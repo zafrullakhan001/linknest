@@ -68,12 +68,13 @@ interface AdminPanelProps {
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
+  const { user } = useAuth();
   const { refreshSettings } = useSettings();
   const isMobile = useMobile();
   // Initialize activeTab from localStorage or default to 'pending'
-  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenance' | 'widgets' | 'addons'>(() => {
+  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenanceScripts' | 'maintenance' | 'widgets' | 'addons'>(() => {
     const savedTab = localStorage.getItem('adminPanelActiveTab');
-    const validTabs: Array<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenance' | 'widgets' | 'addons'> = ['pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'saml', 'footer', 'tabVisibility', 'access', 'clone', 'browser', 'broadcast', 'maintenance', 'widgets', 'addons'];
+    const validTabs: Array<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenanceScripts' | 'maintenance' | 'widgets' | 'addons'> = ['pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'saml', 'footer', 'tabVisibility', 'access', 'clone', 'browser', 'broadcast', 'maintenanceScripts', 'maintenance', 'widgets', 'addons'];
     return (savedTab && validTabs.includes(savedTab as any)) ? savedTab as any : 'pending';
   });
   // Initialize tab layout from localStorage or default to 'horizontal'
@@ -249,6 +250,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     cleaned?: Record<string, number>;
     success: boolean; 
     errors?: string[];
+    missing_tile_ids_sample?: string[];
+    tiles_table_count?: number;
   } | null>(null);
 
   // Duplicate Tiles Cleanup state
@@ -339,6 +342,58 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }>;
     success: boolean;
     errors?: string[];
+  } | null>(null);
+
+  // Optimize Database script state
+  const [optimizeDbLoading, setOptimizeDbLoading] = useState(false);
+  const [optimizeDbResult, setOptimizeDbResult] = useState<{ success: boolean; indexesCreated?: string[]; indexesSkipped?: string[]; errors?: string[]; error?: string } | null>(null);
+
+  // Vacuum Database script state
+  const [vacuumDbLoading, setVacuumDbLoading] = useState(false);
+  const [vacuumDbResult, setVacuumDbResult] = useState<{ success: boolean; message?: string; error?: string } | null>(null);
+
+  // Database Health Report state
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [healthResult, setHealthResult] = useState<{
+    success: boolean; integrity_ok?: boolean; health_status?: string; size_kb?: number; journal_mode?: string;
+    table_counts?: Record<string, number | null>; suggestions?: string[]; error?: string;
+  } | null>(null);
+
+  // Tile & Link Statistics state
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsImpersonating, setStatsImpersonating] = useState(false);
+  const [statsUserFilter, setStatsUserFilter] = useState<number | ''>('');
+  const [statsUsersList, setStatsUsersList] = useState<Array<{ id: number; username: string }>>([]);
+  const [heatMapSearch, setHeatMapSearch] = useState('');
+  const [heatMapPage, setHeatMapPage] = useState(1);
+  const [statsResult, setStatsResult] = useState<{
+    success: boolean; stats?: Record<string, number | { name: string; count: number }[]>; users?: Array<{ id: number; username: string }>;
+    by_user?: Array<{ user_id: number; username: string; tiles: number; links: number; sections: number; tabs: number }>;
+    filtered_by_username?: string | null; error?: string;
+  } | null>(null);
+
+  // OPcache Status state
+  const [opcacheLoading, setOpcacheLoading] = useState(false);
+  const [opcacheResult, setOpcacheResult] = useState<{
+    success: boolean;
+    loaded?: boolean;
+    active?: boolean;
+    message?: string;
+    statistics?: { hits: number; misses: number; total_requests: number; hit_rate_percent: number; num_cached_scripts: number };
+    memory?: { used_human: string; free_human: string; total_human: string; used_percent: number; wasted_human: string };
+    config?: { memory_consumption_mb: number; max_accelerated_files: number; validate_timestamps: boolean; revalidate_freq: number };
+    error?: string;
+  } | null>(null);
+
+  // Duplicate URLs Report state
+  const [dupUrlsLoading, setDupUrlsLoading] = useState(false);
+  const [dupUrlsResult, setDupUrlsResult] = useState<{
+    success: boolean; duplicate_urls_count?: number; duplicate_links_count?: number;
+    duplicates?: Array<{
+      url: string; count: number;
+      by_user?: Array<{ username: string; tiles: Array<{ tile_id: string; tile_title: string }> }>;
+    }>;
+    truncated?: boolean; error?: string;
   } | null>(null);
 
   // Access Manager state
@@ -1071,6 +1126,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       return newSelection.size !== prev.size ? newSelection : prev;
     });
   }, [pendingUsers]);
+
+  // Tile & Link Statistics: fetch when on Maintenance Scripts tab or when filter changes
+  const loadMaintenanceStats = React.useCallback(async () => {
+    try {
+      setStatsLoading(true);
+      setError('');
+      setStatsResult(null);
+      const url = statsUserFilter === ''
+        ? `${resolveApiBase()}/maintenance-stats`
+        : `${resolveApiBase()}/maintenance-stats?user_id=${encodeURIComponent(statsUserFilter)}`;
+      const res = await fetch(url, { credentials: 'include' });
+      const data = await res.json().catch(() => ({}));
+      setStatsResult(data);
+      if (data.success && data.users && data.users.length > 0) {
+        setStatsUsersList(data.users);
+      }
+    } catch (e: unknown) {
+      setStatsResult({ success: false, error: (e as Error).message || 'Failed' });
+    } finally {
+      setStatsLoading(false);
+    }
+  }, [statsUserFilter]);
+
+  useEffect(() => {
+    if (activeTab !== 'maintenanceScripts') return;
+    loadMaintenanceStats();
+  }, [activeTab, statsUserFilter, loadMaintenanceStats]);
 
   const loadSpaces = async () => {
     try {
@@ -3186,6 +3268,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 </button>
                 <button
                   onClick={() => {
+                    setActiveTab('maintenanceScripts');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'maintenanceScripts'
+                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                  }`}
+                  style={{ minHeight: '44px' }}
+                >
+                  Maintenance Scripts
+                </button>
+                <button
+                  onClick={() => {
                     setActiveTab('maintenance');
                     setMobileMenuOpen(false);
                   }}
@@ -3431,6 +3526,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               }
             >
               Broadcast Message
+            </button>
+            <button
+              onClick={() => setActiveTab('maintenanceScripts')}
+              className={tabLayout === 'horizontal'
+                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'maintenanceScripts'
+                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`
+                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'maintenanceScripts'
+                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                }`
+              }
+            >
+              Maintenance Scripts
             </button>
             <button
               onClick={() => setActiveTab('maintenance')}
@@ -10387,8 +10497,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 </div>
               )}
 
-              {/* Maintenance Tab */}
-              {activeTab === 'maintenance' && (
+              {/* Maintenance Scripts Tab - DB cleanup, duplicates, invisible, optimize, vacuum */}
+              {activeTab === 'maintenanceScripts' && (
                 <div className="space-y-6 mt-6">
                   {/* Database Cleanup Section */}
                   <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
@@ -10430,7 +10540,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             </div>
                             {cleanupResults.details && cleanupResults.details.length > 0 && (
                               <div className="space-y-2">
-                                <p className="text-sm text-green-800 dark:text-green-200 mb-2">Orphaned records found:</p>
+                                <p className="text-sm text-green-800 dark:text-green-200 mb-2">Orphaned records found (these reference tile/section IDs that do not exist in the database):</p>
                                 {cleanupResults.details.map((detail, idx) => (
                                   <div key={idx} className="flex items-center justify-between text-sm bg-white dark:bg-slate-800 rounded p-2 border border-green-200 dark:border-green-800">
                                     <div className="flex-1">
@@ -10440,6 +10550,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     <span className="font-bold text-orange-600 dark:text-orange-400">{detail.count}</span>
                                   </div>
                                 ))}
+                                {cleanupResults.tiles_table_count !== undefined && (
+                                  <p className="text-xs text-green-800 dark:text-green-200 mt-2">
+                                    Your database has <strong>{cleanupResults.tiles_table_count}</strong> tile(s). Only records that reference tile IDs <strong>not</strong> in this list are considered orphans.
+                                  </p>
+                                )}
+                                {cleanupResults.missing_tile_ids_sample && cleanupResults.missing_tile_ids_sample.length > 0 && (
+                                  <div className="mt-2 p-2 bg-white dark:bg-slate-800 rounded border border-green-200 dark:border-green-800">
+                                    <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Sample of missing tile IDs (referenced by orphaned sections/tabs but not in the tiles table):</p>
+                                    <p className="text-xs text-slate-600 dark:text-slate-400 font-mono break-all">{cleanupResults.missing_tile_ids_sample.join(', ')}</p>
+                                    <p className="text-xs text-slate-500 dark:text-slate-500 mt-1">Only these orphan references will be removed. No existing tiles are ever deleted.</p>
+                                  </div>
+                                )}
                               </div>
                             )}
                             {cleanupResults.cleaned && Object.keys(cleanupResults.cleaned).length > 0 && (
@@ -10583,8 +10705,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
                       <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">What are orphaned records?</h4>
                       <p className="text-xs text-slate-600 dark:text-slate-400 mb-3">
-                        When tiles are deleted, sometimes related data can remain in the database: permissions for deleted tiles, sections and links that reference missing tiles, or duplicate permission entries. These "orphaned" records can cause display issues (like duplicate tiles in admin panels) and waste database space.
+                        Orphaned = records whose referenced tile or section <strong>no longer exists</strong> in the database (e.g. the tile was deleted). Permissions, sections, tabs, or links that point to a missing tile/section are removed. <strong>Tiles that exist but have no owner</strong> (e.g. created in bulk by a demos script with user_id NULL) are <strong>never</strong> treated as orphans—this cleanup never deletes from the tiles table and never removes data that belongs to an existing tile.
                       </p>
+                      <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-3 border border-emerald-200 dark:border-emerald-800 mb-3">
+                        <p className="text-xs text-emerald-800 dark:text-emerald-200">
+                          <span className="font-semibold">✓ Safe:</span> Only sections/tabs/links/permissions that reference tile IDs (or section IDs) that do not exist in the database are removed. Your existing tiles—with or without an owner—are never deleted by this tool.
+                        </p>
+                      </div>
                       <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3 border border-slate-200 dark:border-slate-700">
                         <p className="text-xs text-slate-600 dark:text-slate-400">
                           <span className="font-semibold text-slate-900 dark:text-white">💡 Best Practice:</span> Run the check periodically, especially after bulk tile deletions or data imports. Cleanup operations use transactions, so if any error occurs, no changes will be made to your database.
@@ -11183,6 +11310,603 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     </div>
                   </div>
 
+                  {/* Optimize Database Section */}
+                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                    <div className="flex items-start gap-3 mb-4">
+                      <div className="flex-shrink-0 w-10 h-10 bg-indigo-500 rounded-lg flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
+                          <path fillRule="evenodd" d="M4.5 2A2.5 2.5 0 002 4.5v3.879a2.5 2.5 0 00.732 1.767l7.5 7.5a2.5 2.5 0 003.536 0l3.878-3.878a2.5 2.5 0 000-3.536l-7.5-7.5A2.5 2.5 0 008.38 2H4.5zM5 6a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Optimize Database</h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-400">
+                          Create or update indexes and apply PRAGMA settings to improve query performance. Safe to run periodically.
+                        </p>
+                      </div>
+                    </div>
+                    {optimizeDbResult && (
+                      <div className={`mb-6 p-4 rounded-lg border ${optimizeDbResult.success ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
+                        {optimizeDbResult.success ? (
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-green-600 dark:text-green-400">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                              </svg>
+                              <span className="font-semibold text-green-900 dark:text-green-100">Optimization complete</span>
+                            </div>
+                            {optimizeDbResult.indexesCreated && optimizeDbResult.indexesCreated.length > 0 && (
+                              <p className="text-sm text-green-800 dark:text-green-200">Indexes created/verified: {optimizeDbResult.indexesCreated.length}</p>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-red-600 dark:text-red-400">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                            </svg>
+                            <span className="text-red-800 dark:text-red-200">{optimizeDbResult.error || (optimizeDbResult.errors && optimizeDbResult.errors[0]) || 'Optimization failed'}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        onClick={async () => {
+                          try {
+                            setOptimizeDbLoading(true);
+                            setError('');
+                            setOptimizeDbResult(null);
+                            const response = await fetch(`${resolveApiBase()}/optimize-database`, { credentials: 'include' });
+                            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                            const data = await response.json();
+                            setOptimizeDbResult(data);
+                            if (data.success) alert('Database optimization completed successfully.');
+                          } catch (err: any) {
+                            setOptimizeDbResult({ success: false, error: err.message || 'Optimization failed' });
+                          } finally {
+                            setOptimizeDbLoading(false);
+                          }
+                        }}
+                        disabled={optimizeDbLoading}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold transition-colors"
+                      >
+                        {optimizeDbLoading ? (
+                          <>
+                            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                            Optimizing...
+                          </>
+                        ) : (
+                          <>Optimize Database</>
+                        )}
+                      </button>
+                      {optimizeDbResult && (
+                        <button onClick={() => setOptimizeDbResult(null)} className="px-4 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium">
+                          Clear Results
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Vacuum Database Section */}
+                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                    <div className="flex items-start gap-3 mb-4">
+                      <div className="flex-shrink-0 w-10 h-10 bg-cyan-500 rounded-lg flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
+                          <path d="M15.98 1.804a1 1 0 00-1.96 0l-.24 1.192a1 1 0 01-.784.785l-1.192.238a1 1 0 000 1.962l1.192.238a1 1 0 01.785.785l.238 1.192a1 1 0 001.962 0l.238-1.192a1 1 0 01.785-.785l1.192-.238a1 1 0 000-1.962l-1.192-.238a1 1 0 01-.785-.785l-.238-1.192zM6.949 5.684a1 1 0 00-1.898 0l-.683 2.051a1 1 0 01-.633.633l-2.051.683a1 1 0 000 1.898l2.051.684a1 1 0 01.633.632l.683 2.051a1 1 0 001.898 0l.683-2.051a1 1 0 01.633-.633l2.051-.683a1 1 0 000-1.898l-2.051-.683a1 1 0 01-.633-.633L6.95 5.684z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Vacuum Database</h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-400">
+                          Reclaim disk space and defragment the database file. Run after large deletions or cleanup operations.
+                        </p>
+                      </div>
+                    </div>
+                    {vacuumDbResult && (
+                      <div className={`mb-6 p-4 rounded-lg border ${vacuumDbResult.success ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
+                        {vacuumDbResult.success ? (
+                          <div className="flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-green-600 dark:text-green-400">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                            </svg>
+                            <span className="font-semibold text-green-900 dark:text-green-100">{vacuumDbResult.message || 'Vacuum completed successfully.'}</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-red-600 dark:text-red-400">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                            </svg>
+                            <span className="text-red-800 dark:text-red-200">{vacuumDbResult.error || 'Vacuum failed'}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        onClick={async () => {
+                          try {
+                            setVacuumDbLoading(true);
+                            setError('');
+                            setVacuumDbResult(null);
+                            const response = await fetch(`${resolveApiBase()}/vacuum-database`, { credentials: 'include' });
+                            const data = await response.json().catch(() => ({ success: false, error: 'Invalid response' }));
+                            setVacuumDbResult({ success: data.success, message: data.message, error: data.error || (!response.ok ? `HTTP ${response.status}` : undefined) });
+                            if (data.success) alert('Database vacuum completed successfully.');
+                          } catch (err: any) {
+                            setVacuumDbResult({ success: false, error: err.message || 'Vacuum failed' });
+                          } finally {
+                            setVacuumDbLoading(false);
+                          }
+                        }}
+                        disabled={vacuumDbLoading}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold transition-colors"
+                      >
+                        {vacuumDbLoading ? (
+                          <>
+                            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                            Vacuuming...
+                          </>
+                        ) : (
+                          <>Vacuum Database</>
+                        )}
+                      </button>
+                      {vacuumDbResult && (
+                        <button onClick={() => setVacuumDbResult(null)} className="px-4 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium">
+                          Clear Results
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Database Health Report */}
+                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                    <div className="flex items-start gap-3 mb-4">
+                      <div className="flex-shrink-0 w-10 h-10 bg-emerald-500 rounded-lg flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Database Health Report</h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-400">
+                          Run a full health check: integrity, size, table row counts, and recommendations. One-click insight into your database.
+                        </p>
+                      </div>
+                    </div>
+                    {healthResult && (
+                      <div className={`mb-6 p-4 rounded-lg border ${healthResult.success ? (healthResult.health_status === 'good' ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800') : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
+                        {healthResult.success ? (
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-2">
+                              {healthResult.integrity_ok ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-semibold bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-200">
+                                  <span className="w-2 h-2 rounded-full bg-green-500" /> Integrity: OK
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-semibold bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200">
+                                  <span className="w-2 h-2 rounded-full bg-amber-500" /> Integrity: Check failed
+                                </span>
+                              )}
+                              <span className="text-slate-600 dark:text-slate-400 text-sm">•</span>
+                              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                Size: {healthResult.size_kb != null ? (healthResult.size_kb >= 1024 ? `${(healthResult.size_kb / 1024).toFixed(1)} MB` : `${healthResult.size_kb} KB`) : '—'}
+                              </span>
+                              <span className="text-slate-500 dark:text-slate-400 text-sm">• {healthResult.journal_mode || '—'} mode</span>
+                            </div>
+                            {healthResult.table_counts && Object.keys(healthResult.table_counts).length > 0 && (
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                                {Object.entries(healthResult.table_counts).filter(([, v]) => v != null).map(([name, count]) => (
+                                  <div key={name} className="bg-white dark:bg-slate-800/50 rounded px-2 py-1 border border-slate-200 dark:border-slate-600">
+                                    <span className="text-slate-500 dark:text-slate-400">{name.replace(/_/g, ' ')}:</span> <span className="font-semibold text-slate-900 dark:text-white">{count}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {healthResult.suggestions && healthResult.suggestions.length > 0 && (
+                              <ul className="list-disc list-inside text-sm text-amber-800 dark:text-amber-200 space-y-1">
+                                {healthResult.suggestions.map((s, i) => <li key={i}>{s}</li>)}
+                              </ul>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-red-800 dark:text-red-200">{healthResult.error || 'Health check failed'}</span>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        onClick={async () => {
+                          try {
+                            setHealthLoading(true); setError(''); setHealthResult(null);
+                            const res = await fetch(`${resolveApiBase()}/maintenance-health`, { credentials: 'include' });
+                            const data = await res.json().catch(() => ({}));
+                            setHealthResult(data);
+                          } catch (e: any) {
+                            setHealthResult({ success: false, error: e.message || 'Failed' });
+                          } finally {
+                            setHealthLoading(false);
+                          }
+                        }}
+                        disabled={healthLoading}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold"
+                      >
+                        {healthLoading ? <><svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Checking...</> : <>Run Health Report</>}
+                      </button>
+                      {healthResult && <button onClick={() => setHealthResult(null)} className="px-4 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium">Clear Results</button>}
+                    </div>
+                  </div>
+
+                  {/* PHP OPcache Status */}
+                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                    <div className="flex items-start gap-3 mb-4">
+                      <div className="flex-shrink-0 w-10 h-10 bg-cyan-500 rounded-lg flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
+                          <path fillRule="evenodd" d="M4.5 2A1.5 1.5 0 003 3.5v13A1.5 1.5 0 004.5 18h11a1.5 1.5 0 001.5-1.5V7.621a1.5 1.5 0 00-.44-1.06l-4.12-4.122A1.5 1.5 0 0011.378 2H4.5zm2.25 8.5a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zm0 3a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">PHP OPcache Status</h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-400">
+                          View OPcache cache hits, misses, hit rate, memory usage, and configuration. Helps monitor PHP bytecode cache health.
+                        </p>
+                      </div>
+                    </div>
+                    {opcacheResult && opcacheResult.success && opcacheResult.active && opcacheResult.statistics && (
+                      <div className="mb-6 p-4 rounded-lg border bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+                          <div className="bg-white dark:bg-slate-800 rounded-lg p-3 border border-slate-200 dark:border-slate-600 text-center">
+                            <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{opcacheResult.statistics.hits.toLocaleString()}</div>
+                            <div className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Cache hits</div>
+                          </div>
+                          <div className="bg-white dark:bg-slate-800 rounded-lg p-3 border border-slate-200 dark:border-slate-600 text-center">
+                            <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">{opcacheResult.statistics.misses.toLocaleString()}</div>
+                            <div className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Cache misses</div>
+                          </div>
+                          <div className="bg-white dark:bg-slate-800 rounded-lg p-3 border border-slate-200 dark:border-slate-600 text-center">
+                            <div className="text-2xl font-bold text-cyan-600 dark:text-cyan-400">{opcacheResult.statistics.hit_rate_percent}%</div>
+                            <div className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Hit rate</div>
+                          </div>
+                          <div className="bg-white dark:bg-slate-800 rounded-lg p-3 border border-slate-200 dark:border-slate-600 text-center">
+                            <div className="text-2xl font-bold text-brand-600 dark:text-brand-400">{opcacheResult.statistics.num_cached_scripts.toLocaleString()}</div>
+                            <div className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Cached scripts</div>
+                          </div>
+                        </div>
+                        {opcacheResult.memory && (
+                          <div className="space-y-2 text-sm mb-4">
+                            <p className="text-slate-700 dark:text-slate-300">
+                              Memory: <strong>{opcacheResult.memory.used_human}</strong> used, <strong>{opcacheResult.memory.free_human}</strong> free, <strong>{opcacheResult.memory.total_human}</strong> total ({opcacheResult.memory.used_percent}% used). Wasted: {opcacheResult.memory.wasted_human}.
+                            </p>
+                          </div>
+                        )}
+                        {opcacheResult.config && (
+                          <div className="text-sm text-slate-600 dark:text-slate-400">
+                            Config: {opcacheResult.config.memory_consumption_mb} MB limit, max {opcacheResult.config.max_accelerated_files.toLocaleString()} files, validate_timestamps={opcacheResult.config.validate_timestamps ? 'yes' : 'no'}, revalidate_freq={opcacheResult.config.revalidate_freq}s.
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {opcacheResult && opcacheResult.success && !opcacheResult.active && (
+                      <div className="mb-6 p-4 rounded-lg border bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-sm">
+                        {opcacheResult.message || 'OPcache is not active (e.g. CLI or disabled in php.ini).'}
+                      </div>
+                    )}
+                    {opcacheResult && opcacheResult.success && !opcacheResult.loaded && (
+                      <div className="mb-6 p-4 rounded-lg border bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-sm">
+                        OPcache extension is not loaded. Enable zend_extension=opcache in php.ini.
+                      </div>
+                    )}
+                    {opcacheResult && !opcacheResult.success && (
+                      <div className="mb-6 p-4 rounded-lg border bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-800 dark:text-red-200 text-sm">{opcacheResult.error || 'Failed'}</div>
+                    )}
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        onClick={async () => {
+                          try {
+                            setOpcacheLoading(true);
+                            setError('');
+                            setOpcacheResult(null);
+                            const res = await fetch(`${resolveApiBase()}/opcache-status`, { credentials: 'include' });
+                            const data = await res.json().catch(() => ({}));
+                            setOpcacheResult(data);
+                          } catch (e: unknown) {
+                            setOpcacheResult({ success: false, error: (e as Error).message || 'Failed' });
+                          } finally {
+                            setOpcacheLoading(false);
+                          }
+                        }}
+                        disabled={opcacheLoading}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold"
+                      >
+                        {opcacheLoading ? <><svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Loading...</> : <>Check OPcache Status</>}
+                      </button>
+                      {opcacheResult && <button onClick={() => setOpcacheResult(null)} className="px-4 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium">Clear Results</button>}
+                    </div>
+                  </div>
+
+                  {/* Tile & Link Statistics */}
+                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                    <div className="flex items-start gap-3 mb-4">
+                      <div className="flex-shrink-0 w-10 h-10 bg-violet-500 rounded-lg flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
+                          <path d="M15.5 2A1.5 1.5 0 0014 3.5v13a1.5 1.5 0 001.5 1.5h1a1.5 1.5 0 001.5-1.5v-13A1.5 1.5 0 0016.5 2h-1zM9.5 6A1.5 1.5 0 008 7.5v9A1.5 1.5 0 009.5 18h1a1.5 1.5 0 001.5-1.5v-9A1.5 1.5 0 0010.5 6h-1zM3.5 10A1.5 1.5 0 002 11.5v5A1.5 1.5 0 003.5 18h1A1.5 1.5 0 006 16.5v-5A1.5 1.5 0 004.5 10h-1z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Tile & Link Statistics</h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-400">
+                          See at a glance: total tiles, links, sections, tabs, users, and top categories. Filter by user or refresh for all.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mb-4 flex flex-wrap items-center gap-3">
+                      <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Filter by user</label>
+                      <select
+                        value={statsUserFilter === '' ? '' : statsUserFilter}
+                        onChange={(e) => setStatsUserFilter(e.target.value === '' ? '' : Number(e.target.value))}
+                        className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 min-w-[180px]"
+                      >
+                        <option value="">All users</option>
+                        {(statsUsersList.length > 0 ? statsUsersList : (statsResult?.users ?? [])).map((u) => (
+                          <option key={u.id} value={u.id}>{u.username}</option>
+                        ))}
+                      </select>
+                      {statsUserFilter !== '' && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (statsUserFilter === '' || statsUserFilter === user?.id) return;
+                            try {
+                              setStatsImpersonating(true);
+                              setError('');
+                              sessionStorage.setItem('postImpersonationReturn', JSON.stringify({ hash: '#/admin', adminPanelTab: 'maintenanceScripts' }));
+                              await authService.startImpersonation(statsUserFilter);
+                              window.location.reload();
+                            } catch (err: unknown) {
+                              setError((err as Error).message || 'Failed to start impersonation');
+                              setStatsImpersonating(false);
+                            }
+                          }}
+                          disabled={statsImpersonating || statsUserFilter === user?.id}
+                          title={statsUserFilter === user?.id ? 'Cannot impersonate yourself' : 'View the app as this user'}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg border border-indigo-200 dark:border-indigo-800"
+                        >
+                          {statsImpersonating ? (
+                            <><svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Switching…</>
+                          ) : (
+                            <><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zM6 8a2 2 0 11-4 0 2 2 0 014 0zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-3.385-.572zM16 8a2 2 0 11-4 0 2 2 0 014 0zm-1.615 8.428a1.224 1.224 0 00.569-1.175 5.966 5.966 0 00-2.081-.416 5.967 5.967 0 00-1.788.27A9.953 9.953 0 0013 18a9.953 9.953 0 003.385-.572z" /></svg> View as user</>
+                          )}
+                        </button>
+                      )}
+                      {statsResult?.filtered_by_username && (
+                        <span className="text-sm text-violet-600 dark:text-violet-400 font-medium">
+                          Showing stats for: {statsResult.filtered_by_username}
+                        </span>
+                      )}
+                    </div>
+                    {statsResult && statsResult.success && statsResult.stats && (
+                      <div className="mb-6 p-4 rounded-lg border bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-4">
+                          {['tiles', 'links', 'sections', 'tabs', 'users', 'categories'].map((k) => (
+                            <div key={k} className="bg-white dark:bg-slate-800 rounded-lg p-3 border border-slate-200 dark:border-slate-600 text-center">
+                              <div className="text-2xl font-bold text-brand-600 dark:text-brand-400">{Number(statsResult.stats[k]) ?? 0}</div>
+                              <div className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">{k}</div>
+                            </div>
+                          ))}
+                        </div>
+                        {(statsResult.stats.avg_links_per_tile != null || statsResult.stats.top_categories) && (
+                          <div className="space-y-2 text-sm">
+                            {statsResult.stats.avg_links_per_tile != null && (
+                              <p className="text-slate-700 dark:text-slate-300">Average links per tile: <strong>{Number(statsResult.stats.avg_links_per_tile).toFixed(1)}</strong></p>
+                            )}
+                            {Array.isArray(statsResult.stats.top_categories) && statsResult.stats.top_categories.length > 0 && (
+                              <div>
+                                <p className="font-semibold text-slate-900 dark:text-white mb-1">Top categories by tile count</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {statsResult.stats.top_categories.slice(0, 8).map((c: { name: string; count: number }, i: number) => (
+                                    <span key={i} className="px-2 py-1 rounded bg-violet-100 dark:bg-violet-900/30 text-violet-800 dark:text-violet-200 text-xs">{c.name} ({c.count})</span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {statsResult && !statsResult.success && (
+                      <div className="mb-6 p-4 rounded-lg border bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-800 dark:text-red-200 text-sm">{statsResult.error || 'Failed'}</div>
+                    )}
+                    {statsResult && statsResult.success && statsResult.by_user && statsResult.by_user.length > 0 && statsUserFilter === '' && (() => {
+                      const HEAT_MAP_PAGE_SIZE = 20;
+                      const byUser = statsResult.by_user;
+                      const searchLower = heatMapSearch.trim().toLowerCase();
+                      const filtered = searchLower
+                        ? byUser.filter((u: { username: string }) => (u.username || '').toLowerCase().includes(searchLower))
+                        : byUser;
+                      const totalPages = Math.max(1, Math.ceil(filtered.length / HEAT_MAP_PAGE_SIZE));
+                      const page = Math.min(heatMapPage, totalPages);
+                      const start = (page - 1) * HEAT_MAP_PAGE_SIZE;
+                      const pageRows = filtered.slice(start, start + HEAT_MAP_PAGE_SIZE);
+                      const maxTiles = Math.max(1, ...byUser.map((u: { tiles: number }) => u.tiles));
+                      const maxLinks = Math.max(1, ...byUser.map((u: { links: number }) => u.links));
+                      const maxSections = Math.max(1, ...byUser.map((u: { sections: number }) => u.sections));
+                      const maxTabs = Math.max(1, ...byUser.map((u: { tabs: number }) => u.tabs));
+                      const cellClass = (v: number, max: number) => {
+                        const h = Math.min(1, v / max);
+                        if (h <= 0) return 'bg-slate-100 dark:bg-slate-800';
+                        if (h <= 0.25) return 'bg-violet-100 dark:bg-violet-900/30';
+                        if (h <= 0.5) return 'bg-violet-200 dark:bg-violet-800/40';
+                        if (h <= 0.75) return 'bg-violet-300 dark:bg-violet-700/50';
+                        return 'bg-violet-400 dark:bg-violet-600 text-white dark:text-white';
+                      };
+                      return (
+                        <div key="heatmap" className="mb-6 p-4 rounded-lg border bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700">
+                          <p className="font-semibold text-slate-900 dark:text-white mb-3">Per-user heat map (tiles, links, sections, tabs)</p>
+                          <div className="mb-3 flex flex-wrap items-center gap-3">
+                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300 sr-only">Search users</label>
+                            <input
+                              type="text"
+                              placeholder="Search by username…"
+                              value={heatMapSearch}
+                              onChange={(e) => { setHeatMapSearch(e.target.value); setHeatMapPage(1); }}
+                              className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 min-w-[200px]"
+                            />
+                            <span className="text-sm text-slate-500 dark:text-slate-400">
+                              {filtered.length} user{filtered.length !== 1 ? 's' : ''}
+                              {searchLower ? ` matching "${heatMapSearch.trim()}"` : ''}
+                            </span>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm border-collapse">
+                              <thead>
+                                <tr className="border-b border-slate-200 dark:border-slate-600">
+                                  <th className="text-left py-2 px-3 font-semibold text-slate-700 dark:text-slate-300">User</th>
+                                  <th className="text-center py-2 px-3 font-semibold text-slate-700 dark:text-slate-300">Tiles</th>
+                                  <th className="text-center py-2 px-3 font-semibold text-slate-700 dark:text-slate-300">Links</th>
+                                  <th className="text-center py-2 px-3 font-semibold text-slate-700 dark:text-slate-300">Sections</th>
+                                  <th className="text-center py-2 px-3 font-semibold text-slate-700 dark:text-slate-300">Tabs</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {pageRows.map((row: { user_id: number; username: string; tiles: number; links: number; sections: number; tabs: number }, i: number) => (
+                                  <tr key={row.user_id ?? start + i} className="border-b border-slate-100 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                                    <td className="py-2 px-3 font-medium text-slate-900 dark:text-white">{row.username}</td>
+                                    <td className={`py-2 px-3 text-center ${cellClass(row.tiles, maxTiles)}`} title={`${row.tiles} / ${maxTiles}`}>{row.tiles}</td>
+                                    <td className={`py-2 px-3 text-center ${cellClass(row.links, maxLinks)}`} title={`${row.links} / ${maxLinks}`}>{row.links}</td>
+                                    <td className={`py-2 px-3 text-center ${cellClass(row.sections, maxSections)}`} title={`${row.sections} / ${maxSections}`}>{row.sections}</td>
+                                    <td className={`py-2 px-3 text-center ${cellClass(row.tabs, maxTabs)}`} title={`${row.tabs} / ${maxTabs}`}>{row.tabs}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          {totalPages > 1 && (
+                            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                              <span className="text-sm text-slate-600 dark:text-slate-400">
+                                Page {page} of {totalPages} ({start + 1}–{Math.min(start + HEAT_MAP_PAGE_SIZE, filtered.length)} of {filtered.length})
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setHeatMapPage((p) => Math.max(1, p - 1))}
+                                  disabled={page <= 1}
+                                  className="px-3 py-1.5 text-sm font-medium bg-slate-200 dark:bg-slate-600 hover:bg-slate-300 dark:hover:bg-slate-500 disabled:opacity-50 disabled:cursor-not-allowed text-slate-800 dark:text-slate-200 rounded-lg"
+                                >
+                                  Previous
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setHeatMapPage((p) => Math.min(totalPages, p + 1))}
+                                  disabled={page >= totalPages}
+                                  className="px-3 py-1.5 text-sm font-medium bg-slate-200 dark:bg-slate-600 hover:bg-slate-300 dark:hover:bg-slate-500 disabled:opacity-50 disabled:cursor-not-allowed text-slate-800 dark:text-slate-200 rounded-lg"
+                                >
+                                  Next
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        onClick={() => loadMaintenanceStats()}
+                        disabled={statsLoading}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold"
+                      >
+                        {statsLoading ? <><svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Loading...</> : <>Refresh Statistics</>}
+                      </button>
+                      {statsResult && <button onClick={() => setStatsResult(null)} className="px-4 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium">Clear Results</button>}
+                    </div>
+                  </div>
+
+                  {/* Duplicate URLs Report */}
+                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                    <div className="flex items-start gap-3 mb-4">
+                      <div className="flex-shrink-0 w-10 h-10 bg-rose-500 rounded-lg flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
+                          <path fillRule="evenodd" d="M4.5 2A2.5 2.5 0 002 4.5v3.879a2.5 2.5 0 00.732 1.767l7.5 7.5a2.5 2.5 0 003.536 0l3.878-3.878a2.5 2.5 0 000-3.536l-7.5-7.5A2.5 2.5 0 008.38 2H4.5zM8 6a.75.75 0 100-1.5.75.75 0 000 1.5z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Duplicate URLs Report</h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-400">
+                          Find links that share the same URL across your tiles. Helps spot redundant bookmarks and clean up. Read-only report.
+                        </p>
+                      </div>
+                    </div>
+                    {dupUrlsResult && dupUrlsResult.success && (
+                      <div className="mb-6 p-4 rounded-lg border bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700">
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="font-semibold text-slate-900 dark:text-white">
+                            {dupUrlsResult.duplicate_urls_count === 0
+                              ? 'No duplicate URLs found — all links are unique.'
+                              : `Found ${dupUrlsResult.duplicate_urls_count} URL(s) used more than once (${dupUrlsResult.duplicate_links_count} total link entries).`}
+                          </span>
+                        </div>
+                        {dupUrlsResult.duplicates && dupUrlsResult.duplicates.length > 0 && (
+                          <div className="max-h-96 overflow-y-auto space-y-4 text-sm">
+                            {dupUrlsResult.duplicates.map((d, i) => (
+                              <div key={i} className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden">
+                                <div className="flex items-center justify-between gap-2 px-3 py-2 bg-rose-50 dark:bg-rose-900/20 border-b border-slate-200 dark:border-slate-600">
+                                  <span className="truncate text-slate-700 dark:text-slate-300 font-medium" title={d.url}>{d.url}</span>
+                                  <span className="flex-shrink-0 font-semibold text-rose-600 dark:text-rose-400">{d.count}×</span>
+                                </div>
+                                {d.by_user && d.by_user.length > 0 ? (
+                                  <div className="px-3 py-2 space-y-2">
+                                    {d.by_user.map((u, ui) => (
+                                      <div key={ui} className="space-y-1">
+                                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">User: {u.username}</span>
+                                        <div className="flex flex-wrap gap-1.5 pl-2">
+                                          {u.tiles.map((t, ti) => (
+                                            <span key={ti} className="inline-flex items-center px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs" title={t.tile_id}>
+                                              {t.tile_title || 'Untitled'}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className="px-3 py-2 text-slate-500 dark:text-slate-400 text-xs">No user/tile details</div>
+                                )}
+                              </div>
+                            ))}
+                            {dupUrlsResult.truncated && <p className="text-xs text-slate-500 dark:text-slate-400">Showing first 100 duplicate URLs. More may exist.</p>}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {dupUrlsResult && !dupUrlsResult.success && (
+                      <div className="mb-6 p-4 rounded-lg border bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-800 dark:text-red-200 text-sm">{dupUrlsResult.error || 'Failed'}</div>
+                    )}
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        onClick={async () => {
+                          try {
+                            setDupUrlsLoading(true); setError(''); setDupUrlsResult(null);
+                            const res = await fetch(`${resolveApiBase()}/maintenance-duplicate-urls`, { credentials: 'include' });
+                            const data = await res.json().catch(() => ({}));
+                            setDupUrlsResult(data);
+                          } catch (e: any) {
+                            setDupUrlsResult({ success: false, error: e.message || 'Failed' });
+                          } finally {
+                            setDupUrlsLoading(false);
+                          }
+                        }}
+                        disabled={dupUrlsLoading}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold"
+                      >
+                        {dupUrlsLoading ? <><svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Scanning...</> : <>Find Duplicate URLs</>}
+                      </button>
+                      {dupUrlsResult && <button onClick={() => setDupUrlsResult(null)} className="px-4 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium">Clear Results</button>}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Maintenance Tab - mode toggle only */}
+              {activeTab === 'maintenance' && (
+                <div className="space-y-6 mt-6">
                   <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
                     <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Maintenance Mode</h3>
                     <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">

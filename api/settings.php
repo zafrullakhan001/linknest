@@ -7,6 +7,7 @@ if (session_status() === PHP_SESSION_NONE) {
 
 $method = $_SERVER['REQUEST_METHOD'];
 $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
+$path = $path === '' ? '/' : ('/' . ltrim($path, '/'));
 
 switch ($method) {
     case 'GET':

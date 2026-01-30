@@ -943,6 +943,15 @@ const AppContent: React.FC = () => {
             onClick={async () => {
               try {
                 await authService.stopImpersonation();
+                const returnTo = sessionStorage.getItem('postImpersonationReturn');
+                if (returnTo) {
+                  try {
+                    const { hash, adminPanelTab } = JSON.parse(returnTo);
+                    sessionStorage.removeItem('postImpersonationReturn');
+                    if (adminPanelTab) localStorage.setItem('adminPanelActiveTab', adminPanelTab);
+                    if (hash) window.location.hash = hash;
+                  } catch (_) { /* ignore */ }
+                }
                 window.location.reload();
               } catch (error) {
                 console.error('Failed to stop impersonation:', error);

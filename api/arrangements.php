@@ -3,10 +3,11 @@ require_once __DIR__ . '/config.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
+$path = $path === '' ? '/' : ('/' . ltrim($path, '/'));
 
 switch ($method) {
     case 'GET':
-        if ($path === '' || $path === '/') {
+        if ($path === '/' || $path === '') {
             handleGetArrangement();
         } elseif ($path === '/categories' || $path === '/categories/') {
             handleGetCategoryArrangement();
@@ -17,7 +18,7 @@ switch ($method) {
         
     case 'POST':
     case 'PUT':
-        if ($path === '' || $path === '/') {
+        if ($path === '/' || $path === '') {
             handleSaveArrangement();
         } elseif ($path === '/categories' || $path === '/categories/') {
             handleSaveCategoryArrangement();

@@ -32,18 +32,27 @@ header('Content-Type: application/json');
 $action = $_GET['action'] ?? '';
 
 /**
- * Check for orphaned records without deleting them
+ * Check for orphaned records without deleting them.
+ *
+ * SAFETY: "Orphaned" means the record references a tile/section that DOES NOT EXIST in the database.
+ * We only count sections/tabs whose tile_id is NOT IN (SELECT id FROM tiles).
+ * Tiles that exist but have no owner (user_id NULL) are NEVER treated as orphans - their sections/tabs
+ * are never removed. This script NEVER deletes from the tiles table.
  */
 function checkOrphanedRecords($db) {
     $results = [
         'success' => true,
         'orphaned_found' => 0,
         'details' => [],
-        'errors' => []
+        'errors' => [],
+        'missing_tile_ids_sample' => [], // tile_ids that are referenced but don't exist (for verification)
+        'tiles_table_count' => 0,
     ];
     
     try {
-        // 1. Check orphaned tile permissions
+        $results['tiles_table_count'] = (int) $db->query('SELECT COUNT(*) FROM tiles')->fetchColumn();
+
+        // 1. Check orphaned tile permissions (permissions where tile_id does not exist in tiles table)
         $orphanedPermissions = $db->query("
             SELECT COUNT(*) as count
             FROM user_tile_permissions utp
@@ -56,12 +65,12 @@ function checkOrphanedRecords($db) {
                 'type' => 'tile_permissions',
                 'label' => 'Tile Permissions',
                 'count' => $orphanedPermissions,
-                'description' => 'Permission records for deleted tiles'
+                'description' => 'Permission records for tiles that no longer exist in the database'
             ];
             $results['orphaned_found'] += $orphanedPermissions;
         }
         
-        // 2. Check orphaned sections
+        // 2. Check orphaned sections (sections whose tile_id is NOT in tiles table - tile was deleted or never existed)
         $orphanedSections = $db->query("
             SELECT COUNT(*) as count
             FROM sections s
@@ -70,16 +79,27 @@ function checkOrphanedRecords($db) {
         ")->fetch()['count'];
         
         if ($orphanedSections > 0) {
+            $missingFromSections = $db->query("
+                SELECT DISTINCT s.tile_id
+                FROM sections s
+                WHERE s.tile_id NOT IN (SELECT id FROM tiles)
+                LIMIT 20
+            ")->fetchAll(PDO::FETCH_COLUMN);
+            foreach ($missingFromSections as $tid) {
+                if (!in_array($tid, $results['missing_tile_ids_sample'], true)) {
+                    $results['missing_tile_ids_sample'][] = $tid;
+                }
+            }
             $results['details'][] = [
                 'type' => 'sections',
                 'label' => 'Sections',
                 'count' => $orphanedSections,
-                'description' => 'Sections referencing deleted tiles'
+                'description' => 'Sections whose tile_id does not exist in the tiles table (real orphans only)'
             ];
             $results['orphaned_found'] += $orphanedSections;
         }
         
-        // 3. Check orphaned links
+        // 3. Check orphaned links (links whose section_id is NOT in sections table)
         $orphanedLinks = $db->query("
             SELECT COUNT(*) as count
             FROM links l
@@ -92,12 +112,12 @@ function checkOrphanedRecords($db) {
                 'type' => 'links',
                 'label' => 'Links',
                 'count' => $orphanedLinks,
-                'description' => 'Links referencing deleted sections'
+                'description' => 'Links whose section no longer exists in the database'
             ];
             $results['orphaned_found'] += $orphanedLinks;
         }
         
-        // 4. Check orphaned tabs
+        // 4. Check orphaned tabs (tabs whose tile_id is NOT in tiles table)
         $orphanedTabs = $db->query("
             SELECT COUNT(*) as count
             FROM tabs t
@@ -106,14 +126,27 @@ function checkOrphanedRecords($db) {
         ")->fetch()['count'];
         
         if ($orphanedTabs > 0) {
+            $missingFromTabs = $db->query("
+                SELECT DISTINCT t.tile_id
+                FROM tabs t
+                WHERE t.tile_id NOT IN (SELECT id FROM tiles)
+                LIMIT 20
+            ")->fetchAll(PDO::FETCH_COLUMN);
+            foreach ($missingFromTabs as $tid) {
+                if (!in_array($tid, $results['missing_tile_ids_sample'], true)) {
+                    $results['missing_tile_ids_sample'][] = $tid;
+                }
+            }
             $results['details'][] = [
                 'type' => 'tabs',
                 'label' => 'Tabs',
                 'count' => $orphanedTabs,
-                'description' => 'Tabs referencing deleted tiles'
+                'description' => 'Tabs whose tile_id does not exist in the tiles table (real orphans only)'
             ];
             $results['orphaned_found'] += $orphanedTabs;
         }
+        
+        $results['missing_tile_ids_sample'] = array_slice(array_unique($results['missing_tile_ids_sample']), 0, 30);
         
         // 5. Check for duplicate permissions
         $duplicatePerms = $db->query("
@@ -145,7 +178,14 @@ function checkOrphanedRecords($db) {
 }
 
 /**
- * Clean up all orphaned records
+ * Clean up all orphaned records.
+ *
+ * SAFETY: This function NEVER deletes from the tiles table. It only deletes:
+ * - user_tile_permissions where tile_id NOT IN (SELECT id FROM tiles)
+ * - sections where tile_id NOT IN (SELECT id FROM tiles)
+ * - links where section_id NOT IN (SELECT id FROM sections)
+ * - tabs where tile_id NOT IN (SELECT id FROM tiles)
+ * Tiles that exist (including those with user_id NULL / no owner) are never touched.
  */
 function cleanupOrphanedRecords($db) {
     $results = [
@@ -158,7 +198,7 @@ function cleanupOrphanedRecords($db) {
     try {
         $db->beginTransaction();
         
-        // 1. Clean orphaned tile permissions
+        // 1. Clean orphaned tile permissions (tile_id does not exist in tiles table)
         $orphanedPermissions = $db->query("
             SELECT COUNT(*) as count
             FROM user_tile_permissions utp

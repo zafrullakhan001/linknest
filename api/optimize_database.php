@@ -11,6 +11,26 @@
 
 require_once __DIR__ . '/config.php';
 
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+if (!isset($_SESSION['user_id'])) {
+    http_response_code(401);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['success' => false, 'error' => 'Not authenticated']);
+    exit;
+}
+$db = getDB();
+$stmt = $db->prepare('SELECT is_admin FROM users WHERE id = ?');
+$stmt->execute([$_SESSION['user_id']]);
+$user = $stmt->fetch();
+if (!$user || !$user['is_admin']) {
+    http_response_code(403);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['success' => false, 'error' => 'Admin access required']);
+    exit;
+}
+
 // Set execution time limit for optimization
 set_time_limit(60);
 
@@ -23,8 +43,12 @@ try {
     // Enable WAL mode for better concurrent access
     $db->exec('PRAGMA journal_mode = WAL');
     
-    // Set page size to 4096 (4 KB) for enterprise standard
-    $db->exec('PRAGMA page_size = 4096');
+    // Set page size to 4096 (4 KB) - only takes effect on empty DB; skip if DB has data
+    try {
+        $db->exec('PRAGMA page_size = 4096');
+    } catch (PDOException $e) {
+        // Ignore - page_size cannot be changed on existing non-empty database
+    }
     
     // Foreign keys disabled for enterprise (as per requirements)
     $db->exec('PRAGMA foreign_keys = OFF');
@@ -296,6 +320,7 @@ try {
         'message' => 'Database optimization completed successfully',
         'indexes_created' => count($indexesCreated),
         'indexes_skipped' => count($indexesSkipped),
+        'indexesCreated' => $indexesCreated,
         'indexes_list' => $indexesCreated,
         'indexes_skipped_list' => $indexesSkipped,
         'total_indexes' => count($allIndexes),

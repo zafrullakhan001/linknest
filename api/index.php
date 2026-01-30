@@ -76,13 +76,15 @@ if ($path === '/') {
     $_SERVER['PATH_INFO'] = substr($path, 6); // Remove '/tiles'
     require __DIR__ . '/tiles.php';
 } elseif (strpos($path, '/settings') === 0) {
-    $_SERVER['PATH_INFO'] = substr($path, 9); // Remove '/settings'
+    $remainingPath = substr($path, 9); // Remove '/settings'
+    $_SERVER['PATH_INFO'] = (empty($remainingPath) || $remainingPath === '/') ? '/' : (($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath);
     require __DIR__ . '/settings.php';
 } elseif (strpos($path, '/database') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 9); // Remove '/database'
     require __DIR__ . '/database.php';
 } elseif (strpos($path, '/arrangements') === 0) {
-    $_SERVER['PATH_INFO'] = substr($path, 13); // Remove '/arrangements'
+    $remainingPath = substr($path, 13); // Remove '/arrangements'
+    $_SERVER['PATH_INFO'] = (empty($remainingPath) || $remainingPath === '/') ? '/' : (($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath);
     require __DIR__ . '/arrangements.php';
 } elseif (strpos($path, '/linkhealth') === 0) {
     // Remove the '/linkhealth' prefix (11 characters) and keep any sub-path (e.g. '/check', '/check-tile')
@@ -198,6 +200,42 @@ if ($path === '/') {
         $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
     }
     require __DIR__ . '/addons.php';
+    exit;
+} elseif (strpos($path, '/optimize-database') === 0) {
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    require __DIR__ . '/optimize_database.php';
+    exit;
+} elseif (strpos($path, '/vacuum-database') === 0) {
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    require __DIR__ . '/vacuum_database.php';
+    exit;
+} elseif (strpos($path, '/maintenance-health') === 0) {
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    require __DIR__ . '/maintenance_health.php';
+    exit;
+} elseif (strpos($path, '/maintenance-stats') === 0) {
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    require __DIR__ . '/maintenance_stats.php';
+    exit;
+} elseif (strpos($path, '/maintenance-duplicate-urls') === 0) {
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    require __DIR__ . '/maintenance_duplicate_urls.php';
+    exit;
+} elseif (strpos($path, '/opcache-status') === 0) {
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    require __DIR__ . '/opcache_status.php';
     exit;
 } elseif (strpos($path, '/monitor-notifications') === 0) {
     // Remove '/monitor-notifications' prefix (22 characters)

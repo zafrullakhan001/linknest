@@ -2358,27 +2358,24 @@ function requireAuth() {
 
 // Helper function to send JSON response
 function sendJSON($data, $statusCode = 200) {
-    // Clean any output buffers but keep the buffer active
-    $level = ob_get_level();
-    for ($i = 0; $i < $level; $i++) {
-        ob_clean();
+    try {
+        $level = ob_get_level();
+        for ($i = 0; $i < $level; $i++) {
+            @ob_clean();
+        }
+    } catch (Throwable $e) {
+        // Ignore buffer errors so we can still send JSON
     }
-    
-    // If headers were already sent, log it but try to continue
     if (headers_sent($file, $line)) {
         error_log("Warning: Headers already sent in $file on line $line - output may be corrupted");
-        // Try to clean output if possible
-        if (ob_get_level() > 0) {
-            ob_clean();
-        }
     }
-    
-    http_response_code($statusCode);
-    header('Content-Type: application/json; charset=utf-8');
-    // Prevent stale API responses due to HTTP caching (important for rule reordering, etc.)
-    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
-    header('Pragma: no-cache');
-    header('Expires: 0');
+    if (!headers_sent()) {
+        http_response_code($statusCode);
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+    }
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
