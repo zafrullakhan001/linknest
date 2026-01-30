@@ -2,14 +2,26 @@
  * LinkNest Semi-PWA Service Worker
  * When enabled: cache-first for document and same-origin GET requests.
  * Hard refresh (Cache-Control: no-cache / Pragma: no-cache / cache: 'reload') fetches from network and updates cache.
+ * 
+ * CACHE INVALIDATION FIX:
+ * - Hard refresh now clears ALL caches and broadcasts to all clients
+ * - API calls use stale-while-revalidate to stay fresh
+ * - Prevents outdated cache from being served after updates
  */
-const CACHE_NAME = 'linknest-pwa-v1';
+const CACHE_NAME = 'linknest-pwa-v2';
 const LOG_PREFIX = '[LinkNest PWA]';
 
+// Track if hard refresh happened recently (to clear caches for subsequent API calls)
+let hardRefreshTimestamp = 0;
+const HARD_REFRESH_WINDOW = 2000; // 2 seconds
+
 // Only the main page (navigation) is treated as hard refresh when user does Ctrl+F5.
-// API and subresource requests are always cache-first so tab switch / normal refresh stay fast.
 function isHardRefresh(request) {
   return request.mode === 'navigate' && request.cache === 'reload';
+}
+
+function isWithinHardRefreshWindow() {
+  return Date.now() - hardRefreshTimestamp < HARD_REFRESH_WINDOW;
 }
 
 function shortUrl(request) {
@@ -39,6 +51,28 @@ function isIncludedInPwa(pathname) {
   return INCLUDED_PATHS.some(function (seg) { return pathMatchesSegment(pathname, seg); });
 }
 
+// Check if request is for API endpoint
+function isApiRequest(pathname) {
+  return pathname.indexOf('/api/') !== -1;
+}
+
+// Clear all caches and notify clients
+async function clearAllCaches() {
+  try {
+    const cacheNames = await caches.keys();
+    await Promise.all(cacheNames.map(name => caches.delete(name)));
+    console.log(LOG_PREFIX, 'All caches cleared due to hard refresh');
+
+    // Notify all clients that cache was cleared
+    const clients = await self.clients.matchAll();
+    clients.forEach(client => {
+      client.postMessage({ type: 'CACHE_CLEARED', timestamp: Date.now() });
+    });
+  } catch (e) {
+    console.error(LOG_PREFIX, 'Error clearing caches:', e);
+  }
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
@@ -62,8 +96,13 @@ self.addEventListener('fetch', (event) => {
   event.respondWith((async () => {
     const hardRefresh = isHardRefresh(request);
     const path = shortUrl(request);
+    const isApi = isApiRequest(url.pathname);
 
+    // HARD REFRESH: Clear all caches and fetch fresh
     if (hardRefresh) {
+      hardRefreshTimestamp = Date.now();
+      await clearAllCaches();
+
       try {
         const networkResponse = await fetch(request);
         if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
@@ -74,15 +113,67 @@ self.addEventListener('fetch', (event) => {
         console.log(LOG_PREFIX, 'Database/network fetch (hard refresh):', path);
         return networkResponse;
       } catch (e) {
-        const cached = await caches.match(request);
-        if (cached) {
-          console.log(LOG_PREFIX, 'Cache (fallback after network error):', path);
-          return cached;
-        }
+        console.error(LOG_PREFIX, 'Network error on hard refresh:', e);
         return await fetch(request);
       }
     }
 
+    // If within hard refresh window, bypass cache for all requests
+    if (isWithinHardRefreshWindow()) {
+      try {
+        const networkResponse = await fetch(request);
+        if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+          const clone = networkResponse.clone();
+          const cache = await caches.open(CACHE_NAME);
+          await cache.put(request, clone);
+        }
+        console.log(LOG_PREFIX, 'Database/network fetch (post-hard-refresh window):', path);
+        return networkResponse;
+      } catch (e) {
+        console.error(LOG_PREFIX, 'Network error:', e);
+        return await fetch(request);
+      }
+    }
+
+    // STALE-WHILE-REVALIDATE for API calls to keep data fresh
+    if (isApi) {
+      const cached = await caches.match(request);
+
+      // Start network fetch in background
+      const fetchPromise = fetch(request).then(async (networkResponse) => {
+        if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+          const clone = networkResponse.clone();
+          const cache = await caches.open(CACHE_NAME);
+          await cache.put(request, clone);
+          console.log(LOG_PREFIX, 'Background update (API):', path);
+        }
+        return networkResponse;
+      }).catch(e => {
+        console.error(LOG_PREFIX, 'Background fetch error:', e);
+        return null;
+      });
+
+      // If cached, return immediately but update in background
+      if (cached) {
+        console.log(LOG_PREFIX, 'Cache (stale-while-revalidate):', path);
+        return cached;
+      }
+
+      // No cache, wait for network
+      try {
+        const networkResponse = await fetchPromise;
+        if (networkResponse) {
+          console.log(LOG_PREFIX, 'Database/network fetch (cache miss):', path);
+          return networkResponse;
+        }
+      } catch (e) {
+        console.error(LOG_PREFIX, 'Network error on cache miss:', e);
+      }
+
+      return await fetch(request);
+    }
+
+    // CACHE-FIRST for non-API resources
     const cached = await caches.match(request);
     if (cached) {
       console.log(LOG_PREFIX, 'Cache:', path);
@@ -113,5 +204,12 @@ self.addEventListener('activate', (event) => {
     })
   );
   self.clients.claim();
-  console.log(LOG_PREFIX, 'Service worker active. Cache-first for GET; hard refresh = network fetch.');
+  console.log(LOG_PREFIX, 'Service worker active. Cache-first for GET; hard refresh = network fetch + cache clear.');
+});
+
+// Handle messages from clients (e.g., manual cache clear requests)
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'CLEAR_CACHE') {
+    event.waitUntil(clearAllCaches());
+  }
 });

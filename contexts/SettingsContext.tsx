@@ -5,6 +5,7 @@ interface SettingsContextType {
   settings: AppSettings;
   loading: boolean;
   refreshSettings: () => Promise<void>;
+  clearCache: () => Promise<void>;
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
@@ -86,16 +87,36 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
     // Remove existing favicon links
     const existingLinks = document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]');
     existingLinks.forEach(link => link.remove());
-    
+
     if (faviconUrl) {
       // Create new favicon link
       const link = document.createElement('link');
       link.rel = 'icon';
-      link.type = faviconUrl.endsWith('.svg') ? 'image/svg+xml' : 
-                  faviconUrl.endsWith('.ico') ? 'image/x-icon' : 
-                  'image/png';
+      link.type = faviconUrl.endsWith('.svg') ? 'image/svg+xml' :
+        faviconUrl.endsWith('.ico') ? 'image/x-icon' :
+          'image/png';
       link.href = faviconUrl;
       document.head.appendChild(link);
+    }
+  };
+
+  const clearCache = async () => {
+    try {
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.getRegistration(getSwScope());
+        if (reg && reg.active) {
+          // Message the service worker to clear cache
+          reg.active.postMessage({ type: 'CLEAR_CACHE' });
+        }
+        // Also clear caches directly
+        const cacheNames = await caches.keys();
+        await Promise.all(cacheNames.map(name => caches.delete(name)));
+        console.log('[LinkNest PWA] Cache cleared manually');
+      }
+      // Reload the page to get fresh data
+      window.location.reload();
+    } catch (e) {
+      console.error('[LinkNest PWA] Error clearing cache:', e);
     }
   };
 
@@ -104,7 +125,7 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
   }, []);
 
   return (
-    <SettingsContext.Provider value={{ settings, loading, refreshSettings: loadSettings }}>
+    <SettingsContext.Provider value={{ settings, loading, refreshSettings: loadSettings, clearCache }}>
       {children}
     </SettingsContext.Provider>
   );
@@ -126,7 +147,8 @@ export const useSettings = () => {
         footer_text: '© 2025 Adventhealth - Designed and developed by AIT Architecture team'
       },
       loading: false,
-      refreshSettings: async () => {}
+      refreshSettings: async () => { },
+      clearCache: async () => { }
     };
   }
   return context;

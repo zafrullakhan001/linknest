@@ -69,7 +69,7 @@ interface AdminPanelProps {
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const { user } = useAuth();
-  const { refreshSettings } = useSettings();
+  const { refreshSettings, clearCache } = useSettings();
   const isMobile = useMobile();
   // Initialize activeTab from localStorage or default to 'pending'
   const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenanceScripts' | 'maintenance' | 'widgets' | 'addons'>(() => {
@@ -246,12 +246,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   // Database Cleanup state
   const [cleanupChecking, setCleanupChecking] = useState(false);
   const [cleanupCleaning, setCleanupCleaning] = useState(false);
-  const [cleanupResults, setCleanupResults] = useState<{ 
-    orphaned_found?: number; 
-    details?: Array<{ type: string; label: string; count: number; description: string }>; 
+  const [cleanupResults, setCleanupResults] = useState<{
+    orphaned_found?: number;
+    details?: Array<{ type: string; label: string; count: number; description: string }>;
     total_cleaned?: number;
     cleaned?: Record<string, number>;
-    success: boolean; 
+    success: boolean;
     errors?: string[];
     missing_tile_ids_sample?: string[];
     tiles_table_count?: number;
@@ -408,7 +408,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     const validSubTabs: Array<'roles' | 'assign' | 'admins' | 'groups'> = ['roles', 'assign', 'admins', 'groups'];
     return (savedSubTab && validSubTabs.includes(savedSubTab as any)) ? savedSubTab as any : 'roles';
   });
-  
+
   // User Groups state
   const [userGroups, setUserGroups] = useState<Array<{ id: number; name: string; description: string | null; memberCount: number; roleCount: number; createdAt: number; updatedAt: number }>>([]);
   const [userGroupsLoading, setUserGroupsLoading] = useState(false);
@@ -491,7 +491,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [roleWidgetsLoading, setRoleWidgetsLoading] = useState(false);
   const [availableWidgets, setAvailableWidgets] = useState<Array<{ id: string; label: string; description: string; isCustom?: boolean }>>([]);
   const [widgetsLoading, setWidgetsLoading] = useState(false);
-  
+
   // Custom Widgets Management state
   const [customWidgets, setCustomWidgets] = useState<CustomWidget[]>([]);
   const [customWidgetsLoading, setCustomWidgetsLoading] = useState(false);
@@ -652,7 +652,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         semi_pwa_exclude_paths: loadedSettings.semi_pwa_exclude_paths || SEMI_PWA_EXCLUDE_PATHS_DEFAULT
       };
       setSettings(settingsWithDefaults);
-      
+
       // Load LDAP servers
       const ldapServersJson = (loadedSettings as any).ldap_servers as string | undefined;
       if (ldapServersJson) {
@@ -804,7 +804,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         await loadUserRolesForBulk();
       }
     };
-    
+
     loadUserRolesWhenReady();
   }, [activeTab, allUsers.length]);
 
@@ -1318,7 +1318,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     try {
       const tiles = await getTiles();
       setAllTiles(tiles);
-      
+
       // Extract all links from tiles
       const linksList: Array<{ id: string; label: string; url: string; tileId: string; tileTitle: string }> = [];
       tiles.forEach(tile => {
@@ -1359,19 +1359,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         loadUserGroups(),
         loadAllTilesAndLinks()
       ]);
-      
+
       // Set flag that users are loaded (state will update)
       setTileAdminsUsersLoaded(true);
-      
+
       // Load all permissions for all tiles in a single batch call (much faster)
       const [batchPermissions, batchGroupPermissions] = await Promise.all([
         accessService.getBatchPermissions(),
         groupTilePermissionsService.getBatchPermissions()
       ]);
-      
+
       const permissionsMap: Record<string, TilePermission[]> = {};
       const groupPermissionsMap: Record<string, Array<{ groupId: number; groupName: string; canView: boolean; canEdit: boolean; canDelete: boolean }>> = {};
-      
+
       // Process user permissions - filter to only tile admins (canEdit = true)
       for (const tilePerms of batchPermissions) {
         const admins = tilePerms.permissions
@@ -1390,7 +1390,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           }));
         permissionsMap[tilePerms.tileId] = admins;
       }
-      
+
       // Process group permissions - filter to only tile admins (canEdit = true)
       for (const tileGroupPerms of batchGroupPermissions) {
         const groupAdmins = tileGroupPerms.groupPermissions
@@ -1404,7 +1404,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           }));
         groupPermissionsMap[tileGroupPerms.tileId] = groupAdmins;
       }
-      
+
       // Ensure all tiles have an entry (even if empty)
       const currentTiles = await getTiles();
       for (const tile of currentTiles) {
@@ -1415,7 +1415,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           groupPermissionsMap[tile.id] = [];
         }
       }
-      
+
       setTileAdminsMap(permissionsMap);
       setTileAdminGroupsMap(groupPermissionsMap);
       setShowTileAdminsModal(true);
@@ -1463,7 +1463,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         canViewTileInfo: granularPerms?.canViewTileInfo ?? true,
         canEditTile: granularPerms?.canEditTile ?? true
       });
-      
+
       // Reload admins for this tile
       const tilePerms = await accessService.getTilePermissions(tileId);
       const admins = tilePerms.permissions
@@ -1480,7 +1480,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           email: perm.email,
           tileTitle: allTiles.find(t => t.id === tileId)?.title || tileId
         }));
-      
+
       setTileAdminsMap(prev => ({ ...prev, [tileId]: admins }));
       await loadPermissions();
     } catch (err: any) {
@@ -1492,7 +1492,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     try {
       setError('');
       await accessService.deletePermission(userId, tileId);
-      
+
       // Reload admins for this tile
       const tilePerms = await accessService.getTilePermissions(tileId);
       const admins = tilePerms.permissions
@@ -1521,7 +1521,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           email: perm.email,
           tileTitle: allTiles.find(t => t.id === tileId)?.title || tileId
         }));
-      
+
       setTileAdminsMap(prev => ({ ...prev, [tileId]: admins }));
       await loadPermissions();
     } catch (err: any) {
@@ -1566,7 +1566,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         canViewTileInfo: granularPerms?.canViewTileInfo ?? true,
         canEditTile: granularPerms?.canEditTile ?? true
       });
-      
+
       // Reload group admins for this tile
       const tileGroupPerms = await groupTilePermissionsService.getTileGroupPermissions(tileId);
       const groupAdmins = tileGroupPerms.groupPermissions
@@ -1578,7 +1578,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           canEdit: perm.canEdit,
           canDelete: perm.canDelete
         }));
-      
+
       setTileAdminGroupsMap(prev => ({ ...prev, [tileId]: groupAdmins }));
       await loadPermissions();
     } catch (err: any) {
@@ -1590,7 +1590,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     try {
       setError('');
       await groupTilePermissionsService.deletePermission(groupId, tileId);
-      
+
       // Reload group admins for this tile
       const tileGroupPerms = await groupTilePermissionsService.getTileGroupPermissions(tileId);
       const groupAdmins = tileGroupPerms.groupPermissions
@@ -1602,7 +1602,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           canEdit: perm.canEdit,
           canDelete: perm.canDelete
         }));
-      
+
       setTileAdminGroupsMap(prev => ({ ...prev, [tileId]: groupAdmins }));
       await loadPermissions();
     } catch (err: any) {
@@ -1626,7 +1626,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     canEditTile: boolean;
   }) => {
     if (!selectedPermissionForEdit) return;
-    
+
     try {
       setError('');
       await accessService.updatePermission(
@@ -1650,7 +1650,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           canEditTile: permissions.canEditTile
         }
       );
-      
+
       // Reload admins for this tile
       const tilePerms = await accessService.getTilePermissions(selectedPermissionForEdit.tileId);
       const admins = tilePerms.permissions
@@ -1678,7 +1678,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           email: perm.email,
           tileTitle: allTiles.find(t => t.id === selectedPermissionForEdit.tileId)?.title || selectedPermissionForEdit.tileId
         }));
-      
+
       setTileAdminsMap(prev => ({ ...prev, [selectedPermissionForEdit.tileId]: admins }));
       await loadPermissions();
       setShowGranularPermissionsModal(false);
@@ -1707,7 +1707,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     try {
       setError('');
       setTileAdminsLoading(true);
-      
+
       // Add selected users as admins to all selected tiles
       for (const tileId of selectedTileIdsForAdmins) {
         for (const userId of selectedUserIds) {
@@ -1719,7 +1719,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             canDelete: true
           });
         }
-        
+
         // Reload admins for this tile
         const tilePerms = await accessService.getTilePermissions(tileId);
         const admins = tilePerms.permissions
@@ -1736,10 +1736,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             email: perm.email,
             tileTitle: allTiles.find(t => t.id === tileId)?.title || tileId
           }));
-        
+
         setTileAdminsMap(prev => ({ ...prev, [tileId]: admins }));
       }
-      
+
       await loadPermissions();
     } catch (err: any) {
       setError(err.message || 'Failed to add tile admins');
@@ -1830,7 +1830,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const handleSelectAllTiles = () => {
     const allTileIds = new Set(allTiles.map(tile => tile.id));
     setSelectedTileIds(allTileIds);
-    
+
     // Also select all links from all tiles
     const allLinkIds = new Set<string>();
     allTiles.forEach(tile => {
@@ -1858,7 +1858,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const handleSelectAllLinksInSection = (tileId: string, sectionId: string, sectionLinks: any[]) => {
     const newLinkSet = new Set(selectedLinkIds);
     const allSelected = sectionLinks.every(link => selectedLinkIds.has(link.id));
-    
+
     if (allSelected) {
       // Deselect all links in this section
       sectionLinks.forEach(link => newLinkSet.delete(link.id));
@@ -1878,10 +1878,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   // Select/Deselect all links directly in a tab (not from sections)
   const handleSelectAllTabLevelLinks = (tileId: string, tabLinks: any[]) => {
     if (tabLinks.length === 0) return;
-    
+
     const allSelected = tabLinks.every((link: any) => selectedLinkIds.has(link.id));
     const newLinkSet = new Set(selectedLinkIds);
-    
+
     if (allSelected) {
       // Deselect all tab-level links
       tabLinks.forEach((link: any) => newLinkSet.delete(link.id));
@@ -1923,7 +1923,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     // Validation: If a tile is selected, at least one link from that tile must be selected
     const selectedTilesArray: string[] = Array.from(selectedTileIds);
     const selectedLinksArray: string[] = Array.from(selectedLinkIds);
-    
+
     // Get all links for selected tiles
     const linksInSelectedTiles = new Set<string>();
     allTiles.forEach(tile => {
@@ -1952,7 +1952,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           });
           tab.links?.forEach(link => tileLinks.add(link.id));
         });
-        
+
         // Check if at least one link from this tile is selected
         const hasSelectedLink = Array.from(tileLinks).some(linkId => selectedLinksArray.includes(linkId));
         if (!hasSelectedLink && tileLinks.size > 0) {
@@ -2069,7 +2069,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           { id: 'snake-game', label: 'Snake Game', description: 'Snake game widget' }
         ]);
       }
-      
+
       // Load existing widget assignments for this role
       try {
         const roleWidgets = await rolesService.getRoleWidgets(role.id);
@@ -2122,29 +2122,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
   const loadUserRolesForBulk = async () => {
     if (allUsers.length === 0) return;
-    
+
     try {
       setUserRolesLoading(true);
       // Use batch endpoint for much faster loading
       const batchRoles = await rolesService.getBatchUserRoles();
-      
+
       // Convert batch response to map format
       const rolesMap: Record<number, Array<{ id: number; name: string; description?: string }>> = {};
       for (const item of batchRoles) {
-        rolesMap[item.userId] = item.roles.map(r => ({ 
-          id: r.id, 
-          name: r.name, 
-          description: r.description 
+        rolesMap[item.userId] = item.roles.map(r => ({
+          id: r.id,
+          name: r.name,
+          description: r.description
         }));
       }
-      
+
       // Ensure all users have an entry (even if empty)
       for (const user of allUsers) {
         if (!rolesMap[user.id]) {
           rolesMap[user.id] = [];
         }
       }
-      
+
       setUserRolesMap(rolesMap);
     } catch (err) {
       // If batch fails, fall back to empty map
@@ -2161,11 +2161,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const loadGroupRolesForBulk = async (groups?: Array<{ id: number; name: string; description: string | null; memberCount: number; roleCount: number; createdAt: number; updatedAt: number }>) => {
     const groupsToUse = groups || userGroups;
     if (groupsToUse.length === 0) return;
-    
+
     try {
       setUserRolesLoading(true); // Reuse the same loading state
       const rolesMap: Record<number, Array<{ id: number; name: string; description?: string }>> = {};
-      
+
       // Load roles for each group
       for (const group of groupsToUse) {
         try {
@@ -2179,7 +2179,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           rolesMap[group.id] = [];
         }
       }
-      
+
       setGroupRolesMap(rolesMap);
     } catch (err) {
       // If loading fails, set empty map
@@ -2215,7 +2215,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     try {
       setError('');
       setBulkAssignLoading(true);
-      
+
       let result;
       if (bulkAssignTarget === 'users') {
         if (bulkAssignMode === 'remove') {
@@ -2249,7 +2249,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           });
         }
       }
-      
+
       setShowBulkAssignModal(false);
       setBulkSelectedUserIds([]);
       setBulkSelectedGroupIds([]);
@@ -2260,16 +2260,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setBulkRoleSearchTerm('');
       setUserRolesMap({});
       setGroupRolesMap({});
-      
+
       await loadRoles();
       await loadData(); // Refresh user list to show updated role counts
       if (bulkAssignTarget === 'groups') {
         await loadUserGroups(); // Refresh group list
       }
-      
+
       const targetName = bulkAssignTarget === 'users' ? 'user' : 'group';
       const targetNamePlural = bulkAssignTarget === 'users' ? 'users' : 'groups';
-      
+
       if (bulkAssignMode === 'remove') {
         if (result.failed > 0) {
           alert(`Bulk removal completed with some errors:\n- Successfully removed: ${result.removed} ${targetNamePlural}\n- Failed: ${result.failed} ${targetNamePlural}${result.errors ? '\n\nErrors:\n' + result.errors.join('\n') : ''}`);
@@ -3061,9 +3061,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           <>
             {/* Mobile Sidebar Menu */}
             <div
-              className={`fixed top-0 left-0 h-full w-72 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 z-50 transform transition-transform duration-300 ease-in-out overflow-y-auto ${
-                mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-              }`}
+              className={`fixed top-0 left-0 h-full w-72 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 z-50 transform transition-transform duration-300 ease-in-out overflow-y-auto ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+                }`}
             >
               <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
                 <h2 className="text-lg font-bold text-slate-900 dark:text-white">Menu</h2>
@@ -3093,9 +3092,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </svg>
                   <span>Home</span>
                 </button>
-                
+
                 <div className="my-2 border-t border-slate-200 dark:border-slate-700"></div>
-                
+
                 <button
                   onClick={() => {
                     setActiveTab('pending');
@@ -3104,7 +3103,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'pending'
                     ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                  }`}
+                    }`}
                   style={{ minHeight: '44px' }}
                 >
                   <div className="flex items-center justify-between">
@@ -3124,7 +3123,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'all'
                     ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                  }`}
+                    }`}
                   style={{ minHeight: '44px' }}
                 >
                   All Users
@@ -3137,7 +3136,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'settings'
                     ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                  }`}
+                    }`}
                   style={{ minHeight: '44px' }}
                 >
                   Settings
@@ -3150,7 +3149,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'database'
                     ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                  }`}
+                    }`}
                   style={{ minHeight: '44px' }}
                 >
                   Database
@@ -3163,7 +3162,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'spaces'
                     ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                  }`}
+                    }`}
                   style={{ minHeight: '44px' }}
                 >
                   Spaces
@@ -3176,7 +3175,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'ldap'
                     ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                  }`}
+                    }`}
                   style={{ minHeight: '44px' }}
                 >
                   LDAP
@@ -3189,7 +3188,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'saml'
                     ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                  }`}
+                    }`}
                   style={{ minHeight: '44px' }}
                 >
                   SAML
@@ -3202,7 +3201,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'footer'
                     ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                  }`}
+                    }`}
                   style={{ minHeight: '44px' }}
                 >
                   Footer
@@ -3215,7 +3214,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'tabVisibility'
                     ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                  }`}
+                    }`}
                   style={{ minHeight: '44px' }}
                 >
                   Enable/Disable Tabs
@@ -3228,7 +3227,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'access'
                     ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                  }`}
+                    }`}
                   style={{ minHeight: '44px' }}
                 >
                   Access Manager
@@ -3241,7 +3240,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'clone'
                     ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                  }`}
+                    }`}
                   style={{ minHeight: '44px' }}
                 >
                   Clone
@@ -3254,7 +3253,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'browser'
                     ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                  }`}
+                    }`}
                   style={{ minHeight: '44px' }}
                 >
                   Browser Extn Integration
@@ -3267,7 +3266,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'broadcast'
                     ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                  }`}
+                    }`}
                   style={{ minHeight: '44px' }}
                 >
                   Broadcast Message
@@ -3280,7 +3279,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'maintenanceScripts'
                     ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                  }`}
+                    }`}
                   style={{ minHeight: '44px' }}
                 >
                   Maintenance Scripts
@@ -3293,7 +3292,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'maintenance'
                     ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                  }`}
+                    }`}
                   style={{ minHeight: '44px' }}
                 >
                   Maintenance
@@ -3306,7 +3305,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'widgets'
                     ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                  }`}
+                    }`}
                   style={{ minHeight: '44px' }}
                 >
                   Custom Widgets
@@ -3319,7 +3318,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'addons'
                     ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                  }`}
+                    }`}
                   style={{ minHeight: '44px' }}
                 >
                   Add-ons
@@ -3866,7 +3865,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 .filter(u => selectedUserIds.has(u.id))
                                 .map(u => u.username)
                                 .join(', ');
-                              
+
                               if (!confirm(`Are you sure you want to delete ${selectedCount} user(s)?\n\nUsers: ${userNames}\n\nThis will permanently delete their accounts and all their data. This action cannot be undone.`)) {
                                 return;
                               }
@@ -3875,7 +3874,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 setBulkProcessing(true);
                                 setError('');
                                 const userIdsArray: number[] = Array.from(selectedUserIds);
-                                
+
                                 // Delete users one by one (since there's no bulk delete endpoint)
                                 let successCount = 0;
                                 let failCount = 0;
@@ -3888,11 +3887,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     console.error(`Failed to delete user ${userId}:`, err);
                                   }
                                 }
-                                
+
                                 if (failCount > 0) {
                                   setError(`${successCount} user(s) deleted successfully, but ${failCount} user(s) failed to delete.`);
                                 }
-                                
+
                                 await loadData();
                                 setSelectedUserIds(new Set());
                                 if (onUserApproved) {
@@ -3963,259 +3962,259 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       </button>
                     </div>
                   </div>
-                  
+
                   {/* Desktop Table View */}
                   {!isMobile && (
                     <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
                       <div className="overflow-x-auto">
                         <table className="w-full">
-                        <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
-                          <tr>
-                            <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
-                              <input
-                                type="checkbox"
-                                checked={(() => {
-                                  const filteredUsers = allUsers.filter(user => {
-                                    if (!allUsersSearchTerm) return true;
-                                    const search = allUsersSearchTerm.toLowerCase();
-                                    return user.username.toLowerCase().includes(search) ||
-                                           user.email.toLowerCase().includes(search);
-                                  });
-                                  const paginatedUsers = filteredUsers.slice(
-                                    (allUsersPage - 1) * allUsersPerPage,
-                                    allUsersPage * allUsersPerPage
-                                  );
-                                  return paginatedUsers.length > 0 && paginatedUsers.every(user => selectedUserIds.has(user.id));
-                                })()}
-                                onChange={() => {
-                                  const filteredUsers = allUsers.filter(user => {
-                                    if (!allUsersSearchTerm) return true;
-                                    const search = allUsersSearchTerm.toLowerCase();
-                                    return user.username.toLowerCase().includes(search) ||
-                                           user.email.toLowerCase().includes(search);
-                                  });
-                                  const paginatedUsers = filteredUsers.slice(
-                                    (allUsersPage - 1) * allUsersPerPage,
-                                    allUsersPage * allUsersPerPage
-                                  );
-                                  
-                                  if (paginatedUsers.every(user => selectedUserIds.has(user.id))) {
-                                    // Deselect all paginated users
-                                    const newSelection = new Set(selectedUserIds);
-                                    paginatedUsers.forEach(user => newSelection.delete(user.id));
-                                    setSelectedUserIds(newSelection);
-                                  } else {
-                                    // Select all paginated users
-                                    const newSelection = new Set(selectedUserIds);
-                                    paginatedUsers.forEach(user => newSelection.add(user.id));
-                                    setSelectedUserIds(newSelection);
-                                  }
-                                }}
-                                className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
-                              />
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">User</th>
-                            <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Email</th>
-                            <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Badges</th>
-                            <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Status</th>
-                            <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Registered</th>
-                            <th className="px-6 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                          {allUsers
-                            .filter(user => {
-                              if (!allUsersSearchTerm) return true;
-                              const search = allUsersSearchTerm.toLowerCase();
-                              return user.username.toLowerCase().includes(search) ||
-                                     user.email.toLowerCase().includes(search);
-                            })
-                            .map((user) => {
-                              // Get user's roles
-                              const userRoles = userRolesMap[user.id] || [];
-                              // Get user's tile admin count (tiles where they have canEdit=true)
-                              const tileAdminCount = permissions.filter(
-                                p => p.userId === user.id && p.canEdit
-                              ).length;
-                              
-                              return (
-                                <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/30 transition-colors">
-                                  <td className="px-6 py-4 whitespace-nowrap">
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedUserIds.has(user.id)}
-                                      onChange={() => {
-                                        const newSelection = new Set(selectedUserIds);
-                                        if (newSelection.has(user.id)) {
-                                          newSelection.delete(user.id);
-                                        } else {
-                                          newSelection.add(user.id);
-                                        }
-                                        setSelectedUserIds(newSelection);
-                                      }}
-                                      className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
-                                    />
-                                  </td>
-                                  <td className="px-6 py-4">
-                                    <div className="flex items-center gap-3">
-                                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0 ${user.is_admin
-                                        ? 'bg-gradient-to-br from-amber-500 to-orange-600'
-                                        : 'bg-gradient-to-br from-brand-500 to-brand-600'
-                                        }`}>
-                                        {user.username.charAt(0).toUpperCase()}
-                                      </div>
-                                      <div className="flex-1 min-w-0">
-                                        <span className="font-medium text-slate-900 dark:text-white block">{user.username}</span>
-                                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                                          {user.is_admin && (
-                                            <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-xs font-semibold whitespace-nowrap">
-                                              Admin
-                                            </span>
-                                          )}
-                                          {user.auth_source === 'saml' ? (
-                                            <span className="px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 text-xs font-semibold whitespace-nowrap">
-                                              SAML
-                                            </span>
-                                          ) : user.auth_source === 'ldap' ? (
-                                            <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-xs font-semibold whitespace-nowrap">
-                                              LDAP
-                                            </span>
-                                          ) : (
-                                            <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold whitespace-nowrap">
-                                              Local
-                                            </span>
-                                          )}
+                          <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                            <tr>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                                <input
+                                  type="checkbox"
+                                  checked={(() => {
+                                    const filteredUsers = allUsers.filter(user => {
+                                      if (!allUsersSearchTerm) return true;
+                                      const search = allUsersSearchTerm.toLowerCase();
+                                      return user.username.toLowerCase().includes(search) ||
+                                        user.email.toLowerCase().includes(search);
+                                    });
+                                    const paginatedUsers = filteredUsers.slice(
+                                      (allUsersPage - 1) * allUsersPerPage,
+                                      allUsersPage * allUsersPerPage
+                                    );
+                                    return paginatedUsers.length > 0 && paginatedUsers.every(user => selectedUserIds.has(user.id));
+                                  })()}
+                                  onChange={() => {
+                                    const filteredUsers = allUsers.filter(user => {
+                                      if (!allUsersSearchTerm) return true;
+                                      const search = allUsersSearchTerm.toLowerCase();
+                                      return user.username.toLowerCase().includes(search) ||
+                                        user.email.toLowerCase().includes(search);
+                                    });
+                                    const paginatedUsers = filteredUsers.slice(
+                                      (allUsersPage - 1) * allUsersPerPage,
+                                      allUsersPage * allUsersPerPage
+                                    );
+
+                                    if (paginatedUsers.every(user => selectedUserIds.has(user.id))) {
+                                      // Deselect all paginated users
+                                      const newSelection = new Set(selectedUserIds);
+                                      paginatedUsers.forEach(user => newSelection.delete(user.id));
+                                      setSelectedUserIds(newSelection);
+                                    } else {
+                                      // Select all paginated users
+                                      const newSelection = new Set(selectedUserIds);
+                                      paginatedUsers.forEach(user => newSelection.add(user.id));
+                                      setSelectedUserIds(newSelection);
+                                    }
+                                  }}
+                                  className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
+                                />
+                              </th>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">User</th>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Email</th>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Badges</th>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Status</th>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Registered</th>
+                              <th className="px-6 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                            {allUsers
+                              .filter(user => {
+                                if (!allUsersSearchTerm) return true;
+                                const search = allUsersSearchTerm.toLowerCase();
+                                return user.username.toLowerCase().includes(search) ||
+                                  user.email.toLowerCase().includes(search);
+                              })
+                              .map((user) => {
+                                // Get user's roles
+                                const userRoles = userRolesMap[user.id] || [];
+                                // Get user's tile admin count (tiles where they have canEdit=true)
+                                const tileAdminCount = permissions.filter(
+                                  p => p.userId === user.id && p.canEdit
+                                ).length;
+
+                                return (
+                                  <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/30 transition-colors">
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedUserIds.has(user.id)}
+                                        onChange={() => {
+                                          const newSelection = new Set(selectedUserIds);
+                                          if (newSelection.has(user.id)) {
+                                            newSelection.delete(user.id);
+                                          } else {
+                                            newSelection.add(user.id);
+                                          }
+                                          setSelectedUserIds(newSelection);
+                                        }}
+                                        className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
+                                      />
+                                    </td>
+                                    <td className="px-6 py-4">
+                                      <div className="flex items-center gap-3">
+                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0 ${user.is_admin
+                                          ? 'bg-gradient-to-br from-amber-500 to-orange-600'
+                                          : 'bg-gradient-to-br from-brand-500 to-brand-600'
+                                          }`}>
+                                          {user.username.charAt(0).toUpperCase()}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <span className="font-medium text-slate-900 dark:text-white block">{user.username}</span>
+                                          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                            {user.is_admin && (
+                                              <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-xs font-semibold whitespace-nowrap">
+                                                Admin
+                                              </span>
+                                            )}
+                                            {user.auth_source === 'saml' ? (
+                                              <span className="px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 text-xs font-semibold whitespace-nowrap">
+                                                SAML
+                                              </span>
+                                            ) : user.auth_source === 'ldap' ? (
+                                              <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-xs font-semibold whitespace-nowrap">
+                                                LDAP
+                                              </span>
+                                            ) : (
+                                              <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold whitespace-nowrap">
+                                                Local
+                                              </span>
+                                            )}
+                                          </div>
                                         </div>
                                       </div>
-                                    </div>
-                                  </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">
-                                {user.email}
-                              </td>
-                              <td className="px-6 py-4">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  {userRolesLoading ? (
-                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-brand-500"></div>
-                                  ) : (
-                                    <>
-                                      {/* Role badges */}
-                                      {userRoles.map((role) => (
-                                        <span
-                                          key={role.id}
-                                          className="px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 text-xs font-semibold whitespace-nowrap flex items-center gap-1"
-                                          title={role.description || `Role: ${role.name}`}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">
+                                      {user.email}
+                                    </td>
+                                    <td className="px-6 py-4">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        {userRolesLoading ? (
+                                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-brand-500"></div>
+                                        ) : (
+                                          <>
+                                            {/* Role badges */}
+                                            {userRoles.map((role) => (
+                                              <span
+                                                key={role.id}
+                                                className="px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 text-xs font-semibold whitespace-nowrap flex items-center gap-1"
+                                                title={role.description || `Role: ${role.name}`}
+                                              >
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                                  <path d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                                                </svg>
+                                                {role.name}
+                                              </span>
+                                            ))}
+                                            {/* Tile Admin badge */}
+                                            {tileAdminCount > 0 && (
+                                              <span
+                                                className="px-2 py-0.5 rounded-full bg-brand-100 dark:bg-brand-500/20 text-brand-700 dark:text-brand-400 text-xs font-semibold whitespace-nowrap flex items-center gap-1"
+                                                title={`Tile Admin for ${tileAdminCount} tile${tileAdminCount !== 1 ? 's' : ''}`}
+                                              >
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-5.5-2.5a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0zM10 12a5.98 5.98 0 00-4.93 2.26l.896 1.79a1 1 0 101.788.894l-1.062-2.12A5.98 5.98 0 0110 12z" clipRule="evenodd" />
+                                                </svg>
+                                                Tile Admin ({tileAdminCount})
+                                              </span>
+                                            )}
+                                            {userRoles.length === 0 && tileAdminCount === 0 && (
+                                              <span className="text-xs text-slate-400 dark:text-slate-500 italic">No badges</span>
+                                            )}
+                                          </>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                      <div className="flex flex-col gap-1">
+                                        {user.is_disabled ? (
+                                          <span className="px-2 py-1 rounded-full bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400 text-xs font-semibold">
+                                            Disabled
+                                          </span>
+                                        ) : user.is_approved ? (
+                                          <span className="px-2 py-1 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-xs font-semibold">
+                                            Approved
+                                          </span>
+                                        ) : (
+                                          <span className="px-2 py-1 rounded-full bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 text-xs font-semibold">
+                                            Pending
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-500">
+                                      {formatDate(user.created_at)}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                                      <div className="flex items-center justify-end gap-2">
+                                        {/* Primary action buttons - always visible */}
+                                        {!user.is_admin && (
+                                          <button
+                                            onClick={() => {
+                                              setEditUserModal({ open: true, userId: user.id, username: user.username, email: user.email, auth_source: user.auth_source || 'local' });
+                                              setEditUsername(user.username);
+                                              setEditEmail(user.email);
+                                              setEditAuthSource((user.auth_source || 'local') as 'local' | 'ldap' | 'saml');
+                                            }}
+                                            disabled={processing === user.id}
+                                            className="px-2.5 py-1.5 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
+                                            title="Edit User"
+                                          >
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                              <path d="M5.433 13.917l1.262-3.155A4 4 0 017.58 9.42l6.92-6.918a2.121 2.121 0 013 3l-6.919 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 01-.65-.65z" />
+                                              <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0010 3H4.75A2.75 2.75 0 002 5.75v9.5A2.75 2.75 0 004.75 18h9.5A2.75 2.75 0 0017 15.25V10a.75.75 0 00-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5z" />
+                                            </svg>
+                                          </button>
+                                        )}
+                                        {!user.is_admin && (
+                                          <button
+                                            onClick={() => handleDeleteUser(user.id, user.username)}
+                                            disabled={processing === user.id}
+                                            className="px-2.5 py-1.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
+                                            title="Delete User"
+                                          >
+                                            {processing === user.id ? (
+                                              <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                              </svg>
+                                            ) : (
+                                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                                <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                                              </svg>
+                                            )}
+                                          </button>
+                                        )}
+
+                                        {/* More actions button */}
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setUserActionsDialog({ open: true, user });
+                                          }}
+                                          className="px-2.5 py-1.5 bg-slate-600 hover:bg-slate-500 text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
+                                          title="More actions"
                                         >
-                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                            <path d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                            <path d="M10 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM11.5 15.5a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z" />
                                           </svg>
-                                          {role.name}
-                                        </span>
-                                      ))}
-                                      {/* Tile Admin badge */}
-                                      {tileAdminCount > 0 && (
-                                        <span
-                                          className="px-2 py-0.5 rounded-full bg-brand-100 dark:bg-brand-500/20 text-brand-700 dark:text-brand-400 text-xs font-semibold whitespace-nowrap flex items-center gap-1"
-                                          title={`Tile Admin for ${tileAdminCount} tile${tileAdminCount !== 1 ? 's' : ''}`}
-                                        >
-                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-5.5-2.5a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0zM10 12a5.98 5.98 0 00-4.93 2.26l.896 1.79a1 1 0 101.788.894l-1.062-2.12A5.98 5.98 0 0110 12z" clipRule="evenodd" />
-                                          </svg>
-                                          Tile Admin ({tileAdminCount})
-                                        </span>
-                                      )}
-                                      {userRoles.length === 0 && tileAdminCount === 0 && (
-                                        <span className="text-xs text-slate-400 dark:text-slate-500 italic">No badges</span>
-                                      )}
-                                    </>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="flex flex-col gap-1">
-                                  {user.is_disabled ? (
-                                    <span className="px-2 py-1 rounded-full bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400 text-xs font-semibold">
-                                      Disabled
-                                    </span>
-                                  ) : user.is_approved ? (
-                                    <span className="px-2 py-1 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-xs font-semibold">
-                                      Approved
-                                    </span>
-                                  ) : (
-                                    <span className="px-2 py-1 rounded-full bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 text-xs font-semibold">
-                                      Pending
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-500">
-                                {formatDate(user.created_at)}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-right">
-                                <div className="flex items-center justify-end gap-2">
-                                  {/* Primary action buttons - always visible */}
-                                  {!user.is_admin && (
-                                    <button
-                                      onClick={() => {
-                                        setEditUserModal({ open: true, userId: user.id, username: user.username, email: user.email, auth_source: user.auth_source || 'local' });
-                                        setEditUsername(user.username);
-                                        setEditEmail(user.email);
-                                        setEditAuthSource((user.auth_source || 'local') as 'local' | 'ldap' | 'saml');
-                                      }}
-                                      disabled={processing === user.id}
-                                      className="px-2.5 py-1.5 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
-                                      title="Edit User"
-                                    >
-                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                        <path d="M5.433 13.917l1.262-3.155A4 4 0 017.58 9.42l6.92-6.918a2.121 2.121 0 013 3l-6.919 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 01-.65-.65z" />
-                                        <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0010 3H4.75A2.75 2.75 0 002 5.75v9.5A2.75 2.75 0 004.75 18h9.5A2.75 2.75 0 0017 15.25V10a.75.75 0 00-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5z" />
-                                      </svg>
-                                    </button>
-                                  )}
-                                  {!user.is_admin && (
-                                    <button
-                                      onClick={() => handleDeleteUser(user.id, user.username)}
-                                      disabled={processing === user.id}
-                                      className="px-2.5 py-1.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
-                                      title="Delete User"
-                                    >
-                                      {processing === user.id ? (
-                                        <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                        </svg>
-                                      ) : (
-                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                          <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
-                                        </svg>
-                                      )}
-                                    </button>
-                                  )}
-                                  
-                                  {/* More actions button */}
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setUserActionsDialog({ open: true, user });
-                                    }}
-                                    className="px-2.5 py-1.5 bg-slate-600 hover:bg-slate-500 text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
-                                    title="More actions"
-                                  >
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                      <path d="M10 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM11.5 15.5a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z" />
-                                    </svg>
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                            })
-                            .slice((allUsersPage - 1) * allUsersPerPage, allUsersPage * allUsersPerPage)}
-                        </tbody>
-                      </table>
-                    </div>
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                              .slice((allUsersPage - 1) * allUsersPerPage, allUsersPage * allUsersPerPage)}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   )}
-                  
+
                   {/* Mobile Card View */}
                   {isMobile && (
                     <div className="space-y-3">
@@ -4224,7 +4223,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           if (!allUsersSearchTerm) return true;
                           const search = allUsersSearchTerm.toLowerCase();
                           return user.username.toLowerCase().includes(search) ||
-                                 user.email.toLowerCase().includes(search);
+                            user.email.toLowerCase().includes(search);
                         })
                         .map((user) => {
                           // Get user's roles
@@ -4233,7 +4232,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           const tileAdminCount = permissions.filter(
                             p => p.userId === user.id && p.canEdit
                           ).length;
-                          
+
                           return (
                             <div
                               key={user.id}
@@ -4289,13 +4288,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   </div>
                                 </div>
                               </div>
-                              
+
                               {/* Email */}
                               <div className="mb-3">
                                 <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Email</div>
                                 <div className="text-sm text-slate-900 dark:text-white break-all">{user.email}</div>
                               </div>
-                              
+
                               {/* Badges */}
                               <div className="mb-3">
                                 <div className="text-xs text-slate-500 dark:text-slate-400 mb-1.5">Badges</div>
@@ -4330,7 +4329,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   )}
                                 </div>
                               </div>
-                              
+
                               {/* Status and Registered Date */}
                               <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-200 dark:border-slate-700">
                                 <div>
@@ -4354,7 +4353,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   <div className="text-xs text-slate-600 dark:text-slate-400">{formatDate(user.created_at)}</div>
                                 </div>
                               </div>
-                              
+
                               {/* Action Buttons */}
                               <div className="flex items-center gap-2 flex-wrap">
                                 {!user.is_admin && (
@@ -4396,7 +4395,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     Delete
                                   </button>
                                 )}
-                                
+
                                 {/* More actions button */}
                                 <button
                                   onClick={(e) => {
@@ -4419,105 +4418,104 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         .slice((allUsersPage - 1) * allUsersPerPage, allUsersPage * allUsersPerPage)}
                     </div>
                   )}
-                  
-                    {/* Pagination Controls */}
-                    {(() => {
-                      const filteredUsers = allUsers.filter(user => {
-                        if (!allUsersSearchTerm) return true;
-                        const search = allUsersSearchTerm.toLowerCase();
-                        return user.username.toLowerCase().includes(search) ||
-                               user.email.toLowerCase().includes(search);
-                      });
-                      const totalUsers = filteredUsers.length;
-                      const totalPages = Math.ceil(totalUsers / allUsersPerPage);
-                      const startUser = totalUsers === 0 ? 0 : (allUsersPage - 1) * allUsersPerPage + 1;
-                      const endUser = Math.min(allUsersPage * allUsersPerPage, totalUsers);
-                      
-                      return (
-                        <div className={`${isMobile ? 'px-4' : 'px-6'} py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50`}>
-                          <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} gap-4`}>
-                            <div className={`flex ${isMobile ? 'flex-col sm:flex-row' : 'items-center'} gap-4`}>
-                              <div className="text-sm text-slate-600 dark:text-slate-400">
-                                Showing <span className="font-medium text-slate-900 dark:text-white">{startUser}</span> to{' '}
-                                <span className="font-medium text-slate-900 dark:text-white">{endUser}</span> of{' '}
-                                <span className="font-medium text-slate-900 dark:text-white">{totalUsers}</span> users
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <label className="text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                                  Show:
-                                </label>
-                                <select
-                                  value={allUsersPerPage}
-                                  onChange={(e) => {
-                                    setAllUsersPerPage(parseInt(e.target.value));
-                                    setAllUsersPage(1); // Reset to first page when changing items per page
-                                  }}
-                                  className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 touch-manipulation"
-                                  style={{ minHeight: '44px' }}
-                                >
-                                  <option value={10}>10</option>
-                                  <option value={25}>25</option>
-                                  <option value={50}>50</option>
-                                  <option value={100}>100</option>
-                                </select>
-                              </div>
+
+                  {/* Pagination Controls */}
+                  {(() => {
+                    const filteredUsers = allUsers.filter(user => {
+                      if (!allUsersSearchTerm) return true;
+                      const search = allUsersSearchTerm.toLowerCase();
+                      return user.username.toLowerCase().includes(search) ||
+                        user.email.toLowerCase().includes(search);
+                    });
+                    const totalUsers = filteredUsers.length;
+                    const totalPages = Math.ceil(totalUsers / allUsersPerPage);
+                    const startUser = totalUsers === 0 ? 0 : (allUsersPage - 1) * allUsersPerPage + 1;
+                    const endUser = Math.min(allUsersPage * allUsersPerPage, totalUsers);
+
+                    return (
+                      <div className={`${isMobile ? 'px-4' : 'px-6'} py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50`}>
+                        <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} gap-4`}>
+                          <div className={`flex ${isMobile ? 'flex-col sm:flex-row' : 'items-center'} gap-4`}>
+                            <div className="text-sm text-slate-600 dark:text-slate-400">
+                              Showing <span className="font-medium text-slate-900 dark:text-white">{startUser}</span> to{' '}
+                              <span className="font-medium text-slate-900 dark:text-white">{endUser}</span> of{' '}
+                              <span className="font-medium text-slate-900 dark:text-white">{totalUsers}</span> users
                             </div>
-                            
-                            {totalPages > 1 && (
-                              <div className={`flex items-center ${isMobile ? 'justify-center flex-wrap' : 'gap-2'}`}>
-                                <button
-                                  onClick={() => setAllUsersPage(prev => Math.max(1, prev - 1))}
-                                  disabled={allUsersPage === 1}
-                                  className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors touch-manipulation"
-                                  style={{ minHeight: '44px' }}
-                                >
-                                  Previous
-                                </button>
-                                
-                                <div className="flex items-center gap-1 mx-2">
-                                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                                    let pageNum;
-                                    if (totalPages <= 5) {
-                                      pageNum = i + 1;
-                                    } else if (allUsersPage <= 3) {
-                                      pageNum = i + 1;
-                                    } else if (allUsersPage >= totalPages - 2) {
-                                      pageNum = totalPages - 4 + i;
-                                    } else {
-                                      pageNum = allUsersPage - 2 + i;
-                                    }
-                                    
-                                    return (
-                                      <button
-                                        key={pageNum}
-                                        onClick={() => setAllUsersPage(pageNum)}
-                                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors touch-manipulation ${
-                                          allUsersPage === pageNum
-                                            ? 'bg-brand-600 text-white'
-                                            : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-                                        }`}
-                                        style={{ minHeight: '44px', minWidth: '44px' }}
-                                      >
-                                        {pageNum}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                                
-                                <button
-                                  onClick={() => setAllUsersPage(prev => Math.min(totalPages, prev + 1))}
-                                  disabled={allUsersPage === totalPages}
-                                  className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors touch-manipulation"
-                                  style={{ minHeight: '44px' }}
-                                >
-                                  Next
-                                </button>
-                              </div>
-                            )}
+                            <div className="flex items-center gap-2">
+                              <label className="text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                                Show:
+                              </label>
+                              <select
+                                value={allUsersPerPage}
+                                onChange={(e) => {
+                                  setAllUsersPerPage(parseInt(e.target.value));
+                                  setAllUsersPage(1); // Reset to first page when changing items per page
+                                }}
+                                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 touch-manipulation"
+                                style={{ minHeight: '44px' }}
+                              >
+                                <option value={10}>10</option>
+                                <option value={25}>25</option>
+                                <option value={50}>50</option>
+                                <option value={100}>100</option>
+                              </select>
+                            </div>
                           </div>
+
+                          {totalPages > 1 && (
+                            <div className={`flex items-center ${isMobile ? 'justify-center flex-wrap' : 'gap-2'}`}>
+                              <button
+                                onClick={() => setAllUsersPage(prev => Math.max(1, prev - 1))}
+                                disabled={allUsersPage === 1}
+                                className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors touch-manipulation"
+                                style={{ minHeight: '44px' }}
+                              >
+                                Previous
+                              </button>
+
+                              <div className="flex items-center gap-1 mx-2">
+                                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                  let pageNum;
+                                  if (totalPages <= 5) {
+                                    pageNum = i + 1;
+                                  } else if (allUsersPage <= 3) {
+                                    pageNum = i + 1;
+                                  } else if (allUsersPage >= totalPages - 2) {
+                                    pageNum = totalPages - 4 + i;
+                                  } else {
+                                    pageNum = allUsersPage - 2 + i;
+                                  }
+
+                                  return (
+                                    <button
+                                      key={pageNum}
+                                      onClick={() => setAllUsersPage(pageNum)}
+                                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors touch-manipulation ${allUsersPage === pageNum
+                                        ? 'bg-brand-600 text-white'
+                                        : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                        }`}
+                                      style={{ minHeight: '44px', minWidth: '44px' }}
+                                    >
+                                      {pageNum}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+
+                              <button
+                                onClick={() => setAllUsersPage(prev => Math.min(totalPages, prev + 1))}
+                                disabled={allUsersPage === totalPages}
+                                className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors touch-manipulation"
+                                style={{ minHeight: '44px' }}
+                              >
+                                Next
+                              </button>
+                            </div>
+                          )}
                         </div>
-                      );
-                    })()}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -4776,103 +4774,103 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       {!isMobile && (
                         <div className="overflow-x-auto">
                           <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
-                          <thead>
-                            <tr>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Date & Time</th>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Filename</th>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Message</th>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Size</th>
-                              <th className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                            {snapshotsLoading && snapshots.length === 0 ? (
+                            <thead>
                               <tr>
-                                <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">Loading snapshots...</td>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Date & Time</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Filename</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Message</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Size</th>
+                                <th className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
                               </tr>
-                            ) : snapshots.length === 0 ? (
-                              <tr>
-                                <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">No snapshots found.</td>
-                              </tr>
-                            ) : (
-                              snapshots.map((snap) => (
-                                <tr key={snap.filename} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                                  <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-900 dark:text-white">
-                                    {snap.created_at_formatted}
-                                  </td>
-                                  <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">
-                                    {snap.filename}
-                                  </td>
-                                  <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400 max-w-xs">
-                                    {snap.metadata?.message ? (
-                                      <span className="inline-block px-2 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded text-xs break-words">
-                                        {snap.metadata.message}
-                                      </span>
-                                    ) : (
-                                      <span className="text-slate-400 dark:text-slate-500 italic text-xs">No message</span>
-                                    )}
-                                  </td>
-                                  <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400 font-mono">
-                                    {snap.size_formatted}
-                                  </td>
-                                  <td className="px-4 py-3 whitespace-nowrap text-right">
-                                    <div className="flex items-center justify-end gap-2">
-                                      <button
-                                        onClick={async () => {
-                                          try {
-                                            await databaseService.downloadSnapshot(snap.filename);
-                                          } catch (err: any) {
-                                            setError(err.message || 'Failed to download snapshot');
-                                          }
-                                        }}
-                                        className="px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded-lg text-xs font-medium transition-colors"
-                                        title="Download snapshot"
-                                      >
-                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 inline">
-                                          <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.295a.75.75 0 00-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.069V2.75z" />
-                                          <path d="M3.5 12.75a.75.75 0 00-1.5 0v3.5A2.75 2.75 0 004.75 19h10.5A2.75 2.75 0 0018 16.25v-3.5a.75.75 0 00-1.5 0v3.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-3.5z" />
-                                        </svg>
-                                      </button>
-                                      <button
-                                        onClick={async () => {
-                                          if (!confirm(`Are you sure you want to RESTORE the database from ${snap.filename}? This will OVERWRITE all current data!`)) return;
-                                          try {
-                                            setSnapshotRestoring(snap.filename);
-                                            await databaseService.restoreSnapshot(snap.filename);
-                                            alert('Database restored successfully! The page will now reload.');
-                                            window.location.reload();
-                                          } catch (err: any) {
-                                            setError(err.message || 'Failed to restore snapshot');
-                                          } finally {
-                                            setSnapshotRestoring(null);
-                                          }
-                                        }}
-                                        disabled={snapshotRestoring !== null}
-                                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition-colors"
-                                      >
-                                        {snapshotRestoring === snap.filename ? 'Restoring...' : 'Restore'}
-                                      </button>
-                                      <button
-                                        onClick={async () => {
-                                          if (!confirm(`Are you sure you want to DELETE snapshot ${snap.filename}?`)) return;
-                                          try {
-                                            await databaseService.deleteSnapshot(snap.filename);
-                                            await loadSnapshots();
-                                          } catch (err: any) {
-                                            setError(err.message || 'Failed to delete snapshot');
-                                          }
-                                        }}
-                                        className="px-3 py-1.5 bg-slate-200 hover:bg-red-100 dark:bg-slate-700 dark:hover:bg-red-900/30 text-slate-700 hover:text-red-600 dark:text-slate-300 dark:hover:text-red-400 rounded-lg text-xs font-medium transition-colors"
-                                      >
-                                        Delete
-                                      </button>
-                                    </div>
-                                  </td>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                              {snapshotsLoading && snapshots.length === 0 ? (
+                                <tr>
+                                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">Loading snapshots...</td>
                                 </tr>
-                              ))
-                            )}
-                          </tbody>
-                        </table>
+                              ) : snapshots.length === 0 ? (
+                                <tr>
+                                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">No snapshots found.</td>
+                                </tr>
+                              ) : (
+                                snapshots.map((snap) => (
+                                  <tr key={snap.filename} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-900 dark:text-white">
+                                      {snap.created_at_formatted}
+                                    </td>
+                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">
+                                      {snap.filename}
+                                    </td>
+                                    <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400 max-w-xs">
+                                      {snap.metadata?.message ? (
+                                        <span className="inline-block px-2 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded text-xs break-words">
+                                          {snap.metadata.message}
+                                        </span>
+                                      ) : (
+                                        <span className="text-slate-400 dark:text-slate-500 italic text-xs">No message</span>
+                                      )}
+                                    </td>
+                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400 font-mono">
+                                      {snap.size_formatted}
+                                    </td>
+                                    <td className="px-4 py-3 whitespace-nowrap text-right">
+                                      <div className="flex items-center justify-end gap-2">
+                                        <button
+                                          onClick={async () => {
+                                            try {
+                                              await databaseService.downloadSnapshot(snap.filename);
+                                            } catch (err: any) {
+                                              setError(err.message || 'Failed to download snapshot');
+                                            }
+                                          }}
+                                          className="px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded-lg text-xs font-medium transition-colors"
+                                          title="Download snapshot"
+                                        >
+                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 inline">
+                                            <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.295a.75.75 0 00-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.069V2.75z" />
+                                            <path d="M3.5 12.75a.75.75 0 00-1.5 0v3.5A2.75 2.75 0 004.75 19h10.5A2.75 2.75 0 0018 16.25v-3.5a.75.75 0 00-1.5 0v3.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-3.5z" />
+                                          </svg>
+                                        </button>
+                                        <button
+                                          onClick={async () => {
+                                            if (!confirm(`Are you sure you want to RESTORE the database from ${snap.filename}? This will OVERWRITE all current data!`)) return;
+                                            try {
+                                              setSnapshotRestoring(snap.filename);
+                                              await databaseService.restoreSnapshot(snap.filename);
+                                              alert('Database restored successfully! The page will now reload.');
+                                              window.location.reload();
+                                            } catch (err: any) {
+                                              setError(err.message || 'Failed to restore snapshot');
+                                            } finally {
+                                              setSnapshotRestoring(null);
+                                            }
+                                          }}
+                                          disabled={snapshotRestoring !== null}
+                                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition-colors"
+                                        >
+                                          {snapshotRestoring === snap.filename ? 'Restoring...' : 'Restore'}
+                                        </button>
+                                        <button
+                                          onClick={async () => {
+                                            if (!confirm(`Are you sure you want to DELETE snapshot ${snap.filename}?`)) return;
+                                            try {
+                                              await databaseService.deleteSnapshot(snap.filename);
+                                              await loadSnapshots();
+                                            } catch (err: any) {
+                                              setError(err.message || 'Failed to delete snapshot');
+                                            }
+                                          }}
+                                          className="px-3 py-1.5 bg-slate-200 hover:bg-red-100 dark:bg-slate-700 dark:hover:bg-red-900/30 text-slate-700 hover:text-red-600 dark:text-slate-300 dark:hover:text-red-400 rounded-lg text-xs font-medium transition-colors"
+                                        >
+                                          Delete
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
                         </div>
                       )}
 
@@ -4900,21 +4898,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       {snap.created_at_formatted}
                                     </div>
                                   </div>
-                                  
+
                                   <div>
                                     <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Filename</div>
                                     <div className="text-sm text-slate-600 dark:text-slate-400 break-all">
                                       {snap.filename}
                                     </div>
                                   </div>
-                                  
+
                                   <div>
                                     <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Size</div>
                                     <div className="text-sm text-slate-600 dark:text-slate-400 font-mono">
                                       {snap.size_formatted}
                                     </div>
                                   </div>
-                                  
+
                                   {snap.metadata?.message && (
                                     <div>
                                       <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Message</div>
@@ -4925,7 +4923,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       </div>
                                     </div>
                                   )}
-                                  
+
                                   <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
                                     <div className="flex flex-col gap-2">
                                       <button
@@ -5199,7 +5197,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400 mb-6`}>
                                 Choose how you want to delete snapshots. This action cannot be undone.
                               </p>
-                              
+
                               <div className="mb-6 space-y-4">
                                 <div>
                                   <label className={`block ${isMobile ? 'text-xs' : 'text-sm'} font-medium text-slate-700 dark:text-slate-300 mb-2`}>
@@ -5237,7 +5235,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     </button>
                                   </div>
                                 </div>
-                                
+
                                 <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
                                   <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400 mb-3`}>
                                     Delete all snapshots regardless of age:
@@ -5789,11 +5787,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             {ldapServers.map((server, index) => (
                               <div
                                 key={index}
-                                className={`bg-slate-50 dark:bg-slate-900/50 border-2 rounded-lg p-4 transition-all ${
-                                  editingServerIndex === index
-                                    ? 'border-brand-500 dark:border-brand-400'
-                                    : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
-                                }`}
+                                className={`bg-slate-50 dark:bg-slate-900/50 border-2 rounded-lg p-4 transition-all ${editingServerIndex === index
+                                  ? 'border-brand-500 dark:border-brand-400'
+                                  : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                                  }`}
                               >
                                 {editingServerIndex === index ? (
                                   <div className="space-y-6 max-h-[80vh] overflow-y-auto pr-2">
@@ -6716,7 +6713,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     {/* Test Connection */}
                     <div className={`${isMobile ? 'mt-6' : 'mt-8'} ${isMobile ? 'pt-6' : 'pt-6'} border-t border-slate-200 dark:border-slate-700`}>
                       <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-slate-900 dark:text-white mb-4`}>Test Connection</h4>
-                      
+
                       {/* Server Selection Dropdown */}
                       {ldapServers.length > 1 && (
                         <div className="mb-4">
@@ -6754,11 +6751,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             // If we have multiple LDAP servers, use the selected server's config
                             if (ldapServers.length > 0) {
                               // Use the selected test server index
-                              const serverIndex = selectedTestServerIndex >= 0 && selectedTestServerIndex < ldapServers.length 
-                                ? selectedTestServerIndex 
+                              const serverIndex = selectedTestServerIndex >= 0 && selectedTestServerIndex < ldapServers.length
+                                ? selectedTestServerIndex
                                 : 0;
                               const server = ldapServers[serverIndex];
-                              
+
                               if (!server) {
                                 setLdapTestResult({
                                   success: false,
@@ -6772,7 +6769,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               // Also try to extract domain from server hostname or base DN if login_domain not set
                               if (testUsername && testUsername.includes('@')) {
                                 let domainToMatch = server.login_domain;
-                                
+
                                 // If no login_domain, try to extract from server hostname
                                 if (!domainToMatch && server.server) {
                                   const hostParts = server.server.split('.');
@@ -6780,7 +6777,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     domainToMatch = hostParts.slice(1).join('.');
                                   }
                                 }
-                                
+
                                 // If still no domain, try to extract from base DN
                                 if (!domainToMatch && server.user_search_base) {
                                   const dnMatch = server.user_search_base.match(/DC=([^,]+)/gi);
@@ -6788,7 +6785,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     domainToMatch = dnMatch.map(dc => dc.replace(/DC=/i, '')).join('.');
                                   }
                                 }
-                                
+
                                 if (domainToMatch) {
                                   const domainLower = domainToMatch.toLowerCase().trim();
                                   const usernameLower = testUsername.toLowerCase();
@@ -7121,7 +7118,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           try {
                             setSettingsSaving(true);
                             setError('');
-                            
+
                             // Save LDAP servers as JSON
                             const settingsToSave: Partial<AppSettings> = { ...settings };
                             if (ldapServers.length > 0) {
@@ -7130,7 +7127,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               // If no servers, clear the setting
                               settingsToSave.ldap_servers = '';
                             }
-                            
+
                             await settingsService.updateSettings(settingsToSave);
                             // Refresh global settings context so AuthModal sees latest LDAP status
                             await refreshSettings();
@@ -7187,7 +7184,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             onChange={async (e) => {
                               const newValue = e.target.checked ? '1' : '0';
                               setSettings({ ...settings, saml_enabled: newValue });
-                              
+
                               // Auto-save the setting
                               try {
                                 setSettingsSaving(true);
@@ -7218,7 +7215,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         <div className="flex-1">
                           <h4 className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-1">SAML 2.0 Single Sign-On</h4>
                           <p className="text-xs text-blue-700 dark:text-blue-300 mb-3">
-                            Configure enterprise SAML 2.0 authentication to allow users to sign in using their organization's identity provider (IdP). 
+                            Configure enterprise SAML 2.0 authentication to allow users to sign in using their organization's identity provider (IdP).
                             Supports Azure AD, Okta, Auth0, and other SAML 2.0 compliant providers.
                           </p>
                           <button
@@ -7346,11 +7343,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         </button>
                       </div>
                       {bulkImportResults && (
-                        <div className={`mt-4 p-4 rounded-lg ${
-                          bulkImportResults.summary?.errors > 0
-                            ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
-                            : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
-                        }`}>
+                        <div className={`mt-4 p-4 rounded-lg ${bulkImportResults.summary?.errors > 0
+                          ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
+                          : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+                          }`}>
                           <p className="text-sm font-medium mb-2">
                             {bulkImportResults.message}
                           </p>
@@ -8380,11 +8376,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         onClick={() => {
                           setAccessSubTab('roles');
                         }}
-                        className={`flex-1 px-4 py-2 text-sm font-medium transition-colors rounded-lg ${
-                          accessSubTab === 'roles'
-                            ? 'bg-brand-600 text-white'
-                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
-                        }`}
+                        className={`flex-1 px-4 py-2 text-sm font-medium transition-colors rounded-lg ${accessSubTab === 'roles'
+                          ? 'bg-brand-600 text-white'
+                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                          }`}
                       >
                         Role-Based Access Control
                       </button>
@@ -8392,11 +8387,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         onClick={() => {
                           setAccessSubTab('assign');
                         }}
-                        className={`flex-1 px-4 py-2 text-sm font-medium transition-colors rounded-lg ${
-                          accessSubTab === 'assign'
-                            ? 'bg-brand-600 text-white'
-                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
-                        }`}
+                        className={`flex-1 px-4 py-2 text-sm font-medium transition-colors rounded-lg ${accessSubTab === 'assign'
+                          ? 'bg-brand-600 text-white'
+                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                          }`}
                       >
                         Assign Roles to Users
                       </button>
@@ -8408,11 +8402,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             loadPermissions();
                           }
                         }}
-                        className={`flex-1 px-4 py-2 text-sm font-medium transition-colors rounded-lg ${
-                          accessSubTab === 'admins'
-                            ? 'bg-brand-600 text-white'
-                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
-                        }`}
+                        className={`flex-1 px-4 py-2 text-sm font-medium transition-colors rounded-lg ${accessSubTab === 'admins'
+                          ? 'bg-brand-600 text-white'
+                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                          }`}
                       >
                         Tile Admins
                       </button>
@@ -8424,11 +8417,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             loadUserGroups();
                           }
                         }}
-                        className={`flex-1 px-4 py-2 text-sm font-medium transition-colors rounded-lg ${
-                          accessSubTab === 'groups'
-                            ? 'bg-brand-600 text-white'
-                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
-                        }`}
+                        className={`flex-1 px-4 py-2 text-sm font-medium transition-colors rounded-lg ${accessSubTab === 'groups'
+                          ? 'bg-brand-600 text-white'
+                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                          }`}
                       >
                         User Groups
                       </button>
@@ -8771,7 +8763,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       tile.id.toLowerCase().includes(searchLower);
                                     if (!matchesSearch) return false;
                                   }
-                                  
+
                                   // Username filter
                                   if (tileAdminsFilterUsername) {
                                     const userIdNum = typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId;
@@ -8781,13 +8773,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       return false;
                                     }
                                   }
-                                  
+
                                   // Menu/Tab filter (visibility) - always filter by public or private
                                   const tileVisibility = tile.visibility || 'public';
                                   if (tileVisibility !== tileAdminsFilterMenu) {
                                     return false;
                                   }
-                                  
+
                                   // Category filter
                                   if (tileAdminsFilterCategory) {
                                     const category = tile.group || '';
@@ -8795,143 +8787,141 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       return false;
                                     }
                                   }
-                                  
+
                                   return true;
                                 });
-                                
+
                                 return filteredTiles.length === 0 ? (
                                   <div className="text-center py-8 text-slate-600 dark:text-slate-400">
                                     No tiles found matching the selected filters
                                   </div>
                                 ) : (
                                   filteredTiles.map((tile) => {
-                                // Get tile admins for this tile (users with canEdit=true)
-                                const tileAdminPerms = permissions.filter(
-                                  p => p.tileId === tile.id && p.canEdit
-                                );
-                                
-                                return (
-                                  <div
-                                    key={tile.id}
-                                    className="border border-slate-200 dark:border-slate-700 rounded-lg p-4 hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors"
-                                  >
-                                    <div className="flex items-start justify-between">
-                                      <div className="flex-1 min-w-0">
-                                        <div className="flex items-center flex-wrap gap-2 mb-2">
-                                          <div className="flex items-center gap-2">
-                                            <span className="text-base">{tile.emoji || '📄'}</span>
-                                            <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
-                                              {tile.title || tile.id}
-                                            </h4>
+                                    // Get tile admins for this tile (users with canEdit=true)
+                                    const tileAdminPerms = permissions.filter(
+                                      p => p.tileId === tile.id && p.canEdit
+                                    );
+
+                                    return (
+                                      <div
+                                        key={tile.id}
+                                        className="border border-slate-200 dark:border-slate-700 rounded-lg p-4 hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors"
+                                      >
+                                        <div className="flex items-start justify-between">
+                                          <div className="flex-1 min-w-0">
+                                            <div className="flex items-center flex-wrap gap-2 mb-2">
+                                              <div className="flex items-center gap-2">
+                                                <span className="text-base">{tile.emoji || '📄'}</span>
+                                                <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
+                                                  {tile.title || tile.id}
+                                                </h4>
+                                              </div>
+                                            </div>
+                                            {/* Owner, Tab/Menu, and Category badges - Always shown */}
+                                            <div className="flex flex-wrap gap-2 mb-2">
+                                              {/* Owner badge - Always show */}
+                                              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                                  <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                                                </svg>
+                                                <span className="font-medium">
+                                                  {(() => {
+                                                    if (!tile.userId) return 'No Owner';
+                                                    // Convert userId to number for comparison
+                                                    const userIdNum = typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId;
+                                                    // Find owner in allUsers array
+                                                    const owner = allUsers.find(u => u.id === userIdNum);
+                                                    return owner?.username || `Unknown (ID: ${tile.userId})`;
+                                                  })()}
+                                                </span>
+                                              </span>
+                                              {/* Tab/Menu badge */}
+                                              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-700">
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                                  <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 4.5zM2.75 9.083a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 12.663a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 16.25a.75.75 0 000 1.5h14.5a.75.75 0 100-1.5H2.75z" />
+                                                </svg>
+                                                <span className="font-medium capitalize">{tile.visibility || 'public'}</span>
+                                              </span>
+                                              {/* Category badge */}
+                                              {tile.group ? (
+                                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700">
+                                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                                    <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 4.5zM2.75 9.083a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 12.663a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 16.25a.75.75 0 000 1.5h14.5a.75.75 0 100-1.5H2.75z" />
+                                                  </svg>
+                                                  <span className="font-medium">{tile.group}</span>
+                                                </span>
+                                              ) : (
+                                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-600">
+                                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                                    <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 4.5zM2.75 9.083a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 12.663a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 16.25a.75.75 0 000 1.5h14.5a.75.75 0 100-1.5H2.75z" />
+                                                  </svg>
+                                                  No Category
+                                                </span>
+                                              )}
+                                            </div>
+                                            {tile.description && (
+                                              <p className="text-xs text-slate-600 dark:text-slate-400 mb-2 line-clamp-1">
+                                                {tile.description}
+                                              </p>
+                                            )}
+
+                                            {/* Tile Admins List */}
+                                            {tileAdminPerms.length > 0 ? (
+                                              <div className="mt-2 space-y-1">
+                                                <div className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                                  Tile Admins ({tileAdminPerms.length}):
+                                                </div>
+                                                <div className="flex flex-wrap gap-2">
+                                                  {tileAdminPerms.map((perm) => {
+                                                    const fullPerm = permissions.find(p => p.userId === perm.userId && p.tileId === perm.tileId);
+                                                    // Check if this user is the tile owner
+                                                    const userIdNum = typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId;
+                                                    const isOwner = tile.userId && userIdNum === perm.userId;
+                                                    return (
+                                                      <div
+                                                        key={`${perm.userId}_${perm.tileId}`}
+                                                        className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs group ${isOwner
+                                                          ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 text-amber-700 dark:text-amber-300'
+                                                          : 'bg-brand-50 dark:bg-brand-500/20 border border-brand-200 dark:border-brand-500/30 text-brand-700 dark:text-brand-300'
+                                                          }`}
+                                                      >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                                          <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                                                        </svg>
+                                                        <span>{perm.username || perm.email}</span>
+                                                        {isOwner && (
+                                                          <span className="text-[10px] font-semibold uppercase">Owner</span>
+                                                        )}
+                                                        <button
+                                                          onClick={() => {
+                                                            setSelectedPermissionForEdit(fullPerm || perm);
+                                                            setShowGranularPermissionsModal(true);
+                                                          }}
+                                                          className={`ml-1 opacity-0 group-hover:opacity-100 transition-opacity ${isOwner
+                                                            ? 'text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300'
+                                                            : 'text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300'
+                                                            }`}
+                                                          title={isOwner ? "View owner permissions (read-only)" : "Configure permissions"}
+                                                        >
+                                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                                            <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+                                                          </svg>
+                                                        </button>
+                                                      </div>
+                                                    );
+                                                  })}
+                                                </div>
+                                              </div>
+                                            ) : (
+                                              <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                                                No tile admins assigned
+                                              </div>
+                                            )}
                                           </div>
                                         </div>
-                                        {/* Owner, Tab/Menu, and Category badges - Always shown */}
-                                        <div className="flex flex-wrap gap-2 mb-2">
-                                          {/* Owner badge - Always show */}
-                                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                              <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                                            </svg>
-                                            <span className="font-medium">
-                                              {(() => {
-                                                if (!tile.userId) return 'No Owner';
-                                                // Convert userId to number for comparison
-                                                const userIdNum = typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId;
-                                                // Find owner in allUsers array
-                                                const owner = allUsers.find(u => u.id === userIdNum);
-                                                return owner?.username || `Unknown (ID: ${tile.userId})`;
-                                              })()}
-                                            </span>
-                                          </span>
-                                          {/* Tab/Menu badge */}
-                                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-700">
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                              <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 4.5zM2.75 9.083a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 12.663a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 16.25a.75.75 0 000 1.5h14.5a.75.75 0 100-1.5H2.75z" />
-                                            </svg>
-                                            <span className="font-medium capitalize">{tile.visibility || 'public'}</span>
-                                          </span>
-                                          {/* Category badge */}
-                                          {tile.group ? (
-                                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700">
-                                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                                <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 4.5zM2.75 9.083a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 12.663a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 16.25a.75.75 0 000 1.5h14.5a.75.75 0 100-1.5H2.75z" />
-                                              </svg>
-                                              <span className="font-medium">{tile.group}</span>
-                                            </span>
-                                          ) : (
-                                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-600">
-                                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                                <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 4.5zM2.75 9.083a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 12.663a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 16.25a.75.75 0 000 1.5h14.5a.75.75 0 100-1.5H2.75z" />
-                                              </svg>
-                                              No Category
-                                            </span>
-                                          )}
-                                        </div>
-                                        {tile.description && (
-                                          <p className="text-xs text-slate-600 dark:text-slate-400 mb-2 line-clamp-1">
-                                            {tile.description}
-                                          </p>
-                                        )}
-                                        
-                                        {/* Tile Admins List */}
-                                        {tileAdminPerms.length > 0 ? (
-                                          <div className="mt-2 space-y-1">
-                                            <div className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                              Tile Admins ({tileAdminPerms.length}):
-                                            </div>
-                                            <div className="flex flex-wrap gap-2">
-                                              {tileAdminPerms.map((perm) => {
-                                                const fullPerm = permissions.find(p => p.userId === perm.userId && p.tileId === perm.tileId);
-                                                // Check if this user is the tile owner
-                                                const userIdNum = typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId;
-                                                const isOwner = tile.userId && userIdNum === perm.userId;
-                                                return (
-                                                  <div
-                                                    key={`${perm.userId}_${perm.tileId}`}
-                                                    className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs group ${
-                                                      isOwner 
-                                                        ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 text-amber-700 dark:text-amber-300'
-                                                        : 'bg-brand-50 dark:bg-brand-500/20 border border-brand-200 dark:border-brand-500/30 text-brand-700 dark:text-brand-300'
-                                                    }`}
-                                                  >
-                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                                      <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                                                    </svg>
-                                                    <span>{perm.username || perm.email}</span>
-                                                    {isOwner && (
-                                                      <span className="text-[10px] font-semibold uppercase">Owner</span>
-                                                    )}
-                                                    <button
-                                                      onClick={() => {
-                                                        setSelectedPermissionForEdit(fullPerm || perm);
-                                                        setShowGranularPermissionsModal(true);
-                                                      }}
-                                                      className={`ml-1 opacity-0 group-hover:opacity-100 transition-opacity ${
-                                                        isOwner
-                                                          ? 'text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300'
-                                                          : 'text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300'
-                                                      }`}
-                                                      title={isOwner ? "View owner permissions (read-only)" : "Configure permissions"}
-                                                    >
-                                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                                        <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
-                                                      </svg>
-                                                    </button>
-                                                  </div>
-                                                );
-                                              })}
-                                            </div>
-                                          </div>
-                                        ) : (
-                                          <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                                            No tile admins assigned
-                                          </div>
-                                        )}
                                       </div>
-                                    </div>
-                                  </div>
-                                );
-                              })
+                                    );
+                                  })
                                 );
                               })()
                             )}
@@ -10523,11 +10513,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     </div>
 
                     {cleanupResults && (
-                      <div className={`mb-6 p-4 rounded-lg border ${
-                        cleanupResults.success
-                          ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
-                          : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
-                      }`}>
+                      <div className={`mb-6 p-4 rounded-lg border ${cleanupResults.success
+                        ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                        : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+                        }`}>
                         {cleanupResults.success ? (
                           <div>
                             <div className="flex items-center gap-2 mb-3">
@@ -10535,13 +10524,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
                               </svg>
                               <h4 className="font-semibold text-green-900 dark:text-green-100">
-                                {cleanupResults.total_cleaned !== undefined 
+                                {cleanupResults.total_cleaned !== undefined
                                   ? `Cleanup Complete - ${cleanupResults.total_cleaned} record(s) removed`
                                   : cleanupResults.orphaned_found !== undefined
-                                  ? cleanupResults.orphaned_found === 0
-                                    ? 'Database is Clean!'
-                                    : `Found ${cleanupResults.orphaned_found} orphaned record(s)`
-                                  : 'Check Complete'}
+                                    ? cleanupResults.orphaned_found === 0
+                                      ? 'Database is Clean!'
+                                      : `Found ${cleanupResults.orphaned_found} orphaned record(s)`
+                                    : 'Check Complete'}
                               </h4>
                             </div>
                             {cleanupResults.details && cleanupResults.details.length > 0 && (
@@ -10694,7 +10683,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           </>
                         )}
                       </button>
-                      
+
                       {cleanupResults && (
                         <button
                           onClick={() => setCleanupResults(null)}
@@ -10744,11 +10733,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     </div>
 
                     {dupTilesResults && (
-                      <div className={`mb-6 p-4 rounded-lg border ${
-                        dupTilesResults.success
-                          ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
-                          : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
-                      }`}>
+                      <div className={`mb-6 p-4 rounded-lg border ${dupTilesResults.success
+                        ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                        : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+                        }`}>
                         {dupTilesResults.success ? (
                           <div>
                             <div className="flex items-center gap-2 mb-3">
@@ -10756,18 +10744,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
                               </svg>
                               <h4 className="font-semibold text-green-900 dark:text-green-100">
-                                {dupTilesResults.deleted !== undefined 
+                                {dupTilesResults.deleted !== undefined
                                   ? dupTilesResults.deleted === 0
                                     ? 'No duplicate tiles found - All tiles are unique!'
                                     : `Cleanup Complete - ${dupTilesResults.deleted} duplicate tile(s) removed`
                                   : dupTilesResults.duplicates_found !== undefined
-                                  ? dupTilesResults.duplicates_found === 0
-                                    ? 'No duplicate tiles found!'
-                                    : `Found ${dupTilesResults.duplicates_found} duplicate tile(s)`
-                                  : 'Check Complete'}
+                                    ? dupTilesResults.duplicates_found === 0
+                                      ? 'No duplicate tiles found!'
+                                      : `Found ${dupTilesResults.duplicates_found} duplicate tile(s)`
+                                    : 'Check Complete'}
                               </h4>
                             </div>
-                            
+
                             {dupTilesResults.duplicate_groups && dupTilesResults.duplicate_groups.length > 0 && (
                               <div className="space-y-3">
                                 <p className="text-sm text-green-800 dark:text-green-200 mb-2">Duplicate tiles found:</p>
@@ -11004,7 +10992,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           )}
                         </button>
                       )}
-                      
+
                       {dupTilesResults && (
                         <button
                           onClick={() => setDupTilesResults(null)}
@@ -11090,11 +11078,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     </div>
 
                     {invisibleTilesResults && (
-                      <div className={`mb-6 p-4 rounded-lg border ${
-                        invisibleTilesResults.success
-                          ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
-                          : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
-                      }`}>
+                      <div className={`mb-6 p-4 rounded-lg border ${invisibleTilesResults.success
+                        ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                        : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+                        }`}>
                         {invisibleTilesResults.success ? (
                           <div>
                             <div className="flex items-center gap-2 mb-3">
@@ -11105,8 +11092,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 {invisibleTilesResults.deleted !== undefined
                                   ? `Cleanup Complete - ${invisibleTilesResults.deleted} invisible tile(s) removed`
                                   : invisibleTilesResults.invisible_tiles && invisibleTilesResults.invisible_tiles.length > 0
-                                  ? `Found ${invisibleTilesResults.invisible_tiles.length} invisible tile(s)`
-                                  : 'No invisible tiles found - All tiles are properly configured!'}
+                                    ? `Found ${invisibleTilesResults.invisible_tiles.length} invisible tile(s)`
+                                    : 'No invisible tiles found - All tiles are properly configured!'}
                               </h4>
                             </div>
 
@@ -11661,31 +11648,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         const isTargetAdmin = selectedUser && (selectedUser as { is_admin?: boolean }).is_admin;
                         const cannotImpersonate = statsUserFilter === user?.id || isTargetAdmin;
                         return (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (statsUserFilter === '' || cannotImpersonate) return;
-                            try {
-                              setStatsImpersonating(true);
-                              setError('');
-                              sessionStorage.setItem('postImpersonationReturn', JSON.stringify({ hash: '#/admin', adminPanelTab: 'maintenanceScripts' }));
-                              await authService.startImpersonation(statsUserFilter);
-                              window.location.reload();
-                            } catch (err: unknown) {
-                              setError((err as Error).message || 'Failed to start impersonation');
-                              setStatsImpersonating(false);
-                            }
-                          }}
-                          disabled={statsImpersonating || cannotImpersonate}
-                          title={statsUserFilter === user?.id ? 'Cannot impersonate yourself' : isTargetAdmin ? 'Cannot impersonate admin users' : 'View the app as this user'}
-                          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg border border-indigo-200 dark:border-indigo-800"
-                        >
-                          {statsImpersonating ? (
-                            <><svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Switching…</>
-                          ) : (
-                            <><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zM6 8a2 2 0 11-4 0 2 2 0 014 0zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-3.385-.572zM16 8a2 2 0 11-4 0 2 2 0 014 0zm-1.615 8.428a1.224 1.224 0 00.569-1.175 5.966 5.966 0 00-2.081-.416 5.967 5.967 0 00-1.788.27A9.953 9.953 0 0013 18a9.953 9.953 0 003.385-.572z" /></svg> View as user</>
-                          )}
-                        </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (statsUserFilter === '' || cannotImpersonate) return;
+                              try {
+                                setStatsImpersonating(true);
+                                setError('');
+                                sessionStorage.setItem('postImpersonationReturn', JSON.stringify({ hash: '#/admin', adminPanelTab: 'maintenanceScripts' }));
+                                await authService.startImpersonation(statsUserFilter);
+                                window.location.reload();
+                              } catch (err: unknown) {
+                                setError((err as Error).message || 'Failed to start impersonation');
+                                setStatsImpersonating(false);
+                              }
+                            }}
+                            disabled={statsImpersonating || cannotImpersonate}
+                            title={statsUserFilter === user?.id ? 'Cannot impersonate yourself' : isTargetAdmin ? 'Cannot impersonate admin users' : 'View the app as this user'}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg border border-indigo-200 dark:border-indigo-800"
+                          >
+                            {statsImpersonating ? (
+                              <><svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Switching…</>
+                            ) : (
+                              <><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zM6 8a2 2 0 11-4 0 2 2 0 014 0zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-3.385-.572zM16 8a2 2 0 11-4 0 2 2 0 014 0zm-1.615 8.428a1.224 1.224 0 00.569-1.175 5.966 5.966 0 00-2.081-.416 5.967 5.967 0 00-1.788.27A9.953 9.953 0 0013 18a9.953 9.953 0 003.385-.572z" /></svg> View as user</>
+                            )}
+                          </button>
                         );
                       })()}
                       {statsResult?.filtered_by_username && (
@@ -12097,6 +12084,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       </button>
                     </div>
 
+                    {/* Manual Cache Clear Button */}
+                    {(settings?.semi_pwa_enabled === '1' || settings?.semi_pwa_enabled === 'true') && (
+                      <div className="mt-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                        <div className="flex items-start gap-3">
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5">
+                            <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                          </svg>
+                          <div className="flex-1">
+                            <h4 className="text-sm font-semibold text-amber-900 dark:text-amber-100 mb-1">
+                              Cache Troubleshooting
+                            </h4>
+                            <p className="text-xs text-amber-800 dark:text-amber-200 mb-3">
+                              If you're seeing outdated data or tiles not showing correctly, clear the cache manually. This will delete all cached data and reload the page with fresh content from the database.
+                            </p>
+                            <button
+                              onClick={async () => {
+                                if (!confirm('This will clear all PWA caches and reload the page. Continue?')) return;
+                                await clearCache();
+                              }}
+                              className="inline-flex items-center gap-2 px-3 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-sm font-medium transition-colors"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
+                              </svg>
+                              Clear Cache & Reload
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="mt-6 space-y-4 border-t border-slate-200 dark:border-slate-700 pt-6">
                       <p className="text-sm font-semibold text-slate-900 dark:text-white">PWA path rules (comma-separated path segments — see help above for allowed strings)</p>
                       <div>
@@ -12195,7 +12213,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           <div className="bg-white dark:bg-slate-800/50 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
                             <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Example Widget Structure</h4>
                             <pre className="text-xs bg-slate-900 dark:bg-slate-950 text-slate-100 p-3 rounded overflow-x-auto">
-{`interface YourWidgetProps {
+                              {`interface YourWidgetProps {
   onClose?: () => void;
 }
 
@@ -12241,7 +12259,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
                     <div className="flex items-center justify-between mb-6">
                       <div>
@@ -12423,11 +12441,10 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     setBulkImportMode(false);
                     setError('');
                   }}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    addUserType === 'local'
-                      ? 'bg-brand-600 text-white'
-                      : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
-                  }`}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${addUserType === 'local'
+                    ? 'bg-brand-600 text-white'
+                    : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                    }`}
                 >
                   Local User
                 </button>
@@ -12437,11 +12454,10 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     setBulkImportMode(false);
                     setError('');
                   }}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    addUserType === 'ldap'
-                      ? 'bg-brand-600 text-white'
-                      : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
-                  }`}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${addUserType === 'ldap'
+                    ? 'bg-brand-600 text-white'
+                    : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                    }`}
                 >
                   LDAP User
                 </button>
@@ -12451,11 +12467,10 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     setBulkImportMode(false);
                     setError('');
                   }}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    addUserType === 'saml'
-                      ? 'bg-brand-600 text-white'
-                      : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
-                  }`}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${addUserType === 'saml'
+                    ? 'bg-brand-600 text-white'
+                    : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                    }`}
                 >
                   SAML User
                 </button>
@@ -12464,11 +12479,10 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     setBulkImportMode(!bulkImportMode);
                     setError('');
                   }}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    bulkImportMode
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
-                  }`}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${bulkImportMode
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                    }`}
                 >
                   Bulk Import
                 </button>
@@ -12532,11 +12546,10 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       )}
                     </div>
                     {bulkImportResults && (
-                      <div className={`p-4 rounded-lg ${
-                        bulkImportResults.summary?.errors > 0
-                          ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
-                          : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
-                      }`}>
+                      <div className={`p-4 rounded-lg ${bulkImportResults.summary?.errors > 0
+                        ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
+                        : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+                        }`}>
                         <p className="text-sm font-medium mb-2">
                           {bulkImportResults.message}
                         </p>
@@ -12618,11 +12631,10 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       />
                     </div>
                     {bulkImportResults && (
-                      <div className={`p-4 rounded-lg ${
-                        bulkImportResults.summary?.errors > 0
-                          ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
-                          : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
-                      }`}>
+                      <div className={`p-4 rounded-lg ${bulkImportResults.summary?.errors > 0
+                        ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
+                        : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+                        }`}>
                         <p className="text-sm font-medium mb-2">
                           {bulkImportResults.message}
                         </p>
@@ -12697,11 +12709,10 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       )}
                     </div>
                     {bulkImportResults && (
-                      <div className={`p-4 rounded-lg ${
-                        bulkImportResults.summary?.errors > 0
-                          ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
-                          : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
-                      }`}>
+                      <div className={`p-4 rounded-lg ${bulkImportResults.summary?.errors > 0
+                        ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
+                        : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+                        }`}>
                         <p className="text-sm font-medium mb-2">
                           {bulkImportResults.message}
                         </p>
@@ -12830,9 +12841,8 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                               setSelectedLdapUser(user);
                               setError('');
                             }}
-                            className={`w-full text-left px-4 py-3 border-b border-slate-200 dark:border-slate-700 last:border-b-0 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors ${
-                              selectedLdapUser?.dn === user.dn ? 'bg-brand-50 dark:bg-brand-900/20' : ''
-                            }`}
+                            className={`w-full text-left px-4 py-3 border-b border-slate-200 dark:border-slate-700 last:border-b-0 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors ${selectedLdapUser?.dn === user.dn ? 'bg-brand-50 dark:bg-brand-900/20' : ''
+                              }`}
                           >
                             <div className="font-medium text-slate-900 dark:text-white">{user.displayName || user.username}</div>
                             <div className="text-sm text-slate-600 dark:text-slate-400">{user.email}</div>
@@ -13239,7 +13249,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                               (tile.description || '').toLowerCase().includes(search);
                             if (!matchesSearch) return false;
                           }
-                          
+
                           // Owner filter
                           if (tileAdminModalFilterUsername) {
                             const userIdNum = typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId;
@@ -13247,22 +13257,22 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                             const ownerUsername = owner?.username || '';
                             if (ownerUsername !== tileAdminModalFilterUsername) return false;
                           }
-                          
+
                           // Tab/Menu filter
                           const tileVisibility = tile.visibility || 'public';
                           if (tileVisibility !== tileAdminModalFilterMenu) return false;
-                          
+
                           // Category filter
                           if (tileAdminModalFilterCategory) {
                             const category = tile.group || '';
                             if (category !== tileAdminModalFilterCategory) return false;
                           }
-                          
+
                           return true;
                         });
                         const filteredTileIds = filteredTiles.map(t => t.id);
                         const allFilteredSelected = filteredTileIds.every(id => selectedTileIdsForAdmins.has(id));
-                        
+
                         if (allFilteredSelected) {
                           const newSet = new Set(selectedTileIdsForAdmins);
                           filteredTileIds.forEach(id => newSet.delete(id));
@@ -13284,7 +13294,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                               (tile.description || '').toLowerCase().includes(search);
                             if (!matchesSearch) return false;
                           }
-                          
+
                           // Owner filter
                           if (tileAdminModalFilterUsername) {
                             const userIdNum = typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId;
@@ -13292,17 +13302,17 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                             const ownerUsername = owner?.username || '';
                             if (ownerUsername !== tileAdminModalFilterUsername) return false;
                           }
-                          
+
                           // Tab/Menu filter
                           const tileVisibility = tile.visibility || 'public';
                           if (tileVisibility !== tileAdminModalFilterMenu) return false;
-                          
+
                           // Category filter
                           if (tileAdminModalFilterCategory) {
                             const category = tile.group || '';
                             if (category !== tileAdminModalFilterCategory) return false;
                           }
-                          
+
                           return true;
                         });
                         const filteredTileIds = filteredTiles.map(t => t.id);
@@ -13311,7 +13321,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       })()}
                     </button>
                   </div>
-                  
+
                   {/* Search Input */}
                   <div className="mb-3">
                     <div className="relative">
@@ -13430,7 +13440,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       </button>
                     )}
                   </div>
-                  
+
                   {tileAdminsLoading ? (
                     <div className="flex items-center justify-center py-12 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
@@ -13452,7 +13462,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                                   (tile.description || '').toLowerCase().includes(search);
                                 if (!matchesSearch) return false;
                               }
-                              
+
                               // Owner filter
                               if (tileAdminModalFilterUsername) {
                                 const owner = allUsers.find(u => u.id === Number(tile.userId));
@@ -13461,13 +13471,13 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                                   return false;
                                 }
                               }
-                              
+
                               // Tab/Menu filter (visibility) - always filter by public or private
                               const tileVisibility = tile.visibility || 'public';
                               if (tileVisibility !== tileAdminModalFilterMenu) {
                                 return false;
                               }
-                              
+
                               // Category filter
                               if (tileAdminModalFilterCategory) {
                                 const category = tile.group || '';
@@ -13475,7 +13485,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                                   return false;
                                 }
                               }
-                              
+
                               return true;
                             })
                             .map((tile) => {
@@ -13581,16 +13591,16 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     </label>
                     <button
                       onClick={() => {
-                        const filteredUsers = allUsers.filter(user => 
+                        const filteredUsers = allUsers.filter(user =>
                           user.is_approved &&
                           (user.username.toLowerCase().includes(tileAdminUserSearchTerm.toLowerCase()) ||
-                           user.email.toLowerCase().includes(tileAdminUserSearchTerm.toLowerCase()))
+                            user.email.toLowerCase().includes(tileAdminUserSearchTerm.toLowerCase()))
                         );
                         const filteredUserIds: number[] = filteredUsers.map(u => u.id);
                         const selectedTileIds: string[] = Array.from(selectedTileIdsForAdmins);
-                        
+
                         if (selectedTileIds.length === 0) return;
-                        
+
                         // Check if all filtered users are already admins for all selected tiles
                         const allFilteredSelected = filteredUserIds.every(userId => {
                           return selectedTileIds.every(tileId => {
@@ -13598,13 +13608,13 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                             return admins.some(admin => admin.userId === userId);
                           });
                         });
-                        
+
                         // Toggle all filtered users for all selected tiles
                         filteredUserIds.forEach(async userId => {
                           for (const tileId of selectedTileIds) {
                             const admins = tileAdminsMap[tileId] || [];
                             const isAdmin = admins.some(admin => admin.userId === userId);
-                            
+
                             if (!allFilteredSelected && !isAdmin) {
                               // Add admin
                               await handleAddTileAdmin(userId, tileId);
@@ -13618,16 +13628,16 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
                     >
                       {(() => {
-                        const filteredUsers = allUsers.filter(user => 
+                        const filteredUsers = allUsers.filter(user =>
                           user.is_approved &&
                           (user.username.toLowerCase().includes(tileAdminUserSearchTerm.toLowerCase()) ||
-                           user.email.toLowerCase().includes(tileAdminUserSearchTerm.toLowerCase()))
+                            user.email.toLowerCase().includes(tileAdminUserSearchTerm.toLowerCase()))
                         );
                         return filteredUsers.length > 0 ? 'Select All' : '';
                       })()}
                     </button>
                   </div>
-                  
+
                   {/* Entity Type Filter */}
                   <div className="mb-3">
                     <select
@@ -13640,7 +13650,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       <option value="groups">Groups Only</option>
                     </select>
                   </div>
-                  
+
                   {/* Search Input */}
                   <div className="mb-3">
                     <div className="relative">
@@ -13675,7 +13685,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       )}
                     </div>
                   </div>
-                  
+
                   {selectedTileIdsForAdmins.size === 0 ? (
                     <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
                       Select tiles on the left to manage their admins
@@ -13691,17 +13701,17 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       if (!tileAdminUserSearchTerm) return true;
                       const search = tileAdminUserSearchTerm.toLowerCase();
                       return user.username.toLowerCase().includes(search) ||
-                             user.email.toLowerCase().includes(search);
+                        user.email.toLowerCase().includes(search);
                     });
-                    
+
                     // Filter groups
                     const filteredGroups = userGroups.filter(group => {
                       if (!tileAdminUserSearchTerm) return true;
                       const search = tileAdminUserSearchTerm.toLowerCase();
                       return group.name.toLowerCase().includes(search) ||
-                             (group.description && group.description.toLowerCase().includes(search));
+                        (group.description && group.description.toLowerCase().includes(search));
                     });
-                    
+
                     // Create combined entity list
                     const combinedEntities: Array<{
                       type: 'user' | 'group';
@@ -13712,7 +13722,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       icon: React.ReactNode;
                       badgeColor: string;
                     }> = [];
-                    
+
                     // Add users if filter allows
                     if (tileAdminEntityFilter === 'all' || tileAdminEntityFilter === 'users') {
                       filteredUsers.forEach(user => {
@@ -13731,7 +13741,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                         });
                       });
                     }
-                    
+
                     // Add groups if filter allows
                     if (tileAdminEntityFilter === 'all' || tileAdminEntityFilter === 'groups') {
                       filteredGroups.forEach(group => {
@@ -13750,7 +13760,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                         });
                       });
                     }
-                    
+
                     if (combinedEntities.length === 0) {
                       return (
                         <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
@@ -13758,14 +13768,14 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                         </div>
                       );
                     }
-                    
+
                     return (
                       <>
                         <div className="max-h-96 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
                           <div className="divide-y divide-slate-200 dark:divide-slate-700">
                             {combinedEntities.map((entity) => {
                               const selectedTileIds: string[] = Array.from(selectedTileIdsForAdmins);
-                              
+
                               return (
                                 <div
                                   key={entity.id}
@@ -13791,7 +13801,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                                       </div>
                                     </div>
                                   </div>
-                                  
+
                                   {/* Checkboxes for each selected tile */}
                                   {selectedTileIds.length > 0 && (
                                     <div className="ml-11 space-y-1">
@@ -13800,7 +13810,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                                         const isAdmin = entity.type === 'user'
                                           ? tileAdminsMap[tileId]?.some(admin => admin.userId === entity.entityId) || false
                                           : tileAdminGroupsMap[tileId]?.some(admin => admin.groupId === entity.entityId) || false;
-                                        
+
                                         return (
                                           <label
                                             key={tileId}
@@ -13867,7 +13877,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                           </div>
                         </div>
                         <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                          {combinedEntities.length} entit{combinedEntities.length !== 1 ? 'ies' : 'y'} 
+                          {combinedEntities.length} entit{combinedEntities.length !== 1 ? 'ies' : 'y'}
                           {tileAdminEntityFilter === 'all' && ` (${filteredUsers.length} user${filteredUsers.length !== 1 ? 's' : ''}, ${filteredGroups.length} group${filteredGroups.length !== 1 ? 's' : ''})`}
                           {tileAdminEntityFilter === 'users' && ` (${filteredUsers.length} user${filteredUsers.length !== 1 ? 's' : ''})`}
                           {tileAdminEntityFilter === 'groups' && ` (${filteredGroups.length} group${filteredGroups.length !== 1 ? 's' : ''})`}
@@ -14165,10 +14175,10 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                         user.email.toLowerCase().includes(searchLower)
                       ) && !groupMembers.some(m => m.id === user.id);
                     }).length === 0 && (
-                      <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400">
-                        {groupMembersSearchTerm ? 'No users found' : 'All users are already members'}
-                      </div>
-                    )}
+                        <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400">
+                          {groupMembersSearchTerm ? 'No users found' : 'All users are already members'}
+                        </div>
+                      )}
                   </div>
                   <button
                     onClick={handleAddMembersToGroup}
@@ -14341,10 +14351,10 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     return role.name.toLowerCase().includes(searchLower) ||
                       (role.description || '').toLowerCase().includes(searchLower);
                   }).length === 0 && (
-                    <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400">
-                      No roles found
-                    </div>
-                  )}
+                      <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400">
+                        No roles found
+                      </div>
+                    )}
                 </div>
               )}
 
@@ -14420,10 +14430,10 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                 </div>
               ) : (
                 <>
-              <p className="text-sm text-slate-600 dark:text-slate-400">
-                Select tiles and links that users with this role can access. If you select a tile, you must select at least one link from that tile. When you select a link, its parent tile is automatically selected. Users will see only the specific links assigned to their roles.
-              </p>
-                  
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    Select tiles and links that users with this role can access. If you select a tile, you must select at least one link from that tile. When you select a link, its parent tile is automatically selected. Users will see only the specific links assigned to their roles.
+                  </p>
+
                   {/* Search Input */}
                   <div className="relative">
                     <input
@@ -14447,7 +14457,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       </button>
                     )}
                   </div>
-                  
+
                   {/* Tree Structure */}
                   <div className="max-h-96 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
                     {allTiles
@@ -14455,8 +14465,8 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                         if (!tileSearchTerm) return true;
                         const searchLower = tileSearchTerm.toLowerCase();
                         const matchesTile = (tile.title || '').toLowerCase().includes(searchLower) ||
-                                          (tile.description || '').toLowerCase().includes(searchLower);
-                        const matchesTab = tile.tabs?.some(tab => 
+                          (tile.description || '').toLowerCase().includes(searchLower);
+                        const matchesTab = tile.tabs?.some(tab =>
                           (tab.title || '').toLowerCase().includes(searchLower)
                         );
                         const matchesSection = tile.tabs?.some(tab =>
@@ -14474,7 +14484,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                         const isExpanded = expandedTiles.has(tile.id);
                         const isSelected = selectedTileIds.has(tile.id);
                         const hasChildren = tile.tabs && tile.tabs.length > 0;
-                        
+
                         return (
                           <div key={tile.id} className="border-b border-slate-200 dark:border-slate-700 last:border-b-0">
                             {/* Tile Level */}
@@ -14523,13 +14533,13 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                                 )}
                               </div>
                             </div>
-                            
+
                             {/* Tabs Level */}
                             {isExpanded && tile.tabs && tile.tabs.map((tab) => {
                               const tabKey = `${tile.id}_${tab.id}`;
                               const isTabExpanded = expandedLinks.has(tabKey);
                               const hasSections = tab.sections && tab.sections.length > 0;
-                              
+
                               return (
                                 <div key={tab.id} className="bg-slate-100 dark:bg-slate-800/30 border-l-2 border-slate-300 dark:border-slate-600 ml-5">
                                   <div className="flex items-center gap-2 p-2 pl-3 hover:bg-slate-200 dark:hover:bg-slate-700/50">
@@ -14558,35 +14568,35 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                                       </div>
                                     </div>
                                   </div>
-                                  
+
                                   {/* Tab-level links (if any) */}
                                   {isTabExpanded && tab.links && tab.links.length > 0 && (() => {
                                     const filteredTabLinks = tab.links.filter((link: any) => {
                                       if (!tileSearchTerm) return true;
                                       const searchLower = tileSearchTerm.toLowerCase();
                                       return (link.label || '').toLowerCase().includes(searchLower) ||
-                                             (link.url || '').toLowerCase().includes(searchLower);
+                                        (link.url || '').toLowerCase().includes(searchLower);
                                     });
                                     const allTabLinksSelected = filteredTabLinks.length > 0 && filteredTabLinks.every((link: any) => selectedLinkIds.has(link.id));
-                                    
+
                                     return (
-                                    <div className="bg-slate-200 dark:bg-slate-700/30 border-l-2 border-slate-400 dark:border-slate-500 ml-5">
-                                      <div className="p-2 pl-3">
-                                        <div className="flex items-center justify-between mb-1">
-                                          <div className="text-xs font-medium text-slate-600 dark:text-slate-400">
-                                            📋 Tab Links
+                                      <div className="bg-slate-200 dark:bg-slate-700/30 border-l-2 border-slate-400 dark:border-slate-500 ml-5">
+                                        <div className="p-2 pl-3">
+                                          <div className="flex items-center justify-between mb-1">
+                                            <div className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                                              📋 Tab Links
+                                            </div>
+                                            {filteredTabLinks.length > 0 && (
+                                              <button
+                                                onClick={() => handleSelectAllTabLevelLinks(tile.id, filteredTabLinks)}
+                                                className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
+                                              >
+                                                {allTabLinksSelected ? 'Deselect All' : 'Select All'}
+                                              </button>
+                                            )}
                                           </div>
-                                          {filteredTabLinks.length > 0 && (
-                                            <button
-                                              onClick={() => handleSelectAllTabLevelLinks(tile.id, filteredTabLinks)}
-                                              className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
-                                            >
-                                              {allTabLinksSelected ? 'Deselect All' : 'Select All'}
-                                            </button>
-                                          )}
-                                        </div>
-                                        <div className="ml-4 space-y-1">
-                                          {filteredTabLinks.map((link: any) => (
+                                          <div className="ml-4 space-y-1">
+                                            {filteredTabLinks.map((link: any) => (
                                               <label
                                                 key={link.id}
                                                 className="flex items-center gap-2 p-1.5 hover:bg-slate-300 dark:hover:bg-slate-600/50 rounded cursor-pointer"
@@ -14618,9 +14628,9 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                                                 </div>
                                               </label>
                                             ))}
+                                          </div>
                                         </div>
                                       </div>
-                                    </div>
                                     );
                                   })()}
 
@@ -14630,10 +14640,10 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                                       if (!tileSearchTerm) return true;
                                       const searchLower = tileSearchTerm.toLowerCase();
                                       return (link.label || '').toLowerCase().includes(searchLower) ||
-                                             (link.url || '').toLowerCase().includes(searchLower);
+                                        (link.url || '').toLowerCase().includes(searchLower);
                                     }) || [];
                                     const allSectionLinksSelected = filteredLinks.length > 0 && filteredLinks.every(link => selectedLinkIds.has(link.id));
-                                    
+
                                     return (
                                       <div key={section.id} className="bg-slate-200 dark:bg-slate-700/30 border-l-2 border-slate-400 dark:border-slate-500 ml-5">
                                         <div className="p-2 pl-3">
@@ -14650,7 +14660,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                                               </button>
                                             )}
                                           </div>
-                                          
+
                                           {/* Links Level */}
                                           {section.links && section.links.length > 0 && (
                                             <div className="ml-4 space-y-1">
@@ -14817,7 +14827,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                   <p className="text-sm text-slate-600 dark:text-slate-400">
                     Select widgets that users with this role can access. Users will only see widgets that are assigned to their roles.
                   </p>
-                  
+
                   <div className="space-y-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30 p-4">
                     {widgetsLoading ? (
                       <div className="flex items-center justify-center py-4">
@@ -14829,40 +14839,40 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       </div>
                     ) : (
                       availableWidgets.map((widget) => (
-                      <label
-                        key={widget.id}
-                        className="flex items-start gap-3 p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50 rounded-lg cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedWidgetIds.has(widget.id)}
-                          onChange={(e) => {
-                            const newWidgetSet = new Set(selectedWidgetIds);
-                            if (e.target.checked) {
-                              newWidgetSet.add(widget.id);
-                            } else {
-                              newWidgetSet.delete(widget.id);
-                            }
-                            setSelectedWidgetIds(newWidgetSet);
-                          }}
-                          className="mt-1 h-4 w-4 text-brand-600 focus:ring-brand-500 border-slate-300 rounded"
-                        />
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <div className="text-sm font-medium text-slate-900 dark:text-white">
-                              {widget.label}
+                        <label
+                          key={widget.id}
+                          className="flex items-start gap-3 p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50 rounded-lg cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedWidgetIds.has(widget.id)}
+                            onChange={(e) => {
+                              const newWidgetSet = new Set(selectedWidgetIds);
+                              if (e.target.checked) {
+                                newWidgetSet.add(widget.id);
+                              } else {
+                                newWidgetSet.delete(widget.id);
+                              }
+                              setSelectedWidgetIds(newWidgetSet);
+                            }}
+                            className="mt-1 h-4 w-4 text-brand-600 focus:ring-brand-500 border-slate-300 rounded"
+                          />
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <div className="text-sm font-medium text-slate-900 dark:text-white">
+                                {widget.label}
+                              </div>
+                              {widget.isCustom && (
+                                <span className="px-1.5 py-0.5 text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded">
+                                  Custom
+                                </span>
+                              )}
                             </div>
-                            {widget.isCustom && (
-                              <span className="px-1.5 py-0.5 text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded">
-                                Custom
-                              </span>
-                            )}
+                            <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                              {widget.description}
+                            </div>
                           </div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                            {widget.description}
-                          </div>
-                        </div>
-                      </label>
+                        </label>
                       ))
                     )}
                   </div>
@@ -14952,7 +14962,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                   <p className="text-sm text-slate-600 dark:text-slate-400">
                     Select tabs that users with this role can access. Users will only see tabs that are both globally enabled and allowed by their roles.
                   </p>
-                  
+
                   <div className="space-y-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30 p-4">
                     {[
                       { id: 'public', label: 'Public', description: 'Public spaces visible to everyone' },
@@ -15213,11 +15223,10 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       setBulkSelectedGroupIds([]);
                       setGroupRolesMap({});
                     }}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      bulkAssignTarget === 'users'
-                        ? 'bg-brand-600 text-white'
-                        : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                    }`}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${bulkAssignTarget === 'users'
+                      ? 'bg-brand-600 text-white'
+                      : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                      }`}
                   >
                     Users
                   </button>
@@ -15236,11 +15245,10 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                         await loadGroupRolesForBulk(groupsToUse);
                       }
                     }}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      bulkAssignTarget === 'groups'
-                        ? 'bg-brand-600 text-white'
-                        : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                    }`}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${bulkAssignTarget === 'groups'
+                      ? 'bg-brand-600 text-white'
+                      : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                      }`}
                   >
                     Groups
                   </button>
@@ -15255,41 +15263,38 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                 <div className="grid grid-cols-3 gap-2">
                   <button
                     onClick={() => setBulkAssignMode('add')}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      bulkAssignMode === 'add'
-                        ? 'bg-brand-600 text-white'
-                        : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                    }`}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${bulkAssignMode === 'add'
+                      ? 'bg-brand-600 text-white'
+                      : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                      }`}
                   >
                     Add Roles
                   </button>
                   <button
                     onClick={() => setBulkAssignMode('replace')}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      bulkAssignMode === 'replace'
-                        ? 'bg-brand-600 text-white'
-                        : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                    }`}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${bulkAssignMode === 'replace'
+                      ? 'bg-brand-600 text-white'
+                      : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                      }`}
                   >
                     Replace All
                   </button>
                   <button
                     onClick={() => setBulkAssignMode('remove')}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      bulkAssignMode === 'remove'
-                        ? 'bg-red-600 text-white'
-                        : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                    }`}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${bulkAssignMode === 'remove'
+                      ? 'bg-red-600 text-white'
+                      : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                      }`}
                   >
                     Remove Roles
                   </button>
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                  {bulkAssignMode === 'add' 
+                  {bulkAssignMode === 'add'
                     ? `Selected roles will be added to existing ${bulkAssignTarget} roles`
                     : bulkAssignMode === 'replace'
-                    ? `Selected roles will replace all existing ${bulkAssignTarget} roles`
-                    : `Selected roles will be removed from the selected ${bulkAssignTarget}`}
+                      ? `Selected roles will replace all existing ${bulkAssignTarget} roles`
+                      : `Selected roles will be removed from the selected ${bulkAssignTarget}`}
                 </p>
               </div>
 
@@ -15301,168 +15306,168 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
                         Select Users
                       </label>
-                    <div className="flex gap-2 items-center">
-                      <button
-                        onClick={loadUserRolesForBulk}
-                        className="text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 transition-colors"
-                        title="Refresh user roles"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                          <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() => {
-                          const filteredUsers = allUsers.filter(user => 
-                            user.username.toLowerCase().includes(bulkUserSearchTerm.toLowerCase()) ||
-                            user.email.toLowerCase().includes(bulkUserSearchTerm.toLowerCase())
-                          );
-                          const filteredUserIds = filteredUsers.map(u => u.id);
-                          const allFilteredSelected = filteredUserIds.every(id => bulkSelectedUserIds.includes(id));
-                          
-                          if (allFilteredSelected) {
-                            // Deselect all filtered users
-                            setBulkSelectedUserIds(bulkSelectedUserIds.filter(id => !filteredUserIds.includes(id)));
-                          } else {
-                            // Select all filtered users
-                            const newSelected = [...bulkSelectedUserIds];
-                            filteredUserIds.forEach(id => {
-                              if (!newSelected.includes(id)) {
-                                newSelected.push(id);
-                              }
-                            });
-                            setBulkSelectedUserIds(newSelected);
-                          }
-                        }}
-                        className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
-                      >
-                        {(() => {
-                          const filteredUsers = allUsers.filter(user => 
-                            user.username.toLowerCase().includes(bulkUserSearchTerm.toLowerCase()) ||
-                            user.email.toLowerCase().includes(bulkUserSearchTerm.toLowerCase())
-                          );
-                          const filteredUserIds = filteredUsers.map(u => u.id);
-                          const allFilteredSelected = filteredUserIds.length > 0 && filteredUserIds.every(id => bulkSelectedUserIds.includes(id));
-                          return allFilteredSelected ? 'Deselect All' : 'Select All';
-                        })()}
-                      </button>
-                    </div>
-                  </div>
-                  {/* Search Input */}
-                  <div className="mb-3">
-                    <div className="relative">
-                      <input
-                        type="text"
-                        placeholder="Search users..."
-                        value={bulkUserSearchTerm}
-                        onChange={(e) => setBulkUserSearchTerm(e.target.value)}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                      />
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 20 20"
-                        fill="currentColor"
-                        className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"
-                      >
-                        <path
-                          fillRule="evenodd"
-                          d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
-                      {bulkUserSearchTerm && (
+                      <div className="flex gap-2 items-center">
                         <button
-                          onClick={() => setBulkUserSearchTerm('')}
-                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                          onClick={loadUserRolesForBulk}
+                          className="text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 transition-colors"
+                          title="Refresh user roles"
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                            <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                            <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
                           </svg>
                         </button>
-                      )}
+                        <button
+                          onClick={() => {
+                            const filteredUsers = allUsers.filter(user =>
+                              user.username.toLowerCase().includes(bulkUserSearchTerm.toLowerCase()) ||
+                              user.email.toLowerCase().includes(bulkUserSearchTerm.toLowerCase())
+                            );
+                            const filteredUserIds = filteredUsers.map(u => u.id);
+                            const allFilteredSelected = filteredUserIds.every(id => bulkSelectedUserIds.includes(id));
+
+                            if (allFilteredSelected) {
+                              // Deselect all filtered users
+                              setBulkSelectedUserIds(bulkSelectedUserIds.filter(id => !filteredUserIds.includes(id)));
+                            } else {
+                              // Select all filtered users
+                              const newSelected = [...bulkSelectedUserIds];
+                              filteredUserIds.forEach(id => {
+                                if (!newSelected.includes(id)) {
+                                  newSelected.push(id);
+                                }
+                              });
+                              setBulkSelectedUserIds(newSelected);
+                            }
+                          }}
+                          className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
+                        >
+                          {(() => {
+                            const filteredUsers = allUsers.filter(user =>
+                              user.username.toLowerCase().includes(bulkUserSearchTerm.toLowerCase()) ||
+                              user.email.toLowerCase().includes(bulkUserSearchTerm.toLowerCase())
+                            );
+                            const filteredUserIds = filteredUsers.map(u => u.id);
+                            const allFilteredSelected = filteredUserIds.length > 0 && filteredUserIds.every(id => bulkSelectedUserIds.includes(id));
+                            return allFilteredSelected ? 'Deselect All' : 'Select All';
+                          })()}
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                  <div className="max-h-96 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
-                    <div className="divide-y divide-slate-200 dark:divide-slate-700">
-                      {(() => {
-                        const filteredUsers = allUsers.filter(user => 
-                          user.username.toLowerCase().includes(bulkUserSearchTerm.toLowerCase()) ||
-                          user.email.toLowerCase().includes(bulkUserSearchTerm.toLowerCase())
-                        );
-                        
-                        if (filteredUsers.length === 0) {
-                          return (
-                            <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400">
-                              {allUsers.length === 0 ? 'No users available' : 'No users match your search'}
-                            </div>
+                    {/* Search Input */}
+                    <div className="mb-3">
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Search users..."
+                          value={bulkUserSearchTerm}
+                          onChange={(e) => setBulkUserSearchTerm(e.target.value)}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                        />
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 20 20"
+                          fill="currentColor"
+                          className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                        {bulkUserSearchTerm && (
+                          <button
+                            onClick={() => setBulkUserSearchTerm('')}
+                            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                              <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="max-h-96 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
+                      <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                        {(() => {
+                          const filteredUsers = allUsers.filter(user =>
+                            user.username.toLowerCase().includes(bulkUserSearchTerm.toLowerCase()) ||
+                            user.email.toLowerCase().includes(bulkUserSearchTerm.toLowerCase())
                           );
-                        }
-                        
-                        return filteredUsers.map((user) => {
-                          const userRoles = userRolesMap[user.id] || [];
-                          const isLoading = loadingUserRoles.has(user.id);
-                          
-                          return (
-                            <label
-                              key={user.id}
-                              className="flex items-start gap-3 p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50 cursor-pointer transition-colors"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={bulkSelectedUserIds.includes(user.id)}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setBulkSelectedUserIds([...bulkSelectedUserIds, user.id]);
-                                  } else {
-                                    setBulkSelectedUserIds(bulkSelectedUserIds.filter(id => id !== user.id));
-                                  }
-                                }}
-                                className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2 mt-0.5"
-                              />
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <div className="text-sm font-medium text-slate-900 dark:text-white truncate">
-                                    {user.username}
+
+                          if (filteredUsers.length === 0) {
+                            return (
+                              <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400">
+                                {allUsers.length === 0 ? 'No users available' : 'No users match your search'}
+                              </div>
+                            );
+                          }
+
+                          return filteredUsers.map((user) => {
+                            const userRoles = userRolesMap[user.id] || [];
+                            const isLoading = loadingUserRoles.has(user.id);
+
+                            return (
+                              <label
+                                key={user.id}
+                                className="flex items-start gap-3 p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50 cursor-pointer transition-colors"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={bulkSelectedUserIds.includes(user.id)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setBulkSelectedUserIds([...bulkSelectedUserIds, user.id]);
+                                    } else {
+                                      setBulkSelectedUserIds(bulkSelectedUserIds.filter(id => id !== user.id));
+                                    }
+                                  }}
+                                  className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2 mt-0.5"
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <div className="text-sm font-medium text-slate-900 dark:text-white truncate">
+                                      {user.username}
+                                    </div>
+                                    {isLoading && (
+                                      <svg className="animate-spin h-3 w-3 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                      </svg>
+                                    )}
                                   </div>
-                                  {isLoading && (
-                                    <svg className="animate-spin h-3 w-3 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
+                                  <div className="text-xs text-slate-500 dark:text-slate-400 truncate mb-1">
+                                    {user.email}
+                                  </div>
+                                  {userRoles.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                      {userRoles.map((role) => (
+                                        <span
+                                          key={role.id}
+                                          className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+                                          title={role.description || role.name}
+                                        >
+                                          {role.name}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {!isLoading && userRoles.length === 0 && (
+                                    <div className="text-xs text-slate-400 dark:text-slate-500 italic mt-1">
+                                      No roles assigned
+                                    </div>
                                   )}
                                 </div>
-                                <div className="text-xs text-slate-500 dark:text-slate-400 truncate mb-1">
-                                  {user.email}
-                                </div>
-                                {userRoles.length > 0 && (
-                                  <div className="flex flex-wrap gap-1 mt-1">
-                                    {userRoles.map((role) => (
-                                      <span
-                                        key={role.id}
-                                        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
-                                        title={role.description || role.name}
-                                      >
-                                        {role.name}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-                                {!isLoading && userRoles.length === 0 && (
-                                  <div className="text-xs text-slate-400 dark:text-slate-500 italic mt-1">
-                                    No roles assigned
-                                  </div>
-                                )}
-                              </div>
-                            </label>
-                          );
-                        });
-                      })()}
+                              </label>
+                            );
+                          });
+                        })()}
+                      </div>
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                      {bulkSelectedUserIds.length} user{bulkSelectedUserIds.length !== 1 ? 's' : ''} selected
                     </div>
                   </div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                    {bulkSelectedUserIds.length} user{bulkSelectedUserIds.length !== 1 ? 's' : ''} selected
-                  </div>
-                </div>
                 ) : (
                   <div>
                     <div className="flex items-center justify-between mb-3">
@@ -15481,13 +15486,13 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                         </button>
                         <button
                           onClick={() => {
-                            const filteredGroups = userGroups.filter(group => 
+                            const filteredGroups = userGroups.filter(group =>
                               group.name.toLowerCase().includes(bulkGroupSearchTerm.toLowerCase()) ||
                               (group.description && group.description.toLowerCase().includes(bulkGroupSearchTerm.toLowerCase()))
                             );
                             const filteredGroupIds = filteredGroups.map(g => g.id);
                             const allFilteredSelected = filteredGroupIds.every(id => bulkSelectedGroupIds.includes(id));
-                            
+
                             if (allFilteredSelected) {
                               // Deselect all filtered groups
                               setBulkSelectedGroupIds(bulkSelectedGroupIds.filter(id => !filteredGroupIds.includes(id)));
@@ -15505,7 +15510,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                           className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
                         >
                           {(() => {
-                            const filteredGroups = userGroups.filter(group => 
+                            const filteredGroups = userGroups.filter(group =>
                               group.name.toLowerCase().includes(bulkGroupSearchTerm.toLowerCase()) ||
                               (group.description && group.description.toLowerCase().includes(bulkGroupSearchTerm.toLowerCase()))
                             );
@@ -15553,11 +15558,11 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     <div className="max-h-96 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
                       <div className="divide-y divide-slate-200 dark:divide-slate-700">
                         {(() => {
-                          const filteredGroups = userGroups.filter(group => 
+                          const filteredGroups = userGroups.filter(group =>
                             group.name.toLowerCase().includes(bulkGroupSearchTerm.toLowerCase()) ||
                             (group.description && group.description.toLowerCase().includes(bulkGroupSearchTerm.toLowerCase()))
                           );
-                          
+
                           if (filteredGroups.length === 0) {
                             return (
                               <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400">
@@ -15565,11 +15570,11 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                               </div>
                             );
                           }
-                          
+
                           return filteredGroups.map((group) => {
                             const groupRoles = groupRolesMap[group.id] || [];
                             const isLoading = loadingGroupRoles.has(group.id);
-                            
+
                             return (
                               <label
                                 key={group.id}
@@ -15647,13 +15652,13 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     <div className="flex gap-2">
                       <button
                         onClick={() => {
-                          const filteredRoles = roles.filter(role => 
+                          const filteredRoles = roles.filter(role =>
                             role.name.toLowerCase().includes(bulkRoleSearchTerm.toLowerCase()) ||
                             (role.description && role.description.toLowerCase().includes(bulkRoleSearchTerm.toLowerCase()))
                           );
                           const filteredRoleIds = filteredRoles.map(r => r.id);
                           const allFilteredSelected = filteredRoleIds.every(id => bulkSelectedRoleIds.includes(id));
-                          
+
                           if (allFilteredSelected) {
                             // Deselect all filtered roles
                             setBulkSelectedRoleIds(bulkSelectedRoleIds.filter(id => !filteredRoleIds.includes(id)));
@@ -15671,7 +15676,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                         className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
                       >
                         {(() => {
-                          const filteredRoles = roles.filter(role => 
+                          const filteredRoles = roles.filter(role =>
                             role.name.toLowerCase().includes(bulkRoleSearchTerm.toLowerCase()) ||
                             (role.description && role.description.toLowerCase().includes(bulkRoleSearchTerm.toLowerCase()))
                           );
@@ -15729,11 +15734,11 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       <div className="max-h-96 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
                         <div className="divide-y divide-slate-200 dark:divide-slate-700">
                           {(() => {
-                            let filteredRoles = roles.filter(role => 
+                            let filteredRoles = roles.filter(role =>
                               role.name.toLowerCase().includes(bulkRoleSearchTerm.toLowerCase()) ||
                               (role.description && role.description.toLowerCase().includes(bulkRoleSearchTerm.toLowerCase()))
                             );
-                            
+
                             // In remove mode, only show roles that at least one selected user/group has
                             if (bulkAssignMode === 'remove') {
                               if (bulkAssignTarget === 'users' && bulkSelectedUserIds.length > 0) {
@@ -15742,7 +15747,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                                   const userRoles = userRolesMap[userId] || [];
                                   userRoles.forEach(role => userRoleIds.add(role.id));
                                 });
-                                
+
                                 filteredRoles = filteredRoles.filter(role => userRoleIds.has(role.id));
                               } else if (bulkAssignTarget === 'groups' && bulkSelectedGroupIds.length > 0) {
                                 const groupRoleIds = new Set<number>();
@@ -15750,23 +15755,23 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                                   const groupRoles = groupRolesMap[groupId] || [];
                                   groupRoles.forEach(role => groupRoleIds.add(role.id));
                                 });
-                                
+
                                 filteredRoles = filteredRoles.filter(role => groupRoleIds.has(role.id));
                               }
                             }
-                            
+
                             if (filteredRoles.length === 0) {
                               return (
                                 <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400">
-                                  {roles.length === 0 
-                                    ? 'No roles available. Create roles first.' 
+                                  {roles.length === 0
+                                    ? 'No roles available. Create roles first.'
                                     : bulkAssignMode === 'remove' && (bulkAssignTarget === 'users' ? bulkSelectedUserIds.length > 0 : bulkSelectedGroupIds.length > 0)
-                                    ? `No roles found for selected ${bulkAssignTarget}`
-                                    : 'No roles match your search'}
+                                      ? `No roles found for selected ${bulkAssignTarget}`
+                                      : 'No roles match your search'}
                                 </div>
                               );
                             }
-                            
+
                             return filteredRoles.map((role) => {
                               // Check if all selected users/groups have this role (for remove mode)
                               let allTargetsHaveRole = true;
@@ -15783,54 +15788,53 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                                   });
                                 }
                               }
-                              
+
                               return (
-                            <label
-                              key={role.id}
-                              className={`flex items-center gap-3 p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50 cursor-pointer transition-colors ${
-                                !allTargetsHaveRole && bulkAssignMode === 'remove' ? 'opacity-50' : ''
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={bulkSelectedRoleIds.includes(role.id)}
-                                disabled={!allTargetsHaveRole && bulkAssignMode === 'remove'}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setBulkSelectedRoleIds([...bulkSelectedRoleIds, role.id]);
-                                  } else {
-                                    setBulkSelectedRoleIds(bulkSelectedRoleIds.filter(id => id !== role.id));
-                                  }
-                                }}
-                                className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                              />
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2">
-                                  <div className="text-sm font-medium text-slate-900 dark:text-white">
-                                    {role.name}
+                                <label
+                                  key={role.id}
+                                  className={`flex items-center gap-3 p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50 cursor-pointer transition-colors ${!allTargetsHaveRole && bulkAssignMode === 'remove' ? 'opacity-50' : ''
+                                    }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={bulkSelectedRoleIds.includes(role.id)}
+                                    disabled={!allTargetsHaveRole && bulkAssignMode === 'remove'}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setBulkSelectedRoleIds([...bulkSelectedRoleIds, role.id]);
+                                      } else {
+                                        setBulkSelectedRoleIds(bulkSelectedRoleIds.filter(id => id !== role.id));
+                                      }
+                                    }}
+                                    className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  />
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2">
+                                      <div className="text-sm font-medium text-slate-900 dark:text-white">
+                                        {role.name}
+                                      </div>
+                                      {bulkAssignMode === 'remove' && !allTargetsHaveRole && (
+                                        <span className="text-xs text-slate-400 dark:text-slate-500 italic">
+                                          (not all {bulkAssignTarget} have this role)
+                                        </span>
+                                      )}
+                                    </div>
+                                    {role.description && (
+                                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                        {role.description}
+                                      </div>
+                                    )}
+                                    <div className="flex gap-3 mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                      <span>{role.userCount || 0} users</span>
+                                      <span>•</span>
+                                      <span>{role.tileCount || 0} tiles</span>
+                                      <span>•</span>
+                                      <span>{role.linkCount || 0} links</span>
+                                    </div>
                                   </div>
-                                  {bulkAssignMode === 'remove' && !allTargetsHaveRole && (
-                                    <span className="text-xs text-slate-400 dark:text-slate-500 italic">
-                                      (not all {bulkAssignTarget} have this role)
-                                    </span>
-                                  )}
-                                </div>
-                                {role.description && (
-                                  <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                                    {role.description}
-                                  </div>
-                                )}
-                                <div className="flex gap-3 mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                  <span>{role.userCount || 0} users</span>
-                                  <span>•</span>
-                                  <span>{role.tileCount || 0} tiles</span>
-                                  <span>•</span>
-                                  <span>{role.linkCount || 0} links</span>
-                                </div>
-                              </div>
-                            </label>
-                          );
-                          });
+                                </label>
+                              );
+                            });
                           })()}
                         </div>
                       </div>
@@ -15865,15 +15869,14 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                 <button
                   onClick={handleBulkAssignRoles}
                   disabled={
-                    bulkAssignLoading || 
-                    (bulkAssignTarget === 'users' ? bulkSelectedUserIds.length === 0 : bulkSelectedGroupIds.length === 0) || 
+                    bulkAssignLoading ||
+                    (bulkAssignTarget === 'users' ? bulkSelectedUserIds.length === 0 : bulkSelectedGroupIds.length === 0) ||
                     bulkSelectedRoleIds.length === 0
                   }
-                  className={`flex-1 px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors ${
-                    bulkAssignMode === 'remove'
-                      ? 'bg-red-600 hover:bg-red-500'
-                      : 'bg-brand-600 hover:bg-brand-500'
-                  }`}
+                  className={`flex-1 px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors ${bulkAssignMode === 'remove'
+                    ? 'bg-red-600 hover:bg-red-500'
+                    : 'bg-brand-600 hover:bg-brand-500'
+                    }`}
                 >
                   {bulkAssignLoading ? (
                     <>
@@ -16220,7 +16223,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                   )}
                   {userActionsDialog.user.is_admin ? 'Demote from Admin' : 'Promote to Admin'}
                 </button>
-                
+
                 {!userActionsDialog.user.is_admin && (
                   <>
                     {/* Disable/Enable */}
@@ -16246,7 +16249,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       )}
                       {userActionsDialog.user.is_disabled ? 'Enable User' : 'Disable User'}
                     </button>
-                    
+
                     {/* Toggle Auth Source */}
                     <button
                       onClick={async () => {
@@ -16274,7 +16277,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       </svg>
                       Toggle Auth Source
                     </button>
-                    
+
                     {/* Reset Password */}
                     {userActionsDialog.user.auth_source !== 'ldap' && userActionsDialog.user.auth_source !== 'saml' && (
                       <button
@@ -16291,7 +16294,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                         Reset Password
                       </button>
                     )}
-                    
+
                     {/* Impersonate */}
                     <button
                       onClick={async () => {
@@ -16314,7 +16317,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       </svg>
                       Impersonate
                     </button>
-                    
+
                     {/* Roles */}
                     <button
                       onClick={async () => {
