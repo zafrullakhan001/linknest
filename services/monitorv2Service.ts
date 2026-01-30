@@ -220,7 +220,7 @@ export const monitorv2Service = {
         return data.result;
     },
 
-    async checkAllMonitors(): Promise<{
+    async checkAllMonitors(force = false): Promise<{
         count: number;
         total: number;
         up_count: number;
@@ -230,7 +230,8 @@ export const monitorv2Service = {
     }> {
         const response = await fetch(`${API_BASE}/check-all`, {
             method: 'POST',
-            credentials: 'include'
+            credentials: 'include',
+            ...(force ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ force: true }) } : {})
         });
         if (!response.ok) throw new Error('Failed to check all monitors');
         return await response.json();

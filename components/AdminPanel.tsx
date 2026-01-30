@@ -118,7 +118,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     show_database_path_in_footer: '1',
     disabled_tabs: '[]',
     maintenance_enabled: '0',
-    maintenance_message: ''
+    maintenance_message: '',
+    semi_pwa_enabled: '0',
+    semi_pwa_include_paths: '',
+    semi_pwa_exclude_paths: 'monitors,monitorv2'
   });
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -643,7 +646,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       const settingsWithDefaults = {
         ...loadedSettings,
         maintenance_enabled: loadedSettings.maintenance_enabled || '0',
-        maintenance_message: loadedSettings.maintenance_message || ''
+        maintenance_message: loadedSettings.maintenance_message || '',
+        semi_pwa_enabled: loadedSettings.semi_pwa_enabled || '0',
+        semi_pwa_include_paths: loadedSettings.semi_pwa_include_paths || '',
+        semi_pwa_exclude_paths: loadedSettings.semi_pwa_exclude_paths || 'monitors,monitorv2'
       };
       setSettings(settingsWithDefaults);
       
@@ -12002,6 +12008,104 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           {settingsSaving ? 'Saving...' : 'Save Settings'}
                         </button>
                       </div>
+                    </div>
+                  </div>
+
+                  {/* Semi-PWA / Aggressive cache */}
+                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Semi-PWA (Aggressive cache)</h3>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
+                      When enabled, the app and API responses are served from the browser cache. This reduces database and server load. Users see cached data until they perform a <strong>hard refresh</strong> (Ctrl+F5 / Cmd+Shift+R), which fetches fresh data and updates the cache.
+                    </p>
+                    <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg">
+                      <div className="flex-1">
+                        <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-1">Serve from browser cache</h4>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {(settings?.semi_pwa_enabled === '1' || settings?.semi_pwa_enabled === 'true')
+                            ? 'Enabled - Pages and API are cached; hard refresh revalidates'
+                            : 'Disabled - Normal requests (no service worker cache)'}
+                        </p>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          try {
+                            setSettingsSaving(true);
+                            setError('');
+                            const currentValue = settings?.semi_pwa_enabled || '0';
+                            const newValue = (currentValue === '1' || currentValue === 'true') ? '0' : '1';
+                            const updatedSettings = { ...settings, semi_pwa_enabled: newValue };
+                            setSettings(updatedSettings);
+                            await settingsService.updateSettings({ semi_pwa_enabled: newValue });
+                            await loadSettings();
+                            await refreshSettings();
+                            alert(`Semi-PWA cache ${newValue === '1' ? 'enabled' : 'disabled'}. ${newValue === '1' ? 'Reload the page to activate the service worker.' : ''}`);
+                          } catch (err: unknown) {
+                            setError((err as Error).message || 'Failed to update');
+                          } finally {
+                            setSettingsSaving(false);
+                          }
+                        }}
+                        disabled={settingsSaving}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${(settings?.semi_pwa_enabled === '1' || settings?.semi_pwa_enabled === 'true')
+                          ? 'bg-cyan-600'
+                          : 'bg-slate-300 dark:bg-slate-600'
+                          } ${settingsSaving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                        type="button"
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${(settings?.semi_pwa_enabled === '1' || settings?.semi_pwa_enabled === 'true') ? 'translate-x-6' : 'translate-x-1'
+                            }`}
+                        />
+                      </button>
+                    </div>
+
+                    <div className="mt-6 space-y-4 border-t border-slate-200 dark:border-slate-700 pt-6">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white">PWA path rules (path segments, comma-separated)</p>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Include in PWA (only these get cached)</label>
+                        <input
+                          type="text"
+                          value={settings?.semi_pwa_include_paths ?? ''}
+                          onChange={(e) => setSettings((s) => ({ ...s, semi_pwa_include_paths: e.target.value }))}
+                          placeholder="e.g. tiles, settings, arrangements (leave empty to cache all except excluded)"
+                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+                        />
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Leave empty to cache all requests except those in Exclude. If set, only URLs containing one of these segments are cached.</p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Exclude from PWA (never cache, always live)</label>
+                        <input
+                          type="text"
+                          value={settings?.semi_pwa_exclude_paths ?? 'monitors,monitorv2'}
+                          onChange={(e) => setSettings((s) => ({ ...s, semi_pwa_exclude_paths: e.target.value }))}
+                          placeholder="e.g. monitors, monitorv2"
+                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+                        />
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">URLs containing any of these segments always fetch from the server (e.g. real-time monitors).</p>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          try {
+                            setSettingsSaving(true);
+                            setError('');
+                            await settingsService.updateSettings({
+                              semi_pwa_include_paths: settings?.semi_pwa_include_paths ?? '',
+                              semi_pwa_exclude_paths: settings?.semi_pwa_exclude_paths ?? 'monitors,monitorv2'
+                            });
+                            await loadSettings();
+                            await refreshSettings();
+                            alert('PWA path rules saved. Reload the page so the service worker picks up the new config.');
+                          } catch (err: unknown) {
+                            setError((err as Error).message || 'Failed to save');
+                          } finally {
+                            setSettingsSaving(false);
+                          }
+                        }}
+                        disabled={settingsSaving}
+                        className="px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold"
+                      >
+                        {settingsSaving ? 'Saving...' : 'Save PWA path rules'}
+                      </button>
                     </div>
                   </div>
                 </div>

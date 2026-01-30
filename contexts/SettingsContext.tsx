@@ -26,10 +26,40 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
     try {
       const loadedSettings = await settingsService.getSettings();
       setSettings(loadedSettings);
-      
+
+      // Semi-PWA: register or unregister service worker based on setting
+      const semiPwaEnabled = loadedSettings.semi_pwa_enabled === '1' || loadedSettings.semi_pwa_enabled === 'true';
+      const swPath = getSwPath();
+      if ('serviceWorker' in navigator) {
+        if (semiPwaEnabled) {
+          try {
+            const reg = await navigator.serviceWorker.register(swPath, { scope: getSwScope() });
+            await reg.update();
+            // Log once per session so hard-refresh shows SW fetch messages instead of this again
+            if (typeof sessionStorage !== 'undefined' && !sessionStorage.getItem('linknest_pwa_logged')) {
+              sessionStorage.setItem('linknest_pwa_logged', '1');
+              console.log('[LinkNest PWA] Semi-PWA is ON. Normal load = from cache. Hard refresh (Ctrl+F5 / Cmd+Shift+R) = from database/server — look for "[LinkNest PWA] Database/network fetch" in console.');
+            }
+          } catch (e) {
+            console.warn('[LinkNest PWA] Service worker registration failed:', e);
+          }
+        } else {
+          if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('linknest_pwa_logged');
+          const scope = getSwScope();
+          const reg = await navigator.serviceWorker.getRegistration(scope);
+          if (reg) await reg.unregister();
+          try {
+            const cacheNames = await caches.keys();
+            const linknestCache = cacheNames.filter((n) => n.startsWith('linknest-pwa'));
+            await Promise.all(linknestCache.map((n) => caches.delete(n)));
+          } catch (_) { /* ignore */ }
+          console.log('[LinkNest PWA] Disabled. Using normal (database/server) fetch for all requests.');
+        }
+      }
+
       // Update page title
       document.title = loadedSettings.page_title || 'LinkNest';
-      
+
       // Update favicon
       updateFavicon(loadedSettings.favicon);
     } catch (error) {
@@ -38,6 +68,19 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
       setLoading(false);
     }
   };
+
+  function getSwPath() {
+    const path = typeof window !== 'undefined' ? window.location.pathname || '' : '';
+    const base = path.replace(/\/[^/]*$/, '') || '';
+    // Use .php endpoint so server returns application/javascript (avoids SPA rewrite returning HTML for .js)
+    return (base || '') + '/sw-cache-first.php';
+  }
+
+  function getSwScope() {
+    const path = typeof window !== 'undefined' ? window.location.pathname || '' : '';
+    const base = path.replace(/\/[^/]*$/, '') || '';
+    return (base || '/') + '/';
+  }
 
   const updateFavicon = (faviconUrl: string) => {
     // Remove existing favicon links

@@ -254,7 +254,7 @@ export const Monitorv2Dashboard: React.FC = () => {
         setCheckStatus(null); // Clear previous status
         try {
             if (isFullCheck) {
-                const checkResult = await monitoringService.checkAllMonitors();
+                const checkResult = await monitoringService.checkAllMonitors(true);
                 setCheckStatus({
                     count: checkResult.count,
                     total: checkResult.total,

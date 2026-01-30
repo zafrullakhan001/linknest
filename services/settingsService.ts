@@ -88,6 +88,9 @@ export interface AppSettings {
   // Maintenance Mode Settings
   maintenance_enabled?: string; // '0' or '1' - controls whether maintenance mode is enabled
   maintenance_message?: string; // Message to display on maintenance page
+  semi_pwa_enabled?: string; // '0' or '1' - aggressive cache: serve from browser cache; hard refresh revalidates
+  semi_pwa_include_paths?: string; // comma-separated path segments to cache (empty = cache all except excluded)
+  semi_pwa_exclude_paths?: string; // comma-separated path segments to never cache (e.g. monitors, monitorv2)
 
   // SAML Settings
   saml_enabled?: string; // '0' or '1'
@@ -178,6 +181,9 @@ export const settingsService = {
       // Maintenance mode defaults
       maintenance_enabled: data.settings?.maintenance_enabled || '0',
       maintenance_message: data.settings?.maintenance_message || '',
+      semi_pwa_enabled: data.settings?.semi_pwa_enabled || '0',
+      semi_pwa_include_paths: data.settings?.semi_pwa_include_paths || '',
+      semi_pwa_exclude_paths: data.settings?.semi_pwa_exclude_paths || 'monitors,monitorv2',
 
       // SAML defaults
       saml_enabled: data.settings?.saml_enabled || '0',

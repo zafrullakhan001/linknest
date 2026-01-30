@@ -795,14 +795,31 @@ function handleCheckAllMonitors() {
         return;
     }
     
+    $force = false;
+    $raw = file_get_contents('php://input');
+    if ($raw !== false && $raw !== '') {
+        $input = json_decode($raw, true);
+        if (is_array($input) && !empty($input['force'])) {
+            $force = true;
+        }
+    }
+    
     try {
-        // Get all active monitors that are due for checking
-        $stmt = $db->query("
-            SELECT * FROM zmonitoring.monitors
-            WHERE is_active = TRUE
-            AND (last_checked_at IS NULL OR 
-                 last_checked_at <= NOW() - (interval_minutes || ' minutes')::INTERVAL)
-        ");
+        // Force refresh: recheck all active monitors. Otherwise only monitors due by interval.
+        if ($force) {
+            $stmt = $db->query("
+                SELECT * FROM zmonitoring.monitors
+                WHERE is_active = TRUE
+                ORDER BY id
+            ");
+        } else {
+            $stmt = $db->query("
+                SELECT * FROM zmonitoring.monitors
+                WHERE is_active = TRUE
+                AND (last_checked_at IS NULL OR 
+                     last_checked_at <= NOW() - (interval_minutes || ' minutes')::INTERVAL)
+            ");
+        }
         $monitors = $stmt->fetchAll();
         
         $results = [];
