@@ -1,4 +1,4 @@
-# Fix: PG-timescale "invalid value for parameter log_timezone: LOCAL"
+# Fix: PG-timescale won't start (postgresql.conf / timezone / pg_cron)
 
 ## What’s wrong
 
@@ -10,7 +10,18 @@ PostgreSQL 18 does not accept `"LOCAL"` for `log_timezone` or `TimeZone`. If the
 
 ---
 
-## Fix without destroying container or data (recovery script)
+## Fix: repair postgresql.conf (after manual edits or timezone errors)
+
+Run from project folder:
+```powershell
+cd c:\xampp\htdocs\linknest
+.\docker\fix-timescale-config.ps1
+```
+This stops PG-timescale, backs up and repairs `postgresql.conf` in the volume (timezone → UTC, `shared_preload_libraries`, `cron.database_name`), then restarts the container. To use **pg_cron**, build and run the main compose (`docker-compose.timescale.yml`), then run in the DB: `CREATE EXTENSION IF NOT EXISTS pg_cron;` See `README_TIMESCALE_PGCRON.md`. If the pg_cron build fails, start with `docker compose -f docker/docker-compose.timescale-no-pgcron.yml up -d`.
+
+---
+
+## Fix: timezone only (original script)
 
 **Use this if you have not backed up the database and must keep the same container and volume.**
 

@@ -42,7 +42,7 @@ if %ERRORLEVEL% NEQ 0 (
         set /a WAIT_COUNT+=2
         docker info >nul 2>&1
         if %ERRORLEVEL% EQU 0 (
-        echo Docker Desktop is now ready!
+            echo Docker Desktop is now ready!
             echo.
             goto docker_check_done
         )
@@ -107,13 +107,15 @@ if %ERRORLEVEL% NEQ 0 (
         :docker_started
         echo Docker Desktop is now running!
         echo.
-        goto docker_check_done
+        goto docker_ready
     )
     :docker_check_done
+    goto docker_ready
 ) else (
     echo Docker Desktop is already running.
     echo.
 )
+:docker_ready
 
 REM Determine search for docker compose command
 docker compose version >nul 2>&1
@@ -162,6 +164,8 @@ echo.
 
 REM 3b. Verify Python is available inside the container (needed for worker scripts)
 echo Step 3b: Verifying Python workers inside container...
+echo    Waiting a few seconds for container to be ready...
+timeout /t 5 /nobreak >nul
 echo    Checking python3 version...
 %COMPOSE_CMD% -f docker/docker-compose.yml exec -T linknest python3 --version
 if errorlevel 1 goto python_missing

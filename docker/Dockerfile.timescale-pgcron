@@ -10,7 +10,7 @@ RUN set -ex; \
     echo "https://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories; \
     apk update; \
     apk add --no-cache build-base git postgresql18-dev; \
-    git clone --depth 1 --branch v1.6.2 https://github.com/citusdata/pg_cron.git /tmp/pg_cron; \
+    git clone --depth 1 --branch v1.6.7 https://github.com/citusdata/pg_cron.git /tmp/pg_cron; \
     cd /tmp/pg_cron; \
     make; \
     make install; \

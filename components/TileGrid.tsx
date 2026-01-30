@@ -8055,33 +8055,34 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Text Color</label>
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="color"
-                                  value={messageTextColor || '#000000'}
-                                  onChange={(e) => setMessageTextColor(e.target.value)}
-                                  className="w-16 h-10 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer"
-                                />
-                                <input
-                                  type="text"
-                                  value={messageTextColor}
-                                  onChange={(e) => setMessageTextColor(e.target.value)}
-                                  placeholder="#000000"
-                                  className="flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => setMessageTextColor('')}
-                                  className="px-3 py-2 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-                                  title="Reset to default"
-                                >
-                                  Reset
-                                </button>
-                              </div>
+                          <div>
+                            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Text Color</label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="color"
+                                value={messageTextColor || '#000000'}
+                                onChange={(e) => setMessageTextColor(e.target.value)}
+                                className="w-16 h-10 shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer"
+                              />
+                              <input
+                                type="text"
+                                value={messageTextColor}
+                                onChange={(e) => setMessageTextColor(e.target.value)}
+                                placeholder="#000000"
+                                className="min-w-[7rem] flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setMessageTextColor('')}
+                                className="shrink-0 px-3 py-2 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                                title="Reset to default"
+                              >
+                                Reset
+                              </button>
                             </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
                             <div>
                               <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Font Style</label>
                               <select
@@ -8095,19 +8096,18 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                 <option value="bold italic">Bold Italic</option>
                               </select>
                             </div>
-                          </div>
-
-                          <div>
-                            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Display Location</label>
-                            <select
-                              value={messageDisplayLocation}
-                              onChange={(e) => setMessageDisplayLocation(e.target.value as 'tile' | 'detail' | 'both')}
-                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
-                            >
-                              <option value="both">Both (Tile & Detail Page)</option>
-                              <option value="tile">Tile Only</option>
-                              <option value="detail">Detail Page Only</option>
-                            </select>
+                            <div>
+                              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Display Location</label>
+                              <select
+                                value={messageDisplayLocation}
+                                onChange={(e) => setMessageDisplayLocation(e.target.value as 'tile' | 'detail' | 'both')}
+                                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+                              >
+                                <option value="both">Both (Tile & Detail Page)</option>
+                                <option value="tile">Tile Only</option>
+                                <option value="detail">Detail Page Only</option>
+                              </select>
+                            </div>
                           </div>
 
                           <div>
@@ -9385,24 +9385,24 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                     {/* Text Color */}
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Text Color</label>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 items-center">
                         <input
                           type="color"
                           value={tileTextColor || '#000000'}
                           onChange={(e) => setTileTextColor(e.target.value)}
-                          className="w-16 h-10 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
+                          className="w-16 h-10 shrink-0 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
                         />
                         <input
                           type="text"
                           value={tileTextColor}
                           onChange={(e) => setTileTextColor(e.target.value)}
                           placeholder="#000000"
-                          className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
+                          className="min-w-[7rem] flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
                         />
                         {tileTextColor && (
                           <button
                             onClick={() => setTileTextColor('')}
-                            className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                            className="shrink-0 px-3 py-2 text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
                           >
                             Clear
                           </button>

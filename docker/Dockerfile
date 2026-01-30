@@ -23,6 +23,7 @@ COPY index.html index.tsx index.css ./
 COPY components/ ./components/
 COPY contexts/ ./contexts/
 COPY services/ ./services/
+COPY hooks/ ./hooks/
 COPY land/ ./land/
 COPY App.tsx ./
 COPY types.ts ./

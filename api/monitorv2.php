@@ -10,6 +10,7 @@
  * DELETE /monitorv2/{id}         - Delete monitor
  * POST   /monitorv2/{id}/check   - Check monitor now
  * POST   /monitorv2/check-all    - Check all monitors
+ * GET/POST /monitorv2/run-scheduled-checks - Run monitor checks for pg_cron requests (token auth)
  * GET    /monitorv2/{id}/logs    - Get monitor logs (with time range)
  * GET    /monitorv2/{id}/stats   - Get monitor statistics
  * POST   /monitorv2/{id}/duplicate - Duplicate monitor
@@ -27,6 +28,12 @@ if (session_status() === PHP_SESSION_NONE) {
 
 $method = $_SERVER['REQUEST_METHOD'];
 $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
+
+// run-scheduled-checks: token auth (for cron/scheduler calling every minute; pg_cron inserts into cron_trigger)
+if (($method === 'GET' || $method === 'POST') && $path === '/run-scheduled-checks') {
+    handleRunScheduledChecks();
+    exit;
+}
 
 // Require authentication for all operations
 $AUTH_USER = requireAuth();
@@ -128,6 +135,8 @@ switch ($method) {
             handleExportBundle();
         } elseif ($path === '/health') {
             handleHealthCheck();
+        } elseif ($path === '/dashboard') {
+            handleDashboard();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -786,9 +795,20 @@ function handleCheckAllMonitors() {
             $force = true;
         }
     }
-    
+    $result = doCheckAllMonitors($db, $force);
+    if (isset($result['error'])) {
+        sendJSON($result, 500);
+        return;
+    }
+    sendJSON($result);
+}
+
+/**
+ * Run monitor checks for all due monitors. Used by check-all and run-scheduled-checks.
+ * @return array{success:bool, count:int, total:int, up_count:int, down_count:int, error_count:int, results:array}|array{error:string}
+ */
+function doCheckAllMonitors(PDO $db, bool $force = false): array {
     try {
-        // Force refresh: recheck all active monitors. Otherwise only monitors due by interval.
         if ($force) {
             $stmt = $db->query("
                 SELECT * FROM zmonitoring.monitors
@@ -804,47 +824,41 @@ function handleCheckAllMonitors() {
             ");
         }
         $monitors = $stmt->fetchAll();
-        
         $results = [];
         $up = 0;
         $down = 0;
         $error = 0;
-        
         foreach ($monitors as $monitor) {
             try {
                 $result = performMonitorv2Check($monitor);
-                
                 $insertStmt = $db->prepare("
                     INSERT INTO zmonitoring.monitor_checks 
-                    (monitor_id, status, response_time_ms, details, checked_at)
-                    VALUES (:monitor_id, :status, :response_time, :details, NOW())
+                    (monitor_id, status, response_time_ms, details, checked_at, http_code, error_message)
+                    VALUES (:monitor_id, :status, :response_time, :details, NOW(), :http_code, :error)
                 ");
                 $insertStmt->execute([
                     ':monitor_id' => $monitor['id'],
                     ':status' => $result['status'],
                     ':response_time' => $result['response_time'],
-                    ':details' => $result['details']
+                    ':details' => $result['details'],
+                    ':http_code' => $result['http_code'] ?? null,
+                    ':error' => $result['error'] ?? null
                 ]);
-                
                 if ($result['status'] === 'up') $up++;
                 elseif ($result['status'] === 'down') $down++;
                 else $error++;
-                
                 $results[$monitor['id']] = $result;
             } catch (Exception $e) {
                 $error++;
                 $results[$monitor['id']] = ['status' => 'error', 'error' => $e->getMessage()];
             }
         }
-        
-        // Update uptime percentages
         $db->exec("
             UPDATE zmonitoring.monitors m
             SET uptime_percentage = zmonitoring.calculate_uptime(m.id, NOW() - INTERVAL '24 hours', NOW())
             WHERE is_active = TRUE
         ");
-        
-        sendJSON([
+        return [
             'success' => true,
             'count' => count($monitors),
             'total' => count($monitors),
@@ -852,11 +866,66 @@ function handleCheckAllMonitors() {
             'down_count' => $down,
             'error_count' => $error,
             'results' => $results
-        ]);
-        
+        ];
     } catch (PDOException $e) {
         error_log("Monitorv2 check all error: " . $e->getMessage());
-        sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
+        return ['error' => 'Database error: ' . $e->getMessage()];
+    }
+}
+
+/**
+ * Process pg_cron trigger rows and run monitor checks. Called by cron/scheduler with ?token=...
+ * No session auth; validate token from settings (monitorv2_cron_token) or default.
+ */
+function handleRunScheduledChecks(): void {
+    $token = $_GET['token'] ?? $_POST['token'] ?? $_SERVER['HTTP_X_CRON_TOKEN'] ?? '';
+    if ($token === '') {
+        sendJSON(['error' => 'Missing token'], 403);
+        return;
+    }
+    $sqlite = getDB();
+    $stmt = $sqlite->prepare("SELECT value FROM settings WHERE key = 'monitorv2_cron_token'");
+    $stmt->execute();
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    $expected = $row ? trim($row['value']) : 'linknest_monitorv2_cron';
+    if (!hash_equals($expected, $token)) {
+        sendJSON(['error' => 'Invalid token'], 403);
+        return;
+    }
+    $db = getMonitorv2DB();
+    if (!$db) {
+        $r = getMonitorv2DBFailureReason();
+        sendJSON(['error' => $r['message'] ?? 'Monitorv2 database not configured'], 503);
+        return;
+    }
+    try {
+        $stmt = $db->query("
+            SELECT id FROM zmonitoring.cron_trigger
+            WHERE processed_at IS NULL
+            ORDER BY id
+        ");
+        $rows = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        if (count($rows) === 0) {
+            sendJSON(['processed' => 0, 'message' => 'No pending cron triggers']);
+            return;
+        }
+        $result = doCheckAllMonitors($db, false);
+        if (isset($result['error'])) {
+            sendJSON(['processed' => 0, 'error' => $result['error']], 500);
+            return;
+        }
+        $ids = implode(',', array_map('intval', $rows));
+        $db->exec("UPDATE zmonitoring.cron_trigger SET processed_at = NOW() WHERE id IN ($ids)");
+        sendJSON([
+            'processed' => count($rows),
+            'check_count' => $result['count'],
+            'up_count' => $result['up_count'],
+            'down_count' => $result['down_count'],
+            'error_count' => $result['error_count']
+        ]);
+    } catch (PDOException $e) {
+        error_log("Monitorv2 run-scheduled-checks error: " . $e->getMessage());
+        sendJSON(['error' => $e->getMessage()], 500);
     }
 }
 
@@ -1440,6 +1509,117 @@ function handleHealthCheck() {
     } catch (PDOException $e) {
         sendJSON(['status' => 'error', 'message' => $e->getMessage()], 500);
     }
+}
+
+/**
+ * Serve HTML dashboard (same data as Python monitorv2_dashboard.py).
+ * Uses zmonitoring views from pgcron_dashboard.sql when present; otherwise direct queries.
+ */
+function handleDashboard() {
+    $db = getMonitorv2DB();
+    if (!$db) {
+        $r = getMonitorv2DBFailureReason();
+        $msg = $r['message'] ?? 'Database is not available. Please setup or start the database.';
+        header('Content-Type: text/html; charset=utf-8');
+        echo dashboardHtml($msg, [], [], []);
+        return;
+    }
+    $summary = ['total_monitors' => 0, 'up' => 0, 'down' => 0, 'warning' => 0, 'unknown' => 0, 'checks_24h' => 0];
+    $monitors = [];
+    $recentChecks = [];
+    try {
+        $useViews = false;
+        try {
+            $stmt = $db->query('SELECT * FROM zmonitoring.v_dashboard_summary');
+            if ($stmt && $stmt->rowCount()) {
+                $row = $stmt->fetch(PDO::FETCH_ASSOC);
+                $summary = [
+                    'total_monitors' => (int)($row['total_monitors'] ?? 0),
+                    'up' => (int)($row['up'] ?? 0),
+                    'down' => (int)($row['down'] ?? 0),
+                    'warning' => (int)($row['warning'] ?? 0),
+                    'unknown' => (int)($row['unknown'] ?? 0),
+                    'checks_24h' => (int)($row['checks_24h'] ?? 0),
+                ];
+                $useViews = true;
+            }
+        } catch (PDOException $e) { /* views not installed */ }
+        if (!$useViews) {
+            $stmt = $db->query("SELECT COUNT(*) FROM zmonitoring.monitors");
+            $summary['total_monitors'] = (int)$stmt->fetchColumn();
+            $stmt = $db->query("SELECT current_status, COUNT(*) AS cnt FROM zmonitoring.monitors WHERE is_active = TRUE GROUP BY current_status");
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $k = $row['current_status'] ?: 'unknown';
+                $summary[$k === 'up' || $k === 'down' || $k === 'warning' ? $k : 'unknown'] = (int)$row['cnt'];
+            }
+            $stmt = $db->query("SELECT COUNT(*) FROM zmonitoring.monitor_checks WHERE checked_at >= NOW() - INTERVAL '24 hours'");
+            $summary['checks_24h'] = (int)$stmt->fetchColumn();
+        }
+        try {
+            if ($useViews) {
+                $stmt = $db->query("SELECT * FROM zmonitoring.v_dashboard_monitors ORDER BY tab_name, group_name, name");
+            } else {
+                $stmt = $db->query("SELECT id, name, type, target, current_status, last_checked_at, last_response_time_ms, uptime_percentage, is_active, tab_name, group_name, interval_minutes FROM zmonitoring.monitors ORDER BY tab_name, group_name, name");
+            }
+            $monitors = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+        } catch (PDOException $e) {
+            $stmt = $db->query("SELECT id, name, type, target, current_status, last_checked_at, last_response_time_ms, uptime_percentage, is_active, tab_name, group_name, interval_minutes FROM zmonitoring.monitors ORDER BY tab_name, group_name, name");
+            $monitors = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+        }
+        try {
+            $stmt = $db->query("SELECT c.id, c.monitor_id, m.name AS monitor_name, c.status, c.response_time_ms, c.checked_at, c.details FROM zmonitoring.monitor_checks c JOIN zmonitoring.monitors m ON m.id = c.monitor_id ORDER BY c.checked_at DESC LIMIT 50");
+            $recentChecks = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+        } catch (PDOException $e) {
+            $recentChecks = [];
+        }
+    } catch (PDOException $e) {
+        header('Content-Type: text/html; charset=utf-8');
+        echo dashboardHtml($e->getMessage(), $summary, $monitors, $recentChecks);
+        return;
+    }
+    header('Content-Type: text/html; charset=utf-8');
+    echo dashboardHtml(null, $summary, $monitors, $recentChecks);
+}
+
+function dashboardHtml($error, $summary, $monitors, $recentChecks) {
+    $dbInfo = 'zmonitoring';
+    $refreshUrl = '#';
+    if (isset($_SERVER['REQUEST_URI'])) {
+        $refreshUrl = strpos($_SERVER['REQUEST_URI'], '?') !== false ? strstr($_SERVER['REQUEST_URI'], '?', true) : $_SERVER['REQUEST_URI'];
+    }
+    $h = function ($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); };
+    $row = function ($m) use ($h) {
+        $target = $m['target'] ?? '';
+        $targetShort = strlen($target) > 50 ? substr($target, 0, 50) . '…' : $target;
+        $status = $m['current_status'] ?? 'unknown';
+        $resp = isset($m['last_response_time_ms']) && $m['last_response_time_ms'] !== '' ? $h($m['last_response_time_ms']) . ' ms' : '—';
+        $uptime = isset($m['uptime_percentage']) && $m['uptime_percentage'] !== '' && $m['uptime_percentage'] !== null ? number_format((float)$m['uptime_percentage'], 1) . '%' : '—';
+        $last = isset($m['last_checked_at']) && $m['last_checked_at'] ? date('Y-m-d H:i', strtotime($m['last_checked_at'])) : '—';
+        return '<tr><td>' . $h($m['name'] ?? '') . '</td><td>' . $h($m['type'] ?? '') . '</td><td>' . $h($targetShort) . '</td><td><span class="status ' . $h($status) . '">' . $h($status) . '</span></td><td>' . $resp . '</td><td>' . $uptime . '</td><td class="time">' . $h($last) . '</td></tr>';
+    };
+    $checkRow = function ($c) use ($h) {
+        $resp = isset($c['response_time_ms']) && $c['response_time_ms'] !== '' && $c['response_time_ms'] !== null ? $h($c['response_time_ms']) . ' ms' : '—';
+        $time = isset($c['checked_at']) && $c['checked_at'] ? date('Y-m-d H:i:s', strtotime($c['checked_at'])) : '—';
+        return '<tr><td>' . $h($c['monitor_name'] ?? '') . '</td><td><span class="status ' . $h($c['status'] ?? '') . '">' . $h($c['status'] ?? '') . '</span></td><td>' . $resp . '</td><td class="time">' . $h($time) . '</td></tr>';
+    };
+    $monitorRows = implode('', array_map($row, $monitors));
+    $checkRows = implode('', array_map($checkRow, $recentChecks));
+    $body = $error
+        ? '<div class="error">' . $h($error) . '</div>'
+        : (
+            '<div class="stats">' .
+            '<div class="stat"><div class="stat-value">' . (int)$summary['total_monitors'] . '</div><div class="stat-label">Monitors</div></div>' .
+            '<div class="stat up"><div class="stat-value">' . (int)$summary['up'] . '</div><div class="stat-label">Up</div></div>' .
+            '<div class="stat down"><div class="stat-value">' . (int)$summary['down'] . '</div><div class="stat-label">Down</div></div>' .
+            '<div class="stat warning"><div class="stat-value">' . (int)$summary['warning'] . '</div><div class="stat-label">Warning</div></div>' .
+            '<div class="stat"><div class="stat-value">' . (int)$summary['checks_24h'] . '</div><div class="stat-label">Checks (24h)</div></div>' .
+            '</div>' .
+            '<div class="card"><h2>Monitors</h2><table><thead><tr><th>Name</th><th>Type</th><th>Target</th><th>Status</th><th>Response</th><th>Uptime %</th><th>Last checked</th></tr></thead><tbody>' . $monitorRows . '</tbody></table></div>' .
+            '<div class="card"><h2>Recent checks</h2><table><thead><tr><th>Monitor</th><th>Status</th><th>Response</th><th>Time</th></tr></thead><tbody>' . $checkRows . '</tbody></table></div>'
+        );
+    return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Monitorv2 Dashboard | LinkNest</title><style>
+*{box-sizing:border-box}body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:16px;background:#0f172a;color:#e2e8f0}.container{max-width:1200px;margin:0 auto}h1{font-size:1.5rem;margin:0 0 8px 0}.subtitle{color:#94a3b8;font-size:0.9rem;margin-bottom:24px}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:24px}.stat{background:#1e293b;padding:16px;border-radius:8px;text-align:center}.stat-value{font-size:1.75rem;font-weight:700}.stat-label{font-size:0.8rem;color:#94a3b8;margin-top:4px}.stat.up .stat-value{color:#22c55e}.stat.down .stat-value{color:#ef4444}.stat.warning .stat-value{color:#eab308}.card{background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px}.card h2{font-size:1rem;margin:0 0 12px 0;color:#94a3b8}table{width:100%;border-collapse:collapse}th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #334155}th{color:#94a3b8;font-weight:600;font-size:0.85rem}.status{display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.8rem;font-weight:600}.status.up{background:#166534;color:#86efac}.status.down{background:#991b1b;color:#fca5a5}.status.warning{background:#854d0e;color:#fde047}.status.unknown{background:#475569;color:#cbd5e1}.time{font-size:0.85rem;color:#94a3b8}.error{background:#7f1d1d;color:#fecaca;padding:16px;border-radius:8px;margin-bottom:16px}.refresh{margin-bottom:16px}.refresh a{color:#38bdf8;text-decoration:none}.refresh a:hover{text-decoration:underline}
+</style></head><body><div class="container"><h1>Monitorv2 Dashboard</h1><p class="subtitle">zmonitoring · pg_cron views</p><div class="refresh"><a href="' . $h($refreshUrl) . '">Refresh</a></div>' . $body . '</div></body></html>';
 }
 
 function handleSetupSchema() {

@@ -118,10 +118,30 @@ export const PageZoomControl: React.FC = () => {
     updateZoom(100);
   };
 
+  const ZOOM_PRESETS = [70, 75, 80, 85, 90, 95, 100];
+
   return (
     <div className="flex flex-col items-center gap-2">
       {/* Zoom Control Container */}
       <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg p-2 flex flex-col items-center gap-2 min-w-[60px]">
+        {/* Preset sizes 70–100 */}
+        <div className="flex flex-wrap justify-center gap-1">
+          {ZOOM_PRESETS.map((pct) => (
+            <button
+              key={pct}
+              onClick={() => updateZoom(pct)}
+              className={`min-w-[28px] h-7 px-1.5 rounded text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-1 ${
+                currentZoom === pct
+                  ? 'bg-brand-500 text-white dark:bg-brand-600'
+                  : 'bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-500'
+              }`}
+              title={`Zoom ${pct}%`}
+              aria-label={`Zoom ${pct}%`}
+            >
+              {pct}
+            </button>
+          ))}
+        </div>
         {/* Zoom In Button */}
         <button
           onClick={handleZoomIn}
