@@ -58,6 +58,7 @@ export const Monitorv2Dashboard: React.FC = () => {
     const [notificationsPaused, setNotificationsPaused] = useState<boolean>(false);
     const csvInputRef = useRef<HTMLInputElement>(null);
     const [checkStatus, setCheckStatus] = useState<{ count: number; total: number; up: number; down: number; error: number } | null>(null);
+    const [dbError, setDbError] = useState<string | null>(null);
 
     // Handle Escape key for fullscreen
     useEffect(() => {
@@ -211,11 +212,14 @@ export const Monitorv2Dashboard: React.FC = () => {
     }, []);
 
     const fetchMonitors = useCallback(async () => {
+        setDbError(null);
         try {
             const data = await monitoringService.getMonitors();
             setMonitors(data);
         } catch (error) {
             console.error('Failed to load monitors', error);
+            const msg = error instanceof Error ? error.message : 'Failed to load monitors';
+            setDbError(msg);
         } finally {
             setIsLoading(false);
         }
@@ -1234,7 +1238,23 @@ export const Monitorv2Dashboard: React.FC = () => {
                 </div>
             )}
 
-            {isLoading && monitors.length === 0 ? (
+            {dbError ? (
+                <div className="flex flex-col items-center justify-center py-20 bg-amber-50 dark:bg-amber-950/30 rounded-3xl border-2 border-amber-200 dark:border-amber-800">
+                    <div className="inline-flex w-16 h-16 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/50 mb-6 text-3xl">
+                        🗄️
+                    </div>
+                    <h2 className="text-xl font-bold text-amber-800 dark:text-amber-200 mb-2">Database unavailable</h2>
+                    <p className="text-amber-700 dark:text-amber-300 mb-6 max-w-md text-center">
+                        {dbError}
+                    </p>
+                    <button
+                        onClick={() => { setDbError(null); setIsLoading(true); fetchMonitors(); }}
+                        className="px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold transition-colors inline-flex items-center gap-2"
+                    >
+                        <FaRedo size={14} /> Retry
+                    </button>
+                </div>
+            ) : isLoading && monitors.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20">
                     <div className="w-12 h-12 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mb-4"></div>
                     <div className="text-slate-900 dark:text-white font-medium">Loading monitors...</div>

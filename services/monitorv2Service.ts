@@ -157,8 +157,11 @@ export const monitorv2Service = {
     // Monitors
     async getMonitors(): Promise<Monitorv2[]> {
         const response = await fetch(API_BASE, { credentials: 'include' });
-        if (!response.ok) throw new Error('Failed to fetch monitors');
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            const msg = (data && typeof data.error === 'string') ? data.error : 'Failed to fetch monitors';
+            throw new Error(msg);
+        }
         return data.monitors || [];
     },
 

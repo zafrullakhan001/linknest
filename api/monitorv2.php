@@ -33,22 +33,33 @@ $AUTH_USER = requireAuth();
 $GLOBALS['AUTH_USER'] = $AUTH_USER;
 
 // Get PostgreSQL connection for monitorv2
+/** @var array{message:string,code:string}|null */
+$GLOBALS['_monitorv2_db_failure'] = null;
+
 function getMonitorv2DB() {
     static $db = null;
     if ($db !== null) return $db;
-    
+
     // Get settings from SQLite
     $sqlite = getDB();
     $stmt = $sqlite->prepare("SELECT key, value FROM settings WHERE key LIKE 'monitorv2_%'");
     $stmt->execute();
     $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
-    
-    $host = $settings['monitorv2_pg_host'] ?? 'localhost';
+
+    $host = trim($settings['monitorv2_pg_host'] ?? '');
     $port = (int)($settings['monitorv2_pg_port'] ?? 5433);
-    $database = $settings['monitorv2_pg_database'] ?? 'postgres';
+    $database = trim($settings['monitorv2_pg_database'] ?? '');
     $user = $settings['monitorv2_pg_user'] ?? 'postgres';
     $password = $settings['monitorv2_pg_password'] ?? '';
-    
+
+    if ($host === '' || $database === '') {
+        $GLOBALS['_monitorv2_db_failure'] = [
+            'message' => 'Monitorv2 database is not configured. Please configure it in Add-ons → Monitorv2.',
+            'code' => 'not_configured'
+        ];
+        return null;
+    }
+
     // Decrypt password if needed
     if (!empty($password) && strpos($password, '.') !== false && substr_count($password, '.') === 2) {
         try {
@@ -57,7 +68,7 @@ function getMonitorv2DB() {
             // Keep as-is if decryption fails
         }
     }
-    
+
     try {
         $dsn = "pgsql:host={$host};port={$port};dbname={$database}";
         $db = new PDO($dsn, $user, $password, [
@@ -68,8 +79,26 @@ function getMonitorv2DB() {
         return $db;
     } catch (PDOException $e) {
         error_log("Monitorv2 DB connection failed: " . $e->getMessage());
+        $GLOBALS['_monitorv2_db_failure'] = [
+            'message' => 'Database is not available. Please setup or start the database.',
+            'code' => 'unavailable'
+        ];
         return null;
     }
+}
+
+function getMonitorv2DBFailureReason(): ?array {
+    return $GLOBALS['_monitorv2_db_failure'] ?? null;
+}
+
+/** Returns PDO or sends JSON error and exits. */
+function requireMonitorv2DB(): PDO {
+    $db = getMonitorv2DB();
+    if ($db) return $db;
+    $r = getMonitorv2DBFailureReason();
+    $msg = $r['message'] ?? 'Database is not available. Please setup or start the database.';
+    sendJSON(['error' => $msg], 503);
+    exit;
 }
 
 // Check if user is admin
@@ -155,12 +184,7 @@ switch ($method) {
 // ============================================
 
 function handleGetMonitors() {
-    $db = getMonitorv2DB();
-    if (!$db) {
-        sendJSON(['error' => 'Monitorv2 database not configured'], 503);
-        return;
-    }
-    
+    $db = requireMonitorv2DB();
     $isAdmin = isMonitorv2Admin();
     $userId = getMonitorv2UserId();
     
@@ -252,12 +276,7 @@ function handleGetMonitors() {
 }
 
 function handleGetMonitor($id) {
-    $db = getMonitorv2DB();
-    if (!$db) {
-        sendJSON(['error' => 'Monitorv2 database not configured'], 503);
-        return;
-    }
-    
+    $db = requireMonitorv2DB();
     $isAdmin = isMonitorv2Admin();
     $userId = getMonitorv2UserId();
     
@@ -328,12 +347,7 @@ function handleCreateMonitor() {
         return;
     }
     
-    $db = getMonitorv2DB();
-    if (!$db) {
-        sendJSON(['error' => 'Monitorv2 database not configured'], 503);
-        return;
-    }
-    
+    $db = requireMonitorv2DB();
     $data = getJSONInput();
     if (!is_array($data)) {
         sendJSON(['error' => 'Invalid input'], 400);
@@ -425,12 +439,7 @@ function handleUpdateMonitor($id) {
         return;
     }
     
-    $db = getMonitorv2DB();
-    if (!$db) {
-        sendJSON(['error' => 'Monitorv2 database not configured'], 503);
-        return;
-    }
-    
+    $db = requireMonitorv2DB();
     $data = getJSONInput();
     
     try {
@@ -542,12 +551,7 @@ function handleDeleteMonitor($id) {
         return;
     }
     
-    $db = getMonitorv2DB();
-    if (!$db) {
-        sendJSON(['error' => 'Monitorv2 database not configured'], 503);
-        return;
-    }
-    
+    $db = requireMonitorv2DB();
     try {
         $stmt = $db->prepare("DELETE FROM zmonitoring.monitors WHERE id = :id");
         $stmt->execute([':id' => $id]);
@@ -571,12 +575,7 @@ function handleDeleteAllMonitors() {
         return;
     }
     
-    $db = getMonitorv2DB();
-    if (!$db) {
-        sendJSON(['error' => 'Monitorv2 database not configured'], 503);
-        return;
-    }
-    
+    $db = requireMonitorv2DB();
     try {
         // Delete in correct order due to foreign keys
         $db->exec("DELETE FROM zmonitoring.notification_recipients");
@@ -596,12 +595,7 @@ function handleDeleteAllMonitors() {
 }
 
 function handleGetMonitorLogs($id) {
-    $db = getMonitorv2DB();
-    if (!$db) {
-        sendJSON(['error' => 'Monitorv2 database not configured'], 503);
-        return;
-    }
-    
+    $db = requireMonitorv2DB();
     // Parse query parameters
     $days = isset($_GET['days']) ? (int)$_GET['days'] : 1;
     $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 500;
@@ -663,12 +657,7 @@ function handleGetMonitorLogs($id) {
 }
 
 function handleGetMonitorStats($id) {
-    $db = getMonitorv2DB();
-    if (!$db) {
-        sendJSON(['error' => 'Monitorv2 database not configured'], 503);
-        return;
-    }
-    
+    $db = requireMonitorv2DB();
     $period = $_GET['period'] ?? '24h';
     
     try {
@@ -733,12 +722,7 @@ function handleCheckMonitor($id) {
     // This is a placeholder - actual checking would be done by a worker/cron
     // For now, we just insert a test check
     
-    $db = getMonitorv2DB();
-    if (!$db) {
-        sendJSON(['error' => 'Monitorv2 database not configured'], 503);
-        return;
-    }
-    
+    $db = requireMonitorv2DB();
     try {
         // Get monitor details
         $stmt = $db->prepare("SELECT * FROM zmonitoring.monitors WHERE id = :id");
@@ -789,12 +773,7 @@ function handleCheckMonitor($id) {
 }
 
 function handleCheckAllMonitors() {
-    $db = getMonitorv2DB();
-    if (!$db) {
-        sendJSON(['error' => 'Monitorv2 database not configured'], 503);
-        return;
-    }
-    
+    $db = requireMonitorv2DB();
     $force = false;
     $raw = file_get_contents('php://input');
     if ($raw !== false && $raw !== '') {
@@ -1008,12 +987,7 @@ function handleDuplicateMonitor($id) {
         return;
     }
     
-    $db = getMonitorv2DB();
-    if (!$db) {
-        sendJSON(['error' => 'Monitorv2 database not configured'], 503);
-        return;
-    }
-    
+    $db = requireMonitorv2DB();
     try {
         $db->beginTransaction();
         
@@ -1153,12 +1127,7 @@ function handleUpdateTabName() {
         return;
     }
     
-    $db = getMonitorv2DB();
-    if (!$db) {
-        sendJSON(['error' => 'Monitorv2 database not configured'], 503);
-        return;
-    }
-    
+    $db = requireMonitorv2DB();
     $data = getJSONInput();
     $oldName = $data['old_name'] ?? '';
     $newName = $data['new_name'] ?? '';
@@ -1190,12 +1159,7 @@ function handleUpdateGroupName() {
         return;
     }
     
-    $db = getMonitorv2DB();
-    if (!$db) {
-        sendJSON(['error' => 'Monitorv2 database not configured'], 503);
-        return;
-    }
-    
+    $db = requireMonitorv2DB();
     $data = getJSONInput();
     $tabName = $data['tab_name'] ?? '';
     $oldName = $data['old_name'] ?? '';
@@ -1232,12 +1196,7 @@ function handleExportBundle() {
         return;
     }
     
-    $db = getMonitorv2DB();
-    if (!$db) {
-        sendJSON(['error' => 'Monitorv2 database not configured'], 503);
-        return;
-    }
-    
+    $db = requireMonitorv2DB();
     try {
         // Get all monitors
         $monitorsStmt = $db->query("SELECT * FROM zmonitoring.monitors ORDER BY id");
@@ -1294,12 +1253,7 @@ function handleImportBundle() {
         return;
     }
     
-    $db = getMonitorv2DB();
-    if (!$db) {
-        sendJSON(['error' => 'Monitorv2 database not configured'], 503);
-        return;
-    }
-    
+    $db = requireMonitorv2DB();
     $data = getJSONInput();
     $replace = $data['replace'] ?? false;
     
@@ -1435,12 +1389,7 @@ function handleImportBundle() {
 }
 
 function handleGetMonitorIncidents($id) {
-    $db = getMonitorv2DB();
-    if (!$db) {
-        sendJSON(['error' => 'Monitorv2 database not configured'], 503);
-        return;
-    }
-    
+    $db = requireMonitorv2DB();
     $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 50;
     $limit = min($limit, 500);
     
@@ -1465,10 +1414,11 @@ function handleGetMonitorIncidents($id) {
 function handleHealthCheck() {
     $db = getMonitorv2DB();
     if (!$db) {
-        sendJSON(['status' => 'unavailable', 'message' => 'Database not connected'], 503);
+        $r = getMonitorv2DBFailureReason();
+        $msg = $r['message'] ?? 'Database is not available. Please setup or start the database.';
+        sendJSON(['status' => 'unavailable', 'message' => $msg], 503);
         return;
     }
-    
     try {
         // Check if we can query
         $stmt = $db->query("SELECT COUNT(*) FROM zmonitoring.monitors");
@@ -1494,12 +1444,7 @@ function handleSetupSchema() {
         return;
     }
     
-    $db = getMonitorv2DB();
-    if (!$db) {
-        sendJSON(['error' => 'Monitorv2 database not configured'], 503);
-        return;
-    }
-    
+    $db = requireMonitorv2DB();
     $schemaFile = __DIR__ . '/../monitorv2/schema.sql';
     if (!file_exists($schemaFile)) {
         sendJSON(['error' => 'Schema file not found'], 404);
