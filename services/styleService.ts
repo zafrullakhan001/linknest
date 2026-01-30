@@ -159,6 +159,25 @@ export interface SpaceStyles {
     xl: number;
   };
 
+  // Page background (full-page canvas: solid, gradient, pattern, or image)
+  pageBackgroundType: 'none' | 'solid' | 'gradient' | 'pattern' | 'image';
+  pageBackgroundSolidColor: string;
+  pageBackgroundGradientType: 'linear' | 'radial' | 'conic';
+  pageBackgroundGradientDirection: number; // 0-360 for linear
+  pageBackgroundGradientStart: string;
+  pageBackgroundGradientEnd: string;
+  pageBackgroundPatternId: string; // e.g. 'dots', 'grid', 'waves'
+  pageBackgroundPatternColor1: string; // main pattern color (hex)
+  pageBackgroundPatternColor2: string; // second pattern color for two-tone patterns (hex)
+  pageBackgroundPatternOpacity: number; // 0-100 for pattern intensity
+  pageBackgroundPatternFixed: boolean; // true = pattern stays fixed (doesn't scroll), false = pattern scrolls with page
+  pageBackgroundImageUrl: string;
+  pageBackgroundOpacity: number; // 0-100 for image visibility
+  pageBackgroundBlur: number; // 0-30 for image blur
+  pageBackgroundDarkOverlay: number; // 0-100 for image readability in dark mode
+  pageBackgroundImagePosition: string; // 'center' | 'top' | 'bottom' | 'left' | 'right'
+  pageBackgroundImageSize: string; // 'cover' | 'contain' | 'auto'
+
   // Background/Page styling
   backgroundRaised: boolean; // Raised table-like background
   backgroundTableType: 'wood' | 'marble' | 'metal' | 'fabric' | 'clean';
@@ -359,6 +378,24 @@ export const DEFAULT_STYLES: SpaceStyles = {
     lg: 3,
     xl: 4
   },
+  pageBackgroundType: 'none',
+  pageBackgroundSolidColor: '#f8fafc',
+  pageBackgroundGradientType: 'linear',
+  pageBackgroundGradientDirection: 135,
+  pageBackgroundGradientStart: '#eef2ff',
+  pageBackgroundGradientEnd: '#e0e7ff',
+  pageBackgroundPatternId: 'dots',
+  pageBackgroundPatternColor1: '#64748b',
+  pageBackgroundPatternColor2: '#94a3b8',
+  pageBackgroundPatternOpacity: 25,
+  pageBackgroundPatternFixed: true,
+  pageBackgroundImageUrl: '',
+  pageBackgroundOpacity: 100,
+  pageBackgroundBlur: 0,
+  pageBackgroundDarkOverlay: 40,
+  pageBackgroundImagePosition: 'center',
+  pageBackgroundImageSize: 'cover',
+
   backgroundRaised: false,
   backgroundTableType: 'wood',
   backgroundRaisedIntensity: 3,
@@ -552,6 +589,26 @@ export const styleService = {
       profileId: data.profileId,
       profileName: data.profileName
     };
+  },
+
+  /** Resolve a page background image URL to an absolute URL for preview/link (same logic as CSS). */
+  resolvePageBackgroundImageUrl(url: string): string {
+    return resolveImageUrlForCss((url || '').trim());
+  },
+
+  /** Update the currently active style profile (e.g. after changing page background). Persists across refresh. */
+  async saveActiveProfileStyles(styles: SpaceStyles): Promise<void> {
+    this.cacheStyles(styles);
+    const response = await fetch(`${API_BASE}/styles/active`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ styles })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to save styles');
+    }
   },
 
   async resetStyles(): Promise<void> {
@@ -829,6 +886,9 @@ export const styleService = {
   },
 
   generateCSS(styles: SpaceStyles, isDark: boolean = false): string {
+    const pageBgCSS = getPageBackgroundCSS(styles, isDark);
+    const pageBgBeforeCSS = getPageBackgroundBeforeCSS(styles);
+
     const shadowIntensity = styles.tileElevation;
     const hoverShadowIntensity = styles.hoverElevation;
 
@@ -962,7 +1022,9 @@ export const styleService = {
         width: 100%;
         box-sizing: border-box;
         position: relative;
+        ${pageBgCSS}
       }
+      ${pageBgBeforeCSS}
       
       /* Ensure main content area grows and footer sticks to bottom */
       .linknest-app-container > main {
@@ -1338,6 +1400,245 @@ export const styleService = {
   }
 };
 
+// Escape image URL for use inside CSS url("...") so data URLs and links work
+function escapeUrlForCss(url: string): string {
+  return url.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ').replace(/\r/g, '');
+}
+
+// Resolve relative image URLs to absolute so they load when used in CSS (e.g. /uploads/... or uploads/...)
+function resolveImageUrlForCss(url: string): string {
+  const u = url.trim();
+  if (!u) return u;
+  // Leave data: and full http(s) URLs as-is
+  if (/^data:/i.test(u) || /^https?:\/\//i.test(u)) return u;
+  if (typeof window === 'undefined') return u;
+  const origin = window.location.origin;
+  const apiBase = resolveApiBase();
+  const basePath = apiBase.replace(/\/api\/?$/, '') || '';
+  const path = u.startsWith('/') ? u : '/' + u;
+  return origin + basePath + path;
+}
+
+// Hex to rgba with alpha (0-1) for pattern colors
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace(/^#/, '');
+  if (h.length === 3) {
+    const r = parseInt(h[0] + h[0], 16);
+    const g = parseInt(h[1] + h[1], 16);
+    const b = parseInt(h[2] + h[2], 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+  if (h.length === 6) {
+    const r = parseInt(h.slice(0, 2), 16);
+    const g = parseInt(h.slice(2, 4), 16);
+    const b = parseInt(h.slice(4, 6), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+  return `rgba(100,116,139,${alpha})`;
+}
+
+// Page background (full-page canvas) CSS for .linknest-app-container
+function getPageBackgroundCSS(styles: SpaceStyles, isDark: boolean): string {
+  const type = styles.pageBackgroundType || 'none';
+  const opacity = (styles.pageBackgroundOpacity ?? 100) / 100;
+  if (type === 'none') return '';
+
+  if (type === 'solid') {
+    const color = styles.pageBackgroundSolidColor || '#f8fafc';
+    return `background: ${color} !important;`;
+  }
+
+  if (type === 'gradient') {
+    const dir = styles.pageBackgroundGradientDirection ?? 135;
+    const start = styles.pageBackgroundGradientStart || '#eef2ff';
+    const end = styles.pageBackgroundGradientEnd || '#e0e7ff';
+    const gt = styles.pageBackgroundGradientType || 'linear';
+    let gradient = '';
+    if (gt === 'linear') {
+      gradient = `linear-gradient(${dir}deg, ${start}, ${end})`;
+    } else if (gt === 'radial') {
+      gradient = `radial-gradient(circle at 50% 50%, ${start}, ${end})`;
+    } else {
+      gradient = `conic-gradient(from ${dir}deg, ${start}, ${end})`;
+    }
+    return `background: ${gradient} !important; background-attachment: fixed !important;`;
+  }
+
+  if (type === 'pattern') {
+    const patternId = styles.pageBackgroundPatternId || 'dots';
+    const baseColor = isDark ? '#1e293b' : '#f1f5f9';
+    const color1 = styles.pageBackgroundPatternColor1 || '#64748b';
+    const color2 = styles.pageBackgroundPatternColor2 || '#94a3b8';
+    const patternOpacity = ((styles.pageBackgroundPatternOpacity ?? 25) / 100);
+    const c1 = hexToRgba(color1, patternOpacity);
+    const c2 = hexToRgba(color2, patternOpacity);
+    let patternBG = '';
+    let patternSize = '';
+    switch (patternId) {
+      case 'dots':
+        patternBG = `radial-gradient(circle at 1px 1px, ${c1} 1px, transparent 0), ${baseColor}`;
+        patternSize = '24px 24px';
+        break;
+      case 'circles':
+        patternBG = `radial-gradient(circle at 50% 50%, ${c1} 0%, transparent 70%), ${baseColor}`;
+        break;
+      case 'grid':
+        patternBG = `linear-gradient(${c1} 1px, transparent 1px), linear-gradient(90deg, ${c1} 1px, transparent 1px), ${baseColor}`;
+        patternSize = '32px 32px';
+        break;
+      case 'waves':
+        patternBG = `radial-gradient(ellipse at 50% 50%, ${c1} 0%, transparent 70%), ${baseColor}`;
+        break;
+      case 'cross':
+        patternBG = `linear-gradient(${c1} 1px, transparent 1px), linear-gradient(90deg, ${c1} 1px, transparent 1px), ${baseColor}`;
+        patternSize = '20px 20px';
+        break;
+      case 'diagonal':
+        patternBG = `repeating-linear-gradient(45deg, transparent, transparent 10px, ${c1} 10px, ${c1} 11px), ${baseColor}`;
+        break;
+      case 'hexagon':
+        patternBG = `linear-gradient(30deg, ${c1} 12%, transparent 12.5%, transparent 87%, ${c1} 87.5%), linear-gradient(150deg, ${c1} 12%, transparent 12.5%, transparent 87%, ${c1} 87.5%), ${baseColor}`;
+        patternSize = '32px 56px';
+        break;
+      case 'noise':
+        patternBG = `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E"), ${baseColor}`;
+        break;
+      case 'bricks':
+        patternBG = `linear-gradient(90deg, ${c1} 0%, transparent 50%), repeating-linear-gradient(0deg, transparent, transparent 24px, ${c1} 24px, ${c1} 25px), ${baseColor}`;
+        break;
+      case 'stripes':
+        patternBG = `repeating-linear-gradient(90deg, transparent, transparent 12px, ${c1} 12px, ${c1} 13px), ${baseColor}`;
+        break;
+      case 'checkerboard':
+        patternBG = `linear-gradient(45deg, ${c1} 25%, transparent 25%), linear-gradient(-45deg, ${c2} 25%, transparent 25%), linear-gradient(45deg, transparent 75%, ${c1} 75%), linear-gradient(-45deg, transparent 75%, ${c2} 75%), ${baseColor}`;
+        patternSize = '24px 24px';
+        break;
+      case 'plus':
+        patternBG = `linear-gradient(${c1} 2px, transparent 2px), linear-gradient(90deg, ${c1} 2px, transparent 2px), ${baseColor}`;
+        patternSize = '20px 20px';
+        break;
+      case 'topography':
+        patternBG = `repeating-linear-gradient(0deg, transparent, transparent 20px, ${c1} 20px, ${c1} 21px), repeating-linear-gradient(90deg, transparent, transparent 20px, ${c2} 20px, ${c2} 21px), ${baseColor}`;
+        break;
+      case 'confetti':
+        patternBG = `radial-gradient(circle at 0 0, ${c1} 2px, transparent 2px), radial-gradient(circle at 16px 16px, ${c2} 2px, transparent 2px), ${baseColor}`;
+        patternSize = '32px 32px';
+        break;
+      case 'rings':
+        patternBG = `radial-gradient(circle at 50% 50%, transparent 40%, ${c1} 41%, transparent 42%), ${baseColor}`;
+        patternSize = '48px 48px';
+        break;
+      case 'squares':
+        patternBG = `linear-gradient(${c1} 2px, transparent 2px), linear-gradient(90deg, ${c1} 2px, transparent 2px), ${baseColor}`;
+        patternSize = '24px 24px';
+        break;
+      case 'herringbone':
+        patternBG = `repeating-linear-gradient(45deg, ${c1} 0px, ${c1} 8px, transparent 8px, transparent 16px), repeating-linear-gradient(-45deg, ${c2} 0px, ${c2} 8px, transparent 8px, transparent 16px), ${baseColor}`;
+        patternSize = '32px 32px';
+        break;
+      case 'zigzag':
+        patternBG = `repeating-linear-gradient(135deg, transparent, transparent 12px, ${c1} 12px, ${c1} 14px), repeating-linear-gradient(45deg, transparent, transparent 12px, ${c2} 12px, ${c2} 14px), ${baseColor}`;
+        patternSize = '24px 24px';
+        break;
+      case 'quatrefoil':
+        patternBG = `radial-gradient(circle at 0 0, ${c1} 4px, transparent 4px), radial-gradient(circle at 24px 0, ${c1} 4px, transparent 4px), radial-gradient(circle at 0 24px, ${c1} 4px, transparent 4px), radial-gradient(circle at 24px 24px, ${c1} 4px, transparent 4px), ${baseColor}`;
+        patternSize = '24px 24px';
+        break;
+      case 'stars':
+        patternBG = `radial-gradient(circle at 50% 50%, ${c1} 1px, transparent 1px), radial-gradient(circle at 0 0, ${c2} 1px, transparent 1px), ${baseColor}`;
+        patternSize = '32px 32px';
+        break;
+      case 'mesh':
+        patternBG = `linear-gradient(${c1} 1px, transparent 1px), linear-gradient(90deg, ${c1} 1px, transparent 1px), linear-gradient(${c2} 1px, transparent 1px), linear-gradient(90deg, ${c2} 1px, transparent 1px), ${baseColor}`;
+        patternSize = '24px 24px';
+        break;
+      case 'plaid':
+        patternBG = `repeating-linear-gradient(0deg, transparent, transparent 8px, ${c1} 8px, ${c1} 10px), repeating-linear-gradient(90deg, transparent, transparent 8px, ${c1} 8px, ${c1} 10px), repeating-linear-gradient(0deg, transparent, transparent 24px, ${c2} 24px, ${c2} 26px), repeating-linear-gradient(90deg, transparent, transparent 24px, ${c2} 24px, ${c2} 26px), ${baseColor}`;
+        patternSize = '48px 48px';
+        break;
+      case 'triangles':
+        patternBG = `linear-gradient(30deg, ${c1} 12%, transparent 12.5%), linear-gradient(150deg, ${c1} 12%, transparent 12.5%), linear-gradient(30deg, ${c2} 12%, transparent 12.5%), linear-gradient(150deg, ${c2} 12%, transparent 12.5%), ${baseColor}`;
+        patternSize = '32px 56px';
+        break;
+      case 'diamonds':
+        patternBG = `repeating-linear-gradient(45deg, ${c1} 0px, ${c1} 2px, transparent 2px, transparent 14px), repeating-linear-gradient(-45deg, ${c2} 0px, ${c2} 2px, transparent 2px, transparent 14px), ${baseColor}`;
+        patternSize = '20px 20px';
+        break;
+      case 'arrows':
+        patternBG = `repeating-linear-gradient(90deg, transparent, transparent 16px, ${c1} 16px, ${c1} 18px), repeating-linear-gradient(0deg, transparent, transparent 16px, ${c2} 16px, ${c2} 18px), ${baseColor}`;
+        patternSize = '32px 32px';
+        break;
+      case 'scatter':
+        patternBG = `radial-gradient(circle at 20% 30%, ${c1} 2px, transparent 2px), radial-gradient(circle at 80% 70%, ${c2} 2px, transparent 2px), radial-gradient(circle at 50% 50%, ${c1} 1px, transparent 1px), ${baseColor}`;
+        patternSize = '64px 64px';
+        break;
+      default:
+        patternBG = baseColor;
+    }
+    const fixed = styles.pageBackgroundPatternFixed !== false;
+    const attachment = `background-attachment: ${fixed ? 'fixed' : 'scroll'} !important;`;
+    if (patternSize) {
+      return `background: ${patternBG} !important; background-size: ${patternSize} !important; ${attachment}`;
+    }
+    return `background: ${patternBG} !important; ${attachment}`;
+  }
+
+  if (type === 'image' && styles.pageBackgroundImageUrl) {
+    const url = styles.pageBackgroundImageUrl.trim();
+    if (!url) return '';
+    return `position: relative !important; overflow: hidden !important; background: transparent !important;`;
+  }
+
+  return '';
+}
+
+function getPageBackgroundBeforeCSS(styles: SpaceStyles): string {
+  if (styles.pageBackgroundType !== 'image' || !styles.pageBackgroundImageUrl?.trim()) {
+    return '';
+  }
+  const url = styles.pageBackgroundImageUrl.trim();
+  const resolvedUrl = resolveImageUrlForCss(url);
+  const safeUrl = escapeUrlForCss(resolvedUrl);
+  const blur = Math.min(30, Math.max(0, styles.pageBackgroundBlur ?? 0));
+  const opacity = Math.min(1, Math.max(0, (styles.pageBackgroundOpacity ?? 100) / 100));
+  const position = styles.pageBackgroundImagePosition || 'center';
+  const size = styles.pageBackgroundImageSize || 'cover';
+  const filter = blur > 0 ? `filter: blur(${blur}px);` : '';
+  const overlay = styles.pageBackgroundDarkOverlay ?? 40;
+  const overlayCss = overlay > 0
+    ? `
+      .linknest-app-container::after {
+        content: '';
+        position: fixed !important;
+        inset: 0 !important;
+        background: linear-gradient(rgba(0,0,0,${overlay / 100}), rgba(0,0,0,${overlay / 100})) !important;
+        pointer-events: none !important;
+        z-index: 0 !important;
+      }`
+    : '';
+  const beforeBlock = `
+      .linknest-app-container::before,
+      .dark .linknest-app-container::before {
+        content: '' !important;
+        position: fixed !important;
+        inset: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        top: 0 !important;
+        bottom: 0 !important;
+        background-image: url("${safeUrl}") !important;
+        background-position: ${position} !important;
+        background-size: ${size} !important;
+        background-repeat: no-repeat !important;
+        background-attachment: fixed !important;
+        opacity: ${opacity} !important;
+        ${filter ? filter.replace(';', ' !important;') : ''}
+        z-index: -1 !important;
+        pointer-events: none !important;
+      }`;
+  return beforeBlock + overlayCss;
+}
+
 // Helper functions for table background effects
 function getTableBackground(styles: SpaceStyles): string {
   const baseColor = styles.backgroundTableColor;
@@ -1498,18 +1799,6 @@ function getTableOverlay(styles: SpaceStyles): string {
     )`;
   }
   return 'transparent';
-}
-
-// Helper function to convert hex to rgba
-function hexToRgba(hex: string, alpha: number): string {
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  if (result) {
-    const r = parseInt(result[1], 16);
-    const g = parseInt(result[2], 16);
-    const b = parseInt(result[3], 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  }
-  return hex; // Return original if not a valid hex
 }
 
 // Generate Hero Section CSS

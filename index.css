@@ -1746,7 +1746,8 @@ body.has-broadcast-banner .linknest-app-container {
     radial-gradient(circle at 40% 20%, rgba(59, 130, 246, 0.03) 0%, transparent 50%);
 }
 
-.linknest-app-container> :not(.linknest-overlay) {
+/* Direct children get position: relative; exclude nav so it can stay sticky */
+.linknest-app-container > :not(.linknest-overlay):not(.linknest-nav) {
   position: relative;
   z-index: 1;
 }

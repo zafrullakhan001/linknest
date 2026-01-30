@@ -844,6 +844,24 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                 </div>
               </section>
 
+              {/* Page Background */}
+              <section className="bg-gradient-to-r from-brand-50/50 to-violet-50/50 dark:from-brand-500/5 dark:to-violet-500/5 -mx-6 px-6 py-5 border-b border-slate-200 dark:border-slate-700">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-500">
+                    <path fillRule="evenodd" d="M1 5.25A2.25 2.25 0 013.25 3h13.5A2.25 2.25 0 0119 5.25v9.5A2.25 2.25 0 0116.75 17H3.25A2.25 2.25 0 011 14.75v-9.5zm1.5 5.81v3.69c0 .414.336.75.75.75h13.5a.75.75 0 00.75-.75v-2.69l-2.22-2.219a.75.75 0 00-1.06 0l-1.91 1.909.47.47a.75.75 0 11-1.06 1.06L2.53 8.091a.75.75 0 00-1.06 0l-2.97 2.97zM2.5 6.5v-.75a.75.75 0 01.75-.75h3a.75.75 0 01.75.75v.75h4.5v-.75a.75.75 0 01.75-.75h3a.75.75 0 01.75.75v.75h.75a.75.75 0 010 1.5h-15a.75.75 0 010-1.5h.75z" clipRule="evenodd" />
+                  </svg>
+                  Page background
+                </h3>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">Choose a solid color, gradient, pattern, or custom image for the page background.</p>
+                <button
+                  type="button"
+                  onClick={() => window.dispatchEvent(new CustomEvent('openPageBackgroundDialog'))}
+                  className="px-4 py-2 rounded-xl bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors shadow-sm"
+                >
+                  Choose page background...
+                </button>
+              </section>
+
               {/* Tile Styling */}
               <section>
                 <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">

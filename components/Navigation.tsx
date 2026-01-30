@@ -51,7 +51,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
   };
 
   return (
-    <nav className="border-b border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/50 backdrop-blur-md sticky top-0 z-[100] transition-colors duration-300">
+    <nav className="linknest-nav border-b border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/50 backdrop-blur-md sticky top-0 z-[100] transition-colors duration-300">
       <div className="container mx-auto px-4 h-16 flex items-center justify-between max-w-6xl">
         <div
           onClick={() => window.location.hash = '#/'}

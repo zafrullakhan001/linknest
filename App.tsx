@@ -47,6 +47,7 @@ const TileGrid = lazy(() => import('./components/TileGrid').then(m => ({ default
 const TileDetail = lazy(() => import('./components/TileDetail').then(m => ({ default: m.TileDetail })));
 const AdminPanel = lazy(() => import('./components/AdminPanel').then(m => ({ default: m.AdminPanel })));
 const StyleManager = lazy(() => import('./components/StyleManager').then(m => ({ default: m.StyleManager })));
+const PageBackgroundDialog = lazy(() => import('./components/PageBackgroundDialog').then(m => ({ default: m.PageBackgroundDialog })));
 
 // Loading fallback component
 const LoadingFallback: React.FC = () => (
@@ -84,6 +85,7 @@ const AppContent: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [styleManagerOpen, setStyleManagerOpen] = useState(false);
+  const [pageBackgroundDialogOpen, setPageBackgroundDialogOpen] = useState(false);
   const [helpAboutOpen, setHelpAboutOpen] = useState(false);
   const [authRequired, setAuthRequired] = useState(false); // Track if we got 401 error
   const didAutoOpenLoginRef = useRef(false); // Avoid re-opening login when user closed it (guest disabled)
@@ -466,6 +468,15 @@ const AppContent: React.FC = () => {
       window.removeEventListener('openStyleManager', handleOpenStyleManager);
     };
   }, [user]);
+
+  // Listen for page background dialog (admin only)
+  useEffect(() => {
+    const handleOpenPageBackground = () => {
+      if (user?.is_admin) setPageBackgroundDialogOpen(true);
+    };
+    window.addEventListener('openPageBackgroundDialog', handleOpenPageBackground);
+    return () => window.removeEventListener('openPageBackgroundDialog', handleOpenPageBackground);
+  }, [user?.is_admin]);
 
   // Keyboard shortcut for widget quick access (Ctrl+Shift+U or Cmd+Shift+U)
   useEffect(() => {
@@ -1229,6 +1240,14 @@ const AppContent: React.FC = () => {
           />
         </Suspense>
       )}
+      <Suspense fallback={null}>
+        <PageBackgroundDialog
+          isOpen={pageBackgroundDialogOpen}
+          onClose={() => setPageBackgroundDialogOpen(false)}
+          styles={styles}
+          onApply={updateStyles}
+        />
+      </Suspense>
       <HelpAboutDialog
         isOpen={helpAboutOpen}
         onClose={() => setHelpAboutOpen(false)}

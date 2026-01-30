@@ -27,6 +27,8 @@ switch ($method) {
     case 'PUT':
         if ($path === '' || $path === '/') {
             handleUpdateStyles();
+        } else if ($path === 'active') {
+            handleUpdateActiveProfileStyles();
         } else if (preg_match('/^profiles\/(\d+)\/activate$/', $path, $matches)) {
             handleActivateProfile((int)$matches[1]);
         } else {
@@ -438,6 +440,46 @@ function handleUpdateStyles() {
         $db->rollBack();
         error_log('Error creating style profile: ' . $e->getMessage() . ' in ' . $e->getFile() . ' on line ' . $e->getLine());
         sendJSON(['error' => 'Failed to create style profile: ' . $e->getMessage()], 500);
+    }
+}
+
+/**
+ * Update the currently active style profile with new styles (e.g. page background).
+ * Used when admin changes page background so the choice persists across refresh.
+ */
+function handleUpdateActiveProfileStyles() {
+    requireAdmin();
+    
+    $data = getJSONInput();
+    if (!isset($data['styles']) || !is_array($data['styles'])) {
+        sendJSON(['error' => 'Styles data is required'], 400);
+    }
+    
+    $db = getDB();
+    ensureStyleProfilesTable($db);
+    
+    try {
+        $timestamp = time();
+        $stylesData = json_encode($data['styles']);
+        
+        $stmt = $db->prepare('SELECT id, name FROM style_profiles WHERE is_active = 1 ORDER BY updated_at DESC LIMIT 1');
+        $stmt->execute();
+        $active = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($active) {
+            $stmt = $db->prepare('UPDATE style_profiles SET styles_data = ?, updated_at = ? WHERE id = ?');
+            $stmt->execute([$stylesData, $timestamp, (int)$active['id']]);
+            sendJSON(['success' => true, 'message' => 'Active profile updated', 'profileId' => (int)$active['id']]);
+        } else {
+            $db->exec('UPDATE style_profiles SET is_active = 0');
+            $stmt = $db->prepare('INSERT INTO style_profiles (name, styles_data, is_active, created_at, updated_at) VALUES (?, ?, 1, ?, ?)');
+            $stmt->execute(['Default', $stylesData, $timestamp, $timestamp]);
+            $profileId = (int)$db->lastInsertId();
+            sendJSON(['success' => true, 'message' => 'Default profile created and activated', 'profileId' => $profileId]);
+        }
+    } catch (Exception $e) {
+        error_log('Error updating active profile styles: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to save styles: ' . $e->getMessage()], 500);
     }
 }
 
