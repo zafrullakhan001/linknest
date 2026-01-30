@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { authService, PendingUser, AllUser } from '../services/authService';
-import { settingsService, AppSettings } from '../services/settingsService';
+import { settingsService, AppSettings, SEMI_PWA_EXCLUDE_PATHS_DEFAULT } from '../services/settingsService';
 import { databaseService } from '../services/databaseService';
 import { useSettings } from '../contexts/SettingsContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -121,7 +121,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     maintenance_message: '',
     semi_pwa_enabled: '0',
     semi_pwa_include_paths: '',
-    semi_pwa_exclude_paths: 'monitors,monitorv2'
+    semi_pwa_exclude_paths: SEMI_PWA_EXCLUDE_PATHS_DEFAULT
   });
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -366,11 +366,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsImpersonating, setStatsImpersonating] = useState(false);
   const [statsUserFilter, setStatsUserFilter] = useState<number | ''>('');
-  const [statsUsersList, setStatsUsersList] = useState<Array<{ id: number; username: string }>>([]);
+  const [statsUsersList, setStatsUsersList] = useState<Array<{ id: number; username: string; is_admin?: boolean }>>([]);
   const [heatMapSearch, setHeatMapSearch] = useState('');
   const [heatMapPage, setHeatMapPage] = useState(1);
   const [statsResult, setStatsResult] = useState<{
-    success: boolean; stats?: Record<string, number | { name: string; count: number }[]>; users?: Array<{ id: number; username: string }>;
+    success: boolean; stats?: Record<string, number | { name: string; count: number }[]>; users?: Array<{ id: number; username: string; is_admin?: boolean }>;
     by_user?: Array<{ user_id: number; username: string; tiles: number; links: number; sections: number; tabs: number }>;
     filtered_by_username?: string | null; error?: string;
   } | null>(null);
@@ -649,7 +649,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         maintenance_message: loadedSettings.maintenance_message || '',
         semi_pwa_enabled: loadedSettings.semi_pwa_enabled || '0',
         semi_pwa_include_paths: loadedSettings.semi_pwa_include_paths || '',
-        semi_pwa_exclude_paths: loadedSettings.semi_pwa_exclude_paths || 'monitors,monitorv2'
+        semi_pwa_exclude_paths: loadedSettings.semi_pwa_exclude_paths || SEMI_PWA_EXCLUDE_PATHS_DEFAULT
       };
       setSettings(settingsWithDefaults);
       
@@ -11656,11 +11656,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           <option key={u.id} value={u.id}>{u.username}</option>
                         ))}
                       </select>
-                      {statsUserFilter !== '' && (
+                      {statsUserFilter !== '' && (() => {
+                        const selectedUser = (statsUsersList.length ? statsUsersList : (statsResult?.users ?? [])).find((u) => u.id === statsUserFilter);
+                        const isTargetAdmin = selectedUser && (selectedUser as { is_admin?: boolean }).is_admin;
+                        const cannotImpersonate = statsUserFilter === user?.id || isTargetAdmin;
+                        return (
                         <button
                           type="button"
                           onClick={async () => {
-                            if (statsUserFilter === '' || statsUserFilter === user?.id) return;
+                            if (statsUserFilter === '' || cannotImpersonate) return;
                             try {
                               setStatsImpersonating(true);
                               setError('');
@@ -11672,8 +11676,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               setStatsImpersonating(false);
                             }
                           }}
-                          disabled={statsImpersonating || statsUserFilter === user?.id}
-                          title={statsUserFilter === user?.id ? 'Cannot impersonate yourself' : 'View the app as this user'}
+                          disabled={statsImpersonating || cannotImpersonate}
+                          title={statsUserFilter === user?.id ? 'Cannot impersonate yourself' : isTargetAdmin ? 'Cannot impersonate admin users' : 'View the app as this user'}
                           className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg border border-indigo-200 dark:border-indigo-800"
                         >
                           {statsImpersonating ? (
@@ -11682,7 +11686,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             <><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zM6 8a2 2 0 11-4 0 2 2 0 014 0zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-3.385-.572zM16 8a2 2 0 11-4 0 2 2 0 014 0zm-1.615 8.428a1.224 1.224 0 00.569-1.175 5.966 5.966 0 00-2.081-.416 5.967 5.967 0 00-1.788.27A9.953 9.953 0 0013 18a9.953 9.953 0 003.385-.572z" /></svg> View as user</>
                           )}
                         </button>
-                      )}
+                        );
+                      })()}
                       {statsResult?.filtered_by_username && (
                         <span className="text-sm text-violet-600 dark:text-violet-400 font-medium">
                           Showing stats for: {statsResult.filtered_by_username}
@@ -12014,9 +12019,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   {/* Semi-PWA / Aggressive cache */}
                   <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
                     <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Semi-PWA (Aggressive cache)</h3>
-                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                       When enabled, the app and API responses are served from the browser cache. This reduces database and server load. Users see cached data until they perform a <strong>hard refresh</strong> (Ctrl+F5 / Cmd+Shift+R), which fetches fresh data and updates the cache.
                     </p>
+
+                    {/* Help: what it does, hard refresh, path rules, allowed strings */}
+                    <div className="mb-6 p-4 bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-200 dark:border-cyan-800 rounded-lg text-sm text-slate-700 dark:text-slate-300">
+                      <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Help — Semi-PWA & path rules</h4>
+                      <ul className="list-disc list-inside space-y-1 mb-3">
+                        <li><strong>What it does:</strong> The service worker caches same-origin GET requests (HTML and API). Cached responses are used until a hard refresh or until the path is excluded.</li>
+                        <li><strong>Hard refresh:</strong> Ctrl+F5 (Windows/Linux) or Cmd+Shift+R (Mac) loads the page with <code className="bg-slate-200 dark:bg-slate-600 px-1 rounded">cache: reload</code> so the app and API are re-fetched and the cache is updated.</li>
+                        <li><strong>Path rules:</strong> Enter comma-separated <strong>path segments</strong> (no slashes). A request is matched if its URL path <em>contains</em> the segment (e.g. segment <code className="bg-slate-200 dark:bg-slate-600 px-1 rounded">tiles</code> matches <code className="bg-slate-200 dark:bg-slate-600 px-1 rounded">/api/tiles</code>). Save path rules then reload the page so the service worker picks up the new config.</li>
+                      </ul>
+                      <p className="font-semibold text-slate-900 dark:text-white mb-1">Include in PWA (allowed strings)</p>
+                      <p className="mb-1 text-slate-600 dark:text-slate-400">Path segments that may be cached when Include is set. Leave Include <strong>empty</strong> to cache all requests except those in Exclude.</p>
+                      <p className="mb-2 font-mono text-xs bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded break-all">
+                        tiles, settings, arrangements, styles, database, linkhealth, chat, access, roles, user-groups, group-tile-permissions, widgets, clone, browsers, uploads, timezones, alarms, notes, broadcast, analytics, addons, optimize-database, vacuum-database
+                      </p>
+                      <p className="font-semibold text-slate-900 dark:text-white mb-1">Exclude from PWA (allowed strings, recommended)</p>
+                      <p className="mb-1 text-slate-600 dark:text-slate-400">Path segments that must never be cached (always live). Default excludes:</p>
+                      <ul className="list-disc list-inside text-slate-600 dark:text-slate-400 mb-2">
+                        <li><code className="bg-slate-200 dark:bg-slate-600 px-1 rounded">monitors</code>, <code className="bg-slate-200 dark:bg-slate-600 px-1 rounded">monitorv2</code> — real-time monitor APIs</li>
+                        <li><code className="bg-slate-200 dark:bg-slate-600 px-1 rounded">auth</code> — login, logout, impersonation</li>
+                        <li><code className="bg-slate-200 dark:bg-slate-600 px-1 rounded">maintenance</code> — maintenance-stats, maintenance-health, etc.</li>
+                        <li><code className="bg-slate-200 dark:bg-slate-600 px-1 rounded">opcache</code> — OPcache status</li>
+                        <li><code className="bg-slate-200 dark:bg-slate-600 px-1 rounded">settings</code> — app settings (so this page and toggles stay up to date)</li>
+                      </ul>
+                      <p className="font-mono text-xs bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded break-all">
+                        {SEMI_PWA_EXCLUDE_PATHS_DEFAULT}
+                      </p>
+                    </div>
+
                     <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg">
                       <div className="flex-1">
                         <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-1">Serve from browser cache</h4>
@@ -12038,7 +12071,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             await settingsService.updateSettings({ semi_pwa_enabled: newValue });
                             await loadSettings();
                             await refreshSettings();
-                            alert(`Semi-PWA cache ${newValue === '1' ? 'enabled' : 'disabled'}. ${newValue === '1' ? 'Reload the page to activate the service worker.' : ''}`);
+                            if (newValue === '1') {
+                              alert('Semi-PWA cache enabled. Reload the page to activate the service worker.');
+                            } else {
+                              // Reload so the page is no longer controlled by the old service worker
+                              window.location.reload();
+                            }
                           } catch (err: unknown) {
                             setError((err as Error).message || 'Failed to update');
                           } finally {
@@ -12060,7 +12098,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     </div>
 
                     <div className="mt-6 space-y-4 border-t border-slate-200 dark:border-slate-700 pt-6">
-                      <p className="text-sm font-semibold text-slate-900 dark:text-white">PWA path rules (path segments, comma-separated)</p>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white">PWA path rules (comma-separated path segments — see help above for allowed strings)</p>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Include in PWA (only these get cached)</label>
                         <input
@@ -12070,18 +12108,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           placeholder="e.g. tiles, settings, arrangements (leave empty to cache all except excluded)"
                           className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
                         />
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Leave empty to cache all requests except those in Exclude. If set, only URLs containing one of these segments are cached.</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Leave empty to cache all except Exclude. Allowed segments: tiles, settings, arrangements, styles, database, linkhealth, chat, access, roles, user-groups, widgets, uploads, timezones, alarms, notes, broadcast, analytics, addons, etc.</p>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Exclude from PWA (never cache, always live)</label>
                         <input
                           type="text"
-                          value={settings?.semi_pwa_exclude_paths ?? 'monitors,monitorv2'}
+                          value={settings?.semi_pwa_exclude_paths ?? SEMI_PWA_EXCLUDE_PATHS_DEFAULT}
                           onChange={(e) => setSettings((s) => ({ ...s, semi_pwa_exclude_paths: e.target.value }))}
-                          placeholder="e.g. monitors, monitorv2"
+                          placeholder={`e.g. ${SEMI_PWA_EXCLUDE_PATHS_DEFAULT}`}
                           className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
                         />
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">URLs containing any of these segments always fetch from the server (e.g. real-time monitors).</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">URLs containing any of these segments always fetch from the server. Recommended: {SEMI_PWA_EXCLUDE_PATHS_DEFAULT}</p>
                       </div>
                       <button
                         onClick={async () => {
@@ -12090,7 +12128,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             setError('');
                             await settingsService.updateSettings({
                               semi_pwa_include_paths: settings?.semi_pwa_include_paths ?? '',
-                              semi_pwa_exclude_paths: settings?.semi_pwa_exclude_paths ?? 'monitors,monitorv2'
+                              semi_pwa_exclude_paths: settings?.semi_pwa_exclude_paths ?? SEMI_PWA_EXCLUDE_PATHS_DEFAULT
                             });
                             await loadSettings();
                             await refreshSettings();

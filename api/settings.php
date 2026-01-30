@@ -586,8 +586,11 @@ function handleGetDatabasePath() {
 
 function handleGetUserPreferences() {
     try {
-        $user = requireAuth(); // User must be authenticated
-        
+        $user = getAuthenticatedUser();
+        if (!$user) {
+            sendJSON(['preferences' => []]);
+            return;
+        }
         $userId = $user['id'];
         $db = getDB();
         
@@ -626,6 +629,12 @@ function handleGetUserPreferences() {
         ], 500);
     } catch (Exception $e) {
         error_log('User preferences API error: ' . $e->getMessage() . ' | File: ' . $e->getFile() . ' | Line: ' . $e->getLine());
+        sendJSON([
+            'error' => 'Failed to get user preferences',
+            'details' => $e->getMessage()
+        ], 500);
+    } catch (Throwable $e) {
+        error_log('User preferences API Throwable: ' . $e->getMessage() . ' | File: ' . $e->getFile() . ' | Line: ' . $e->getLine() . "\n" . $e->getTraceAsString());
         sendJSON([
             'error' => 'Failed to get user preferences',
             'details' => $e->getMessage()
@@ -706,6 +715,12 @@ function handleUpdateUserPreferences() {
         
     } catch (Exception $e) {
         error_log('User preferences update error: ' . $e->getMessage() . ' | File: ' . $e->getFile() . ' | Line: ' . $e->getLine());
+        sendJSON([
+            'error' => 'Failed to update user preferences',
+            'details' => $e->getMessage()
+        ], 500);
+    } catch (Throwable $e) {
+        error_log('User preferences update Throwable: ' . $e->getMessage() . ' | File: ' . $e->getFile() . ' | Line: ' . $e->getLine() . "\n" . $e->getTraceAsString());
         sendJSON([
             'error' => 'Failed to update user preferences',
             'details' => $e->getMessage()

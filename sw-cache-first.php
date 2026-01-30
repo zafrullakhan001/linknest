@@ -14,7 +14,7 @@ if (!is_file($script)) {
     exit;
 }
 
-$excludedPaths = ['monitors', 'monitorv2'];
+$excludedPaths = ['monitors', 'monitorv2', 'auth', 'maintenance', 'opcache', 'settings'];
 $includedPaths = [];
 try {
     if (file_exists(__DIR__ . '/api/config.php')) {
@@ -35,7 +35,7 @@ try {
         }
     }
 } catch (Throwable $e) {
-    $excludedPaths = ['monitors', 'monitorv2'];
+    $excludedPaths = ['monitors', 'monitorv2', 'auth', 'maintenance', 'opcache', 'settings'];
     $includedPaths = [];
 }
 

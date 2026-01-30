@@ -90,7 +90,7 @@ export interface AppSettings {
   maintenance_message?: string; // Message to display on maintenance page
   semi_pwa_enabled?: string; // '0' or '1' - aggressive cache: serve from browser cache; hard refresh revalidates
   semi_pwa_include_paths?: string; // comma-separated path segments to cache (empty = cache all except excluded)
-  semi_pwa_exclude_paths?: string; // comma-separated path segments to never cache (e.g. monitors, monitorv2)
+  semi_pwa_exclude_paths?: string; // comma-separated path segments to never cache
 
   // SAML Settings
   saml_enabled?: string; // '0' or '1'
@@ -111,6 +111,9 @@ export interface AppSettings {
   map_display_name_to?: string;
   auto_provision?: string; // '0' or '1'
 }
+
+/** Default PWA exclude list: real-time monitors, auth (impersonation), maintenance APIs, opcache, settings. */
+export const SEMI_PWA_EXCLUDE_PATHS_DEFAULT = 'monitors,monitorv2,auth,maintenance,opcache,settings';
 
 export const settingsService = {
   async getSettings(noCache: boolean = false): Promise<AppSettings> {
@@ -183,7 +186,7 @@ export const settingsService = {
       maintenance_message: data.settings?.maintenance_message || '',
       semi_pwa_enabled: data.settings?.semi_pwa_enabled || '0',
       semi_pwa_include_paths: data.settings?.semi_pwa_include_paths || '',
-      semi_pwa_exclude_paths: data.settings?.semi_pwa_exclude_paths || 'monitors,monitorv2',
+      semi_pwa_exclude_paths: data.settings?.semi_pwa_exclude_paths || SEMI_PWA_EXCLUDE_PATHS_DEFAULT,
 
       // SAML defaults
       saml_enabled: data.settings?.saml_enabled || '0',

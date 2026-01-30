@@ -2860,15 +2860,26 @@ function handleBulkImportSamlUsers() {
 }
 
 function handleStartImpersonation($targetUserId) {
-    requireAdmin(); // Only admins can impersonate users
-    
+    // Use real admin for the check: when impersonating, getAuthenticatedUser() returns the impersonated user,
+    // so we must use the stored admin ID so impersonation still works (e.g. from Admin Panel in another tab).
     $db = getDB();
-    $adminUser = getAuthenticatedUser();
-    
-    // Store the original admin ID before starting impersonation
-    // We need to temporarily switch to admin user ID to check if they're admin
+    $adminId = $_SESSION['impersonating_admin_id'] ?? $_SESSION['user_id'] ?? null;
+    if (!$adminId) {
+        sendJSON(['error' => 'Authentication required'], 401);
+        exit;
+    }
+    $stmt = $db->prepare('SELECT id, username, email, is_admin FROM users WHERE id = ?');
+    $stmt->execute([$adminId]);
+    $adminUser = $stmt->fetch();
+    if (!$adminUser || !$adminUser['is_admin']) {
+        sendJSON(['error' => 'Admin access required'], 403);
+        exit;
+    }
+    $adminUser['is_admin'] = (bool)$adminUser['is_admin'];
+
+    // Store the original admin ID before starting impersonation (if not already set)
     if (!isset($_SESSION['impersonating_admin_id'])) {
-        $_SESSION['impersonating_admin_id'] = $adminUser['id'];
+        $_SESSION['impersonating_admin_id'] = (int)$adminUser['id'];
     }
     
     // Check if target user exists

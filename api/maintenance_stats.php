@@ -30,8 +30,12 @@ try {
     $filterUserId = isset($_GET['user_id']) ? (int) $_GET['user_id'] : null;
     $filterByUser = ($filterUserId > 0);
 
-    // User list for dropdown (id, username)
-    $usersList = $db->query('SELECT id, username FROM users ORDER BY username ASC')->fetchAll(PDO::FETCH_ASSOC);
+    // User list for dropdown (id, username, is_admin for impersonation button)
+    $usersList = $db->query('SELECT id, username, is_admin FROM users ORDER BY username ASC')->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($usersList as &$u) {
+        $u['is_admin'] = !empty($u['is_admin']);
+    }
+    unset($u);
 
     $stats = [];
 
