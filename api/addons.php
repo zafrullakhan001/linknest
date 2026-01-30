@@ -30,6 +30,8 @@ switch ($method) {
             handleCheckMonitorv2Status();
         } elseif ($path === '/monitorv2/backup' || $path === '/monitorv2/backup/') {
             handleBackupMonitorv2Db();
+        } elseif ($path === '/monitorv2/schema-backup' || $path === '/monitorv2/schema-backup/') {
+            handleBackupMonitorv2Schema();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -1110,6 +1112,11 @@ function handleRestoreMonitorv2Db(): void {
         sendJSON(['error' => 'Monitorv2 database not configured.'], 400);
         return;
     }
+    // Create database if it does not exist
+    if (!ensureMonitorv2DatabaseExists()) {
+        sendJSON(['error' => 'Cannot connect to PostgreSQL or create database. Check connection settings.'], 400);
+        return;
+    }
     $file = $_FILES['file'] ?? null;
     if (!$file || ($file['error'] !== UPLOAD_ERR_OK)) {
         $msg = 'No file uploaded or upload error.';
@@ -1531,6 +1538,68 @@ function handleUpdateMonitorv2Config() {
 }
 
 /**
+ * Ensure Monitorv2 database exists; create it if missing (connect to postgres, create DB, then retry).
+ * @return bool true if DB exists or was created, false on failure
+ */
+function ensureMonitorv2DatabaseExists(): bool {
+    $params = getMonitorv2ConnectionParams();
+    if (!$params) {
+        return false;
+    }
+    if (getMonitorv2DB() !== null) {
+        return true;
+    }
+    try {
+        $dsn = sprintf('pgsql:host=%s;port=%d;dbname=postgres', $params['host'], $params['port']);
+        $pdo = new PDO($dsn, $params['user'], $params['password'], [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_TIMEOUT => 10
+        ]);
+        $dbName = $params['database'];
+        $stmt = $pdo->prepare('SELECT 1 FROM pg_database WHERE datname = ?');
+        $stmt->execute([$dbName]);
+        if ($stmt->fetch()) {
+            return true;
+        }
+        $safeName = preg_replace('/[^a-z0-9_]/', '', strtolower($dbName));
+        if ($safeName === '') {
+            return false;
+        }
+        $pdo->exec("CREATE DATABASE \"" . str_replace('"', '""', $safeName) . "\" WITH ENCODING 'UTF8'");
+        return true;
+    } catch (Exception $e) {
+        error_log('Monitorv2 ensure DB exists: ' . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Download Monitorv2 schema (DDL) as a .sql file. Contains full DDL for all tables, views, functions, triggers.
+ * Run against the target database after creating it if needed (app can create DB via setup/restore).
+ */
+function handleBackupMonitorv2Schema(): void {
+    $schemaFile = __DIR__ . '/../monitorv2/schema.sql';
+    if (!file_exists($schemaFile) || !is_readable($schemaFile)) {
+        sendJSON(['error' => 'Schema file not found or not readable'], 404);
+        return;
+    }
+    $content = file_get_contents($schemaFile);
+    if ($content === false) {
+        sendJSON(['error' => 'Could not read schema file'], 500);
+        return;
+    }
+    $filename = 'monitorv2_schema_' . date('Ymd-His') . '.sql';
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    header('Content-Type: application/sql; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Content-Length: ' . strlen($content));
+    echo $content;
+    exit;
+}
+
+/**
  * Setup Monitorv2 database schema
  */
 function handleSetupMonitorv2Schema() {
@@ -1539,6 +1608,12 @@ function handleSetupMonitorv2Schema() {
         
         if (!file_exists($schemaFile)) {
             sendJSON(['error' => 'Schema file not found: ' . $schemaFile], 404);
+            return;
+        }
+        
+        // Ensure database exists (create if not)
+        if (!ensureMonitorv2DatabaseExists()) {
+            sendJSON(['error' => 'Cannot connect to PostgreSQL or create database. Please check connection settings.'], 400);
             return;
         }
         

@@ -1,5 +1,5 @@
 # TimescaleDB (PostgreSQL + TimescaleDB) for Performance Analytics add-on
-# Use this when running analytics with a Dockerized PostgreSQL/TimescaleDB.
+# Includes pg_cron extension (built from Dockerfile.timescale-pgcron).
 #
 # Fix for "invalid value for parameter log_timezone: LOCAL" / "TimeZone: LOCAL":
 # PostgreSQL 18 does not accept "LOCAL" for these parameters. This compose
@@ -7,18 +7,27 @@
 # directory was initialized with an invalid timezone.
 #
 # Start:  docker compose -f docker/docker-compose.timescale.yml up -d
+# Build:  docker compose -f docker/docker-compose.timescale.yml build
 # Stop:   docker compose -f docker/docker-compose.timescale.yml down
 # Logs:   docker compose -f docker/docker-compose.timescale.yml logs -f PG-timescale
+#
+# After first start, enable pg_cron in the database:
+#   psql -h localhost -p 5433 -U postgres -d linknest_analytics -c "CREATE EXTENSION pg_cron;"
 
 services:
   PG-timescale:
-    image: timescale/timescaledb:latest-pg18
+    build:
+      context: .
+      dockerfile: Dockerfile.timescale-pgcron
+    image: timescale/timescaledb-pgcron:latest-pg18
     container_name: PG-timescale
-    # Override invalid postgresql.conf timezone (e.g. "LOCAL") so the server starts
+    # Override timezone and enable pg_cron in shared_preload_libraries
     command: >
       postgres
       -c log_timezone=UTC
       -c TimeZone=UTC
+      -c shared_preload_libraries=timescaledb,pg_cron
+      -c cron.database_name=linknest_analytics
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres

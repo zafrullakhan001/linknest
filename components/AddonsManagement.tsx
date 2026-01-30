@@ -993,6 +993,7 @@ const Monitorv2AddonCard: React.FC = () => {
     const [setupActions, setSetupActions] = useState<{ [key: string]: boolean }>({});
     const [setupResults, setSetupResults] = useState<{ [key: string]: any }>({});
     const [monitorv2Tab, setMonitorv2Tab] = useState<'config' | 'backup-restore'>('config');
+    const [schemaBackupLoading, setSchemaBackupLoading] = useState(false);
     const [backupLoading, setBackupLoading] = useState(false);
     const [restoreLoading, setRestoreLoading] = useState(false);
     const [restoreFile, setRestoreFile] = useState<File | null>(null);
@@ -1259,6 +1260,46 @@ const Monitorv2AddonCard: React.FC = () => {
                     {monitorv2Tab === 'backup-restore' && (
                         <div className="space-y-6">
                             <div className="bg-white rounded-lg border border-gray-200 p-5">
+                                <h3 className="text-lg font-semibold text-gray-800 mb-4">Schema Backup (DDL)</h3>
+                                <p className="text-sm text-gray-600 mb-4">
+                                    Download the full DDL of all Monitorv2 tables, views, functions, and triggers. Use this to create or recreate the database structure. Setup and Restore will create the database if it does not exist.
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        setSchemaBackupLoading(true);
+                                        try {
+                                            const url = `${API_BASE}/addons/monitorv2/schema-backup`;
+                                            const res = await fetch(url, { credentials: 'include' });
+                                            if (!res.ok) {
+                                                const data = await res.json().catch(() => ({}));
+                                                throw new Error(data.error || `Schema backup failed (${res.status})`);
+                                            }
+                                            const blob = await res.blob();
+                                            const disp = res.headers.get('Content-Disposition');
+                                            const match = disp && disp.match(/filename="?([^";]+)"?/);
+                                            const name = match ? match[1] : `monitorv2_schema_${new Date().toISOString().slice(0, 10)}.sql`;
+                                            const a = document.createElement('a');
+                                            a.href = URL.createObjectURL(blob);
+                                            a.download = name;
+                                            a.click();
+                                            URL.revokeObjectURL(a.href);
+                                        } catch (err: any) {
+                                            setError(err.message);
+                                        } finally {
+                                            setSchemaBackupLoading(false);
+                                        }
+                                    }}
+                                    disabled={schemaBackupLoading}
+                                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {schemaBackupLoading ? 'Downloading...' : 'Download schema (DDL)'}
+                                </button>
+                                <p className="text-xs text-gray-500 mt-3">
+                                    Contains full DDL for schema <code className="bg-gray-100 px-1 rounded">zmonitoring</code>. Run against your PostgreSQL database; the database is created automatically on Setup or Restore if it does not exist.
+                                </p>
+                            </div>
+                            <div className="bg-white rounded-lg border border-gray-200 p-5">
                                 <h3 className="text-lg font-semibold text-gray-800 mb-4">Database Backup</h3>
                                 <p className="text-sm text-gray-600 mb-4">
                                     Download a full backup of the Monitorv2 PostgreSQL database as a ZIP file (contains a plain SQL dump). Use the same connection settings configured in the Configuration tab.
@@ -1296,7 +1337,7 @@ const Monitorv2AddonCard: React.FC = () => {
                                     {backupLoading ? 'Creating backup...' : 'Download backup (ZIP)'}
                                 </button>
                                 <p className="text-xs text-gray-500 mt-3">
-                                    Backup uses PHP/PDO only (no <code className="bg-gray-100 px-1 rounded">pg_dump</code> required). Data-only SQL; run <code className="bg-gray-100 px-1 rounded">monitorv2/schema.sql</code> before restore if the database is empty.
+                                    Backup uses PHP/PDO only (no <code className="bg-gray-100 px-1 rounded">pg_dump</code> required). Data-only SQL; run the schema (DDL) first if the database is empty, or use Setup schema / Restore (database is created automatically if missing).
                                 </p>
                             </div>
                             <div className="bg-white rounded-lg border border-gray-200 p-5">
