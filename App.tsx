@@ -41,6 +41,7 @@ import { FloatingWidgetQuickAccess } from './components/FloatingWidgetQuickAcces
 import { useMobile } from './hooks/useMobile';
 import { getAllowedWidgets } from './services/widgetService';
 import { performanceAnalyticsService } from './services/performanceAnalyticsService';
+import { CelebrationEffects } from './components/CelebrationEffects';
 
 // Lazy load heavy components for better initial load performance
 const TileGrid = lazy(() => import('./components/TileGrid').then(m => ({ default: m.TileGrid })));
@@ -89,6 +90,7 @@ const AppContent: React.FC = () => {
   const [helpAboutOpen, setHelpAboutOpen] = useState(false);
   const [authRequired, setAuthRequired] = useState(false); // Track if we got 401 error
   const didAutoOpenLoginRef = useRef(false); // Avoid re-opening login when user closed it (guest disabled)
+  const celebrationContainerRef = useRef<HTMLDivElement>(null);
   const [databasePath, setDatabasePath] = useState<string>('');
   const [databasePathAbsolute, setDatabasePathAbsolute] = useState<string>('');
   const { user, isAuthenticated, loading: authLoading } = useAuth();
@@ -979,8 +981,13 @@ const AppContent: React.FC = () => {
         </div>
       )}
       <BroadcastBanner />
-      <main className={`flex-grow container mx-auto px-4 py-8 max-w-6xl-plus linknest-page-content ${styles?.backgroundRaised ? 'linknest-page-background' : ''} ${!guestAccessEnabled && !isAuthenticated ? 'flex items-center justify-center' : ''}`}>
-        {content}
+      <main className={`flex-grow container mx-auto px-4 py-8 max-w-6xl-plus linknest-page-content relative ${styles?.backgroundRaised ? 'linknest-page-background' : ''} ${!guestAccessEnabled && !isAuthenticated ? 'flex items-center justify-center' : ''}`}>
+        <div ref={celebrationContainerRef} className="absolute inset-0 z-0 overflow-hidden pointer-events-none" aria-hidden>
+          <CelebrationEffects containerRef={celebrationContainerRef} styles={styles} />
+        </div>
+        <div className="relative z-10 min-h-0">
+          {content}
+        </div>
       </main>
       {!isAuthenticated && guestAccessEnabled && (
         <div className="container mx-auto px-4 max-w-6xl-plus pb-4">

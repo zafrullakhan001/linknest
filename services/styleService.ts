@@ -178,6 +178,17 @@ export interface SpaceStyles {
   pageBackgroundImagePosition: string; // 'center' | 'top' | 'bottom' | 'left' | 'right'
   pageBackgroundImageSize: string; // 'cover' | 'contain' | 'auto'
 
+  // Celebration effects (overlay: fireworks, confetti, balloons, hearts, snow, bubbles, matrix, shooting stars, ribbons, sparkles)
+  celebrationEffectEnabled: boolean;
+  celebrationEffectType: 'none' | 'fireworks' | 'confetti' | 'balloons' | 'hearts' | 'snow' | 'bubbles' | 'matrix' | 'shooting-stars' | 'floating-ribbons' | 'sparkles';
+  celebrationIntensity: number; // 0-100, particle count / activity
+  celebrationParticleSize: number; // 1-5 scale for particle/balloon size
+  celebrationSpeed: number; // 0-100, animation speed
+  celebrationColor1: string;
+  celebrationColor2: string;
+  celebrationColor3: string;
+  celebrationShowOnForeground: boolean; // Show effects on top of content
+
   // Background/Page styling
   backgroundRaised: boolean; // Raised table-like background
   backgroundTableType: 'wood' | 'marble' | 'metal' | 'fabric' | 'clean';
@@ -395,6 +406,16 @@ export const DEFAULT_STYLES: SpaceStyles = {
   pageBackgroundDarkOverlay: 40,
   pageBackgroundImagePosition: 'center',
   pageBackgroundImageSize: 'cover',
+
+  celebrationEffectEnabled: false,
+  celebrationEffectType: 'none',
+  celebrationIntensity: 50,
+  celebrationParticleSize: 3,
+  celebrationSpeed: 50,
+  celebrationColor1: '#ec4899',
+  celebrationColor2: '#8b5cf6',
+  celebrationColor3: '#f59e0b',
+  celebrationShowOnForeground: false,
 
   backgroundRaised: false,
   backgroundTableType: 'wood',

@@ -4,6 +4,18 @@ import { SpaceStyles, DEFAULT_STYLES, styleService } from '../services/styleServ
 import { useAuth } from '../contexts/AuthContext';
 
 export type PageBackgroundType = 'none' | 'solid' | 'gradient' | 'pattern' | 'image';
+export type CelebrationEffectType = 
+  | 'none' 
+  | 'fireworks' 
+  | 'confetti' 
+  | 'balloons' 
+  | 'hearts' 
+  | 'snow' 
+  | 'bubbles' 
+  | 'matrix' 
+  | 'shooting-stars' 
+  | 'floating-ribbons' 
+  | 'sparkles';
 
 const GRADIENT_PRESETS: Array<{ name: string; start: string; end: string; direction: number }> = [
   { name: 'Sunset', start: '#f97316', end: '#ec4899', direction: 135 },
@@ -77,7 +89,7 @@ interface PageBackgroundDialogProps {
 
 export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOpen, onClose, styles, onApply }) => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<PageBackgroundType>(() => (styles?.pageBackgroundType as PageBackgroundType) || 'none');
+  const [activeTab, setActiveTab] = useState<PageBackgroundType | 'celebration'>(() => (styles?.pageBackgroundType as PageBackgroundType) || 'none');
   const [solidColor, setSolidColor] = useState(styles?.pageBackgroundSolidColor ?? DEFAULT_STYLES.pageBackgroundSolidColor);
   const [gradientStart, setGradientStart] = useState(styles?.pageBackgroundGradientStart ?? DEFAULT_STYLES.pageBackgroundGradientStart);
   const [gradientEnd, setGradientEnd] = useState(styles?.pageBackgroundGradientEnd ?? DEFAULT_STYLES.pageBackgroundGradientEnd);
@@ -95,6 +107,17 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
   const [imagePosition, setImagePosition] = useState(styles?.pageBackgroundImagePosition ?? 'center');
   const [imageSize, setImageSize] = useState(styles?.pageBackgroundImageSize ?? 'cover');
   const [imagePreviewError, setImagePreviewError] = useState(false);
+
+  // Celebration effects state
+  const [celebrationEnabled, setCelebrationEnabled] = useState(styles?.celebrationEffectEnabled ?? DEFAULT_STYLES.celebrationEffectEnabled);
+  const [celebrationType, setCelebrationType] = useState<CelebrationEffectType>(() => (styles?.celebrationEffectType as CelebrationEffectType) ?? DEFAULT_STYLES.celebrationEffectType);
+  const [celebrationIntensity, setCelebrationIntensity] = useState(styles?.celebrationIntensity ?? DEFAULT_STYLES.celebrationIntensity);
+  const [celebrationParticleSize, setCelebrationParticleSize] = useState(styles?.celebrationParticleSize ?? DEFAULT_STYLES.celebrationParticleSize);
+  const [celebrationSpeed, setCelebrationSpeed] = useState(styles?.celebrationSpeed ?? DEFAULT_STYLES.celebrationSpeed);
+  const [celebrationColor1, setCelebrationColor1] = useState(styles?.celebrationColor1 ?? DEFAULT_STYLES.celebrationColor1);
+  const [celebrationColor2, setCelebrationColor2] = useState(styles?.celebrationColor2 ?? DEFAULT_STYLES.celebrationColor2);
+  const [celebrationColor3, setCelebrationColor3] = useState(styles?.celebrationColor3 ?? DEFAULT_STYLES.celebrationColor3);
+  const [celebrationShowOnForeground, setCelebrationShowOnForeground] = useState(styles?.celebrationShowOnForeground ?? DEFAULT_STYLES.celebrationShowOnForeground ?? false);
 
   const dialogRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -158,7 +181,9 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
 
   useEffect(() => {
     if (isOpen && styles) {
-      setActiveTab((styles.pageBackgroundType as PageBackgroundType) || 'none');
+      setActiveTab((prev) =>
+        prev === 'celebration' ? prev : ((styles.pageBackgroundType as PageBackgroundType) || 'none')
+      );
       setSolidColor(styles.pageBackgroundSolidColor ?? DEFAULT_STYLES.pageBackgroundSolidColor);
       setGradientStart(styles.pageBackgroundGradientStart ?? DEFAULT_STYLES.pageBackgroundGradientStart);
       setGradientEnd(styles.pageBackgroundGradientEnd ?? DEFAULT_STYLES.pageBackgroundGradientEnd);
@@ -175,13 +200,23 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
       setOpacity(styles.pageBackgroundOpacity ?? 100);
       setImagePosition(styles.pageBackgroundImagePosition ?? 'center');
       setImageSize(styles.pageBackgroundImageSize ?? 'cover');
+      setCelebrationEnabled(styles.celebrationEffectEnabled ?? DEFAULT_STYLES.celebrationEffectEnabled);
+      setCelebrationType((styles.celebrationEffectType as CelebrationEffectType) ?? DEFAULT_STYLES.celebrationEffectType);
+      setCelebrationIntensity(styles.celebrationIntensity ?? DEFAULT_STYLES.celebrationIntensity);
+      setCelebrationParticleSize(styles.celebrationParticleSize ?? DEFAULT_STYLES.celebrationParticleSize);
+      setCelebrationSpeed(styles.celebrationSpeed ?? DEFAULT_STYLES.celebrationSpeed);
+      setCelebrationColor1(styles.celebrationColor1 ?? DEFAULT_STYLES.celebrationColor1);
+      setCelebrationColor2(styles.celebrationColor2 ?? DEFAULT_STYLES.celebrationColor2);
+      setCelebrationColor3(styles.celebrationColor3 ?? DEFAULT_STYLES.celebrationColor3);
+      setCelebrationShowOnForeground(styles.celebrationShowOnForeground ?? DEFAULT_STYLES.celebrationShowOnForeground ?? false);
     }
   }, [isOpen, styles]);
 
   const apply = (overrides: Partial<SpaceStyles> = {}) => {
+    const bgType = activeTab === 'celebration' ? (styles?.pageBackgroundType ?? 'none') : activeTab;
     const next: SpaceStyles = {
       ...styles,
-      pageBackgroundType: activeTab,
+      pageBackgroundType: bgType,
       pageBackgroundSolidColor: solidColor,
       pageBackgroundGradientStart: gradientStart,
       pageBackgroundGradientEnd: gradientEnd,
@@ -198,6 +233,15 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
       pageBackgroundOpacity: opacity,
       pageBackgroundImagePosition: imagePosition,
       pageBackgroundImageSize: imageSize,
+      celebrationEffectEnabled: celebrationEnabled,
+      celebrationEffectType: celebrationType,
+      celebrationIntensity: celebrationIntensity,
+      celebrationParticleSize: celebrationParticleSize,
+      celebrationSpeed: celebrationSpeed,
+      celebrationColor1: celebrationColor1,
+      celebrationColor2: celebrationColor2,
+      celebrationColor3: celebrationColor3,
+      celebrationShowOnForeground: celebrationShowOnForeground,
       ...overrides
     };
     onApply(next);
@@ -257,12 +301,13 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
     onApply(next);
   };
 
-  const tabs: { id: PageBackgroundType; label: string }[] = [
+  const tabs: { id: PageBackgroundType | 'celebration'; label: string }[] = [
     { id: 'none', label: 'Default' },
     { id: 'solid', label: 'Solid' },
     { id: 'gradient', label: 'Gradient' },
     { id: 'pattern', label: 'Pattern' },
-    { id: 'image', label: 'Image' }
+    { id: 'image', label: 'Image' },
+    { id: 'celebration', label: 'Celebration' }
   ];
 
   const dialogContent = (
@@ -721,6 +766,216 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
               >
                 Apply & save image
               </button>
+            </div>
+          )}
+
+          {activeTab === 'celebration' && (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Add amazing celebration effects over the page. Choose from fireworks, confetti, hearts, snow, bubbles, matrix rain, and more!
+              </p>
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="celebration-enabled"
+                  checked={celebrationEnabled}
+                  onChange={(e) => {
+                    setCelebrationEnabled(e.target.checked);
+                    apply({
+                      celebrationEffectEnabled: e.target.checked,
+                      celebrationEffectType: celebrationType,
+                      celebrationIntensity: celebrationIntensity,
+                      celebrationParticleSize: celebrationParticleSize,
+                      celebrationSpeed: celebrationSpeed,
+                      celebrationColor1: celebrationColor1,
+                      celebrationColor2: celebrationColor2,
+                      celebrationColor3: celebrationColor3,
+                      celebrationShowOnForeground: celebrationShowOnForeground,
+                    });
+                  }}
+                  className="h-4 w-4 rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                />
+                <label htmlFor="celebration-enabled" className="text-sm font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
+                  Enable celebration effects
+                </label>
+              </div>
+              
+              {/* Foreground/Background Toggle */}
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600">
+                <input
+                  type="checkbox"
+                  id="celebration-foreground"
+                  checked={celebrationShowOnForeground}
+                  onChange={(e) => {
+                    const newValue = e.target.checked;
+                    setCelebrationShowOnForeground(newValue);
+                    apply({ celebrationShowOnForeground: newValue });
+                  }}
+                  className="h-4 w-4 rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                />
+                <div className="flex-1">
+                  <label htmlFor="celebration-foreground" className="text-sm font-medium text-slate-700 dark:text-slate-300 cursor-pointer flex items-center gap-2">
+                    Show on foreground
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${celebrationShowOnForeground ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' : 'bg-slate-200 text-slate-600 dark:bg-slate-600 dark:text-slate-400'}`}>
+                      {celebrationShowOnForeground ? 'Above content' : 'Behind content'}
+                    </span>
+                  </label>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    {celebrationShowOnForeground 
+                      ? 'Effects appear on top of all content (more visible)' 
+                      : 'Effects appear behind tiles and content'}
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Effect type</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    { value: 'none', label: 'Off', icon: '⭕' },
+                    { value: 'fireworks', label: 'Fireworks', icon: '🎆' },
+                    { value: 'confetti', label: 'Confetti', icon: '🎊' },
+                    { value: 'balloons', label: 'Balloons', icon: '🎈' },
+                    { value: 'hearts', label: 'Hearts', icon: '💖' },
+                    { value: 'snow', label: 'Snow', icon: '❄️' },
+                    { value: 'bubbles', label: 'Bubbles', icon: '🫧' },
+                    { value: 'matrix', label: 'Matrix', icon: '💚' },
+                    { value: 'shooting-stars', label: 'Stars', icon: '⭐' },
+                    { value: 'floating-ribbons', label: 'Ribbons', icon: '🎀' },
+                    { value: 'sparkles', label: 'Sparkles', icon: '✨' },
+                  ] as const).map((effect) => (
+                    <button
+                      key={effect.value}
+                      type="button"
+                      onClick={() => {
+                        setCelebrationType(effect.value as CelebrationEffectType);
+                        if (effect.value === 'none') setCelebrationEnabled(false);
+                        apply({
+                          celebrationEffectType: effect.value as CelebrationEffectType,
+                          celebrationEffectEnabled: effect.value !== 'none' ? celebrationEnabled : false,
+                        });
+                      }}
+                      className={`flex flex-col items-center gap-1 px-2 py-2 rounded-xl text-xs font-medium transition-all ${
+                        celebrationType === effect.value
+                          ? 'bg-brand-600 text-white ring-2 ring-brand-400 ring-offset-2 dark:ring-offset-slate-800'
+                          : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                      }`}
+                    >
+                      <span className="text-lg">{effect.icon}</span>
+                      <span>{effect.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {celebrationType !== 'none' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Intensity: {celebrationIntensity}%</label>
+                    <input
+                      type="range"
+                      min={10}
+                      max={100}
+                      value={celebrationIntensity}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        setCelebrationIntensity(v);
+                        apply({ celebrationIntensity: v });
+                      }}
+                      className="w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Particle / item size: {celebrationParticleSize}</label>
+                    <input
+                      type="range"
+                      min={1}
+                      max={5}
+                      value={celebrationParticleSize}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        setCelebrationParticleSize(v);
+                        apply({ celebrationParticleSize: v });
+                      }}
+                      className="w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Animation speed: {celebrationSpeed}%</label>
+                    <input
+                      type="range"
+                      min={20}
+                      max={100}
+                      value={celebrationSpeed}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        setCelebrationSpeed(v);
+                        apply({ celebrationSpeed: v });
+                      }}
+                      className="w-full"
+                    />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Color 1</label>
+                      <div className="flex gap-1">
+                        <input
+                          type="color"
+                          value={celebrationColor1}
+                          onChange={(e) => setCelebrationColor1(e.target.value)}
+                          className="h-9 w-10 rounded border border-slate-300 dark:border-slate-600 cursor-pointer bg-transparent"
+                        />
+                        <input
+                          type="text"
+                          value={celebrationColor1}
+                          onChange={(e) => setCelebrationColor1(e.target.value)}
+                          className="flex-1 min-w-0 px-2 py-1 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-xs"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Color 2</label>
+                      <div className="flex gap-1">
+                        <input
+                          type="color"
+                          value={celebrationColor2}
+                          onChange={(e) => setCelebrationColor2(e.target.value)}
+                          className="h-9 w-10 rounded border border-slate-300 dark:border-slate-600 cursor-pointer bg-transparent"
+                        />
+                        <input
+                          type="text"
+                          value={celebrationColor2}
+                          onChange={(e) => setCelebrationColor2(e.target.value)}
+                          className="flex-1 min-w-0 px-2 py-1 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-xs"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Color 3</label>
+                      <div className="flex gap-1">
+                        <input
+                          type="color"
+                          value={celebrationColor3}
+                          onChange={(e) => setCelebrationColor3(e.target.value)}
+                          className="h-9 w-10 rounded border border-slate-300 dark:border-slate-600 cursor-pointer bg-transparent"
+                        />
+                        <input
+                          type="text"
+                          value={celebrationColor3}
+                          onChange={(e) => setCelebrationColor3(e.target.value)}
+                          className="flex-1 min-w-0 px-2 py-1 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-xs"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => apply()}
+                    className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium transition-colors"
+                  >
+                    Apply celebration settings
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>
