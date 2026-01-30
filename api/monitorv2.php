@@ -48,7 +48,7 @@ function getMonitorv2DB() {
 
     $host = trim($settings['monitorv2_pg_host'] ?? '');
     $port = (int)($settings['monitorv2_pg_port'] ?? 5433);
-    $database = trim($settings['monitorv2_pg_database'] ?? '');
+    $database = trim($settings['monitorv2_pg_database'] ?? 'zmonitoring');
     $user = $settings['monitorv2_pg_user'] ?? 'postgres';
     $password = $settings['monitorv2_pg_password'] ?? '';
 
@@ -148,6 +148,10 @@ switch ($method) {
             handleSetupSchema();
         } elseif ($path === '/test-connection') {
             handleTestConnection();
+        } elseif ($path === '/create-database') {
+            handleCreateDatabase();
+        } elseif ($path === '/install-extensions') {
+            handleInstallExtensions();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -1473,42 +1477,232 @@ function handleTestConnection() {
     
     $host = $data['pgHost'] ?? 'localhost';
     $port = (int)($data['pgPort'] ?? 5433);
-    $database = $data['pgDatabase'] ?? 'postgres';
+    $database = $data['pgDatabase'] ?? 'zmonitoring';
     $user = $data['pgUser'] ?? 'postgres';
     $password = $data['pgPassword'] ?? '';
     
+    $dbExists = false;
+    $canConnectToDb = false;
+    $testDb = null;
+    
     try {
+        // First, try to connect to the target database
         $dsn = "pgsql:host={$host};port={$port};dbname={$database}";
         $testDb = new PDO($dsn, $user, $password, [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_TIMEOUT => 5
         ]);
-        
+        $dbExists = true;
+        $canConnectToDb = true;
+    } catch (PDOException $e) {
+        // If database doesn't exist, try connecting to 'postgres' database to check server access
+        try {
+            $dsn = "pgsql:host={$host};port={$port};dbname=postgres";
+            $testDb = new PDO($dsn, $user, $password, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_TIMEOUT => 5
+            ]);
+            // Check if target database exists
+            $stmt = $testDb->prepare("SELECT 1 FROM pg_database WHERE datname = ?");
+            $stmt->execute([$database]);
+            $dbExists = (bool)$stmt->fetch();
+        } catch (PDOException $e2) {
+            sendJSON(['success' => false, 'error' => 'Connection failed: ' . $e2->getMessage()], 400);
+            return;
+        }
+    }
+    
+    try {
         // Check TimescaleDB
         $stmt = $testDb->query("SELECT default_version FROM pg_available_extensions WHERE name = 'timescaledb'");
         $timescale = $stmt->fetch();
         
-        // Check schema
-        $stmt = $testDb->query("
-            SELECT table_name FROM information_schema.tables 
-            WHERE table_schema = 'zmonitoring' 
-            AND table_name IN ('monitors', 'monitor_checks', 'notification_rules')
-        ");
-        $tables = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        // Check pg_cron
+        $stmt = $testDb->query("SELECT default_version FROM pg_available_extensions WHERE name = 'pg_cron'");
+        $pgCron = $stmt->fetch();
+        
+        // Check if extensions are installed (only if we're connected to the target db)
+        $timescaledbInstalled = false;
+        $pgCronInstalled = false;
+        $schemaExists = false;
+        $existingTables = [];
+        
+        if ($canConnectToDb) {
+            $stmt = $testDb->query("SELECT * FROM pg_extension WHERE extname = 'timescaledb'");
+            $timescaledbInstalled = (bool)$stmt->fetch();
+            
+            $stmt = $testDb->query("SELECT * FROM pg_extension WHERE extname = 'pg_cron'");
+            $pgCronInstalled = (bool)$stmt->fetch();
+            
+            // Check if schema exists
+            $stmt = $testDb->query("
+                SELECT schema_name 
+                FROM information_schema.schemata 
+                WHERE schema_name = 'zmonitoring'
+            ");
+            $schemaExists = (bool)$stmt->fetch();
+            
+            // Check if tables exist
+            if ($schemaExists) {
+                $stmt = $testDb->query("
+                    SELECT table_name 
+                    FROM information_schema.tables 
+                    WHERE table_schema = 'zmonitoring'
+                ");
+                $existingTables = $stmt->fetchAll(PDO::FETCH_COLUMN);
+            }
+        }
         
         sendJSON([
             'success' => true,
-            'message' => 'Connection successful',
+            'message' => $canConnectToDb ? 'Connection successful' : 'Server accessible, database needs to be created',
             'details' => [
                 'postgres_version' => $testDb->getAttribute(PDO::ATTR_SERVER_VERSION),
+                'database_exists' => $dbExists,
+                'can_connect_to_database' => $canConnectToDb,
+                'timescaledb_available' => !empty($timescale),
                 'timescaledb_version' => $timescale['default_version'] ?? null,
-                'timescaledb_installed' => !empty($timescale),
-                'tables_exist' => $tables,
-                'schema_ready' => count($tables) >= 3
+                'timescaledb_installed' => $timescaledbInstalled,
+                'pg_cron_available' => !empty($pgCron),
+                'pg_cron_version' => $pgCron['default_version'] ?? null,
+                'pg_cron_installed' => $pgCronInstalled,
+                'schema_exists' => $schemaExists,
+                'tables_exist' => $existingTables,
+                'schema_ready' => in_array('monitors', $existingTables) && in_array('monitor_checks', $existingTables)
             ]
         ]);
         
     } catch (PDOException $e) {
         sendJSON(['success' => false, 'error' => 'Connection failed: ' . $e->getMessage()], 400);
+    }
+}
+
+/**
+ * Create the monitoring database
+ */
+function handleCreateDatabase() {
+    if (!isMonitorv2Admin()) {
+        sendJSON(['error' => 'Admin access required'], 403);
+        return;
+    }
+    
+    $data = getJSONInput();
+    
+    $host = $data['pgHost'] ?? 'localhost';
+    $port = (int)($data['pgPort'] ?? 5433);
+    $database = $data['pgDatabase'] ?? 'zmonitoring';
+    $user = $data['pgUser'] ?? 'postgres';
+    $password = $data['pgPassword'] ?? '';
+    
+    try {
+        // Connect to 'postgres' database to create the new database
+        $dsn = "pgsql:host={$host};port={$port};dbname=postgres";
+        $pdo = new PDO($dsn, $user, $password, [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_TIMEOUT => 10
+        ]);
+        
+        // Check if database already exists
+        $stmt = $pdo->prepare("SELECT 1 FROM pg_database WHERE datname = ?");
+        $stmt->execute([$database]);
+        if ($stmt->fetch()) {
+            sendJSON([
+                'success' => true,
+                'message' => 'Database already exists',
+                'already_exists' => true
+            ]);
+            return;
+        }
+        
+        // Create new database
+        // Note: Cannot use prepared statements for CREATE DATABASE
+        $safeName = preg_replace('/[^a-z0-9_]/', '', strtolower($database));
+        $pdo->exec("CREATE DATABASE \"{$safeName}\" WITH ENCODING 'UTF8'");
+        
+        sendJSON([
+            'success' => true,
+            'message' => "Database '{$safeName}' created successfully",
+            'database_name' => $safeName
+        ]);
+        
+    } catch (PDOException $e) {
+        sendJSON([
+            'success' => false,
+            'error' => 'Failed to create database: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Install PostgreSQL extensions (TimescaleDB and pg_cron)
+ */
+function handleInstallExtensions() {
+    if (!isMonitorv2Admin()) {
+        sendJSON(['error' => 'Admin access required'], 403);
+        return;
+    }
+    
+    $data = getJSONInput();
+    
+    $host = $data['pgHost'] ?? 'localhost';
+    $port = (int)($data['pgPort'] ?? 5433);
+    $database = $data['pgDatabase'] ?? 'zmonitoring';
+    $user = $data['pgUser'] ?? 'postgres';
+    $password = $data['pgPassword'] ?? '';
+    $extensions = $data['extensions'] ?? ['timescaledb', 'pg_cron']; // Default both
+    
+    try {
+        $dsn = "pgsql:host={$host};port={$port};dbname={$database}";
+        $pdo = new PDO($dsn, $user, $password, [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_TIMEOUT => 10
+        ]);
+        
+        $installed = [];
+        $errors = [];
+        
+        foreach ($extensions as $ext) {
+            if (!in_array($ext, ['timescaledb', 'pg_cron'])) {
+                continue;
+            }
+            
+            try {
+                // Check if extension is available
+                $stmt = $pdo->prepare("SELECT 1 FROM pg_available_extensions WHERE name = ?");
+                $stmt->execute([$ext]);
+                if (!$stmt->fetch()) {
+                    $errors[] = "Extension '{$ext}' is not available on this PostgreSQL server";
+                    continue;
+                }
+                
+                // Check if already installed
+                $stmt = $pdo->prepare("SELECT 1 FROM pg_extension WHERE extname = ?");
+                $stmt->execute([$ext]);
+                if ($stmt->fetch()) {
+                    $installed[] = "{$ext} (already installed)";
+                    continue;
+                }
+                
+                // Install extension
+                $pdo->exec("CREATE EXTENSION IF NOT EXISTS {$ext}");
+                $installed[] = $ext;
+                
+            } catch (PDOException $e) {
+                $errors[] = "Failed to install {$ext}: " . $e->getMessage();
+            }
+        }
+        
+        sendJSON([
+            'success' => empty($errors),
+            'message' => count($installed) > 0 ? 'Extensions processed' : 'No extensions were installed',
+            'installed' => $installed,
+            'errors' => $errors
+        ]);
+        
+    } catch (PDOException $e) {
+        sendJSON([
+            'success' => false,
+            'error' => 'Failed to connect to database: ' . $e->getMessage()
+        ], 500);
     }
 }

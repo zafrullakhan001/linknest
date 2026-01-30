@@ -213,7 +213,7 @@ export const monitorv2Service = {
     },
 
     // Monitor Operations
-    async checkMonitor(id: number): Promise<{ status: string; response_time: number; details: string }> {
+    async checkMonitor(id: number, p0: { forceNotifyRules: boolean; }): Promise<{ status: string; response_time: number; details: string }> {
         const response = await fetch(`${API_BASE}/${id}/check`, {
             method: 'POST',
             credentials: 'include'
@@ -252,7 +252,7 @@ export const monitorv2Service = {
 
     // Logs
     async getMonitorLogs(
-        id: number, 
+        id: number,
         options?: { days?: number; limit?: number; from?: number; to?: number }
     ): Promise<Monitorv2Log[]> {
         const params = new URLSearchParams();
@@ -260,7 +260,7 @@ export const monitorv2Service = {
         if (options?.limit) params.append('limit', options.limit.toString());
         if (options?.from) params.append('from', options.from.toString());
         if (options?.to) params.append('to', options.to.toString());
-        
+
         const url = `${API_BASE}/${id}/logs${params.toString() ? '?' + params.toString() : ''}`;
         const response = await fetch(url, { credentials: 'include' });
         if (!response.ok) throw new Error('Failed to fetch monitor logs');
@@ -408,5 +408,86 @@ export const monitorv2Service = {
     async runCheck(id: number): Promise<{ check: MonitorCheck }> {
         const result = await this.checkMonitor(id);
         return { check: { status: result.status, response_time_ms: result.response_time, status_message: result.details, checked_at: new Date().toISOString() } as MonitorCheck };
+    },
+
+    // CSV import
+    async importMonitorsFromCSV(csvContent: string): Promise<number> {
+        const response = await fetch(`${API_BASE}/import-csv`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: csvContent,
+            credentials: 'include'
+        });
+        if (!response.ok) {
+            throw new Error('Failed to import from CSV');
+        }
+        const data = await response.json();
+        return data.count || 0;
+    },
+
+    // Fixed export/import bundle methods
+    async exportMonitorsBundle(): Promise<any> {
+        const response = await fetch(`${API_BASE}/export-bundle`, { credentials: 'include' });
+        if (!response.ok) throw new Error('Failed to export monitoring bundle');
+        return await response.json();
+    },
+
+    async importMonitorsBundle(bundle: any, replace: boolean = false): Promise<number> {
+        const response = await fetch(`${API_BASE}/import-bundle`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...bundle, replace }),
+            credentials: 'include'
+        });
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.error || 'Failed to import monitoring bundle');
+        }
+        const data = await response.json();
+        return data.count;
+    },
+
+    // Database management
+    async createDatabase(config: Partial<Monitorv2Config>): Promise<{
+        success: boolean;
+        message: string;
+        database_name?: string;
+        already_exists?: boolean;
+    }> {
+        const response = await fetch(`${API_BASE}/create-database`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                pgHost: config.pgHost,
+                pgPort: config.pgPort,
+                pgDatabase: config.pgDatabase,
+                pgUser: config.pgUser,
+                pgPassword: config.pgPassword
+            }),
+            credentials: 'include'
+        });
+        return await response.json();
+    },
+
+    async installExtensions(config: Partial<Monitorv2Config>, extensions: string[] = ['timescaledb', 'pg_cron']): Promise<{
+        success: boolean;
+        message: string;
+        installed: string[];
+        errors: string[];
+    }> {
+        const response = await fetch(`${API_BASE}/install-extensions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                pgHost: config.pgHost,
+                pgPort: config.pgPort,
+                pgDatabase: config.pgDatabase,
+                pgUser: config.pgUser,
+                pgPassword: config.pgPassword,
+                extensions
+            }),
+            credentials: 'include'
+        });
+        return await response.json();
     }
 };
