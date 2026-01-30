@@ -5598,10 +5598,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             {!disabledAppTabs.has('recycle-bin') && (
               <button
                 onClick={() => requestTab('recycle-bin')}
-                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'recycle-bin'
-                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                  }`}
+                data-active={activeTab === 'recycle-bin'}
+                className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'recycle-bin' ? 'active' : ''}`}
               >
                 Recycle Bin
                 {isAuthenticated && (
