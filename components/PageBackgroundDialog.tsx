@@ -7,6 +7,7 @@ export type PageBackgroundType = 'none' | 'solid' | 'gradient' | 'pattern' | 'im
 export type CelebrationEffectType = 
   | 'none' 
   | 'fireworks' 
+  | 'rocket-fireworks'
   | 'confetti' 
   | 'balloons' 
   | 'hearts' 
@@ -15,7 +16,17 @@ export type CelebrationEffectType =
   | 'matrix' 
   | 'shooting-stars' 
   | 'floating-ribbons' 
-  | 'sparkles';
+  | 'sparkles'
+  | 'rain'
+  | 'leaves'
+  | 'fireflies'
+  | 'petals'
+  | 'aurora'
+  | 'cosmic'
+  | 'meteors'
+  | 'dandelion'
+  | 'butterflies'
+  | 'lightning';
 
 const GRADIENT_PRESETS: Array<{ name: string; start: string; end: string; direction: number }> = [
   { name: 'Sunset', start: '#f97316', end: '#ec4899', direction: 135 },
@@ -80,6 +91,23 @@ const PATTERNS: Array<{ id: string; label: string; preview: string; previewSize?
 
 const ACCEPTED_IMAGE_TYPES = 'image/jpeg,image/png,image/svg+xml,image/webp,image/gif';
 
+const PAGE_BG_ACTIVE_TAB_KEY = 'linknest_page_bg_active_tab';
+const VALID_TABS = ['none', 'solid', 'gradient', 'pattern', 'image', 'celebration'] as const;
+
+function getPersistedTab(): PageBackgroundType | 'celebration' | null {
+  try {
+    const saved = localStorage.getItem(PAGE_BG_ACTIVE_TAB_KEY);
+    if (saved && VALID_TABS.includes(saved as typeof VALID_TABS[number])) return saved as PageBackgroundType | 'celebration';
+  } catch (_) {}
+  return null;
+}
+
+function persistTab(tab: PageBackgroundType | 'celebration') {
+  try {
+    localStorage.setItem(PAGE_BG_ACTIVE_TAB_KEY, tab);
+  } catch (_) {}
+}
+
 interface PageBackgroundDialogProps {
   isOpen: boolean;
   onClose: () => void;
@@ -89,7 +117,13 @@ interface PageBackgroundDialogProps {
 
 export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOpen, onClose, styles, onApply }) => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<PageBackgroundType | 'celebration'>(() => (styles?.pageBackgroundType as PageBackgroundType) || 'none');
+  const [activeTab, setActiveTab] = useState<PageBackgroundType | 'celebration'>(() => {
+    const persisted = getPersistedTab();
+    const celebrationEnabled = styles?.celebrationEffectEnabled ?? DEFAULT_STYLES.celebrationEffectEnabled;
+    if (persisted) return persisted;
+    if (celebrationEnabled) return 'celebration';
+    return (styles?.pageBackgroundType as PageBackgroundType) || 'none';
+  });
   const [solidColor, setSolidColor] = useState(styles?.pageBackgroundSolidColor ?? DEFAULT_STYLES.pageBackgroundSolidColor);
   const [gradientStart, setGradientStart] = useState(styles?.pageBackgroundGradientStart ?? DEFAULT_STYLES.pageBackgroundGradientStart);
   const [gradientEnd, setGradientEnd] = useState(styles?.pageBackgroundGradientEnd ?? DEFAULT_STYLES.pageBackgroundGradientEnd);
@@ -118,6 +152,8 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
   const [celebrationColor2, setCelebrationColor2] = useState(styles?.celebrationColor2 ?? DEFAULT_STYLES.celebrationColor2);
   const [celebrationColor3, setCelebrationColor3] = useState(styles?.celebrationColor3 ?? DEFAULT_STYLES.celebrationColor3);
   const [celebrationShowOnForeground, setCelebrationShowOnForeground] = useState(styles?.celebrationShowOnForeground ?? DEFAULT_STYLES.celebrationShowOnForeground ?? false);
+  const [celebrationOpacity, setCelebrationOpacity] = useState(styles?.celebrationOpacity ?? DEFAULT_STYLES.celebrationOpacity ?? 100);
+  const [celebrationBurstInterval, setCelebrationBurstInterval] = useState(styles?.celebrationBurstInterval ?? DEFAULT_STYLES.celebrationBurstInterval ?? 1500);
 
   const dialogRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -181,9 +217,14 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
 
   useEffect(() => {
     if (isOpen && styles) {
-      setActiveTab((prev) =>
-        prev === 'celebration' ? prev : ((styles.pageBackgroundType as PageBackgroundType) || 'none')
-      );
+      const celebrationEnabled = styles.celebrationEffectEnabled ?? DEFAULT_STYLES.celebrationEffectEnabled;
+      setActiveTab((prev) => {
+        const persisted = getPersistedTab();
+        if (persisted) return persisted;
+        if (prev === 'celebration') return prev;
+        if (celebrationEnabled) return 'celebration' as const;
+        return (styles.pageBackgroundType as PageBackgroundType) || 'none';
+      });
       setSolidColor(styles.pageBackgroundSolidColor ?? DEFAULT_STYLES.pageBackgroundSolidColor);
       setGradientStart(styles.pageBackgroundGradientStart ?? DEFAULT_STYLES.pageBackgroundGradientStart);
       setGradientEnd(styles.pageBackgroundGradientEnd ?? DEFAULT_STYLES.pageBackgroundGradientEnd);
@@ -209,6 +250,8 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
       setCelebrationColor2(styles.celebrationColor2 ?? DEFAULT_STYLES.celebrationColor2);
       setCelebrationColor3(styles.celebrationColor3 ?? DEFAULT_STYLES.celebrationColor3);
       setCelebrationShowOnForeground(styles.celebrationShowOnForeground ?? DEFAULT_STYLES.celebrationShowOnForeground ?? false);
+      setCelebrationOpacity(styles.celebrationOpacity ?? DEFAULT_STYLES.celebrationOpacity ?? 100);
+      setCelebrationBurstInterval(styles.celebrationBurstInterval ?? DEFAULT_STYLES.celebrationBurstInterval ?? 1500);
     }
   }, [isOpen, styles]);
 
@@ -242,6 +285,8 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
       celebrationColor2: celebrationColor2,
       celebrationColor3: celebrationColor3,
       celebrationShowOnForeground: celebrationShowOnForeground,
+      celebrationOpacity: celebrationOpacity,
+      celebrationBurstInterval: celebrationBurstInterval,
       ...overrides
     };
     onApply(next);
@@ -252,6 +297,7 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
 
   const handleApplyNone = () => {
     setActiveTab('none');
+    persistTab('none');
     apply({ pageBackgroundType: 'none' });
   };
 
@@ -348,7 +394,10 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
             <button
               key={id}
               type="button"
-              onClick={() => setActiveTab(id)}
+              onClick={() => {
+                setActiveTab(id);
+                persistTab(id);
+              }}
               className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
                 activeTab === id
                   ? 'border-brand-500 text-brand-600 dark:text-brand-400'
@@ -830,10 +879,11 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Effect type</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-4 gap-1.5 max-h-64 overflow-y-auto">
                   {([
                     { value: 'none', label: 'Off', icon: '⭕' },
                     { value: 'fireworks', label: 'Fireworks', icon: '🎆' },
+                    { value: 'rocket-fireworks', label: 'Rocket', icon: '🚀' },
                     { value: 'confetti', label: 'Confetti', icon: '🎊' },
                     { value: 'balloons', label: 'Balloons', icon: '🎈' },
                     { value: 'hearts', label: 'Hearts', icon: '💖' },
@@ -843,6 +893,16 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
                     { value: 'shooting-stars', label: 'Stars', icon: '⭐' },
                     { value: 'floating-ribbons', label: 'Ribbons', icon: '🎀' },
                     { value: 'sparkles', label: 'Sparkles', icon: '✨' },
+                    { value: 'rain', label: 'Rain', icon: '🌧️' },
+                    { value: 'leaves', label: 'Leaves', icon: '🍂' },
+                    { value: 'fireflies', label: 'Fireflies', icon: '🪲' },
+                    { value: 'petals', label: 'Petals', icon: '🌸' },
+                    { value: 'aurora', label: 'Aurora', icon: '🌌' },
+                    { value: 'cosmic', label: 'Cosmic', icon: '🌠' },
+                    { value: 'meteors', label: 'Meteors', icon: '☄️' },
+                    { value: 'dandelion', label: 'Dandelion', icon: '🌼' },
+                    { value: 'butterflies', label: 'Butterflies', icon: '🦋' },
+                    { value: 'lightning', label: 'Lightning', icon: '⚡' },
                   ] as const).map((effect) => (
                     <button
                       key={effect.value}
@@ -914,6 +974,40 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
                       className="w-full"
                     />
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Opacity: {celebrationOpacity}%</label>
+                    <input
+                      type="range"
+                      min={10}
+                      max={100}
+                      value={celebrationOpacity}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        setCelebrationOpacity(v);
+                        apply({ celebrationOpacity: v });
+                      }}
+                      className="w-full"
+                    />
+                  </div>
+                  {(['fireworks', 'rocket-fireworks'].includes(celebrationType) && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Burst interval: {celebrationBurstInterval}ms</label>
+                      <input
+                        type="range"
+                        min={500}
+                        max={5000}
+                        step={100}
+                        value={celebrationBurstInterval}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          setCelebrationBurstInterval(v);
+                          apply({ celebrationBurstInterval: v });
+                        }}
+                        className="w-full"
+                      />
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Lower = more frequent bursts</p>
+                    </div>
+                  ))}
                   <div className="grid grid-cols-3 gap-2">
                     <div>
                       <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Color 1</label>

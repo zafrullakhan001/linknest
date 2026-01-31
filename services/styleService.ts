@@ -180,7 +180,7 @@ export interface SpaceStyles {
 
   // Celebration effects (overlay: fireworks, confetti, balloons, hearts, snow, bubbles, matrix, shooting stars, ribbons, sparkles)
   celebrationEffectEnabled: boolean;
-  celebrationEffectType: 'none' | 'fireworks' | 'confetti' | 'balloons' | 'hearts' | 'snow' | 'bubbles' | 'matrix' | 'shooting-stars' | 'floating-ribbons' | 'sparkles';
+  celebrationEffectType: 'none' | 'fireworks' | 'rocket-fireworks' | 'confetti' | 'balloons' | 'hearts' | 'snow' | 'bubbles' | 'matrix' | 'shooting-stars' | 'floating-ribbons' | 'sparkles' | 'rain' | 'leaves' | 'fireflies' | 'petals' | 'aurora' | 'cosmic' | 'meteors' | 'dandelion' | 'butterflies' | 'lightning';
   celebrationIntensity: number; // 0-100, particle count / activity
   celebrationParticleSize: number; // 1-5 scale for particle/balloon size
   celebrationSpeed: number; // 0-100, animation speed
@@ -188,6 +188,8 @@ export interface SpaceStyles {
   celebrationColor2: string;
   celebrationColor3: string;
   celebrationShowOnForeground: boolean; // Show effects on top of content
+  celebrationOpacity: number; // 0-100, effect opacity
+  celebrationBurstInterval: number; // 500-5000 ms between fireworks/rocket bursts
 
   // Background/Page styling
   backgroundRaised: boolean; // Raised table-like background
@@ -416,6 +418,8 @@ export const DEFAULT_STYLES: SpaceStyles = {
   celebrationColor2: '#8b5cf6',
   celebrationColor3: '#f59e0b',
   celebrationShowOnForeground: false,
+  celebrationOpacity: 100,
+  celebrationBurstInterval: 1500,
 
   backgroundRaised: false,
   backgroundTableType: 'wood',

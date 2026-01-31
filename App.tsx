@@ -981,14 +981,16 @@ const AppContent: React.FC = () => {
         </div>
       )}
       <BroadcastBanner />
-      <main className={`flex-grow container mx-auto px-4 py-8 max-w-6xl-plus linknest-page-content relative ${styles?.backgroundRaised ? 'linknest-page-background' : ''} ${!guestAccessEnabled && !isAuthenticated ? 'flex items-center justify-center' : ''}`}>
-        <div ref={celebrationContainerRef} className="absolute inset-0 z-0 overflow-hidden pointer-events-none" aria-hidden>
+      <div className="flex-grow relative min-h-0 flex flex-col">
+        <div ref={celebrationContainerRef} className={`absolute inset-0 w-full overflow-hidden pointer-events-none ${styles?.celebrationShowOnForeground ? 'z-[9999]' : 'z-0'}`} aria-hidden>
           <CelebrationEffects containerRef={celebrationContainerRef} styles={styles} />
         </div>
-        <div className="relative z-10 min-h-0">
-          {content}
-        </div>
-      </main>
+        <main className={`flex-grow container mx-auto px-4 py-8 max-w-6xl-plus linknest-page-content relative z-10 ${styles?.backgroundRaised ? 'linknest-page-background' : ''} ${!guestAccessEnabled && !isAuthenticated ? 'flex items-center justify-center' : ''}`}>
+          <div className="relative min-h-0">
+            {content}
+          </div>
+        </main>
+      </div>
       {!isAuthenticated && guestAccessEnabled && (
         <div className="container mx-auto px-4 max-w-6xl-plus pb-4">
           <div className="p-2.5 bg-slate-100/50 dark:bg-slate-800/30 border border-slate-200/50 dark:border-slate-700/50 rounded-md text-center">
