@@ -1587,46 +1587,13 @@ const SortableTile: React.FC<SortableTileProps> = ({
               const allRollover = activeMessages.length > 0 && activeMessages.every(msg => !msg.animationType || msg.animationType === 'rollover');
 
               if (allRollover) {
-                // Rollover animation - use marquee with seamless duplication
-                // Note: Delays are not applied in rollover mode to maintain seamless loop
+                // Rollover animation - stock ticker style: single copy, right-to-left, pause when fully gone
                 return (
                   <div className="overflow-hidden">
                     <div className="animate-rolling-tile flex items-center gap-10 text-[10px] sm:text-xs font-semibold">
-                      {/* First set of messages */}
                       {activeMessages.map((msg, idx) => (
                         <div
                           key={`${msg.id}-${idx}`}
-                          className="flex items-center gap-2 shrink-0"
-                          style={{
-                            ...(msg.textColor ? { '--message-text-color': msg.textColor, color: msg.textColor } : {}),
-                            fontStyle: msg.fontStyle === 'italic' || msg.fontStyle === 'bold italic' ? 'italic' : undefined,
-                            fontWeight: msg.fontStyle === 'bold' || msg.fontStyle === 'bold italic' ? 'bold' : undefined
-                          } as React.CSSProperties}
-                          data-message-color={msg.textColor || ''}
-                        >
-                          {renderMessageContent(msg.content)}
-                          {msg.url && (
-                            <a
-                              href={msg.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[9px] font-medium text-slate-800 dark:text-brand-400 bg-transparent hover:bg-slate-200/50 dark:hover:bg-brand-900/30 rounded transition-colors"
-                              onClick={(e) => e.stopPropagation()}
-                              title="Click for more info"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-2.5 h-2.5">
-                                <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
-                                <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
-                              </svg>
-                              Info
-                            </a>
-                          )}
-                        </div>
-                      ))}
-                      {/* Duplicate set for seamless loop - no delays, exact copy */}
-                      {activeMessages.map((msg, idx) => (
-                        <div
-                          key={`${msg.id}-dup-${idx}`}
                           className="flex items-center gap-2 shrink-0"
                           style={{
                             ...(msg.textColor ? { '--message-text-color': msg.textColor, color: msg.textColor } : {}),

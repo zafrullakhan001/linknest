@@ -1929,9 +1929,12 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
   }
 
   return `
-    /* Content Page Header */
+    /* Content Page Header - isolate prevents backdrop/blur corner artifacts */
     .linknest-content-header {
       background: ${headerBackground} !important;
+      border-radius: 1rem !important;
+      overflow: hidden;
+      isolation: isolate;
       ${styles.contentHeaderStyle === 'glassmorphism' ? `
         backdrop-filter: blur(${styles.contentHeaderBlur}px) !important;
         -webkit-backdrop-filter: blur(${styles.contentHeaderBlur}px) !important;

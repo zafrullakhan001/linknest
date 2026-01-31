@@ -282,41 +282,48 @@ div.linknest-tile.has-local-decoration .tooltip-force-black * {
   animation: gradient-shift 3s ease infinite;
 }
 
-/* Rolling message animation (Marquee) - Seamless infinite scroll */
-@keyframes marquee-roll-tile {
+/* Rolling message animation (Marquee) - Stock ticker style: right-to-left with pause */
+/* Content enters from right, scrolls fully out to left, pauses before next cycle */
+@keyframes marquee-stock-ticker-tile {
   0% {
-    transform: translateX(0);
+    transform: translateX(100%);
   }
-
+  65% {
+    transform: translateX(-100%);
+  }
   100% {
-    transform: translateX(-50%);
+    transform: translateX(-100%);
   }
 }
 
-@keyframes marquee-roll-detail {
+@keyframes marquee-stock-ticker-detail {
   0% {
-    transform: translateX(0);
+    transform: translateX(100%);
   }
-
+  65% {
+    transform: translateX(-100%);
+  }
   100% {
-    transform: translateX(-50%);
+    transform: translateX(-100%);
   }
 }
 
 .animate-rolling-tile {
   display: flex;
   white-space: nowrap;
-  animation: marquee-roll-tile 20s linear infinite;
+  animation: marquee-stock-ticker-tile 25s linear infinite;
   width: max-content;
   will-change: transform;
+  margin-left: 0;
 }
 
 .animate-rolling-detail {
   display: flex;
   white-space: nowrap;
-  animation: marquee-roll-detail 45s linear infinite;
+  animation: marquee-stock-ticker-detail 35s linear infinite;
   width: max-content;
   will-change: transform;
+  margin-left: 0;
 }
 
 .animate-rolling-tile:hover,
