@@ -40,10 +40,7 @@ export const broadcastService = {
     });
 
     if (!response.ok) {
-      if (response.status === 404) {
-        return null;
-      }
-      throw new Error(`Failed to fetch broadcast: ${response.statusText}`);
+      return null;
     }
 
     const data = await response.json();

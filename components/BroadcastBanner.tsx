@@ -82,8 +82,7 @@ export const BroadcastBanner: React.FC = () => {
       } else {
         setBroadcast(null);
       }
-    } catch (error) {
-      console.error('Failed to load broadcast message:', error);
+    } catch {
       setBroadcast(null);
     } finally {
       setLoading(false);

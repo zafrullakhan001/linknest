@@ -779,9 +779,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             setBroadcastScrollSpeed(30);
             setBroadcastExpiresAt('');
           }
-        } catch (err: any) {
-          console.error('Failed to load broadcast:', err);
-          setError(err.message || 'Failed to load broadcast message');
+        } catch {
+          // Suppress console error (e.g. network); treat as no broadcast
+          setCurrentBroadcast(null);
+          setBroadcastMessage('');
+          setBroadcastFontFamily('Arial, sans-serif');
+          setBroadcastFontSize('16px');
+          setBroadcastColor('#ff0000');
+          setBroadcastScrollSpeed(30);
+          setBroadcastExpiresAt('');
         } finally {
           setBroadcastLoading(false);
         }
@@ -1054,7 +1060,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           if (response.ok) {
             const data = await response.json();
             const step = data.step || 'running';
-            const progress = data.progress || 0;
+            const progress = data.progress ?? 0;
 
             setCloneProgress(progress);
             setCloneStatus(step);
@@ -1062,22 +1068,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               setCloneLogs(data.logs);
             }
 
-            // Check if clone is complete or failed
+            // Only clear the bar when we get a real terminal state from the API
             if (step === 'complete' || step === 'error') {
-              // Clear the current clone tracking
               setCurrentCloneId(null);
               setCloneStatus(null);
               setCloneProgress(0);
-              // Keep logs for a moment to show completion
-              setTimeout(() => {
-                setCloneLogs([]);
-              }, 3000);
-              // Reload list to get updated status
+              setTimeout(() => setCloneLogs([]), 3000);
               loadClonesList();
             }
+          } else {
+            // 401/403: stop polling; other errors: keep bar visible and keep polling
+            if (response.status === 401 || response.status === 403) {
+              setCurrentCloneId(null);
+              setCloneStatus(null);
+              setCloneProgress(0);
+              setCloneLogs([]);
+            }
           }
-        } catch (err) {
-          console.error('Failed to fetch clone status:', err);
+        } catch {
+          // Network/parse error: keep bar visible and keep polling (don't clear)
         }
       }, 1000); // Poll every second
 
@@ -7714,8 +7723,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         </label>
                       </div>
 
-                      {/* Progress Bar */}
-                      {currentCloneId && cloneStatus && cloneStatus !== 'complete' && cloneStatus !== 'error' && (
+                      {/* Progress Bar - show as soon as a clone is started */}
+                      {currentCloneId && cloneStatus !== 'complete' && cloneStatus !== 'error' && (
                         <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
                           <div className="mb-2 flex justify-between items-center">
                             <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -7728,14 +7737,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                           cloneStatus === 'finalizing' ? 'Finalizing...' :
                                             cloneStatus === 'running' ? 'Running...' :
                                               cloneStatus === 'pending' ? 'Starting...' :
-                                                cloneStatus || 'Processing...'}
+                                                cloneStatus ? String(cloneStatus) : 'Starting...'}
                             </span>
                             <span className="text-sm text-slate-600 dark:text-slate-400">{cloneProgress}%</span>
                           </div>
                           <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2.5">
                             <div
                               className="bg-brand-600 h-2.5 rounded-full transition-all duration-300"
-                              style={{ width: `${cloneProgress}%` }}
+                              style={{ width: `${Math.max(0, cloneProgress)}%` }}
                             ></div>
                           </div>
                         </div>
@@ -7855,9 +7864,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   throw new Error(data.error || 'Failed to start clone process');
                                 }
 
-                                // Set current clone ID and start polling
+                                // Set current clone ID and show progress bar immediately
                                 setCurrentCloneId(data.cloneId);
-                                setCloneStatus('running');
+                                setCloneStatus('pending');
+                                setCloneProgress(0);
+                                setCloneLogs([]);
 
                                 // Reset form
                                 setCloneFolderName('');

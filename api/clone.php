@@ -114,6 +114,23 @@ switch ($method) {
         sendJSON(['error' => 'Method not allowed'], 405);
 }
 
+/**
+ * Normalize host for clone URL (fix common typos like locahost -> localhost).
+ * @param string $host HTTP_HOST value (e.g. "localhost", "locahost", "localhost:8000")
+ * @return string Normalized host
+ */
+function normalizeCloneHost($host) {
+    $host = trim($host);
+    if (strpos($host, ':') !== false) {
+        $parts = explode(':', $host, 2);
+        $parts[0] = normalizeCloneHost($parts[0]);
+        return $parts[0] . ':' . $parts[1];
+    }
+    $typos = ['locahost' => 'localhost', 'localhos' => 'localhost', 'localhot' => 'localhost', '127.0.0.1' => 'localhost'];
+    $lower = strtolower($host);
+    return $typos[$lower] ?? $host;
+}
+
 function handleClone() {
     requireAdmin();
     
@@ -174,12 +191,22 @@ function handleClone() {
             if (!filter_var($customUrl, FILTER_VALIDATE_URL)) {
                 sendJSON(['error' => 'Invalid URL format'], 400);
             }
-            // Ensure URL ends with /
-            $url = rtrim($customUrl, '/') . '/';
+            // Normalize host in URL (fix typos like locahost -> localhost)
+            $parsed = parse_url($customUrl);
+            if (!empty($parsed['host'])) {
+                $fixedHost = normalizeCloneHost($parsed['host']);
+                $scheme = $parsed['scheme'] ?? 'http';
+                $port = isset($parsed['port']) ? ':' . $parsed['port'] : '';
+                $path = isset($parsed['path']) ? $parsed['path'] : '/';
+                $path = rtrim($path, '/') . '/';
+                $url = $scheme . '://' . $fixedHost . $port . $path;
+            } else {
+                $url = rtrim($customUrl, '/') . '/';
+            }
         } else {
             // Default to localhost with folder name if not provided
             $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-            $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+            $host = normalizeCloneHost($_SERVER['HTTP_HOST'] ?? 'localhost');
             $url = "$protocol://$host/$folderName/";
         }
         
@@ -272,37 +299,94 @@ function handleGetStatus() {
 }
 
 function handleGetCloneStatus($cloneId) {
+    $cloneId = (int)$cloneId;
+    $status = null;
+
     try {
         requireAdmin();
+    } catch (Throwable $e) {
+        // Auth failure: let it propagate (401/403)
+        throw $e;
+    }
 
-        $cloneId = (int)$cloneId;
-        $service = new CloneService($cloneId);
-        $status = $service->getStatus();
-
-        if (!$status) {
-            // Try to get from database
-            $db = getDB();
-            $stmt = $db->prepare('SELECT * FROM clones WHERE id = ?');
-            $stmt->execute([$cloneId]);
-            $clone = $stmt->fetch();
-
-            if (!$clone) {
-                sendJSON(['error' => 'Clone not found'], 404);
+    // Try to get status from file first (avoids DB locks during cloning)
+    try {
+        if (class_exists('CloneService')) {
+            $service = new CloneService($cloneId, false);
+            $fileStatus = $service->getStatus();
+            if ($fileStatus && isset($fileStatus['step'])) {
+                $status = $fileStatus;
+                $status['id'] = $cloneId;
             }
+        }
+    } catch (Throwable $e) {
+        // Ignore file read errors, fall back to DB (no 500)
+    }
 
-            $status = [
-                'step' => $clone['status'],
-                'progress' => (int)$clone['progress'],
-                'message' => $clone['error_message'] ?? 'Processing...',
+    if ($status) {
+        sendJSON($status);
+        return;
+    }
+
+    // Fallback to database; never return 500 so polling does not spam console
+    try {
+        $db = getDB();
+        $stmt = $db->prepare('SELECT * FROM clones WHERE id = ?');
+        $stmt->execute([$cloneId]);
+        $clone = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$clone) {
+            // Clone not in DB (e.g. deleted): return complete so client stops polling
+            sendJSON([
+                'id' => $cloneId,
+                'step' => 'complete',
+                'progress' => 100,
+                'message' => 'Clone no longer available.',
                 'logs' => [],
-                'timestamp' => $clone['completed_at'] ?? $clone['created_at']
-            ];
+                'timestamp' => time()
+            ]);
+            return;
         }
 
+        $status = [
+            'id' => (int)$clone['id'],
+            'step' => $clone['status'],
+            'progress' => (int)$clone['progress'],
+            'message' => $clone['error_message'] ?? ($clone['status'] === 'completed' ? 'Clone completed successfully!' : 'Processing...'),
+            'logs' => [],
+            'timestamp' => $clone['completed_at'] ?? $clone['created_at']
+        ];
         sendJSON($status);
+    } catch (PDOException $dbError) {
+        if (strpos($dbError->getMessage(), 'locked') !== false || $dbError->getCode() === 'HY000') {
+            sendJSON([
+                'id' => $cloneId,
+                'step' => 'processing',
+                'progress' => 0,
+                'message' => 'Database is busy, retrying...',
+                'logs' => [['time' => date('H:i:s'), 'message' => 'Waiting for database lock...']]
+            ]);
+        } else {
+            error_log('Clone status DB error: ' . $dbError->getMessage());
+            sendJSON([
+                'id' => $cloneId,
+                'step' => 'processing',
+                'progress' => 0,
+                'message' => 'Checking status...',
+                'logs' => [['time' => date('H:i:s'), 'message' => 'Database busy, retrying...']],
+                'timestamp' => time()
+            ]);
+        }
     } catch (Throwable $e) {
-        error_log('Clone status error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
-        sendJSON(['error' => 'Failed to get clone status: ' . $e->getMessage(), 'step' => 'error', 'progress' => 0], 500);
+        error_log('Clone status error: ' . $e->getMessage());
+        sendJSON([
+            'id' => $cloneId,
+            'step' => 'processing',
+            'progress' => 0,
+            'message' => 'Checking status...',
+            'logs' => [],
+            'timestamp' => time()
+        ]);
     }
 }
 
@@ -567,7 +651,7 @@ function handleUpdateClone($cloneId) {
     // Update URL if folder name changed (only if URL not explicitly provided)
     if (isset($data['folderName']) && !isset($data['url'])) {
         $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-        $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+        $host = normalizeCloneHost($_SERVER['HTTP_HOST'] ?? 'localhost');
         $newUrl = "$protocol://$host/" . trim($data['folderName']) . "/";
         $updates[] = 'url = ?';
         $params[] = $newUrl;

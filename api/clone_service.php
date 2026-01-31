@@ -13,22 +13,25 @@ class CloneService {
     private $traceLogFile;
     private $startTime;
     
-    public function __construct($cloneId = null) {
+    public function __construct($cloneId = null, $enableTraceLog = true) {
         $this->db = getDB();
         $this->cloneId = $cloneId;
         $this->startTime = microtime(true);
         if ($cloneId) {
             $this->statusFile = __DIR__ . '/../clone_status_' . $cloneId . '.json';
-            $this->traceLogFile = __DIR__ . '/../clone_trace_' . $cloneId . '.log';
-            // Initialize trace log
-            $this->writeTraceLog("=== CLONE PROCESS STARTED ===");
-            $this->writeTraceLog("Clone ID: $cloneId");
-            $this->writeTraceLog("Start Time: " . date('Y-m-d H:i:s'));
-            $this->writeTraceLog("PHP Version: " . PHP_VERSION);
-            $this->writeTraceLog("Memory Limit: " . ini_get('memory_limit'));
-            $this->writeTraceLog("Max Execution Time: " . ini_get('max_execution_time'));
-            $this->writeTraceLog("Current Memory Usage: " . $this->formatBytes(memory_get_usage(true)));
-            $this->writeTraceLog("Peak Memory Usage: " . $this->formatBytes(memory_get_peak_usage(true)));
+            // Only enable trace logging if requested (set to false when just reading status)
+            if ($enableTraceLog) {
+                $this->traceLogFile = __DIR__ . '/../clone_trace_' . $cloneId . '.log';
+                // Initialize trace log
+                $this->writeTraceLog("=== CLONE PROCESS STARTED ===");
+                $this->writeTraceLog("Clone ID: $cloneId");
+                $this->writeTraceLog("Start Time: " . date('Y-m-d H:i:s'));
+                $this->writeTraceLog("PHP Version: " . PHP_VERSION);
+                $this->writeTraceLog("Memory Limit: " . ini_get('memory_limit'));
+                $this->writeTraceLog("Max Execution Time: " . ini_get('max_execution_time'));
+                $this->writeTraceLog("Current Memory Usage: " . $this->formatBytes(memory_get_usage(true)));
+                $this->writeTraceLog("Peak Memory Usage: " . $this->formatBytes(memory_get_peak_usage(true)));
+            }
         }
     }
     
@@ -50,6 +53,37 @@ class CloneService {
         error_log("CloneService[{$this->cloneId}]: $message");
     }
     
+    /**
+     * Normalize host for clone URL (fix common typos like locahost -> localhost).
+     * @param string $host HTTP_HOST or URL host part
+     * @return string Normalized host
+     */
+    private function normalizeCloneHost($host) {
+        $host = trim($host);
+        if (strpos($host, ':') !== false) {
+            $parts = explode(':', $host, 2);
+            $parts[0] = $this->normalizeCloneHost($parts[0]);
+            return $parts[0] . ':' . $parts[1];
+        }
+        $typos = ['locahost' => 'localhost', 'localhos' => 'localhost', 'localhot' => 'localhost', '127.0.0.1' => 'localhost'];
+        $lower = strtolower($host);
+        return $typos[$lower] ?? $host;
+    }
+
+    /**
+     * Rebuild URL from parse_url() result (with optional path normalization).
+     * @param array $parsed Result of parse_url()
+     * @return string URL
+     */
+    private function buildUrlFromParsed(array $parsed) {
+        $scheme = $parsed['scheme'] ?? 'http';
+        $host = $parsed['host'] ?? '';
+        $port = isset($parsed['port']) ? ':' . $parsed['port'] : '';
+        $path = isset($parsed['path']) ? $parsed['path'] : '/';
+        $path = rtrim($path, '/') . '/';
+        return $scheme . '://' . $host . $port . $path;
+    }
+
     /**
      * Format bytes to human readable format
      */
@@ -314,9 +348,18 @@ class CloneService {
         // Fallback to default URL generation if not found
         if (!$url) {
             $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-            $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+            $host = $this->normalizeCloneHost($_SERVER['HTTP_HOST'] ?? 'localhost');
             $url = "$protocol://$host/$folderName/";
             $this->writeTraceLog("Using generated default URL: $url", 'INFO');
+        } else {
+            // Normalize host in stored URL (fix typos like locahost -> localhost)
+            $parsed = parse_url($url);
+            if (!empty($parsed['host'])) {
+                $fixedHost = $this->normalizeCloneHost($parsed['host']);
+                $parsed['host'] = $fixedHost;
+                $url = $this->buildUrlFromParsed($parsed);
+                $this->writeTraceLog("Normalized URL from database: $url", 'INFO');
+            }
         }
         
         $logs = [];
@@ -407,6 +450,8 @@ class CloneService {
                 'App.tsx',
                 'types.ts',
                 'router.php',
+                'landing.php',
+                'sw-cache-first.php',
                 '.htaccess',
                 '.gitignore',
                 'README.md',

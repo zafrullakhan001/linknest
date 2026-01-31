@@ -86,9 +86,12 @@ function handleGetBroadcast($db) {
         } else {
             sendJSON(null);
         }
+    } catch (PDOException $e) {
+        error_log('Broadcast fetch PDO: ' . $e->getMessage());
+        sendJSON(null);
     } catch (Throwable $e) {
-        error_log('Broadcast fetch error: ' . $e->getMessage());
-        sendJSON(['error' => 'Failed to fetch broadcast message'], 500);
+        error_log('Broadcast fetch: ' . $e->getMessage());
+        sendJSON(null);
     }
 }
 

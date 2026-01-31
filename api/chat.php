@@ -83,9 +83,13 @@ function handleGetMessages() {
         unset($message); // break reference
 
         sendJSON($messages);
+    } catch (PDOException $e) {
+        // During clone or DB busy: return 200 with empty list so polling does not spam console
+        error_log('Chat getMessages: ' . $e->getMessage());
+        sendJSON([]);
     } catch (Throwable $e) {
-        error_log('Error fetching chat messages: ' . $e->getMessage());
-        sendJSON(['error' => 'Failed to fetch messages: ' . $e->getMessage()], 500);
+        error_log('Chat getMessages: ' . $e->getMessage());
+        sendJSON([]);
     }
 }
 
