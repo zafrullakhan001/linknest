@@ -2,7 +2,11 @@
 require_once __DIR__ . '/config.php';
 
 if (session_status() === PHP_SESSION_NONE) {
-    session_start();
+    try {
+        @session_start();
+    } catch (Throwable $e) {
+        error_log('Broadcast session start failed: ' . $e->getMessage());
+    }
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -14,7 +18,13 @@ if (empty($path)) {
     $path = '/';
 }
 
-$db = getDB();
+try {
+    $db = getDB();
+} catch (Throwable $e) {
+    error_log('Broadcast getDB failed: ' . $e->getMessage());
+    sendJSON(['error' => 'Failed to connect to database'], 500);
+    exit;
+}
 
 switch ($method) {
     case 'GET':
@@ -64,20 +74,21 @@ function handleGetBroadcast($db) {
         if ($broadcast) {
             sendJSON([
                 'id' => (int)$broadcast['id'],
-                'message' => $broadcast['message'],
-                'fontFamily' => $broadcast['font_family'],
-                'fontSize' => $broadcast['font_size'],
-                'color' => $broadcast['color'],
-                'scrollSpeed' => $broadcast['scroll_speed'] ? (int)$broadcast['scroll_speed'] : 30,
-                'expiresAt' => $broadcast['expires_at'] ? (int)$broadcast['expires_at'] : null,
-                'createdAt' => (int)$broadcast['created_at'],
-                'updatedAt' => (int)$broadcast['updated_at'],
+                'message' => (string)($broadcast['message'] ?? ''),
+                'fontFamily' => (string)($broadcast['font_family'] ?? 'Arial, sans-serif'),
+                'fontSize' => (string)($broadcast['font_size'] ?? '16px'),
+                'color' => (string)($broadcast['color'] ?? '#ff0000'),
+                'scrollSpeed' => isset($broadcast['scroll_speed']) ? (int)$broadcast['scroll_speed'] : 30,
+                'expiresAt' => !empty($broadcast['expires_at']) ? (int)$broadcast['expires_at'] : null,
+                'createdAt' => (int)($broadcast['created_at'] ?? 0),
+                'updatedAt' => (int)($broadcast['updated_at'] ?? 0),
             ]);
         } else {
             sendJSON(null);
         }
-    } catch (PDOException $e) {
-        sendJSON(['error' => 'Failed to fetch broadcast message: ' . $e->getMessage()], 500);
+    } catch (Throwable $e) {
+        error_log('Broadcast fetch error: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to fetch broadcast message'], 500);
     }
 }
 

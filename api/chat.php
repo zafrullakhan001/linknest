@@ -73,15 +73,17 @@ function handleGetMessages() {
         
         // Parse tile_data JSON if present
         foreach ($messages as &$message) {
-            if ($message['tile_data']) {
+            if (!empty($message['tile_data'])) {
                 $message['tile_data'] = json_decode($message['tile_data'], true);
             }
-            // Convert timestamps to ISO strings
-            $message['created_at_iso'] = date('c', $message['created_at']);
+            // Convert timestamps to ISO strings (PHP 8.1+ requires int for date())
+            $ts = isset($message['created_at']) ? (int) $message['created_at'] : 0;
+            $message['created_at_iso'] = date('c', $ts);
         }
-        
+        unset($message); // break reference
+
         sendJSON($messages);
-    } catch (Exception $e) {
+    } catch (Throwable $e) {
         error_log('Error fetching chat messages: ' . $e->getMessage());
         sendJSON(['error' => 'Failed to fetch messages: ' . $e->getMessage()], 500);
     }

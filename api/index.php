@@ -59,9 +59,13 @@ if (empty($path)) {
 
 error_log("api/index.php: Final normalized path: $path");
 
-// Start session for auth and roles routes so cookies are available
-if ((strpos($path, '/auth') === 0 || strpos($path, '/roles') === 0) && session_status() === PHP_SESSION_NONE) {
-    session_start();
+// Start session once for all API requests so clone, chat, broadcast, auth, roles have cookies
+if (session_status() === PHP_SESSION_NONE) {
+    try {
+        @session_start();
+    } catch (Throwable $e) {
+        error_log("api/index.php: Session start failed: " . $e->getMessage());
+    }
 }
 
 // Route to appropriate handler

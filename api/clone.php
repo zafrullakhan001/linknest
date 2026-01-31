@@ -272,33 +272,38 @@ function handleGetStatus() {
 }
 
 function handleGetCloneStatus($cloneId) {
-    requireAdmin();
-    
-    $cloneId = (int)$cloneId;
-    $service = new CloneService($cloneId);
-    $status = $service->getStatus();
-    
-    if (!$status) {
-        // Try to get from database
-        $db = getDB();
-        $stmt = $db->prepare('SELECT * FROM clones WHERE id = ?');
-        $stmt->execute([$cloneId]);
-        $clone = $stmt->fetch();
-        
-        if (!$clone) {
-            sendJSON(['error' => 'Clone not found'], 404);
+    try {
+        requireAdmin();
+
+        $cloneId = (int)$cloneId;
+        $service = new CloneService($cloneId);
+        $status = $service->getStatus();
+
+        if (!$status) {
+            // Try to get from database
+            $db = getDB();
+            $stmt = $db->prepare('SELECT * FROM clones WHERE id = ?');
+            $stmt->execute([$cloneId]);
+            $clone = $stmt->fetch();
+
+            if (!$clone) {
+                sendJSON(['error' => 'Clone not found'], 404);
+            }
+
+            $status = [
+                'step' => $clone['status'],
+                'progress' => (int)$clone['progress'],
+                'message' => $clone['error_message'] ?? 'Processing...',
+                'logs' => [],
+                'timestamp' => $clone['completed_at'] ?? $clone['created_at']
+            ];
         }
-        
-        $status = [
-            'step' => $clone['status'],
-            'progress' => (int)$clone['progress'],
-            'message' => $clone['error_message'] ?? 'Processing...',
-            'logs' => [],
-            'timestamp' => $clone['completed_at'] ?? $clone['created_at']
-        ];
+
+        sendJSON($status);
+    } catch (Throwable $e) {
+        error_log('Clone status error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+        sendJSON(['error' => 'Failed to get clone status: ' . $e->getMessage(), 'step' => 'error', 'progress' => 0], 500);
     }
-    
-    sendJSON($status);
 }
 
 function handleGetCloneList() {

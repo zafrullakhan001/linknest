@@ -2006,57 +2006,60 @@ function getDB($clear = false) {
     return $dbInstance;
 }
 
-// Helper function to get authenticated user
+// Helper function to get authenticated user (never throws - returns null on DB/session errors)
 function getAuthenticatedUser() {
-    if (session_status() === PHP_SESSION_NONE) {
-        session_start();
-    }
-    if (!isset($_SESSION['user_id'])) {
+    try {
+        if (session_status() === PHP_SESSION_NONE) {
+            @session_start();
+        }
+        if (!isset($_SESSION['user_id'])) {
+            return null;
+        }
+
+        $db = getDB();
+
+        // Check if we're impersonating a user
+        $userId = $_SESSION['user_id'];
+        if (isset($_SESSION['impersonating_user_id'])) {
+            $userId = $_SESSION['impersonating_user_id'];
+        }
+
+        $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved, auth_source, display_name FROM users WHERE id = ?');
+        $stmt->execute([$userId]);
+        $user = $stmt->fetch();
+
+        if ($user) {
+            // Convert integer to boolean
+            $user['is_admin'] = (bool)$user['is_admin'];
+            $user['is_approved'] = (bool)$user['is_approved'];
+            $user['auth_source'] = $user['auth_source'] ?? 'local';
+
+            // Ensure username is in session (fix for analytics)
+            if (empty($_SESSION['username']) && !empty($user['username'])) {
+                $_SESSION['username'] = $user['username'];
+            }
+
+            // Add impersonation info if applicable
+            if (isset($_SESSION['impersonating_user_id']) && isset($_SESSION['impersonating_admin_id'])) {
+                $user['impersonating'] = true;
+                $user['impersonating_admin_id'] = (int)$_SESSION['impersonating_admin_id'];
+
+                $adminStmt = $db->prepare('SELECT id, username FROM users WHERE id = ?');
+                $adminStmt->execute([$_SESSION['impersonating_admin_id']]);
+                $adminUser = $adminStmt->fetch();
+                if ($adminUser) {
+                    $user['impersonating_admin_username'] = $adminUser['username'];
+                }
+            } else {
+                $user['impersonating'] = false;
+            }
+        }
+
+        return $user ?: null;
+    } catch (Throwable $e) {
+        error_log('getAuthenticatedUser error: ' . $e->getMessage());
         return null;
     }
-    
-    $db = getDB();
-    
-    // Check if we're impersonating a user
-    $userId = $_SESSION['user_id'];
-    if (isset($_SESSION['impersonating_user_id'])) {
-        $userId = $_SESSION['impersonating_user_id'];
-    }
-    
-    $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved, auth_source, display_name FROM users WHERE id = ?');
-    $stmt->execute([$userId]);
-    $user = $stmt->fetch();
-    
-    if ($user) {
-        // Convert integer to boolean
-        $user['is_admin'] = (bool)$user['is_admin'];
-        $user['is_approved'] = (bool)$user['is_approved'];
-        $user['auth_source'] = $user['auth_source'] ?? 'local';
-        
-        // Ensure username is in session (fix for analytics)
-        // This ensures $_SESSION['username'] is always populated when user is authenticated
-        if (empty($_SESSION['username']) && !empty($user['username'])) {
-            $_SESSION['username'] = $user['username'];
-        }
-        
-        // Add impersonation info if applicable
-        if (isset($_SESSION['impersonating_user_id']) && isset($_SESSION['impersonating_admin_id'])) {
-            $user['impersonating'] = true;
-            $user['impersonating_admin_id'] = (int)$_SESSION['impersonating_admin_id'];
-            
-            // Get admin user info for display
-            $adminStmt = $db->prepare('SELECT id, username FROM users WHERE id = ?');
-            $adminStmt->execute([$_SESSION['impersonating_admin_id']]);
-            $adminUser = $adminStmt->fetch();
-            if ($adminUser) {
-                $user['impersonating_admin_username'] = $adminUser['username'];
-            }
-        } else {
-            $user['impersonating'] = false;
-        }
-    }
-    
-    return $user ?: null;
 }
 
 // Helper function to check if user is admin
