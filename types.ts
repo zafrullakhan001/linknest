@@ -130,7 +130,7 @@ export interface TileMessage {
   displayLocation?: 'tile' | 'detail' | 'both'; // Where to display the message
   animationType?: 'rollover' | 'still' | 'flash' | 'flip-horizontal' | 'flip-vertical' | 'bounce' | 'pulse' | 'shake' | 'fade' | 'slide'; // Animation type
   delayBefore?: number; // Delay in seconds before showing this message (for sequential display when multiple messages are active)
-  celebrationEffect?: 'none' | 'fireworks' | 'confetti' | 'snowfall' | 'hearts-rising' | 'hearts-falling' | 'bubbles'; // Visual effect for celebration messages
+  celebrationEffect?: 'none' | 'fireworks' | 'confetti' | 'snowfall' | 'hearts-rising' | 'hearts-falling' | 'bubbles' | 'butterflies' | 'birds-flying' | 'rocket-launch' | 'burst-fireworks' | 'sparkles' | 'petals' | 'shooting-stars' | 'leaves' | 'fireflies' | 'balloons' | 'stars' | 'rainbow'; // Visual effect for celebration messages
   celebrationConfig?: CelebrationConfig; // Optional overrides for celebration animation
   url?: string; // Optional URL link for more information about the message
   urlLabel?: string; // Optional custom display text for the link (e.g. "Learn more", "View details")

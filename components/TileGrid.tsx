@@ -31,6 +31,18 @@ import { TileSnowfall } from './TileSnowfall';
 import { TileHeartsRising } from './TileHeartsRising';
 import { TileHeartsFalling } from './TileHeartsFalling';
 import { TileBubbles } from './TileBubbles';
+import { TileButterflies } from './TileButterflies';
+import { TileBirdsFlying } from './TileBirdsFlying';
+import { TileRocketLaunch } from './TileRocketLaunch';
+import { TileBurstFireworks } from './TileBurstFireworks';
+import { TileSparkles } from './TileSparkles';
+import { TilePetals } from './TilePetals';
+import { TileShootingStars } from './TileShootingStars';
+import { TileLeaves } from './TileLeaves';
+import { TileFireflies } from './TileFireflies';
+import { TileBalloons } from './TileBalloons';
+import { TileStars } from './TileStars';
+import { TileRainbow } from './TileRainbow';
 
 
 
@@ -880,6 +892,18 @@ const SortableTile: React.FC<SortableTileProps> = ({
   const [heartsRisingTrigger, setHeartsRisingTrigger] = useState(0);
   const [heartsFallingTrigger, setHeartsFallingTrigger] = useState(0);
   const [bubblesTrigger, setBubblesTrigger] = useState(0);
+  const [butterfliesTrigger, setButterfliesTrigger] = useState(0);
+  const [birdsFlyingTrigger, setBirdsFlyingTrigger] = useState(0);
+  const [rocketLaunchTrigger, setRocketLaunchTrigger] = useState(0);
+  const [burstFireworksTrigger, setBurstFireworksTrigger] = useState(0);
+  const [sparklesTrigger, setSparklesTrigger] = useState(0);
+  const [petalsTrigger, setPetalsTrigger] = useState(0);
+  const [shootingStarsTrigger, setShootingStarsTrigger] = useState(0);
+  const [leavesTrigger, setLeavesTrigger] = useState(0);
+  const [firefliesTrigger, setFirefliesTrigger] = useState(0);
+  const [balloonsTrigger, setBalloonsTrigger] = useState(0);
+  const [starsTrigger, setStarsTrigger] = useState(0);
+  const [rainbowTrigger, setRainbowTrigger] = useState(0);
   const tileRef = useRef<HTMLDivElement>(null);
 
 
@@ -1044,39 +1068,56 @@ const SortableTile: React.FC<SortableTileProps> = ({
       const cfg = celebrationMessages[0].celebrationConfig ?? {};
       const intervalMs = Math.max(2000, Math.min(15000, cfg.triggerIntervalMs ?? 5000));
 
-      if (effectType === 'none') {
+      const resetAllTriggers = () => {
         setFireworksTrigger(0);
         setConfettiTrigger(0);
         setSnowfallTrigger(0);
         setHeartsRisingTrigger(0);
         setHeartsFallingTrigger(0);
         setBubblesTrigger(0);
+        setButterfliesTrigger(0);
+        setBirdsFlyingTrigger(0);
+        setRocketLaunchTrigger(0);
+        setBurstFireworksTrigger(0);
+        setSparklesTrigger(0);
+        setPetalsTrigger(0);
+        setShootingStarsTrigger(0);
+        setLeavesTrigger(0);
+        setFirefliesTrigger(0);
+        setBalloonsTrigger(0);
+        setStarsTrigger(0);
+        setRainbowTrigger(0);
+      };
+
+      if (effectType === 'none') {
+        resetAllTriggers();
         return;
       }
 
-      if (effectType === 'fireworks') {
-        setFireworksTrigger(prev => prev + 1);
-        const interval = setInterval(() => setFireworksTrigger(prev => prev + 1), intervalMs);
-        return () => clearInterval(interval);
-      } else if (effectType === 'confetti') {
-        setConfettiTrigger(prev => prev + 1);
-        const interval = setInterval(() => setConfettiTrigger(prev => prev + 1), intervalMs);
-        return () => clearInterval(interval);
-      } else if (effectType === 'snowfall') {
-        setSnowfallTrigger(prev => prev + 1);
-        const interval = setInterval(() => setSnowfallTrigger(prev => prev + 1), intervalMs);
-        return () => clearInterval(interval);
-      } else if (effectType === 'hearts-rising') {
-        setHeartsRisingTrigger(prev => prev + 1);
-        const interval = setInterval(() => setHeartsRisingTrigger(prev => prev + 1), intervalMs);
-        return () => clearInterval(interval);
-      } else if (effectType === 'hearts-falling') {
-        setHeartsFallingTrigger(prev => prev + 1);
-        const interval = setInterval(() => setHeartsFallingTrigger(prev => prev + 1), intervalMs);
-        return () => clearInterval(interval);
-      } else if (effectType === 'bubbles') {
-        setBubblesTrigger(prev => prev + 1);
-        const interval = setInterval(() => setBubblesTrigger(prev => prev + 1), intervalMs);
+      const triggerMap: Record<string, React.Dispatch<React.SetStateAction<number>>> = {
+        'fireworks': setFireworksTrigger,
+        'confetti': setConfettiTrigger,
+        'snowfall': setSnowfallTrigger,
+        'hearts-rising': setHeartsRisingTrigger,
+        'hearts-falling': setHeartsFallingTrigger,
+        'bubbles': setBubblesTrigger,
+        'butterflies': setButterfliesTrigger,
+        'birds-flying': setBirdsFlyingTrigger,
+        'rocket-launch': setRocketLaunchTrigger,
+        'burst-fireworks': setBurstFireworksTrigger,
+        'sparkles': setSparklesTrigger,
+        'petals': setPetalsTrigger,
+        'shooting-stars': setShootingStarsTrigger,
+        'leaves': setLeavesTrigger,
+        'fireflies': setFirefliesTrigger,
+        'balloons': setBalloonsTrigger,
+        'stars': setStarsTrigger,
+        'rainbow': setRainbowTrigger,
+      };
+      const setTrigger = triggerMap[effectType];
+      if (setTrigger) {
+        setTrigger(prev => prev + 1);
+        const interval = setInterval(() => setTrigger(prev => prev + 1), intervalMs);
         return () => clearInterval(interval);
       }
     } else {
@@ -1086,6 +1127,18 @@ const SortableTile: React.FC<SortableTileProps> = ({
       setHeartsRisingTrigger(0);
       setHeartsFallingTrigger(0);
       setBubblesTrigger(0);
+      setButterfliesTrigger(0);
+      setBirdsFlyingTrigger(0);
+      setRocketLaunchTrigger(0);
+      setBurstFireworksTrigger(0);
+      setSparklesTrigger(0);
+      setPetalsTrigger(0);
+      setShootingStarsTrigger(0);
+      setLeavesTrigger(0);
+      setFirefliesTrigger(0);
+      setBalloonsTrigger(0);
+      setStarsTrigger(0);
+      setRainbowTrigger(0);
     }
   }, [celebrationMessageKeys]);
 
@@ -1225,6 +1278,18 @@ const SortableTile: React.FC<SortableTileProps> = ({
             <TileHeartsRising trigger={heartsRisingTrigger} tileRef={tileRef} config={effectCfg} />
             <TileHeartsFalling trigger={heartsFallingTrigger} tileRef={tileRef} config={effectCfg} />
             <TileBubbles trigger={bubblesTrigger} tileRef={tileRef} config={effectCfg} />
+            <TileButterflies trigger={butterfliesTrigger} tileRef={tileRef} config={effectCfg} />
+            <TileBirdsFlying trigger={birdsFlyingTrigger} tileRef={tileRef} config={effectCfg} />
+            <TileRocketLaunch trigger={rocketLaunchTrigger} tileRef={tileRef} config={effectCfg} />
+            <TileBurstFireworks trigger={burstFireworksTrigger} tileRef={tileRef} config={effectCfg} />
+            <TileSparkles trigger={sparklesTrigger} tileRef={tileRef} config={effectCfg} />
+            <TilePetals trigger={petalsTrigger} tileRef={tileRef} config={effectCfg} />
+            <TileShootingStars trigger={shootingStarsTrigger} tileRef={tileRef} config={effectCfg} />
+            <TileLeaves trigger={leavesTrigger} tileRef={tileRef} config={effectCfg} />
+            <TileFireflies trigger={firefliesTrigger} tileRef={tileRef} config={effectCfg} />
+            <TileBalloons trigger={balloonsTrigger} tileRef={tileRef} config={effectCfg} />
+            <TileStars trigger={starsTrigger} tileRef={tileRef} config={effectCfg} />
+            <TileRainbow trigger={rainbowTrigger} tileRef={tileRef} config={effectCfg} />
           </>
         );
       })()}
@@ -2066,7 +2131,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [messageDisplayLocation, setMessageDisplayLocation] = useState<'tile' | 'detail' | 'both'>('both');
   const [messageAnimationType, setMessageAnimationType] = useState<'rollover' | 'still' | 'flash' | 'flip-horizontal' | 'flip-vertical' | 'bounce' | 'pulse' | 'shake' | 'fade' | 'slide'>('rollover');
   const [messageDelayBefore, setMessageDelayBefore] = useState<number>(0);
-  const [messageCelebrationEffect, setMessageCelebrationEffect] = useState<'none' | 'fireworks' | 'confetti' | 'snowfall' | 'hearts-rising' | 'hearts-falling' | 'bubbles'>('fireworks');
+  const [messageCelebrationEffect, setMessageCelebrationEffect] = useState<TileMessage['celebrationEffect']>('fireworks');
   const [messageCelebrationConfig, setMessageCelebrationConfig] = useState<CelebrationConfig>(() => ({
     intensity: 100,
     particleCount: 18,
@@ -2148,7 +2213,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const validMessageTypes = ['info', 'warning', 'celebration', 'alert', 'custom'] as const;
   const validDisplayLocations = ['tile', 'detail', 'both'] as const;
   const validAnimationTypes = ['rollover', 'still', 'flash', 'flip-horizontal', 'flip-vertical', 'bounce', 'pulse', 'shake', 'fade', 'slide'] as const;
-  const validCelebrationEffects = ['none', 'fireworks', 'confetti', 'snowfall', 'hearts-rising', 'hearts-falling', 'hearts', 'bubbles'] as const;
+  const validCelebrationEffects = ['none', 'fireworks', 'confetti', 'snowfall', 'hearts-rising', 'hearts-falling', 'hearts', 'bubbles', 'butterflies', 'birds-flying', 'rocket-launch', 'burst-fireworks', 'sparkles', 'petals', 'shooting-stars', 'leaves', 'fireflies', 'balloons', 'stars', 'rainbow'] as const;
 
   const normalizeImportedMessage = (raw: unknown, index: number): TileMessage | null => {
     if (!raw || typeof raw !== 'object') return null;
@@ -2278,7 +2343,7 @@ Generate a JSON array of scheduled message board messages for Linknest. Each mes
 | displayLocation | string | "tile", "detail", "both" | "both" |
 | animationType | string | "rollover", "still", "flash", "flip-horizontal", "flip-vertical", "bounce", "pulse", "shake", "fade", "slide" | "rollover" |
 | delayBefore | number | seconds before showing (sequential messages) | 0 |
-| celebrationEffect | string | "none", "fireworks", "confetti", "snowfall", "hearts-rising", "hearts-falling", "bubbles" | "fireworks" |
+| celebrationEffect | string | "none", "fireworks", "burst-fireworks", "confetti", "snowfall", "hearts-rising", "hearts-falling", "bubbles", "butterflies", "birds-flying", "rocket-launch", "sparkles", "petals", "shooting-stars", "leaves", "fireflies", "balloons", "stars", "rainbow" | "fireworks" |
 | celebrationConfig | object | optional; see below | — |
 | url | string | URL link for more info (e.g. "https://example.com/details") | — |
 | urlLabel | string | Custom text for the link (e.g. "Learn more", "View details") | "Info" |
@@ -8071,15 +8136,27 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                               </label>
                               <select
                                 value={messageCelebrationEffect}
-                                onChange={(e) => setMessageCelebrationEffect(e.target.value as 'none' | 'fireworks' | 'confetti' | 'snowfall' | 'hearts-rising' | 'hearts-falling' | 'bubbles')}
+                                onChange={(e) => setMessageCelebrationEffect(e.target.value as TileMessage['celebrationEffect'])}
                                 className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
                               >
                                 <option value="fireworks">🎆 Fireworks</option>
+                                <option value="burst-fireworks">💥 Burst Fireworks</option>
                                 <option value="confetti">🎊 Confetti (Falling)</option>
                                 <option value="snowfall">❄️ Snowfall</option>
                                 <option value="hearts-rising">❤️ Hearts (Rising)</option>
                                 <option value="hearts-falling">❤️ Hearts (Falling)</option>
                                 <option value="bubbles">🫧 Bubbles (Rising)</option>
+                                <option value="butterflies">🦋 Butterflies</option>
+                                <option value="birds-flying">🐦 Birds Flying</option>
+                                <option value="rocket-launch">🚀 Rocket Launch</option>
+                                <option value="sparkles">✨ Sparkles</option>
+                                <option value="petals">🌸 Flower Petals</option>
+                                <option value="shooting-stars">🌠 Shooting Stars</option>
+                                <option value="leaves">🍂 Autumn Leaves</option>
+                                <option value="fireflies">✨ Fireflies</option>
+                                <option value="balloons">🎈 Balloons</option>
+                                <option value="stars">⭐ Twinkling Stars</option>
+                                <option value="rainbow">🌈 Rainbow</option>
                                 <option value="none">❌ None</option>
                               </select>
                               <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
@@ -8525,7 +8602,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                       setMessageDisplayLocation(msg.displayLocation || 'both');
                                       setMessageAnimationType(msg.animationType || 'rollover');
                                       setMessageDelayBefore(msg.delayBefore || 0);
-                                      const validEffects = ['none', 'fireworks', 'confetti', 'snowfall', 'hearts-rising', 'hearts-falling', 'bubbles'] as const;
+                                      const validEffects = ['none', 'fireworks', 'confetti', 'snowfall', 'hearts-rising', 'hearts-falling', 'bubbles', 'butterflies', 'birds-flying', 'rocket-launch', 'burst-fireworks', 'sparkles', 'petals', 'shooting-stars', 'leaves', 'fireflies', 'balloons', 'stars', 'rainbow'] as const;
                                       const eff = msg.celebrationEffect || 'fireworks';
                                       const resolved = eff === 'hearts' ? 'hearts-rising' : (validEffects.includes(eff as any) ? eff : 'fireworks');
                                       setMessageCelebrationEffect(resolved);
