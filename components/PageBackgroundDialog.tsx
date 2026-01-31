@@ -49,6 +49,32 @@ const METALLIC_GRADIENT_PRESETS: Array<{ name: string; start: string; end: strin
   { name: 'Rose Gold', start: '#f5e6e8', end: '#c9a0a0', direction: 135 },
 ];
 
+// Extra gradient presets for center canvas (wider variety)
+const CENTER_CANVAS_GRADIENT_PRESETS: Array<{ name: string; start: string; end: string; direction: number }> = [
+  ...GRADIENT_PRESETS,
+  ...METALLIC_GRADIENT_PRESETS,
+  { name: 'Peach', start: '#ffecd2', end: '#fcb69f', direction: 120 },
+  { name: 'Sage', start: '#a8edea', end: '#fed6e3', direction: 135 },
+  { name: 'Midnight', start: '#0f0c29', end: '#302b63', direction: 180 },
+  { name: 'Aurora', start: '#00c6fb', end: '#005bea', direction: 135 },
+  { name: 'Candy', start: '#ff9a9e', end: '#fecfef', direction: 90 },
+  { name: 'Frost', start: '#e0c3fc', end: '#8ec5fc', direction: 135 },
+  { name: 'Coral', start: '#ffecd2', end: '#fcb69f', direction: 45 },
+  { name: 'Moss', start: '#134e5e', end: '#71b280', direction: 135 },
+  { name: 'Lilac', start: '#d299c2', end: '#fef9d7', direction: 135 },
+  { name: 'Steel', start: '#2c3e50', end: '#bdc3c7', direction: 180 },
+  { name: 'Sunrise', start: '#ff7e5f', end: '#feb47b', direction: 45 },
+  { name: 'Forest', start: '#0ba360', end: '#3cba92', direction: 135 },
+  { name: 'Berry', start: '#ee9ca7', end: '#ffdde1', direction: 90 },
+  { name: 'Dusk', start: '#4b79a1', end: '#283e51', direction: 180 },
+  { name: 'Blush', start: '#ffafbd', end: '#ffc3a0', direction: 120 },
+  { name: 'Mint Frost', start: '#d4fc79', end: '#96e6a1', direction: 90 },
+  { name: 'Royal', start: '#667eea', end: '#764ba2', direction: 135 },
+  { name: 'Sand', start: '#f5f7fa', end: '#c3cfe2', direction: 180 },
+  { name: 'Neon', start: '#fa709a', end: '#fee140', direction: 45 },
+  { name: 'Ocean Deep', start: '#2193b0', end: '#6dd5ed', direction: 160 },
+];
+
 const SOLID_PRESETS: Array<{ name: string; color: string }> = [
   { name: 'Silver', color: '#c0c0c0' },
   { name: 'Gold', color: '#daa520' },
@@ -92,17 +118,17 @@ const PATTERNS: Array<{ id: string; label: string; preview: string; previewSize?
 const ACCEPTED_IMAGE_TYPES = 'image/jpeg,image/png,image/svg+xml,image/webp,image/gif';
 
 const PAGE_BG_ACTIVE_TAB_KEY = 'linknest_page_bg_active_tab';
-const VALID_TABS = ['none', 'solid', 'gradient', 'pattern', 'image', 'celebration'] as const;
+const VALID_TABS = ['none', 'solid', 'gradient', 'pattern', 'image', 'centerCanvas', 'celebration'] as const;
 
-function getPersistedTab(): PageBackgroundType | 'celebration' | null {
+function getPersistedTab(): PageBackgroundType | 'centerCanvas' | 'celebration' | null {
   try {
     const saved = localStorage.getItem(PAGE_BG_ACTIVE_TAB_KEY);
-    if (saved && VALID_TABS.includes(saved as typeof VALID_TABS[number])) return saved as PageBackgroundType | 'celebration';
+    if (saved && VALID_TABS.includes(saved as typeof VALID_TABS[number])) return saved as PageBackgroundType | 'centerCanvas' | 'celebration';
   } catch (_) {}
   return null;
 }
 
-function persistTab(tab: PageBackgroundType | 'celebration') {
+function persistTab(tab: PageBackgroundType | 'centerCanvas' | 'celebration') {
   try {
     localStorage.setItem(PAGE_BG_ACTIVE_TAB_KEY, tab);
   } catch (_) {}
@@ -117,7 +143,7 @@ interface PageBackgroundDialogProps {
 
 export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOpen, onClose, styles, onApply }) => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<PageBackgroundType | 'celebration'>(() => {
+  const [activeTab, setActiveTab] = useState<PageBackgroundType | 'centerCanvas' | 'celebration'>(() => {
     const persisted = getPersistedTab();
     const celebrationEnabled = styles?.celebrationEffectEnabled ?? DEFAULT_STYLES.celebrationEffectEnabled;
     if (persisted) return persisted;
@@ -141,6 +167,25 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
   const [imagePosition, setImagePosition] = useState(styles?.pageBackgroundImagePosition ?? 'center');
   const [imageSize, setImageSize] = useState(styles?.pageBackgroundImageSize ?? 'cover');
   const [imagePreviewError, setImagePreviewError] = useState(false);
+
+  // Center canvas (main content area) state
+  const [centerCanvasType, setCenterCanvasType] = useState<'none' | 'solid' | 'gradient'>(() => (styles?.centerCanvasBackgroundType as 'none' | 'solid' | 'gradient') ?? DEFAULT_STYLES.centerCanvasBackgroundType);
+  const [centerCanvasSolidColor, setCenterCanvasSolidColor] = useState(styles?.centerCanvasSolidColor ?? DEFAULT_STYLES.centerCanvasSolidColor);
+  const [centerCanvasSolidColorDark, setCenterCanvasSolidColorDark] = useState(styles?.centerCanvasSolidColorDark ?? DEFAULT_STYLES.centerCanvasSolidColorDark);
+  const [centerCanvasGradientStart, setCenterCanvasGradientStart] = useState(styles?.centerCanvasGradientStart ?? DEFAULT_STYLES.centerCanvasGradientStart);
+  const [centerCanvasGradientEnd, setCenterCanvasGradientEnd] = useState(styles?.centerCanvasGradientEnd ?? DEFAULT_STYLES.centerCanvasGradientEnd);
+  const [centerCanvasGradientStartDark, setCenterCanvasGradientStartDark] = useState(styles?.centerCanvasGradientStartDark ?? DEFAULT_STYLES.centerCanvasGradientStartDark);
+  const [centerCanvasGradientEndDark, setCenterCanvasGradientEndDark] = useState(styles?.centerCanvasGradientEndDark ?? DEFAULT_STYLES.centerCanvasGradientEndDark);
+  const [centerCanvasGradientDirection, setCenterCanvasGradientDirection] = useState(styles?.centerCanvasGradientDirection ?? DEFAULT_STYLES.centerCanvasGradientDirection);
+  const [centerCanvasGradientType, setCenterCanvasGradientType] = useState<'linear' | 'radial' | 'conic'>(styles?.centerCanvasGradientType ?? DEFAULT_STYLES.centerCanvasGradientType);
+  const [centerCanvasBorderRadius, setCenterCanvasBorderRadius] = useState(styles?.centerCanvasBorderRadius ?? DEFAULT_STYLES.centerCanvasBorderRadius);
+  const [centerCanvasGradientStop, setCenterCanvasGradientStop] = useState(styles?.centerCanvasGradientStop ?? DEFAULT_STYLES.centerCanvasGradientStop);
+  const [centerCanvasRadialPosition, setCenterCanvasRadialPosition] = useState(styles?.centerCanvasRadialPosition ?? DEFAULT_STYLES.centerCanvasRadialPosition);
+  const [centerCanvasPatternEnabled, setCenterCanvasPatternEnabled] = useState(styles?.centerCanvasPatternEnabled ?? DEFAULT_STYLES.centerCanvasPatternEnabled);
+  const [centerCanvasPatternId, setCenterCanvasPatternId] = useState(styles?.centerCanvasPatternId ?? DEFAULT_STYLES.centerCanvasPatternId);
+  const [centerCanvasPatternColor1, setCenterCanvasPatternColor1] = useState(styles?.centerCanvasPatternColor1 ?? DEFAULT_STYLES.centerCanvasPatternColor1);
+  const [centerCanvasPatternColor2, setCenterCanvasPatternColor2] = useState(styles?.centerCanvasPatternColor2 ?? DEFAULT_STYLES.centerCanvasPatternColor2);
+  const [centerCanvasPatternOpacity, setCenterCanvasPatternOpacity] = useState(styles?.centerCanvasPatternOpacity ?? DEFAULT_STYLES.centerCanvasPatternOpacity);
 
   // Celebration effects state
   const [celebrationEnabled, setCelebrationEnabled] = useState(styles?.celebrationEffectEnabled ?? DEFAULT_STYLES.celebrationEffectEnabled);
@@ -241,6 +286,23 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
       setOpacity(styles.pageBackgroundOpacity ?? 100);
       setImagePosition(styles.pageBackgroundImagePosition ?? 'center');
       setImageSize(styles.pageBackgroundImageSize ?? 'cover');
+      setCenterCanvasType((styles.centerCanvasBackgroundType as 'none' | 'solid' | 'gradient') ?? DEFAULT_STYLES.centerCanvasBackgroundType);
+      setCenterCanvasSolidColor(styles.centerCanvasSolidColor ?? DEFAULT_STYLES.centerCanvasSolidColor);
+      setCenterCanvasSolidColorDark(styles.centerCanvasSolidColorDark ?? DEFAULT_STYLES.centerCanvasSolidColorDark);
+      setCenterCanvasGradientStart(styles.centerCanvasGradientStart ?? DEFAULT_STYLES.centerCanvasGradientStart);
+      setCenterCanvasGradientEnd(styles.centerCanvasGradientEnd ?? DEFAULT_STYLES.centerCanvasGradientEnd);
+      setCenterCanvasGradientStartDark(styles.centerCanvasGradientStartDark ?? DEFAULT_STYLES.centerCanvasGradientStartDark);
+      setCenterCanvasGradientEndDark(styles.centerCanvasGradientEndDark ?? DEFAULT_STYLES.centerCanvasGradientEndDark);
+      setCenterCanvasGradientDirection(styles.centerCanvasGradientDirection ?? DEFAULT_STYLES.centerCanvasGradientDirection);
+      setCenterCanvasGradientType(styles.centerCanvasGradientType ?? DEFAULT_STYLES.centerCanvasGradientType);
+      setCenterCanvasBorderRadius(styles.centerCanvasBorderRadius ?? DEFAULT_STYLES.centerCanvasBorderRadius);
+      setCenterCanvasGradientStop(styles.centerCanvasGradientStop ?? DEFAULT_STYLES.centerCanvasGradientStop);
+      setCenterCanvasRadialPosition(styles.centerCanvasRadialPosition ?? DEFAULT_STYLES.centerCanvasRadialPosition);
+      setCenterCanvasPatternEnabled(styles.centerCanvasPatternEnabled ?? DEFAULT_STYLES.centerCanvasPatternEnabled);
+      setCenterCanvasPatternId(styles.centerCanvasPatternId ?? DEFAULT_STYLES.centerCanvasPatternId);
+      setCenterCanvasPatternColor1(styles.centerCanvasPatternColor1 ?? DEFAULT_STYLES.centerCanvasPatternColor1);
+      setCenterCanvasPatternColor2(styles.centerCanvasPatternColor2 ?? DEFAULT_STYLES.centerCanvasPatternColor2);
+      setCenterCanvasPatternOpacity(styles.centerCanvasPatternOpacity ?? DEFAULT_STYLES.centerCanvasPatternOpacity);
       setCelebrationEnabled(styles.celebrationEffectEnabled ?? DEFAULT_STYLES.celebrationEffectEnabled);
       setCelebrationType((styles.celebrationEffectType as CelebrationEffectType) ?? DEFAULT_STYLES.celebrationEffectType);
       setCelebrationIntensity(styles.celebrationIntensity ?? DEFAULT_STYLES.celebrationIntensity);
@@ -256,7 +318,10 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
   }, [isOpen, styles]);
 
   const apply = (overrides: Partial<SpaceStyles> = {}) => {
-    const bgType = activeTab === 'celebration' ? (styles?.pageBackgroundType ?? 'none') : activeTab;
+    const bgType =
+      activeTab === 'celebration' || activeTab === 'centerCanvas'
+        ? (styles?.pageBackgroundType ?? 'none')
+        : activeTab;
     const next: SpaceStyles = {
       ...styles,
       pageBackgroundType: bgType,
@@ -287,6 +352,23 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
       celebrationShowOnForeground: celebrationShowOnForeground,
       celebrationOpacity: celebrationOpacity,
       celebrationBurstInterval: celebrationBurstInterval,
+      centerCanvasBackgroundType: activeTab === 'centerCanvas' ? centerCanvasType : (styles?.centerCanvasBackgroundType ?? DEFAULT_STYLES.centerCanvasBackgroundType),
+      centerCanvasSolidColor: centerCanvasSolidColor,
+      centerCanvasSolidColorDark: centerCanvasSolidColorDark,
+      centerCanvasGradientType: centerCanvasGradientType,
+      centerCanvasGradientDirection: centerCanvasGradientDirection,
+      centerCanvasGradientStart: centerCanvasGradientStart,
+      centerCanvasGradientEnd: centerCanvasGradientEnd,
+      centerCanvasGradientStartDark: centerCanvasGradientStartDark,
+      centerCanvasGradientEndDark: centerCanvasGradientEndDark,
+      centerCanvasBorderRadius: centerCanvasBorderRadius,
+      centerCanvasGradientStop: centerCanvasGradientStop,
+      centerCanvasRadialPosition: centerCanvasRadialPosition,
+      centerCanvasPatternEnabled: centerCanvasPatternEnabled,
+      centerCanvasPatternId: centerCanvasPatternId,
+      centerCanvasPatternColor1: centerCanvasPatternColor1,
+      centerCanvasPatternColor2: centerCanvasPatternColor2,
+      centerCanvasPatternOpacity: centerCanvasPatternOpacity,
       ...overrides
     };
     onApply(next);
@@ -347,12 +429,13 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
     onApply(next);
   };
 
-  const tabs: { id: PageBackgroundType | 'celebration'; label: string }[] = [
+  const tabs: { id: PageBackgroundType | 'centerCanvas' | 'celebration'; label: string }[] = [
     { id: 'none', label: 'Default' },
     { id: 'solid', label: 'Solid' },
     { id: 'gradient', label: 'Gradient' },
     { id: 'pattern', label: 'Pattern' },
     { id: 'image', label: 'Image' },
+    { id: 'centerCanvas', label: 'Center canvas' },
     { id: 'celebration', label: 'Celebration' }
   ];
 
@@ -361,7 +444,7 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
       <div className="absolute inset-0 bg-black/50 dark:bg-black/60 pointer-events-auto" onClick={onClose} aria-hidden="true" />
       <div
         ref={dialogRef}
-        className="relative w-full max-w-lg rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden pointer-events-auto"
+        className="relative w-full max-w-4xl rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden pointer-events-auto"
         style={{
           position: 'fixed',
           left: position.x,
@@ -409,7 +492,7 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
           ))}
         </div>
 
-        <div className="p-4 max-h-[60vh] overflow-y-auto">
+        <div className="p-4 max-h-[70vh] overflow-y-auto">
           {activeTab === 'none' && (
             <div className="space-y-4">
               <p className="text-sm text-slate-600 dark:text-slate-400">
@@ -569,6 +652,382 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
                   Apply custom
                 </button>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'centerCanvas' && (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Set a solid or gradient background for the center content area only (where tiles and categories appear). Leave transparent by choosing None.
+              </p>
+              <div className="flex gap-2 mb-3">
+                {(['none', 'solid', 'gradient'] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setCenterCanvasType(t)}
+                    className={`px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
+                      centerCanvasType === t
+                        ? 'bg-brand-600 text-white'
+                        : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600'
+                    }`}
+                  >
+                    {t === 'none' ? 'None (transparent)' : t === 'solid' ? 'Solid' : 'Gradient'}
+                  </button>
+                ))}
+              </div>
+              {(centerCanvasType === 'solid' || centerCanvasType === 'gradient') && (
+                <div className="space-y-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Corner radius: {centerCanvasBorderRadius}px</label>
+                  <input
+                    type="range"
+                    min={0}
+                    max={48}
+                    value={centerCanvasBorderRadius}
+                    onChange={(e) => setCenterCanvasBorderRadius(Number(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
+              )}
+              {(centerCanvasType === 'solid' || centerCanvasType === 'gradient') && (
+                <div className="space-y-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="centerCanvasPatternOverlay"
+                      checked={centerCanvasPatternEnabled}
+                      onChange={(e) => setCenterCanvasPatternEnabled(e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                    />
+                    <label htmlFor="centerCanvasPatternOverlay" className="text-sm font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
+                      Overlay pattern on background (keep existing color)
+                    </label>
+                  </div>
+                  {centerCanvasPatternEnabled && (
+                    <>
+                      <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Pattern preset</p>
+                      <div className="grid grid-cols-4 sm:grid-cols-5 gap-2 max-h-36 overflow-y-auto">
+                        {PATTERNS.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => setCenterCanvasPatternId(p.id)}
+                            className={`flex flex-col items-center gap-1 p-2 rounded-lg border-2 transition-all flex-shrink-0 ${
+                              centerCanvasPatternId === p.id
+                                ? 'border-brand-500 ring-2 ring-brand-500/30'
+                                : 'border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500'
+                            }`}
+                          >
+                            <div
+                              className="w-full h-10 rounded bg-slate-100 dark:bg-slate-700"
+                              style={{
+                                background: p.preview,
+                                backgroundSize: p.previewSize || (p.id === 'grid' || p.id === 'cross' ? '16px 16px' : p.id === 'hexagon' ? '24px 42px' : '24px 24px'),
+                                backgroundColor: '#f1f5f9'
+                              }}
+                            />
+                            <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate w-full text-center">{p.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-200 dark:border-slate-600">
+                        <div>
+                          <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Pattern color 1</label>
+                          <div className="flex gap-2">
+                            <input
+                              type="color"
+                              value={centerCanvasPatternColor1}
+                              onChange={(e) => setCenterCanvasPatternColor1(e.target.value)}
+                              className="h-9 w-11 rounded border border-slate-300 dark:border-slate-600 cursor-pointer bg-transparent"
+                            />
+                            <input
+                              type="text"
+                              value={centerCanvasPatternColor1}
+                              onChange={(e) => setCenterCanvasPatternColor1(e.target.value)}
+                              className="flex-1 min-w-0 px-2 py-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-xs"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Pattern color 2</label>
+                          <div className="flex gap-2">
+                            <input
+                              type="color"
+                              value={centerCanvasPatternColor2}
+                              onChange={(e) => setCenterCanvasPatternColor2(e.target.value)}
+                              className="h-9 w-11 rounded border border-slate-300 dark:border-slate-600 cursor-pointer bg-transparent"
+                            />
+                            <input
+                              type="text"
+                              value={centerCanvasPatternColor2}
+                              onChange={(e) => setCenterCanvasPatternColor2(e.target.value)}
+                              className="flex-1 min-w-0 px-2 py-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-xs"
+                            />
+                          </div>
+                        </div>
+                        <div className="col-span-2">
+                          <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Pattern opacity: {centerCanvasPatternOpacity}%</label>
+                          <input
+                            type="range"
+                            min={5}
+                            max={100}
+                            value={centerCanvasPatternOpacity}
+                            onChange={(e) => setCenterCanvasPatternOpacity(Number(e.target.value))}
+                            className="w-full"
+                          />
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          apply({
+                            centerCanvasPatternEnabled: true,
+                            centerCanvasPatternId: centerCanvasPatternId,
+                            centerCanvasPatternColor1: centerCanvasPatternColor1,
+                            centerCanvasPatternColor2: centerCanvasPatternColor2,
+                            centerCanvasPatternOpacity: centerCanvasPatternOpacity
+                          })
+                        }
+                        className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium transition-colors"
+                      >
+                        Apply pattern overlay
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+              {centerCanvasType === 'solid' && (
+                <div className="space-y-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Day (light theme) color</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={centerCanvasSolidColor}
+                      onChange={(e) => setCenterCanvasSolidColor(e.target.value)}
+                      className="h-10 w-14 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer bg-transparent"
+                    />
+                    <input
+                      type="text"
+                      value={centerCanvasSolidColor}
+                      onChange={(e) => setCenterCanvasSolidColor(e.target.value)}
+                      className="flex-1 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm"
+                    />
+                  </div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 pt-1">Night (dark theme) color</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={centerCanvasSolidColorDark}
+                      onChange={(e) => setCenterCanvasSolidColorDark(e.target.value)}
+                      className="h-10 w-14 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer bg-transparent"
+                    />
+                    <input
+                      type="text"
+                      value={centerCanvasSolidColorDark}
+                      onChange={(e) => setCenterCanvasSolidColorDark(e.target.value)}
+                      className="flex-1 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => apply({ centerCanvasBackgroundType: 'solid', centerCanvasSolidColor, centerCanvasSolidColorDark, centerCanvasBorderRadius })}
+                    className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium transition-colors"
+                  >
+                    Apply solid
+                  </button>
+                </div>
+              )}
+              {centerCanvasType === 'gradient' && (
+                <div className="space-y-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Gradient presets</p>
+                  <div className="grid grid-cols-5 sm:grid-cols-6 gap-2 max-h-40 overflow-y-auto">
+                    {CENTER_CANVAS_GRADIENT_PRESETS.map((preset) => (
+                      <button
+                        key={preset.name}
+                        type="button"
+                        onClick={() => {
+                          setCenterCanvasGradientStart(preset.start);
+                          setCenterCanvasGradientEnd(preset.end);
+                          setCenterCanvasGradientDirection(preset.direction);
+                          apply({
+                            centerCanvasBackgroundType: 'gradient',
+                            centerCanvasGradientStart: preset.start,
+                            centerCanvasGradientEnd: preset.end,
+                            centerCanvasGradientDirection: preset.direction,
+                            centerCanvasBorderRadius,
+                            centerCanvasGradientStop: centerCanvasGradientStop,
+                            centerCanvasRadialPosition: centerCanvasRadialPosition
+                          });
+                        }}
+                        className="h-11 rounded-xl border-2 border-slate-200 dark:border-slate-600 overflow-hidden hover:ring-2 hover:ring-brand-500 transition-all flex-shrink-0"
+                        style={{
+                          background: `linear-gradient(${preset.direction}deg, ${preset.start}, ${preset.end})`
+                        }}
+                        title={preset.name}
+                      />
+                    ))}
+                  </div>
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300 pt-1">Custom gradient</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Start color</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="color"
+                          value={centerCanvasGradientStart}
+                          onChange={(e) => setCenterCanvasGradientStart(e.target.value)}
+                          className="h-9 w-12 rounded border border-slate-300 dark:border-slate-600 cursor-pointer"
+                        />
+                        <input
+                          type="text"
+                          value={centerCanvasGradientStart}
+                          onChange={(e) => setCenterCanvasGradientStart(e.target.value)}
+                          className="flex-1 min-w-0 px-2 py-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-xs"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">End color</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="color"
+                          value={centerCanvasGradientEnd}
+                          onChange={(e) => setCenterCanvasGradientEnd(e.target.value)}
+                          className="h-9 w-12 rounded border border-slate-300 dark:border-slate-600 cursor-pointer"
+                        />
+                        <input
+                          type="text"
+                          value={centerCanvasGradientEnd}
+                          onChange={(e) => setCenterCanvasGradientEnd(e.target.value)}
+                          className="flex-1 min-w-0 px-2 py-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-xs"
+                        />
+                      </div>
+                    </div>
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Angle: {centerCanvasGradientDirection}°</label>
+                      <input
+                        type="range"
+                        min={0}
+                        max={360}
+                        value={centerCanvasGradientDirection}
+                        onChange={(e) => setCenterCanvasGradientDirection(Number(e.target.value))}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Gradient stop: {centerCanvasGradientStop}%</label>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={centerCanvasGradientStop}
+                        onChange={(e) => setCenterCanvasGradientStop(Number(e.target.value))}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Type</label>
+                      <select
+                        value={centerCanvasGradientType}
+                        onChange={(e) => setCenterCanvasGradientType(e.target.value as 'linear' | 'radial' | 'conic')}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm"
+                      >
+                        <option value="linear">Linear</option>
+                        <option value="radial">Radial</option>
+                        <option value="conic">Conic</option>
+                      </select>
+                    </div>
+                    {centerCanvasGradientType === 'radial' && (
+                      <div className="col-span-2 sm:col-span-1">
+                        <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Radial center</label>
+                        <select
+                          value={centerCanvasRadialPosition}
+                          onChange={(e) => setCenterCanvasRadialPosition(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm"
+                        >
+                          <option value="50% 50%">Center</option>
+                          <option value="top">Top</option>
+                          <option value="bottom">Bottom</option>
+                          <option value="left">Left</option>
+                          <option value="right">Right</option>
+                          <option value="top left">Top left</option>
+                          <option value="top right">Top right</option>
+                          <option value="bottom left">Bottom left</option>
+                          <option value="bottom right">Bottom right</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                  <div className="border-t border-slate-200 dark:border-slate-600 pt-3 mt-2">
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Night (dark theme) gradient</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Start (dark)</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="color"
+                            value={centerCanvasGradientStartDark}
+                            onChange={(e) => setCenterCanvasGradientStartDark(e.target.value)}
+                            className="h-9 w-12 rounded border border-slate-300 dark:border-slate-600 cursor-pointer"
+                          />
+                          <input
+                            type="text"
+                            value={centerCanvasGradientStartDark}
+                            onChange={(e) => setCenterCanvasGradientStartDark(e.target.value)}
+                            className="flex-1 min-w-0 px-2 py-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-xs"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">End (dark)</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="color"
+                            value={centerCanvasGradientEndDark}
+                            onChange={(e) => setCenterCanvasGradientEndDark(e.target.value)}
+                            className="h-9 w-12 rounded border border-slate-300 dark:border-slate-600 cursor-pointer"
+                          />
+                          <input
+                            type="text"
+                            value={centerCanvasGradientEndDark}
+                            onChange={(e) => setCenterCanvasGradientEndDark(e.target.value)}
+                            className="flex-1 min-w-0 px-2 py-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-xs"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      apply({
+                        centerCanvasBackgroundType: 'gradient',
+                        centerCanvasGradientStart: centerCanvasGradientStart,
+                        centerCanvasGradientEnd: centerCanvasGradientEnd,
+                        centerCanvasGradientStartDark: centerCanvasGradientStartDark,
+                        centerCanvasGradientEndDark: centerCanvasGradientEndDark,
+                        centerCanvasGradientDirection: centerCanvasGradientDirection,
+                        centerCanvasGradientType: centerCanvasGradientType,
+                        centerCanvasBorderRadius,
+                        centerCanvasGradientStop: centerCanvasGradientStop,
+                        centerCanvasRadialPosition: centerCanvasRadialPosition
+                      })
+                    }
+                    className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium transition-colors"
+                  >
+                    Apply gradient
+                  </button>
+                </div>
+              )}
+              {centerCanvasType === 'none' && (
+                <button
+                  type="button"
+                  onClick={() => apply({ centerCanvasBackgroundType: 'none' })}
+                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-medium hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                >
+                  Use transparent (none)
+                </button>
+              )}
             </div>
           )}
 

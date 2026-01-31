@@ -178,6 +178,26 @@ export interface SpaceStyles {
   pageBackgroundImagePosition: string; // 'center' | 'top' | 'bottom' | 'left' | 'right'
   pageBackgroundImageSize: string; // 'cover' | 'contain' | 'auto'
 
+  // Center canvas background (main content area only: solid or gradient)
+  centerCanvasBackgroundType: 'none' | 'solid' | 'gradient';
+  centerCanvasSolidColor: string;
+  centerCanvasSolidColorDark: string; // Dark mode solid color
+  centerCanvasBorderRadius: number; // 0-48 px corner radius
+  centerCanvasGradientType: 'linear' | 'radial' | 'conic';
+  centerCanvasGradientDirection: number; // 0-360 for linear
+  centerCanvasGradientStart: string;
+  centerCanvasGradientEnd: string;
+  centerCanvasGradientStartDark: string; // Dark mode gradient start
+  centerCanvasGradientEndDark: string; // Dark mode gradient end
+  centerCanvasGradientStop: number; // 0-100 where end color takes over
+  centerCanvasRadialPosition: string; // '50% 50%' | 'top' | 'bottom' | etc. for radial
+  // Pattern overlay on top of solid/gradient (keep existing background, overlay pattern)
+  centerCanvasPatternEnabled: boolean;
+  centerCanvasPatternId: string;
+  centerCanvasPatternColor1: string;
+  centerCanvasPatternColor2: string;
+  centerCanvasPatternOpacity: number; // 0-100
+
   // Celebration effects (overlay: fireworks, confetti, balloons, hearts, snow, bubbles, matrix, shooting stars, ribbons, sparkles)
   celebrationEffectEnabled: boolean;
   celebrationEffectType: 'none' | 'fireworks' | 'rocket-fireworks' | 'confetti' | 'balloons' | 'hearts' | 'snow' | 'bubbles' | 'matrix' | 'shooting-stars' | 'floating-ribbons' | 'sparkles' | 'rain' | 'leaves' | 'fireflies' | 'petals' | 'aurora' | 'cosmic' | 'meteors' | 'dandelion' | 'butterflies' | 'lightning';
@@ -408,6 +428,24 @@ export const DEFAULT_STYLES: SpaceStyles = {
   pageBackgroundDarkOverlay: 40,
   pageBackgroundImagePosition: 'center',
   pageBackgroundImageSize: 'cover',
+
+  centerCanvasBackgroundType: 'none',
+  centerCanvasSolidColor: '#ffffff',
+  centerCanvasSolidColorDark: '#1e293b',
+  centerCanvasBorderRadius: 16,
+  centerCanvasGradientType: 'linear',
+  centerCanvasGradientDirection: 135,
+  centerCanvasGradientStart: '#f8fafc',
+  centerCanvasGradientEnd: '#f1f5f9',
+  centerCanvasGradientStartDark: '#1e293b',
+  centerCanvasGradientEndDark: '#334155',
+  centerCanvasGradientStop: 50,
+  centerCanvasRadialPosition: '50% 50%',
+  centerCanvasPatternEnabled: false,
+  centerCanvasPatternId: 'dots',
+  centerCanvasPatternColor1: '#64748b',
+  centerCanvasPatternColor2: '#94a3b8',
+  centerCanvasPatternOpacity: 25,
 
   celebrationEffectEnabled: false,
   celebrationEffectType: 'none',
@@ -913,6 +951,7 @@ export const styleService = {
   generateCSS(styles: SpaceStyles, isDark: boolean = false): string {
     const pageBgCSS = getPageBackgroundCSS(styles, isDark);
     const pageBgBeforeCSS = getPageBackgroundBeforeCSS(styles);
+    const centerCanvasCSS = getCenterCanvasBackgroundCSS(styles, isDark);
 
     const shadowIntensity = styles.tileElevation;
     const hoverShadowIntensity = styles.hoverElevation;
@@ -1050,6 +1089,11 @@ export const styleService = {
         ${pageBgCSS}
       }
       ${pageBgBeforeCSS}
+      
+      /* Center canvas (main content area) background - solid or gradient */
+      .linknest-page-content {
+        ${centerCanvasCSS}
+      }
       
       /* Ensure main content area grows and footer sticks to bottom */
       .linknest-app-container > main {
@@ -1615,6 +1659,182 @@ function getPageBackgroundCSS(styles: SpaceStyles, isDark: boolean): string {
   }
 
   return '';
+}
+
+// Map radial position label to CSS position
+function getRadialPositionCSS(pos: string): string {
+  const map: Record<string, string> = {
+    '50% 50%': '50% 50%',
+    'top': '50% 0%',
+    'bottom': '50% 100%',
+    'left': '0% 50%',
+    'right': '100% 50%',
+    'top left': '0% 0%',
+    'top right': '100% 0%',
+    'bottom left': '0% 100%',
+    'bottom right': '100% 100%'
+  };
+  return map[pos] || pos;
+}
+
+// Center canvas pattern overlay layer only (no base) - overlays on solid/gradient
+function getCenterCanvasPatternLayer(styles: SpaceStyles): { layer: string; size: string | null } | null {
+  if (!styles.centerCanvasPatternEnabled) return null;
+  const patternId = styles.centerCanvasPatternId || 'dots';
+  const color1 = styles.centerCanvasPatternColor1 || '#64748b';
+  const color2 = styles.centerCanvasPatternColor2 || '#94a3b8';
+  const patternOpacity = Math.min(1, Math.max(0, (styles.centerCanvasPatternOpacity ?? 25) / 100));
+  const c1 = hexToRgba(color1, patternOpacity);
+  const c2 = hexToRgba(color2, patternOpacity);
+  let layer = '';
+  let size: string | null = null;
+  switch (patternId) {
+    case 'dots':
+      layer = `radial-gradient(circle at 1px 1px, ${c1} 1px, transparent 0)`;
+      size = '24px 24px';
+      break;
+    case 'grid':
+      layer = `linear-gradient(${c1} 1px, transparent 1px), linear-gradient(90deg, ${c1} 1px, transparent 1px)`;
+      size = '32px 32px';
+      break;
+    case 'waves':
+      layer = `radial-gradient(ellipse at 50% 50%, ${c1} 0%, transparent 70%)`;
+      break;
+    case 'cross':
+      layer = `linear-gradient(${c1} 1px, transparent 1px), linear-gradient(90deg, ${c1} 1px, transparent 1px)`;
+      size = '20px 20px';
+      break;
+    case 'diagonal':
+      layer = `repeating-linear-gradient(45deg, transparent, transparent 10px, ${c1} 10px, ${c1} 11px)`;
+      break;
+    case 'hexagon':
+      layer = `linear-gradient(30deg, ${c1} 12%, transparent 12.5%, transparent 87%, ${c1} 87.5%), linear-gradient(150deg, ${c1} 12%, transparent 12.5%, transparent 87%, ${c1} 87.5%)`;
+      size = '32px 56px';
+      break;
+    case 'noise':
+      layer = `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E")`;
+      break;
+    case 'circles':
+      layer = `radial-gradient(circle at 50% 50%, ${c1} 0%, transparent 70%)`;
+      break;
+    case 'bricks':
+      layer = `linear-gradient(90deg, ${c1} 0%, transparent 50%), repeating-linear-gradient(0deg, transparent, transparent 24px, ${c1} 24px, ${c1} 25px)`;
+      break;
+    case 'stripes':
+      layer = `repeating-linear-gradient(90deg, transparent, transparent 12px, ${c1} 12px, ${c1} 13px)`;
+      break;
+    case 'checkerboard':
+      layer = `linear-gradient(45deg, ${c1} 25%, transparent 25%), linear-gradient(-45deg, ${c2} 25%, transparent 25%), linear-gradient(45deg, transparent 75%, ${c1} 75%), linear-gradient(-45deg, transparent 75%, ${c2} 75%)`;
+      size = '24px 24px';
+      break;
+    case 'plus':
+      layer = `linear-gradient(${c1} 2px, transparent 2px), linear-gradient(90deg, ${c1} 2px, transparent 2px)`;
+      size = '20px 20px';
+      break;
+    case 'topography':
+      layer = `repeating-linear-gradient(0deg, transparent, transparent 20px, ${c1} 20px, ${c1} 21px), repeating-linear-gradient(90deg, transparent, transparent 20px, ${c2} 20px, ${c2} 21px)`;
+      break;
+    case 'confetti':
+      layer = `radial-gradient(circle at 0 0, ${c1} 2px, transparent 2px), radial-gradient(circle at 16px 16px, ${c2} 2px, transparent 2px)`;
+      size = '32px 32px';
+      break;
+    case 'rings':
+      layer = `radial-gradient(circle at 50% 50%, transparent 40%, ${c1} 41%, transparent 42%)`;
+      size = '48px 48px';
+      break;
+    case 'squares':
+      layer = `linear-gradient(${c1} 2px, transparent 2px), linear-gradient(90deg, ${c1} 2px, transparent 2px)`;
+      size = '24px 24px';
+      break;
+    case 'herringbone':
+      layer = `repeating-linear-gradient(45deg, ${c1} 0px, ${c1} 8px, transparent 8px, transparent 16px), repeating-linear-gradient(-45deg, ${c2} 0px, ${c2} 8px, transparent 8px, transparent 16px)`;
+      size = '32px 32px';
+      break;
+    case 'zigzag':
+      layer = `repeating-linear-gradient(135deg, transparent, transparent 12px, ${c1} 12px, ${c1} 14px), repeating-linear-gradient(45deg, transparent, transparent 12px, ${c2} 12px, ${c2} 14px)`;
+      size = '24px 24px';
+      break;
+    case 'quatrefoil':
+      layer = `radial-gradient(circle at 0 0, ${c1} 4px, transparent 4px), radial-gradient(circle at 24px 0, ${c1} 4px, transparent 4px), radial-gradient(circle at 0 24px, ${c1} 4px, transparent 4px), radial-gradient(circle at 24px 24px, ${c1} 4px, transparent 4px)`;
+      size = '24px 24px';
+      break;
+    case 'stars':
+      layer = `radial-gradient(circle at 50% 50%, ${c1} 1px, transparent 1px), radial-gradient(circle at 0 0, ${c2} 1px, transparent 1px)`;
+      size = '32px 32px';
+      break;
+    case 'mesh':
+      layer = `linear-gradient(${c1} 1px, transparent 1px), linear-gradient(90deg, ${c1} 1px, transparent 1px), linear-gradient(${c2} 1px, transparent 1px), linear-gradient(90deg, ${c2} 1px, transparent 1px)`;
+      size = '24px 24px';
+      break;
+    case 'plaid':
+      layer = `repeating-linear-gradient(0deg, transparent, transparent 8px, ${c1} 8px, ${c1} 10px), repeating-linear-gradient(90deg, transparent, transparent 8px, ${c1} 8px, ${c1} 10px), repeating-linear-gradient(0deg, transparent, transparent 24px, ${c2} 24px, ${c2} 26px), repeating-linear-gradient(90deg, transparent, transparent 24px, ${c2} 24px, ${c2} 26px)`;
+      size = '48px 48px';
+      break;
+    case 'triangles':
+      layer = `linear-gradient(30deg, ${c1} 12%, transparent 12.5%), linear-gradient(150deg, ${c1} 12%, transparent 12.5%), linear-gradient(30deg, ${c2} 12%, transparent 12.5%), linear-gradient(150deg, ${c2} 12%, transparent 12.5%)`;
+      size = '32px 56px';
+      break;
+    case 'diamonds':
+      layer = `repeating-linear-gradient(45deg, ${c1} 0px, ${c1} 2px, transparent 2px, transparent 14px), repeating-linear-gradient(-45deg, ${c2} 0px, ${c2} 2px, transparent 2px, transparent 14px)`;
+      size = '20px 20px';
+      break;
+    case 'arrows':
+      layer = `repeating-linear-gradient(90deg, transparent, transparent 16px, ${c1} 16px, ${c1} 18px), repeating-linear-gradient(0deg, transparent, transparent 16px, ${c2} 16px, ${c2} 18px)`;
+      size = '32px 32px';
+      break;
+    case 'scatter':
+      layer = `radial-gradient(circle at 20% 30%, ${c1} 2px, transparent 2px), radial-gradient(circle at 80% 70%, ${c2} 2px, transparent 2px), radial-gradient(circle at 50% 50%, ${c1} 1px, transparent 1px)`;
+      size = '64px 64px';
+      break;
+    default:
+      layer = `radial-gradient(circle at 1px 1px, ${c1} 1px, transparent 0)`;
+      size = '24px 24px';
+  }
+  return { layer, size };
+}
+
+// Center canvas (main content area only) background - solid or gradient, day/night aware, optional pattern overlay
+function getCenterCanvasBackgroundCSS(styles: SpaceStyles, isDark: boolean): string {
+  const type = styles.centerCanvasBackgroundType || 'none';
+  const radius = Math.min(48, Math.max(0, styles.centerCanvasBorderRadius ?? 16));
+  const radiusCss = radius > 0 ? `border-radius: ${radius}px !important; overflow: hidden !important;` : '';
+
+  if (type === 'none') return '';
+
+  let base = '';
+  if (type === 'solid') {
+    const color = isDark
+      ? (styles.centerCanvasSolidColorDark || '#1e293b')
+      : (styles.centerCanvasSolidColor || '#ffffff');
+    base = color;
+  } else if (type === 'gradient') {
+    const dir = styles.centerCanvasGradientDirection ?? 135;
+    const start = isDark
+      ? (styles.centerCanvasGradientStartDark || '#1e293b')
+      : (styles.centerCanvasGradientStart || '#f8fafc');
+    const end = isDark
+      ? (styles.centerCanvasGradientEndDark || '#334155')
+      : (styles.centerCanvasGradientEnd || '#f1f5f9');
+    const stop = Math.min(100, Math.max(0, styles.centerCanvasGradientStop ?? 50));
+    const gt = styles.centerCanvasGradientType || 'linear';
+    const radialPos = getRadialPositionCSS(styles.centerCanvasRadialPosition || '50% 50%');
+    if (gt === 'linear') {
+      base = `linear-gradient(${dir}deg, ${start} 0%, ${end} ${stop}%)`;
+    } else if (gt === 'radial') {
+      base = `radial-gradient(circle at ${radialPos}, ${start} 0%, ${end} ${stop}%)`;
+    } else {
+      base = `conic-gradient(from ${dir}deg, ${start} 0%, ${end} ${stop}%)`;
+    }
+  }
+
+  const patternResult = getCenterCanvasPatternLayer(styles);
+  if (patternResult) {
+    const bg = `${patternResult.layer}, ${base}`;
+    const sizeCss = patternResult.size ? ` background-size: ${patternResult.size}, auto !important;` : '';
+    return `background: ${bg} !important;${sizeCss} ${radiusCss}`;
+  }
+
+  return `background: ${base} !important; ${radiusCss}`;
 }
 
 function getPageBackgroundBeforeCSS(styles: SpaceStyles): string {
