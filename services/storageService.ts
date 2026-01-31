@@ -328,6 +328,7 @@ export interface FavoriteLink {
   notes?: string;
   tooltip?: string;
   browser?: string;
+  richTextContent?: string;
   isFavorite: boolean;
   health?: {
     status: 'unknown' | 'healthy' | 'broken' | 'timeout' | 'checking' | 'restricted' | 'accessible';

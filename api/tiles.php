@@ -2947,6 +2947,7 @@ function handleGetFavoriteLinks() {
                 'notes' => $row['notes'] ?? null,
                 'tooltip' => $row['tooltip'] ?? null,
                 'browser' => $row['browser'] ?? null,
+                'richTextContent' => $row['rich_text_content'] ?? null,
                 'isFavorite' => true,
                 'health' => $health,
                 'tile' => [
