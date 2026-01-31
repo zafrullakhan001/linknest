@@ -508,7 +508,8 @@ function handleGetTiles() {
                 'delayBefore' => isset($msgRow['delay_before']) ? (float)$msgRow['delay_before'] : 0,
                 'celebrationEffect' => $msgRow['celebration_effect'] ?? 'fireworks',
                 'celebrationConfig' => $cc,
-                'url' => $msgRow['url'] ?? null
+                'url' => $msgRow['url'] ?? null,
+                'urlLabel' => $msgRow['url_label'] ?? null
             ];
         }
         
@@ -972,7 +973,8 @@ function handleGetTile($tileId) {
             'delayBefore' => isset($msgRow['delay_before']) ? (float)$msgRow['delay_before'] : 0,
             'celebrationEffect' => $msgRow['celebration_effect'] ?? 'fireworks',
             'celebrationConfig' => $cc,
-            'url' => $msgRow['url'] ?? null
+            'url' => $msgRow['url'] ?? null,
+            'urlLabel' => $msgRow['url_label'] ?? null
         ];
     }
 
@@ -1475,7 +1477,7 @@ function handleCreateTile() {
     
     // Handle tile messages
     if (isset($data['messages']) && is_array($data['messages'])) {
-        $msgStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active, priority, text_color, font_style, display_location, animation_type, delay_before, celebration_effect, celebration_config, url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $msgStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active, priority, text_color, font_style, display_location, animation_type, delay_before, celebration_effect, celebration_config, url, url_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         foreach ($data['messages'] as $msg) {
             $msgId = $msg['id'] ?? uniqid('msg_', true);
             $cc = isset($msg['celebrationConfig']) && is_array($msg['celebrationConfig']) ? json_encode($msg['celebrationConfig']) : null;
@@ -1495,7 +1497,8 @@ function handleCreateTile() {
                 isset($msg['delayBefore']) ? (float)$msg['delayBefore'] : 0,
                 $msg['celebrationEffect'] ?? 'fireworks',
                 $cc,
-                $msg['url'] ?? null
+                $msg['url'] ?? null,
+                $msg['urlLabel'] ?? null
             ]);
         }
     }
@@ -1940,7 +1943,7 @@ function handleCloneTile($tileId) {
     $messages = $msgStmt->fetchAll();
     
     if (!empty($messages)) {
-        $msgInsertStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active, priority, text_color, font_style, display_location, animation_type, delay_before, celebration_effect, celebration_config, url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $msgInsertStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active, priority, text_color, font_style, display_location, animation_type, delay_before, celebration_effect, celebration_config, url, url_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         foreach ($messages as $msg) {
             $newMsgId = uniqid('msg_', true);
             $cc = isset($msg['celebration_config']) && $msg['celebration_config'] !== null && $msg['celebration_config'] !== '' ? $msg['celebration_config'] : null;
@@ -1960,7 +1963,8 @@ function handleCloneTile($tileId) {
                 isset($msg['delay_before']) ? (float)$msg['delay_before'] : 0,
                 $msg['celebration_effect'] ?? 'fireworks',
                 $cc,
-                $msg['url'] ?? null
+                $msg['url'] ?? null,
+                $msg['url_label'] ?? null
             ]);
         }
     }
@@ -2272,7 +2276,7 @@ function handleCloneCategory($categoryName) {
             $messages = $msgStmt->fetchAll();
             
             if (!empty($messages)) {
-                $msgInsertStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active, priority, text_color, font_style, display_location, animation_type, delay_before, celebration_effect, celebration_config, url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                $msgInsertStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active, priority, text_color, font_style, display_location, animation_type, delay_before, celebration_effect, celebration_config, url, url_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                 foreach ($messages as $msg) {
                     $newMsgId = uniqid('msg_', true);
                     $cc = isset($msg['celebration_config']) && $msg['celebration_config'] !== null && $msg['celebration_config'] !== '' ? $msg['celebration_config'] : null;
@@ -2292,7 +2296,8 @@ function handleCloneCategory($categoryName) {
                         isset($msg['delay_before']) ? (float)$msg['delay_before'] : 0,
                         $msg['celebration_effect'] ?? 'fireworks',
                         $cc,
-                        $msg['url'] ?? null
+                        $msg['url'] ?? null,
+                        $msg['url_label'] ?? null
                     ]);
                 }
             }
@@ -3879,7 +3884,8 @@ function getTileForVersion($tileId, $db) {
             'delayBefore' => isset($msgRow['delay_before']) ? (float)$msgRow['delay_before'] : 0,
             'celebrationEffect' => $msgRow['celebration_effect'] ?? 'fireworks',
             'celebrationConfig' => $cc,
-            'url' => $msgRow['url'] ?? null
+            'url' => $msgRow['url'] ?? null,
+            'urlLabel' => $msgRow['url_label'] ?? null
         ];
     }
 
@@ -4424,7 +4430,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
         
         // Messages
         if (isset($data['messages']) && is_array($data['messages'])) {
-            $msgStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active, priority, text_color, font_style, display_location, animation_type, delay_before, celebration_effect, celebration_config, url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $msgStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active, priority, text_color, font_style, display_location, animation_type, delay_before, celebration_effect, celebration_config, url, url_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             foreach ($data['messages'] as $msg) {
                 $msgId = $msg['id'] ?? uniqid('msg_', true);
                 $cc = isset($msg['celebrationConfig']) && is_array($msg['celebrationConfig']) ? json_encode($msg['celebrationConfig']) : null;
@@ -4444,7 +4450,8 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                     isset($msg['delayBefore']) ? (float)$msg['delayBefore'] : 0,
                     $msg['celebrationEffect'] ?? 'fireworks',
                     $cc,
-                    $msg['url'] ?? null
+                    $msg['url'] ?? null,
+                    $msg['urlLabel'] ?? null
                 ]);
             }
         }

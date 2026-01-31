@@ -133,6 +133,7 @@ export interface TileMessage {
   celebrationEffect?: 'none' | 'fireworks' | 'confetti' | 'snowfall' | 'hearts-rising' | 'hearts-falling' | 'bubbles'; // Visual effect for celebration messages
   celebrationConfig?: CelebrationConfig; // Optional overrides for celebration animation
   url?: string; // Optional URL link for more information about the message
+  urlLabel?: string; // Optional custom display text for the link (e.g. "Learn more", "View details")
 }
 
 /** Optional per-message overrides for celebration effect animations. All values use defaults when omitted. */

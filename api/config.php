@@ -1033,6 +1033,9 @@ function initDatabase() {
                 if (!in_array('url', $columnNames)) {
                     $db->exec('ALTER TABLE tile_messages ADD COLUMN url TEXT');
                 }
+                if (!in_array('url_label', $columnNames)) {
+                    $db->exec('ALTER TABLE tile_messages ADD COLUMN url_label TEXT');
+                }
             }
         } catch (PDOException $e) {
             error_log('tile_messages migration error: ' . $e->getMessage());

@@ -1610,13 +1610,13 @@ const SortableTile: React.FC<SortableTileProps> = ({
                               rel="noopener noreferrer"
                               className="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[9px] font-medium text-slate-800 dark:text-brand-400 bg-transparent hover:bg-slate-200/50 dark:hover:bg-brand-900/30 rounded transition-colors"
                               onClick={(e) => e.stopPropagation()}
-                              title="Click for more info"
+                              title={msg.urlLabel || 'Click for more info'}
                             >
                               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-2.5 h-2.5">
                                 <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
                                 <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
                               </svg>
-                              Info
+                              {msg.urlLabel || 'Info'}
                             </a>
                           )}
                         </div>
@@ -1655,13 +1655,13 @@ const SortableTile: React.FC<SortableTileProps> = ({
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[9px] font-medium text-slate-800 dark:text-brand-400 bg-transparent hover:bg-slate-200/50 dark:hover:bg-brand-900/30 rounded transition-colors"
                           onClick={(e) => e.stopPropagation()}
-                          title="Click for more info"
+                          title={currentMsg.urlLabel || 'Click for more info'}
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-2.5 h-2.5">
                             <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
                             <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
                           </svg>
-                          Info
+                          {currentMsg.urlLabel || 'Info'}
                         </a>
                       )}
                     </div>
@@ -2074,6 +2074,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
     triggerIntervalMs: 5000,
   }));
   const [messageUrl, setMessageUrl] = useState<string>('');
+  const [messageUrlLabel, setMessageUrlLabel] = useState<string>('');
   const messageBoardImportInputRef = useRef<HTMLInputElement>(null);
 
   // Helper function to get message status
@@ -2167,6 +2168,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
     const fontStyle = typeof m.fontStyle === 'string' ? m.fontStyle : undefined;
     const delayBefore = typeof m.delayBefore === 'number' ? m.delayBefore : 0;
     const url = typeof m.url === 'string' && m.url.trim() ? m.url.trim() : undefined;
+    const urlLabel = typeof m.urlLabel === 'string' ? m.urlLabel.trim() || undefined : undefined;
     let celebrationConfig: CelebrationConfig | undefined;
     if (m.celebrationConfig && typeof m.celebrationConfig === 'object' && m.celebrationConfig !== null) {
       const cc = m.celebrationConfig as Record<string, unknown>;
@@ -2192,6 +2194,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
       celebrationEffect: celebrationEffect as TileMessage['celebrationEffect'],
       celebrationConfig: Object.keys(celebrationConfig || {}).length ? celebrationConfig : undefined,
       url,
+      urlLabel,
     };
   };
 
@@ -2278,6 +2281,7 @@ Generate a JSON array of scheduled message board messages for Linknest. Each mes
 | celebrationEffect | string | "none", "fireworks", "confetti", "snowfall", "hearts-rising", "hearts-falling", "bubbles" | "fireworks" |
 | celebrationConfig | object | optional; see below | — |
 | url | string | URL link for more info (e.g. "https://example.com/details") | — |
+| urlLabel | string | Custom text for the link (e.g. "Learn more", "View details") | "Info" |
 
 **celebrationConfig** (optional, for celebrationEffect not "none"):
 - intensity: 1–100 (default 100)
@@ -2309,7 +2313,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     "displayLocation": "both",
     "animationType": "rollover",
     "celebrationEffect": "none",
-    "url": "https://example.com/more-info"
+    "url": "https://example.com/more-info",
+    "urlLabel": "Learn more"
   }
 ]
 
@@ -7837,6 +7842,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             setMessageCelebrationEffect('fireworks');
                             setMessageCelebrationConfig({ intensity: 100, particleCount: 18, particleSize: 100, triggerIntervalMs: 5000 });
                             setMessageUrl('');
+                            setMessageUrlLabel('');
                           }}
                           className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition-colors shadow-sm hover:shadow"
                         >
@@ -7907,6 +7913,25 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                               Add a URL where users can get more information about this message.
                             </p>
                           </div>
+
+                          {/* Link label - custom text for the link (when URL is set) */}
+                          {messageUrl && (
+                            <div>
+                              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                                Link display text <span className="text-slate-400 font-normal">(optional)</span>
+                              </label>
+                              <input
+                                type="text"
+                                value={messageUrlLabel}
+                                onChange={(e) => setMessageUrlLabel(e.target.value)}
+                                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+                                placeholder="e.g. Learn more, View details, Read announcement"
+                              />
+                              <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+                                Custom text shown for the link. Leave empty to use &quot;Info&quot;.
+                              </p>
+                            </div>
+                          )}
 
                           <div>
                             {/* Message Presets - Enhanced with Categories */}
@@ -8346,6 +8371,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                   celebrationEffect: messageCelebrationEffect,
                                   celebrationConfig: messageCelebrationEffect !== 'none' ? messageCelebrationConfig : undefined,
                                   url: messageUrl || undefined,
+                                  urlLabel: messageUrlLabel.trim() || undefined,
                                 };
 
                                 if (editingMessageId === 'new') {
@@ -8429,7 +8455,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                       <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
                                       <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
                                     </svg>
-                                    More Info
+                                    {msg.urlLabel || 'More Info'}
                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
                                       <path fillRule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clipRule="evenodd" />
                                       <path fillRule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z" clipRule="evenodd" />
@@ -8511,6 +8537,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                         triggerIntervalMs: Math.max(2000, Math.min(15000, cc.triggerIntervalMs ?? 5000)),
                                       });
                                       setMessageUrl(msg.url || '');
+                                      setMessageUrlLabel(msg.urlLabel || '');
                                     }}
                                     className="p-2 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg transition-colors"
                                     title="Edit message"
