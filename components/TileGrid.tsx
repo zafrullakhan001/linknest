@@ -1605,6 +1605,22 @@ const SortableTile: React.FC<SortableTileProps> = ({
                           data-message-color={msg.textColor || ''}
                         >
                           {renderMessageContent(msg.content)}
+                          {msg.url && (
+                            <a
+                              href={msg.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[9px] font-medium text-slate-800 dark:text-brand-400 bg-transparent hover:bg-slate-200/50 dark:hover:bg-brand-900/30 rounded transition-colors"
+                              onClick={(e) => e.stopPropagation()}
+                              title="Click for more info"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-2.5 h-2.5">
+                                <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
+                                <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
+                              </svg>
+                              Info
+                            </a>
+                          )}
                         </div>
                       ))}
                       {/* Duplicate set for seamless loop - no delays, exact copy */}
@@ -1620,6 +1636,22 @@ const SortableTile: React.FC<SortableTileProps> = ({
                           data-message-color={msg.textColor || ''}
                         >
                           {renderMessageContent(msg.content)}
+                          {msg.url && (
+                            <a
+                              href={msg.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[9px] font-medium text-slate-800 dark:text-brand-400 bg-transparent hover:bg-slate-200/50 dark:hover:bg-brand-900/30 rounded transition-colors"
+                              onClick={(e) => e.stopPropagation()}
+                              title="Click for more info"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-2.5 h-2.5">
+                                <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
+                                <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
+                              </svg>
+                              Info
+                            </a>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -1640,6 +1672,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
                   <div className={`flex items-center gap-2 text-[10px] sm:text-xs font-semibold ${animationClass}`}>
                     <div
                       key={`${currentMsg.id}-current`}
+                      className="flex items-center gap-1"
                       style={{
                         ...(currentMsg.textColor ? { '--message-text-color': currentMsg.textColor, color: currentMsg.textColor } : {}),
                         fontStyle: currentMsg.fontStyle === 'italic' || currentMsg.fontStyle === 'bold italic' ? 'italic' : undefined,
@@ -1648,6 +1681,22 @@ const SortableTile: React.FC<SortableTileProps> = ({
                       data-message-color={currentMsg.textColor || ''}
                     >
                       {renderMessageContent(currentMsg.content)}
+                      {currentMsg.url && (
+                        <a
+                          href={currentMsg.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[9px] font-medium text-slate-800 dark:text-brand-400 bg-transparent hover:bg-slate-200/50 dark:hover:bg-brand-900/30 rounded transition-colors"
+                          onClick={(e) => e.stopPropagation()}
+                          title="Click for more info"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-2.5 h-2.5">
+                            <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
+                            <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
+                          </svg>
+                          Info
+                        </a>
+                      )}
                     </div>
                   </div>
                 );
@@ -2055,6 +2104,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
     particleSize: 100,
     triggerIntervalMs: 5000,
   }));
+  const [messageUrl, setMessageUrl] = useState<string>('');
   const messageBoardImportInputRef = useRef<HTMLInputElement>(null);
 
   // Helper function to get message status
@@ -2147,6 +2197,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
     const textColor = typeof m.textColor === 'string' ? m.textColor : undefined;
     const fontStyle = typeof m.fontStyle === 'string' ? m.fontStyle : undefined;
     const delayBefore = typeof m.delayBefore === 'number' ? m.delayBefore : 0;
+    const url = typeof m.url === 'string' && m.url.trim() ? m.url.trim() : undefined;
     let celebrationConfig: CelebrationConfig | undefined;
     if (m.celebrationConfig && typeof m.celebrationConfig === 'object' && m.celebrationConfig !== null) {
       const cc = m.celebrationConfig as Record<string, unknown>;
@@ -2171,6 +2222,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
       delayBefore,
       celebrationEffect: celebrationEffect as TileMessage['celebrationEffect'],
       celebrationConfig: Object.keys(celebrationConfig || {}).length ? celebrationConfig : undefined,
+      url,
     };
   };
 
@@ -2256,6 +2308,7 @@ Generate a JSON array of scheduled message board messages for Linknest. Each mes
 | delayBefore | number | seconds before showing (sequential messages) | 0 |
 | celebrationEffect | string | "none", "fireworks", "confetti", "snowfall", "hearts-rising", "hearts-falling", "bubbles" | "fireworks" |
 | celebrationConfig | object | optional; see below | — |
+| url | string | URL link for more info (e.g. "https://example.com/details") | — |
 
 **celebrationConfig** (optional, for celebrationEffect not "none"):
 - intensity: 1–100 (default 100)
@@ -2267,7 +2320,7 @@ Generate a JSON array of scheduled message board messages for Linknest. Each mes
 
 [
   { "content": "🎉 Happy Birthday!", "type": "celebration", "startDate": "2026-02-14T00:00:00.000Z", "endDate": "2026-02-14T23:59:59.000Z", "celebrationEffect": "hearts-rising" },
-  { "content": "**Maintenance** tonight 10–11pm.", "type": "warning", "priority": 1 }
+  { "content": "**Maintenance** tonight 10–11pm.", "type": "warning", "priority": 1, "url": "https://status.example.com" }
 ]
 
 You may also wrap the array in an object: { "messages": [ ... ] }.
@@ -2286,7 +2339,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     "priority": 0,
     "displayLocation": "both",
     "animationType": "rollover",
-    "celebrationEffect": "none"
+    "celebrationEffect": "none",
+    "url": "https://example.com/more-info"
   }
 ]
 
@@ -7738,6 +7792,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             setMessageDelayBefore(0);
                             setMessageCelebrationEffect('fireworks');
                             setMessageCelebrationConfig({ intensity: 100, particleCount: 18, particleSize: 100, triggerIntervalMs: 5000 });
+                            setMessageUrl('');
                           }}
                           className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition-colors shadow-sm hover:shadow"
                         >
@@ -7767,7 +7822,49 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
                               💡 Formatting: URLs are automatically clickable. Use <strong>**text**</strong> for <strong>bold</strong> and <em>_text_</em> for <em>italic</em>.
                             </p>
+                          </div>
 
+                          {/* Message URL Link */}
+                          <div>
+                            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                              Link URL <span className="text-slate-400 font-normal">(optional)</span>
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <div className="relative flex-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                                  <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
+                                  <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
+                                </svg>
+                                <input
+                                  type="url"
+                                  value={messageUrl}
+                                  onChange={(e) => setMessageUrl(e.target.value)}
+                                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+                                  placeholder="https://example.com/more-info"
+                                />
+                              </div>
+                              {messageUrl && (
+                                <a
+                                  href={messageUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-1 px-3 py-2.5 text-sm font-medium text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 bg-brand-50 dark:bg-brand-900/20 hover:bg-brand-100 dark:hover:bg-brand-900/30 rounded-lg transition-colors"
+                                  title="Test link"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                    <path fillRule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clipRule="evenodd" />
+                                    <path fillRule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z" clipRule="evenodd" />
+                                  </svg>
+                                  Test
+                                </a>
+                              )}
+                            </div>
+                            <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+                              Add a URL where users can get more information about this message.
+                            </p>
+                          </div>
+
+                          <div>
                             {/* Message Presets - Enhanced with Categories */}
                             <div className="mt-3 space-y-3">
                               <div className="flex items-center gap-2">
@@ -8204,6 +8301,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                   delayBefore: messageDelayBefore || 0,
                                   celebrationEffect: messageCelebrationEffect,
                                   celebrationConfig: messageCelebrationEffect !== 'none' ? messageCelebrationConfig : undefined,
+                                  url: messageUrl || undefined,
                                 };
 
                                 if (editingMessageId === 'new') {
@@ -8274,6 +8372,26 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                 <div className="text-sm text-slate-800 dark:text-slate-200 mb-2 leading-relaxed break-words">
                                   {renderMessageContent(msg.content)}
                                 </div>
+                                {/* Message URL Link */}
+                                {msg.url && (
+                                  <a
+                                    href={msg.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1.5 mb-2 px-2.5 py-1 text-xs font-medium text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/20 hover:bg-brand-100 dark:hover:bg-brand-900/30 rounded-md transition-colors"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                      <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
+                                      <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
+                                    </svg>
+                                    More Info
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                      <path fillRule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clipRule="evenodd" />
+                                      <path fillRule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z" clipRule="evenodd" />
+                                    </svg>
+                                  </a>
+                                )}
                                 <div className="flex flex-wrap gap-3 text-xs text-slate-500 dark:text-slate-400">
                                   {msg.startDate && (
                                     <div className="flex items-center gap-1">
@@ -8348,6 +8466,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                         particleSize: Math.max(50, Math.min(200, cc.particleSize ?? 100)),
                                         triggerIntervalMs: Math.max(2000, Math.min(15000, cc.triggerIntervalMs ?? 5000)),
                                       });
+                                      setMessageUrl(msg.url || '');
                                     }}
                                     className="p-2 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg transition-colors"
                                     title="Edit message"

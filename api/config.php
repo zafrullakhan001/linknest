@@ -1030,6 +1030,9 @@ function initDatabase() {
                 if (!in_array('celebration_config', $columnNames)) {
                     $db->exec('ALTER TABLE tile_messages ADD COLUMN celebration_config TEXT');
                 }
+                if (!in_array('url', $columnNames)) {
+                    $db->exec('ALTER TABLE tile_messages ADD COLUMN url TEXT');
+                }
             }
         } catch (PDOException $e) {
             error_log('tile_messages migration error: ' . $e->getMessage());

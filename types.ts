@@ -132,6 +132,7 @@ export interface TileMessage {
   delayBefore?: number; // Delay in seconds before showing this message (for sequential display when multiple messages are active)
   celebrationEffect?: 'none' | 'fireworks' | 'confetti' | 'snowfall' | 'hearts-rising' | 'hearts-falling' | 'bubbles'; // Visual effect for celebration messages
   celebrationConfig?: CelebrationConfig; // Optional overrides for celebration animation
+  url?: string; // Optional URL link for more information about the message
 }
 
 /** Optional per-message overrides for celebration effect animations. All values use defaults when omitted. */
