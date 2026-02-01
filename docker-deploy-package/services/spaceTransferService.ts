@@ -3,7 +3,7 @@ import { Tile, LinkSection, Link } from '../types';
 export type SpaceExportType = 'tile' | 'category' | 'all_categories';
 
 export interface SpaceExportFile {
-  version: '1.1'; // Updated to include rich text content and all new fields
+  version: '1.2'; // Includes all current fields: decorations, messages, allowedGroups, link richTextContent, section/tab positions, etc.
   type: SpaceExportType;
   exportedAt: number;
   tile?: Tile;
@@ -45,7 +45,7 @@ const triggerDownload = (data: unknown, filename: string) => {
 /** Export a single space/tile to a JSON file */
 export const exportTileToFile = (tile: Tile) => {
   const payload: SpaceExportFile = {
-    version: '1.1',
+    version: '1.2',
     type: 'tile',
     exportedAt: Date.now(),
     tile
@@ -67,7 +67,7 @@ export const exportCategoryToFile = (categoryName: string, tiles: Tile[]) => {
   }
 
   const payload: SpaceExportFile = {
-    version: '1.1',
+    version: '1.2',
     type: 'category',
     exportedAt: Date.now(),
     categoryName,
@@ -112,7 +112,7 @@ export const exportAllCategoriesToFile = (tiles: Tile[], categoryOrder: string[]
   }
 
   const payload: SpaceExportFile = {
-    version: '1.1',
+    version: '1.2',
     type: 'all_categories',
     exportedAt: Date.now(),
     tiles,
@@ -129,9 +129,8 @@ export const parseSpaceExportObject = (data: any): ParsedSpaceImport => {
     throw new Error('Invalid file: expected a JSON object.');
   }
 
-  // Support both 1.0 and 1.1 versions for backward compatibility
-  if (data.version !== '1.0' && data.version !== '1.1') {
-    // Be tolerant but warn
+  // Support 1.0, 1.1, and 1.2 for backward compatibility
+  if (data.version !== '1.0' && data.version !== '1.1' && data.version !== '1.2') {
     console.warn('Unknown space export version, proceeding anyway:', data.version);
   }
 
@@ -205,6 +204,7 @@ export const normalizeImportedTiles = (
                         : undefined,
                       notes: link.notes || undefined,
                       tooltip: link.tooltip || undefined,
+                      richTextContent: typeof link.richTextContent === 'string' ? link.richTextContent : undefined,
                       health: link.health || undefined,
                       visibleFrom: typeof link.visibleFrom === 'string' ? link.visibleFrom : undefined,
                       expiresAt: typeof link.expiresAt === 'string' ? link.expiresAt : undefined
@@ -229,6 +229,7 @@ export const normalizeImportedTiles = (
                 return {
                   id: generateId(),
                   title: String(section.title || ''),
+                  position: typeof section.position === 'number' ? section.position : undefined,
                   textColor: typeof section.textColor === 'string' ? section.textColor : undefined,
                   forceStackedView: typeof section.forceStackedView === 'boolean' ? section.forceStackedView : undefined,
                   visibility: section.visibility || 'public',
@@ -263,6 +264,7 @@ export const normalizeImportedTiles = (
                   : undefined,
                 notes: link.notes || undefined,
                 tooltip: link.tooltip || undefined,
+                richTextContent: typeof link.richTextContent === 'string' ? link.richTextContent : undefined,
                 health: link.health || undefined,
                 visibleFrom: typeof link.visibleFrom === 'string' ? link.visibleFrom : undefined,
                 expiresAt: typeof link.expiresAt === 'string' ? link.expiresAt : undefined
@@ -287,6 +289,7 @@ export const normalizeImportedTiles = (
           return {
             id: generateId(),
             title: String(section.title || ''),
+            position: typeof section.position === 'number' ? section.position : undefined,
             textColor: typeof section.textColor === 'string' ? section.textColor : undefined,
             forceStackedView: typeof section.forceStackedView === 'boolean' ? section.forceStackedView : undefined,
             visibility: section.visibility || 'public',
@@ -314,12 +317,39 @@ export const normalizeImportedTiles = (
       createdAt: typeof src.createdAt === 'number' ? src.createdAt : now,
       visibility: src.visibility || 'public',
       allowedUsers: Array.isArray(src.allowedUsers) ? src.allowedUsers : undefined,
+      allowedGroups: Array.isArray(src.allowedGroups) ? src.allowedGroups : undefined,
       isHyperlink: src.isHyperlink || false,
       hyperlinkUrl: src.hyperlinkUrl || undefined,
       openInNewTab: src.openInNewTab !== undefined ? src.openInNewTab : undefined,
       browser: typeof src.browser === 'string' ? src.browser : undefined,
       visibleFrom: typeof src.visibleFrom === 'string' ? src.visibleFrom : undefined,
-      expiresAt: typeof src.expiresAt === 'string' ? src.expiresAt : undefined
+      expiresAt: typeof src.expiresAt === 'string' ? src.expiresAt : undefined,
+      tileBackgroundColor: typeof src.tileBackgroundColor === 'string' ? src.tileBackgroundColor : undefined,
+      tileGradientEnabled: typeof src.tileGradientEnabled === 'boolean' ? src.tileGradientEnabled : undefined,
+      tileGradientColors: Array.isArray(src.tileGradientColors) ? src.tileGradientColors : undefined,
+      tileGradientDirection: (typeof src.tileGradientDirection === 'string' || typeof src.tileGradientDirection === 'number') ? src.tileGradientDirection : undefined,
+      tileGradientType: (typeof src.tileGradientType === 'string' && ['linear', 'radial', 'conic', 'repeating-linear', 'repeating-radial', 'repeating-conic'].includes(src.tileGradientType)) ? src.tileGradientType as any : undefined,
+      tileGradientColorPositions: Array.isArray(src.tileGradientColorPositions) ? src.tileGradientColorPositions : undefined,
+      tileBorderRadius: typeof src.tileBorderRadius === 'number' ? src.tileBorderRadius : undefined,
+      tileTextColor: typeof src.tileTextColor === 'string' ? src.tileTextColor : undefined,
+      messages: Array.isArray(src.messages) && src.messages.length > 0
+        ? src.messages.map((msg: any) => ({
+            id: generateId(),
+            content: String(msg.content || ''),
+            type: (typeof msg.type === 'string' && ['info', 'warning', 'celebration', 'alert', 'custom'].includes(msg.type)) ? msg.type as any : 'info',
+            startDate: typeof msg.startDate === 'string' ? msg.startDate : new Date().toISOString(),
+            endDate: typeof msg.endDate === 'string' ? msg.endDate : new Date().toISOString(),
+            isActive: typeof msg.isActive === 'boolean' ? msg.isActive : false,
+            priority: typeof msg.priority === 'number' ? msg.priority : undefined,
+            textColor: typeof msg.textColor === 'string' ? msg.textColor : undefined,
+            fontStyle: typeof msg.fontStyle === 'string' ? msg.fontStyle : undefined,
+            displayLocation: (typeof msg.displayLocation === 'string' && ['tile', 'detail', 'both'].includes(msg.displayLocation)) ? msg.displayLocation as any : 'both',
+            animationType: (typeof msg.animationType === 'string' && ['rollover', 'still', 'flash', 'flip-horizontal', 'flip-vertical', 'bounce', 'pulse', 'shake', 'fade', 'slide'].includes(msg.animationType)) ? msg.animationType as any : 'rollover',
+            delayBefore: typeof msg.delayBefore === 'number' ? msg.delayBefore : undefined,
+            celebrationEffect: (typeof msg.celebrationEffect === 'string' && ['none', 'fireworks', 'confetti', 'snowfall', 'hearts-rising', 'hearts-falling', 'bubbles', 'butterflies', 'birds-flying', 'rocket-launch', 'burst-fireworks', 'sparkles', 'petals', 'shooting-stars', 'leaves', 'fireflies', 'balloons', 'stars', 'rainbow'].includes(msg.celebrationEffect)) ? msg.celebrationEffect as any : undefined,
+            celebrationConfig: typeof msg.celebrationConfig === 'object' && msg.celebrationConfig !== null ? msg.celebrationConfig : undefined
+          }))
+        : undefined
     };
 
     return tile;

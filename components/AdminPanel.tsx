@@ -5,7 +5,7 @@ import { settingsService, AppSettings, SEMI_PWA_EXCLUDE_PATHS_DEFAULT } from '..
 import { databaseService } from '../services/databaseService';
 import { useSettings } from '../contexts/SettingsContext';
 import { useAuth } from '../contexts/AuthContext';
-import { getTiles, createTile } from '../services/storageService';
+import { getTiles, createTile, saveTile } from '../services/storageService';
 import { bulkImportTiles } from '../services/storageService';
 import { exportAllCategoriesToFile, parseSpaceExportObject, normalizeImportedTiles } from '../services/spaceTransferService';
 import { Tile } from '../types';
@@ -147,6 +147,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [spacesBulkImporting, setSpacesBulkImporting] = useState(false);
   const [spacesImportFile, setSpacesImportFile] = useState<File | null>(null);
   const [spacesBulkImportFile, setSpacesBulkImportFile] = useState<File | null>(null);
+  const [spacesImportOverwrite, setSpacesImportOverwrite] = useState(false);
   const [spacesTiles, setSpacesTiles] = useState<Tile[]>([]);
   const [spacesCategoryOrder, setSpacesCategoryOrder] = useState<string[]>([]);
 
@@ -5357,7 +5358,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   // Convert tiles to CSV format
                                   // Note: CSV format is simplified and does not include rich text content, tabs structure, scheduling, browser settings, icons, or other advanced features
                                   const csvRows: string[] = [];
-                                  csvRows.push('Tile Title,Tile Description,Tile Emoji,Tile Theme Color,Tile Group,Tab Title,Section Title,Link Label,Link URL,Link Visibility,Link Notes,Link Tooltip');
+                                  csvRows.push('Tile Title,Tile Description,Tile Emoji,Tile Theme Color,Tile Group,Tab Title,Section Title,Link Label,Link URL,Link Icon,Link Browser,Link Visibility,Link Notes,Link Tooltip');
 
                                   spacesTiles.forEach(tile => {
                                     // Handle tabs structure (new structure)
@@ -5370,13 +5371,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                                 const row = [
                                                   `"${(tile.title || '').replace(/"/g, '""')}"`,
                                                   `"${(tile.description || '').replace(/"/g, '""')}"`,
-                                                  `"${(tile.emoji || 'ðŸ“').replace(/"/g, '""')}"`,
+                                                  `"${(tile.emoji || '📁').replace(/"/g, '""')}"`,
                                                   `"${(tile.themeColor || 'blue').replace(/"/g, '""')}"`,
                                                   `"${(tile.group || 'General').replace(/"/g, '""')}"`,
                                                   `"${(tab.title || '').replace(/"/g, '""')}"`,
                                                   `"${(section.title || '').replace(/"/g, '""')}"`,
                                                   `"${(link.label || '').replace(/"/g, '""')}"`,
                                                   `"${(link.url || '').replace(/"/g, '""')}"`,
+                                                  `"${(link.icon || '').replace(/"/g, '""')}"`,
+                                                  `"${(link.browser || '').replace(/"/g, '""')}"`,
                                                   `"${(link.visibility || 'public').replace(/"/g, '""')}"`,
                                                   `"${((link.notes || '').replace(/"/g, '""'))}"`,
                                                   `"${((link.tooltip || '').replace(/"/g, '""'))}"`
@@ -5396,13 +5399,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                             const row = [
                                               `"${(tile.title || '').replace(/"/g, '""')}"`,
                                               `"${(tile.description || '').replace(/"/g, '""')}"`,
-                                              `"${(tile.emoji || 'ðŸ“').replace(/"/g, '""')}"`,
+                                              `"${(tile.emoji || '📁').replace(/"/g, '""')}"`,
                                               `"${(tile.themeColor || 'blue').replace(/"/g, '""')}"`,
                                               `"${(tile.group || 'General').replace(/"/g, '""')}"`,
                                               `""`, // No tab title for legacy sections
                                               `"${(section.title || '').replace(/"/g, '""')}"`,
                                               `"${(link.label || '').replace(/"/g, '""')}"`,
                                               `"${(link.url || '').replace(/"/g, '""')}"`,
+                                              `"${(link.icon || '').replace(/"/g, '""')}"`,
+                                              `"${(link.browser || '').replace(/"/g, '""')}"`,
                                               `"${(link.visibility || 'public').replace(/"/g, '""')}"`,
                                               `"${((link.notes || '').replace(/"/g, '""'))}"`,
                                               `"${((link.tooltip || '').replace(/"/g, '""'))}"`
@@ -5462,6 +5467,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           <h4 className="text-base font-semibold text-slate-900 dark:text-white mb-2">Import Spaces</h4>
                           <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                             Import spaces from exported JSON files or CSV spreadsheets.
+                          </p>
+                          <label className="flex items-center gap-2 mb-4 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={spacesImportOverwrite}
+                              onChange={(e) => setSpacesImportOverwrite(e.target.checked)}
+                              className="rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-slate-700 dark:text-slate-300">Overwrite existing tiles</span>
+                          </label>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+                            When enabled, spaces with the same title and category as an existing tile will be updated instead of creating duplicates.
                           </p>
                           <div className="space-y-3">
                             {/* JSON Import - Supports Single Space, Category, or All Categories */}
@@ -5525,14 +5542,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       return;
                                     }
 
-                                    // Import tiles one by one using createTile API
+                                    const currentTiles = await getTiles();
                                     let imported = 0;
+                                    let updated = 0;
                                     let errors: string[] = [];
 
                                     for (const tile of newTiles) {
                                       try {
-                                        await createTile(tile);
-                                        imported++;
+                                        if (spacesImportOverwrite) {
+                                          const existing = currentTiles.find(
+                                            (t) => t.title === tile.title && (t.group || 'General') === (tile.group || 'General')
+                                          );
+                                          if (existing) {
+                                            await saveTile({ ...tile, id: existing.id }, true);
+                                            updated++;
+                                          } else {
+                                            await createTile(tile);
+                                            imported++;
+                                          }
+                                        } else {
+                                          await createTile(tile);
+                                          imported++;
+                                        }
                                       } catch (err: any) {
                                         const errorMsg = err.message || 'Unknown error';
                                         errors.push(`Failed to import "${tile.title}": ${errorMsg}`);
@@ -5541,17 +5572,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     }
 
                                     const result = {
-                                      success: imported > 0,
+                                      success: imported > 0 || updated > 0,
                                       created: imported,
+                                      updated,
                                       errors: errors.length,
-                                      createdTiles: newTiles.slice(0, imported).map(t => ({ id: t.id, title: t.title })),
+                                      createdTiles: newTiles.slice(0, imported + updated).map(t => ({ id: t.id, title: t.title })),
                                       errorMessages: errors
                                     };
 
                                     setSpacesImportFile(null);
 
                                     if (result.success) {
-                                      let message = `Successfully imported ${result.created} space(s) from ${importType}.`;
+                                      let message = '';
+                                      if (result.updated > 0 && result.created > 0) {
+                                        message = `Successfully imported ${result.created} new space(s) and updated ${result.updated} existing space(s) from ${importType}.`;
+                                      } else if (result.updated > 0) {
+                                        message = `Successfully updated ${result.updated} space(s) from ${importType}.`;
+                                      } else {
+                                        message = `Successfully imported ${result.created} space(s) from ${importType}.`;
+                                      }
                                       if (result.errors > 0) {
                                         message += `\n\n${result.errors} error(s) occurred:`;
                                         result.errorMessages.forEach((msg, idx) => {

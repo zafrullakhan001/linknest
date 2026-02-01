@@ -2370,6 +2370,8 @@ function handleBulkImport() {
             'section_title' => ['section title', 'section_title', 'sectiontitle'],
             'link_label' => ['link label', 'link_label', 'linklabel'],
             'link_url' => ['link url', 'link_url', 'linkurl'],
+            'link_icon' => ['link icon', 'link_icon', 'linkicon'],
+            'link_browser' => ['link browser', 'link_browser', 'linkbrowser'],
             'link_visibility' => ['link visibility', 'link_visibility', 'linkvisibility'],
             'link_notes' => ['link notes', 'link_notes', 'linknotes'],
             'link_tooltip' => ['link tooltip', 'link_tooltip', 'linktooltip'],
@@ -2413,6 +2415,8 @@ function handleBulkImport() {
                 'section_title' => isset($headerMap['section_title']) ? trim($row[$headerMap['section_title']]) : 'General',
                 'link_label' => isset($headerMap['link_label']) ? trim($row[$headerMap['link_label']]) : '',
                 'link_url' => isset($headerMap['link_url']) ? trim($row[$headerMap['link_url']]) : '',
+                'link_icon' => isset($headerMap['link_icon']) ? trim($row[$headerMap['link_icon']]) : '',
+                'link_browser' => isset($headerMap['link_browser']) ? trim($row[$headerMap['link_browser']]) : '',
                 'link_visibility' => isset($headerMap['link_visibility']) ? trim($row[$headerMap['link_visibility']]) : 'public',
                 'link_notes' => isset($headerMap['link_notes']) ? trim($row[$headerMap['link_notes']]) : '',
                 'link_tooltip' => isset($headerMap['link_tooltip']) ? trim($row[$headerMap['link_tooltip']]) : '',
@@ -2477,6 +2481,8 @@ function handleBulkImport() {
         $tilesMap[$tileKey]['tabs'][$tabKey]['sections'][$sectionKey][] = [
             'label' => $row['link_label'],
             'url' => $row['link_url'],
+            'icon' => !empty($row['link_icon']) ? $row['link_icon'] : null,
+            'browser' => !empty($row['link_browser']) ? $row['link_browser'] : null,
             'visibility' => $row['link_visibility'] ?: 'public',
             'notes' => $row['link_notes'],
             'tooltip' => $row['link_tooltip']
@@ -2542,7 +2548,7 @@ function handleBulkImport() {
                         
                         foreach ($links as $link) {
                             $linkId = uniqid('link_', true);
-                            $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                            $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, browser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                             $linkStmt->execute([
                                 $linkId,
                                 $sectionId,
@@ -2553,7 +2559,8 @@ function handleBulkImport() {
                                 $link['visibility'],
                                 null,
                                 $link['notes'] ?: null,
-                                $link['tooltip'] ?: null
+                                $link['tooltip'] ?: null,
+                                $link['browser'] ?? null
                             ]);
                         }
                     }
