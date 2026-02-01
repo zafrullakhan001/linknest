@@ -17,6 +17,7 @@ export interface Link {
   health?: LinkHealth; // Link health status
   visibility?: LinkVisibility; // Visibility setting: 'public', 'authenticated', or 'private'
   allowedUsers?: number[]; // Array of user IDs for private links
+  allowedGroups?: number[]; // Array of group IDs for private links
   notes?: string; // Optional notes/description for the link
   tooltip?: string; // Optional custom hover tooltip text
   richTextContent?: string; // Optional rich text HTML content - if present, shows dialog instead of opening URL
@@ -34,6 +35,7 @@ export interface RichTextContent {
   position: number; // Position in the section (for sorting)
   visibility?: LinkVisibility; // Visibility setting: 'public', 'authenticated', or 'private'
   allowedUsers?: number[]; // Array of user IDs for private rich text content
+  allowedGroups?: number[]; // Array of group IDs for private rich text content
   visibleFrom?: string; // ISO date string - content becomes visible from this date/time
   expiresAt?: string; // ISO date string - content expires at this date/time
 }
@@ -46,6 +48,7 @@ export interface LinkSection {
   textColor?: string; // Optional custom text color for section title (hex color code)
   visibility?: LinkVisibility; // Visibility setting: 'public', 'authenticated', or 'private'
   allowedUsers?: number[]; // Array of user IDs for private sections
+  allowedGroups?: number[]; // Array of group IDs for private sections
   visibleFrom?: string; // ISO date string - section becomes visible from this date/time
   expiresAt?: string; // ISO date string - section expires at this date/time
   forceStackedView?: boolean; // Force stacked view for this section regardless of global view preference
@@ -60,6 +63,7 @@ export interface Tab {
   textColor?: string; // Optional custom text color for tab title (hex color code)
   visibility?: LinkVisibility; // Visibility setting: 'public', 'authenticated', or 'private'
   allowedUsers?: number[]; // Array of user IDs for private tabs
+  allowedGroups?: number[]; // Array of group IDs for private tabs
   visibleFrom?: string; // ISO date string - tab becomes visible from this date/time
   expiresAt?: string; // ISO date string - tab expires at this date/time
 }

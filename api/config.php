@@ -572,6 +572,19 @@ function initDatabase() {
             error_log('Tabs migration warning: ' . $e->getMessage());
         }
         
+        // Migrate tabs table to add visibility columns if they don't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(tabs)")->fetchAll();
+            $columnNames = array_column($columns, 'name');
+            if (!in_array('visibility', $columnNames)) {
+                $db->exec('ALTER TABLE tabs ADD COLUMN visibility TEXT DEFAULT "public"');
+                $db->exec('ALTER TABLE tabs ADD COLUMN allowed_users TEXT');
+                $db->exec('ALTER TABLE tabs ADD COLUMN allowed_groups TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Tabs visibility migration warning: ' . $e->getMessage());
+        }
+        
         // Migrate existing sections table to add tab_id column if it doesn't exist
         try {
             $columns = $db->query("PRAGMA table_info(sections)")->fetchAll();
@@ -686,6 +699,19 @@ function initDatabase() {
             }
         } catch (PDOException $e) {
             error_log('Sections position migration warning: ' . $e->getMessage());
+        }
+        
+        // Migrate sections table to add visibility columns if they don't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(sections)")->fetchAll();
+            $columnNames = array_column($columns, 'name');
+            if (!in_array('visibility', $columnNames)) {
+                $db->exec('ALTER TABLE sections ADD COLUMN visibility TEXT DEFAULT "public"');
+                $db->exec('ALTER TABLE sections ADD COLUMN allowed_users TEXT');
+                $db->exec('ALTER TABLE sections ADD COLUMN allowed_groups TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Sections visibility migration warning: ' . $e->getMessage());
         }
         
         // Create links table

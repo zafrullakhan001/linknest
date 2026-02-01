@@ -255,14 +255,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editSections, setEditSections] = useState<LinkSection[]>(tile.sections || []);
 
     // Temporary State for Adding Links (keyed by section ID)
-    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, allowedUsers: number[], notes: string, tooltip: string, browser: string, richTextContent: string }>>({});
+    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, browser: string, richTextContent: string }>>({});
 
     // Selection State for Bulk Actions
     const [selectedLinkIds, setSelectedLinkIds] = useState<string[]>([]);
 
     // State for Editing Links (keyed by link ID)
     const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
-    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, allowedUsers: number[], notes: string, tooltip: string, browser: string, richTextContent: string }>>({});
+    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, browser: string, richTextContent: string }>>({});
 
     // Available browsers from BrowserLauncher API
     const [availableBrowsers, setAvailableBrowsers] = useState<string[]>([]);
@@ -1789,10 +1789,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setEditTabs(newTabs);
     };
 
-    const handleUpdateTabVisibility = (tabId: string, visibility: LinkVisibility, allowedUsers?: number[]) => {
+    const handleUpdateTabVisibility = (tabId: string, visibility: LinkVisibility, allowedUsers?: number[], allowedGroups?: number[]) => {
         setEditTabs(editTabs.map(t =>
             t.id === tabId
-                ? { ...t, visibility, allowedUsers: visibility === 'private' ? allowedUsers : undefined }
+                ? { ...t, visibility, allowedUsers: visibility === 'private' ? allowedUsers : undefined, allowedGroups: visibility === 'private' ? allowedGroups : undefined }
                 : t
         ));
     };
@@ -2164,7 +2164,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }));
     };
 
-    const handleUpdateSectionVisibility = (tabId: string, sectionId: string, visibility: LinkVisibility, allowedUsers?: number[]) => {
+    const handleUpdateSectionVisibility = (tabId: string, sectionId: string, visibility: LinkVisibility, allowedUsers?: number[], allowedGroups?: number[]) => {
         setEditTabs(editTabs.map(tab => {
             if (tab.id !== tabId) return tab;
 
@@ -2172,7 +2172,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 ...tab,
                 sections: tab.sections.map(s =>
                     s.id === sectionId
-                        ? { ...s, visibility, allowedUsers: visibility === 'private' ? allowedUsers : undefined }
+                        ? { ...s, visibility, allowedUsers: visibility === 'private' ? allowedUsers : undefined, allowedGroups: visibility === 'private' ? allowedGroups : undefined }
                         : s
                 )
             };
@@ -2180,11 +2180,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     // Link Management
-    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'notes' | 'tooltip' | 'browser' | 'richTextContent', value: string | LinkVisibility | number[]) => {
+    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'browser' | 'richTextContent', value: string | LinkVisibility | number[]) => {
         setNewLinkState(prev => ({
             ...prev,
             [sectionId]: {
-                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], notes: '', tooltip: '', browser: 'default', richTextContent: '' }),
+                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '' }),
                 [field]: value
             }
         }));
@@ -2196,6 +2196,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             ? currentUsers.filter(id => id !== userId)
             : [...currentUsers, userId];
         updateNewLinkState(sectionId, 'allowedUsers', newUsers);
+    };
+
+    const toggleGroupSelection = (sectionId: string, groupId: number) => {
+        const currentGroups = newLinkState[sectionId]?.allowedGroups || [];
+        const newGroups = currentGroups.includes(groupId)
+            ? currentGroups.filter(id => id !== groupId)
+            : [...currentGroups, groupId];
+        updateNewLinkState(sectionId, 'allowedGroups', newGroups);
     };
 
     const handleAddLinkToSection = (tabId: string, sectionId: string) => {
@@ -2210,6 +2218,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             textColor: state.textColor?.trim() || undefined,
             visibility: state.visibility || 'public',
             allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
+            allowedGroups: state.allowedGroups && state.allowedGroups.length > 0 ? state.allowedGroups : undefined,
             notes: state.notes?.trim() || undefined,
             tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
             browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
@@ -2251,7 +2260,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
 
         // Clear form and hide it
-        setNewLinkState(prev => ({ ...prev, [sectionId]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], notes: '', tooltip: '', browser: 'default', richTextContent: '' } }));
+        setNewLinkState(prev => ({ ...prev, [sectionId]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '' } }));
         setShowUserPicker(prev => ({ ...prev, [sectionId]: false }));
         setShowLinkEmojiPicker(prev => ({ ...prev, [sectionId]: false }));
         setShowAddLinkForm(prev => ({ ...prev, [sectionId]: false }));
@@ -2441,6 +2450,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 textColor: link.textColor || '',
                 visibility: link.visibility || 'public',
                 allowedUsers: link.allowedUsers || [],
+                allowedGroups: link.allowedGroups || [],
                 notes: link.notes || '',
                 tooltip: link.tooltip || '',
                 browser: link.browser || 'default',
@@ -2484,6 +2494,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         textColor: state.textColor?.trim() || undefined,
                                         visibility: state.visibility || 'public',
                                         allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
+                                        allowedGroups: state.allowedGroups && state.allowedGroups.length > 0 ? state.allowedGroups : undefined,
                                         notes: state.notes?.trim() || undefined,
                                         tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
                                         browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
@@ -2511,6 +2522,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 url: state.url.startsWith('http') ? state.url : `https://${state.url}`,
                                 visibility: state.visibility || 'public',
                                 allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
+                                allowedGroups: state.allowedGroups && state.allowedGroups.length > 0 ? state.allowedGroups : undefined,
                                 notes: state.notes?.trim() || undefined,
                                 tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
                                 browser: state.browser && state.browser !== 'default' ? state.browser : undefined
@@ -2527,7 +2539,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setShowUserPicker(prev => ({ ...prev, [linkId]: false }));
     };
 
-    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'notes' | 'tooltip' | 'browser', value: string | LinkVisibility | number[]) => {
+    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'browser', value: string | LinkVisibility | number[]) => {
         setEditLinkState(prev => ({
             ...prev,
             [linkId]: { ...prev[linkId], [field]: value }
@@ -2540,6 +2552,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             ? currentUsers.filter(id => id !== userId)
             : [...currentUsers, userId];
         updateEditLinkState(linkId, 'allowedUsers', newUsers);
+    };
+
+    const toggleEditGroupSelection = (linkId: string, groupId: number) => {
+        const currentGroups = editLinkState[linkId]?.allowedGroups || [];
+        const newGroups = currentGroups.includes(groupId)
+            ? currentGroups.filter(id => id !== groupId)
+            : [...currentGroups, groupId];
+        updateEditLinkState(linkId, 'allowedGroups', newGroups);
     };
 
     // Helper to get normalized sorted items
@@ -6241,6 +6261,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                             textColor: link.textColor || '',
                                                                                                             visibility: link.visibility || 'public',
                                                                                                             allowedUsers: link.allowedUsers || [],
+                                                                                                            allowedGroups: link.allowedGroups || [],
                                                                                                             notes: link.notes || '',
                                                                                                             tooltip: link.tooltip || '',
                                                                                                             browser: link.browser || 'default',
@@ -6334,85 +6355,89 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                             </div>
                                                                                         )}
 
-                                                                                        {/* User Selector for Private Visibility */}
+                                                                                        {/* User and Group Selector for Private Visibility */}
                                                                                         {editLinkState[link.id]?.visibility === 'private' && (
-                                                                                            <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border-2 border-slate-200 dark:border-slate-700">
-                                                                                                <div className="flex items-center justify-between mb-2">
-                                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Select Users</label>
-                                                                                                    <button
-                                                                                                        type="button"
-                                                                                                        onClick={() => setShowUserPicker(prev => ({ ...prev, [link.id]: !prev[link.id] }))}
-                                                                                                        className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 font-medium flex items-center gap-1"
-                                                                                                    >
-                                                                                                        {showUserPicker[link.id] ? 'Hide' : 'Show'}
-                                                                                                    </button>
-                                                                                                </div>
-                                                                                                {editLinkState[link.id]?.allowedUsers && editLinkState[link.id]!.allowedUsers.length > 0 && (
-                                                                                                    <div className="flex flex-wrap gap-1.5 mb-2">
-                                                                                                        {editLinkState[link.id]!.allowedUsers.map(userId => {
-                                                                                                            const user = usersList.find(u => u.id === userId);
-                                                                                                            return (
-                                                                                                                <span
-                                                                                                                    key={userId}
-                                                                                                                    className="inline-flex items-center gap-1 px-2 py-1 bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 rounded text-xs font-medium"
-                                                                                                                >
-                                                                                                                    {user?.username || `User ${userId}`}
-                                                                                                                    <button
-                                                                                                                        type="button"
-                                                                                                                        onClick={() => toggleEditUserSelection(link.id, userId)}
-                                                                                                                        className="hover:text-red-600 dark:hover:text-red-400 transition-colors"
-                                                                                                                        title="Remove user"
-                                                                                                                    >
-                                                                                                                        ×
-                                                                                                                    </button>
-                                                                                                                </span>
-                                                                                                            );
-                                                                                                        })}
+                                                                                            <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border-2 border-slate-200 dark:border-slate-700 space-y-3">
+                                                                                                <div>
+                                                                                                    <div className="flex items-center justify-between mb-2">
+                                                                                                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Select Users</label>
+                                                                                                        <button
+                                                                                                            type="button"
+                                                                                                            onClick={() => setShowUserPicker(prev => ({ ...prev, [link.id]: !prev[link.id] }))}
+                                                                                                            className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 font-medium flex items-center gap-1"
+                                                                                                        >
+                                                                                                            {showUserPicker[link.id] ? 'Hide' : 'Show'}
+                                                                                                        </button>
                                                                                                     </div>
-                                                                                                )}
-                                                                                                {showUserPicker[link.id] && (
-                                                                                                    <div className="max-h-40 overflow-y-auto border-2 border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-2 space-y-1">
-                                                                                                        {loadingUsers ? (
-                                                                                                            <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2 flex items-center justify-center gap-2">
-                                                                                                                <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                                                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                                                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                                                                                                </svg>
-                                                                                                                Loading...
-                                                                                                            </div>
-                                                                                                        ) : usersList.length === 0 ? (
-                                                                                                            <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2">No users available</div>
+                                                                                                    {editLinkState[link.id]?.allowedUsers && editLinkState[link.id]!.allowedUsers.length > 0 && (
+                                                                                                        <div className="flex flex-wrap gap-1.5 mb-2">
+                                                                                                            {editLinkState[link.id]!.allowedUsers.map(userId => {
+                                                                                                                const user = usersList.find(u => u.id === userId);
+                                                                                                                return (
+                                                                                                                    <span
+                                                                                                                        key={userId}
+                                                                                                                        className="inline-flex items-center gap-1 px-2 py-1 bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 rounded text-xs font-medium"
+                                                                                                                    >
+                                                                                                                        {user?.username || `User ${userId}`}
+                                                                                                                        <button
+                                                                                                                            type="button"
+                                                                                                                            onClick={() => toggleEditUserSelection(link.id, userId)}
+                                                                                                                            className="hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                                                                                                                            title="Remove user"
+                                                                                                                        >
+                                                                                                                            ×
+                                                                                                                        </button>
+                                                                                                                    </span>
+                                                                                                                );
+                                                                                                            })}
+                                                                                                        </div>
+                                                                                                    )}
+                                                                                                    {showUserPicker[link.id] && (
+                                                                                                        <div className="max-h-32 overflow-y-auto border-2 border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-2 space-y-1">
+                                                                                                            {loadingUsers ? (
+                                                                                                                <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2">Loading...</div>
+                                                                                                            ) : usersList.length === 0 ? (
+                                                                                                                <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2">No users available</div>
+                                                                                                            ) : (
+                                                                                                                usersList.map(user => (
+                                                                                                                    <label key={user.id} className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded cursor-pointer">
+                                                                                                                        <input type="checkbox" checked={editLinkState[link.id]?.allowedUsers?.includes(user.id) || false} onChange={() => toggleEditUserSelection(link.id, user.id)} className="rounded w-3.5 h-3.5" />
+                                                                                                                        <span className="text-xs font-medium">{user.username}</span>
+                                                                                                                    </label>
+                                                                                                                ))
+                                                                                                            )}
+                                                                                                        </div>
+                                                                                                    )}
+                                                                                                </div>
+                                                                                                <div>
+                                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2">Select Groups</label>
+                                                                                                    {editLinkState[link.id]?.allowedGroups && editLinkState[link.id]!.allowedGroups.length > 0 && (
+                                                                                                        <div className="flex flex-wrap gap-1.5 mb-2">
+                                                                                                            {editLinkState[link.id]!.allowedGroups.map(groupId => {
+                                                                                                                const group = availableGroups.find(g => g.id === groupId);
+                                                                                                                return (
+                                                                                                                    <span key={groupId} className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 rounded text-xs font-medium">
+                                                                                                                        {group?.name || `Group ${groupId}`}
+                                                                                                                        <button type="button" onClick={() => toggleEditGroupSelection(link.id, groupId)} className="hover:text-red-600 dark:hover:text-red-400">×</button>
+                                                                                                                    </span>
+                                                                                                                );
+                                                                                                            })}
+                                                                                                        </div>
+                                                                                                    )}
+                                                                                                    <div className="max-h-32 overflow-y-auto border-2 border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-2 space-y-1">
+                                                                                                        {availableGroups.length === 0 ? (
+                                                                                                            <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2">No groups available</div>
                                                                                                         ) : (
-                                                                                                            usersList.map(user => (
-                                                                                                                <label
-                                                                                                                    key={user.id}
-                                                                                                                    className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded cursor-pointer transition-colors"
-                                                                                                                >
-                                                                                                                    <input
-                                                                                                                        type="checkbox"
-                                                                                                                        checked={editLinkState[link.id]?.allowedUsers?.includes(user.id) || false}
-                                                                                                                        onChange={() => toggleEditUserSelection(link.id, user.id)}
-                                                                                                                        className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 w-3.5 h-3.5"
-                                                                                                                    />
-                                                                                                                    <span className="text-xs font-medium text-slate-700 dark:text-slate-300 flex-1">{user.username}</span>
-                                                                                                                    {user.auth_source === 'saml' ? (
-                                                                                                                        <span className="px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 text-[9px] font-semibold">
-                                                                                                                            SAML
-                                                                                                                        </span>
-                                                                                                                    ) : user.auth_source === 'ldap' ? (
-                                                                                                                        <span className="px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-[9px] font-semibold">
-                                                                                                                            LDAP
-                                                                                                                        </span>
-                                                                                                                    ) : user.auth_source && user.auth_source !== 'local' ? (
-                                                                                                                        <span className="px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-[9px] font-semibold">
-                                                                                                                            {user.auth_source.toUpperCase()}
-                                                                                                                        </span>
-                                                                                                                    ) : null}
+                                                                                                            availableGroups.map(group => (
+                                                                                                                <label key={group.id} className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded cursor-pointer">
+                                                                                                                    <input type="checkbox" checked={editLinkState[link.id]?.allowedGroups?.includes(group.id) || false} onChange={() => toggleEditGroupSelection(link.id, group.id)} className="rounded w-3.5 h-3.5" />
+                                                                                                                    <span className="text-xs font-medium">{group.name}</span>
+                                                                                                                    <span className="text-[10px] text-slate-500">({group.memberCount})</span>
                                                                                                                 </label>
                                                                                                             ))
                                                                                                         )}
                                                                                                     </div>
-                                                                                                )}
+                                                                                                </div>
                                                                                             </div>
                                                                                         )}
 
@@ -6616,7 +6641,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     onClick={() => {
                                                                                         setShowAddLinkForm(prev => ({ ...prev, [section.id]: false }));
                                                                                         // Clear form when closing
-                                                                                        setNewLinkState(prev => ({ ...prev, [section.id]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], notes: '', tooltip: '', browser: 'default', richTextContent: '' } }));
+                                                                                        setNewLinkState(prev => ({ ...prev, [section.id]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '' } }));
                                                                                     }}
                                                                                     className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded transition-colors"
                                                                                     title="Close form"
@@ -6821,85 +6846,65 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 </div>
                                                                             )}
 
-                                                                            {/* User Selector for Private Visibility */}
+                                                                            {/* User and Group Selector for Private Visibility */}
                                                                             {(newLinkState[section.id]?.visibility || 'public') === 'private' && (
-                                                                                <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border-2 border-slate-200 dark:border-slate-700">
-                                                                                    <div className="flex items-center justify-between mb-2">
-                                                                                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Select Users</label>
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            onClick={() => setShowUserPicker(prev => ({ ...prev, [section.id]: !prev[section.id] }))}
-                                                                                            className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 font-medium flex items-center gap-1"
-                                                                                        >
-                                                                                            {showUserPicker[section.id] ? 'Hide' : 'Show'}
-                                                                                        </button>
-                                                                                    </div>
-                                                                                    {newLinkState[section.id]?.allowedUsers && newLinkState[section.id]!.allowedUsers.length > 0 && (
-                                                                                        <div className="flex flex-wrap gap-1.5 mb-2">
-                                                                                            {newLinkState[section.id]!.allowedUsers.map(userId => {
-                                                                                                const user = usersList.find(u => u.id === userId);
-                                                                                                return (
-                                                                                                    <span
-                                                                                                        key={userId}
-                                                                                                        className="inline-flex items-center gap-1 px-2 py-1 bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 rounded text-xs font-medium"
-                                                                                                    >
-                                                                                                        {user?.username || `User ${userId}`}
-                                                                                                        <button
-                                                                                                            type="button"
-                                                                                                            onClick={() => toggleUserSelection(section.id, userId)}
-                                                                                                            className="hover:text-red-600 dark:hover:text-red-400 transition-colors"
-                                                                                                            title="Remove user"
-                                                                                                        >
-                                                                                                            ×
-                                                                                                        </button>
-                                                                                                    </span>
-                                                                                                );
-                                                                                            })}
+                                                                                <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border-2 border-slate-200 dark:border-slate-700 space-y-3">
+                                                                                    <div>
+                                                                                        <div className="flex items-center justify-between mb-2">
+                                                                                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Select Users</label>
+                                                                                            <button type="button" onClick={() => setShowUserPicker(prev => ({ ...prev, [section.id]: !prev[section.id] }))} className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 font-medium">
+                                                                                                {showUserPicker[section.id] ? 'Hide' : 'Show'}
+                                                                                            </button>
                                                                                         </div>
-                                                                                    )}
-                                                                                    {showUserPicker[section.id] && (
-                                                                                        <div className="max-h-40 overflow-y-auto border-2 border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-2 space-y-1">
-                                                                                            {loadingUsers ? (
-                                                                                                <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2 flex items-center justify-center gap-2">
-                                                                                                    <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                                                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                                                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                                                                                    </svg>
-                                                                                                    Loading...
-                                                                                                </div>
-                                                                                            ) : usersList.length === 0 ? (
-                                                                                                <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2">No users available</div>
-                                                                                            ) : (
-                                                                                                usersList.map(user => (
-                                                                                                    <label
-                                                                                                        key={user.id}
-                                                                                                        className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded cursor-pointer transition-colors"
-                                                                                                    >
-                                                                                                        <input
-                                                                                                            type="checkbox"
-                                                                                                            checked={newLinkState[section.id]?.allowedUsers?.includes(user.id) || false}
-                                                                                                            onChange={() => toggleUserSelection(section.id, user.id)}
-                                                                                                            className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 w-3.5 h-3.5"
-                                                                                                        />
-                                                                                                        <span className="text-xs font-medium text-slate-700 dark:text-slate-300 flex-1">{user.username}</span>
-                                                                                                        {user.auth_source === 'saml' ? (
-                                                                                                            <span className="px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 text-[9px] font-semibold">
-                                                                                                                SAML
-                                                                                                            </span>
-                                                                                                        ) : user.auth_source === 'ldap' ? (
-                                                                                                            <span className="px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-[9px] font-semibold">
-                                                                                                                LDAP
-                                                                                                            </span>
-                                                                                                        ) : user.auth_source && user.auth_source !== 'local' ? (
-                                                                                                            <span className="px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-[9px] font-semibold">
-                                                                                                                {user.auth_source.toUpperCase()}
-                                                                                                            </span>
-                                                                                                        ) : null}
+                                                                                        {newLinkState[section.id]?.allowedUsers && newLinkState[section.id]!.allowedUsers.length > 0 && (
+                                                                                            <div className="flex flex-wrap gap-1.5 mb-2">
+                                                                                                {newLinkState[section.id]!.allowedUsers.map(userId => {
+                                                                                                    const user = usersList.find(u => u.id === userId);
+                                                                                                    return (
+                                                                                                        <span key={userId} className="inline-flex items-center gap-1 px-2 py-1 bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 rounded text-xs font-medium">
+                                                                                                            {user?.username || `User ${userId}`}
+                                                                                                            <button type="button" onClick={() => toggleUserSelection(section.id, userId)} className="hover:text-red-600">×</button>
+                                                                                                        </span>
+                                                                                                    );
+                                                                                                })}
+                                                                                            </div>
+                                                                                        )}
+                                                                                        {showUserPicker[section.id] && (
+                                                                                            <div className="max-h-32 overflow-y-auto border-2 border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-2 space-y-1">
+                                                                                                {loadingUsers ? <div className="text-xs text-slate-500 text-center py-2">Loading...</div> : usersList.length === 0 ? <div className="text-xs text-slate-500 text-center py-2">No users available</div> : usersList.map(user => (
+                                                                                                    <label key={user.id} className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded cursor-pointer">
+                                                                                                        <input type="checkbox" checked={newLinkState[section.id]?.allowedUsers?.includes(user.id) || false} onChange={() => toggleUserSelection(section.id, user.id)} className="rounded w-3.5 h-3.5" />
+                                                                                                        <span className="text-xs font-medium">{user.username}</span>
                                                                                                     </label>
-                                                                                                ))
-                                                                                            )}
+                                                                                                ))}
+                                                                                            </div>
+                                                                                        )}
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2">Select Groups</label>
+                                                                                        {newLinkState[section.id]?.allowedGroups && newLinkState[section.id]!.allowedGroups.length > 0 && (
+                                                                                            <div className="flex flex-wrap gap-1.5 mb-2">
+                                                                                                {newLinkState[section.id]!.allowedGroups.map(groupId => {
+                                                                                                    const group = availableGroups.find(g => g.id === groupId);
+                                                                                                    return (
+                                                                                                        <span key={groupId} className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 rounded text-xs font-medium">
+                                                                                                            {group?.name || `Group ${groupId}`}
+                                                                                                            <button type="button" onClick={() => toggleGroupSelection(section.id, groupId)} className="hover:text-red-600">×</button>
+                                                                                                        </span>
+                                                                                                    );
+                                                                                                })}
+                                                                                            </div>
+                                                                                        )}
+                                                                                        <div className="max-h-32 overflow-y-auto border-2 border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-2 space-y-1">
+                                                                                            {availableGroups.length === 0 ? <div className="text-xs text-slate-500 text-center py-2">No groups available</div> : availableGroups.map(group => (
+                                                                                                <label key={group.id} className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded cursor-pointer">
+                                                                                                    <input type="checkbox" checked={newLinkState[section.id]?.allowedGroups?.includes(group.id) || false} onChange={() => toggleGroupSelection(section.id, group.id)} className="rounded w-3.5 h-3.5" />
+                                                                                                    <span className="text-xs font-medium">{group.name}</span>
+                                                                                                    <span className="text-[10px] text-slate-500">({group.memberCount})</span>
+                                                                                                </label>
+                                                                                            ))}
                                                                                         </div>
-                                                                                    )}
+                                                                                    </div>
                                                                                 </div>
                                                                             )}
 
@@ -7179,37 +7184,66 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     type="radio"
                                                     name="tabVisibility"
                                                     checked={tab.visibility === 'private'}
-                                                    onChange={() => handleUpdateTabVisibility(tab.id, 'private', tab.allowedUsers || [])}
+                                                    onChange={() => handleUpdateTabVisibility(tab.id, 'private', tab.allowedUsers || [], tab.allowedGroups || [])}
                                                     className="w-4 h-4"
                                                 />
                                                 <div>
                                                     <div className="font-semibold text-slate-900 dark:text-white">🔐 Private</div>
-                                                    <div className="text-xs text-slate-500">Specific users only</div>
+                                                    <div className="text-xs text-slate-500">Specific users and/or groups only</div>
                                                 </div>
                                             </label>
                                         </div>
 
                                         {tab.visibility === 'private' && (
-                                            <div className="mb-6">
-                                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Select Users:</label>
-                                                <div className="max-h-48 overflow-y-auto border border-slate-300 dark:border-slate-700 rounded-lg p-2 space-y-1">
-                                                    {usersList.map(user => (
-                                                        <label key={user.id} className="flex items-center gap-2 p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded cursor-pointer">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={tab.allowedUsers?.includes(user.id) || false}
-                                                                onChange={(e) => {
-                                                                    const currentUsers = tab.allowedUsers || [];
-                                                                    const newUsers = e.target.checked
-                                                                        ? [...currentUsers, user.id]
-                                                                        : currentUsers.filter(id => id !== user.id);
-                                                                    handleUpdateTabVisibility(tab.id, 'private', newUsers);
-                                                                }}
-                                                                className="rounded"
-                                                            />
-                                                            <span className="text-sm">{user.username}</span>
-                                                        </label>
-                                                    ))}
+                                            <div className="mb-6 space-y-4">
+                                                <div>
+                                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Select Users:</label>
+                                                    <div className="max-h-40 overflow-y-auto border border-slate-300 dark:border-slate-700 rounded-lg p-2 space-y-1">
+                                                        {usersList.map(user => (
+                                                            <label key={user.id} className="flex items-center gap-2 p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded cursor-pointer">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={tab.allowedUsers?.includes(user.id) || false}
+                                                                    onChange={(e) => {
+                                                                        const currentUsers = tab.allowedUsers || [];
+                                                                        const newUsers = e.target.checked
+                                                                            ? [...currentUsers, user.id]
+                                                                            : currentUsers.filter(id => id !== user.id);
+                                                                        handleUpdateTabVisibility(tab.id, 'private', newUsers, tab.allowedGroups || []);
+                                                                    }}
+                                                                    className="rounded"
+                                                                />
+                                                                <span className="text-sm">{user.username}</span>
+                                                            </label>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Select Groups:</label>
+                                                    <div className="max-h-40 overflow-y-auto border border-slate-300 dark:border-slate-700 rounded-lg p-2 space-y-1">
+                                                        {availableGroups.length === 0 ? (
+                                                            <p className="text-xs text-slate-500 dark:text-slate-400 py-2">No groups available</p>
+                                                        ) : (
+                                                            availableGroups.map(group => (
+                                                                <label key={group.id} className="flex items-center gap-2 p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded cursor-pointer">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={tab.allowedGroups?.includes(group.id) || false}
+                                                                        onChange={(e) => {
+                                                                            const currentGroups = tab.allowedGroups || [];
+                                                                            const newGroups = e.target.checked
+                                                                                ? [...currentGroups, group.id]
+                                                                                : currentGroups.filter(id => id !== group.id);
+                                                                            handleUpdateTabVisibility(tab.id, 'private', tab.allowedUsers || [], newGroups);
+                                                                        }}
+                                                                        className="rounded"
+                                                                    />
+                                                                    <span className="text-sm">{group.name}</span>
+                                                                    <span className="text-xs text-slate-500">({group.memberCount} members)</span>
+                                                                </label>
+                                                            ))
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
                                         )}
@@ -7285,37 +7319,66 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     type="radio"
                                                     name="sectionVisibility"
                                                     checked={section.visibility === 'private'}
-                                                    onChange={() => handleUpdateSectionVisibility(visibilityDialogSection.tabId, section.id, 'private', section.allowedUsers || [])}
+                                                    onChange={() => handleUpdateSectionVisibility(visibilityDialogSection.tabId, section.id, 'private', section.allowedUsers || [], section.allowedGroups || [])}
                                                     className="w-4 h-4"
                                                 />
                                                 <div>
                                                     <div className="font-semibold text-slate-900 dark:text-white">🔐 Private</div>
-                                                    <div className="text-xs text-slate-500">Specific users only</div>
+                                                    <div className="text-xs text-slate-500">Specific users and/or groups only</div>
                                                 </div>
                                             </label>
                                         </div>
 
                                         {section.visibility === 'private' && (
-                                            <div className="mb-6">
-                                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Select Users:</label>
-                                                <div className="max-h-48 overflow-y-auto border border-slate-300 dark:border-slate-700 rounded-lg p-2 space-y-1">
-                                                    {usersList.map(user => (
-                                                        <label key={user.id} className="flex items-center gap-2 p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded cursor-pointer">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={section.allowedUsers?.includes(user.id) || false}
-                                                                onChange={(e) => {
-                                                                    const currentUsers = section.allowedUsers || [];
-                                                                    const newUsers = e.target.checked
-                                                                        ? [...currentUsers, user.id]
-                                                                        : currentUsers.filter(id => id !== user.id);
-                                                                    handleUpdateSectionVisibility(visibilityDialogSection.tabId, section.id, 'private', newUsers);
-                                                                }}
-                                                                className="rounded"
-                                                            />
-                                                            <span className="text-sm">{user.username}</span>
-                                                        </label>
-                                                    ))}
+                                            <div className="mb-6 space-y-4">
+                                                <div>
+                                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Select Users:</label>
+                                                    <div className="max-h-40 overflow-y-auto border border-slate-300 dark:border-slate-700 rounded-lg p-2 space-y-1">
+                                                        {usersList.map(user => (
+                                                            <label key={user.id} className="flex items-center gap-2 p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded cursor-pointer">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={section.allowedUsers?.includes(user.id) || false}
+                                                                    onChange={(e) => {
+                                                                        const currentUsers = section.allowedUsers || [];
+                                                                        const newUsers = e.target.checked
+                                                                            ? [...currentUsers, user.id]
+                                                                            : currentUsers.filter(id => id !== user.id);
+                                                                        handleUpdateSectionVisibility(visibilityDialogSection.tabId, section.id, 'private', newUsers, section.allowedGroups || []);
+                                                                    }}
+                                                                    className="rounded"
+                                                                />
+                                                                <span className="text-sm">{user.username}</span>
+                                                            </label>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Select Groups:</label>
+                                                    <div className="max-h-40 overflow-y-auto border border-slate-300 dark:border-slate-700 rounded-lg p-2 space-y-1">
+                                                        {availableGroups.length === 0 ? (
+                                                            <p className="text-xs text-slate-500 dark:text-slate-400 py-2">No groups available</p>
+                                                        ) : (
+                                                            availableGroups.map(group => (
+                                                                <label key={group.id} className="flex items-center gap-2 p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded cursor-pointer">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={section.allowedGroups?.includes(group.id) || false}
+                                                                        onChange={(e) => {
+                                                                            const currentGroups = section.allowedGroups || [];
+                                                                            const newGroups = e.target.checked
+                                                                                ? [...currentGroups, group.id]
+                                                                                : currentGroups.filter(id => id !== group.id);
+                                                                            handleUpdateSectionVisibility(visibilityDialogSection.tabId, section.id, 'private', section.allowedUsers || [], newGroups);
+                                                                        }}
+                                                                        className="rounded"
+                                                                    />
+                                                                    <span className="text-sm">{group.name}</span>
+                                                                    <span className="text-xs text-slate-500">({group.memberCount} members)</span>
+                                                                </label>
+                                                            ))
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
                                         )}
