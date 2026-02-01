@@ -3478,7 +3478,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         // For all other tabs (public, private, etc.), show all links based on their own visibility settings
         if (!isEditing) {
             // Only apply role-based filtering if we came from "Your Apps" tab
-            const shouldApplyRoleFiltering = sourceTab === 'your-apps';
+            // BUT for 'authenticated' tiles (which are now in Your Apps), we show full content
+            const shouldApplyRoleFiltering = sourceTab === 'your-apps' && tile.visibility !== 'authenticated';
 
             sectionsToFilter = sectionsToFilter
                 .filter(section => isContentVisible(section))

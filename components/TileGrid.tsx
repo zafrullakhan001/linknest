@@ -1897,6 +1897,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingTile, setEditingTile] = useState<Tile | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [yourAppsFilter, setYourAppsFilter] = useState<'all' | 'authenticated' | 'assigned'>('all');
   const [linkInfoDialog, setLinkInfoDialog] = useState<{ link: Link } | null>(null);
   const [tileInfoDialog, setTileInfoDialog] = useState<{ tile?: Tile; categoryInfo?: { categoryName: string; tiles: Tile[] } } | null>(null);
   const [favNotesDialogState, setFavNotesDialogState] = useState<{ linkId: string; notes: string; linkLabel: string } | null>(null);
@@ -3089,9 +3090,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
   const privateTilesCount = useMemo(() => {
     if (!isAuthenticated || !user) return 0;
     return tiles.filter(t => {
-      if (t.visibility === 'authenticated') {
-        return true; // All authenticated users can see authenticated tiles
-      } else if (t.visibility === 'private') {
+      if (t.visibility === 'private') {
         // Only show if user is in allowedUsers list
         return t.allowedUsers && t.allowedUsers.includes(user.id);
       }
@@ -3144,9 +3143,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       filteredTiles = tiles.filter(t => t.visibility === 'public');
     } else if (activeTab === 'your-apps') {
       // Show tiles/links accessible via user roles - only show specific assigned links
+      // ALSO show 'authenticated' tiles (visible to all logged in users) without filtering their links
       if (isAuthenticated && user) {
-        // First, find all tiles that have links with role access
+        // First, find all tiles that have links with role access OR are authenticated (protected)
         filteredTiles = tiles.filter(t => {
+          if (t.visibility === 'authenticated') return true;
+
           // Check if any link within the tile has role access
           const hasLinkWithRoleAccess = t.tabs?.some(tab =>
             tab.sections?.some(section =>
@@ -3159,7 +3161,11 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         });
 
         // Filter links within tiles to ONLY show those with role access (even if tile has role access)
+        // BUT preserve full content for 'authenticated' tiles
         filteredTiles = filteredTiles.map(tile => {
+          // If tile is authenticated type, show all content (don't filter links by role)
+          if (tile.visibility === 'authenticated') return tile;
+
           // Always filter to only show links with role access, regardless of tile access
           const filteredTabs = tile.tabs?.map(tab => {
             const filteredSections = tab.sections?.map(section => ({
@@ -3181,11 +3187,20 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             tabs: filteredTabs && filteredTabs.length > 0 ? filteredTabs : []
           };
         }).filter(tile =>
-          tile.tabs && tile.tabs.length > 0 && tile.tabs.some(tab =>
+          tile.visibility === 'authenticated' ||
+          (tile.tabs && tile.tabs.length > 0 && tile.tabs.some(tab =>
             (tab.sections && tab.sections.length > 0) ||
             (tab.links && tab.links.length > 0)
-          )
+          ))
         );
+
+        // Apply sub-filter for 'Your Apps' tab
+        if (yourAppsFilter === 'authenticated') {
+          filteredTiles = filteredTiles.filter(t => t.visibility === 'authenticated');
+        } else if (yourAppsFilter === 'assigned') {
+          // Show tiles that are explicitly assigned via roles (not just generically 'authenticated')
+          filteredTiles = filteredTiles.filter(t => t.visibility !== 'authenticated');
+        }
       } else {
         filteredTiles = []; // No role-based content for unauthenticated users
       }
@@ -3193,9 +3208,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       // Show only authenticated and private tiles that belong to the user
       if (isAuthenticated && user) {
         filteredTiles = tiles.filter(t => {
-          if (t.visibility === 'authenticated') {
-            return true; // All authenticated users can see authenticated tiles
-          } else if (t.visibility === 'private') {
+          if (t.visibility === 'private') {
             // Only show if user is in allowedUsers list
             return t.allowedUsers && t.allowedUsers.includes(user.id);
           }
@@ -5657,7 +5670,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           >
             Your Apps
             {(() => {
-              const roleBasedTiles = tiles.filter(t => t.hasRoleAccess ||
+              const roleBasedTiles = tiles.filter(t => t.visibility === 'authenticated' || t.hasRoleAccess ||
                 t.tabs?.some(tab =>
                   tab.sections?.some(section => section.links?.some(link => link.hasRoleAccess)) ||
                   tab.links?.some(link => link.hasRoleAccess)
@@ -5850,6 +5863,41 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           </>
         )}
       </div>
+
+      {/* Your Apps Filter Actions */}
+      {activeTab === 'your-apps' && isAuthenticated && (
+        <div className="flex items-center gap-2 py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 overflow-x-auto">
+          <button
+            onClick={() => setYourAppsFilter('all')}
+            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${yourAppsFilter === 'all'
+              ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm ring-1 ring-slate-200 dark:ring-slate-600'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'
+              }`}
+          >
+            All Apps
+          </button>
+          <button
+            onClick={() => setYourAppsFilter('authenticated')}
+            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors whitespace-nowrap flex items-center gap-1.5 ${yourAppsFilter === 'authenticated'
+              ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm ring-1 ring-slate-200 dark:ring-slate-600'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'
+              }`}
+          >
+            <span className="text-xs">🔒</span>
+            Authenticated
+          </button>
+          <button
+            onClick={() => setYourAppsFilter('assigned')}
+            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors whitespace-nowrap flex items-center gap-1.5 ${yourAppsFilter === 'assigned'
+              ? 'bg-white dark:bg-slate-700 text-purple-600 dark:text-purple-400 shadow-sm ring-1 ring-slate-200 dark:ring-slate-600'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'
+              }`}
+          >
+            <span className="text-xs">👤</span>
+            Your Assigned Apps
+          </button>
+        </div>
+      )}
 
       {/* Archive Actions */}
       {activeTab === 'archive' && isAuthenticated && (
@@ -6387,8 +6435,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
               canMoveDown={canMoveDown}
               onMoveUp={() => handleMoveCategory(groupName, 'up')}
               onMoveDown={() => handleMoveCategory(groupName, 'down')}
-              onDeleteCategory={activeTab !== 'recycle-bin' ? handleDeleteCategory : undefined}
-              onArchiveCategory={activeTab !== 'recycle-bin' && activeTab !== 'archive' ? handleArchiveCategory : undefined}
+              onDeleteCategory={activeTab !== 'recycle-bin' && (activeTab !== 'your-apps' || user?.is_admin) ? handleDeleteCategory : undefined}
+              onArchiveCategory={activeTab !== 'recycle-bin' && activeTab !== 'archive' && (activeTab !== 'your-apps' || user?.is_admin) ? handleArchiveCategory : undefined}
               onUnarchiveCategory={activeTab === 'archive' ? handleUnarchiveCategory : undefined}
               onPermanentDeleteCategory={activeTab === 'recycle-bin' ? handlePermanentDeleteCategory : undefined}
               isRecycleBin={activeTab === 'recycle-bin'}
@@ -6398,7 +6446,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
               onExportCategory={handleExportCategory}
               onImportCategory={handleImportCategory}
               onCloneCategory={handleCloneCategory}
-              onToggleCategoryFavorite={handleToggleCategoryFavorite}
+              onToggleCategoryFavorite={(activeTab !== 'your-apps' || user?.is_admin) ? handleToggleCategoryFavorite : undefined}
               isCategoryFavorited={isCategoryFavorited(groupName)}
               onScheduleCategory={handleOpenCategorySchedule}
               onManageVisibility={handleOpenManageVisibility}
