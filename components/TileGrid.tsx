@@ -1897,7 +1897,13 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingTile, setEditingTile] = useState<Tile | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [yourAppsFilter, setYourAppsFilter] = useState<'all' | 'authenticated' | 'assigned'>('all');
+  const [yourAppsFilter, setYourAppsFilter] = useState<'all' | 'authenticated' | 'assigned'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('linknest_your_apps_filter');
+      if (saved === 'all' || saved === 'authenticated' || saved === 'assigned') return saved;
+    }
+    return 'all';
+  });
   const [linkInfoDialog, setLinkInfoDialog] = useState<{ link: Link } | null>(null);
   const [tileInfoDialog, setTileInfoDialog] = useState<{ tile?: Tile; categoryInfo?: { categoryName: string; tiles: Tile[] } } | null>(null);
   const [favNotesDialogState, setFavNotesDialogState] = useState<{ linkId: string; notes: string; linkLabel: string } | null>(null);
@@ -2999,31 +3005,38 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setPreferencesLoaded(false);
   }, [isAuthenticated]);
 
-  // Load saved active tab preference for authenticated users
+  // Load saved active tab and Your Apps filter preference for authenticated users
   useEffect(() => {
     if (isAuthenticated && !preferencesLoaded) {
       // Try to load from localStorage first (for immediate restoration after login)
       const localStorageTab = localStorage.getItem('linknest_user_active_tab');
 
-      userPreferencesService.getPreference('activeTab')
-        .then(savedTab => {
-          // Prefer user preferences over localStorage, but use localStorage as fallback
-          const tabToRestore = savedTab || localStorageTab;
+      userPreferencesService.getPreferences()
+        .then(prefs => {
+          const savedTab = prefs.activeTab || null;
+          const tabToRestore = (typeof savedTab === 'string' ? savedTab : null) || localStorageTab;
 
           if (tabToRestore && typeof tabToRestore === 'string') {
-            const validTabs: TabType[] = ['public', 'favorites', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
+            const validTabs: TabType[] = ['public', 'favorites', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring', 'your-apps', 'monitorv2'];
             if (validTabs.includes(tabToRestore as TabType)) {
               setActiveTab(tabToRestore as TabType);
             }
           }
+
+          // Restore Your Apps filter preference
+          const savedFilter = prefs.yourAppsFilter;
+          if (savedFilter === 'all' || savedFilter === 'authenticated' || savedFilter === 'assigned') {
+            setYourAppsFilter(savedFilter);
+          }
+
           setPreferencesLoaded(true);
         })
         .catch(error => {
           // If preferences can't be loaded, try localStorage as fallback
-          console.debug('Could not load active tab preference:', error);
+          console.debug('Could not load preferences:', error);
 
           if (localStorageTab) {
-            const validTabs: TabType[] = ['public', 'favorites', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
+            const validTabs: TabType[] = ['public', 'favorites', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring', 'your-apps', 'monitorv2'];
             if (validTabs.includes(localStorageTab as TabType)) {
               setActiveTab(localStorageTab as TabType);
             }
@@ -3076,6 +3089,18 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       }
     }
   }, [activeTab, isAuthenticated, preferencesLoaded]);
+
+  // Save Your Apps filter preference when it changes (for authenticated users)
+  useEffect(() => {
+    if (isAuthenticated && preferencesLoaded) {
+      const timeoutId = setTimeout(() => {
+        userPreferencesService.updatePreference('yourAppsFilter', yourAppsFilter)
+          .catch(() => { });
+        localStorage.setItem('linknest_your_apps_filter', yourAppsFilter);
+      }, 300);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [yourAppsFilter, isAuthenticated, preferencesLoaded]);
 
   // Calculate counts for tabs
   const favoriteTilesCount = useMemo(() => {
@@ -3572,7 +3597,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     }
 
     return groups;
-  }, [tiles, searchTerm, categoryOrder, categoryMetadata, activeTab, isAuthenticated, user, recycleBinTiles, archiveTiles, publicFavorites]);
+  }, [tiles, searchTerm, categoryOrder, categoryMetadata, activeTab, isAuthenticated, user, recycleBinTiles, archiveTiles, publicFavorites, yourAppsFilter]);
 
   // Apply selected category filter to the grouped tiles
   const groupedTiles = useMemo(() => {

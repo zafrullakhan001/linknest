@@ -81,7 +81,7 @@ Both `generate_demo_data.php` and `generate_demo_data_simple.php` create:
 - **Role-based access (varied tiles; Public tab blocked):**  
   - Each role has a **different subset of tiles and links** (e.g. Manager: Main + Collaboration; Developer: Development + Infrastructure; Guest: minimal set).  
   - **All built-in widgets** are assigned to every role.  
-  - **All tabs are allowed except Public:** Your Apps, Favorites, Private, Scheduled, Expired, Archive, Recycle bin, and Monitoring.
+  - **All tabs are allowed except Public:** Your Apps, Favorites, Private, Scheduled, Expired, Archive, Recycle bin, Monitoring, and Monitorv2 Dashboard.
 
 Re-running either script will re-use existing demo users and roles, reset demo user passwords to `password`, reassign the roles, and re-apply tile/link/widget/tab permissions.
 
@@ -104,16 +104,16 @@ Distributed across tiles with relevant URLs and descriptions
 
 ### **Monitors: 10**
 Infrastructure monitoring examples:
-- Website uptime
-- API endpoint
-- Database health
-- Server resources
-- SSL certificates
-- DNS records
-- Email service
-- Backup status
-- Login portal
-- Network latency
+- Main Website (URL)
+- API Gateway (URL with keyword check)
+- Database Server (port)
+- Redis Cache (port)
+- Email Server (ping)
+- Staging Environment (URL)
+- CDN Status (URL)
+- Load Balancer (ping)
+- Monitoring Dashboard (URL with keyword)
+- Backup Server (port)
 
 ---
 
@@ -154,7 +154,7 @@ Both scripts **DELETE ALL EXISTING DATA** including:
 ### Public Tiles
 All generated tiles are marked as:
 - `visibility = "public"`
-- `user_id = NULL` (global/public tiles)
+- `user_id` = admin user ID (tiles are owned by the admin)
 - Visible to all users automatically
 
 ### Arrangements

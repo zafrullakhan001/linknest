@@ -27,6 +27,7 @@ try {
         'user_link_favorites',
         'user_tile_favorites',
         'user_tile_permissions',
+        'group_tile_permissions',
         'rich_text_content',
         'links',
         'sections',
@@ -833,7 +834,7 @@ try {
         'Guest'     => ['tile_dashboard', 'tile_customer_portal', 'tile_documentation', 'tile_support'],
         'Auditor'   => ['tile_dashboard', 'tile_analytics', 'tile_hr_portal', 'tile_finance', 'tile_customer_portal', 'tile_dev_tools', 'tile_code_repos', 'tile_documentation', 'tile_training', 'tile_library', 'tile_forms', 'tile_support'],
     ];
-    $allowedTabsForDemoRoles = ['your-apps', 'favorites', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
+    $allowedTabsForDemoRoles = ['your-apps', 'favorites', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring', 'monitorv2'];
     $builtInWidgetIds = [
         'clock', 'weather', 'calculator', 'notes', 'password-generator',
         'phonetic-alphabet', 'zoom-control', 'theme', 'fav-organizer', 'chat', 'snake-game'
