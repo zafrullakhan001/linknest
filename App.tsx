@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { Tile, Link } from './types';
-import { getTiles, saveTiles, createTile, deleteTile, cloneTile } from './services/storageService';
+import { getTiles, getTile, saveTiles, createTile, deleteTile, cloneTile } from './services/storageService';
 import { settingsService } from './services/settingsService';
 import { authService } from './services/authService';
 import { Navigation } from './components/Navigation';
@@ -102,6 +102,11 @@ const AppContent: React.FC = () => {
   // Allowed widgets state (for role-based widget filtering)
   const [allowedWidgetIds, setAllowedWidgetIds] = useState<Set<string>>(new Set());
   const [widgetsLoading, setWidgetsLoading] = useState(false);
+
+  // Staging tile detail (when opening a staging tile that is not in main tiles list)
+  const [stagingDetailTile, setStagingDetailTile] = useState<Tile | null>(null);
+  const [stagingDetailLoading, setStagingDetailLoading] = useState(false);
+  const [stagingDetailError, setStagingDetailError] = useState<string | null>(null);
 
   // Footer Details Toggle State
   const [showFooterDetails, setShowFooterDetails] = useState(() => {
@@ -644,6 +649,54 @@ const AppContent: React.FC = () => {
     loadDatabasePath();
   }, []);
 
+  // Fetch staging tile when opening #/tile/id?from=staging and tile is not in main list
+  useEffect(() => {
+    if (!route.startsWith('#/tile/')) {
+      setStagingDetailTile(null);
+      setStagingDetailLoading(false);
+      setStagingDetailError(null);
+      return;
+    }
+    const tilePath = route.split('/tile/')[1];
+    const [tileId, queryString] = (tilePath || '').split('?');
+    const urlParams = new URLSearchParams(queryString || '');
+    const sourceTab = urlParams.get('from') || null;
+    if (sourceTab !== 'staging') {
+      setStagingDetailTile(null);
+      setStagingDetailLoading(false);
+      setStagingDetailError(null);
+      return;
+    }
+    const tile = tiles.find((t) => t.id === tileId);
+    if (tile) {
+      setStagingDetailTile(null);
+      setStagingDetailLoading(false);
+      setStagingDetailError(null);
+      return;
+    }
+    let cancelled = false;
+    setStagingDetailLoading(true);
+    setStagingDetailTile(null);
+    setStagingDetailError(null);
+    getTile(tileId)
+      .then((t) => {
+        if (cancelled) return;
+        setStagingDetailLoading(false);
+        setStagingDetailTile(t || null);
+        if (!t) setStagingDetailError('Space not found or you do not have permission to view it.');
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setStagingDetailLoading(false);
+          setStagingDetailTile(null);
+          setStagingDetailError(err?.message || 'Unable to load this space.');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [route, tiles]);
+
   // If guest access is disabled and user is not authenticated, we show login dialog (computed here so hooks below run unconditionally).
   // Require !authLoading so we never show/open login until session check has finished (fixes refresh with existing session).
   const shouldShowLoginMessage = (!guestAccessEnabled && !isAuthenticated && !settingsLoading && !authLoading) ||
@@ -868,22 +921,40 @@ const AppContent: React.FC = () => {
     const sourceTab = urlParams.get('from') || null;
 
     const tile = tiles.find((t) => t.id === tileId);
-    if (tile) {
+    const displayTile = tile || (sourceTab === 'staging' ? stagingDetailTile : null);
+    const isLoadingStaging = !tile && sourceTab === 'staging' && stagingDetailLoading;
+    const isStagingError = !tile && sourceTab === 'staging' && !stagingDetailLoading && stagingDetailError;
+
+    if (displayTile) {
       content = (
         <Suspense fallback={<LoadingFallback />}>
           <TileDetail
-            tile={tile}
-            allTiles={tiles}
+            tile={displayTile}
+            allTiles={tile ? tiles : (stagingDetailTile ? [stagingDetailTile] : [])}
             onUpdateTiles={handleUpdateTiles}
             isAuthenticated={isAuthenticated}
             onAuthRequired={() => setAuthModalOpen(true)}
-            sourceTab={sourceTab as 'public' | 'your-apps' | 'private' | 'favorites' | 'public-favorites' | null}
+            sourceTab={sourceTab as 'public' | 'your-apps' | 'private' | 'favorites' | 'public-favorites' | 'staging' | null}
             user={user}
           />
         </Suspense>
       );
+    } else if (isStagingError) {
+      content = (
+        <div className="flex flex-col items-center justify-center min-h-[50vh] px-4">
+          <p className="text-slate-600 dark:text-slate-400 mb-4">{stagingDetailError}</p>
+          <button
+            type="button"
+            onClick={() => { window.location.hash = '#/'; }}
+            className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium"
+          >
+            Back to Dashboard
+          </button>
+        </div>
+      );
+    } else if (isLoadingStaging || (!tile && sourceTab === 'staging')) {
+      content = <LoadingFallback />;
     } else {
-      // 404 or redirect
       window.location.hash = '#/';
       content = null;
     }

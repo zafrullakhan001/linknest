@@ -19,6 +19,7 @@ const transformTile = (apiTile: any): Tile => {
     tabs: apiTile.tabs || undefined, // Include tabs if present (with richTextContent)
     sections: apiTile.sections || [], // Keep for backward compatibility (with richTextContent)
     visibility: apiTile.visibility || 'public',
+    sourceTab: apiTile.sourceTab === 'staging' ? 'staging' : 'public',
     allowedUsers: apiTile.allowedUsers || undefined,
     isFavorite: apiTile.isFavorite || false,
     isHyperlink: apiTile.isHyperlink || false,
@@ -45,8 +46,20 @@ const transformTile = (apiTile: any): Tile => {
   };
 };
 
-export const getTiles = async (): Promise<Tile[]> => {
-  const response = await fetch(`${API_BASE}/tiles`, {
+export interface GetTilesOptions {
+  /** 'public' = main tab tiles (default); 'staging' = staging tab tiles (admin only) */
+  sourceTab?: 'public' | 'staging';
+}
+
+export const getTiles = async (options?: GetTilesOptions): Promise<Tile[]> => {
+  const params = new URLSearchParams();
+  if (options?.sourceTab === 'staging') {
+    params.set('source_tab', 'staging');
+  } else if (options?.sourceTab === 'public') {
+    params.set('source_tab', 'public');
+  }
+  const url = params.toString() ? `${API_BASE}/tiles?${params.toString()}` : `${API_BASE}/tiles`;
+  const response = await fetch(url, {
     method: 'GET',
     credentials: 'include'
   });
@@ -60,6 +73,20 @@ export const getTiles = async (): Promise<Tile[]> => {
 
   const apiTiles = await response.json();
   return apiTiles.map(transformTile);
+};
+
+export const getTile = async (tileId: string): Promise<Tile | null> => {
+  const response = await fetch(`${API_BASE}/tiles/${tileId}`, {
+    method: 'GET',
+    credentials: 'include'
+  });
+  if (!response.ok) {
+    if (response.status === 404) return null;
+    const errorData = await response.json().catch(() => ({ error: 'Failed to fetch tile' }));
+    throw new Error(errorData.error || 'Failed to fetch tile');
+  }
+  const apiTile = await response.json();
+  return transformTile(apiTile);
 };
 
 export const saveTiles = async (tiles: Tile[], isFinal: boolean = false): Promise<void> => {
@@ -120,10 +147,11 @@ export const createTile = async (tile: Tile): Promise<Tile> => {
     }
 
     const data = await response.json();
-    // Fetch the created tile to get full data
-    const tiles = await getTiles();
+    // Fetch the created tile to get full data (use same source when staging)
+    const sourceTab = tile.sourceTab === 'staging' ? 'staging' : undefined;
+    const tiles = await getTiles(sourceTab ? { sourceTab } : undefined);
     const created = tiles.find(t => t.id === data.id || t.id === tile.id);
-    return created || tile;
+    return created || { ...tile, id: data.id || tile.id };
   } catch (e) {
     console.error("Failed to create tile", e);
     throw e;
@@ -138,7 +166,9 @@ export const deleteTile = async (tileId: string): Promise<void> => {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to delete tile');
+      const errorData = await response.json().catch(() => ({ error: 'Failed to delete tile' }));
+      const message = (errorData && typeof errorData.error === 'string') ? errorData.error : `Failed to delete tile (${response.status})`;
+      throw new Error(message);
     }
   } catch (e) {
     console.error("Failed to delete tile", e);
@@ -381,9 +411,8 @@ export const cloneTile = async (tileId: string): Promise<Tile> => {
       throw new Error(data.error || 'Failed to clone tile');
     }
 
-    // Fetch the cloned tile to get full data
-    const tiles = await getTiles();
-    const cloned = tiles.find(t => t.id === data.id);
+    // Fetch the cloned tile (by ID so it works for both public and staging)
+    const cloned = await getTile(data.id);
     if (!cloned) {
       throw new Error('Cloned tile not found');
     }

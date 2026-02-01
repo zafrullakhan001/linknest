@@ -1793,7 +1793,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
   );
 };
 
-type TabType = 'favorites' | 'public' | 'public-favorites' | 'your-apps' | 'private' | 'scheduled' | 'expired' | 'archive' | 'recycle-bin' | 'monitoring' | 'monitorv2';
+type TabType = 'favorites' | 'public' | 'public-favorites' | 'your-apps' | 'staging' | 'private' | 'scheduled' | 'expired' | 'archive' | 'recycle-bin' | 'monitoring' | 'monitorv2';
 
 export const TileGrid: React.FC<TileGridProps> = ({
   tiles,
@@ -1819,6 +1819,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
   // Check if user has roles - if yes, check role permissions; if no, use global settings only
   const isTabDisabledBySettings = useCallback((tab: TabType) => {
+    // Staging tab: admin only (not controlled by global settings)
+    if (tab === 'staging') return !isAuthenticated || !user?.is_admin;
     // First check global settings - if disabled globally, hide from everyone
     const disabledGlobally = (() => {
       if (tab === 'favorites' || tab === 'public-favorites') return disabledAppTabs.has('favorites');
@@ -1850,6 +1852,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
         'public-favorites': 'favorites',
         'public': 'public',
         'your-apps': 'your-apps',
+        'staging': 'staging',
         'private': 'private',
         'scheduled': 'scheduled',
         'expired': 'expired',
@@ -1874,6 +1877,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
         'public',
         'your-apps',
         'favorites',
+        ...(user?.is_admin ? (['staging'] as TabType[]) : []),
         'private',
         'scheduled',
         'expired',
@@ -1885,8 +1889,9 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
     for (const c of candidates) {
       // Auth restrictions
-      const restrictedTabs: TabType[] = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring', 'monitorv2'];
+      const restrictedTabs: TabType[] = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring', 'monitorv2', 'staging'];
       if (!isAuthenticated && restrictedTabs.includes(c)) continue;
+      if (c === 'staging' && !user?.is_admin) continue;
       if (isTabDisabledBySettings(c)) continue;
       return c;
     }
@@ -1908,18 +1913,21 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [tileInfoDialog, setTileInfoDialog] = useState<{ tile?: Tile; categoryInfo?: { categoryName: string; tiles: Tile[] } } | null>(null);
   const [favNotesDialogState, setFavNotesDialogState] = useState<{ linkId: string; notes: string; linkLabel: string } | null>(null);
   const [favNotesCopied, setFavNotesCopied] = useState(false);
+  const [stagingTiles, setStagingTiles] = useState<Tile[]>([]);
+  const [stagingTilesLoading, setStagingTilesLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     try {
       const saved = localStorage.getItem('linknest_active_tab');
-      const validTabs = ['favorites', 'public', 'public-favorites', 'your-apps', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring', 'monitorv2'];
+      const validTabs = ['favorites', 'public', 'public-favorites', 'your-apps', 'staging', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring', 'monitorv2'];
 
       if (saved && validTabs.includes(saved)) {
         // If not authenticated, force public-accessible tabs only
-        // monitoring tab is admin only (checked in useEffect)
-        const restrictedTabs = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring', 'monitorv2'];
+        // monitoring/staging tabs are admin only (checked in useEffect)
+        const restrictedTabs = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring', 'monitorv2', 'staging'];
         if (!isAuthenticated && restrictedTabs.includes(saved)) {
           return 'public';
         }
+        if (saved === 'staging' && !user?.is_admin) return 'public';
         return saved as TabType;
       }
     } catch (e) {
@@ -1934,11 +1942,21 @@ export const TileGrid: React.FC<TileGridProps> = ({
       if (fallback) setActiveTab(fallback);
       return;
     }
-    // Preserve existing auth rules
-    const restrictedTabs: TabType[] = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring', 'monitorv2'];
+    // Preserve existing auth rules (staging is admin-only, enforced by isTabDisabledBySettings)
+    const restrictedTabs: TabType[] = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring', 'monitorv2', 'staging'];
     if (!isAuthenticated && restrictedTabs.includes(tab)) {
       setActiveTab('public');
       return;
+    }
+    // When switching to Staging tab, load staging tiles immediately so they show without refresh
+    if (tab === 'staging' && isAuthenticated && user?.is_admin) {
+      setStagingTilesLoading(true);
+      getTiles({ sourceTab: 'staging' })
+        .then(t => {
+          setStagingTiles(t);
+          setStagingTilesLoading(false);
+        })
+        .catch(() => setStagingTilesLoading(false));
     }
     setActiveTab(tab);
   }, [getFallbackTab, isAuthenticated, isTabDisabledBySettings, user]);
@@ -1970,7 +1988,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   useEffect(() => {
     const handleSwitchTab = (e: any) => {
       const tab = e.detail as TabType;
-      const validTabs: TabType[] = ['favorites', 'public', 'public-favorites', 'your-apps', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring', 'monitorv2'];
+      const validTabs: TabType[] = ['favorites', 'public', 'public-favorites', 'your-apps', 'staging', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring', 'monitorv2'];
 
       if (tab && validTabs.includes(tab)) {
         if (isTabDisabledBySettings(tab)) {
@@ -1984,9 +2002,11 @@ export const TileGrid: React.FC<TileGridProps> = ({
         } else if (tab === 'public-favorites' && isAuthenticated) {
           setActiveTab('favorites');
         } else {
-          // Check restricted tabs
-          const restrictedTabs = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring', 'monitorv2'];
+          // Check restricted tabs (staging is admin-only)
+          const restrictedTabs = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring', 'monitorv2', 'staging'];
           if (!isAuthenticated && restrictedTabs.includes(tab)) {
+            setActiveTab('public');
+          } else if (tab === 'staging' && !user?.is_admin) {
             setActiveTab('public');
           } else {
             setActiveTab(tab);
@@ -2084,6 +2104,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [showUserSelector, setShowUserSelector] = useState(false);
   const [visibilitySearchTerm, setVisibilitySearchTerm] = useState('');
   const [visibilityActiveTab, setVisibilityActiveTab] = useState<'users' | 'groups'>('users');
+  const [newCreateInStaging, setNewCreateInStaging] = useState(false);
 
   // Hyperlink state
   const [tileType, setTileType] = useState<'space' | 'hyperlink'>('space');
@@ -2818,6 +2839,23 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     }
   }, [activeTab, isAuthenticated]);
 
+  // Load staging tiles when Staging tab is active (admin only)
+  useEffect(() => {
+    if (activeTab === 'staging' && isAuthenticated && user?.is_admin) {
+      setStagingTilesLoading(true);
+      getTiles({ sourceTab: 'staging' })
+        .then(t => {
+          setStagingTiles(t);
+          setStagingTilesLoading(false);
+        })
+        .catch(() => {
+          setStagingTilesLoading(false);
+        });
+    } else if (activeTab !== 'staging') {
+      setStagingTiles([]);
+    }
+  }, [activeTab, isAuthenticated, user?.is_admin]);
+
   // Load favorite links when favorites tab is active
   useEffect(() => {
     if (activeTab === 'favorites' || activeTab === 'public-favorites') {
@@ -3166,6 +3204,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     } else if (activeTab === 'public') {
       // Show only public tiles (same as current public access)
       filteredTiles = tiles.filter(t => t.visibility === 'public');
+    } else if (activeTab === 'staging') {
+      // Staging tab: admin-only; show staging tiles (loaded separately)
+      filteredTiles = stagingTilesLoading ? [] : stagingTiles;
     } else if (activeTab === 'your-apps') {
       // Show tiles/links accessible via user roles - only show specific assigned links
       // ALSO show 'authenticated' tiles (visible to all logged in users) without filtering their links
@@ -3264,11 +3305,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       });
     }
 
-    // For all tabs except 'scheduled', 'expired', and 'your-apps', filter out scheduled and expired tiles
+    // For all tabs except 'scheduled', 'expired', 'your-apps', and 'staging', filter out scheduled and expired tiles
     // Scheduled tiles should only appear in the scheduled tab
     // Expired tiles should only appear in the expired tab
     // 'your-apps' shows role-based content which may include scheduled/expired items
-    if (activeTab !== 'scheduled' && activeTab !== 'expired' && activeTab !== 'your-apps' && activeTab !== 'recycle-bin' && activeTab !== 'archive') {
+    // 'staging' shows all staging tiles (admin manages visibility/schedule there)
+    if (activeTab !== 'scheduled' && activeTab !== 'expired' && activeTab !== 'your-apps' && activeTab !== 'staging' && activeTab !== 'recycle-bin' && activeTab !== 'archive') {
       const now = new Date();
       filteredTiles = filteredTiles.filter(t => {
         // Hide tiles that are scheduled for the future
@@ -3597,7 +3639,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     }
 
     return groups;
-  }, [tiles, searchTerm, categoryOrder, categoryMetadata, activeTab, isAuthenticated, user, recycleBinTiles, archiveTiles, publicFavorites, yourAppsFilter]);
+  }, [tiles, searchTerm, categoryOrder, categoryMetadata, activeTab, isAuthenticated, user, recycleBinTiles, archiveTiles, publicFavorites, yourAppsFilter, stagingTiles, stagingTilesLoading]);
 
   // Apply selected category filter to the grouped tiles
   const groupedTiles = useMemo(() => {
@@ -3725,6 +3767,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       openInNewTab: tileType === 'hyperlink' ? openInNewTab : undefined,
       visibleFrom: visibleFrom.trim() ? new Date(visibleFrom).toISOString() : undefined,
       expiresAt: expiresAt.trim() ? new Date(expiresAt).toISOString() : undefined,
+      sourceTab: (activeTab === 'staging' || newCreateInStaging) ? 'staging' : 'public',
       messages: messages,
       // Tile decoration properties - preserve false/0 values, only use undefined for empty
       // When all values are empty/default, they'll be undefined and tile will use global style manager
@@ -3743,6 +3786,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         await onCreateTile(newTile);
         resetForm();
         setIsModalOpen(false);
+        if (activeTab === 'staging') {
+          getTiles({ sourceTab: 'staging' }).then(setStagingTiles).catch(() => {});
+        }
       } catch (error) {
         console.error('Failed to create tile:', error);
         alert('Failed to create tile. Please try again.');
@@ -3763,6 +3809,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setNewColor('blue');
     setShowEmojiPicker(false);
     setNewVisibility('public');
+    setNewCreateInStaging(activeTab === 'staging');
     setNewAllowedUsers([]);
     setNewAllowedGroups([]);
     setVisibilitySearchTerm('');
@@ -3793,6 +3840,13 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setMessageIsActive(true);
     setMessagePriority(0);
   };
+
+  // When create modal opens, sync "Create in Staging" to current tab (Staging tab = staging)
+  useEffect(() => {
+    if (isModalOpen) {
+      setNewCreateInStaging(activeTab === 'staging');
+    }
+  }, [isModalOpen, activeTab]);
 
   // Fetch users and groups when modal opens and visibility is private
   useEffect(() => {
@@ -3893,9 +3947,14 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       if (onDeleteTile) {
         try {
           await onDeleteTile(id);
-          // Reload tiles to reflect the deletion
-          const updatedTiles = await getTiles();
-          onUpdateTiles(updatedTiles);
+          // Reload tiles to reflect the deletion (staging vs main list)
+          if (activeTab === 'staging') {
+            const updatedStaging = await getTiles({ sourceTab: 'staging' });
+            setStagingTiles(updatedStaging);
+          } else {
+            const updatedTiles = await getTiles();
+            onUpdateTiles(updatedTiles);
+          }
 
           // Always reload recycle bin to update the counter (tile was moved to recycle bin)
           const updatedRecycleBin = await getRecycleBin();
@@ -3908,10 +3967,15 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           }
         } catch (error) {
           console.error('Failed to delete tile:', error);
-          alert('Failed to delete space. Please try again.');
+          const msg = error instanceof Error ? error.message : 'Failed to delete space. Please try again.';
+          alert(msg);
         }
       } else {
-        onUpdateTiles(tiles.filter(t => t.id !== id));
+        if (activeTab === 'staging') {
+          setStagingTiles(prev => prev.filter(t => t.id !== id));
+        } else {
+          onUpdateTiles(tiles.filter(t => t.id !== id));
+        }
         // Still refresh recycle bin even if using local state
         try {
           const updatedRecycleBin = await getRecycleBin();
@@ -4104,6 +4168,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     if (onCloneTile) {
       try {
         await onCloneTile(id);
+        if (activeTab === 'staging') {
+          getTiles({ sourceTab: 'staging' }).then(setStagingTiles).catch(() => {});
+        }
       } catch (error) {
         console.error('Failed to clone tile:', error);
         alert('Failed to clone space. Please try again.');
@@ -4112,7 +4179,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
   };
 
   const handleTileClick = (tileId: string) => {
-    const tile = tiles.find(t => t.id === tileId);
+    const sourceList = activeTab === 'staging' ? stagingTiles : tiles;
+    const tile = sourceList.find(t => t.id === tileId);
     if (tile?.isHyperlink && tile.hyperlinkUrl) {
       if (tile.openInNewTab) {
         window.open(tile.hyperlinkUrl, '_blank', 'noopener,noreferrer');
@@ -5676,8 +5744,22 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* Tabs - Staging first (admin only), then Public, Your Apps, etc. */}
       <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-700">
+        {isAuthenticated && user?.is_admin && (
+          <button
+            onClick={() => requestTab('staging')}
+            data-active={activeTab === 'staging'}
+            className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'staging' ? 'active' : ''}`}
+          >
+            Staging
+            {stagingTiles.length > 0 && (
+              <span className="ml-2 px-1.5 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-full">
+                {stagingTiles.length}
+              </span>
+            )}
+          </button>
+        )}
         {!disabledAppTabs.has('public') && (
           <button
             onClick={() => requestTab('public')}
@@ -6382,6 +6464,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             const activeTabNameMap: Record<string, string> = {
               'your-apps': 'Your Apps',
               'public': 'Public',
+              'staging': 'Staging',
               'favorites': 'Favorites',
               'private': 'Private',
               'scheduled': 'Scheduled',
@@ -7703,6 +7786,20 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           />
                           <span className="text-sm text-slate-700 dark:text-slate-300">Private - Available for specific users only</span>
                         </label>
+                        {user?.is_admin && (
+                          <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">Location (admin)</label>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={newCreateInStaging}
+                                onChange={(e) => setNewCreateInStaging(e.target.checked)}
+                                className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded border-slate-300 dark:border-slate-600"
+                              />
+                              <span className="text-sm text-slate-700 dark:text-slate-300">Staging - Create in staging area (admin only)</span>
+                            </label>
+                          </div>
+                        )}
                       </div>
 
                       {/* User and Group Selector for Private Visibility */}

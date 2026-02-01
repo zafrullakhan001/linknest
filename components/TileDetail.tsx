@@ -54,7 +54,7 @@ interface TileDetailProps {
     onUpdateTiles: (tiles: Tile[], skipReload?: boolean, isFinal?: boolean) => void;
     isAuthenticated?: boolean;
     onAuthRequired?: () => void;
-    sourceTab?: 'public' | 'your-apps' | 'private' | 'favorites' | 'public-favorites' | null;
+    sourceTab?: 'public' | 'your-apps' | 'staging' | 'private' | 'favorites' | 'public-favorites' | null;
     user?: User | null;
 }
 // Enhanced emoji categories with more emojis
@@ -3667,6 +3667,32 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             </button>
                                         )}
                                     </>
+                                )}
+                                {sourceTab === 'staging' && user?.is_admin && (
+                                    <button
+                                        onClick={async () => {
+                                            try {
+                                                const updatedTile = { ...tile, sourceTab: 'public' as const };
+                                                await saveTile(updatedTile);
+                                                const updatedTilesArray = allTiles.map(t => t.id === tile.id ? updatedTile : t);
+                                                if (allTiles.every(t => t.id !== tile.id)) {
+                                                    updatedTilesArray.push(updatedTile);
+                                                }
+                                                onUpdateTiles(updatedTilesArray);
+                                                window.location.hash = '#/';
+                                            } catch (e) {
+                                                console.error('Failed to move tile to public', e);
+                                                alert('Failed to move tile to public. Please try again.');
+                                            }
+                                        }}
+                                        className="p-2 rounded-lg bg-amber-500/80 hover:bg-amber-500 text-white border border-amber-400/50 transition-all backdrop-blur-sm flex items-center justify-center gap-1.5"
+                                        title="Move to Public tab"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                            <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+                                        </svg>
+                                        <span className="text-sm font-medium">Move to Public</span>
+                                    </button>
                                 )}
                                 <button
                                     onClick={() => window.location.hash = '#/'}

@@ -81,6 +81,7 @@ export interface Tile {
   group?: string; // New: Category/Group for the tile
   createdAt: number;
   visibility?: TileVisibility; // Visibility setting: 'public', 'authenticated', or 'private'
+  sourceTab?: 'public' | 'staging'; // Source tab: public (main) or staging (admin-only staging area)
   allowedUsers?: number[]; // Array of user IDs for private tiles/spaces
   allowedGroups?: number[]; // Array of user group IDs for private tiles/spaces
   isFavorite?: boolean; // Whether this tile is favorited by the current user

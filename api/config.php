@@ -368,6 +368,24 @@ function initDatabase() {
         } catch (PDOException $e) {
             error_log('Tiles visibility migration warning: ' . $e->getMessage());
         }
+
+        // Migrate existing tiles table to add source_tab column (public | staging; admin-only staging tab)
+        try {
+            $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll();
+            $hasSourceTab = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'source_tab') {
+                    $hasSourceTab = true;
+                    break;
+                }
+            }
+            if (!$hasSourceTab) {
+                $db->exec('ALTER TABLE tiles ADD COLUMN source_tab TEXT DEFAULT "public"');
+                error_log('Added source_tab column to tiles table');
+            }
+        } catch (PDOException $e) {
+            error_log('Tiles source_tab migration warning: ' . $e->getMessage());
+        }
         
         // Migrate existing tiles table to add allowed_groups column if it doesn't exist
         try {

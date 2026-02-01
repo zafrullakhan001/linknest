@@ -133,13 +133,30 @@ function handleGetTiles() {
     if (!$guestAccessEnabled && !$user) {
         sendJSON(['error' => 'Authentication required. Guest access is disabled.'], 401);
     }
+
+    // Source tab filter: public (default) or staging (admin only)
+    $sourceTab = isset($_GET['source_tab']) ? trim((string)$_GET['source_tab']) : (isset($_GET['sourceTab']) ? trim((string)$_GET['sourceTab']) : 'public');
+    if ($sourceTab !== 'public' && $sourceTab !== 'staging') {
+        $sourceTab = 'public';
+    }
+    if ($sourceTab === 'staging') {
+        if (!$user || empty($user['is_admin'])) {
+            sendJSON(['error' => 'Only administrators can view staging tiles.'], 403);
+        }
+    }
     
     // OPTIMIZED: Batch fetch all data using JOINs instead of N+1 queries
     // This dramatically reduces the number of database queries from hundreds to just a few
     
-    // Step 1: Get all visible tiles in one query
-    $stmt = $db->prepare('SELECT * FROM tiles WHERE deleted_at IS NULL AND archived_at IS NULL ORDER BY position ASC');
-    $stmt->execute();
+    // Step 1: Get visible tiles filtered by source_tab
+    $baseWhere = 'deleted_at IS NULL AND archived_at IS NULL';
+    if ($sourceTab === 'staging') {
+        $stmt = $db->prepare('SELECT * FROM tiles WHERE ' . $baseWhere . ' AND source_tab = ? ORDER BY position ASC');
+        $stmt->execute(['staging']);
+    } else {
+        $stmt = $db->prepare('SELECT * FROM tiles WHERE ' . $baseWhere . ' AND (source_tab IS NULL OR source_tab = ? OR source_tab = \'\') ORDER BY position ASC');
+        $stmt->execute(['public']);
+    }
     
     $allTiles = $stmt->fetchAll(PDO::FETCH_ASSOC);
     $tiles = [];
@@ -345,6 +362,7 @@ function handleGetTiles() {
             'createdAt' => (int)$row['created_at'],
             'position' => $position,
             'visibility' => $tileVisibility,
+            'sourceTab' => !empty($row['source_tab']) ? $row['source_tab'] : 'public',
             'allowedUsers' => $tileAllowedUsers,
             'allowedGroups' => $tileAllowedGroups,
             'isFavorite' => $isFavorite,
@@ -824,6 +842,12 @@ function handleGetTile($tileId) {
     if (!$row) {
         sendJSON(['error' => 'Tile not found'], 404);
     }
+
+    // Staging tiles are visible only to admins
+    $rowSourceTab = isset($row['source_tab']) ? trim($row['source_tab']) : 'public';
+    if ($rowSourceTab === 'staging' && (!$user || empty($user['is_admin']))) {
+        sendJSON(['error' => 'Tile not found'], 404);
+    }
     
     // Filter tiles based on visibility
     $tileVisibility = $row['visibility'] ?? 'public';
@@ -934,6 +958,7 @@ function handleGetTile($tileId) {
         'group' => $row['group'],
         'createdAt' => (int)$row['created_at'],
         'visibility' => $tileVisibility,
+        'sourceTab' => !empty($row['source_tab']) ? $row['source_tab'] : 'public',
         'allowedUsers' => $tileAllowedUsers,
         'allowedGroups' => $tileAllowedGroups,
         'isFavorite' => $isFavorite,
@@ -1293,8 +1318,17 @@ function handleCreateTile() {
         $maxStmt->execute();
         $position = (int)$maxStmt->fetchColumn();
     }
+
+    // Source tab: public (default) or staging (admin only)
+    $sourceTab = isset($data['sourceTab']) ? trim((string)$data['sourceTab']) : (isset($data['source_tab']) ? trim((string)$data['source_tab']) : 'public');
+    if ($sourceTab !== 'public' && $sourceTab !== 'staging') {
+        $sourceTab = 'public';
+    }
+    if ($sourceTab === 'staging' && empty($user['is_admin'])) {
+        $sourceTab = 'public';
+    }
     
-    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     
     if (!$stmt->execute([
         $tileId,
@@ -1321,6 +1355,7 @@ function handleCreateTile() {
         $tileGradientType,
         $tileBorderRadius,
         $tileTextColor,
+        $sourceTab,
         $position,
         $data['createdAt'] ?? time()
     ])) {
@@ -1774,8 +1809,10 @@ function handleCloneTile($tileId) {
         $tileGradientType = !empty($originalTile['tile_gradient_type']) ? $originalTile['tile_gradient_type'] : null;
         $tileBorderRadius = isset($originalTile['tile_border_radius']) && $originalTile['tile_border_radius'] !== null ? (int)$originalTile['tile_border_radius'] : null;
         $tileTextColor = !empty($originalTile['tile_text_color']) ? $originalTile['tile_text_color'] : null;
+        // Copy source_tab so cloned tile stays in same area (staging vs public)
+        $newSourceTab = isset($originalTile['source_tab']) && trim($originalTile['source_tab']) === 'staging' ? 'staging' : 'public';
         
-        $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         
         if (!$insertStmt->execute([
             $newTileId,
@@ -1803,6 +1840,7 @@ function handleCloneTile($tileId) {
             $tileGradientType,
             $tileBorderRadius,
             $tileTextColor,
+            $newSourceTab,
             $newPosition,
             time()
         ])) {
@@ -4277,9 +4315,21 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
         $tileBorderRadius = array_key_exists('tileBorderRadius', $data) && $data['tileBorderRadius'] !== null ? (int)$data['tileBorderRadius'] : null;
         // Don't save #000000 (black) as it's effectively "no decoration" - treat it as null
         $tileTextColor = isset($data['tileTextColor']) && $data['tileTextColor'] !== null && $data['tileTextColor'] !== '' && strtolower(trim($data['tileTextColor'])) !== '#000000' && strtolower(trim($data['tileTextColor'])) !== '000000' ? $data['tileTextColor'] : null;
+
+        // Source tab: only admin can change (e.g. move staging -> public)
+        $currentSourceTab = isset($currentTileData['sourceTab']) ? $currentTileData['sourceTab'] : (isset($currentTileData['source_tab']) ? $currentTileData['source_tab'] : 'public');
+        $sourceTab = $currentSourceTab;
+        if (isset($data['sourceTab']) || isset($data['source_tab'])) {
+            $newSourceTab = isset($data['sourceTab']) ? trim((string)$data['sourceTab']) : trim((string)$data['source_tab']);
+            if ($newSourceTab === 'public' || $newSourceTab === 'staging') {
+                if ($user['is_admin']) {
+                    $sourceTab = $newSourceTab;
+                }
+            }
+        }
         
         // Update tile
-        $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, allowed_groups = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ?, visible_from = ?, expires_at = ?, browser = ?, tile_background_color = ?, tile_gradient_enabled = ?, tile_gradient_colors = ?, tile_gradient_color_positions = ?, tile_gradient_direction = ?, tile_gradient_type = ?, tile_border_radius = ?, tile_text_color = ? WHERE id = ?');
+        $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, allowed_groups = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ?, visible_from = ?, expires_at = ?, browser = ?, tile_background_color = ?, tile_gradient_enabled = ?, tile_gradient_colors = ?, tile_gradient_color_positions = ?, tile_gradient_direction = ?, tile_gradient_type = ?, tile_border_radius = ?, tile_text_color = ?, source_tab = ? WHERE id = ?');
         $stmt->execute([
             $data['title'] ?? '',
             $data['description'] ?? '',
@@ -4304,6 +4354,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
             $tileGradientType,
             $tileBorderRadius,
             $tileTextColor,
+            $sourceTab,
             $tileId
         ]);
         

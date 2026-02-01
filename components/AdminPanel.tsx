@@ -485,6 +485,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [roleTilesLoading, setRoleTilesLoading] = useState(false);
   const [roleLinksLoading, setRoleLinksLoading] = useState(false);
   const [roleTabsLoading, setRoleTabsLoading] = useState(false);
+  const [roleTilesSource, setRoleTilesSource] = useState<'public' | 'staging'>('public');
   const [selectedTileIds, setSelectedTileIds] = useState<Set<string>>(new Set());
   const [selectedLinkIds, setSelectedLinkIds] = useState<Set<string>>(new Set());
   const [selectedTabIds, setSelectedTabIds] = useState<Set<string>>(new Set());
@@ -1324,9 +1325,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }
   };
 
-  const loadAllTilesAndLinks = async () => {
+  const loadAllTilesAndLinks = async (sourceTab?: 'public' | 'staging') => {
     try {
-      const tiles = await getTiles();
+      const tiles = await getTiles(sourceTab !== undefined ? { sourceTab } : undefined);
       setAllTiles(tiles);
 
       // Extract all links from tiles
@@ -1814,7 +1815,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     setSelectedTileIds(new Set());
     setSelectedLinkIds(new Set());
     try {
-      await loadAllTilesAndLinks();
+      await loadAllTilesAndLinks(roleTilesSource);
       // Load existing tile and link assignments for this role
       try {
         const [roleTiles, roleLinks] = await Promise.all([
@@ -14489,6 +14490,45 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                   <p className="text-sm text-slate-600 dark:text-slate-400">
                     Select tiles and links that users with this role can access. If you select a tile, you must select at least one link from that tile. When you select a link, its parent tile is automatically selected. Users will see only the specific links assigned to their roles.
                   </p>
+
+                  {/* Source: Public tab or Staging tab */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Source:</span>
+                    <div className="flex rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (roleTilesSource === 'public') return;
+                          setRoleTilesSource('public');
+                          setRoleTilesLoading(true);
+                          try {
+                            await loadAllTilesAndLinks('public');
+                          } finally {
+                            setRoleTilesLoading(false);
+                          }
+                        }}
+                        className={`px-4 py-2 text-sm font-medium transition-colors ${roleTilesSource === 'public' ? 'bg-brand-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'}`}
+                      >
+                        Public tab
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (roleTilesSource === 'staging') return;
+                          setRoleTilesSource('staging');
+                          setRoleTilesLoading(true);
+                          try {
+                            await loadAllTilesAndLinks('staging');
+                          } finally {
+                            setRoleTilesLoading(false);
+                          }
+                        }}
+                        className={`px-4 py-2 text-sm font-medium transition-colors ${roleTilesSource === 'staging' ? 'bg-brand-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'}`}
+                      >
+                        Staging tab
+                      </button>
+                    </div>
+                  </div>
 
                   {/* Search Input */}
                   <div className="relative">
