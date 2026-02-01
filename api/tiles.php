@@ -1262,7 +1262,18 @@ function handleCreateTile() {
     // Don't save #000000 (black) as it's effectively "no decoration" - treat it as null
     $tileTextColor = isset($data['tileTextColor']) && $data['tileTextColor'] !== null && $data['tileTextColor'] !== '' && strtolower(trim($data['tileTextColor'])) !== '#000000' && strtolower(trim($data['tileTextColor'])) !== '000000' ? $data['tileTextColor'] : null;
     
-    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    // Position: use provided value (e.g. from import) or append at end so tile order is preserved
+    $position = null;
+    if (isset($data['position']) && is_numeric($data['position'])) {
+        $position = (int)$data['position'];
+    }
+    if ($position === null) {
+        $maxStmt = $db->prepare('SELECT COALESCE(MAX(position), -1) + 1 AS next_pos FROM tiles WHERE deleted_at IS NULL AND archived_at IS NULL');
+        $maxStmt->execute();
+        $position = (int)$maxStmt->fetchColumn();
+    }
+    
+    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     
     if (!$stmt->execute([
         $tileId,
@@ -1289,6 +1300,7 @@ function handleCreateTile() {
         $tileGradientType,
         $tileBorderRadius,
         $tileTextColor,
+        $position,
         $data['createdAt'] ?? time()
     ])) {
         sendJSON(['error' => 'Failed to create tile'], 500);

@@ -5543,6 +5543,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     }
 
                                     const currentTiles = await getTiles();
+                                    const maxPosition = currentTiles.length
+                                      ? Math.max(...currentTiles.map((t) => (t as Tile & { position?: number }).position ?? 0))
+                                      : -1;
+                                    let nextPosition = maxPosition + 1;
                                     let imported = 0;
                                     let updated = 0;
                                     let errors: string[] = [];
@@ -5557,11 +5561,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                             await saveTile({ ...tile, id: existing.id }, true);
                                             updated++;
                                           } else {
-                                            await createTile(tile);
+                                            await createTile({ ...tile, position: nextPosition });
+                                            nextPosition++;
                                             imported++;
                                           }
                                         } else {
-                                          await createTile(tile);
+                                          await createTile({ ...tile, position: nextPosition });
+                                          nextPosition++;
                                           imported++;
                                         }
                                       } catch (err: any) {
