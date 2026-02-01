@@ -144,6 +144,8 @@ export interface CelebrationConfig {
   particleCount?: number;
   /** 50–200. Size multiplier (%). Default 100. */
   particleSize?: number;
+  /** 20–200. Speed multiplier (%). Default 100. */
+  speed?: number;
   /** Milliseconds between bursts. Default 5000. Min 2000, max 15000. */
   triggerIntervalMs?: number;
 }

@@ -10,7 +10,7 @@ interface Particle {
   maxLife: number;
   color: string;
   size: number;
-  intensity: number;
+  decay: number;
 }
 
 interface TileBurstFireworksProps {
@@ -19,28 +19,28 @@ interface TileBurstFireworksProps {
   config?: CelebrationConfig;
 }
 
-const DEFAULT_COUNT = 55;
-const COLORS = ['#ff006e', '#8338ec', '#3a86ff', '#ffbe0b', '#fb5607', '#06d6a0', '#ff006e', '#8ac926', '#ffd166', '#ef476f'];
+const DEFAULT_COUNT = 40;
+const COLORS = ['#ff006e', '#8338ec', '#3a86ff', '#ffbe0b', '#fb5607', '#06d6a0', '#ff595e', '#ff924c', '#ffca3a', '#c5ca30', '#8ac926'];
 
 export const TileBurstFireworks: React.FC<TileBurstFireworksProps> = ({ trigger, tileRef, config }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const particlesRef = useRef<Particle[]>([]);
   const animationFrameRef = useRef<number>();
-  const [isActive, setIsActive] = useState(false);
 
   const intensity = Math.max(1, Math.min(100, config?.intensity ?? 100)) / 100;
-  const particleCount = Math.max(20, Math.min(100, config?.particleCount ?? DEFAULT_COUNT));
-  const sizeMul = Math.max(0.5, Math.min(2, (config?.particleSize ?? 100) / 100));
+  const particleCount = Math.max(20, Math.min(80, config?.particleCount ?? DEFAULT_COUNT));
+  const sizeMul = Math.max(0.7, Math.min(2.5, (config?.particleSize ?? 100) / 100));
+  const speedMul = Math.max(0.2, Math.min(2, (config?.speed ?? 100) / 100));
 
   const createBurst = (canvas: HTMLCanvasElement) => {
     const rect = canvas.getBoundingClientRect();
-    const centerX = rect.width * (0.25 + Math.random() * 0.5);
+    const centerX = rect.width * (0.2 + Math.random() * 0.6);
     const centerY = rect.height * (0.2 + Math.random() * 0.5);
     const color = COLORS[Math.floor(Math.random() * COLORS.length)];
 
     for (let i = 0; i < particleCount; i++) {
-      const angle = (Math.PI * 2 * i) / particleCount + Math.random() * 0.3;
-      const velocity = (0.25 + Math.random() * 0.5) * intensity;
+      const angle = (Math.PI * 2 * i) / particleCount + (Math.random() - 0.5) * 0.2;
+      const velocity = (0.5 + Math.random() * 1.5) * intensity * speedMul;
       particlesRef.current.push({
         x: centerX,
         y: centerY,
@@ -49,8 +49,8 @@ export const TileBurstFireworks: React.FC<TileBurstFireworksProps> = ({ trigger,
         life: 1,
         maxLife: 1,
         color,
-        size: (1.5 + Math.random() * 2) * sizeMul,
-        intensity,
+        size: (1 + Math.random() * 2) * sizeMul,
+        decay: (0.005 + Math.random() * 0.015) * speedMul,
       });
     }
   };
@@ -66,24 +66,34 @@ export const TileBurstFireworks: React.FC<TileBurstFireworksProps> = ({ trigger,
     particlesRef.current = particlesRef.current.filter((p) => {
       p.x += p.vx;
       p.y += p.vy;
-      p.vy += 0.006;
-      p.vx *= 0.99;
-      p.vy *= 0.99;
-      p.life -= 0.012;
+      p.vy += 0.015 * speedMul; // Gravity
+      p.vx *= Math.pow(0.98, speedMul);
+      p.vy *= Math.pow(0.98, speedMul);
+      p.life -= p.decay;
+
       if (p.life > 0) {
         ctx.save();
-        ctx.globalAlpha = p.life * 0.9 * p.intensity;
+        ctx.globalAlpha = p.life;
+
+        // Sparkling effect
+        const sparkle = Math.sin(Date.now() * 0.05 * speedMul + p.x) * 0.3 + 0.7;
+
+        ctx.shadowBlur = 4 * p.life;
+        ctx.shadowColor = p.color;
         ctx.fillStyle = p.color;
+
         ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        const r = p.size * sparkle;
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
         ctx.fill();
+
         ctx.restore();
         return true;
       }
       return false;
     });
 
-    if (particlesRef.current.length > 0 || isActive) {
+    if (particlesRef.current.length > 0) {
       animationFrameRef.current = requestAnimationFrame(animate);
     }
   };
@@ -93,31 +103,25 @@ export const TileBurstFireworks: React.FC<TileBurstFireworksProps> = ({ trigger,
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    if (tileRef?.current && canvas) {
+    if (tileRef?.current) {
       const rect = tileRef.current.getBoundingClientRect();
       canvas.width = rect.width;
       canvas.height = rect.height;
     }
 
-    particlesRef.current = [];
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-    setIsActive(true);
+
+    // Multiple bursts over time
     createBurst(canvas);
+    setTimeout(() => { if (canvasRef.current) createBurst(canvasRef.current); }, 500 / speedMul);
+    setTimeout(() => { if (canvasRef.current) createBurst(canvasRef.current); }, 1100 / speedMul);
+
     animate();
 
-    const intervals = [
-      setTimeout(() => { if (canvas) createBurst(canvas); }, 600),
-      setTimeout(() => { if (canvas) createBurst(canvas); }, 1200),
-      setTimeout(() => { if (canvas) createBurst(canvas); }, 2000),
-    ];
-    const stopTimeout = setTimeout(() => setIsActive(false), 7000);
-
     return () => {
-      intervals.forEach(clearTimeout);
-      clearTimeout(stopTimeout);
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
-  }, [trigger, tileRef, intensity, particleCount, sizeMul]);
+  }, [trigger, tileRef, intensity, particleCount, sizeMul, speedMul]);
 
   if (trigger === 0) return null;
 

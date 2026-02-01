@@ -1,17 +1,17 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 
-export type CelebrationEffectType = 
-  | 'none' 
-  | 'fireworks' 
+export type CelebrationEffectType =
+  | 'none'
+  | 'fireworks'
   | 'rocket-fireworks'
-  | 'confetti' 
-  | 'balloons' 
-  | 'hearts' 
-  | 'snow' 
-  | 'bubbles' 
-  | 'matrix' 
-  | 'shooting-stars' 
-  | 'floating-ribbons' 
+  | 'confetti'
+  | 'balloons'
+  | 'hearts'
+  | 'snow'
+  | 'bubbles'
+  | 'matrix'
+  | 'shooting-stars'
+  | 'floating-ribbons'
   | 'sparkles'
   | 'rain'
   | 'leaves'
@@ -219,7 +219,7 @@ function drawHeart(ctx: CanvasRenderingContext2D, x: number, y: number, size: nu
   ctx.bezierCurveTo(size / 2, 0, 0, 0, 0, topCurveHeight);
   ctx.closePath();
   ctx.fill();
-  
+
   // Add shine
   ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
   ctx.beginPath();
@@ -235,7 +235,7 @@ function drawSnowflake(ctx: CanvasRenderingContext2D, x: number, y: number, size
   ctx.lineWidth = Math.max(1, size * 0.2);
   ctx.lineCap = 'round';
   ctx.translate(Math.round(x), Math.round(y));
-  
+
   const arms = 6;
   for (let i = 0; i < arms; i++) {
     ctx.rotate(Math.PI / 3);
@@ -243,7 +243,7 @@ function drawSnowflake(ctx: CanvasRenderingContext2D, x: number, y: number, size
     ctx.moveTo(0, 0);
     ctx.lineTo(0, size);
     ctx.stroke();
-    
+
     // Branch details based on type
     if (type > 0) {
       ctx.beginPath();
@@ -270,10 +270,10 @@ function drawSparkle(ctx: CanvasRenderingContext2D, sparkle: Sparkle) {
   ctx.globalAlpha = sparkle.life / sparkle.maxLife;
   ctx.translate(Math.round(sparkle.x), Math.round(sparkle.y));
   ctx.rotate(sparkle.rotation);
-  
+
   const progress = 1 - (sparkle.life / sparkle.maxLife);
   const currentSize = sparkle.size + (sparkle.maxSize - sparkle.size) * Math.sin(progress * Math.PI);
-  
+
   // Draw rays
   ctx.fillStyle = sparkle.color;
   for (let i = 0; i < sparkle.rays; i++) {
@@ -282,7 +282,7 @@ function drawSparkle(ctx: CanvasRenderingContext2D, sparkle: Sparkle) {
     ctx.ellipse(0, currentSize * 0.5, currentSize * 0.15, currentSize, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-  
+
   // Center glow
   const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, currentSize * 0.5);
   gradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
@@ -292,7 +292,7 @@ function drawSparkle(ctx: CanvasRenderingContext2D, sparkle: Sparkle) {
   ctx.beginPath();
   ctx.arc(0, 0, currentSize * 0.5, 0, Math.PI * 2);
   ctx.fill();
-  
+
   ctx.restore();
 }
 
@@ -335,7 +335,7 @@ export const CelebrationEffects: React.FC<{
   const showOnForeground = styles?.celebrationShowOnForeground ?? false;
   const intensity = clamp(styles?.celebrationIntensity ?? 50, 0, 100) / 100;
   const particleSizeScale = clamp(styles?.celebrationParticleSize ?? 3, 1, 5) / 3;
-  const speedMul = 0.5 + (clamp(styles?.celebrationSpeed ?? 50, 0, 100) / 100) * 1.0;
+  const speedMul = clamp((styles?.celebrationSpeed ?? 100) / 100, 0.2, 2.0);
   const opacityMul = clamp(styles?.celebrationOpacity ?? 100, 0, 100) / 100;
   const burstIntervalMs = clamp(styles?.celebrationBurstInterval ?? 1500, 500, 5000);
   const colors = [
@@ -448,7 +448,7 @@ export const CelebrationEffects: React.FC<{
           x: Math.random() * width,
           y: -20 - Math.random() * 80,
           vx: (Math.random() - 0.5) * 1.5 * speedMul,
-          vy: (0.8 + Math.random() * 1.2) * speedMul * (0.8 + intensity * 0.4),
+          vy: (0.8 + Math.random() * 1.2) * speedMul,
           rotation: Math.random() * 360,
           rotationSpeed: (Math.random() - 0.5) * 3 * speedMul,
           color: colors[Math.floor(Math.random() * colors.length)] || '#ec4899',
@@ -469,7 +469,7 @@ export const CelebrationEffects: React.FC<{
       ctx.translate(Math.round(c.x + swayX), Math.round(c.y));
       ctx.rotate((c.rotation * Math.PI) / 180);
       ctx.fillStyle = c.color;
-      
+
       switch (c.shape) {
         case 'square':
           ctx.fillRect(Math.round(-c.size / 2), Math.round(-c.size / 2), Math.round(c.size), Math.round(c.size));
@@ -491,9 +491,9 @@ export const CelebrationEffects: React.FC<{
           ctx.beginPath();
           for (let i = 0; i < 5; i++) {
             ctx.lineTo(Math.cos((18 + i * 72) * Math.PI / 180) * c.size / 2,
-                      -Math.sin((18 + i * 72) * Math.PI / 180) * c.size / 2);
+              -Math.sin((18 + i * 72) * Math.PI / 180) * c.size / 2);
             ctx.lineTo(Math.cos((54 + i * 72) * Math.PI / 180) * c.size / 4,
-                      -Math.sin((54 + i * 72) * Math.PI / 180) * c.size / 4);
+              -Math.sin((54 + i * 72) * Math.PI / 180) * c.size / 4);
           }
           ctx.closePath();
           ctx.fill();
@@ -519,8 +519,8 @@ export const CelebrationEffects: React.FC<{
         particlesRef.current.push({
           x: centerX,
           y: centerY,
-          vx: Math.cos(angle) * velocity,
-          vy: Math.sin(angle) * velocity,
+          vx: Math.cos(angle) * velocity * speedMul,
+          vy: Math.sin(angle) * velocity * speedMul,
           life: 1,
           maxLife: 1,
           color,
@@ -570,7 +570,7 @@ export const CelebrationEffects: React.FC<{
           x: Math.random() * width,
           y: height + 40 + Math.random() * 100,
           vx: (Math.random() - 0.5) * 0.3 * speedMul,
-          vy: (-0.8 - Math.random() * 1.2) * speedMul * (0.8 + intensity * 0.4),
+          vy: (-0.8 - Math.random() * 1.2) * speedMul,
           color: colors[Math.floor(Math.random() * colors.length)] || '#ec4899',
           radiusX,
           radiusY: radiusX * 1.25,
@@ -587,29 +587,29 @@ export const CelebrationEffects: React.FC<{
       const wx = Math.sin(b.wobble) * 3;
       ctx.translate(Math.round(b.x + wx), Math.round(b.y));
       ctx.globalAlpha = b.opacity;
-      
+
       // Create gradient for 3D effect
       const gradient = ctx.createRadialGradient(-b.radiusX * 0.3, -b.radiusY * 0.3, 0, 0, 0, b.radiusX);
       gradient.addColorStop(0, lightenColor(b.color, 40));
       gradient.addColorStop(0.4, b.color);
       gradient.addColorStop(1, darkenColor(b.color, 30));
-      
+
       ctx.fillStyle = gradient;
       ctx.strokeStyle = darkenColor(b.color, 20);
       ctx.lineWidth = 1;
-      
+
       // Balloon body
       ctx.beginPath();
       ctx.ellipse(0, 0, b.radiusX, b.radiusY, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
-      
+
       // Shine/highlight
       ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
       ctx.beginPath();
       ctx.ellipse(-b.radiusX * 0.3, -b.radiusY * 0.35, b.radiusX * 0.25, b.radiusY * 0.2, -0.3, 0, Math.PI * 2);
       ctx.fill();
-      
+
       // Knot
       ctx.fillStyle = darkenColor(b.color, 20);
       ctx.beginPath();
@@ -618,7 +618,7 @@ export const CelebrationEffects: React.FC<{
       ctx.lineTo(0, b.radiusY + 4);
       ctx.closePath();
       ctx.fill();
-      
+
       // String
       ctx.strokeStyle = 'rgba(100, 100, 100, 0.4)';
       ctx.lineWidth = 1;
@@ -627,7 +627,7 @@ export const CelebrationEffects: React.FC<{
       const sway = Math.sin(b.wobble * 1.5) * 5;
       ctx.quadraticCurveTo(sway, b.radiusY + b.stringLength * 0.5, sway * 0.5, b.radiusY + b.stringLength);
       ctx.stroke();
-      
+
       ctx.restore();
     };
 
@@ -640,7 +640,7 @@ export const CelebrationEffects: React.FC<{
           x: Math.random() * width,
           y: height + 20 + Math.random() * 80,
           vx: (Math.random() - 0.5) * 0.5 * speedMul,
-          vy: (-0.6 - Math.random() * 0.8) * speedMul * (0.8 + intensity * 0.4),
+          vy: (-0.6 - Math.random() * 0.8) * speedMul,
           size: (10 + Math.random() * 15) * sizeMul,
           color: colors[Math.floor(Math.random() * colors.length)] || '#ec4899',
           opacity: 0.6 + Math.random() * 0.4,
@@ -660,7 +660,7 @@ export const CelebrationEffects: React.FC<{
           x: Math.random() * width,
           y: -20 - Math.random() * 100,
           vx: (Math.random() - 0.5) * 0.5 * speedMul,
-          vy: (0.3 + Math.random() * 0.5) * speedMul * (0.7 + intensity * 0.3),
+          vy: (0.3 + Math.random() * 0.5) * speedMul,
           size: (3 + Math.random() * 6) * sizeMul,
           opacity: 0.4 + Math.random() * 0.5,
           swayAmount: 10 + Math.random() * 20,
@@ -680,7 +680,7 @@ export const CelebrationEffects: React.FC<{
           x: Math.random() * width,
           y: height + 20 + Math.random() * 100,
           vx: (Math.random() - 0.5) * 0.2 * speedMul,
-          vy: (-0.4 - Math.random() * 0.6) * speedMul * (0.8 + intensity * 0.4),
+          vy: (-0.4 - Math.random() * 0.6) * speedMul,
           radius: (5 + Math.random() * 10) * sizeMul,
           color: colors[Math.floor(Math.random() * colors.length)] || '#ec4899',
           opacity: 0.2 + Math.random() * 0.3,
@@ -695,28 +695,28 @@ export const CelebrationEffects: React.FC<{
       const wx = Math.sin(b.wobble) * 2;
       ctx.translate(Math.round(b.x + wx), Math.round(b.y));
       ctx.globalAlpha = b.opacity;
-      
+
       // Bubble body with gradient
       const gradient = ctx.createRadialGradient(-b.radius * 0.3, -b.radius * 0.3, 0, 0, 0, b.radius);
       gradient.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
       gradient.addColorStop(0.5, hexToRgba(b.color, 0.2));
       gradient.addColorStop(1, hexToRgba(b.color, 0.1));
-      
+
       ctx.fillStyle = gradient;
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
       ctx.lineWidth = 1;
-      
+
       ctx.beginPath();
       ctx.arc(0, 0, b.radius, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
-      
+
       // Shine
       ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
       ctx.beginPath();
       ctx.ellipse(-b.radius * 0.3 + b.shineOffset * 5, -b.radius * 0.3, b.radius * 0.25, b.radius * 0.15, -0.5, 0, Math.PI * 2);
       ctx.fill();
-      
+
       ctx.restore();
     };
 
@@ -725,13 +725,13 @@ export const CelebrationEffects: React.FC<{
       const { width } = getSize();
       const fontSize = Math.max(14, 16 * sizeMul);
       const columns = Math.floor(width / fontSize);
-      
+
       for (let i = 0; i < Math.min(columns * 0.3, 15); i++) {
         matrixCharsRef.current.push({
           x: Math.floor(Math.random() * columns) * fontSize,
           y: -fontSize - Math.random() * 500,
           char: MATRIX_CHARS[Math.floor(Math.random() * MATRIX_CHARS.length)],
-          speed: (1 + Math.random() * 2) * speedMul * (0.8 + intensity * 0.4),
+          speed: (1 + Math.random() * 2) * speedMul,
           opacity: 0.3 + Math.random() * 0.7,
           trailLength: 5 + Math.floor(Math.random() * 10),
         });
@@ -743,11 +743,11 @@ export const CelebrationEffects: React.FC<{
       const { width, height } = getSize();
       const startY = height * (0.05 + Math.random() * 0.3);
       const color = colors[Math.floor(Math.random() * colors.length)] || '#ffffff';
-      
+
       shootingStarsRef.current.push({
         x: Math.random() * width * 0.5,
         y: startY,
-        vx: (3 + Math.random() * 3) * speedMul * (0.8 + intensity * 0.4),
+        vx: (3 + Math.random() * 3) * speedMul,
         vy: (1 + Math.random() * 1.5) * speedMul * 0.5,
         length: 30 + Math.random() * 50,
         life: 1,
@@ -766,7 +766,7 @@ export const CelebrationEffects: React.FC<{
           x: Math.random() * width,
           y: -50 - Math.random() * 100,
           vx: (Math.random() - 0.5) * 1 * speedMul,
-          vy: (0.5 + Math.random() * 0.8) * speedMul * (0.8 + intensity * 0.4),
+          vy: (0.5 + Math.random() * 0.8) * speedMul,
           color: colors[Math.floor(Math.random() * colors.length)] || '#ec4899',
           width: (3 + Math.random() * 3) * sizeMul,
           length: 40 + Math.random() * 40,
@@ -781,13 +781,13 @@ export const CelebrationEffects: React.FC<{
       ctx.save();
       ctx.globalAlpha = 0.8;
       ctx.fillStyle = r.color;
-      
+
       // Draw ribbon as a series of connected segments
       for (let i = 0; i < r.points.length - 1; i++) {
         const point = r.points[i];
         const nextPoint = r.points[i + 1];
         const wave = Math.sin(r.wavePhase + i * 0.2) * 10;
-        
+
         ctx.beginPath();
         ctx.moveTo(point.x + wave - r.width / 2, point.y);
         ctx.lineTo(point.x + wave + r.width / 2, point.y);
@@ -809,8 +809,8 @@ export const CelebrationEffects: React.FC<{
           y: Math.random() * height,
           size: 1,
           maxSize: (5 + Math.random() * 10) * sizeMul,
-          life: 20 + Math.random() * 40,
-          maxLife: 20 + Math.random() * 40,
+          life: (20 + Math.random() * 40),
+          maxLife: (20 + Math.random() * 40),
           color: colors[Math.floor(Math.random() * colors.length)] || '#ffffff',
           rays: 4 + Math.floor(Math.random() * 4),
           rotation: Math.random() * Math.PI * 2,
@@ -827,7 +827,7 @@ export const CelebrationEffects: React.FC<{
           x: Math.random() * width,
           y: -10 - Math.random() * 100,
           len: 8 + Math.random() * 16 * sizeMul,
-          speed: (3 + Math.random() * 4) * speedMul * (0.7 + intensity * 0.3),
+          speed: (3 + Math.random() * 4) * speedMul,
           opacity: 0.3 + Math.random() * 0.4,
           sway: 2 + Math.random() * 4,
           swayOffset: Math.random() * Math.PI * 2,
@@ -843,7 +843,7 @@ export const CelebrationEffects: React.FC<{
           x: Math.random() * width,
           y: -20 - Math.random() * 80,
           vx: (Math.random() - 0.5) * 0.8 * speedMul,
-          vy: (0.4 + Math.random() * 0.8) * speedMul * (0.8 + intensity * 0.3),
+          vy: (0.4 + Math.random() * 0.8) * speedMul,
           size: (6 + Math.random() * 10) * sizeMul,
           color: leafColors[Math.floor(Math.random() * leafColors.length)],
           rotation: Math.random() * 360,
@@ -861,8 +861,8 @@ export const CelebrationEffects: React.FC<{
         firefliesRef.current.push({
           x: Math.random() * width,
           y: Math.random() * height,
-          vx: (Math.random() - 0.5) * 0.3,
-          vy: (Math.random() - 0.5) * 0.2,
+          vx: (Math.random() - 0.5) * 0.3 * speedMul,
+          vy: (Math.random() - 0.5) * 0.2 * speedMul,
           size: (2 + Math.random() * 3) * sizeMul,
           color: colors[Math.floor(Math.random() * colors.length)] || '#ffff88',
           blink: Math.random() * Math.PI * 2,
@@ -879,7 +879,7 @@ export const CelebrationEffects: React.FC<{
           x: Math.random() * width,
           y: -20 - Math.random() * 100,
           vx: (Math.random() - 0.5) * 1.2 * speedMul,
-          vy: (0.5 + Math.random() * 0.9) * speedMul * (0.8 + intensity * 0.3),
+          vy: (0.5 + Math.random() * 0.9) * speedMul,
           size: (8 + Math.random() * 12) * sizeMul,
           color: petalColors[Math.floor(Math.random() * petalColors.length)],
           rotation: Math.random() * 360,
@@ -895,8 +895,8 @@ export const CelebrationEffects: React.FC<{
         cosmicRef.current.push({
           x: Math.random() * width,
           y: Math.random() * height,
-          vx: (Math.random() - 0.5) * 0.15,
-          vy: (Math.random() - 0.5) * 0.1,
+          vx: (Math.random() - 0.5) * 0.15 * speedMul,
+          vy: (Math.random() - 0.5) * 0.1 * speedMul,
           radius: (3 + Math.random() * 8) * sizeMul,
           color: colors[Math.floor(Math.random() * colors.length)] || '#a78bfa',
           pulse: Math.random() * Math.PI * 2,
@@ -911,7 +911,7 @@ export const CelebrationEffects: React.FC<{
           x: Math.random() * width,
           y: height + 20 + Math.random() * 80,
           vx: (Math.random() - 0.5) * 0.4 * speedMul,
-          vy: (-0.5 - Math.random() * 0.6) * speedMul * (0.8 + intensity * 0.3),
+          vy: (-0.5 - Math.random() * 0.6) * speedMul,
           size: (4 + Math.random() * 6) * sizeMul,
           opacity: 0.4 + Math.random() * 0.4,
           rot: Math.random() * Math.PI * 2,
@@ -925,8 +925,8 @@ export const CelebrationEffects: React.FC<{
         butterfliesRef.current.push({
           x: Math.random() * width,
           y: Math.random() * height,
-          vx: (Math.random() - 0.5) * 0.5,
-          vy: (Math.random() - 0.5) * 0.4,
+          vx: (Math.random() - 0.5) * 0.5 * speedMul,
+          vy: (Math.random() - 0.5) * 0.4 * speedMul,
           size: (10 + Math.random() * 14) * sizeMul,
           color: colors[Math.floor(Math.random() * colors.length)] || '#fbbf24',
           wingPhase: Math.random() * Math.PI * 2,
@@ -956,8 +956,8 @@ export const CelebrationEffects: React.FC<{
       const R = (num >> 16) + amt;
       const G = ((num >> 8) & 0x00ff) + amt;
       const B = (num & 0x0000ff) + amt;
-      return `#${(0x1000000 + (R < 255 ? (R < 1 ? 0 : R) : 255) * 0x10000 + 
-        (G < 255 ? (G < 1 ? 0 : G) : 255) * 0x100 + 
+      return `#${(0x1000000 + (R < 255 ? (R < 1 ? 0 : R) : 255) * 0x10000 +
+        (G < 255 ? (G < 1 ? 0 : G) : 255) * 0x100 +
         (B < 255 ? (B < 1 ? 0 : B) : 255))
         .toString(16).slice(1)}`;
     }
@@ -968,8 +968,8 @@ export const CelebrationEffects: React.FC<{
       const R = (num >> 16) - amt;
       const G = ((num >> 8) & 0x00ff) - amt;
       const B = (num & 0x0000ff) - amt;
-      return `#${(0x1000000 + (R > 0 ? R : 0) * 0x10000 + 
-        (G > 0 ? G : 0) * 0x100 + 
+      return `#${(0x1000000 + (R > 0 ? R : 0) * 0x10000 +
+        (G > 0 ? G : 0) * 0x100 +
         (B > 0 ? B : 0))
         .toString(16).slice(1)}`;
     }
@@ -1028,7 +1028,7 @@ export const CelebrationEffects: React.FC<{
         particlesRef.current = particlesRef.current.filter((p) => {
           p.x += p.vx;
           p.y += p.vy;
-          p.vy += 0.004;
+          p.vy += 0.004 * speedMul;
           p.vx *= 0.997;
           p.vy *= 0.997;
           p.life -= 0.0015 * speedMul;
@@ -1177,11 +1177,11 @@ export const CelebrationEffects: React.FC<{
           lastSpawn = now;
           matrixSpawnCount += 15;
         }
-        
+
         const fontSize = Math.max(14, 16 * sizeMul);
         ctx.font = `bold ${fontSize}px "Consolas", "Monaco", "Courier New", monospace`;
         ctx.textAlign = 'center';
-        
+
         matrixCharsRef.current = matrixCharsRef.current.filter((m) => {
           m.y += m.speed;
           if (m.y > height + m.trailLength * fontSize) return false;
@@ -1202,7 +1202,7 @@ export const CelebrationEffects: React.FC<{
         if (Math.random() < 0.02 * intensity * speedMul && shootingStarsRef.current.length < 3) {
           spawnShootingStar();
         }
-        
+
         shootingStarsRef.current = shootingStarsRef.current.filter((s) => {
           s.x += s.vx;
           s.y += s.vy;
@@ -1442,8 +1442,8 @@ export const CelebrationEffects: React.FC<{
         }
         butterfliesRef.current = butterfliesRef.current.filter((b) => {
           b.x += b.vx;
-          b.y += b.vy + Math.sin(b.wingPhase) * 0.5;
-          b.wingPhase += 0.2;
+          b.y += b.vy + Math.sin(b.wingPhase) * 0.5 * speedMul;
+          b.wingPhase += 0.2 * speedMul;
           if (b.x < -50 || b.x > width + 50 || b.y < -50 || b.y > height + 50) return false;
           ctx.save();
           ctx.fillStyle = b.color;

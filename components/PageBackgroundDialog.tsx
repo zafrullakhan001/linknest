@@ -4,18 +4,18 @@ import { SpaceStyles, DEFAULT_STYLES, styleService } from '../services/styleServ
 import { useAuth } from '../contexts/AuthContext';
 
 export type PageBackgroundType = 'none' | 'solid' | 'gradient' | 'pattern' | 'image';
-export type CelebrationEffectType = 
-  | 'none' 
-  | 'fireworks' 
+export type CelebrationEffectType =
+  | 'none'
+  | 'fireworks'
   | 'rocket-fireworks'
-  | 'confetti' 
-  | 'balloons' 
-  | 'hearts' 
-  | 'snow' 
-  | 'bubbles' 
-  | 'matrix' 
-  | 'shooting-stars' 
-  | 'floating-ribbons' 
+  | 'confetti'
+  | 'balloons'
+  | 'hearts'
+  | 'snow'
+  | 'bubbles'
+  | 'matrix'
+  | 'shooting-stars'
+  | 'floating-ribbons'
   | 'sparkles'
   | 'rain'
   | 'leaves'
@@ -124,14 +124,14 @@ function getPersistedTab(): PageBackgroundType | 'centerCanvas' | 'celebration' 
   try {
     const saved = localStorage.getItem(PAGE_BG_ACTIVE_TAB_KEY);
     if (saved && VALID_TABS.includes(saved as typeof VALID_TABS[number])) return saved as PageBackgroundType | 'centerCanvas' | 'celebration';
-  } catch (_) {}
+  } catch (_) { }
   return null;
 }
 
 function persistTab(tab: PageBackgroundType | 'centerCanvas' | 'celebration') {
   try {
     localStorage.setItem(PAGE_BG_ACTIVE_TAB_KEY, tab);
-  } catch (_) {}
+  } catch (_) { }
 }
 
 interface PageBackgroundDialogProps {
@@ -481,11 +481,10 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
                 setActiveTab(id);
                 persistTab(id);
               }}
-              className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-                activeTab === id
+              className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${activeTab === id
                   ? 'border-brand-500 text-brand-600 dark:text-brand-400'
                   : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-              }`}
+                }`}
             >
               {label}
             </button>
@@ -666,11 +665,10 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
                     key={t}
                     type="button"
                     onClick={() => setCenterCanvasType(t)}
-                    className={`px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
-                      centerCanvasType === t
+                    className={`px-3 py-2 rounded-xl text-sm font-medium transition-colors ${centerCanvasType === t
                         ? 'bg-brand-600 text-white'
                         : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600'
-                    }`}
+                      }`}
                   >
                     {t === 'none' ? 'None (transparent)' : t === 'solid' ? 'Solid' : 'Gradient'}
                   </button>
@@ -712,11 +710,10 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
                             key={p.id}
                             type="button"
                             onClick={() => setCenterCanvasPatternId(p.id)}
-                            className={`flex flex-col items-center gap-1 p-2 rounded-lg border-2 transition-all flex-shrink-0 ${
-                              centerCanvasPatternId === p.id
+                            className={`flex flex-col items-center gap-1 p-2 rounded-lg border-2 transition-all flex-shrink-0 ${centerCanvasPatternId === p.id
                                 ? 'border-brand-500 ring-2 ring-brand-500/30'
                                 : 'border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500'
-                            }`}
+                              }`}
                           >
                             <div
                               className="w-full h-10 rounded bg-slate-100 dark:bg-slate-700"
@@ -1110,11 +1107,10 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
                     key={p.id}
                     type="button"
                     onClick={() => handleApplyPattern(p.id)}
-                    className={`flex flex-col items-center gap-2 p-2 rounded-xl border-2 transition-all ${
-                      patternId === p.id
+                    className={`flex flex-col items-center gap-2 p-2 rounded-xl border-2 transition-all ${patternId === p.id
                         ? 'border-brand-500 ring-2 ring-brand-500/30'
                         : 'border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500'
-                    }`}
+                      }`}
                   >
                     <div
                       className="w-full h-14 rounded-lg bg-slate-100 dark:bg-slate-700"
@@ -1307,7 +1303,7 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
                   Enable celebration effects
                 </label>
               </div>
-              
+
               {/* Foreground/Background Toggle */}
               <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600">
                 <input
@@ -1329,8 +1325,8 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
                     </span>
                   </label>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    {celebrationShowOnForeground 
-                      ? 'Effects appear on top of all content (more visible)' 
+                    {celebrationShowOnForeground
+                      ? 'Effects appear on top of all content (more visible)'
                       : 'Effects appear behind tiles and content'}
                   </p>
                 </div>
@@ -1374,11 +1370,10 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
                           celebrationEffectEnabled: effect.value !== 'none' ? celebrationEnabled : false,
                         });
                       }}
-                      className={`flex flex-col items-center gap-1 px-2 py-2 rounded-xl text-xs font-medium transition-all ${
-                        celebrationType === effect.value
+                      className={`flex flex-col items-center gap-1 px-2 py-2 rounded-xl text-xs font-medium transition-all ${celebrationType === effect.value
                           ? 'bg-brand-600 text-white ring-2 ring-brand-400 ring-offset-2 dark:ring-offset-slate-800'
                           : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
-                      }`}
+                        }`}
                     >
                       <span className="text-lg">{effect.icon}</span>
                       <span>{effect.label}</span>
@@ -1423,7 +1418,7 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
                     <input
                       type="range"
                       min={20}
-                      max={100}
+                      max={200}
                       value={celebrationSpeed}
                       onChange={(e) => {
                         const v = Number(e.target.value);

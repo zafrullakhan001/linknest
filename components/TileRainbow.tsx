@@ -1,80 +1,111 @@
 import React, { useEffect, useRef } from 'react';
 import type { CelebrationConfig } from '../types';
 
-interface RainbowParticle {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  hue: number;
-  size: number;
-  opacity: number;
-}
-
 interface TileRainbowProps {
   trigger: number;
   tileRef?: React.RefObject<HTMLDivElement>;
   config?: CelebrationConfig;
 }
 
-const DEFAULT_COUNT = 30;
+const RAINBOW_COLORS = [
+  'rgba(255, 0, 0, 0.6)',
+  'rgba(255, 127, 0, 0.6)',
+  'rgba(255, 255, 0, 0.6)',
+  'rgba(0, 255, 0, 0.6)',
+  'rgba(0, 0, 255, 0.6)',
+  'rgba(75, 0, 130, 0.6)',
+  'rgba(148, 0, 211, 0.6)'
+];
 
 export const TileRainbow: React.FC<TileRainbowProps> = ({ trigger, tileRef, config }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const particlesRef = useRef<RainbowParticle[]>([]);
   const animationFrameRef = useRef<number>();
+  const progressRef = useRef(0);
 
   const intensity = Math.max(1, Math.min(100, config?.intensity ?? 100)) / 100;
-  const count = Math.max(15, Math.min(60, config?.particleCount ?? DEFAULT_COUNT));
   const sizeMul = Math.max(0.5, Math.min(2, (config?.particleSize ?? 100) / 100));
-
-  const createParticles = (canvas: HTMLCanvasElement) => {
-    const rect = canvas.getBoundingClientRect();
-    const centerX = rect.width / 2;
-    const centerY = rect.height / 2;
-    for (let i = 0; i < count; i++) {
-      const angle = (Math.PI * 2 * i) / count + Math.random() * 0.2;
-      const hue = (i / count) * 360;
-      const speed = (0.08 + Math.random() * 0.1) * intensity;
-      particlesRef.current.push({
-        x: centerX + Math.cos(angle) * 20,
-        y: centerY + Math.sin(angle) * 20,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        hue,
-        size: (3 + Math.random() * 5) * sizeMul,
-        opacity: (0.5 + Math.random() * 0.4) * intensity,
-      });
-    }
-  };
+  const speedMul = Math.max(0.2, Math.min(2, (config?.speed ?? 100) / 100));
 
   const animate = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const rect = canvas.getBoundingClientRect();
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const rect = canvas.getBoundingClientRect();
 
-    particlesRef.current = particlesRef.current.filter((p) => {
-      p.x += p.vx;
-      p.y += p.vy;
-      p.vx *= 0.98;
-      p.vy *= 0.98;
-      if (Math.abs(p.x - rect.width / 2) > rect.width * 0.7 || Math.abs(p.y - rect.height / 2) > rect.height * 0.7) return false;
-      ctx.save();
-      ctx.globalAlpha = p.opacity * (0.6 + 0.4 * Math.sin(Date.now() * 0.005 + p.hue));
-      ctx.fillStyle = `hsl(${p.hue}, 90%, 65%)`;
+    progressRef.current += 0.01 * intensity * speedMul;
+    if (progressRef.current > 1.2) progressRef.current = 1.2; // Stay full for a bit then fade?
+
+    const centerX = rect.width / 2;
+    const bottomY = rect.height;
+    const radius = rect.width * 0.4 * sizeMul;
+    const bandWidth = radius * 0.15;
+
+    ctx.save();
+    ctx.lineCap = 'round';
+
+    // Draw each color band
+    RAINBOW_COLORS.forEach((color, i) => {
+      const r = radius - i * bandWidth;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = bandWidth + 1;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-      return true;
+      // Animate the arc sweep
+      const sweep = Math.min(1, progressRef.current) * Math.PI;
+      ctx.arc(centerX, bottomY, r, Math.PI, Math.PI + sweep);
+      ctx.stroke();
     });
 
-    if (particlesRef.current.length > 0) {
+    // Some sparkles around the rainbow
+    if (progressRef.current > 0.5) {
+      for (let i = 0; i < 3; i++) {
+        const angle = Math.PI + Math.random() * Math.PI * Math.min(1, progressRef.current);
+        const r = radius - Math.random() * bandWidth * 7;
+        const x = centerX + Math.cos(angle) * r;
+        const y = bottomY + Math.sin(angle) * r;
+
+        ctx.fillStyle = '#fff';
+        ctx.globalAlpha = (Math.sin(Date.now() * 0.01 * speedMul + i) * 0.5 + 0.5) * intensity;
+        ctx.beginPath();
+        ctx.arc(x, y, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
+
+    if (progressRef.current < 1.2) {
       animationFrameRef.current = requestAnimationFrame(animate);
+    } else {
+      // Slowly fade out after staying full
+      const fadeOut = () => {
+        if (!canvasRef.current) return;
+        const ctx = canvasRef.current.getContext('2d');
+        if (!ctx) return;
+        progressRef.current += 0.005 * speedMul;
+        const opacity = Math.max(0, 1 - (progressRef.current - 1.2) * 2);
+
+        ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+        ctx.save();
+        ctx.globalAlpha = opacity * intensity;
+
+        RAINBOW_COLORS.forEach((color, i) => {
+          const r = radius - i * bandWidth;
+          ctx.strokeStyle = color;
+          ctx.lineWidth = bandWidth + 1;
+          ctx.beginPath();
+          ctx.arc(centerX, bottomY, r, Math.PI, 2 * Math.PI);
+          ctx.stroke();
+        });
+        ctx.restore();
+
+        if (opacity > 0) {
+          animationFrameRef.current = requestAnimationFrame(fadeOut);
+        }
+      };
+      animationFrameRef.current = requestAnimationFrame(fadeOut);
     }
   };
 
@@ -83,21 +114,20 @@ export const TileRainbow: React.FC<TileRainbowProps> = ({ trigger, tileRef, conf
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    if (tileRef?.current && canvas) {
+    if (tileRef?.current) {
       const rect = tileRef.current.getBoundingClientRect();
       canvas.width = rect.width;
       canvas.height = rect.height;
     }
 
-    particlesRef.current = [];
+    progressRef.current = 0;
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-    createParticles(canvas);
     animate();
 
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
-  }, [trigger, tileRef, intensity, count, sizeMul]);
+  }, [trigger, tileRef, intensity, sizeMul, speedMul]);
 
   if (trigger === 0) return null;
 

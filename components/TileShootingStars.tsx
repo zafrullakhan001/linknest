@@ -1,12 +1,14 @@
 import React, { useEffect, useRef } from 'react';
 import type { CelebrationConfig } from '../types';
 
-interface Star {
+interface ShootingStar {
   x: number;
   y: number;
   vx: number;
   vy: number;
-  length: number;
+  size: number;
+  trail: Array<{ x: number; y: number }>;
+  color: string;
   opacity: number;
 }
 
@@ -16,28 +18,64 @@ interface TileShootingStarsProps {
   config?: CelebrationConfig;
 }
 
-const DEFAULT_COUNT = 3;
+const COLORS = ['#fff', '#feca57', '#48dbfb', '#ff9ff3', '#1dd1a1'];
+
+function drawShootingStar(ctx: CanvasRenderingContext2D, s: ShootingStar) {
+  ctx.save();
+
+  // Draw trail
+  const trailLen = s.trail.length;
+  for (let i = 0; i < trailLen; i++) {
+    const t = s.trail[i];
+    const alpha = (i / trailLen) * s.opacity;
+    const size = (i / trailLen) * s.size;
+
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = s.color;
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Head
+  ctx.globalAlpha = s.opacity;
+  ctx.shadowBlur = 15;
+  ctx.shadowColor = s.color;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
 
 export const TileShootingStars: React.FC<TileShootingStarsProps> = ({ trigger, tileRef, config }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const starsRef = useRef<Star[]>([]);
+  const starsRef = useRef<ShootingStar[]>([]);
   const animationFrameRef = useRef<number>();
 
   const intensity = Math.max(1, Math.min(100, config?.intensity ?? 100)) / 100;
-  const count = Math.max(1, Math.min(6, config?.particleCount ?? DEFAULT_COUNT));
+  const count = Math.max(2, Math.min(10, config?.particleCount ?? 4));
   const sizeMul = Math.max(0.5, Math.min(2, (config?.particleSize ?? 100) / 100));
+  const speedMul = Math.max(0.2, Math.min(2, (config?.speed ?? 100) / 100));
 
-  const createStar = (canvas: HTMLCanvasElement): Star => {
+  const createStar = (canvas: HTMLCanvasElement): ShootingStar => {
     const rect = canvas.getBoundingClientRect();
-    const angle = -0.6 - Math.random() * 0.3;
-    const speed = (0.35 + Math.random() * 0.25) * intensity;
+    const side = Math.random() > 0.5;
+    const x = side ? -20 : rect.width + 20;
+    const y = Math.random() * rect.height * 0.5;
+    const angle = side ? Math.random() * Math.PI * 0.25 : Math.PI * 0.75 + Math.random() * Math.PI * 0.25;
+    const speed = (8 + Math.random() * 8) * intensity * speedMul;
+
     return {
-      x: Math.random() * rect.width * 1.2 - rect.width * 0.2,
-      y: -10 - Math.random() * 20,
+      x,
+      y,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
-      length: (15 + Math.random() * 25) * sizeMul,
-      opacity: (0.7 + Math.random() * 0.3) * intensity,
+      size: (1 + Math.random() * 2) * sizeMul,
+      trail: [],
+      color: COLORS[Math.floor(Math.random() * COLORS.length)],
+      opacity: 1
     };
   };
 
@@ -46,27 +84,19 @@ export const TileShootingStars: React.FC<TileShootingStarsProps> = ({ trigger, t
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const rect = canvas.getBoundingClientRect();
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const rect = canvas.getBoundingClientRect();
 
     starsRef.current = starsRef.current.filter((s) => {
+      s.trail.push({ x: s.x, y: s.y });
+      if (s.trail.length > 20) s.trail.shift();
+
       s.x += s.vx;
       s.y += s.vy;
-      if (s.y > rect.height + 20 || s.x > rect.width + 30) return false;
-      ctx.save();
-      const grad = ctx.createLinearGradient(s.x - s.length, s.y, s.x, s.y);
-      grad.addColorStop(0, 'rgba(255,255,255,0)');
-      grad.addColorStop(0.3, `rgba(255,255,255,${s.opacity * 0.3})`);
-      grad.addColorStop(1, `rgba(255,255,255,${s.opacity})`);
-      ctx.strokeStyle = grad;
-      ctx.lineWidth = 2;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(s.x - s.length, s.y - s.vy * 2);
-      ctx.lineTo(s.x, s.y);
-      ctx.stroke();
-      ctx.restore();
+
+      if (s.x < -100 || s.x > rect.width + 100 || s.y > rect.height + 100) return false;
+      drawShootingStar(ctx, s);
       return true;
     });
 
@@ -80,7 +110,7 @@ export const TileShootingStars: React.FC<TileShootingStarsProps> = ({ trigger, t
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    if (tileRef?.current && canvas) {
+    if (tileRef?.current) {
       const rect = tileRef.current.getBoundingClientRect();
       canvas.width = rect.width;
       canvas.height = rect.height;
@@ -91,16 +121,17 @@ export const TileShootingStars: React.FC<TileShootingStarsProps> = ({ trigger, t
 
     for (let i = 0; i < count; i++) {
       setTimeout(() => {
-        starsRef.current.push(createStar(canvas));
-        animate();
-      }, i * 800);
+        if (canvasRef.current) {
+          starsRef.current.push(createStar(canvasRef.current));
+          if (starsRef.current.length === 1) animate();
+        }
+      }, (i * 800) / (intensity * speedMul));
     }
-    animate();
 
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
-  }, [trigger, tileRef, intensity, count, sizeMul]);
+  }, [trigger, tileRef, intensity, count, sizeMul, speedMul]);
 
   if (trigger === 0) return null;
 

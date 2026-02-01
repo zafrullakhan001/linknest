@@ -28,6 +28,7 @@ export const TileBubbles: React.FC<TileBubblesProps> = ({ trigger, tileRef, conf
   const intensity = Math.max(1, Math.min(100, config?.intensity ?? 100)) / 100;
   const count = Math.max(5, Math.min(80, config?.particleCount ?? DEFAULT_COUNT));
   const sizeMul = Math.max(0.5, Math.min(2, (config?.particleSize ?? 100) / 100));
+  const speedMul = Math.max(0.2, Math.min(2, (config?.speed ?? 100) / 100));
 
   const createBubbles = (canvas: HTMLCanvasElement) => {
     const rect = canvas.getBoundingClientRect();
@@ -38,12 +39,12 @@ export const TileBubbles: React.FC<TileBubblesProps> = ({ trigger, tileRef, conf
       bubblesRef.current.push({
         x: Math.random() * rect.width,
         y: rect.height + 5 + Math.random() * 20,
-        vx: (Math.random() - 0.5) * 0.12 * intensity,
-        vy: (-0.15 - Math.random() * 0.2) * intensity,
+        vx: (Math.random() - 0.5) * 0.12 * intensity * speedMul,
+        vy: (-0.15 - Math.random() * 0.2) * intensity * speedMul,
         radius: baseR * sizeMul,
         opacity: baseO * intensity,
         wobble: Math.random() * Math.PI * 2,
-        wobbleSpeed: 0.02 + Math.random() * 0.03,
+        wobbleSpeed: (0.02 + Math.random() * 0.03) * speedMul,
       });
     }
   };
@@ -104,7 +105,7 @@ export const TileBubbles: React.FC<TileBubblesProps> = ({ trigger, tileRef, conf
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
-  }, [trigger, tileRef, intensity, count, sizeMul]);
+  }, [trigger, tileRef, intensity, count, sizeMul, speedMul]);
 
   if (trigger === 0) return null;
 

@@ -45,6 +45,7 @@ export const TileHeartsRising: React.FC<TileHeartsRisingProps> = ({ trigger, til
   const intensity = Math.max(1, Math.min(100, config?.intensity ?? 100)) / 100;
   const count = Math.max(5, Math.min(80, config?.particleCount ?? DEFAULT_COUNT));
   const sizeMul = Math.max(0.5, Math.min(2, (config?.particleSize ?? 100) / 100));
+  const speedMul = Math.max(0.2, Math.min(2, (config?.speed ?? 100) / 100));
   const maxHearts = Math.max(count * 3, 60);
 
   const addHearts = (canvas: HTMLCanvasElement) => {
@@ -55,10 +56,10 @@ export const TileHeartsRising: React.FC<TileHeartsRisingProps> = ({ trigger, til
       heartsRef.current.push({
         x: Math.random() * rect.width,
         y: rect.height + 15 + Math.random() * 50,
-        vx: (Math.random() - 0.5) * 0.25 * intensity,
-        vy: (-0.18 - Math.random() * 0.22) * intensity,
+        vx: (Math.random() - 0.5) * 0.25 * intensity * speedMul,
+        vy: (-0.18 - Math.random() * 0.22) * intensity * speedMul,
         rotation: Math.random() * 360,
-        rotationSpeed: (Math.random() - 0.5) * 0.6,
+        rotationSpeed: (Math.random() - 0.5) * 0.6 * speedMul,
         size: baseSize * sizeMul,
         opacity: baseOpacity * intensity,
       });
@@ -126,7 +127,7 @@ export const TileHeartsRising: React.FC<TileHeartsRisingProps> = ({ trigger, til
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
-  }, [trigger, tileRef, intensity, count, sizeMul, maxHearts]);
+  }, [trigger, tileRef, intensity, count, sizeMul, maxHearts, speedMul]);
 
   if (trigger === 0) return null;
 

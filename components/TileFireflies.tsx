@@ -7,6 +7,7 @@ interface Firefly {
   vx: number;
   vy: number;
   phase: number;
+  speed: number;
   size: number;
   opacity: number;
 }
@@ -17,17 +18,15 @@ interface TileFirefliesProps {
   config?: CelebrationConfig;
 }
 
-const DEFAULT_COUNT = 12;
-
 export const TileFireflies: React.FC<TileFirefliesProps> = ({ trigger, tileRef, config }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const firefliesRef = useRef<Firefly[]>([]);
   const animationFrameRef = useRef<number>();
-  const startTimeRef = useRef(0);
 
   const intensity = Math.max(1, Math.min(100, config?.intensity ?? 100)) / 100;
-  const count = Math.max(6, Math.min(25, config?.particleCount ?? DEFAULT_COUNT));
+  const count = Math.max(6, Math.min(25, config?.particleCount ?? 12));
   const sizeMul = Math.max(0.5, Math.min(2, (config?.particleSize ?? 100) / 100));
+  const speedMul = Math.max(0.2, Math.min(2, (config?.speed ?? 100) / 100));
 
   const createFireflies = (canvas: HTMLCanvasElement) => {
     const rect = canvas.getBoundingClientRect();
@@ -35,50 +34,61 @@ export const TileFireflies: React.FC<TileFirefliesProps> = ({ trigger, tileRef, 
       firefliesRef.current.push({
         x: Math.random() * rect.width,
         y: Math.random() * rect.height,
-        vx: (Math.random() - 0.5) * 0.08 * intensity,
-        vy: (Math.random() - 0.5) * 0.08 * intensity,
+        vx: (Math.random() - 0.5) * 0.4 * intensity * speedMul,
+        vy: (Math.random() - 0.5) * 0.4 * intensity * speedMul,
         phase: Math.random() * Math.PI * 2,
-        size: (2 + Math.random() * 3) * sizeMul,
-        opacity: (0.4 + Math.random() * 0.5) * intensity,
+        speed: (1 + Math.random() * 2) * speedMul,
+        size: (1.5 + Math.random() * 2) * sizeMul,
+        opacity: (0.4 + Math.random() * 0.6) * intensity,
       });
     }
   };
 
-  const animate = (startTime: number) => {
+  const animate = (time: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const t = (Date.now() - startTime) / 1000;
+
+    const t = time / 1000;
     const rect = canvas.getBoundingClientRect();
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     firefliesRef.current.forEach((f) => {
-      f.x += f.vx + Math.sin(t + f.phase) * 0.15;
-      f.y += f.vy + Math.cos(t * 0.7 + f.phase * 1.3) * 0.15;
-      if (f.x < 0) f.x = rect.width;
-      if (f.x > rect.width) f.x = 0;
-      if (f.y < 0) f.y = rect.height;
-      if (f.y > rect.height) f.y = 0;
-      const glow = 0.3 + 0.7 * Math.sin(t * 4 + f.phase);
+      f.x += f.vx + Math.sin(t * 0.5 * speedMul + f.phase) * 0.2 * speedMul;
+      f.y += f.vy + Math.cos(t * 0.4 * speedMul + f.phase) * 0.2 * speedMul;
+
+      if (f.x < -10) f.x = rect.width + 10;
+      if (f.x > rect.width + 10) f.x = -10;
+      if (f.y < -10) f.y = rect.height + 10;
+      if (f.y > rect.height + 10) f.y = -10;
+
+      const pulse = 0.4 + 0.6 * Math.pow(0.5 + 0.5 * Math.sin(t * f.speed + f.phase), 2);
+
       ctx.save();
-      const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.size * 4);
-      g.addColorStop(0, `rgba(255, 255, 150, ${f.opacity * glow})`);
-      g.addColorStop(0.5, `rgba(255, 255, 100, ${f.opacity * glow * 0.3})`);
-      g.addColorStop(1, 'rgba(255, 255, 100, 0)');
-      ctx.fillStyle = g;
+
+      // Glow effect
+      const gradient = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.size * 5);
+      gradient.addColorStop(0, `rgba(255, 255, 100, ${f.opacity * pulse})`);
+      gradient.addColorStop(0.4, `rgba(255, 255, 100, ${f.opacity * pulse * 0.3})`);
+      gradient.addColorStop(1, 'rgba(255, 255, 100, 0)');
+
+      ctx.fillStyle = gradient;
       ctx.beginPath();
-      ctx.arc(f.x, f.y, f.size * 4, 0, Math.PI * 2);
+      ctx.arc(f.x, f.y, f.size * 5, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = `rgba(255, 255, 200, ${f.opacity * glow})`;
+
+      // Core
+      ctx.fillStyle = `rgba(255, 255, 200, ${f.opacity * pulse})`;
       ctx.beginPath();
       ctx.arc(f.x, f.y, f.size, 0, Math.PI * 2);
       ctx.fill();
+
       ctx.restore();
     });
 
-    animationFrameRef.current = requestAnimationFrame(() => animate(startTime));
+    animationFrameRef.current = requestAnimationFrame(animate);
   };
 
   useEffect(() => {
@@ -86,7 +96,7 @@ export const TileFireflies: React.FC<TileFirefliesProps> = ({ trigger, tileRef, 
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    if (tileRef?.current && canvas) {
+    if (tileRef?.current) {
       const rect = tileRef.current.getBoundingClientRect();
       canvas.width = rect.width;
       canvas.height = rect.height;
@@ -94,9 +104,8 @@ export const TileFireflies: React.FC<TileFirefliesProps> = ({ trigger, tileRef, 
 
     firefliesRef.current = [];
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-    startTimeRef.current = Date.now();
     createFireflies(canvas);
-    animate(startTimeRef.current);
+    animationFrameRef.current = requestAnimationFrame(animate);
 
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);

@@ -1,15 +1,15 @@
 import React, { useEffect, useRef } from 'react';
 import type { CelebrationConfig } from '../types';
 
-interface Rocket {
+interface Particle {
   x: number;
   y: number;
   vx: number;
   vy: number;
-  trail: Array<{ x: number; y: number; life: number }>;
-  color: string;
+  life: number;
+  maxLife: number;
   size: number;
-  burst: boolean;
+  color: string;
 }
 
 interface TileRocketLaunchProps {
@@ -18,86 +18,52 @@ interface TileRocketLaunchProps {
   config?: CelebrationConfig;
 }
 
-const COLORS = ['#ff6b35', '#f7c59f', '#ff4757', '#ffa502', '#e74c3c', '#ff6348', '#ff9f43'];
+const FIRE_COLORS = ['#ff4d4d', '#ff9f43', '#feca57', '#ffda79', '#ffffff'];
 
-function drawRocket(ctx: CanvasRenderingContext2D, r: Rocket) {
+function drawRocket(ctx: CanvasRenderingContext2D, x: number, y: number, s: number) {
   ctx.save();
-  ctx.translate(r.x, r.y);
-  const angle = Math.atan2(r.vy, r.vx);
-  ctx.rotate(angle);
+  ctx.translate(x, y);
 
-  ctx.fillStyle = r.color;
-  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-  ctx.lineWidth = 1;
+  // Fins
+  ctx.fillStyle = '#c0392b';
   ctx.beginPath();
-  ctx.moveTo(r.size * 2, 0);
-  ctx.lineTo(-r.size * 1.2, -r.size * 0.8);
-  ctx.lineTo(-r.size * 0.8, 0);
-  ctx.lineTo(-r.size * 1.2, r.size * 0.8);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.fillStyle = '#fff';
-  ctx.beginPath();
-  ctx.moveTo(-r.size * 0.8, -r.size * 0.4);
-  ctx.lineTo(-r.size * 1.5, 0);
-  ctx.lineTo(-r.size * 0.8, r.size * 0.4);
-  ctx.closePath();
+  ctx.moveTo(-s * 0.5, 0);
+  ctx.lineTo(-s * 0.8, s * 0.5);
+  ctx.lineTo(s * 0.8, s * 0.5);
+  ctx.lineTo(s * 0.5, 0);
   ctx.fill();
 
-  for (let i = 0; i < r.trail.length; i++) {
-    const t = r.trail[i];
-    ctx.globalAlpha = t.life;
-    ctx.fillStyle = `rgba(255, ${100 + i * 5}, 50, 0.8)`;
-    ctx.beginPath();
-    ctx.arc(-r.size * 2 - i * 2, (Math.random() - 0.5) * 4, 2, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.globalAlpha = 1;
+  // Body
+  ctx.fillStyle = '#ecf0f1';
+  ctx.beginPath();
+  ctx.ellipse(0, -s * 0.5, s * 0.5, s, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Window
+  ctx.fillStyle = '#3498db';
+  ctx.beginPath();
+  ctx.arc(0, -s * 0.8, s * 0.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Tip
+  ctx.fillStyle = '#c0392b';
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.4, -s * 1.2);
+  ctx.quadraticCurveTo(0, -s * 2, s * 0.4, -s * 1.2);
+  ctx.fill();
+
   ctx.restore();
 }
 
 export const TileRocketLaunch: React.FC<TileRocketLaunchProps> = ({ trigger, tileRef, config }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rocketsRef = useRef<Rocket[]>([]);
+  const particlesRef = useRef<Particle[]>([]);
+  const rocketPosRef = useRef({ x: 0, y: 0, vy: 0 });
   const animationFrameRef = useRef<number>();
-  const burstParticlesRef = useRef<Array<{ x: number; y: number; vx: number; vy: number; life: number; color: string }>>([]);
 
   const intensity = Math.max(1, Math.min(100, config?.intensity ?? 100)) / 100;
-  const count = Math.max(2, Math.min(8, config?.particleCount ?? 4));
   const sizeMul = Math.max(0.5, Math.min(2, (config?.particleSize ?? 100) / 100));
-
-  const createRocket = (canvas: HTMLCanvasElement): Rocket => {
-    const rect = canvas.getBoundingClientRect();
-    const x = rect.width * (0.2 + Math.random() * 0.6);
-    const vy = (-0.4 - Math.random() * 0.3) * intensity;
-    return {
-      x,
-      y: rect.height + 20,
-      vx: (Math.random() - 0.5) * 0.1,
-      vy,
-      trail: [],
-      color: COLORS[Math.floor(Math.random() * COLORS.length)],
-      size: (6 + Math.random() * 4) * sizeMul,
-      burst: false,
-    };
-  };
-
-  const createBurst = (x: number, y: number, color: string) => {
-    const particleCount = 25 + Math.floor(Math.random() * 15);
-    for (let i = 0; i < particleCount; i++) {
-      const angle = (Math.PI * 2 * i) / particleCount + Math.random();
-      const speed = 0.15 + Math.random() * 0.2;
-      burstParticlesRef.current.push({
-        x, y,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        life: 1,
-        color,
-      });
-    }
-  };
+  const speedMul = Math.max(0.2, Math.min(2, (config?.speed ?? 100) / 100));
 
   const animate = () => {
     const canvas = canvasRef.current;
@@ -106,41 +72,49 @@ export const TileRocketLaunch: React.FC<TileRocketLaunchProps> = ({ trigger, til
     if (!ctx) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const rect = canvas.getBoundingClientRect();
 
-    rocketsRef.current = rocketsRef.current.filter((r) => {
-      if (r.burst) return false;
-      r.x += r.vx;
-      r.y += r.vy;
-      r.trail.push({ x: r.x, y: r.y, life: 1 });
-      if (r.trail.length > 15) r.trail.shift();
-      for (const t of r.trail) t.life -= 0.05;
+    // Update rocket
+    rocketPosRef.current.vy -= 0.15 * intensity * speedMul;
+    rocketPosRef.current.y += rocketPosRef.current.vy * speedMul;
 
-      if (r.y < rect.height * 0.3) {
-        createBurst(r.x, r.y, r.color);
-        return false;
+    // Add fire particles
+    if (rocketPosRef.current.y > -100) {
+      for (let i = 0; i < 5; i++) {
+        particlesRef.current.push({
+          x: rocketPosRef.current.x + (Math.random() - 0.5) * 10,
+          y: rocketPosRef.current.y,
+          vx: (Math.random() - 0.5) * 2 * speedMul,
+          vy: (2 + Math.random() * 3) * speedMul,
+          life: 0,
+          maxLife: (20 + Math.random() * 20) / speedMul,
+          size: (4 + Math.random() * 8) * sizeMul,
+          color: FIRE_COLORS[Math.floor(Math.random() * FIRE_COLORS.length)]
+        });
       }
-      drawRocket(ctx, r);
-      return true;
-    });
+    }
 
-    burstParticlesRef.current = burstParticlesRef.current.filter((p) => {
+    // Update particles
+    particlesRef.current = particlesRef.current.filter(p => {
       p.x += p.vx;
       p.y += p.vy;
-      p.vy += 0.008;
-      p.life -= 0.02;
-      if (p.life <= 0) return false;
+      p.life++;
+      p.size *= Math.pow(0.95, speedMul);
+
+      const alpha = 1 - p.life / p.maxLife;
       ctx.save();
-      ctx.globalAlpha = p.life;
+      ctx.globalAlpha = Math.max(0, alpha);
       ctx.fillStyle = p.color;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
-      return true;
+
+      return p.life < p.maxLife;
     });
 
-    if (rocketsRef.current.length > 0 || burstParticlesRef.current.length > 0) {
+    drawRocket(ctx, rocketPosRef.current.x, rocketPosRef.current.y, 10 * sizeMul);
+
+    if (rocketPosRef.current.y > -200 || particlesRef.current.length > 0) {
       animationFrameRef.current = requestAnimationFrame(animate);
     }
   };
@@ -150,27 +124,25 @@ export const TileRocketLaunch: React.FC<TileRocketLaunchProps> = ({ trigger, til
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    if (tileRef?.current && canvas) {
+    if (tileRef?.current) {
       const rect = tileRef.current.getBoundingClientRect();
       canvas.width = rect.width;
       canvas.height = rect.height;
+      rocketPosRef.current = {
+        x: rect.width / 2,
+        y: rect.height + 50,
+        vy: -2 * speedMul
+      };
     }
 
-    rocketsRef.current = [];
-    burstParticlesRef.current = [];
+    particlesRef.current = [];
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-
-    for (let i = 0; i < count; i++) {
-      setTimeout(() => {
-        rocketsRef.current.push(createRocket(canvas));
-      }, i * 400);
-    }
     animate();
 
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
-  }, [trigger, tileRef, intensity, count, sizeMul]);
+  }, [trigger, tileRef, intensity, sizeMul, speedMul]);
 
   if (trigger === 0) return null;
 

@@ -4,10 +4,15 @@ import type { CelebrationConfig } from '../types';
 interface Sparkle {
   x: number;
   y: number;
+  vx: number;
+  vy: number;
   size: number;
-  phase: number;
-  speed: number;
+  rotation: number;
+  rotationSpeed: number;
   opacity: number;
+  life: number;
+  maxLife: number;
+  color: string;
 }
 
 interface TileSparklesProps {
@@ -16,17 +21,28 @@ interface TileSparklesProps {
   config?: CelebrationConfig;
 }
 
-const DEFAULT_COUNT = 25;
+const COLORS = ['#fff', '#feca57', '#ffd32a', '#fffa65', '#fff200'];
+
+function drawStar(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, points: number, inset: number) {
+  ctx.beginPath();
+  for (let i = 0; i < points * 2; i++) {
+    const angle = (i * Math.PI) / points;
+    const radius = i % 2 === 0 ? r : r * inset;
+    ctx.lineTo(x + Math.cos(angle) * radius, y + Math.sin(angle) * radius);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
 
 export const TileSparkles: React.FC<TileSparklesProps> = ({ trigger, tileRef, config }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sparklesRef = useRef<Sparkle[]>([]);
   const animationFrameRef = useRef<number>();
-  const startTimeRef = useRef(0);
 
   const intensity = Math.max(1, Math.min(100, config?.intensity ?? 100)) / 100;
-  const count = Math.max(10, Math.min(50, config?.particleCount ?? DEFAULT_COUNT));
+  const count = Math.max(10, Math.min(50, config?.particleCount ?? 20));
   const sizeMul = Math.max(0.5, Math.min(2, (config?.particleSize ?? 100) / 100));
+  const speedMul = Math.max(0.2, Math.min(2, (config?.speed ?? 100) / 100));
 
   const createSparkles = (canvas: HTMLCanvasElement) => {
     const rect = canvas.getBoundingClientRect();
@@ -34,42 +50,58 @@ export const TileSparkles: React.FC<TileSparklesProps> = ({ trigger, tileRef, co
       sparklesRef.current.push({
         x: Math.random() * rect.width,
         y: Math.random() * rect.height,
+        vx: (Math.random() - 0.5) * 0.5 * speedMul,
+        vy: (Math.random() - 0.5) * 0.5 * speedMul,
         size: (2 + Math.random() * 4) * sizeMul,
-        phase: Math.random() * Math.PI * 2,
-        speed: 2 + Math.random() * 3,
-        opacity: (0.5 + Math.random() * 0.5) * intensity,
+        rotation: Math.random() * Math.PI,
+        rotationSpeed: (Math.random() - 0.5) * 0.1 * speedMul,
+        opacity: 0,
+        life: 0,
+        maxLife: (40 + Math.random() * 40) / speedMul,
+        color: COLORS[Math.floor(Math.random() * COLORS.length)],
       });
     }
   };
 
-  const animate = (startTime: number) => {
+  const animate = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const t = (Date.now() - startTime) / 1000;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    sparklesRef.current.forEach((s) => {
-      const twinkle = 0.4 + 0.6 * Math.sin(t * s.speed + s.phase);
+    sparklesRef.current = sparklesRef.current.filter((s) => {
+      s.x += s.vx;
+      s.y += s.vy;
+      s.rotation += s.rotationSpeed;
+      s.life++;
+
+      const halfLife = s.maxLife / 2;
+      s.opacity = s.life < halfLife ? s.life / halfLife : 1 - (s.life - halfLife) / halfLife;
+
+      const scale = s.opacity * (0.8 + Math.sin(s.life * 0.2 * speedMul) * 0.2);
+
       ctx.save();
-      ctx.globalAlpha = s.opacity * twinkle;
-      ctx.fillStyle = '#fff';
-      ctx.strokeStyle = 'rgba(255, 255, 200, 0.9)';
-      ctx.lineWidth = 0.5;
-      ctx.beginPath();
-      ctx.moveTo(s.x, s.y - s.size);
-      ctx.lineTo(s.x + s.size * 0.3, s.y);
-      ctx.lineTo(s.x, s.y + s.size);
-      ctx.lineTo(s.x - s.size * 0.3, s.y);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
+      ctx.translate(s.x, s.y);
+      ctx.rotate(s.rotation);
+      ctx.globalAlpha = Math.max(0, s.opacity * intensity);
+
+      // Glow
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = s.color;
+
+      ctx.fillStyle = s.color;
+      drawStar(ctx, 0, 0, s.size * scale, 4, 0.3);
+
       ctx.restore();
+
+      return s.life < s.maxLife;
     });
 
-    animationFrameRef.current = requestAnimationFrame(() => animate(startTime));
+    if (sparklesRef.current.length > 0) {
+      animationFrameRef.current = requestAnimationFrame(animate);
+    }
   };
 
   useEffect(() => {
@@ -77,7 +109,7 @@ export const TileSparkles: React.FC<TileSparklesProps> = ({ trigger, tileRef, co
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    if (tileRef?.current && canvas) {
+    if (tileRef?.current) {
       const rect = tileRef.current.getBoundingClientRect();
       canvas.width = rect.width;
       canvas.height = rect.height;
@@ -85,14 +117,13 @@ export const TileSparkles: React.FC<TileSparklesProps> = ({ trigger, tileRef, co
 
     sparklesRef.current = [];
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-    startTimeRef.current = Date.now();
     createSparkles(canvas);
-    animate(startTimeRef.current);
+    animate();
 
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
-  }, [trigger, tileRef, intensity, count, sizeMul]);
+  }, [trigger, tileRef, intensity, count, sizeMul, speedMul]);
 
   if (trigger === 0) return null;
 

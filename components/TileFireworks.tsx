@@ -31,6 +31,7 @@ export const TileFireworks: React.FC<TileFireworksProps> = ({ trigger, tileRef, 
     const intensity = Math.max(1, Math.min(100, config?.intensity ?? 100)) / 100;
     const particleCount = Math.max(10, Math.min(80, config?.particleCount ?? DEFAULT_COUNT));
     const sizeMul = Math.max(0.5, Math.min(2, (config?.particleSize ?? 100) / 100));
+    const speedMul = Math.max(0.2, Math.min(2, (config?.speed ?? 100) / 100));
 
     const colors = [
         'rgba(255, 50, 50, 1.0)', 'rgba(50, 150, 255, 1.0)', 'rgba(255, 255, 50, 1.0)',
@@ -46,7 +47,7 @@ export const TileFireworks: React.FC<TileFireworksProps> = ({ trigger, tileRef, 
 
         for (let i = 0; i < particleCount; i++) {
             const angle = (Math.PI * 2 * i) / particleCount;
-            const velocity = (0.2 + Math.random() * 0.4) * intensity;
+            const velocity = (0.2 + Math.random() * 0.4) * intensity * speedMul;
             const baseLine = 45 + Math.random() * 55;
 
             particlesRef.current.push({
@@ -81,14 +82,14 @@ export const TileFireworks: React.FC<TileFireworksProps> = ({ trigger, tileRef, 
             particle.y += particle.vy;
 
             // Apply gravity (extremely minimal for super slow drift)
-            particle.vy += 0.004;
+            particle.vy += 0.004 * speedMul;
 
             // Apply air resistance (very high for slow motion)
-            particle.vx *= 0.997;
-            particle.vy *= 0.997;
+            particle.vx *= Math.pow(0.997, speedMul);
+            particle.vy *= Math.pow(0.997, speedMul);
 
             // Update life (extremely slow fade)
-            particle.life -= 0.0015;
+            particle.life -= 0.0015 * speedMul;
             // Draw particle as thin line (streak effect)
             if (particle.life > 0) {
                 ctx.save();
@@ -149,20 +150,20 @@ export const TileFireworks: React.FC<TileFireworksProps> = ({ trigger, tileRef, 
 
         // Create many more fireworks at varied intervals
         const intervals = [
-            setTimeout(() => { if (canvas) createFirework(canvas); }, 500),
-            setTimeout(() => { if (canvas) createFirework(canvas); }, 1000),
-            setTimeout(() => { if (canvas) createFirework(canvas); }, 1500),
-            setTimeout(() => { if (canvas) createFirework(canvas); }, 2000),
-            setTimeout(() => { if (canvas) createFirework(canvas); }, 2500),
-            setTimeout(() => { if (canvas) createFirework(canvas); }, 3000),
-            setTimeout(() => { if (canvas) createFirework(canvas); }, 3500),
-            setTimeout(() => { if (canvas) createFirework(canvas); }, 4000),
+            setTimeout(() => { if (canvas) createFirework(canvas); }, 500 / speedMul),
+            setTimeout(() => { if (canvas) createFirework(canvas); }, 1000 / speedMul),
+            setTimeout(() => { if (canvas) createFirework(canvas); }, 1500 / speedMul),
+            setTimeout(() => { if (canvas) createFirework(canvas); }, 2000 / speedMul),
+            setTimeout(() => { if (canvas) createFirework(canvas); }, 2500 / speedMul),
+            setTimeout(() => { if (canvas) createFirework(canvas); }, 3000 / speedMul),
+            setTimeout(() => { if (canvas) createFirework(canvas); }, 3500 / speedMul),
+            setTimeout(() => { if (canvas) createFirework(canvas); }, 4000 / speedMul),
         ];
 
         // Stop after longer duration due to slower fade
         const stopTimeout = setTimeout(() => {
             setIsActive(false);
-        }, 8000);
+        }, 8000 / speedMul);
 
         return () => {
             intervals.forEach(clearTimeout);
@@ -171,7 +172,7 @@ export const TileFireworks: React.FC<TileFireworksProps> = ({ trigger, tileRef, 
                 cancelAnimationFrame(animationFrameRef.current);
             }
         };
-    }, [trigger, tileRef, intensity, particleCount, sizeMul]);
+    }, [trigger, tileRef, intensity, particleCount, sizeMul, speedMul]);
 
     if (trigger === 0) return null;
 

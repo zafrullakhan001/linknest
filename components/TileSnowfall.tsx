@@ -28,6 +28,7 @@ export const TileSnowfall: React.FC<TileSnowfallProps> = ({ trigger, tileRef, co
   const intensity = Math.max(1, Math.min(100, config?.intensity ?? 100)) / 100;
   const burst = Math.max(5, Math.min(80, config?.particleCount ?? DEFAULT_BURST));
   const sizeMul = Math.max(0.5, Math.min(2, (config?.particleSize ?? 100) / 100));
+  const speedMul = Math.max(0.2, Math.min(2, (config?.speed ?? 100) / 100));
   const maxFlakes = Math.max(burst * 4, 60);
 
   const addSnowflakes = (canvas: HTMLCanvasElement) => {
@@ -38,10 +39,10 @@ export const TileSnowfall: React.FC<TileSnowfallProps> = ({ trigger, tileRef, co
       snowflakesRef.current.push({
         x: Math.random() * rect.width,
         y: -10 - Math.random() * 30,
-        vx: (Math.random() - 0.5) * 0.15 * intensity,
-        vy: (0.08 + Math.random() * 0.12) * intensity,
+        vx: (Math.random() - 0.5) * 0.15 * intensity * speedMul,
+        vy: (0.08 + Math.random() * 0.12) * intensity * speedMul,
         rotation: Math.random() * 360,
-        rotationSpeed: (Math.random() - 0.5) * 0.3,
+        rotationSpeed: (Math.random() - 0.5) * 0.3 * speedMul,
         size: baseSize * sizeMul,
         opacity: baseOpacity * intensity,
       });
@@ -119,7 +120,7 @@ export const TileSnowfall: React.FC<TileSnowfallProps> = ({ trigger, tileRef, co
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
-  }, [trigger, tileRef, intensity, burst, sizeMul, maxFlakes]);
+  }, [trigger, tileRef, intensity, burst, sizeMul, maxFlakes, speedMul]);
 
   if (trigger === 0) return null;
 

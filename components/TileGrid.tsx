@@ -2136,11 +2136,62 @@ export const TileGrid: React.FC<TileGridProps> = ({
     intensity: 100,
     particleCount: 18,
     particleSize: 100,
+    speed: 100,
     triggerIntervalMs: 5000,
   }));
   const [messageUrl, setMessageUrl] = useState<string>('');
   const [messageUrlLabel, setMessageUrlLabel] = useState<string>('');
   const messageBoardImportInputRef = useRef<HTMLInputElement>(null);
+
+  // Celebration Preview triggers in TileGrid for Edit Modal
+  const [previewFireworksTrigger, setPreviewFireworksTrigger] = useState(0);
+  const [previewConfettiTrigger, setPreviewConfettiTrigger] = useState(0);
+  const [previewSnowfallTrigger, setPreviewSnowfallTrigger] = useState(0);
+  const [previewHeartsRisingTrigger, setPreviewHeartsRisingTrigger] = useState(0);
+  const [previewHeartsFallingTrigger, setPreviewHeartsFallingTrigger] = useState(0);
+  const [previewBubblesTrigger, setPreviewBubblesTrigger] = useState(0);
+  const [previewButterfliesTrigger, setPreviewButterfliesTrigger] = useState(0);
+  const [previewBirdsFlyingTrigger, setPreviewBirdsFlyingTrigger] = useState(0);
+  const [previewRocketLaunchTrigger, setPreviewRocketLaunchTrigger] = useState(0);
+  const [previewBurstFireworksTrigger, setPreviewBurstFireworksTrigger] = useState(0);
+  const [previewSparklesTrigger, setPreviewSparklesTrigger] = useState(0);
+  const [previewPetalsTrigger, setPreviewPetalsTrigger] = useState(0);
+  const [previewShootingStarsTrigger, setPreviewShootingStarsTrigger] = useState(0);
+  const [previewLeavesTrigger, setPreviewLeavesTrigger] = useState(0);
+  const [previewFirefliesTrigger, setPreviewFirefliesTrigger] = useState(0);
+  const [previewBalloonsTrigger, setPreviewBalloonsTrigger] = useState(0);
+  const [previewStarsTrigger, setPreviewStarsTrigger] = useState(0);
+  const [previewRainbowTrigger, setPreviewRainbowTrigger] = useState(0);
+  const previewTileRef = useRef<HTMLDivElement>(null);
+
+  // Celebration Presets for "Smooth & Slow" effects
+  const CELEBRATION_PRESETS: Record<string, CelebrationConfig> = {
+    'fireworks': { intensity: 45, particleCount: 12, particleSize: 100, speed: 40, triggerIntervalMs: 6000 },
+    'burst-fireworks': { intensity: 55, particleCount: 10, particleSize: 110, speed: 50, triggerIntervalMs: 5000 },
+    'confetti': { intensity: 35, particleCount: 20, particleSize: 100, speed: 30, triggerIntervalMs: 8000 },
+    'snowfall': { intensity: 25, particleCount: 40, particleSize: 80, speed: 20, triggerIntervalMs: 10000 },
+    'hearts-rising': { intensity: 40, particleCount: 15, particleSize: 100, speed: 40, triggerIntervalMs: 7000 },
+    'hearts-falling': { intensity: 40, particleCount: 15, particleSize: 100, speed: 40, triggerIntervalMs: 7000 },
+    'bubbles': { intensity: 30, particleCount: 15, particleSize: 100, speed: 30, triggerIntervalMs: 8000 },
+    'butterflies': { intensity: 40, particleCount: 8, particleSize: 100, speed: 35, triggerIntervalMs: 9000 },
+    'birds-flying': { intensity: 45, particleCount: 6, particleSize: 100, speed: 40, triggerIntervalMs: 9000 },
+    'rocket-launch': { intensity: 60, particleCount: 5, particleSize: 100, speed: 60, triggerIntervalMs: 12000 },
+    'sparkles': { intensity: 50, particleCount: 25, particleSize: 90, speed: 45, triggerIntervalMs: 6000 },
+    'petals': { intensity: 30, particleCount: 20, particleSize: 100, speed: 25, triggerIntervalMs: 9000 },
+    'shooting-stars': { intensity: 55, particleCount: 4, particleSize: 120, speed: 65, triggerIntervalMs: 10000 },
+    'leaves': { intensity: 35, particleCount: 15, particleSize: 100, speed: 30, triggerIntervalMs: 9000 },
+    'fireflies': { intensity: 45, particleCount: 20, particleSize: 80, speed: 35, triggerIntervalMs: 7000 },
+    'balloons': { intensity: 40, particleCount: 10, particleSize: 100, speed: 35, triggerIntervalMs: 12000 },
+    'stars': { intensity: 40, particleCount: 30, particleSize: 90, speed: 30, triggerIntervalMs: 12000 },
+    'rainbow': { intensity: 30, particleCount: 1, particleSize: 150, speed: 20, triggerIntervalMs: 15000 },
+  };
+
+  const applyCelebrationPreset = () => {
+    const preset = CELEBRATION_PRESETS[messageCelebrationEffect || 'fireworks'];
+    if (preset) {
+      setMessageCelebrationConfig(preset);
+    }
+  };
 
   // Helper function to get message status
   const getMessageStatus = (msg: TileMessage): 'active' | 'upcoming' | 'expired' => {
@@ -2241,6 +2292,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
       if (typeof cc.intensity === 'number') celebrationConfig.intensity = Math.max(1, Math.min(100, cc.intensity));
       if (typeof cc.particleCount === 'number') celebrationConfig.particleCount = Math.max(5, Math.min(80, cc.particleCount));
       if (typeof cc.particleSize === 'number') celebrationConfig.particleSize = Math.max(50, Math.min(200, cc.particleSize));
+      if (typeof cc.speed === 'number') celebrationConfig.speed = Math.max(20, Math.min(200, cc.speed));
       if (typeof cc.triggerIntervalMs === 'number') celebrationConfig.triggerIntervalMs = Math.max(2000, Math.min(15000, cc.triggerIntervalMs));
     }
     return {
@@ -2352,6 +2404,7 @@ Generate a JSON array of scheduled message board messages for Linknest. Each mes
 - intensity: 1–100 (default 100)
 - particleCount: 5–80
 - particleSize: 50–200 (percentage)
+- speed: 20–200 (speed percentage, e.g. 50 for half speed, 200 for double)
 - triggerIntervalMs: 2000–15000 (milliseconds between bursts)
 
 **Output format:** Reply with ONLY a valid JSON array of message objects, no markdown code fences or extra text. Example:
@@ -4147,6 +4200,72 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       tileTextColor: undefined
     };
   }, []);
+
+  // Preview Celebration triggering logic
+  useEffect(() => {
+    if (!isEditModalOpen || (editModalActiveTab !== 'messages' && editModalActiveTab !== 'decoration') || (editModalActiveTab === 'messages' && messageType !== 'celebration')) {
+      return;
+    }
+
+    let effectType = messageCelebrationEffect || 'fireworks';
+    if (effectType === 'none') {
+      // Clear all triggers
+      setPreviewFireworksTrigger(0);
+      setPreviewConfettiTrigger(0);
+      setPreviewSnowfallTrigger(0);
+      setPreviewHeartsRisingTrigger(0);
+      setPreviewHeartsFallingTrigger(0);
+      setPreviewBubblesTrigger(0);
+      setPreviewButterfliesTrigger(0);
+      setPreviewBirdsFlyingTrigger(0);
+      setPreviewRocketLaunchTrigger(0);
+      setPreviewBurstFireworksTrigger(0);
+      setPreviewSparklesTrigger(0);
+      setPreviewPetalsTrigger(0);
+      setPreviewShootingStarsTrigger(0);
+      setPreviewLeavesTrigger(0);
+      setPreviewFirefliesTrigger(0);
+      setPreviewBalloonsTrigger(0);
+      setPreviewStarsTrigger(0);
+      setPreviewRainbowTrigger(0);
+      return;
+    }
+    if (effectType === 'hearts') effectType = 'hearts-rising';
+
+    const intervalMs = Math.max(2000, Math.min(15000, messageCelebrationConfig.triggerIntervalMs ?? 5000));
+
+    const triggerMap: Record<string, React.Dispatch<React.SetStateAction<number>>> = {
+      'fireworks': setPreviewFireworksTrigger,
+      'confetti': setPreviewConfettiTrigger,
+      'snowfall': setPreviewSnowfallTrigger,
+      'hearts-rising': setPreviewHeartsRisingTrigger,
+      'hearts-falling': setPreviewHeartsFallingTrigger,
+      'bubbles': setPreviewBubblesTrigger,
+      'butterflies': setPreviewButterfliesTrigger,
+      'birds-flying': setPreviewBirdsFlyingTrigger,
+      'rocket-launch': setPreviewRocketLaunchTrigger,
+      'burst-fireworks': setPreviewBurstFireworksTrigger,
+      'sparkles': setPreviewSparklesTrigger,
+      'petals': setPreviewPetalsTrigger,
+      'shooting-stars': setPreviewShootingStarsTrigger,
+      'leaves': setPreviewLeavesTrigger,
+      'fireflies': setPreviewFirefliesTrigger,
+      'balloons': setPreviewBalloonsTrigger,
+      'stars': setPreviewStarsTrigger,
+      'rainbow': setPreviewRainbowTrigger,
+    };
+
+    const setTrigger = triggerMap[effectType];
+    if (setTrigger) {
+      // Small timeout to allow everything to settle before first trigger
+      const initialTimer = setTimeout(() => setTrigger(prev => prev + 1), 300);
+      const interval = setInterval(() => setTrigger(prev => prev + 1), intervalMs);
+      return () => {
+        clearTimeout(initialTimer);
+        clearInterval(interval);
+      };
+    }
+  }, [isEditModalOpen, editModalActiveTab, messageType, messageCelebrationEffect, messageCelebrationConfig.triggerIntervalMs]);
 
   const handleUpdateTile = async () => {
     if (!editingTile || !newTitle.trim()) return;
@@ -7801,6 +7920,97 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 </button>
               </div>
 
+              {/* Shared Live Preview for All Tabs */}
+              <div className="mb-6 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-inner overflow-hidden relative">
+                <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm z-10">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                  <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tighter">Live Preview</span>
+                </div>
+
+                <div className="flex justify-center items-center py-6 relative overflow-hidden">
+                  <div
+                    ref={previewTileRef}
+                    className="w-full max-w-[280px] min-h-[140px] rounded-xl border border-slate-200 dark:border-slate-700/50 p-5 flex flex-col transition-all duration-300 shadow-lg relative overflow-hidden bg-white dark:bg-slate-800"
+                    style={{
+                      background: tileGradientEnabled && tileGradientColors && tileGradientColors.length > 0
+                        ? (() => {
+                          const hasPositions = tileGradientColorPositions && tileGradientColorPositions.length === tileGradientColors.length;
+                          const gradientStops = tileGradientColors.map((color, i) => {
+                            if (hasPositions) {
+                              return `${color} ${tileGradientColorPositions[i]}%`;
+                            }
+                            return color;
+                          }).join(', ');
+
+                          if (tileGradientType === 'linear' || tileGradientType === 'repeating-linear') {
+                            const prefix = tileGradientType === 'repeating-linear' ? 'repeating-linear-gradient' : 'linear-gradient';
+                            return `${prefix}(${tileGradientDirection}deg, ${gradientStops})`;
+                          } else if (tileGradientType === 'radial' || tileGradientType === 'repeating-radial') {
+                            const prefix = tileGradientType === 'repeating-radial' ? 'repeating-radial-gradient' : 'radial-gradient';
+                            return `${prefix}(circle, ${gradientStops})`;
+                          } else if (tileGradientType === 'conic' || tileGradientType === 'repeating-conic') {
+                            const prefix = tileGradientType === 'repeating-conic' ? 'repeating-conic-gradient' : 'conic-gradient';
+                            return `${prefix}(from ${tileGradientDirection}deg, ${gradientStops})`;
+                          }
+                          return `linear-gradient(${tileGradientDirection}deg, ${gradientStops})`;
+                        })()
+                        : tileBackgroundColor || undefined,
+                      borderRadius: `${tileBorderRadius}px`,
+                      color: tileTextColor || undefined
+                    }}
+                  >
+                    {/* Celebration effects for preview */}
+                    <TileFireworks trigger={previewFireworksTrigger} tileRef={previewTileRef} config={messageCelebrationConfig} />
+                    <TileConfetti trigger={previewConfettiTrigger} tileRef={previewTileRef} config={messageCelebrationConfig} />
+                    <TileSnowfall trigger={previewSnowfallTrigger} tileRef={previewTileRef} config={messageCelebrationConfig} />
+                    <TileHeartsRising trigger={previewHeartsRisingTrigger} tileRef={previewTileRef} config={messageCelebrationConfig} />
+                    <TileHeartsFalling trigger={previewHeartsFallingTrigger} tileRef={previewTileRef} config={messageCelebrationConfig} />
+                    <TileBubbles trigger={previewBubblesTrigger} tileRef={previewTileRef} config={messageCelebrationConfig} />
+                    <TileButterflies trigger={previewButterfliesTrigger} tileRef={previewTileRef} config={messageCelebrationConfig} />
+                    <TileBirdsFlying trigger={previewBirdsFlyingTrigger} tileRef={previewTileRef} config={messageCelebrationConfig} />
+                    <TileRocketLaunch trigger={previewRocketLaunchTrigger} tileRef={previewTileRef} config={messageCelebrationConfig} />
+                    <TileBurstFireworks trigger={previewBurstFireworksTrigger} tileRef={previewTileRef} config={messageCelebrationConfig} />
+                    <TileSparkles trigger={previewSparklesTrigger} tileRef={previewTileRef} config={messageCelebrationConfig} />
+                    <TilePetals trigger={previewPetalsTrigger} tileRef={previewTileRef} config={messageCelebrationConfig} />
+                    <TileShootingStars trigger={previewShootingStarsTrigger} tileRef={previewTileRef} config={messageCelebrationConfig} />
+                    <TileLeaves trigger={previewLeavesTrigger} tileRef={previewTileRef} config={messageCelebrationConfig} />
+                    <TileFireflies trigger={previewFirefliesTrigger} tileRef={previewTileRef} config={messageCelebrationConfig} />
+                    <TileBalloons trigger={previewBalloonsTrigger} tileRef={previewTileRef} config={messageCelebrationConfig} />
+                    <TileStars trigger={previewStarsTrigger} tileRef={previewTileRef} config={messageCelebrationConfig} />
+                    <TileRainbow trigger={previewRainbowTrigger} tileRef={previewTileRef} config={messageCelebrationConfig} />
+
+                    <div className="flex-1">
+                      <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center text-lg mb-3 border border-slate-200 dark:border-slate-600">
+                        {newEmoji || '📁'}
+                      </div>
+                      <h3 className="font-bold text-sm leading-tight line-clamp-2 mb-1">
+                        {newTitle || 'Tile Preview'}
+                      </h3>
+                      <p className="opacity-70 text-[10px] line-clamp-2 leading-snug">
+                        {newDesc || 'No description'}
+                      </p>
+                    </div>
+
+                    {/* Message Preview */}
+                    {(messageContent || (messageType === 'celebration' && messageCelebrationEffect !== 'none')) && (
+                      <div className="mt-3 pt-2 border-t border-slate-200 dark:border-slate-700/50 flex items-center justify-center gap-2">
+                        <div className={`px-2 py-0.5 rounded text-[10px] font-bold ${messageType === 'info' ? 'bg-blue-100/50 text-blue-600' :
+                          messageType === 'warning' ? 'bg-amber-100/50 text-amber-600' :
+                            messageType === 'celebration' ? 'bg-pink-100/50 text-pink-600' :
+                              messageType === 'alert' ? 'bg-red-100/50 text-red-600' :
+                                'bg-slate-100/50 text-slate-600'
+                          }`}>
+                          {messageType.toUpperCase()}
+                        </div>
+                        <div className="text-[10px] font-semibold truncate flex-1" style={messageTextColor ? { color: messageTextColor } : {}}>
+                          {messageContent || (messageType === 'celebration' ? `Effect: ${messageCelebrationEffect}` : '')}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               {/* Tab Navigation */}
               <div className="flex gap-2 mb-6 border-b border-slate-200 dark:border-slate-700">
                 <button
@@ -8131,9 +8341,21 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           {/* Celebration Effect Selector - Only show for celebration messages */}
                           {messageType === 'celebration' && (
                             <div className="mb-4">
-                              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                                🎆 Celebration Effect
-                              </label>
+                              <div className="flex justify-between items-center mb-2">
+                                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                                  🎆 Celebration Effect
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={applyCelebrationPreset}
+                                  className="text-[10px] px-2 py-1 bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border border-brand-200 dark:border-brand-800 rounded hover:bg-brand-100 dark:hover:bg-brand-900/40 transition-all flex items-center gap-1.5 font-bold"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                    <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-1.281z" clipRule="evenodd" />
+                                  </svg>
+                                  APPLY "SMOOTH & SLOW" PRESET
+                                </button>
+                              </div>
                               <select
                                 value={messageCelebrationEffect}
                                 onChange={(e) => setMessageCelebrationEffect(e.target.value as TileMessage['celebrationEffect'])}
@@ -8209,6 +8431,20 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                     max={200}
                                     value={messageCelebrationConfig.particleSize ?? 100}
                                     onChange={(e) => setMessageCelebrationConfig(c => ({ ...c, particleSize: parseInt(e.target.value, 10) }))}
+                                    className="w-full h-2 rounded-lg appearance-none bg-slate-200 dark:bg-slate-700 accent-brand-500"
+                                  />
+                                </div>
+                                <div>
+                                  <div className="flex justify-between text-xs text-slate-600 dark:text-slate-400 mb-1">
+                                    <span>Animation speed</span>
+                                    <span>{messageCelebrationConfig.speed ?? 100}%</span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min={20}
+                                    max={200}
+                                    value={messageCelebrationConfig.speed ?? 100}
+                                    onChange={(e) => setMessageCelebrationConfig(c => ({ ...c, speed: parseInt(e.target.value, 10) }))}
                                     className="w-full h-2 rounded-lg appearance-none bg-slate-200 dark:bg-slate-700 accent-brand-500"
                                   />
                                 </div>
@@ -8611,6 +8847,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                         intensity: Math.max(1, Math.min(100, cc.intensity ?? 100)),
                                         particleCount: Math.max(5, Math.min(80, cc.particleCount ?? 18)),
                                         particleSize: Math.max(50, Math.min(200, cc.particleSize ?? 100)),
+                                        speed: Math.max(20, Math.min(200, cc.speed ?? 100)),
                                         triggerIntervalMs: Math.max(2000, Math.min(15000, cc.triggerIntervalMs ?? 5000)),
                                       });
                                       setMessageUrl(msg.url || '');
@@ -9714,48 +9951,6 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       </div>
                     </div>
 
-                    {/* Live Tile Preview */}
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Live Preview</label>
-                      <div className="relative">
-                        <div
-                          className="w-full min-h-[120px] rounded-lg border-2 border-slate-200 dark:border-slate-700 p-4 flex flex-col items-center justify-center transition-all"
-                          style={{
-                            background: tileGradientEnabled && tileGradientColors && tileGradientColors.length > 0
-                              ? (() => {
-                                const hasPositions = tileGradientColorPositions && tileGradientColorPositions.length === tileGradientColors.length;
-                                const gradientStops = tileGradientColors.map((color, i) => {
-                                  if (hasPositions) {
-                                    return `${color} ${tileGradientColorPositions[i]}%`;
-                                  }
-                                  return color;
-                                }).join(', ');
-
-                                if (tileGradientType === 'linear' || tileGradientType === 'repeating-linear') {
-                                  const prefix = tileGradientType === 'repeating-linear' ? 'repeating-linear-gradient' : 'linear-gradient';
-                                  return `${prefix}(${tileGradientDirection}deg, ${gradientStops})`;
-                                } else if (tileGradientType === 'radial' || tileGradientType === 'repeating-radial') {
-                                  const prefix = tileGradientType === 'repeating-radial' ? 'repeating-radial-gradient' : 'radial-gradient';
-                                  return `${prefix}(circle, ${gradientStops})`;
-                                } else if (tileGradientType === 'conic' || tileGradientType === 'repeating-conic') {
-                                  const prefix = tileGradientType === 'repeating-conic' ? 'repeating-conic-gradient' : 'conic-gradient';
-                                  return `${prefix}(from ${tileGradientDirection}deg, ${gradientStops})`;
-                                }
-                                return `linear-gradient(${tileGradientDirection}deg, ${gradientStops})`;
-                              })()
-                              : tileBackgroundColor || 'transparent',
-                            borderRadius: `${tileBorderRadius}px`,
-                            color: tileTextColor || undefined
-                          }}
-                        >
-                          <div className="text-4xl mb-2">{editingTile?.emoji || '📁'}</div>
-                          <div className="text-sm font-semibold">{editingTile?.title || 'Tile Preview'}</div>
-                          {editingTile?.description && (
-                            <div className="text-xs mt-1 opacity-75">{editingTile.description}</div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
                   </>
                 )}
 

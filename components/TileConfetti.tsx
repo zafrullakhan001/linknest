@@ -30,6 +30,7 @@ export const TileConfetti: React.FC<TileConfettiProps> = ({ trigger, tileRef, co
     const intensity = Math.max(1, Math.min(100, config?.intensity ?? 100)) / 100;
     const count = Math.max(5, Math.min(80, config?.particleCount ?? DEFAULT_COUNT));
     const sizeMul = Math.max(0.5, Math.min(2, (config?.particleSize ?? 100) / 100));
+    const speedMul = Math.max(0.2, Math.min(2, (config?.speed ?? 100) / 100));
 
     const colors = [
         '#ff4d4d', '#4d94ff', '#ffff4d', '#4dff4d', '#d94dff', '#ff944d',
@@ -44,10 +45,10 @@ export const TileConfetti: React.FC<TileConfettiProps> = ({ trigger, tileRef, co
             confettiRef.current.push({
                 x: Math.random() * rect.width,
                 y: -20 - Math.random() * 50,
-                vx: (Math.random() - 0.5) * 0.5 * intensity,
-                vy: (0.2 + Math.random() * 0.4) * intensity,
+                vx: (Math.random() - 0.5) * 0.5 * intensity * speedMul,
+                vy: (0.2 + Math.random() * 0.4) * intensity * speedMul,
                 rotation: Math.random() * 360,
-                rotationSpeed: (Math.random() - 0.5) * 1,
+                rotationSpeed: (Math.random() - 0.5) * speedMul,
                 color: colors[Math.floor(Math.random() * colors.length)],
                 size: baseSize * sizeMul,
                 shape: shapes[Math.floor(Math.random() * shapes.length)],
@@ -100,7 +101,7 @@ export const TileConfetti: React.FC<TileConfettiProps> = ({ trigger, tileRef, co
         confettiRef.current = confettiRef.current.filter(confetti => {
             confetti.x += confetti.vx;
             confetti.y += confetti.vy;
-            confetti.vy += 0.004; // Minimal gravity (50% slower than before)
+            confetti.vy += 0.004 * speedMul; // Minimal gravity
             confetti.rotation += confetti.rotationSpeed;
 
             // Remove if out of bounds
@@ -144,7 +145,7 @@ export const TileConfetti: React.FC<TileConfettiProps> = ({ trigger, tileRef, co
                 cancelAnimationFrame(animationFrameRef.current);
             }
         };
-    }, [trigger, tileRef, intensity, count, sizeMul]);
+    }, [trigger, tileRef, intensity, count, sizeMul, speedMul]);
 
     if (trigger === 0) return null;
 

@@ -8,6 +8,7 @@ interface Star {
   phase: number;
   speed: number;
   opacity: number;
+  color: string;
 }
 
 interface TileStarsProps {
@@ -16,17 +17,17 @@ interface TileStarsProps {
   config?: CelebrationConfig;
 }
 
-const DEFAULT_COUNT = 20;
+const COLORS = ['#fff', '#fff2ac', '#fff9d8', '#e0f7fa', '#f3e5f5'];
 
 export const TileStars: React.FC<TileStarsProps> = ({ trigger, tileRef, config }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const starsRef = useRef<Star[]>([]);
   const animationFrameRef = useRef<number>();
-  const startTimeRef = useRef(0);
 
   const intensity = Math.max(1, Math.min(100, config?.intensity ?? 100)) / 100;
-  const count = Math.max(10, Math.min(40, config?.particleCount ?? DEFAULT_COUNT));
+  const count = Math.max(10, Math.min(60, config?.particleCount ?? 30));
   const sizeMul = Math.max(0.5, Math.min(2, (config?.particleSize ?? 100) / 100));
+  const speedMul = Math.max(0.2, Math.min(2, (config?.speed ?? 100) / 100));
 
   const createStars = (canvas: HTMLCanvasElement) => {
     const rect = canvas.getBoundingClientRect();
@@ -34,46 +35,51 @@ export const TileStars: React.FC<TileStarsProps> = ({ trigger, tileRef, config }
       starsRef.current.push({
         x: Math.random() * rect.width,
         y: Math.random() * rect.height,
-        size: (1.5 + Math.random() * 3) * sizeMul,
+        size: (1 + Math.random() * 3) * sizeMul,
         phase: Math.random() * Math.PI * 2,
-        speed: 1.5 + Math.random() * 2.5,
-        opacity: (0.4 + Math.random() * 0.5) * intensity,
+        speed: (1 + Math.random() * 3) * speedMul,
+        opacity: (0.5 + Math.random() * 0.5) * intensity,
+        color: COLORS[Math.floor(Math.random() * COLORS.length)]
       });
     }
   };
 
-  const animate = (startTime: number) => {
+  const animate = (time: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const t = (Date.now() - startTime) / 1000;
 
+    const t = time / 1000;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     starsRef.current.forEach((s) => {
-      const twinkle = 0.3 + 0.7 * Math.abs(Math.sin(t * s.speed + s.phase));
+      const pulse = 0.2 + 0.8 * Math.pow(0.5 + 0.5 * Math.sin(t * s.speed + s.phase), 2);
+
       ctx.save();
-      ctx.globalAlpha = s.opacity * twinkle;
-      ctx.fillStyle = '#fff';
+      ctx.translate(s.x, s.y);
+      ctx.globalAlpha = s.opacity * pulse;
+
+      // Glow
+      ctx.shadowBlur = 8 * pulse;
+      ctx.shadowColor = s.color;
+
+      ctx.fillStyle = s.color;
+
+      // Draw 4-pointed star
+      const r = s.size * (0.8 + 0.4 * pulse);
       ctx.beginPath();
-      ctx.moveTo(s.x, s.y - s.size);
-      ctx.lineTo(s.x + s.size * 0.4, s.y);
-      ctx.lineTo(s.x, s.y + s.size);
-      ctx.lineTo(s.x - s.size * 0.4, s.y);
-      ctx.closePath();
+      ctx.moveTo(0, -r * 2);
+      ctx.quadraticCurveTo(0, 0, r * 2, 0);
+      ctx.quadraticCurveTo(0, 0, 0, r * 2);
+      ctx.quadraticCurveTo(0, 0, -r * 2, 0);
+      ctx.quadraticCurveTo(0, 0, 0, -r * 2);
       ctx.fill();
-      ctx.beginPath();
-      ctx.moveTo(s.x - s.size, s.y);
-      ctx.lineTo(s.x, s.y + s.size * 0.4);
-      ctx.lineTo(s.x + s.size, s.y);
-      ctx.lineTo(s.x, s.y - s.size * 0.4);
-      ctx.closePath();
-      ctx.fill();
+
       ctx.restore();
     });
 
-    animationFrameRef.current = requestAnimationFrame(() => animate(startTime));
+    animationFrameRef.current = requestAnimationFrame(animate);
   };
 
   useEffect(() => {
@@ -81,7 +87,7 @@ export const TileStars: React.FC<TileStarsProps> = ({ trigger, tileRef, config }
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    if (tileRef?.current && canvas) {
+    if (tileRef?.current) {
       const rect = tileRef.current.getBoundingClientRect();
       canvas.width = rect.width;
       canvas.height = rect.height;
@@ -89,14 +95,13 @@ export const TileStars: React.FC<TileStarsProps> = ({ trigger, tileRef, config }
 
     starsRef.current = [];
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-    startTimeRef.current = Date.now();
     createStars(canvas);
-    animate(startTimeRef.current);
+    animationFrameRef.current = requestAnimationFrame(animate);
 
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
-  }, [trigger, tileRef, intensity, count, sizeMul]);
+  }, [trigger, tileRef, intensity, count, sizeMul, speedMul]);
 
   if (trigger === 0) return null;
 
