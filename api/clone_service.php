@@ -458,6 +458,8 @@ class CloneService {
                 'BUNDLE_DEPLOYMENT_GUIDE.md',
                 'bulk-import-template.csv',
                 'section-links-import-template.csv',
+                'staging-ai-import-template.csv',
+                'staging-ai-prompt-guide.md',
                 'metadata.json'
             ];
             

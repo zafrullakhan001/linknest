@@ -28,6 +28,10 @@ switch ($method) {
             handleGetVersionDetails($matches[1], $matches[2]);
         } elseif (preg_match('#^/([^/]+)/info$#', $path, $matches)) {
             handleGetTileInfo($matches[1]);
+        } elseif ($path === '/staging-template') {
+            handleGetStagingTemplate();
+        } elseif ($path === '/staging-prompt') {
+            handleGetStagingPrompt();
         } elseif (preg_match('#^/([^/]+)$#', $path, $matches)) {
             handleGetTile($matches[1]);
         } else {
@@ -40,6 +44,8 @@ switch ($method) {
             handleCreateTile();
         } elseif ($path === '/bulk-import' || $path === '/bulk-import/') {
             handleBulkImport();
+        } elseif ($path === '/csv-to-json' || $path === '/csv-to-json/') {
+            handleCsvToJson();
         } elseif (preg_match('#^/category/([^/]+)/clone$#', $path, $matches)) {
             handleCloneCategory(rawurldecode($matches[1]));
         } elseif (preg_match('#^/category/([^/]+)/archive$#', $path, $matches)) {
@@ -2671,6 +2677,237 @@ function handleBulkImport() {
         error_log('Bulk import transaction failed: ' . $e->getMessage());
         sendJSON(['error' => 'Bulk import failed: ' . $e->getMessage()], 500);
     }
+}
+
+/**
+ * Serve staging CSV template for download. Admin only.
+ */
+function handleGetStagingTemplate() {
+    requireAdmin();
+    $path = dirname(__DIR__) . '/staging-ai-import-template.csv';
+    if (!is_file($path) || !is_readable($path)) {
+        sendJSON(['error' => 'Template file not found'], 404);
+    }
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="linknest-staging-import-template.csv"');
+    readfile($path);
+    exit;
+}
+
+/**
+ * Serve staging AI prompt guide for download. Admin only.
+ */
+function handleGetStagingPrompt() {
+    requireAdmin();
+    $path = dirname(__DIR__) . '/staging-ai-prompt-guide.md';
+    if (!is_file($path) || !is_readable($path)) {
+        sendJSON(['error' => 'Prompt guide file not found'], 404);
+    }
+    header('Content-Type: text/markdown; charset=utf-8');
+    header('Content-Disposition: attachment; filename="linknest-staging-ai-prompt-guide.md"');
+    readfile($path);
+    exit;
+}
+
+/**
+ * Convert uploaded CSV to LinkNest SpaceExportFile JSON (import-ready, no DB write).
+ * Admin only. Used by Staging offline workflow.
+ */
+function handleCsvToJson() {
+    $user = requireAdmin();
+
+    if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+        sendJSON(['error' => 'No file uploaded or upload error'], 400);
+    }
+
+    $file = $_FILES['file'];
+    $filePath = $file['tmp_name'];
+    $fileExt = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    if ($fileExt !== 'csv') {
+        sendJSON(['error' => 'Invalid file type. Please upload a CSV file.'], 400);
+    }
+
+    $csvData = [];
+    if (($handle = fopen($filePath, 'r')) === false) {
+        sendJSON(['error' => 'Failed to read CSV file'], 400);
+    }
+
+    $headers = fgetcsv($handle);
+    if ($headers === false) {
+        fclose($handle);
+        sendJSON(['error' => 'Invalid CSV file. Could not read header row.'], 400);
+    }
+    $headers = array_map('trim', $headers);
+    $headerMap = [];
+    $headerVariations = [
+        'tile_title' => ['tile title', 'tile_title', 'tiletitle'],
+        'tile_description' => ['tile description', 'tile_description', 'tiledescription'],
+        'tile_emoji' => ['tile emoji', 'tile_emoji', 'tileemoji'],
+        'tile_theme_color' => ['tile theme color', 'tile_theme_color', 'tilethemecolor', 'tile theme', 'tile_theme'],
+        'tile_group' => ['tile group', 'tile_group', 'tilegroup'],
+        'section_title' => ['section title', 'section_title', 'sectiontitle'],
+        'link_label' => ['link label', 'link_label', 'linklabel'],
+        'link_url' => ['link url', 'link_url', 'linkurl'],
+        'link_icon' => ['link icon', 'link_icon', 'linkicon'],
+        'link_browser' => ['link browser', 'link_browser', 'linkbrowser'],
+        'link_visibility' => ['link visibility', 'link_visibility', 'linkvisibility'],
+        'link_notes' => ['link notes', 'link_notes', 'linknotes'],
+        'link_tooltip' => ['link tooltip', 'link_tooltip', 'linktooltip'],
+        'tab_title' => ['tab title', 'tab_title', 'tabtitle']
+    ];
+    foreach ($headerVariations as $key => $variations) {
+        foreach ($headers as $idx => $header) {
+            $normalizedHeader = strtolower(preg_replace('/[\s_\-]/', '', $header));
+            foreach ($variations as $variation) {
+                $normalizedVariation = strtolower(preg_replace('/[\s_\-]/', '', $variation));
+                if ($normalizedHeader === $normalizedVariation) {
+                    $headerMap[$key] = $idx;
+                    break 2;
+                }
+            }
+        }
+    }
+    if (!isset($headerMap['tile_title']) || !isset($headerMap['link_label']) || !isset($headerMap['link_url'])) {
+        fclose($handle);
+        sendJSON(['error' => 'CSV file missing required columns: Tile Title, Link Label, Link URL'], 400);
+    }
+    $rowNum = 1;
+    while (($row = fgetcsv($handle)) !== false) {
+        $rowNum++;
+        if (count($row) < count($headers)) {
+            continue;
+        }
+        $csvData[] = [
+            'tile_title' => isset($headerMap['tile_title']) ? trim($row[$headerMap['tile_title']]) : '',
+            'tile_description' => isset($headerMap['tile_description']) ? trim($row[$headerMap['tile_description']]) : '',
+            'tile_emoji' => isset($headerMap['tile_emoji']) ? trim($row[$headerMap['tile_emoji']]) : '📁',
+            'tile_theme_color' => isset($headerMap['tile_theme_color']) ? trim($row[$headerMap['tile_theme_color']]) : 'blue',
+            'tile_group' => isset($headerMap['tile_group']) ? trim($row[$headerMap['tile_group']]) : 'General',
+            'section_title' => isset($headerMap['section_title']) ? trim($row[$headerMap['section_title']]) : 'General',
+            'link_label' => isset($headerMap['link_label']) ? trim($row[$headerMap['link_label']]) : '',
+            'link_url' => isset($headerMap['link_url']) ? trim($row[$headerMap['link_url']]) : '',
+            'link_icon' => isset($headerMap['link_icon']) ? trim($row[$headerMap['link_icon']]) : '',
+            'link_browser' => isset($headerMap['link_browser']) ? trim($row[$headerMap['link_browser']]) : '',
+            'link_visibility' => isset($headerMap['link_visibility']) ? trim($row[$headerMap['link_visibility']]) : 'public',
+            'link_notes' => isset($headerMap['link_notes']) ? trim($row[$headerMap['link_notes']]) : '',
+            'link_tooltip' => isset($headerMap['link_tooltip']) ? trim($row[$headerMap['link_tooltip']]) : '',
+            'tab_title' => isset($headerMap['tab_title']) ? trim($row[$headerMap['tab_title']]) : 'Default',
+            'row_num' => $rowNum
+        ];
+    }
+    fclose($handle);
+
+    if (empty($csvData)) {
+        sendJSON(['error' => 'CSV file is empty or contains no valid data'], 400);
+    }
+
+    $tilesMap = [];
+    foreach ($csvData as $row) {
+        if (empty($row['tile_title']) || empty($row['link_label']) || empty($row['link_url'])) {
+            continue;
+        }
+        $tileKey = $row['tile_title'] . '|' . ($row['tile_group'] ?: 'General');
+        $tabKey = $row['tab_title'] ?: 'Default';
+        $sectionKey = $row['section_title'] ?: 'General';
+        if (!isset($tilesMap[$tileKey])) {
+            $tilesMap[$tileKey] = [
+                'title' => $row['tile_title'],
+                'description' => $row['tile_description'],
+                'emoji' => $row['tile_emoji'] ?: '📁',
+                'themeColor' => $row['tile_theme_color'] ?: 'blue',
+                'group' => $row['tile_group'] ?: 'General',
+                'tabs' => []
+            ];
+        }
+        if (!isset($tilesMap[$tileKey]['tabs'][$tabKey])) {
+            $tilesMap[$tileKey]['tabs'][$tabKey] = ['sections' => []];
+        }
+        if (!isset($tilesMap[$tileKey]['tabs'][$tabKey]['sections'][$sectionKey])) {
+            $tilesMap[$tileKey]['tabs'][$tabKey]['sections'][$sectionKey] = [];
+        }
+        $tilesMap[$tileKey]['tabs'][$tabKey]['sections'][$sectionKey][] = [
+            'label' => $row['link_label'],
+            'url' => $row['link_url'],
+            'icon' => !empty($row['link_icon']) ? $row['link_icon'] : null,
+            'browser' => !empty($row['link_browser']) ? $row['link_browser'] : null,
+            'visibility' => $row['link_visibility'] ?: 'public',
+            'notes' => $row['link_notes'],
+            'tooltip' => $row['link_tooltip']
+        ];
+    }
+
+    if (empty($tilesMap)) {
+        sendJSON(['error' => 'No valid tiles found in CSV file'], 400);
+    }
+
+    $categories = [];
+    $tiles = [];
+    $position = 0;
+    foreach ($tilesMap as $tileData) {
+        $group = $tileData['group'] ?: 'General';
+        if (!in_array($group, $categories, true)) {
+            $categories[] = $group;
+        }
+        $tabs = [];
+        $tabPos = 0;
+        foreach ($tileData['tabs'] as $tabTitle => $tabData) {
+            $sections = [];
+            $secPos = 0;
+            foreach ($tabData['sections'] as $secTitle => $links) {
+                $linkList = [];
+                foreach ($links as $link) {
+                    $linkList[] = [
+                        'id' => 'link_' . uniqid('', true),
+                        'label' => $link['label'],
+                        'url' => $link['url'],
+                        'icon' => $link['icon'],
+                        'browser' => $link['browser'],
+                        'visibility' => $link['visibility'],
+                        'notes' => $link['notes'],
+                        'tooltip' => $link['tooltip']
+                    ];
+                }
+                $sections[] = [
+                    'id' => 'section_' . uniqid('', true),
+                    'title' => $secTitle,
+                    'position' => $secPos++,
+                    'links' => $linkList
+                ];
+            }
+            $tabs[] = [
+                'id' => 'tab_' . uniqid('', true),
+                'title' => $tabTitle,
+                'position' => $tabPos++,
+                'sections' => $sections
+            ];
+        }
+        $tiles[] = [
+            'id' => 'tile_' . uniqid('', true),
+            'title' => $tileData['title'],
+            'description' => $tileData['description'],
+            'emoji' => $tileData['emoji'],
+            'themeColor' => $tileData['themeColor'],
+            'group' => $group,
+            'tabs' => $tabs,
+            'createdAt' => time() * 1000,
+            'visibility' => 'public'
+        ];
+        $position++;
+    }
+
+    $payload = [
+        'version' => '1.2',
+        'type' => 'all_categories',
+        'exportedAt' => time() * 1000,
+        'tiles' => $tiles,
+        'categories' => $categories
+    ];
+
+    if (!headers_sent()) {
+        header('Content-Type: application/json; charset=utf-8');
+    }
+    echo json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    exit;
 }
 
 function handleToggleFavorite($tileId) {

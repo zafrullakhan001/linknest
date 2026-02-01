@@ -293,6 +293,22 @@ export const bulkImportTiles = async (file: File): Promise<{
   }
 };
 
+/** Convert CSV to import-ready JSON (no DB write). Used by Staging offline workflow. */
+export const csvToJson = async (file: File): Promise<unknown> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await fetch(`${API_BASE}/tiles/csv-to-json`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error((errorData && typeof errorData.error === 'string' ? errorData.error : null) || 'Failed to convert CSV to JSON');
+  }
+  return response.json();
+};
+
 export const toggleFavorite = async (tileId: string): Promise<{ isFavorite: boolean }> => {
   try {
     const response = await fetch(`${API_BASE}/tiles/${tileId}/favorite`, {
