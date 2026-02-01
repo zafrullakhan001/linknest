@@ -2087,9 +2087,28 @@ function handleCloneCategory($categoryName) {
     // Log the attempt for debugging
     error_log('Clone category attempt: User ' . $user['id'] . ' (' . $user['username'] . '), is_admin=' . ($user['is_admin'] ? 'true' : 'false') . ', category="' . $categoryName . '"');
     
-    // Get all tiles in this category (exclude deleted and archived tiles)
-    $stmt = $db->prepare('SELECT * FROM tiles WHERE "group" = ? AND deleted_at IS NULL AND archived_at IS NULL ORDER BY position ASC');
-    $stmt->execute([$categoryName]);
+    // Optional: source_tab to scope clone (staging vs public)
+    $sourceTab = 'public';
+    $rawInput = @file_get_contents('php://input');
+    if ($rawInput !== false && $rawInput !== '') {
+        $body = json_decode($rawInput, true);
+        if (is_array($body)) {
+            if (isset($body['sourceTab']) && trim((string)$body['sourceTab']) === 'staging') {
+                $sourceTab = 'staging';
+            } elseif (isset($body['source_tab']) && trim((string)$body['source_tab']) === 'staging') {
+                $sourceTab = 'staging';
+            }
+        }
+    }
+
+    // Get all tiles in this category (exclude deleted and archived tiles), optionally scoped by source_tab
+    if ($sourceTab === 'staging') {
+        $stmt = $db->prepare('SELECT * FROM tiles WHERE "group" = ? AND deleted_at IS NULL AND archived_at IS NULL AND (source_tab = ? OR source_tab = \'staging\') ORDER BY position ASC');
+        $stmt->execute([$categoryName, 'staging']);
+    } else {
+        $stmt = $db->prepare('SELECT * FROM tiles WHERE "group" = ? AND deleted_at IS NULL AND archived_at IS NULL AND (source_tab IS NULL OR source_tab = ? OR source_tab = \'\') ORDER BY position ASC');
+        $stmt->execute([$categoryName, 'public']);
+    }
     $tiles = $stmt->fetchAll();
     
     if (empty($tiles)) {
@@ -2136,12 +2155,17 @@ function handleCloneCategory($categoryName) {
         $newCategoryName = $categoryNameWithDashes . '-Copy';
     }
     
-    // Check if the new category name already exists, if so, append a number
+    // Check if the new category name already exists in the same source, if so, append a number
     $counter = 1;
     $finalCategoryName = $newCategoryName;
     while (true) {
-        $checkStmt = $db->prepare('SELECT COUNT(*) FROM tiles WHERE "group" = ?');
-        $checkStmt->execute([$finalCategoryName]);
+        if ($sourceTab === 'staging') {
+            $checkStmt = $db->prepare('SELECT COUNT(*) FROM tiles WHERE "group" = ? AND (source_tab = ? OR source_tab = \'staging\')');
+            $checkStmt->execute([$finalCategoryName, 'staging']);
+        } else {
+            $checkStmt = $db->prepare('SELECT COUNT(*) FROM tiles WHERE "group" = ? AND (source_tab IS NULL OR source_tab = ? OR source_tab = \'\')');
+            $checkStmt->execute([$finalCategoryName, 'public']);
+        }
         $count = $checkStmt->fetchColumn();
         
         if ($count == 0) {
@@ -2152,9 +2176,14 @@ function handleCloneCategory($categoryName) {
         $counter++;
     }
     
-    // Get current max position to append new tiles
-    $maxPositionStmt = $db->prepare('SELECT MAX(position) as max_pos FROM tiles');
-    $maxPositionStmt->execute();
+    // Get current max position for the target source_tab
+    if ($sourceTab === 'staging') {
+        $maxPositionStmt = $db->prepare('SELECT MAX(position) as max_pos FROM tiles WHERE source_tab = ?');
+        $maxPositionStmt->execute(['staging']);
+    } else {
+        $maxPositionStmt = $db->prepare('SELECT MAX(position) as max_pos FROM tiles WHERE (source_tab IS NULL OR source_tab = ? OR source_tab = \'\')');
+        $maxPositionStmt->execute(['public']);
+    }
     $maxPosRow = $maxPositionStmt->fetch();
     $nextPosition = ($maxPosRow && $maxPosRow['max_pos'] !== null) ? (int)$maxPosRow['max_pos'] + 1 : 0;
     
@@ -2190,7 +2219,7 @@ function handleCloneCategory($categoryName) {
             $tileBorderRadius = isset($originalTile['tile_border_radius']) && $originalTile['tile_border_radius'] !== null ? (int)$originalTile['tile_border_radius'] : null;
             $tileTextColor = !empty($originalTile['tile_text_color']) ? $originalTile['tile_text_color'] : null;
             
-            $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             
             if (!$insertStmt->execute([
                 $newTileId,
@@ -2218,6 +2247,7 @@ function handleCloneCategory($categoryName) {
                 $tileGradientType,
                 $tileBorderRadius,
                 $tileTextColor,
+                $sourceTab,
                 $nextPosition++,
                 time()
             ])) {
@@ -2986,9 +3016,28 @@ function handleArchiveCategory($categoryName) {
     // Decode URL-encoded category name
     $categoryName = urldecode($categoryName);
     
-    // Get all tiles in this category that are not already archived or deleted
-    $stmt = $db->prepare('SELECT id, user_id FROM tiles WHERE "group" = ? AND deleted_at IS NULL AND archived_at IS NULL');
-    $stmt->execute([$categoryName]);
+    // Optional: source_tab to scope archive (staging vs public)
+    $sourceTab = null;
+    $rawInput = @file_get_contents('php://input');
+    if ($rawInput !== false && $rawInput !== '') {
+        $body = json_decode($rawInput, true);
+        if (is_array($body)) {
+            if (isset($body['sourceTab']) && trim((string)$body['sourceTab']) === 'staging') {
+                $sourceTab = 'staging';
+            } elseif (isset($body['source_tab']) && trim((string)$body['source_tab']) === 'staging') {
+                $sourceTab = 'staging';
+            }
+        }
+    }
+    
+    // Get all tiles in this category that are not already archived or deleted, optionally scoped by source_tab
+    if ($sourceTab === 'staging') {
+        $stmt = $db->prepare('SELECT id, user_id FROM tiles WHERE "group" = ? AND deleted_at IS NULL AND archived_at IS NULL AND (source_tab = ? OR source_tab = \'staging\')');
+        $stmt->execute([$categoryName, 'staging']);
+    } else {
+        $stmt = $db->prepare('SELECT id, user_id FROM tiles WHERE "group" = ? AND deleted_at IS NULL AND archived_at IS NULL');
+        $stmt->execute([$categoryName]);
+    }
     $tiles = $stmt->fetchAll();
     
     if (empty($tiles)) {

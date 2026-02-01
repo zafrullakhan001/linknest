@@ -4527,15 +4527,20 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
   const handleMoveTileToCategory = useCallback(async (tileId: string, categoryName: string) => {
     if (!isAuthenticated) return;
 
+    const sourceTiles = activeTab === 'staging' ? stagingTiles : tiles;
     try {
-      const updatedTiles = tiles.map(tile =>
+      const updatedTiles = sourceTiles.map(tile =>
         tile.id === tileId
           ? { ...tile, group: categoryName }
           : tile
       );
 
-      // Update local state
-      onUpdateTiles(updatedTiles);
+      // Update local state (staging vs main)
+      if (activeTab === 'staging') {
+        setStagingTiles(updatedTiles);
+      } else {
+        onUpdateTiles(updatedTiles);
+      }
 
       // Save arrangement to backend - preserve order within each category
       try {
@@ -4571,21 +4576,26 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         // Revert on error
         const errorMsg = error instanceof Error ? error.message : 'Failed to save tile arrangement. Please try again.';
         alert(errorMsg);
-        onUpdateTiles(tiles);
+        if (activeTab === 'staging') {
+          setStagingTiles(stagingTiles);
+        } else {
+          onUpdateTiles(tiles);
+        }
       }
     } catch (error) {
       console.error('Failed to move tile to category:', error);
       alert('Failed to move tile. Please try again.');
     }
-  }, [tiles, isAuthenticated, onUpdateTiles, categoryOrder, buildArrangementAndScope]);
+  }, [tiles, stagingTiles, activeTab, isAuthenticated, onUpdateTiles, categoryOrder, buildArrangementAndScope]);
 
   const handleMoveCategory = useCallback(async (categoryName: string, direction: 'up' | 'down') => {
     if (!isAuthenticated) return;
 
+    const sourceTiles = activeTab === 'staging' ? stagingTiles : tiles;
     // Get all current categories from tiles (preserve order)
     const allCategoriesFromTiles: string[] = [];
     const seenCats = new Set<string>();
-    tiles.forEach(t => {
+    sourceTiles.forEach(t => {
       const cat = t.group || 'General';
       if (!seenCats.has(cat)) {
         allCategoriesFromTiles.push(cat);
@@ -4645,7 +4655,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       const errorMsg = error instanceof Error ? error.message : 'Failed to save category order. Please try again.';
       alert(errorMsg);
     }
-  }, [tiles, isAuthenticated, categoryOrder, categoryMetadata]);
+  }, [tiles, stagingTiles, activeTab, isAuthenticated, categoryOrder, categoryMetadata]);
 
   const handleExportCategory = useCallback(
     async (categoryName: string) => {
@@ -4663,8 +4673,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           errors: []
         });
 
-        // Get category tiles
-        const categoryTiles = tiles.filter(
+        // Get category tiles from the appropriate source (staging vs main)
+        const sourceTiles = activeTab === 'staging' ? stagingTiles : tiles;
+        const categoryTiles = sourceTiles.filter(
           (t) => (t.group || 'General') === categoryName
         );
 
@@ -4744,7 +4755,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         }, 5000);
       }
     },
-    [tiles, user]
+    [tiles, stagingTiles, activeTab, user]
   );
 
   const handleExportTile = useCallback(
@@ -5070,12 +5081,17 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       }
 
       try {
-        const result = await cloneCategory(categoryName);
+        const result = await cloneCategory(categoryName, activeTab === 'staging' ? { sourceTab: 'staging' } : undefined);
 
         // Refresh tiles from server
         try {
-          const updatedTiles = await getTiles();
-          onUpdateTiles(updatedTiles);
+          if (activeTab === 'staging') {
+            const updatedStaging = await getTiles({ sourceTab: 'staging' });
+            setStagingTiles(updatedStaging);
+          } else {
+            const updatedTiles = await getTiles();
+            onUpdateTiles(updatedTiles);
+          }
         } catch (error) {
           console.error('Failed to refresh tiles:', error);
         }
@@ -5096,7 +5112,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         console.error('Clone category error:', error);
       }
     },
-    [isAuthenticated, onAuthRequired, onUpdateTiles, user]
+    [isAuthenticated, onAuthRequired, onUpdateTiles, user, activeTab]
   );
 
   const handleRenameCategory = useCallback(async (oldName: string, newName: string) => {
@@ -5104,18 +5120,23 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     if (!newName.trim() || newName.trim() === oldName) return;
 
     const trimmedNewName = newName.trim();
+    const sourceTiles = activeTab === 'staging' ? stagingTiles : tiles;
 
     try {
       // Update all tiles with the old category name to the new name
-      const updatedTiles = tiles.map(tile => {
+      const updatedTiles = sourceTiles.map(tile => {
         if ((tile.group || 'General') === oldName) {
           return { ...tile, group: trimmedNewName };
         }
         return tile;
       });
 
-      // Update local state
-      onUpdateTiles(updatedTiles);
+      // Update local state (staging vs main)
+      if (activeTab === 'staging') {
+        setStagingTiles(updatedTiles);
+      } else {
+        onUpdateTiles(updatedTiles);
+      }
 
       // Update category order
       const newCategoryOrder = categoryOrder.map(cat =>
@@ -5142,7 +5163,11 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       } catch (error) {
         console.error('Failed to save arrangements:', error);
         // Revert on error
-        onUpdateTiles(tiles);
+        if (activeTab === 'staging') {
+          setStagingTiles(stagingTiles);
+        } else {
+          onUpdateTiles(tiles);
+        }
         setCategoryOrder(categoryOrder);
         alert('Failed to save category rename. Please try again.');
       }
@@ -5150,12 +5175,13 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       console.error('Failed to rename category:', error);
       alert('Failed to rename category. Please try again.');
     }
-  }, [tiles, isAuthenticated, onUpdateTiles, categoryOrder, categoryMetadata, buildArrangementAndScope]);
+  }, [tiles, stagingTiles, activeTab, isAuthenticated, onUpdateTiles, categoryOrder, categoryMetadata, buildArrangementAndScope]);
 
   const handleArchiveCategory = useCallback(async (categoryName: string) => {
     if (!isAuthenticated) return;
 
-    const categoryTiles = tiles.filter(tile => (tile.group || 'General') === categoryName);
+    const sourceTiles = activeTab === 'staging' ? stagingTiles : tiles;
+    const categoryTiles = sourceTiles.filter(tile => (tile.group || 'General') === categoryName);
 
     if (categoryTiles.length === 0) {
       alert('Category is empty. Nothing to archive.');
@@ -5163,12 +5189,17 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     }
 
     try {
-      // Archive all tiles in this category
-      const result = await archiveCategory(categoryName);
+      // Archive all tiles in this category (scoped to staging when in staging tab)
+      const result = await archiveCategory(categoryName, activeTab === 'staging' ? { sourceTab: 'staging' } : undefined);
 
-      // Reload tiles and archive
-      const updatedTiles = await getTiles();
-      onUpdateTiles(updatedTiles);
+      // Reload tiles and archive (staging vs main)
+      if (activeTab === 'staging') {
+        const updatedStaging = await getTiles({ sourceTab: 'staging' });
+        setStagingTiles(updatedStaging);
+      } else {
+        const updatedTiles = await getTiles();
+        onUpdateTiles(updatedTiles);
+      }
       const updatedArchive = await getArchive();
       setArchiveTiles(updatedArchive);
 
@@ -5178,7 +5209,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       alert(`Failed to archive category: ${errorMsg}`);
     }
-  }, [tiles, isAuthenticated, onUpdateTiles]);
+  }, [tiles, stagingTiles, activeTab, isAuthenticated, onUpdateTiles]);
 
   const handleUnarchiveCategory = useCallback(async (categoryName: string) => {
     if (!isAuthenticated) return;
@@ -5209,6 +5240,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     if (activeTab === 'archive') {
       // In archive view, get tiles from archiveTiles
       categoryTiles = archiveTiles.filter(tile => (tile.group || 'General') === categoryName);
+    } else if (activeTab === 'staging') {
+      // In staging view, get tiles from stagingTiles
+      categoryTiles = stagingTiles.filter(tile => (tile.group || 'General') === categoryName);
     } else {
       // In normal view, get tiles from tiles
       categoryTiles = tiles.filter(tile => (tile.group || 'General') === categoryName);
@@ -5292,9 +5326,14 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         status: 'Reloading data...'
       } : null);
 
-      // Reload tiles, recycle bin, and archive
-      const updatedTiles = await getTiles();
-      onUpdateTiles(updatedTiles);
+      // Reload tiles, recycle bin, and archive (staging vs main)
+      if (activeTab === 'staging') {
+        const updatedStaging = await getTiles({ sourceTab: 'staging' });
+        setStagingTiles(updatedStaging);
+      } else {
+        const updatedTiles = await getTiles();
+        onUpdateTiles(updatedTiles);
+      }
 
       // Always reload recycle bin to update the counter (tiles were moved to recycle bin)
       const updatedRecycleBin = await getRecycleBin();
@@ -5315,7 +5354,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       setDeleteCategoryProgress(null);
       alert('Failed to delete category. Please try again.');
     }
-  }, [tiles, archiveTiles, isAuthenticated, onUpdateTiles, categoryOrder, categoryMetadata, activeTab]);
+  }, [tiles, archiveTiles, stagingTiles, isAuthenticated, onUpdateTiles, categoryOrder, categoryMetadata, activeTab]);
 
   const handleOpenCategorySchedule = useCallback((categoryName: string) => {
     const metadata = categoryMetadata[categoryName];
@@ -5435,14 +5474,15 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     // Only authenticated users can move tiles
     if (!isAuthenticated) return;
 
-    const currentIndex = tiles.findIndex(t => t.id === tileId);
+    const sourceTiles = activeTab === 'staging' ? stagingTiles : tiles;
+    const currentIndex = sourceTiles.findIndex(t => t.id === tileId);
     if (currentIndex === -1) return;
 
-    const currentTile = tiles[currentIndex];
+    const currentTile = sourceTiles[currentIndex];
     const currentGroup = currentTile.group || 'General';
 
     // Find all tiles in this group to determine the target
-    const groupTiles = tiles.filter(t => (t.group || 'General') === currentGroup);
+    const groupTiles = sourceTiles.filter(t => (t.group || 'General') === currentGroup);
     const indexInGroup = groupTiles.findIndex(t => t.id === tileId);
 
     if (indexInGroup === -1) return;
@@ -5457,19 +5497,23 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
     // Find the target tile in the main array
     const targetTile = groupTiles[targetIndexInGroup];
-    const targetIndex = tiles.findIndex(t => t.id === targetTile.id);
+    const targetIndex = sourceTiles.findIndex(t => t.id === targetTile.id);
 
     if (targetIndex === -1) return;
 
     // Swap the two tiles in the flat array
-    const reorderedTiles = [...tiles];
+    const reorderedTiles = [...sourceTiles];
     [reorderedTiles[currentIndex], reorderedTiles[targetIndex]] = [
       reorderedTiles[targetIndex],
       reorderedTiles[currentIndex],
     ];
 
-    // Update local state immediately for visual feedback
-    onUpdateTiles(reorderedTiles);
+    // Update local state immediately for visual feedback (staging vs main)
+    if (activeTab === 'staging') {
+      setStagingTiles(reorderedTiles);
+    } else {
+      onUpdateTiles(reorderedTiles);
+    }
 
     // Auto-save is kept for convenience, but manual save button provides reassurance
     try {
@@ -5480,7 +5524,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       // Don't alert on auto-save failure to avoid annoying popups,
       // let the user use the manual save button if needed.
     }
-  }, [tiles, isAuthenticated, onUpdateTiles, buildArrangementAndScope]);
+  }, [tiles, stagingTiles, activeTab, isAuthenticated, onUpdateTiles, buildArrangementAndScope]);
 
   const handleManualSave = useCallback(async () => {
     if (isSaving) return;
@@ -5494,6 +5538,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           : Object.keys(groupedTiles);
         ordered.forEach((cat) => flat.push(...(groupedTiles[cat] || [])));
         sourceTiles = flat;
+      } else if (activeTab === 'staging') {
+        sourceTiles = stagingTiles;
       } else {
         sourceTiles = tiles;
       }
@@ -5506,7 +5552,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     } finally {
       setIsSaving(false);
     }
-  }, [tiles, isSaving, isPrivateScopeSave, groupedTiles, categoryOrder, buildArrangementAndScope]);
+  }, [tiles, stagingTiles, activeTab, isSaving, isPrivateScopeSave, groupedTiles, categoryOrder, buildArrangementAndScope]);
 
   const handleShowTileInfo = useCallback((tile: Tile) => {
     setTileInfoDialog({ tile });

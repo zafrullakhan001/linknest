@@ -439,7 +439,7 @@ export const cloneTile = async (tileId: string): Promise<Tile> => {
   }
 };
 
-export const cloneCategory = async (categoryName: string): Promise<{
+export const cloneCategory = async (categoryName: string, options?: { sourceTab?: 'public' | 'staging' }): Promise<{
   success: boolean;
   newCategoryName: string;
   clonedTiles: Array<{ id: string; title: string }>;
@@ -448,9 +448,12 @@ export const cloneCategory = async (categoryName: string): Promise<{
 }> => {
   try {
     const encodedCategoryName = encodeURIComponent(categoryName);
+    const body = options?.sourceTab === 'staging' ? JSON.stringify({ sourceTab: 'staging' }) : undefined;
     const response = await fetch(`${API_BASE}/tiles/category/${encodedCategoryName}/clone`, {
       method: 'POST',
-      credentials: 'include'
+      credentials: 'include',
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body
     });
 
     if (!response.ok) {
@@ -491,16 +494,19 @@ export const toggleCategoryFavorite = async (categoryName: string): Promise<{
   }
 };
 
-export const archiveCategory = async (categoryName: string): Promise<{
+export const archiveCategory = async (categoryName: string, options?: { sourceTab?: 'public' | 'staging' }): Promise<{
   success: boolean;
   archivedCount: number;
   categoryName: string;
 }> => {
   try {
     const encodedCategoryName = encodeURIComponent(categoryName);
+    const body = options?.sourceTab === 'staging' ? JSON.stringify({ sourceTab: 'staging' }) : undefined;
     const response = await fetch(`${API_BASE}/tiles/category/${encodedCategoryName}/archive`, {
       method: 'POST',
-      credentials: 'include'
+      credentials: 'include',
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body
     });
 
     if (!response.ok) {
