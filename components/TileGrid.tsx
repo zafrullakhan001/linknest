@@ -1909,6 +1909,16 @@ export const TileGrid: React.FC<TileGridProps> = ({
     }
     return 'all';
   });
+  const [privateOwnerFilter, setPrivateOwnerFilter] = useState<number | 'all'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('linknest_private_owner_filter');
+      if (saved === 'all') return 'all';
+      const n = parseInt(saved || '', 10);
+      if (!Number.isNaN(n)) return n;
+    }
+    return 'all';
+  });
+  const [privateTabUsers, setPrivateTabUsers] = useState<UserListItem[]>([]);
   const [linkInfoDialog, setLinkInfoDialog] = useState<{ link: Link } | null>(null);
   const [tileInfoDialog, setTileInfoDialog] = useState<{ tile?: Tile; categoryInfo?: { categoryName: string; tiles: Tile[] } } | null>(null);
   const [favNotesDialogState, setFavNotesDialogState] = useState<{ linkId: string; notes: string; linkLabel: string } | null>(null);
@@ -3069,6 +3079,17 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             setYourAppsFilter(savedFilter);
           }
 
+          // Restore Private tab owner filter preference
+          const savedPrivateOwner = prefs.privateOwnerFilter;
+          if (savedPrivateOwner != null && savedPrivateOwner !== '') {
+            if (String(savedPrivateOwner) === 'all') {
+              setPrivateOwnerFilter('all');
+            } else {
+              const n = typeof savedPrivateOwner === 'number' ? savedPrivateOwner : parseInt(String(savedPrivateOwner), 10);
+              if (!Number.isNaN(n)) setPrivateOwnerFilter(n);
+            }
+          }
+
           setPreferencesLoaded(true);
         })
         .catch(error => {
@@ -3142,6 +3163,33 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     }
   }, [yourAppsFilter, isAuthenticated, preferencesLoaded]);
 
+  // Load user list when on Private tab (for owner filter labels)
+  useEffect(() => {
+    if (activeTab === 'private' && isAuthenticated) {
+      authService.getUsers()
+        .then(setPrivateTabUsers)
+        .catch(() => setPrivateTabUsers([]));
+    } else {
+      setPrivateTabUsers([]);
+    }
+  }, [activeTab, isAuthenticated]);
+
+  // Save Private tab owner filter when it changes (localStorage + server for authenticated users)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('linknest_private_owner_filter', privateOwnerFilter === 'all' ? 'all' : String(privateOwnerFilter));
+    }
+    if (isAuthenticated && preferencesLoaded) {
+      const timeoutId = setTimeout(() => {
+        userPreferencesService.updatePreference(
+          'privateOwnerFilter',
+          privateOwnerFilter === 'all' ? 'all' : privateOwnerFilter
+        ).catch(() => { });
+      }, 300);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [privateOwnerFilter, isAuthenticated, preferencesLoaded]);
+
   // Calculate counts for tabs
   const favoriteTilesCount = useMemo(() => {
     return tiles.filter(t => t.isFavorite === true).length;
@@ -3162,6 +3210,26 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       return false;
     }).length;
   }, [tiles, isAuthenticated, user]);
+
+  // Distinct owners for Private tab filter dropdown (tiles shared with current user)
+  const privateOwnerOptions = useMemo(() => {
+    if (activeTab !== 'private' || !user) return [];
+    const privateTiles = tiles.filter(t =>
+      t.visibility === 'private' && t.allowedUsers?.includes(user.id)
+    );
+    const ownerIds = [...new Set(
+      privateTiles
+        .map(t => t.userId ?? (t as { user_id?: number }).user_id)
+        .filter((id): id is number => id != null && id !== '')
+    )].sort((a, b) => a - b);
+    return [
+      { value: 'all' as const, label: 'All owners' },
+      ...ownerIds.map(id => ({
+        value: id as number,
+        label: privateTabUsers.find(u => u.id === id)?.username ?? `User #${id}`
+      }))
+    ];
+  }, [activeTab, user, tiles, privateTabUsers]);
 
   const scheduledTilesCount = useMemo(() => {
     const now = new Date();
@@ -3282,6 +3350,13 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           }
           return false;
         });
+        // Filter by owner when "Filter by owner" is set (so users can see which tile belongs to which owner)
+        if (privateOwnerFilter !== 'all') {
+          filteredTiles = filteredTiles.filter(t => {
+            const ownerId = t.userId ?? (t as { user_id?: number }).user_id;
+            return ownerId === privateOwnerFilter;
+          });
+        }
       } else {
         filteredTiles = []; // No private tiles for unauthenticated users
       }
@@ -3641,7 +3716,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     }
 
     return groups;
-  }, [tiles, searchTerm, categoryOrder, categoryMetadata, activeTab, isAuthenticated, user, recycleBinTiles, archiveTiles, publicFavorites, yourAppsFilter, stagingTiles, stagingTilesLoading]);
+  }, [tiles, searchTerm, categoryOrder, categoryMetadata, activeTab, isAuthenticated, user, recycleBinTiles, archiveTiles, publicFavorites, yourAppsFilter, privateOwnerFilter, stagingTiles, stagingTilesLoading]);
 
   // Apply selected category filter to the grouped tiles
   const groupedTiles = useMemo(() => {
@@ -6217,6 +6292,38 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             <span className="text-xs">👤</span>
             Your Assigned Apps
           </button>
+        </div>
+      )}
+
+      {/* Private tab - Filter by owner (tiles shared with you from different owners) */}
+      {activeTab === 'private' && isAuthenticated && (
+        <div className="flex flex-wrap items-center gap-2 py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
+          <span className="text-sm font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">Filter by owner:</span>
+          <select
+            value={privateOwnerFilter === 'all' ? 'all' : String(privateOwnerFilter)}
+            onChange={(e) => {
+              const v = e.target.value;
+              setPrivateOwnerFilter(v === 'all' ? 'all' : parseInt(v, 10));
+            }}
+            className="px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 min-w-[140px]"
+            title="Show tiles from a specific owner (private spaces shared with you)"
+          >
+            {privateOwnerOptions.map((opt) => (
+              <option key={opt.value === 'all' ? 'all' : opt.value} value={opt.value === 'all' ? 'all' : String(opt.value)}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          {privateOwnerFilter !== 'all' && (
+            <button
+              type="button"
+              onClick={() => setPrivateOwnerFilter('all')}
+              className="px-2 py-1 text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
+              title="Clear owner filter"
+            >
+              Clear
+            </button>
+          )}
         </div>
       )}
 

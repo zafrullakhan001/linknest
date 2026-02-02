@@ -92,6 +92,9 @@ export interface AppSettings {
   semi_pwa_include_paths?: string; // comma-separated path segments to cache (empty = cache all except excluded)
   semi_pwa_exclude_paths?: string; // comma-separated path segments to never cache
 
+  // Addon: Monitorv2 (advanced monitoring with PostgreSQL/TimescaleDB)
+  monitorv2_enabled?: string; // '0' or '1' - when '0', hide Monitorv2 tab on main page
+
   // SAML Settings
   saml_enabled?: string; // '0' or '1'
   local_auth_enabled?: string; // '0' or '1'
@@ -187,6 +190,9 @@ export const settingsService = {
       semi_pwa_enabled: data.settings?.semi_pwa_enabled || '0',
       semi_pwa_include_paths: data.settings?.semi_pwa_include_paths || '',
       semi_pwa_exclude_paths: data.settings?.semi_pwa_exclude_paths || SEMI_PWA_EXCLUDE_PATHS_DEFAULT,
+
+      // Addon: Monitorv2 - default enabled so tab shows unless addon is explicitly disabled
+      monitorv2_enabled: data.settings?.monitorv2_enabled ?? '1',
 
       // SAML defaults
       saml_enabled: data.settings?.saml_enabled || '0',

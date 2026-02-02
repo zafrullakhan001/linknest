@@ -978,8 +978,8 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <div className="linknest-app-container min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-brand-500 selection:text-white transition-colors duration-300">
-      {/* Hide Navigation (widget bar) on mobile view */}
+    <div className={`linknest-app-container min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-brand-500 selection:text-white transition-colors duration-300 ${!isMobile ? 'pt-16' : ''}`}>
+      {/* Hide Navigation (widget bar) on mobile view - fixed so it never scrolls with background/center stage */}
       {!isMobile && (
         <Navigation
           darkMode={darkMode}
