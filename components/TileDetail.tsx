@@ -6,6 +6,7 @@ import { performanceAnalyticsService, type AnalyticsMetric } from '../services/p
 import { authService, UserListItem, User } from '../services/authService';
 import { exportTileToFile } from '../services/spaceTransferService';
 import { cloneTile, getTiles, saveTile, toggleLinkFavorite, createTempVersion } from '../services/storageService';
+import { removeSharedTile } from '../services/tileShareService';
 import { useSettings } from '../contexts/SettingsContext';
 import { RichTextEditor } from './RichTextEditor';
 import { RichTextContentItem } from './RichTextContentItem';
@@ -3616,6 +3617,31 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     )}
                                 </button>
 
+                                {tile.sharedWithMeInvitationId && isAuthenticated && (
+                                    <button
+                                        onClick={async () => {
+                                            if (!confirm('Remove this shared tile from your Private tab? You can accept it again if the owner shares it with you later.')) return;
+                                            try {
+                                                await removeSharedTile(tile.sharedWithMeInvitationId!);
+                                                const freshTiles = await getTiles();
+                                                onUpdateTiles(freshTiles);
+                                                window.location.hash = '#/';
+                                                setTimeout(() => {
+                                                    window.dispatchEvent(new CustomEvent('switchTab', { detail: 'private' }));
+                                                }, 100);
+                                            } catch (e) {
+                                                alert(e instanceof Error ? e.message : 'Failed to remove');
+                                            }
+                                        }}
+                                        className="px-4 py-2 rounded-lg bg-amber-500/80 hover:bg-amber-500 text-white text-sm font-medium border border-amber-400/50 transition-all shadow-sm flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 backdrop-blur-sm"
+                                        title="Remove from my Private tab"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                            <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                        </svg>
+                                        <span>Remove from my Private tab</span>
+                                    </button>
+                                )}
                                 {isAuthenticated && tile.canEdit === true && (
                                     <>
                                         <button

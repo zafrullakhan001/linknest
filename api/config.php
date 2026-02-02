@@ -1371,6 +1371,34 @@ function initDatabase() {
             error_log('Chat messages recipient_user_id migration warning: ' . $e->getMessage());
         }
 
+        // Create tile_share_invitations table for tile sharing with accept/reject flow
+        $db->exec('CREATE TABLE IF NOT EXISTS tile_share_invitations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tile_id TEXT NOT NULL,
+            sharer_user_id INTEGER NOT NULL,
+            receiver_user_id INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT "pending", -- pending, accepted, rejected, removed
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE,
+            FOREIGN KEY (sharer_user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (receiver_user_id) REFERENCES users(id) ON DELETE CASCADE,
+            UNIQUE(tile_id, sharer_user_id, receiver_user_id)
+        )');
+        try {
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_tile_share_receiver ON tile_share_invitations(receiver_user_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_tile_share_status ON tile_share_invitations(status)');
+        } catch (PDOException $e) { /* ignore */ }
+
+        // Create user_blocked_sharers table - receiver blocks sharer from sending more shares
+        $db->exec('CREATE TABLE IF NOT EXISTS user_blocked_sharers (
+            user_id INTEGER NOT NULL,
+            blocked_user_id INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (user_id, blocked_user_id),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (blocked_user_id) REFERENCES users(id) ON DELETE CASCADE
+        )');
 
         // Create monitors table
         $db->exec('CREATE TABLE IF NOT EXISTS monitors (

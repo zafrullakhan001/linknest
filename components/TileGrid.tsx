@@ -43,6 +43,10 @@ import { TileFireflies } from './TileFireflies';
 import { TileBalloons } from './TileBalloons';
 import { TileStars } from './TileStars';
 import { TileRainbow } from './TileRainbow';
+import { SharedTileNotifications } from './SharedTileNotifications';
+import { BlockedUsersSection } from './BlockedUsersSection';
+import { ShareTileDialog } from './ShareTileDialog';
+import { removeSharedTile, blockUser, getPendingInvitations, getBlockedUsers } from '../services/tileShareService';
 
 
 
@@ -847,6 +851,9 @@ interface SortableTileProps {
   onArchiveTile?: (e: React.MouseEvent, tileId: string) => void;
   onUnarchiveTile?: (e: React.MouseEvent, tileId: string) => void;
   onShowTileInfo?: (tile: Tile) => void;
+  onShareTile?: (tile: Tile) => void;
+  onRemoveSharedTile?: (tile: Tile) => void;
+  onBlockSharer?: (tile: Tile) => void;
   isRecycleBin?: boolean;
   isArchive?: boolean;
   canMoveLeft?: boolean;
@@ -874,6 +881,9 @@ const SortableTile: React.FC<SortableTileProps> = ({
   onArchiveTile,
   onUnarchiveTile,
   onShowTileInfo,
+  onShareTile,
+  onRemoveSharedTile,
+  onBlockSharer,
   isRecycleBin = false,
   isArchive = false,
   canMoveLeft = false,
@@ -1296,11 +1306,13 @@ const SortableTile: React.FC<SortableTileProps> = ({
 
       {/* Compact Header */}
       <div className="flex items-start justify-between mb-3">
-        <div className={`
-          w-10 h-10 rounded-lg ${styles.soft} flex items-center justify-center text-lg 
-          border ${styles.border} group-hover:scale-105 transition-transform duration-200
-        `}>
-          {tile.emoji}
+        <div className="flex items-center gap-2">
+          <div className={`
+            w-10 h-10 rounded-lg ${styles.soft} flex items-center justify-center text-lg 
+            border ${styles.border} group-hover:scale-105 transition-transform duration-200
+          `}>
+            {tile.emoji}
+          </div>
         </div>
         <div className={`${isAuthenticated ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'} transition-opacity flex items-center gap-1`}>
           {isAuthenticated && (
@@ -1484,6 +1496,46 @@ const SortableTile: React.FC<SortableTileProps> = ({
             </button>
           )}
 
+          {/* Share Button - For tiles user owns (can edit) */}
+          {onShareTile && tile.canEdit === true && !tile.sharedWithMeInvitationId && (
+            <button
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onShareTile(tile); }}
+              className="p-1 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded transition-all"
+              title="Share with user"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                <path d="M13 4.5a2.5 2.5 0 11.602 4.765l-.875 2.035a.75.75 0 001.396.264l.875-2.034a2.501 2.501 0 10-.602-4.765zm-6 0a2.5 2.5 0 11.602 4.765l-.875 2.035a.75.75 0 101.396.264l.875-2.034a2.501 2.501 0 00-.602-4.765zM7 14a2.5 2.5 0 01-.875-4.765l.875-2.034a.75.75 0 001.396.264l-.875 2.035A2.5 2.5 0 017 14z" />
+              </svg>
+            </button>
+          )}
+
+          {/* Remove shared tile & Block sharer - For tiles shared with current user */}
+          {tile.sharedWithMeInvitationId && (onRemoveSharedTile || onBlockSharer) && (
+            <>
+              {onRemoveSharedTile && (
+                <button
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemoveSharedTile(tile); }}
+                  className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:text-slate-300 dark:hover:bg-slate-700/50 rounded transition-all"
+                  title="Remove from my Private tab"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                    <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                  </svg>
+                </button>
+              )}
+              {onBlockSharer && tile.sharedWithMeSharer && (
+                <button
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); onBlockSharer(tile); }}
+                  className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-all"
+                  title={`Block ${tile.sharedWithMeSharer.username} from sharing`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-5.5-2.5a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0zM10 12a5.99 5.99 0 00-4.793 2.39A6.483 6.483 0 0010 16.5a6.483 6.483 0 004.793-2.11A5.99 5.99 0 0010 12z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              )}
+            </>
+          )}
 
           {/* Export Button - Only show if user is admin */}
           {onExportTile && user?.is_admin && (
@@ -1919,8 +1971,19 @@ export const TileGrid: React.FC<TileGridProps> = ({
     return 'all';
   });
   const [privateTabUsers, setPrivateTabUsers] = useState<UserListItem[]>([]);
+  type PrivateSubTab = 'spaces' | 'sharing' | 'blocked';
+  const [privateSubTab, setPrivateSubTab] = useState<PrivateSubTab>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('linknest_private_subtab');
+      if (saved === 'spaces' || saved === 'sharing' || saved === 'blocked') return saved;
+    }
+    return 'spaces';
+  });
+  const [pendingInvitationsCount, setPendingInvitationsCount] = useState(0);
+  const [blockedUsersCount, setBlockedUsersCount] = useState(0);
   const [linkInfoDialog, setLinkInfoDialog] = useState<{ link: Link } | null>(null);
   const [tileInfoDialog, setTileInfoDialog] = useState<{ tile?: Tile; categoryInfo?: { categoryName: string; tiles: Tile[] } } | null>(null);
+  const [shareTileDialog, setShareTileDialog] = useState<Tile | null>(null);
   const [favNotesDialogState, setFavNotesDialogState] = useState<{ linkId: string; notes: string; linkLabel: string } | null>(null);
   const [favNotesCopied, setFavNotesCopied] = useState(false);
   const [stagingTiles, setStagingTiles] = useState<Tile[]>([]);
@@ -3190,6 +3253,50 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     }
   }, [privateOwnerFilter, isAuthenticated, preferencesLoaded]);
 
+  // Persist private sub-tab (Spaces/Sharing/Blocked)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && activeTab === 'private') {
+      localStorage.setItem('linknest_private_subtab', privateSubTab);
+    }
+  }, [privateSubTab, activeTab]);
+
+  // Load pending invitations count when on Private tab (for Sharing sub-tab badge)
+  const loadPendingInvitationsCount = useCallback(async () => {
+    if (!isAuthenticated) return;
+    try {
+      const list = await getPendingInvitations();
+      setPendingInvitationsCount(list.length);
+    } catch {
+      setPendingInvitationsCount(0);
+    }
+  }, [isAuthenticated]);
+
+  // Load blocked users count when on Private tab (for Blocked sub-tab badge)
+  const loadBlockedUsersCount = useCallback(async () => {
+    if (!isAuthenticated) return;
+    try {
+      const list = await getBlockedUsers();
+      setBlockedUsersCount(list.length);
+    } catch {
+      setBlockedUsersCount(0);
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (activeTab === 'private' && isAuthenticated) {
+      const loadCounts = () => {
+        loadPendingInvitationsCount();
+        loadBlockedUsersCount();
+      };
+      loadCounts();
+      const interval = setInterval(loadCounts, 10000);
+      return () => clearInterval(interval);
+    } else {
+      setPendingInvitationsCount(0);
+      setBlockedUsersCount(0);
+    }
+  }, [activeTab, isAuthenticated, loadPendingInvitationsCount, loadBlockedUsersCount]);
+
   // Calculate counts for tabs
   const favoriteTilesCount = useMemo(() => {
     return tiles.filter(t => t.isFavorite === true).length;
@@ -4252,6 +4359,36 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         console.error('Failed to clone tile:', error);
         alert('Failed to clone space. Please try again.');
       }
+    }
+  };
+
+  const handleOpenShareDialog = (tile: Tile) => {
+    setShareTileDialog(tile);
+  };
+
+  const handleRemoveSharedTile = async (tile: Tile) => {
+    if (!tile.sharedWithMeInvitationId) return;
+    if (!confirm('Remove this shared tile from your Private tab? You can accept it again if the owner shares it with you later.')) return;
+    try {
+      await removeSharedTile(tile.sharedWithMeInvitationId);
+      const updated = await getTiles();
+      onUpdateTiles(updated, false);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to remove');
+    }
+  };
+
+  const handleBlockSharer = async (tile: Tile) => {
+    const sharer = tile.sharedWithMeSharer;
+    if (!sharer) return;
+    if (!confirm(`Block ${sharer.username} from sharing tiles with you? They will not be able to send you new share invitations.`)) return;
+    try {
+      await blockUser(sharer.userId);
+      await removeSharedTile(tile.sharedWithMeInvitationId!);
+      const updated = await getTiles();
+      onUpdateTiles(updated, false);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to block user');
     }
   };
 
@@ -6295,8 +6432,55 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         </div>
       )}
 
-      {/* Private tab - Filter by owner (tiles shared with you from different owners) */}
+      {/* Private tab - Sub-tabs: Spaces | Sharing | Blocked */}
       {activeTab === 'private' && isAuthenticated && (
+        <div className="flex items-center gap-1 px-4 py-2 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
+          <button
+            onClick={() => setPrivateSubTab('spaces')}
+            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${privateSubTab === 'spaces'
+              ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm border border-slate-200 dark:border-slate-600'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50'
+              }`}
+          >
+            Spaces
+          </button>
+          <button
+            onClick={() => setPrivateSubTab('sharing')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${privateSubTab === 'sharing'
+              ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm border border-slate-200 dark:border-slate-600'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50'
+              }`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4" aria-hidden>
+              <path d="M3 4a2 2 0 00-2 2v1.161l8.441 4.221a1.25 1.25 0 001.118 0L19 7.162V6a2 2 0 00-2-2H3z" />
+              <path d="M19 8.839l-7.77 3.885a2.75 2.75 0 01-2.46 0L1 8.839V14a2 2 0 002 2h14a2 2 0 002-2V8.839z" />
+            </svg>
+            Sharing
+            {pendingInvitationsCount > 0 && (
+              <span className="ml-0.5 px-1.5 py-0.5 text-xs font-semibold rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">
+                {pendingInvitationsCount}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setPrivateSubTab('blocked')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${privateSubTab === 'blocked'
+              ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm border border-slate-200 dark:border-slate-600'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50'
+              }`}
+          >
+            Blocked
+            {blockedUsersCount > 0 && (
+              <span className="ml-0.5 px-1.5 py-0.5 text-xs font-semibold rounded-full bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-200">
+                {blockedUsersCount}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
+
+      {/* Private tab - Filter by owner (only on Spaces sub-tab) */}
+      {activeTab === 'private' && isAuthenticated && privateSubTab === 'spaces' && (
         <div className="flex flex-wrap items-center gap-2 py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
           <span className="text-sm font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">Filter by owner:</span>
           <select
@@ -6325,6 +6509,19 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             </button>
           )}
         </div>
+      )}
+
+      {/* Private tab - Sharing sub-tab: pending invitations */}
+      {activeTab === 'private' && isAuthenticated && privateSubTab === 'sharing' && (
+        <SharedTileNotifications
+          onAccept={() => { getTiles().then(t => onUpdateTiles(t, false)); loadPendingInvitationsCount(); }}
+          onReject={() => { loadPendingInvitationsCount(); }}
+        />
+      )}
+
+      {/* Private tab - Blocked sub-tab: users you blocked */}
+      {activeTab === 'private' && isAuthenticated && privateSubTab === 'blocked' && (
+        <BlockedUsersSection onUnblock={() => { getTiles().then(t => onUpdateTiles(t, false)); loadBlockedUsersCount(); }} />
       )}
 
       {/* Archive Actions */}
@@ -6418,8 +6615,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         </div>
       )}
 
-      {/* Compact Stats Bar */}
-      {tiles.length > 0 && (
+      {/* Compact Stats Bar - hide when on Private sub-tabs Sharing/Blocked */}
+      {tiles.length > 0 && !(activeTab === 'private' && privateSubTab !== 'spaces') && (
         <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
@@ -6457,7 +6654,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       )}
 
       {/* Show All Categories Button - appears when a category filter is active */}
-      {selectedCategoryFilter && viewMode === 'grid' && (
+      {selectedCategoryFilter && viewMode === 'grid' && !(activeTab === 'private' && privateSubTab !== 'spaces') && (
         <div className="mb-4">
           <button
             onClick={() => setSelectedCategoryFilter(null)}
@@ -6778,7 +6975,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       {activeTab === 'monitorv2' && <Monitorv2Dashboard />}
 
       {/* Categories View */}
-      {viewMode === 'categories' && activeTab !== 'monitoring' && activeTab !== 'monitorv2' && (
+      {viewMode === 'categories' && activeTab !== 'monitoring' && activeTab !== 'monitorv2' && !(activeTab === 'private' && privateSubTab !== 'spaces') && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-20 mt-6">
           {Object.keys(groupedTiles).map((groupName) => {
             const groupTiles = groupedTiles[groupName];
@@ -6845,7 +7042,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       )}
 
       {/* Tiles Grid - Full Width with More Columns */}
-      <div className={activeTab === 'monitoring' || activeTab === 'monitorv2' || viewMode === 'categories' ? 'hidden' : ''}>
+      <div className={activeTab === 'monitoring' || activeTab === 'monitorv2' || viewMode === 'categories' || (activeTab === 'private' && privateSubTab !== 'spaces') ? 'hidden' : ''}>
         {Object.keys(groupedTiles).map((groupName, groupIndex) => {
           const groupTiles = groupedTiles[groupName];
           // Use the actual display order (which respects categoryOrder)
@@ -6917,6 +7114,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           : allCategories
                         }
                         onShowTileInfo={handleShowTileInfo}
+                        onShareTile={handleOpenShareDialog}
+                        onRemoveSharedTile={handleRemoveSharedTile}
+                        onBlockSharer={handleBlockSharer}
                         groupIndex={groupIndex}
                         tileIndex={tileIndex}
                         animationClass={`${getTileAnimationClass(currentAnimation)} ${getTileDecorationClass(currentDecoration)}`.trim()}
@@ -10857,6 +11057,13 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       )}
 
       {/* Tile/Category Info Dialog */}
+      {shareTileDialog && (
+        <ShareTileDialog
+          tile={shareTileDialog}
+          onClose={() => setShareTileDialog(null)}
+          onShared={() => { getTiles().then(t => onUpdateTiles(t, false)); }}
+        />
+      )}
       {tileInfoDialog && (
         <TileInfoDialog
           isOpen={!!tileInfoDialog}

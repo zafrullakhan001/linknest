@@ -42,7 +42,10 @@ const transformTile = (apiTile: any): Tile => {
     tileGradientType: apiTile.tileGradientType !== undefined && apiTile.tileGradientType !== null && apiTile.tileGradientType !== '' ? apiTile.tileGradientType : undefined,
     tileBorderRadius: apiTile.tileBorderRadius !== undefined && apiTile.tileBorderRadius !== null ? Number(apiTile.tileBorderRadius) : undefined,
     tileTextColor: apiTile.tileTextColor !== undefined && apiTile.tileTextColor !== null && apiTile.tileTextColor !== '' ? apiTile.tileTextColor : undefined,
-    messages: apiTile.messages || undefined // Include scheduled messages
+    messages: apiTile.messages || undefined, // Include scheduled messages
+    // Shared-with-me: when tile was shared by another user and receiver accepted
+    sharedWithMeInvitationId: apiTile.sharedWithMeInvitationId ?? undefined,
+    sharedWithMeSharer: apiTile.sharedWithMeSharer ?? undefined
   };
 };
 

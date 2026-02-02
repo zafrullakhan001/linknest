@@ -120,6 +120,9 @@ export interface Tile {
   tileBorderRadius?: number; // Border radius in pixels
   tileTextColor?: string; // Text color (hex code)
   messages?: TileMessage[]; // Array of scheduled messages
+  // Shared-with-me: when tile was shared by another user and receiver accepted
+  sharedWithMeInvitationId?: number | null;
+  sharedWithMeSharer?: { userId: number; username: string } | null;
 }
 
 export interface TileMessage {

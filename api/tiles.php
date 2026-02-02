@@ -179,6 +179,7 @@ function handleGetTiles() {
     $linkRoleAccess = [];
     $userRoleIds = [];
     $userGroupIds = [];
+    $acceptedSharedTiles = [];
     
     if ($user) {
         // Get user role IDs once
@@ -230,6 +231,18 @@ function handleGetTiles() {
                 $linkRoleAccess[$linkRole['link_id']] = true;
             }
         }
+        
+        // Batch fetch accepted shared tiles (tile_id => {invitation_id, sharer_user_id, sharer_username}) for Private tab
+        $acceptedSharedTiles = [];
+        $sharedStmt = $db->prepare('SELECT tsi.id, tsi.tile_id, tsi.sharer_user_id, u.username as sharer_username FROM tile_share_invitations tsi JOIN users u ON u.id = tsi.sharer_user_id WHERE tsi.receiver_user_id = ? AND tsi.status = ?');
+        $sharedStmt->execute([$user['id'], 'accepted']);
+        while ($s = $sharedStmt->fetch()) {
+            $acceptedSharedTiles[$s['tile_id']] = [
+                'invitationId' => (int)$s['id'],
+                'sharerUserId' => (int)$s['sharer_user_id'],
+                'sharerUsername' => $s['sharer_username']
+            ];
+        }
     }
     
     // Step 3: Filter tiles by visibility and permissions
@@ -255,6 +268,11 @@ function handleGetTiles() {
             // Also check if user is in any allowed groups
             if (!$isTileVisible && !empty($tileAllowedGroups) && !empty($userGroupIds)) {
                 $isTileVisible = !empty(array_intersect($userGroupIds, $tileAllowedGroups));
+            }
+            
+            // Also include tiles shared with user and accepted (via tile_share_invitations)
+            if (!$isTileVisible && !empty($acceptedSharedTiles[$row['id']])) {
+                $isTileVisible = true;
             }
         }
         
@@ -402,7 +420,9 @@ function handleGetTiles() {
             'tileGradientType' => !empty($row['tile_gradient_type']) ? $row['tile_gradient_type'] : null,
             'tileBorderRadius' => isset($row['tile_border_radius']) && $row['tile_border_radius'] !== null ? (int)$row['tile_border_radius'] : null,
             'tileTextColor' => !empty($row['tile_text_color']) ? $row['tile_text_color'] : null,
-            'tabs' => []
+            'tabs' => [],
+            'sharedWithMeInvitationId' => isset($acceptedSharedTiles[$row['id']]) ? $acceptedSharedTiles[$row['id']]['invitationId'] : null,
+            'sharedWithMeSharer' => isset($acceptedSharedTiles[$row['id']]) ? ['userId' => $acceptedSharedTiles[$row['id']]['sharerUserId'], 'username' => $acceptedSharedTiles[$row['id']]['sharerUsername']] : null
         ];
         
         $tilesById[$row['id']] = $tile;
@@ -887,6 +907,15 @@ function handleGetTile($tileId) {
         if (!$isTileVisible && !empty($tileAllowedGroups) && !empty($userGroupIds)) {
             $isTileVisible = !empty(array_intersect($userGroupIds, $tileAllowedGroups));
         }
+        // Also include tiles shared with user and accepted (via tile_share_invitations)
+        if (!$isTileVisible) {
+            $sharedCheck = $db->prepare('SELECT id, sharer_user_id FROM tile_share_invitations WHERE tile_id = ? AND receiver_user_id = ? AND status = ?');
+            $sharedCheck->execute([$row['id'], $user['id'], 'accepted']);
+            $sharedRow = $sharedCheck->fetch();
+            if ($sharedRow) {
+                $isTileVisible = true;
+            }
+        }
     }
     
     if (!$isTileVisible) {
@@ -985,8 +1014,21 @@ function handleGetTile($tileId) {
         'tileGradientType' => !empty($row['tile_gradient_type']) ? $row['tile_gradient_type'] : null,
         'tileBorderRadius' => isset($row['tile_border_radius']) && $row['tile_border_radius'] !== null ? (int)$row['tile_border_radius'] : null,
         'tileTextColor' => !empty($row['tile_text_color']) ? $row['tile_text_color'] : null,
-        'tabs' => []
+        'tabs' => [],
+        'sharedWithMeInvitationId' => null,
+        'sharedWithMeSharer' => null
     ];
+    
+    // If user has access via accepted share invitation, include metadata for Remove/Block
+    if ($user) {
+        $sharedStmt = $db->prepare('SELECT tsi.id, tsi.sharer_user_id, u.username as sharer_username FROM tile_share_invitations tsi JOIN users u ON u.id = tsi.sharer_user_id WHERE tsi.tile_id = ? AND tsi.receiver_user_id = ? AND tsi.status = ?');
+        $sharedStmt->execute([$row['id'], $user['id'], 'accepted']);
+        $sharedRow = $sharedStmt->fetch();
+        if ($sharedRow) {
+            $tile['sharedWithMeInvitationId'] = (int)$sharedRow['id'];
+            $tile['sharedWithMeSharer'] = ['userId' => (int)$sharedRow['sharer_user_id'], 'username' => $sharedRow['sharer_username']];
+        }
+    }
     
     // Get messages for this tile
     $msgStmt = $db->prepare('SELECT * FROM tile_messages WHERE tile_id = ?');
@@ -1286,8 +1328,19 @@ function handleCreateTile() {
     $visibility = $data['visibility'] ?? 'public';
     $allowedUsers = null;
     $allowedGroups = null;
+    $pendingShareUserIds = []; // Users to create invitations for after tile insert
     if ($visibility === 'private' && isset($data['allowedUsers']) && is_array($data['allowedUsers'])) {
-        $allowedUsers = json_encode($data['allowedUsers']);
+        $ownerId = (int)$user['id'];
+        $usersToInclude = [];
+        foreach ($data['allowedUsers'] as $uid) {
+            $uid = (int)$uid;
+            if ($uid === $ownerId) {
+                $usersToInclude[] = $uid;
+            } else {
+                $pendingShareUserIds[] = $uid;
+            }
+        }
+        $allowedUsers = !empty($usersToInclude) ? json_encode(array_values(array_unique($usersToInclude))) : json_encode([$ownerId]);
     }
     if ($visibility === 'private' && isset($data['allowedGroups']) && is_array($data['allowedGroups'])) {
         $allowedGroups = json_encode($data['allowedGroups']);
@@ -1366,6 +1419,22 @@ function handleCreateTile() {
         $data['createdAt'] ?? time()
     ])) {
         sendJSON(['error' => 'Failed to create tile'], 500);
+    }
+    
+    // Create share invitations for users added to allowed list (they must accept to get access)
+    if (!empty($pendingShareUserIds) && $visibility === 'private') {
+        $now = time();
+        $ownerId = (int)$user['id'];
+        foreach ($pendingShareUserIds as $receiverId) {
+            $receiverId = (int)$receiverId;
+            if ($receiverId === $ownerId) continue;
+            $invStmt = $db->prepare('INSERT INTO tile_share_invitations (tile_id, sharer_user_id, receiver_user_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)');
+            try {
+                $invStmt->execute([$tileId, $ownerId, $receiverId, 'pending', $now, $now]);
+            } catch (PDOException $e) {
+                if (strpos($e->getMessage(), 'UNIQUE') === false) throw $e;
+            }
+        }
     }
     
     // Handle tabs (new structure) or sections (backward compatibility)
@@ -4513,7 +4582,44 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
         $allowedUsers = null;
         $allowedGroups = null;
         if ($visibility === 'private' && isset($data['allowedUsers']) && is_array($data['allowedUsers'])) {
-            $allowedUsers = json_encode($data['allowedUsers']);
+            // Share flow: users being "added" must accept invitation first. Only include owner + users who have accepted.
+            $ownerId = isset($currentTileData['userId']) ? (int)$currentTileData['userId'] : (isset($currentTileData['user_id']) ? (int)$currentTileData['user_id'] : null);
+            if (!$ownerId) {
+                $ownStmt = $db->prepare('SELECT user_id FROM tiles WHERE id = ?');
+                $ownStmt->execute([$tileId]);
+                $ownRow = $ownStmt->fetch();
+                $ownerId = $ownRow ? (int)$ownRow['user_id'] : null;
+            }
+            $usersToInclude = [];
+            foreach ($data['allowedUsers'] as $uid) {
+                $uid = (int)$uid;
+                if ($uid === $ownerId) {
+                    $usersToInclude[] = $uid;
+                    continue;
+                }
+                // Check if this user has accepted a share invitation
+                $accStmt = $db->prepare('SELECT id FROM tile_share_invitations WHERE tile_id = ? AND sharer_user_id = ? AND receiver_user_id = ? AND status = ?');
+                $accStmt->execute([$tileId, $ownerId, $uid, 'accepted']);
+                if ($accStmt->fetch()) {
+                    $usersToInclude[] = $uid;
+                } else {
+                    // Create pending invitation - they must accept to get access
+                    $now = time();
+                    $invStmt = $db->prepare('SELECT id, status FROM tile_share_invitations WHERE tile_id = ? AND sharer_user_id = ? AND receiver_user_id = ?');
+                    $invStmt->execute([$tileId, $ownerId, $uid]);
+                    $inv = $invStmt->fetch();
+                    if ($inv) {
+                        if ($inv['status'] !== 'pending') {
+                            $updInv = $db->prepare('UPDATE tile_share_invitations SET status = ?, updated_at = ? WHERE id = ?');
+                            $updInv->execute(['pending', $now, $inv['id']]);
+                        }
+                    } else {
+                        $insInv = $db->prepare('INSERT INTO tile_share_invitations (tile_id, sharer_user_id, receiver_user_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)');
+                        $insInv->execute([$tileId, $ownerId, $uid, 'pending', $now, $now]);
+                    }
+                }
+            }
+            $allowedUsers = !empty($usersToInclude) ? json_encode(array_values(array_unique($usersToInclude))) : null;
         }
         if ($visibility === 'private' && isset($data['allowedGroups']) && is_array($data['allowedGroups'])) {
             $allowedGroups = json_encode($data['allowedGroups']);

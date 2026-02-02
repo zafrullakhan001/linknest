@@ -103,6 +103,14 @@ if ($path === '/') {
 } elseif (strpos($path, '/styles') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 7); // Remove '/styles'
     require __DIR__ . '/styles.php';
+} elseif (strpos($path, '/tile-shares') === 0) {
+    $remainingPath = substr($path, 12); // Remove '/tile-shares'
+    if (empty($remainingPath) || $remainingPath === '/') {
+        $_SERVER['PATH_INFO'] = '/';
+    } else {
+        $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
+    }
+    require __DIR__ . '/tile_shares.php';
 } elseif (strpos($path, '/chat') === 0) {
     $remainingPath = substr($path, 5); // Remove '/chat'
     // Set PATH_INFO - use '/' for root endpoint, or ensure sub-paths start with /
