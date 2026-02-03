@@ -85,6 +85,89 @@ function resolveApiBase(): string {
   return '/api';
 }
 
+// Private tab owner filter dropdown (with search when many owners)
+interface PrivateOwnerFilterOption {
+  value: number | 'all';
+  label: string;
+}
+const PrivateOwnerFilterDropdown: React.FC<{
+  value: number | 'all';
+  options: PrivateOwnerFilterOption[];
+  onSelect: (v: number | 'all') => void;
+  userCount: number;
+}> = ({ value, options, onSelect, userCount }) => {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+  const showSearch = userCount > 5;
+  const filtered = useMemo(() => {
+    if (!showSearch || !search.trim()) return options;
+    const q = search.trim().toLowerCase();
+    return options.filter(o => o.label.toLowerCase().includes(q));
+  }, [options, search, showSearch]);
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('click', h);
+    return () => document.removeEventListener('click', h);
+  }, []);
+  const selectedLabel = options.find(o => o.value === value)?.label ?? 'All owners';
+  return (
+    <div ref={ref} className="relative flex items-center gap-1">
+      <span className="text-sm font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">Filter:</span>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-600 min-w-[140px] justify-between"
+        title="Filter by owner"
+      >
+        <span className="truncate">{selectedLabel}</span>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}>
+          <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+        </svg>
+      </button>
+      {value !== 'all' && (
+        <button
+          type="button"
+          onClick={() => onSelect('all')}
+          className="px-2 py-1 text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
+          title="Clear filter"
+        >
+          Clear
+        </button>
+      )}
+      {open && (
+        <div className="absolute top-full right-0 mt-1 z-50 w-56 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-lg py-1 max-h-64 flex flex-col">
+          {showSearch && (
+            <div className="px-2 pb-2">
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search owners..."
+                className="w-full px-2 py-1.5 text-sm rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-400"
+                autoFocus
+              />
+            </div>
+          )}
+          <div className={`overflow-y-auto ${showSearch ? 'max-h-48' : ''}`}>
+            {filtered.map(opt => (
+              <button
+                key={opt.value === 'all' ? 'all' : opt.value}
+                type="button"
+                onClick={() => { onSelect(opt.value); setOpen(false); setSearch(''); }}
+                className={`w-full px-3 py-1.5 text-left text-sm ${opt.value === value ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
+              >
+                {opt.label}
+              </button>
+            ))}
+            {filtered.length === 0 && <div className="px-3 py-2 text-sm text-slate-500">No matches</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Category Visibility Management Dialog
 interface CategoryVisibilityDialogProps {
   categoryName: string;
@@ -862,6 +945,7 @@ interface SortableTileProps {
   groupIndex: number;
   tileIndex: number;
   animationClass?: string;
+  ownerLookup?: Record<number, string>; // userId -> username for Private tab
 }
 
 const SortableTile: React.FC<SortableTileProps> = ({
@@ -891,9 +975,13 @@ const SortableTile: React.FC<SortableTileProps> = ({
   availableCategories,
   groupIndex,
   tileIndex,
-  animationClass = ''
+  animationClass = '',
+  ownerLookup
 }) => {
   const { user } = useAuth();
+  const ownerUsername = (tile.userId != null && tile.userId !== user?.id)
+    ? (tile.sharedWithMeSharer?.username ?? ownerLookup?.[tile.userId] ?? null)
+    : null;
   const [showCategoryDialog, setShowCategoryDialog] = useState(false);
   const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
   const [fireworksTrigger, setFireworksTrigger] = useState(0);
@@ -1657,6 +1745,11 @@ const SortableTile: React.FC<SortableTileProps> = ({
         <p className="text-slate-600 dark:text-slate-400 text-xs line-clamp-2 leading-snug">
           {tile.description || 'No description'}
         </p>
+        {ownerUsername && (
+          <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 truncate" title={`Owner: ${ownerUsername}`}>
+            by {ownerUsername}
+          </p>
+        )}
       </div>
 
       {/* Compact Footer */}
@@ -6432,9 +6525,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         </div>
       )}
 
-      {/* Private tab - Sub-tabs: Spaces | Sharing | Blocked */}
+      {/* Private tab - Sub-tabs: Spaces | Sharing | Blocked + Filter (when Spaces) */}
       {activeTab === 'private' && isAuthenticated && (
-        <div className="flex items-center gap-1 px-4 py-2 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
+          <div className="flex items-center gap-1">
           <button
             onClick={() => setPrivateSubTab('spaces')}
             className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${privateSubTab === 'spaces'
@@ -6476,37 +6570,15 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
               </span>
             )}
           </button>
-        </div>
-      )}
-
-      {/* Private tab - Filter by owner (only on Spaces sub-tab) */}
-      {activeTab === 'private' && isAuthenticated && privateSubTab === 'spaces' && (
-        <div className="flex flex-wrap items-center gap-2 py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
-          <span className="text-sm font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">Filter by owner:</span>
-          <select
-            value={privateOwnerFilter === 'all' ? 'all' : String(privateOwnerFilter)}
-            onChange={(e) => {
-              const v = e.target.value;
-              setPrivateOwnerFilter(v === 'all' ? 'all' : parseInt(v, 10));
-            }}
-            className="px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 min-w-[140px]"
-            title="Show tiles from a specific owner (private spaces shared with you)"
-          >
-            {privateOwnerOptions.map((opt) => (
-              <option key={opt.value === 'all' ? 'all' : opt.value} value={opt.value === 'all' ? 'all' : String(opt.value)}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-          {privateOwnerFilter !== 'all' && (
-            <button
-              type="button"
-              onClick={() => setPrivateOwnerFilter('all')}
-              className="px-2 py-1 text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
-              title="Clear owner filter"
-            >
-              Clear
-            </button>
+          </div>
+          {/* Filter by owner - inline in same bar when Spaces sub-tab */}
+          {privateSubTab === 'spaces' && (
+            <PrivateOwnerFilterDropdown
+              value={privateOwnerFilter}
+              options={privateOwnerOptions}
+              onSelect={(v) => setPrivateOwnerFilter(v)}
+              userCount={privateOwnerOptions.length}
+            />
           )}
         </div>
       )}
@@ -7120,6 +7192,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         groupIndex={groupIndex}
                         tileIndex={tileIndex}
                         animationClass={`${getTileAnimationClass(currentAnimation)} ${getTileDecorationClass(currentDecoration)}`.trim()}
+                        ownerLookup={activeTab === 'private' && isAuthenticated ? Object.fromEntries(privateTabUsers.map(u => [u.id, u.username])) : undefined}
                       />
                     );
                   })}
