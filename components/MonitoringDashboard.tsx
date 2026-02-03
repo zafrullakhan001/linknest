@@ -2457,14 +2457,17 @@ export const MonitoringDashboard: React.FC = () => {
 
     if (isFullscreen) {
         return (
-            <div className="fixed inset-0 overflow-y-auto bg-slate-50 dark:bg-[#121212] transition-colors z-50">
-                <button
-                    onClick={() => setIsFullscreen(false)}
-                    className="fixed top-4 right-4 z-[60] p-3 bg-red-600 hover:bg-red-700 text-white rounded-full shadow-lg transition-transform hover:scale-105 active:scale-95"
-                    title="Exit Fullscreen (Esc)"
-                >
-                    <FaTimes size={16} />
-                </button>
+            <div className="fixed top-16 left-0 right-0 bottom-0 overflow-y-auto bg-slate-50 dark:bg-[#121212] transition-colors z-50">
+                <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 bg-white/95 dark:bg-[#1e1e1e]/95 backdrop-blur-md border-b border-slate-200 dark:border-[#333]">
+                    <button
+                        onClick={() => setIsFullscreen(false)}
+                        className="p-2.5 rounded-xl transition-all text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-[#333] border border-slate-200 dark:border-[#333]"
+                        title="Exit Fullscreen (Esc)"
+                    >
+                        <FaTimes size={18} />
+                    </button>
+                    <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Exit fullscreen</span>
+                </div>
                 <div className="min-h-full p-4">
                     {content}
                 </div>
