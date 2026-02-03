@@ -245,6 +245,25 @@ function handleGetTiles() {
         }
     }
     
+    // When returning public tiles for an authenticated non-admin, also include staging tiles
+    // that are assigned to the user via role_tile_permissions so they show in "Your Apps" tab
+    if ($sourceTab === 'public' && $user && !empty($user['id']) && empty($user['is_admin']) && !empty($tileRoleAccess)) {
+        $publicIds = array_column($allTiles, 'id');
+        $roleAssignedIds = array_keys($tileRoleAccess);
+        $stagingIdsNeeded = array_values(array_diff($roleAssignedIds, $publicIds));
+        if (!empty($stagingIdsNeeded)) {
+            $placeholders = implode(',', array_fill(0, count($stagingIdsNeeded), '?'));
+            $stagingStmt = $db->prepare(
+                'SELECT * FROM tiles WHERE ' . $baseWhere . ' AND source_tab = ? AND id IN (' . $placeholders . ') ORDER BY position ASC'
+            );
+            $stagingStmt->execute(array_merge(['staging'], $stagingIdsNeeded));
+            $stagingRows = $stagingStmt->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($stagingRows as $stagingRow) {
+                $allTiles[] = $stagingRow;
+            }
+        }
+    }
+    
     // Step 3: Filter tiles by visibility and permissions
     foreach ($allTiles as $row) {
         // Filter tiles based on visibility

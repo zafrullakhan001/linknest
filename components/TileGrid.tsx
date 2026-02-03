@@ -3486,8 +3486,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       // ALSO show 'authenticated' tiles (visible to all logged in users) without filtering their links
       if (isAuthenticated && user) {
         // First, find all tiles that have links with role access OR are authenticated (protected)
+        // Include tile-level role access so staging-area tiles assigned in "Assign Tiles & Links to Role" show in Your Apps
         filteredTiles = tiles.filter(t => {
           if (t.visibility === 'authenticated') return true;
+          if (t.hasRoleAccess) return true;
 
           // Check if any link within the tile has role access
           const hasLinkWithRoleAccess = t.tabs?.some(tab =>

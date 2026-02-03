@@ -19,6 +19,8 @@ switch ($method) {
             handleListPending();
         } elseif ($path === '/blocked') {
             handleListBlocked();
+        } elseif ($path === '/by-tile') {
+            handleListByTile();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -32,6 +34,8 @@ switch ($method) {
             handleReject((int)$m[1]);
         } elseif (preg_match('#^/(\d+)/remove$#', $path, $m)) {
             handleRemove((int)$m[1]);
+        } elseif (preg_match('#^/(\d+)/revoke$#', $path, $m)) {
+            handleRevokeBySharer((int)$m[1]);
         } elseif ($path === '/block') {
             handleBlock();
         } elseif ($path === '/unblock') {
@@ -101,6 +105,89 @@ function handleListBlocked(): void {
     }, $rows);
     
     sendJSON(['blocked' => $blocked]);
+}
+
+/**
+ * List all share invitations for a tile (where current user is the sharer).
+ * Query: tile_id (required). Returns pending and accepted invitations.
+ */
+function handleListByTile(): void {
+    $user = requireAuth();
+    $tileId = isset($_GET['tile_id']) ? trim((string)$_GET['tile_id']) : '';
+    if ($tileId === '') {
+        sendJSON(['error' => 'tile_id is required'], 400);
+    }
+
+    $db = getDB();
+
+    $tileStmt = $db->prepare('SELECT id, user_id FROM tiles WHERE id = ? AND deleted_at IS NULL AND archived_at IS NULL');
+    $tileStmt->execute([$tileId]);
+    $tile = $tileStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$tile) {
+        sendJSON(['error' => 'Tile not found'], 404);
+    }
+    if ((int)$tile['user_id'] !== (int)$user['id'] && !$user['is_admin']) {
+        sendJSON(['error' => 'You can only list shares for tiles you own'], 403);
+    }
+
+    $stmt = $db->prepare("
+        SELECT tsi.id, tsi.tile_id, tsi.sharer_user_id, tsi.receiver_user_id, tsi.status, tsi.created_at,
+               u.username as receiver_username
+        FROM tile_share_invitations tsi
+        JOIN users u ON u.id = tsi.receiver_user_id
+        WHERE tsi.tile_id = ? AND tsi.sharer_user_id = ? AND tsi.status IN ('pending', 'accepted')
+        ORDER BY tsi.status ASC, tsi.created_at DESC
+    ");
+    $stmt->execute([$tileId, $user['id']]);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $shares = [];
+    foreach ($rows as $row) {
+        $shares[] = [
+            'id' => (int)$row['id'],
+            'tileId' => $row['tile_id'],
+            'receiverUserId' => (int)$row['receiver_user_id'],
+            'receiverUsername' => $row['receiver_username'],
+            'status' => $row['status'],
+            'createdAt' => (int)$row['created_at'],
+        ];
+    }
+
+    sendJSON(['shares' => $shares]);
+}
+
+/**
+ * Revoke a share (sharer revokes access for a receiver).
+ */
+function handleRevokeBySharer(int $invitationId): void {
+    $user = requireAuth();
+    $db = getDB();
+
+    $stmt = $db->prepare('SELECT * FROM tile_share_invitations WHERE id = ? AND sharer_user_id = ? AND status IN (\'pending\', \'accepted\')');
+    $stmt->execute([$invitationId, $user['id']]);
+    $inv = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$inv) {
+        sendJSON(['error' => 'Share not found or you cannot revoke it'], 404);
+    }
+
+    $now = time();
+    $upd = $db->prepare('UPDATE tile_share_invitations SET status = ?, updated_at = ? WHERE id = ?');
+    $upd->execute(['removed', $now, $invitationId]);
+
+    $tileStmt = $db->prepare('SELECT allowed_users FROM tiles WHERE id = ?');
+    $tileStmt->execute([$inv['tile_id']]);
+    $tile = $tileStmt->fetch(PDO::FETCH_ASSOC);
+    if ($tile && $tile['allowed_users']) {
+        $allowedUsers = json_decode($tile['allowed_users'], true);
+        if (is_array($allowedUsers)) {
+            $receiverId = (int)$inv['receiver_user_id'];
+            $allowedUsers = array_values(array_filter($allowedUsers, fn($id) => (int)$id !== $receiverId));
+            $updTile = $db->prepare('UPDATE tiles SET allowed_users = ? WHERE id = ?');
+            $updTile->execute([!empty($allowedUsers) ? json_encode($allowedUsers) : null, $inv['tile_id']]);
+        }
+    }
+
+    sendJSON(['success' => true, 'message' => 'Share revoked']);
 }
 
 function handleShare(): void {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Tile } from '../types';
-import { shareTile } from '../services/tileShareService';
+import { shareTile, getTileShares, revokeShare, TileShareRecord } from '../services/tileShareService';
 import { authService, UserListItem } from '../services/authService';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -19,6 +19,9 @@ export const ShareTileDialog: React.FC<ShareTileDialogProps> = ({ tile, onClose,
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [currentShares, setCurrentShares] = useState<TileShareRecord[]>([]);
+  const [loadingShares, setLoadingShares] = useState(false);
+  const [revokingId, setRevokingId] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const filteredUsers = useMemo(() => {
@@ -38,6 +41,26 @@ export const ShareTileDialog: React.FC<ShareTileDialogProps> = ({ tile, onClose,
     };
     load();
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!tile?.id) {
+      setCurrentShares([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingShares(true);
+    getTileShares(tile.id)
+      .then((shares) => {
+        if (!cancelled) setCurrentShares(shares);
+      })
+      .catch(() => {
+        if (!cancelled) setCurrentShares([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingShares(false);
+      });
+    return () => { cancelled = true; };
+  }, [tile?.id, success]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -68,11 +91,28 @@ export const ShareTileDialog: React.FC<ShareTileDialogProps> = ({ tile, onClose,
       await shareTile(tile.id, selectedUserId);
       setSuccess(true);
       onShared?.();
-      setTimeout(() => onClose(), 800);
+      const shares = await getTileShares(tile.id);
+      setCurrentShares(shares);
+      setSelectedUserId(null);
+      setSearchTerm('');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to share');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRevoke = async (invitationId: number) => {
+    setRevokingId(invitationId);
+    setError(null);
+    try {
+      await revokeShare(invitationId);
+      setCurrentShares((prev) => prev.filter((s) => s.id !== invitationId));
+      onShared?.();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to revoke');
+    } finally {
+      setRevokingId(null);
     }
   };
 
@@ -92,6 +132,38 @@ export const ShareTileDialog: React.FC<ShareTileDialogProps> = ({ tile, onClose,
           <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
             Share &quot;{tile.title}&quot; with another user. They will receive a notification to accept it in their Private tab.
           </p>
+
+          {/* Current shares */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Shared with</label>
+            {loadingShares ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">Loading...</p>
+            ) : currentShares.length === 0 ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">Not shared with anyone yet.</p>
+            ) : (
+              <ul className="rounded-lg border border-slate-200 dark:border-slate-600 divide-y divide-slate-200 dark:divide-slate-600 max-h-40 overflow-y-auto">
+                {currentShares.map((s) => (
+                  <li key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
+                    <span className="text-slate-700 dark:text-slate-300 truncate">{s.receiverUsername}</span>
+                    <span className="shrink-0 flex items-center gap-2">
+                      <span className={`text-xs px-2 py-0.5 rounded ${s.status === 'accepted' ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300' : 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'}`}>
+                        {s.status === 'accepted' ? 'Accepted' : 'Pending'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleRevoke(s.id)}
+                        disabled={revokingId === s.id}
+                        className="shrink-0 px-2 py-1 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded disabled:opacity-50"
+                      >
+                        {revokingId === s.id ? 'Revoking...' : 'Revoke'}
+                      </button>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
           <div className="mb-4 relative">
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Select user</label>
             <div className="relative">
