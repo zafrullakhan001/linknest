@@ -5705,7 +5705,7 @@ function handleGetTileInfo($tileId) {
     $user = getAuthenticatedUser();
     $db = getDB();
     
-    // Get tile with owner info
+    // Get tile with owner info (include source_tab for "which tab" display: public, staging, or private)
     $stmt = $db->prepare('
         SELECT 
             t.id,
@@ -5715,6 +5715,7 @@ function handleGetTileInfo($tileId) {
             t.archived_at,
             t.deleted_at,
             t.visibility,
+            t.source_tab,
             t.allowed_users,
             u.username as owner_username,
             u.email as owner_email,
@@ -5884,6 +5885,15 @@ function handleGetTileInfo($tileId) {
         }
     }
     
+    // Which tab this tile comes from: Public tab, Staging tab, or Private tab
+    $sourceTabRaw = isset($row['source_tab']) ? trim((string)$row['source_tab']) : '';
+    $sourceTabLabel = 'Public tab';
+    if ($sourceTabRaw === 'staging') {
+        $sourceTabLabel = 'Staging tab';
+    } elseif ($tileVisibility === 'private') {
+        $sourceTabLabel = 'Private tab';
+    }
+
     $response = [
         'tileId' => $row['id'],
         'title' => $row['title'],
@@ -5897,6 +5907,7 @@ function handleGetTileInfo($tileId) {
         'archivedAt' => $row['archived_at'] ? (int)$row['archived_at'] : null,
         'deletedAt' => $row['deleted_at'] ? (int)$row['deleted_at'] : null,
         'visibility' => $tileVisibility,
+        'sourceTab' => $sourceTabLabel,
         'permissions' => [
             'canView' => $canView,
             'canEdit' => $canEdit,

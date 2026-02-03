@@ -38,6 +38,8 @@ interface TileInfo {
   archivedAt: number | null;
   deletedAt: number | null;
   visibility: string;
+  /** Which tab this tile comes from: "Public tab", "Staging tab", or "Private tab" */
+  sourceTab?: string;
   permissions: {
     canView: boolean;
     canEdit: boolean;
@@ -245,6 +247,18 @@ const TileInfoView: React.FC<{
               {tileInfo.visibility.charAt(0).toUpperCase() + tileInfo.visibility.slice(1)}
             </span>
           </div>
+          {tileInfo.sourceTab && (
+            <div className="flex justify-between">
+              <span className="text-slate-600 dark:text-slate-400 font-medium">Source tab:</span>
+              <span className={`px-2 py-1 rounded text-xs font-medium ${
+                tileInfo.sourceTab === 'Staging tab' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400' :
+                tileInfo.sourceTab === 'Private tab' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400' :
+                'bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-300'
+              }`}>
+                {tileInfo.sourceTab}
+              </span>
+            </div>
+          )}
         </div>
       </section>
 
