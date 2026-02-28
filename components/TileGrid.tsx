@@ -65,6 +65,15 @@ interface TileGridProps {
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
+/** Strip HTML tags from a string and return plain text (for safe display of user content that may contain HTML) */
+function stripHtml(html: string): string {
+  if (!html || typeof html !== 'string') return '';
+  if (typeof document === 'undefined') return html.replace(/<[^>]*>/g, '');
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  return div.textContent || div.innerText || html.replace(/<[^>]*>/g, '') || '';
+}
+
 // Resolve API base dynamically
 function resolveApiBase(): string {
   const envBase = (import.meta as any)?.env?.VITE_API_BASE;
@@ -6950,7 +6959,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       {/* Link Info */}
                       <div className="flex-1 min-w-0 overflow-hidden">
                         <div className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-2 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
-                          {link.label}
+                          {stripHtml(link.label)}
                         </div>
                         <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
                           {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
@@ -6964,7 +6973,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         {/* Parent Tile Info */}
                         <div className="flex items-center gap-1.5 mt-1 overflow-hidden">
                           <span className="text-xs shrink-0">{link.tile.emoji}</span>
-                          <span className="text-xs text-slate-400 dark:text-slate-500 line-clamp-1" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{link.tile.title}</span>
+                          <span className="text-xs text-slate-400 dark:text-slate-500 line-clamp-1" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{stripHtml(link.tile.title)}</span>
                         </div>
                       </div>
 
@@ -6999,10 +7008,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              const tempDiv = document.createElement('div');
-                              tempDiv.innerHTML = link.label || '';
-                              const plainLabel = tempDiv.textContent || tempDiv.innerText || link.label || '';
-                              setFavNotesDialogState({ linkId: link.id, notes: link.notes || '', linkLabel: plainLabel });
+                              setFavNotesDialogState({ linkId: link.id, notes: link.notes || '', linkLabel: stripHtml(link.label || '') });
                             }}
                             className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-all"
                             title="View notes"
@@ -7405,7 +7411,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       {/* Link Info */}
                       <div className="flex-1 min-w-0 overflow-hidden pr-10">
                         <div className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-2 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
-                          {link.label}
+                          {stripHtml(link.label)}
                         </div>
                         <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
                           {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
@@ -7419,7 +7425,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         {/* Parent Tile Info */}
                         <div className="flex items-center gap-1.5 mt-1 overflow-hidden">
                           <span className="text-xs shrink-0">{link.tile.emoji}</span>
-                          <span className="text-xs text-slate-400 dark:text-slate-500 line-clamp-1" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{link.tile.title}</span>
+                          <span className="text-xs text-slate-400 dark:text-slate-500 line-clamp-1" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{stripHtml(link.tile.title)}</span>
                         </div>
                       </div>
 
@@ -7663,7 +7669,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         {/* Link Info */}
                         <div className="flex-1 min-w-0 overflow-hidden">
                           <div className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-2 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
-                            {link.label}
+                            {stripHtml(link.label)}
                           </div>
                           <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
                             {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
@@ -7677,7 +7683,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           {/* Parent Tile Info */}
                           <div className="flex items-center gap-1.5 mt-1 overflow-hidden">
                             <span className="text-xs shrink-0">{link.tile.emoji}</span>
-                            <span className="text-xs text-slate-400 dark:text-slate-500 line-clamp-1" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{link.tile.title}</span>
+                            <span className="text-xs text-slate-400 dark:text-slate-500 line-clamp-1" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{stripHtml(link.tile.title)}</span>
                           </div>
                         </div>
 
@@ -11053,7 +11059,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         <LinkInfoDialog
           isOpen={!!linkInfoDialog}
           onClose={() => setLinkInfoDialog(null)}
-          linkLabel={linkInfoDialog.link.label}
+          linkLabel={stripHtml(linkInfoDialog.link.label)}
           linkIcon={linkInfoDialog.link.icon}
           richTextContent={linkInfoDialog.link.richTextContent || ''}
           linkUrl={linkInfoDialog.link.url}

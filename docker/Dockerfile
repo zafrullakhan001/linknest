@@ -50,9 +50,13 @@ RUN npm run build -- --config vite.docker.config.ts && \
 
 # Stage 2: Final single container with PHP, Apache, and SQLite
 # This is the ONLY container that runs - everything is included here
-FROM php:8.2-apache
+# PHP 8.4: 8.5 has broken extension install (Makefile modules/*) in official image; switch to 8.5 when fixed
+FROM php:8.4-apache
 
-# Install required PHP extensions and utilities
+# Install system deps and PHP extensions (ldap, zip, pdo_sqlite, opcache)
+# curl and openssl are already in the base php image
+# - libldap2-dev: for PHP ldap extension
+# - libzip-dev, zlib1g-dev: for PHP zip extension
 RUN apt-get update && apt-get install -y \
     libsqlite3-dev \
     sqlite3 \

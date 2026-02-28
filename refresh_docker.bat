@@ -140,8 +140,9 @@ if %ERRORLEVEL% NEQ 0 (
 echo.
 
 REM 2. Rebuild the image (Multi-stage build handles frontend & backend)
+REM PHP version is set in docker/Dockerfile (FROM php:8.4-apache). Dependent modules there: curl, ldap, zip, pdo_sqlite, opcache, openssl
 echo Step 2: Rebuilding images from source...
-echo This will recompile the React frontend and update the PHP backend.
+echo This will recompile the React frontend and update the PHP backend (PHP 8.4).
 %COMPOSE_CMD% -f docker/docker-compose.yml build --no-cache
 if %ERRORLEVEL% NEQ 0 (
     echo ❌ Error: Docker build failed.
