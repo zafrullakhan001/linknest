@@ -9,18 +9,21 @@ export function resolveApiBase(): string {
 
   // Fallback: dynamically detect base path from current location
   if (typeof window !== 'undefined') {
-    const path = window.location.pathname || '';
+    let path = (window.location.pathname || '').replace(/\/index\.html?$/i, '');
+    path = path.replace(/\/$/, '') || '/';
 
-    // Extract base path (everything before the last segment or root)
+    // Parent directory of the last path segment, or the segment itself when it is the app root
+    // (e.g. /linknest with no trailing slash used to strip to '' and wrongly fall back to /api)
     // Examples:
     // /linknest/ -> /linknest/api
+    // /linknest -> /linknest/api
     // /linknest/index.html -> /linknest/api
     // / -> /api
     if (path !== '/' && path.length > 1) {
-      // Remove trailing slash and any filename
-      const cleanPath = path.replace(/\/[^/]*$/, '').replace(/\/$/, '');
-      if (cleanPath && cleanPath !== '/') {
-        return `${cleanPath}/api`;
+      const parent = path.replace(/\/[^/]*$/, '');
+      const baseDir = parent && parent !== '' ? parent : path;
+      if (baseDir && baseDir !== '/') {
+        return `${baseDir}/api`;
       }
     }
   }

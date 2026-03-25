@@ -30,6 +30,8 @@ switch ($method) {
     case 'GET':
         if ($path === '' || $path === '/') {
             handleGetBroadcast($db);
+        } elseif ($path === '/history') {
+            handleGetBroadcastHistory($db);
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -92,6 +94,37 @@ function handleGetBroadcast($db) {
     } catch (Throwable $e) {
         error_log('Broadcast fetch: ' . $e->getMessage());
         sendJSON(null);
+    }
+}
+
+function handleGetBroadcastHistory($db) {
+    try {
+        $limit = 200;
+        $stmt = $db->prepare('SELECT id, message, font_family, font_size, color, scroll_speed, expires_at, created_at, updated_at, is_active FROM broadcast_messages ORDER BY created_at DESC, id DESC LIMIT ' . (int)$limit);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $items = [];
+        foreach ($rows as $row) {
+            $items[] = [
+                'id' => (int)$row['id'],
+                'message' => (string)($row['message'] ?? ''),
+                'fontFamily' => (string)($row['font_family'] ?? 'Arial, sans-serif'),
+                'fontSize' => (string)($row['font_size'] ?? '16px'),
+                'color' => (string)($row['color'] ?? '#ff0000'),
+                'scrollSpeed' => isset($row['scroll_speed']) ? (int)$row['scroll_speed'] : 30,
+                'expiresAt' => !empty($row['expires_at']) ? (int)$row['expires_at'] : null,
+                'createdAt' => (int)($row['created_at'] ?? 0),
+                'updatedAt' => (int)($row['updated_at'] ?? 0),
+                'isActive' => ((int)($row['is_active'] ?? 0)) === 1,
+            ];
+        }
+        sendJSON(['items' => $items]);
+    } catch (PDOException $e) {
+        error_log('Broadcast history PDO: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to load broadcast history'], 500);
+    } catch (Throwable $e) {
+        error_log('Broadcast history: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to load broadcast history'], 500);
     }
 }
 

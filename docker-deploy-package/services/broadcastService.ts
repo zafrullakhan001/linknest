@@ -32,6 +32,10 @@ export interface BroadcastMessage {
   updatedAt: number;
 }
 
+export interface BroadcastHistoryItem extends BroadcastMessage {
+  isActive: boolean;
+}
+
 export const broadcastService = {
   async getBroadcast(): Promise<BroadcastMessage | null> {
     const response = await fetch(`${API_BASE}/broadcast`, {
@@ -48,6 +52,22 @@ export const broadcastService = {
 
     const data = await response.json();
     return data && data.id ? data : null;
+  },
+
+  async getBroadcastHistory(): Promise<BroadcastHistoryItem[]> {
+    const response = await fetch(`${API_BASE}/broadcast/history`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(errorData.error || `Failed to load broadcast history: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const items = data?.items;
+    return Array.isArray(items) ? items : [];
   },
 
   async createBroadcast(broadcast: {

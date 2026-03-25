@@ -10407,66 +10407,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           </p>
                         </div>
 
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                            Expiration Date/Time (Optional)
-                          </label>
-                          <input
-                            type="datetime-local"
-                            value={broadcastExpiresAt}
-                            onChange={(e) => setBroadcastExpiresAt(e.target.value)}
-                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                          />
-                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                            Leave empty for no expiration. The message will automatically stop displaying after this date/time.
-                          </p>
-                        </div>
-
-                        {currentBroadcast && (
-                          <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
-                            <div className="flex items-center justify-between mb-4">
-                              <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Current Active Message</h4>
-                              <button
-                                onClick={async () => {
-                                  if (!confirm('Are you sure you want to delete the current broadcast message?')) {
-                                    return;
-                                  }
-                                  try {
-                                    setBroadcastLoading(true);
-                                    setError('');
-                                    await broadcastService.deleteBroadcast(currentBroadcast.id);
-                                    setCurrentBroadcast(null);
-                                    setBroadcastMessage('');
-                                    setBroadcastFontFamily('Arial, sans-serif');
-                                    setBroadcastFontSize('16px');
-                                    setBroadcastColor('#ff0000');
-                                    setBroadcastExpiresAt('');
-                                    alert('Broadcast message deleted successfully!');
-                                  } catch (err: any) {
-                                    setError(err.message || 'Failed to delete broadcast message');
-                                  } finally {
-                                    setBroadcastLoading(false);
-                                  }
-                                }}
-                                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm font-medium transition-colors"
-                              >
-                                Delete Current Message
-                              </button>
-                            </div>
-                            <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-                              <p className="text-sm text-slate-700 dark:text-slate-300 mb-2" style={{ fontFamily: currentBroadcast.fontFamily, fontSize: currentBroadcast.fontSize, color: currentBroadcast.color }}>
-                                {currentBroadcast.message}
-                              </p>
-                              <p className="text-xs text-slate-500 dark:text-slate-400">
-                                Created: {new Date(currentBroadcast.createdAt * 1000).toLocaleString()}
-                                {currentBroadcast.expiresAt && (
-                                  <> | Expires: {new Date(currentBroadcast.expiresAt * 1000).toLocaleString()}</>
-                                )}
-                              </p>
-                            </div>
-                          </div>
-                        )}
-
                         <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
                           <button
                             onClick={async () => {
@@ -10544,6 +10484,66 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             </button>
                           )}
                         </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                            Expiration Date/Time (Optional)
+                          </label>
+                          <input
+                            type="datetime-local"
+                            value={broadcastExpiresAt}
+                            onChange={(e) => setBroadcastExpiresAt(e.target.value)}
+                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                          />
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                            Leave empty for no expiration. The message will automatically stop displaying after this date/time.
+                          </p>
+                        </div>
+
+                        {currentBroadcast && (
+                          <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                            <div className="flex items-center justify-between mb-4">
+                              <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Current Active Message</h4>
+                              <button
+                                onClick={async () => {
+                                  if (!confirm('Are you sure you want to delete the current broadcast message?')) {
+                                    return;
+                                  }
+                                  try {
+                                    setBroadcastLoading(true);
+                                    setError('');
+                                    await broadcastService.deleteBroadcast(currentBroadcast.id);
+                                    setCurrentBroadcast(null);
+                                    setBroadcastMessage('');
+                                    setBroadcastFontFamily('Arial, sans-serif');
+                                    setBroadcastFontSize('16px');
+                                    setBroadcastColor('#ff0000');
+                                    setBroadcastExpiresAt('');
+                                    alert('Broadcast message deleted successfully!');
+                                  } catch (err: any) {
+                                    setError(err.message || 'Failed to delete broadcast message');
+                                  } finally {
+                                    setBroadcastLoading(false);
+                                  }
+                                }}
+                                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm font-medium transition-colors"
+                              >
+                                Delete Current Message
+                              </button>
+                            </div>
+                            <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                              <p className="text-sm text-slate-700 dark:text-slate-300 mb-2" style={{ fontFamily: currentBroadcast.fontFamily, fontSize: currentBroadcast.fontSize, color: currentBroadcast.color }}>
+                                {currentBroadcast.message}
+                              </p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                Created: {new Date(currentBroadcast.createdAt * 1000).toLocaleString()}
+                                {currentBroadcast.expiresAt && (
+                                  <> | Expires: {new Date(currentBroadcast.expiresAt * 1000).toLocaleString()}</>
+                                )}
+                              </p>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

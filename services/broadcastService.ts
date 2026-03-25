@@ -1,22 +1,4 @@
-// Resolve API base dynamically based on current location
-function resolveApiBase(): string {
-  const envBase = (import.meta as any)?.env?.VITE_API_BASE;
-  if (envBase) {
-    return envBase;
-  }
-
-  if (typeof window !== 'undefined') {
-    const path = window.location.pathname || '';
-    if (path !== '/' && path.length > 1) {
-      const cleanPath = path.replace(/\/[^/]*$/, '').replace(/\/$/, '');
-      if (cleanPath && cleanPath !== '/') {
-        return `${cleanPath}/api`;
-      }
-    }
-  }
-
-  return '/api';
-}
+import { resolveApiBase } from './apiHelpers';
 
 const API_BASE = resolveApiBase();
 
@@ -32,6 +14,10 @@ export interface BroadcastMessage {
   updatedAt: number;
 }
 
+export interface BroadcastHistoryItem extends BroadcastMessage {
+  isActive: boolean;
+}
+
 export const broadcastService = {
   async getBroadcast(): Promise<BroadcastMessage | null> {
     const response = await fetch(`${API_BASE}/broadcast`, {
@@ -45,6 +31,22 @@ export const broadcastService = {
 
     const data = await response.json();
     return data && data.id ? data : null;
+  },
+
+  async getBroadcastHistory(): Promise<BroadcastHistoryItem[]> {
+    const response = await fetch(`${API_BASE}/broadcast/history`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(errorData.error || `Failed to load broadcast history: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const items = data?.items;
+    return Array.isArray(items) ? items : [];
   },
 
   async createBroadcast(broadcast: {

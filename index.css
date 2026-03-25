@@ -1723,10 +1723,17 @@ div.linknest-tile.has-local-decoration .tooltip-force-black * {
   color: #cbd5e1 !important;
 }
 
-/* Add padding when broadcast banner is visible */
+/* Add padding when broadcast banner is visible (banner sits below fixed nav on desktop) */
 body.has-broadcast-banner .linknest-app-container {
   padding-top: 40px;
   transition: padding-top 0.3s ease;
+}
+
+@media (min-width: 768px) {
+  body.has-broadcast-banner .linknest-app-container {
+    /* 4rem nav (pt-16) + 40px banner — body rule must not override nav offset */
+    padding-top: calc(4rem + 40px);
+  }
 }
 
 
