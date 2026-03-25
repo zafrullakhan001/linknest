@@ -32,6 +32,32 @@ interface TileGridProps {
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
+/**
+ * Tooltips for navigation tabs.
+ * In this deployment-package copy, we use the native `title` attribute
+ * to keep changes small while still providing rich descriptions.
+ */
+const APP_TAB_TOOLTIPS: Record<string, string> = {
+  public:
+    'Public (Guest): Spaces that are visible to everyone, including users who are not signed in.\n\nThese spaces are intended for general audiences. If a space is public, you can browse it here and open its links/sections according to the public layout settings.',
+  'public-favorites':
+    'Favorites (Guest): A lightweight favorites view for users who are not signed in.\n\nThis typically includes favorite spaces and favorite links you saved locally in your browser. You can quickly return to what you bookmarked without requiring an account.',
+  favorites:
+    'Favorites (Signed-in): Your saved spaces and saved links.\n\nUse this tab to jump back to content you marked as a favorite. Favorites are tied to your authenticated user profile, so they remain available across sessions.',
+  private:
+    'Private (Signed-in): Spaces restricted to you via private visibility and sharing controls.\n\nThis area is where you manage private access. Private spaces are not meant for guests or the general public.',
+  scheduled:
+    'Scheduled (Signed-in): Spaces whose visibility is scheduled for a future time.\n\nThis tab shows spaces that are not yet active but will become visible when their scheduled “visible from” time is reached.',
+  expired:
+    'Expired (Signed-in): Spaces whose scheduled expiration time has passed.\n\nThis tab surfaces spaces that were previously visible but are now considered expired.',
+  archive:
+    'Archive (Signed-in): Spaces moved to an archived state.\n\nArchived spaces are kept for reference or cleanup rather than normal browsing. They typically represent a deliberate “keep but don’t show in active views” workflow.',
+  monitoring:
+    'Monitoring (Signed-in): Link health monitoring dashboard.\n\nUse this to review the status of monitored links inside spaces, identify broken destinations, and track health checks.',
+  'recycle-bin':
+    'Recycle Bin (Signed-in): Recently deleted spaces.\n\nWhen you delete a space, it is typically moved here instead of being permanently removed immediately. You can restore items from the bin (depending on permissions/settings).',
+};
+
 // Category Component (no longer sortable via drag)
 interface CategoryProps {
   categoryName: string;
@@ -3471,6 +3497,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
           <button
             onClick={() => requestTab('public')}
             data-active={activeTab === 'public'}
+            title={APP_TAB_TOOLTIPS.public}
             className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'public' ? 'active' : ''}`}
           >
             Public
@@ -3480,6 +3507,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
           <button
             onClick={() => requestTab('public-favorites')}
             data-active={activeTab === 'public-favorites'}
+            title={APP_TAB_TOOLTIPS['public-favorites']}
             className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'public-favorites' ? 'active' : ''}`}
           >
             Favorites
@@ -3546,6 +3574,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
               <button
                 onClick={() => requestTab('favorites')}
                 data-active={activeTab === 'favorites'}
+                title={APP_TAB_TOOLTIPS.favorites}
                 className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'favorites' ? 'active' : ''}`}
               >
                 Favorites
@@ -3569,6 +3598,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
               <button
                 onClick={() => requestTab('private')}
                 data-active={activeTab === 'private'}
+                title={APP_TAB_TOOLTIPS.private}
                 className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'private' ? 'active' : ''}`}
               >
                 Private
@@ -3583,6 +3613,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
               <button
                 onClick={() => requestTab('scheduled')}
                 data-active={activeTab === 'scheduled'}
+                title={APP_TAB_TOOLTIPS.scheduled}
                 className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'scheduled' ? 'active' : ''}`}
               >
                 Scheduled
@@ -3597,6 +3628,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
               <button
                 onClick={() => requestTab('expired')}
                 data-active={activeTab === 'expired'}
+                title={APP_TAB_TOOLTIPS.expired}
                 className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'expired' ? 'active' : ''}`}
               >
                 Expired
@@ -3611,6 +3643,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
               <button
                 onClick={() => requestTab('archive')}
                 data-active={activeTab === 'archive'}
+                title={APP_TAB_TOOLTIPS.archive}
                 className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'archive' ? 'active' : ''}`}
               >
                 Archive
@@ -3624,6 +3657,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
             {isAuthenticated && !disabledAppTabs.has('monitoring') && (
               <button
                 onClick={() => requestTab('monitoring')}
+                title={APP_TAB_TOOLTIPS.monitoring}
                 className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'monitoring' ? 'active' : ''}`}
               >
                 Monitoring
@@ -3632,6 +3666,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
             {!disabledAppTabs.has('recycle-bin') && (
               <button
                 onClick={() => requestTab('recycle-bin')}
+                title={APP_TAB_TOOLTIPS['recycle-bin']}
                 className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'recycle-bin'
                   ? 'border-brand-500 text-brand-600 dark:text-brand-400'
                   : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'

@@ -1,0 +1,175 @@
+{
+    "step": "complete",
+    "progress": 100,
+    "message": "Clone completed successfully!",
+    "logs": [
+        {
+            "time": "2026-03-25 04:18:38",
+            "message": "Starting clone operation for: MyClone"
+        },
+        {
+            "time": "2026-03-25 04:18:38",
+            "message": "Source: C:\\xampp\\htdocs\\linknest"
+        },
+        {
+            "time": "2026-03-25 04:18:38",
+            "message": "Target: C:\\xampp\\htdocs\\MyClone"
+        },
+        {
+            "time": "2026-03-25 04:18:38",
+            "message": "Target directory created"
+        },
+        {
+            "time": "2026-03-25 04:18:38",
+            "message": "Copying root files..."
+        },
+        {
+            "time": "2026-03-25 04:18:38",
+            "message": "Copied 25 root files"
+        },
+        {
+            "time": "2026-03-25 04:18:38",
+            "message": "Copying api directory..."
+        },
+        {
+            "time": "2026-03-25 04:18:38",
+            "message": "Copying components directory..."
+        },
+        {
+            "time": "2026-03-25 04:18:38",
+            "message": "Copying config directory..."
+        },
+        {
+            "time": "2026-03-25 04:18:38",
+            "message": "Copying contexts directory..."
+        },
+        {
+            "time": "2026-03-25 04:18:38",
+            "message": "Copying hooks directory..."
+        },
+        {
+            "time": "2026-03-25 04:18:38",
+            "message": "Copying migrations directory..."
+        },
+        {
+            "time": "2026-03-25 04:18:38",
+            "message": "Copying services directory..."
+        },
+        {
+            "time": "2026-03-25 04:18:38",
+            "message": "Copying src directory..."
+        },
+        {
+            "time": "2026-03-25 04:18:38",
+            "message": "Copying docker directory..."
+        },
+        {
+            "time": "2026-03-25 04:18:38",
+            "message": "Copying docs directory..."
+        },
+        {
+            "time": "2026-03-25 04:18:38",
+            "message": "Copying land directory..."
+        },
+        {
+            "time": "2026-03-25 04:18:38",
+            "message": "Created data directory"
+        },
+        {
+            "time": "2026-03-25 04:18:38",
+            "message": "Created uploads directory"
+        },
+        {
+            "time": "2026-03-25 04:18:38",
+            "message": "Created scripts directory"
+        },
+        {
+            "time": "2026-03-25 04:18:38",
+            "message": "Copying scripts..."
+        },
+        {
+            "time": "2026-03-25 04:18:38",
+            "message": "Scripts copied (took 0.11s)"
+        },
+        {
+            "time": "2026-03-25 04:18:38",
+            "message": "Copying assets..."
+        },
+        {
+            "time": "2026-03-25 04:18:38",
+            "message": "Copied 5 asset files"
+        },
+        {
+            "time": "2026-03-25 04:18:38",
+            "message": "Copying database..."
+        },
+        {
+            "time": "2026-03-25 04:19:44",
+            "message": "Database copied successfully"
+        },
+        {
+            "time": "2026-03-25 04:19:44",
+            "message": "Removing clone records from target database..."
+        },
+        {
+            "time": "2026-03-25 04:19:44",
+            "message": "Removed 4 clone record(s) from target database"
+        },
+        {
+            "time": "2026-03-25 04:19:44",
+            "message": "Re-encrypting LDAP password..."
+        },
+        {
+            "time": "2026-03-25 04:19:44",
+            "message": "LDAP password re-encrypted successfully"
+        },
+        {
+            "time": "2026-03-25 04:19:44",
+            "message": "Initializing database schema in cloned instance..."
+        },
+        {
+            "time": "2026-03-25 04:19:44",
+            "message": "Creating .env file..."
+        },
+        {
+            "time": "2026-03-25 04:19:44",
+            "message": "Created .env with VITE_BASE_PATH=\/MyClone"
+        },
+        {
+            "time": "2026-03-25 04:19:44",
+            "message": "Installing npm dependencies (this may take a few minutes)..."
+        },
+        {
+            "time": "2026-03-25 04:19:49",
+            "message": "npm install completed successfully"
+        },
+        {
+            "time": "2026-03-25 04:19:49",
+            "message": "Building application (this may take a few minutes)..."
+        },
+        {
+            "time": "2026-03-25 04:20:00",
+            "message": "Build completed successfully"
+        },
+        {
+            "time": "2026-03-25 04:20:12",
+            "message": "Cleaned up node_modules"
+        },
+        {
+            "time": "2026-03-25 04:20:12",
+            "message": "Creating deployment README..."
+        },
+        {
+            "time": "2026-03-25 04:20:12",
+            "message": "Clone completed successfully!"
+        },
+        {
+            "time": "2026-03-25 04:20:12",
+            "message": "URL: http:\/\/localhost\/MyClone\/"
+        }
+    ],
+    "timestamp": 1774426812,
+    "memory_usage": "2 MB",
+    "peak_memory": "2 MB",
+    "elapsed_time": "94.57"
+}

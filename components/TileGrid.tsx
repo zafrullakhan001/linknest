@@ -94,6 +94,55 @@ function resolveApiBase(): string {
   return '/api';
 }
 
+/**
+ * Tooltips for navigation tabs and inline filters.
+ * Using the native `title` attribute keeps implementation simple and lightweight.
+ */
+const APP_TAB_TOOLTIPS: Record<string, string> = {
+  staging:
+    'Staging (Admin only): A sandbox workspace for preparing and testing spaces before they are published.\n\nUse this area to experiment with tile/category structure, import data, and validate your changes without affecting what normal users see. When you switch tabs, you are viewing the staging set rather than the live/public set.',
+  public:
+    'Public (Guest): Spaces that are visible to everyone, including users who are not signed in.\n\nThese spaces are intended for general audiences. If a space is public, you can browse it here and open its links/sections according to the public layout settings.',
+  'your-apps':
+    'Your Apps (Signed-in): A personalized view of spaces you have access to.\n\nThis tab combines spaces that are available because you are authenticated and spaces you can access via role-based permissions (and/or link-level role access). In other words, it’s the “everything I’m allowed to see” dashboard for your account.',
+  'public-favorites':
+    'Favorites (Guest): A lightweight favorites view for users who are not signed in.\n\nThis typically includes favorite spaces and favorite links you saved locally in your browser. You can quickly return to what you bookmarked without requiring an account.',
+  favorites:
+    'Favorites (Signed-in): Your saved spaces and saved links.\n\nUse this tab to jump back to content you marked as a favorite. Favorites are tied to your authenticated user profile, so they remain available across sessions.',
+  private:
+    'Private (Signed-in): Spaces restricted to you via private visibility and sharing controls.\n\nThis area is organized into sub-tabs so you can manage your private spaces, invitations/sharing status, and blocked access. Private spaces are not meant for guests or the general public.',
+  scheduled:
+    'Scheduled (Signed-in): Spaces whose visibility is scheduled for a future time.\n\nThis tab shows spaces that are not yet active but will become visible when their scheduled “visible from” time is reached. Once the start time passes, spaces should naturally appear in the appropriate active area.',
+  expired:
+    'Expired (Signed-in): Spaces whose scheduled expiration time has passed.\n\nThis tab surfaces spaces that were previously visible but are now considered expired. Use it to review what has lapsed and to confirm content scheduling behavior.',
+  archive:
+    'Archive (Signed-in): Spaces moved to an archived state.\n\nArchived spaces are kept for reference or cleanup rather than normal browsing. They typically represent a deliberate “keep but don’t show in active views” workflow.',
+  monitoring:
+    'Monitoring (Signed-in): Link health monitoring dashboard.\n\nUse this to review the status of monitored links inside spaces, identify broken/slow destinations, and track health checks over time. This is meant for ongoing maintenance and reliability.',
+  monitorv2:
+    'Monitorv2 (Admin/Advanced Monitoring): An enhanced monitoring interface backed by PostgreSQL/TimescaleDB.\n\nThis view provides deeper analytics and performance-oriented monitoring than the standard dashboard. It is intended for installations configured with the advanced monitoring stack.',
+  'recycle-bin':
+    'Recycle Bin (Signed-in): Recently deleted spaces.\n\nWhen you delete a space, it is typically moved here instead of being permanently removed immediately. You can restore spaces from the bin, and (depending on permissions/settings) permanently purge items afterward.',
+};
+
+const YOUR_APPS_FILTER_TOOLTIPS: Record<string, string> = {
+  all:
+    'All Apps: Shows every space in “Your Apps” that you can access, regardless of whether it’s available due to being authenticated or due to specific role/group permissions.\n\nThis is the broadest filter.',
+  authenticated:
+    'Authenticated: Shows spaces that are visible specifically because you are signed in.\n\nIf a space requires authentication (but does not necessarily grant access via explicit role permissions), it will appear here.',
+  assigned:
+    'Your Assigned Apps: Shows spaces where access is granted based on explicit assignment (for example, via user/group permissions or role access rules).\n\nThis view helps you focus on spaces that were intentionally granted to you, rather than broadly visible to signed-in users.',
+};
+
+const PRIVATE_SUBTAB_TOOLTIPS: Record<string, string> = {
+  spaces:
+    'Spaces: Your private spaces in “Private”.\n\nUse this to browse and manage the private content you own and/or can access. This sub-tab is the main place to work with your private spaces list.',
+  sharing:
+    'Sharing: Invitation and sharing status for private spaces.\n\nThis sub-tab is for handling sharing workflows (for example, pending invitations you can accept/reject). It helps you manage access relationships without mixing them into the main private spaces list.',
+  blocked:
+    'Blocked: Users you have blocked (and access that was revoked).\n\nUse this to review blocked entries related to private sharing and remove/revoke blocks as needed. This is focused on access control hygiene.',
+};
+
 // Private tab owner filter dropdown (with search when many owners)
 interface PrivateOwnerFilterOption {
   value: number | 'all';
@@ -6245,6 +6294,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           <button
             onClick={() => requestTab('staging')}
             data-active={activeTab === 'staging'}
+            title={APP_TAB_TOOLTIPS.staging}
             className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'staging' ? 'active' : ''}`}
           >
             Staging
@@ -6259,6 +6309,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           <button
             onClick={() => requestTab('public')}
             data-active={activeTab === 'public'}
+            title={APP_TAB_TOOLTIPS.public}
             className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'public' ? 'active' : ''}`}
           >
             Public
@@ -6268,6 +6319,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           <button
             onClick={() => requestTab('your-apps')}
             data-active={activeTab === 'your-apps'}
+            title={APP_TAB_TOOLTIPS['your-apps']}
             className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'your-apps' ? 'active' : ''}`}
           >
             Your Apps
@@ -6290,6 +6342,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           <button
             onClick={() => requestTab('public-favorites')}
             data-active={activeTab === 'public-favorites'}
+            title={APP_TAB_TOOLTIPS['public-favorites']}
             className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'public-favorites' ? 'active' : ''}`}
           >
             Favorites
@@ -6356,6 +6409,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
               <button
                 onClick={() => requestTab('favorites')}
                 data-active={activeTab === 'favorites'}
+                title={APP_TAB_TOOLTIPS.favorites}
                 className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'favorites' ? 'active' : ''}`}
               >
                 Favorites
@@ -6379,6 +6433,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
               <button
                 onClick={() => requestTab('private')}
                 data-active={activeTab === 'private'}
+                title={APP_TAB_TOOLTIPS.private}
                 className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'private' ? 'active' : ''}`}
               >
                 Private
@@ -6393,6 +6448,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
               <button
                 onClick={() => requestTab('scheduled')}
                 data-active={activeTab === 'scheduled'}
+                title={APP_TAB_TOOLTIPS.scheduled}
                 className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'scheduled' ? 'active' : ''}`}
               >
                 Scheduled
@@ -6407,6 +6463,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
               <button
                 onClick={() => requestTab('expired')}
                 data-active={activeTab === 'expired'}
+                title={APP_TAB_TOOLTIPS.expired}
                 className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'expired' ? 'active' : ''}`}
               >
                 Expired
@@ -6421,6 +6478,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
               <button
                 onClick={() => requestTab('archive')}
                 data-active={activeTab === 'archive'}
+                title={APP_TAB_TOOLTIPS.archive}
                 className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'archive' ? 'active' : ''}`}
               >
                 Archive
@@ -6434,6 +6492,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             {isAuthenticated && !disabledAppTabs.has('monitoring') && (
               <button
                 onClick={() => requestTab('monitoring')}
+                title={APP_TAB_TOOLTIPS.monitoring}
                 className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'monitoring' ? 'active' : ''}`}
               >
                 Monitoring
@@ -6443,7 +6502,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
               <button
                 onClick={() => requestTab('monitorv2')}
                 className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'monitorv2' ? 'active' : ''}`}
-                title="Advanced Monitoring with PostgreSQL/TimescaleDB"
+                title={APP_TAB_TOOLTIPS.monitorv2}
               >
                 Monitorv2
               </button>
@@ -6452,6 +6511,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
               <button
                 onClick={() => requestTab('recycle-bin')}
                 data-active={activeTab === 'recycle-bin'}
+                title={APP_TAB_TOOLTIPS['recycle-bin']}
                 className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'recycle-bin' ? 'active' : ''}`}
               >
                 Recycle Bin
@@ -6539,6 +6599,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
               ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm ring-1 ring-slate-200 dark:ring-slate-600'
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'
               }`}
+            title={YOUR_APPS_FILTER_TOOLTIPS.all}
           >
             All Apps
           </button>
@@ -6548,6 +6609,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
               ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm ring-1 ring-slate-200 dark:ring-slate-600'
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'
               }`}
+            title={YOUR_APPS_FILTER_TOOLTIPS.authenticated}
           >
             <span className="text-xs">🔒</span>
             Authenticated
@@ -6558,6 +6620,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
               ? 'bg-white dark:bg-slate-700 text-purple-600 dark:text-purple-400 shadow-sm ring-1 ring-slate-200 dark:ring-slate-600'
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'
               }`}
+            title={YOUR_APPS_FILTER_TOOLTIPS.assigned}
           >
             <span className="text-xs">👤</span>
             Your Assigned Apps
@@ -6575,6 +6638,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm border border-slate-200 dark:border-slate-600'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50'
                 }`}
+              title={PRIVATE_SUBTAB_TOOLTIPS.spaces}
             >
               Spaces
             </button>
@@ -6584,6 +6648,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm border border-slate-200 dark:border-slate-600'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50'
                 }`}
+              title={PRIVATE_SUBTAB_TOOLTIPS.sharing}
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4" aria-hidden>
                 <path d="M3 4a2 2 0 00-2 2v1.161l8.441 4.221a1.25 1.25 0 001.118 0L19 7.162V6a2 2 0 00-2-2H3z" />
@@ -6602,6 +6667,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm border border-slate-200 dark:border-slate-600'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50'
                 }`}
+              title={PRIVATE_SUBTAB_TOOLTIPS.blocked}
             >
               Blocked
               {blockedUsersCount > 0 && (
