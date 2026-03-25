@@ -1369,7 +1369,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
       }}
       className={`
         linknest-tile ${hasLocalDecoration ? 'has-local-decoration' : ''} ${tileAnimatedClass} ${finalAnimationClass} group relative ${tile.tileBorderRadius === undefined ? 'rounded-xl' : ''} ${borderClass}
-        transition-all duration-200 
+        transition-[transform,box-shadow,border-color] duration-200 ease-out
         flex flex-col h-full min-h-[140px] cursor-pointer
       `}
     >
@@ -1406,7 +1406,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
         <div className="flex items-center gap-2">
           <div className={`
             w-10 h-10 rounded-lg ${styles.soft} flex items-center justify-center text-lg 
-            border ${styles.border} group-hover:scale-105 transition-transform duration-200
+            border ${styles.border} transition-shadow duration-200 ease-out group-hover:shadow-md
           `}>
             {tile.emoji}
           </div>
@@ -2227,7 +2227,32 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [isLoadingArchive, setIsLoadingArchive] = useState(false);
   const [favoriteLinks, setFavoriteLinks] = useState<FavoriteLink[]>([]);
   const [isLoadingFavoriteLinks, setIsLoadingFavoriteLinks] = useState(false);
-  const [favLinksSort, setFavLinksSort] = useState<'default' | 'asc'>('default');
+  const [favLinksSort, setFavLinksSort] = useState<'default' | 'asc' | 'desc'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('favLinksSort');
+      return (saved as 'default' | 'asc' | 'desc') || 'default';
+    }
+    return 'default';
+  });
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      userPreferencesService.getPreference('favLinksSort').then(val => {
+        if (val !== null && (val === 'default' || val === 'asc' || val === 'desc')) {
+          setFavLinksSort(val as 'default' | 'asc' | 'desc');
+        }
+      });
+    }
+  }, [isAuthenticated]);
+
+  const handleSetFavLinksSort = (sort: 'default' | 'asc' | 'desc') => {
+    setFavLinksSort(sort);
+    if (isAuthenticated) {
+      userPreferencesService.updatePreference('favLinksSort', sort);
+    } else {
+      localStorage.setItem('favLinksSort', sort);
+    }
+  };
   const [linkHealthResults, setLinkHealthResults] = useState<Map<string, LinkHealthCheckResult>>(new Map());
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
   const [autoRefreshInterval, setAutoRefreshInterval] = useState<number>(30); // Default 30s
@@ -6779,14 +6804,14 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
               <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-500 dark:text-slate-400">Sort:</span>
                 <button
-                  onClick={() => setFavLinksSort(prev => prev === 'default' ? 'asc' : 'default')}
-                  className={`p-1.5 rounded-lg transition-all ${favLinksSort === 'asc'
+                  onClick={() => handleSetFavLinksSort(favLinksSort === 'default' ? 'asc' : favLinksSort === 'asc' ? 'desc' : 'default')}
+                  className={`p-1.5 rounded-lg transition-all ${favLinksSort !== 'default'
                     ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                     }`}
-                  title={favLinksSort === 'asc' ? "Sorted alphabetically" : "Sort alphabetically"}
+                  title={favLinksSort === 'asc' ? "Sorted ascending (Click for descending)" : favLinksSort === 'desc' ? "Sorted descending (Click to reset)" : "Sort ascending"}
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 transition-transform ${favLinksSort === 'desc' ? 'rotate-180' : ''}`}>
                     <path fillRule="evenodd" d="M2.24 6.8a.75.75 0 001.06-.04l1.95-2.1v8.59a.75.75 0 001.5 0V4.66l1.95 2.1a.75.75 0 101.1-1.02l-3.25-3.5a.75.75 0 00-1.1 0L2.2 5.74a.75.75 0 00.04 1.06zm8 4a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5zm0-4a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5zm0 8a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5z" clipRule="evenodd" />
                   </svg>
                 </button>
@@ -6874,6 +6899,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 .sort((a, b) => {
                   if (favLinksSort === 'asc') {
                     return a.label.localeCompare(b.label);
+                  }
+                  if (favLinksSort === 'desc') {
+                    return b.label.localeCompare(a.label);
                   }
                   return 0;
                 })
@@ -7489,14 +7517,14 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-slate-500 dark:text-slate-400">Sort:</span>
                   <button
-                    onClick={() => setFavLinksSort(prev => prev === 'default' ? 'asc' : 'default')}
-                    className={`p-1.5 rounded-lg transition-all ${favLinksSort === 'asc'
+                    onClick={() => handleSetFavLinksSort(favLinksSort === 'default' ? 'asc' : favLinksSort === 'asc' ? 'desc' : 'default')}
+                    className={`p-1.5 rounded-lg transition-all ${favLinksSort !== 'default'
                       ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400'
                       : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                       }`}
-                    title={favLinksSort === 'asc' ? "Sorted alphabetically (Click to reset)" : "Sort alphabetically"}
+                    title={favLinksSort === 'asc' ? "Sorted ascending (Click for descending)" : favLinksSort === 'desc' ? "Sorted descending (Click to reset)" : "Sort ascending"}
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 transition-transform ${favLinksSort === 'desc' ? 'rotate-180' : ''}`}>
                       <path fillRule="evenodd" d="M2.24 6.8a.75.75 0 001.06-.04l1.95-2.1v8.59a.75.75 0 001.5 0V4.66l1.95 2.1a.75.75 0 101.1-1.02l-3.25-3.5a.75.75 0 00-1.1 0L2.2 5.74a.75.75 0 00.04 1.06zm8 4a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5zm0-4a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5zm0 8a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5z" clipRule="evenodd" />
                     </svg>
                   </button>
@@ -7584,6 +7612,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                   .sort((a, b) => {
                     if (favLinksSort === 'asc') {
                       return a.label.localeCompare(b.label);
+                    }
+                    if (favLinksSort === 'desc') {
+                      return b.label.localeCompare(a.label);
                     }
                     return 0;
                   })
