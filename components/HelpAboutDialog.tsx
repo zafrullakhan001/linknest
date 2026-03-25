@@ -499,6 +499,63 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
               <section>
                 <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <path fillRule="evenodd" d="M6 4a1 1 0 011-1h6a1 1 0 011 1v1h1a2 2 0 012 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h1V4zm2 2V4h4v2H8zM5 7a1 1 0 00-1 1v7a1 1 0 001 1h10a1 1 0 001-1V8a1 1 0 00-1-1H5zm3 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" clipRule="evenodd" />
+                  </svg>
+                  Keyboard Shortcuts
+                </h3>
+                <div className="space-y-3">
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200 dark:border-slate-700">
+                          <th className="text-left pb-2 font-semibold text-slate-900 dark:text-white">Shortcut</th>
+                          <th className="text-left pb-2 font-semibold text-slate-900 dark:text-white">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        <tr>
+                          <td className="py-2 pr-4">
+                            <span className="inline-flex items-center gap-1">
+                              <kbd className="px-2 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono shadow-sm">Ctrl</kbd>
+                              <span className="text-slate-400">+</span>
+                              <kbd className="px-2 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono shadow-sm">Shift</kbd>
+                              <span className="text-slate-400">+</span>
+                              <kbd className="px-2 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono shadow-sm">Y</kbd>
+                            </span>
+                          </td>
+                          <td className="py-2 text-slate-700 dark:text-slate-300">Open Widget Quick Access menu</td>
+                        </tr>
+                        <tr>
+                          <td className="py-2 pr-4">
+                            <span className="inline-flex items-center gap-1">
+                              <kbd className="px-2 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono shadow-sm">↑</kbd>
+                              <span className="text-slate-400">/</span>
+                              <kbd className="px-2 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono shadow-sm">↓</kbd>
+                            </span>
+                          </td>
+                          <td className="py-2 text-slate-700 dark:text-slate-300">Navigate widgets in menu</td>
+                        </tr>
+                        <tr>
+                          <td className="py-2 pr-4">
+                            <kbd className="px-2 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono shadow-sm">Enter</kbd>
+                          </td>
+                          <td className="py-2 text-slate-700 dark:text-slate-300">Toggle selected widget on/off</td>
+                        </tr>
+                        <tr>
+                          <td className="py-2 pr-4">
+                            <kbd className="px-2 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono shadow-sm">Esc</kbd>
+                          </td>
+                          <td className="py-2 text-slate-700 dark:text-slate-300">Close dialogs &amp; menus</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
                     <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
                   </svg>
                   Tips & Tricks
@@ -527,7 +584,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     <li>Create custom widgets with full development framework (admin only)</li>
                     <li>Customize tile animations from 200+ options for a personalized experience</li>
                     <li>Add seasonal decorations to tiles for holidays and special occasions</li>
-                    <li>Toggle floating widgets (Clock, Phonetic Alphabet, Notes, Weather, Calculator) from navigation</li>
+                    <li>Toggle floating widgets from the navigation bar or press <strong>Ctrl+Shift+Y</strong> for the Widget Quick Access menu</li>
                     <li>Use the Notes widget to keep quick notes (authenticated users only)</li>
                     <li>Monitor system health with URL, keyword, port, and ping checks</li>
                     <li>Set up email notifications with advanced rules and multiple SMTP servers</li>
