@@ -5,6 +5,12 @@ import { linkHealthService, LinkHealthMap } from '../services/linkHealthService'
 import { performanceAnalyticsService, type AnalyticsMetric } from '../services/performanceAnalyticsService';
 import { authService, UserListItem, User } from '../services/authService';
 import { exportTileToFile } from '../services/spaceTransferService';
+import {
+    exportSectionLinksToFile,
+    exportTabToFile,
+    parseSectionLinksExport,
+    parseTabExport
+} from '../services/sectionTabTransferService';
 import { cloneTile, getTiles, saveTile, toggleLinkFavorite, createTempVersion } from '../services/storageService';
 import { removeSharedTile } from '../services/tileShareService';
 import { useSettings } from '../contexts/SettingsContext';
@@ -203,6 +209,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [isEditing, setIsEditing] = useState(false);
     const autoSavingRef = useRef(false);
     const tempVersionCreatedRef = useRef<{ tileId: string | null; active: boolean }>({ tileId: null, active: false });
+    const sectionLinksJsonInputRef = useRef<HTMLInputElement>(null);
+    const tabJsonInputRef = useRef<HTMLInputElement>(null);
+    const pendingSectionJsonImportRef = useRef<{ tabId: string; sectionId: string } | null>(null);
+    const pendingTabJsonImportAfterRef = useRef<string | null>(null);
 
     // Edit State
     const [editTitle, setEditTitle] = useState(tile.title);
@@ -2438,6 +2448,85 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             alert('Failed to import CSV file: ' + (error instanceof Error ? error.message : 'Unknown error'));
         } finally {
             setImportingCsv(prev => ({ ...prev, [sectionId]: false }));
+        }
+    };
+
+    const openSectionLinksJsonImport = (tabId: string, sectionId: string) => {
+        pendingSectionJsonImportRef.current = { tabId, sectionId };
+        sectionLinksJsonInputRef.current?.click();
+    };
+
+    const handleSectionLinksJsonFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        const pending = pendingSectionJsonImportRef.current;
+        pendingSectionJsonImportRef.current = null;
+        if (!file || !pending) return;
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            const newLinks = parseSectionLinksExport(data);
+            if (newLinks.length === 0) {
+                alert('No links found in this file.');
+                return;
+            }
+            setEditTabs(prev =>
+                prev.map(tab => {
+                    if (tab.id !== pending.tabId) return tab;
+                    return {
+                        ...tab,
+                        sections: tab.sections.map(s => {
+                            if (s.id !== pending.sectionId) return s;
+                            const linkPos = (s.links || []).map(l => l.position ?? 0);
+                            const rtPos = (s.richTextContent || []).map(r => r.position ?? 0);
+                            const maxPosition = Math.max(...linkPos, ...rtPos, -1);
+                            const withPos = newLinks.map((link, i) => ({
+                                ...link,
+                                position: maxPosition + 1 + i
+                            }));
+                            return {
+                                ...s,
+                                links: [...s.links, ...withPos],
+                                richTextContent: s.richTextContent || []
+                            };
+                        })
+                    };
+                })
+            );
+            alert(`Imported ${newLinks.length} link(s) from JSON.`);
+        } catch (err) {
+            console.error(err);
+            alert(err instanceof Error ? err.message : 'Failed to import links JSON.');
+        }
+    };
+
+    const openTabJsonImport = (afterTabId: string) => {
+        pendingTabJsonImportAfterRef.current = afterTabId;
+        tabJsonInputRef.current?.click();
+    };
+
+    const handleTabJsonFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        const afterId = pendingTabJsonImportAfterRef.current;
+        pendingTabJsonImportAfterRef.current = null;
+        if (!file || !afterId) return;
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            const importedTab = parseTabExport(data);
+            setEditTabs(prev => {
+                const idx = prev.findIndex(t => t.id === afterId);
+                if (idx === -1) {
+                    return [...prev, { ...importedTab, position: prev.length }].map((t, i) => ({ ...t, position: i }));
+                }
+                const next = [...prev.slice(0, idx + 1), importedTab, ...prev.slice(idx + 1)];
+                return next.map((t, i) => ({ ...t, position: i }));
+            });
+            alert(`Imported tab "${importedTab.title}" with ${importedTab.sections.length} section(s).`);
+        } catch (err) {
+            console.error(err);
+            alert(err instanceof Error ? err.message : 'Failed to import tab JSON.');
         }
     };
 
@@ -5652,6 +5741,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             )}
 
                             <div className="space-y-6">
+                                <input
+                                    ref={sectionLinksJsonInputRef}
+                                    type="file"
+                                    accept=".json,application/json"
+                                    className="hidden"
+                                    aria-hidden={true}
+                                    onChange={handleSectionLinksJsonFile}
+                                />
+                                <input
+                                    ref={tabJsonInputRef}
+                                    type="file"
+                                    accept=".json,application/json"
+                                    className="hidden"
+                                    aria-hidden={true}
+                                    onChange={handleTabJsonFile}
+                                />
                                 {/* Render tabs if available, otherwise fall back to sections (backward compatibility) */}
                                 {editTabs.length > 0 ? (
                                     editTabs.map((tab, tabIndex) => {
@@ -5746,6 +5851,26 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
                                                             <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
                                                             <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
+                                                        </svg>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => exportTabToFile(tab)}
+                                                        className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2"
+                                                        title="Export tab as JSON (all sections, links, and rich text)"
+                                                    >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                                                        </svg>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => openTabJsonImport(tab.id)}
+                                                        className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2"
+                                                        title="Import tab from JSON (inserts after this tab)"
+                                                    >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
                                                         </svg>
                                                     </button>
                                                     <button
@@ -5992,6 +6117,26 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             <span className="text-xs text-slate-600 dark:text-slate-400">Force Stacked</span>
                                                                         </label>
                                                                     </div>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => exportSectionLinksToFile(section)}
+                                                                        className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2 shrink-0"
+                                                                        title="Export links in this section as JSON"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                                                                        </svg>
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => openSectionLinksJsonImport(tab.id, section.id)}
+                                                                        className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2 shrink-0"
+                                                                        title="Import links from JSON (LinkNest section links export)"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                                                                        </svg>
+                                                                    </button>
                                                                     {/* CSV Import */}
                                                                     <div className="flex items-center gap-1">
                                                                         <label className="cursor-pointer">
@@ -6004,7 +6149,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     setCsvImportFile(prev => ({ ...prev, [section.id]: file }));
                                                                                 }}
                                                                             />
-                                                                            <span className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2" title="Import Links from CSV (requires 'Link Name' and 'Link' columns)">
+                                                                            <span className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2" title="Import links from CSV (requires 'Link Name' and 'Link' columns)">
                                                                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
                                                                                     <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
                                                                                 </svg>

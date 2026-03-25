@@ -62,8 +62,9 @@ export interface SpaceStyles {
   // Hover effects
   hoverElevation: number;
   /** 1.0 = default; values above 1 add extra upward motion (no CSS scale — avoids blurry text). */
+  /** Legacy style fields; tile hover no longer uses transform (avoids edge flicker). */
   hoverScale: number;
-  hoverTranslateY: number; // pixels to move up on hover (positive = lift)
+  hoverTranslateY: number;
 
   // Visual effects
   raisedEffect: boolean; // 3D raised appearance with multiple shadows
@@ -1050,12 +1051,6 @@ export const styleService = {
     const zoomScale = zoomValue / 100;
     const inverseScale = 100 / zoomValue;
 
-    // Hover uses translate3d only — CSS scale() on the whole tile blurs titles/descriptions.
-    // Map legacy hoverScale (1.0–1.2) into extra lift so the control still adds “pop”.
-    const tileHoverTranslateY =
-      (styles.raisedEffect ? -styles.hoverTranslateY - 1 : -styles.hoverTranslateY) -
-      (styles.hoverScale > 1 ? (styles.hoverScale - 1) * 56 : 0);
-
     return `
       /* Global Page Zoom - Applied to html element to match browser zoom behavior */
       /* This approach scales the entire page including viewport calculations, eliminating white space */
@@ -1259,11 +1254,12 @@ export const styleService = {
       }
       ` : ''}
       
+      /* No translateY on hover: moving the tile shifts the hit box and causes rapid
+         hover/unhover flicker when the pointer sits on the bottom or side edge. */
       .linknest-tile:hover {
         box-shadow: ${styles.raisedEffect && raisedShadow
         ? `0 ${8 + hoverShadowIntensity * 2}px ${16 + hoverShadowIntensity * 4}px rgba(0, 0, 0, 0.2), 0 ${4 + hoverShadowIntensity}px ${8 + hoverShadowIntensity * 2}px rgba(0, 0, 0, 0.15), inset 0 2px 0 rgba(255, 255, 255, 0.3)`
         : hoverShadows[Math.min(hoverShadowIntensity, 5)]} !important;
-        transform: translate3d(0, ${tileHoverTranslateY}px, 0) !important;
       }
       
       /* Tile entrance animation */

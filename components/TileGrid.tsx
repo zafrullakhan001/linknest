@@ -1370,7 +1370,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
       className={`
         linknest-tile ${hasLocalDecoration ? 'has-local-decoration' : ''} ${tileAnimatedClass} ${finalAnimationClass} group relative ${tile.tileBorderRadius === undefined ? 'rounded-xl' : ''} ${borderClass}
         transition-[transform,box-shadow,border-color] duration-200 ease-out
-        flex flex-col h-full min-h-[140px] cursor-pointer
+        flex flex-col h-full min-h-[140px] min-w-0 cursor-pointer
       `}
     >
       {/* Celebration effect animations */}
@@ -1401,9 +1401,9 @@ const SortableTile: React.FC<SortableTileProps> = ({
         );
       })()}
 
-      {/* Compact Header */}
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-2">
+      {/* Compact Header — min-w-0 + flex-wrap on actions so controls stay visible in narrow tiles */}
+      <div className="flex items-start gap-2 mb-3 min-w-0">
+        <div className="flex items-center gap-2 shrink-0">
           <div className={`
             w-10 h-10 rounded-lg ${styles.soft} flex items-center justify-center text-lg 
             border ${styles.border} transition-shadow duration-200 ease-out group-hover:shadow-md
@@ -1411,7 +1411,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
             {tile.emoji}
           </div>
         </div>
-        <div className={`${isAuthenticated ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'} transition-opacity flex items-center gap-1`}>
+        <div className={`${isAuthenticated ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'} transition-opacity flex flex-wrap items-center gap-1 justify-end flex-1 min-w-0`}>
           {isAuthenticated && (
             <>
               {/* Category Selector */}

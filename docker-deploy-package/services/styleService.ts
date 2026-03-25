@@ -1121,11 +1121,11 @@ export const styleService = {
       }
       ` : ''}
       
+      /* No translate/scale on hover: shifts hit box and causes edge flicker */
       .linknest-tile:hover {
         box-shadow: ${styles.raisedEffect && raisedShadow
         ? `0 ${8 + hoverShadowIntensity * 2}px ${16 + hoverShadowIntensity * 4}px rgba(0, 0, 0, 0.2), 0 ${4 + hoverShadowIntensity}px ${8 + hoverShadowIntensity * 2}px rgba(0, 0, 0, 0.15), inset 0 2px 0 rgba(255, 255, 255, 0.3)`
         : hoverShadows[Math.min(hoverShadowIntensity, 5)]} !important;
-        transform: translateY(${styles.raisedEffect ? -styles.hoverTranslateY - 1 : -styles.hoverTranslateY}px) scale(${styles.hoverScale}) !important;
       }
       
       /* Tile entrance animation */
