@@ -2,19 +2,28 @@
 require_once __DIR__ . '/config.php';
 
 if (session_status() === PHP_SESSION_NONE) {
-    session_start();
+    try {
+        @session_start();
+    } catch (Throwable $e) {
+        error_log('Broadcast session start failed: ' . $e->getMessage());
+    }
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
 $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
 
-// Normalize path - remove trailing slash for consistent matching
 $path = rtrim($path, '/');
 if (empty($path)) {
     $path = '/';
 }
 
-$db = getDB();
+try {
+    $db = getDB();
+} catch (Throwable $e) {
+    error_log('Broadcast getDB failed: ' . $e->getMessage());
+    sendJSON(['error' => 'Failed to connect to database'], 500);
+    exit;
+}
 
 switch ($method) {
     case 'GET':
@@ -26,7 +35,7 @@ switch ($method) {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
         break;
-        
+
     case 'POST':
         if ($path === '' || $path === '/') {
             handleCreateBroadcast($db);
@@ -34,7 +43,7 @@ switch ($method) {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
         break;
-        
+
     case 'PUT':
         if ($path === '' || $path === '/') {
             handleUpdateBroadcast($db);
@@ -42,7 +51,7 @@ switch ($method) {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
         break;
-        
+
     case 'DELETE':
         if ($path === '' || $path === '/') {
             handleDeleteBroadcast($db);
@@ -50,61 +59,115 @@ switch ($method) {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
         break;
-        
+
     default:
         sendJSON(['error' => 'Method not allowed'], 405);
+}
+
+function resolveBroadcastThreadId($db, $data) {
+    if (!empty($data['threadId'])) {
+        return (int)$data['threadId'];
+    }
+    if (!empty($data['id'])) {
+        $stmt = $db->prepare('SELECT thread_id FROM broadcast_revisions WHERE id = ?');
+        $stmt->execute([(int)$data['id']]);
+        $tid = $stmt->fetchColumn();
+        return $tid ? (int)$tid : 0;
+    }
+    return 0;
+}
+
+function revisionRowToJson($row, $threadCreatedAt, $threadUpdatedAt, $revisionCount) {
+    return [
+        'id' => (int)$row['id'],
+        'threadId' => (int)$row['thread_id'],
+        'message' => (string)($row['message'] ?? ''),
+        'fontFamily' => (string)($row['font_family'] ?? 'Arial, sans-serif'),
+        'fontSize' => (string)($row['font_size'] ?? '16px'),
+        'color' => (string)($row['color'] ?? '#ff0000'),
+        'scrollSpeed' => isset($row['scroll_speed']) ? (int)$row['scroll_speed'] : 30,
+        'expiresAt' => !empty($row['expires_at']) ? (int)$row['expires_at'] : null,
+        'createdAt' => (int)$threadCreatedAt,
+        'updatedAt' => (int)$threadUpdatedAt,
+        'revisionCount' => (int)$revisionCount,
+        'latestRevisionAt' => (int)($row['created_at'] ?? 0),
+    ];
 }
 
 function handleGetBroadcast($db) {
     try {
         $now = time();
-        // Get active broadcast message that hasn't expired
-        $stmt = $db->prepare('SELECT id, message, font_family, font_size, color, scroll_speed, expires_at, created_at, updated_at FROM broadcast_messages WHERE is_active = 1 AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC LIMIT 1');
+        $sql = 'SELECT r.id, r.thread_id, r.message, r.font_family, r.font_size, r.color, r.scroll_speed, r.expires_at, r.created_at,
+                t.created_at AS thread_created_at, t.updated_at AS thread_updated_at,
+                (SELECT COUNT(*) FROM broadcast_revisions cr WHERE cr.thread_id = t.id) AS revision_count
+            FROM broadcast_threads t
+            INNER JOIN broadcast_revisions r ON r.thread_id = t.id
+            WHERE t.is_active = 1 AND t.deleted_at IS NULL
+            AND r.id = (SELECT MAX(r2.id) FROM broadcast_revisions r2 WHERE r2.thread_id = t.id)
+            AND (r.expires_at IS NULL OR r.expires_at > ?)
+            LIMIT 1';
+        $stmt = $db->prepare($sql);
         $stmt->execute([$now]);
-        $broadcast = $stmt->fetch();
-        
-        if ($broadcast) {
-            sendJSON([
-                'id' => (int)$broadcast['id'],
-                'message' => $broadcast['message'],
-                'fontFamily' => $broadcast['font_family'],
-                'fontSize' => $broadcast['font_size'],
-                'color' => $broadcast['color'],
-                'scrollSpeed' => $broadcast['scroll_speed'] ? (int)$broadcast['scroll_speed'] : 30,
-                'expiresAt' => $broadcast['expires_at'] ? (int)$broadcast['expires_at'] : null,
-                'createdAt' => (int)$broadcast['created_at'],
-                'updatedAt' => (int)$broadcast['updated_at'],
-            ]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($row) {
+            sendJSON(revisionRowToJson(
+                $row,
+                (int)$row['thread_created_at'],
+                (int)$row['thread_updated_at'],
+                (int)$row['revision_count']
+            ));
         } else {
             sendJSON(null);
         }
     } catch (PDOException $e) {
-        sendJSON(['error' => 'Failed to fetch broadcast message: ' . $e->getMessage()], 500);
+        error_log('Broadcast fetch PDO: ' . $e->getMessage());
+        sendJSON(null);
+    } catch (Throwable $e) {
+        error_log('Broadcast fetch: ' . $e->getMessage());
+        sendJSON(null);
     }
 }
 
 function handleGetBroadcastHistory($db) {
     try {
-        $limit = 200;
-        $stmt = $db->prepare('SELECT id, message, font_family, font_size, color, scroll_speed, expires_at, created_at, updated_at, is_active FROM broadcast_messages ORDER BY created_at DESC, id DESC LIMIT ' . (int)$limit);
+        $threadLimit = 100;
+        $stmt = $db->prepare(
+            'SELECT id, created_at, updated_at, is_active FROM broadcast_threads WHERE deleted_at IS NULL ORDER BY updated_at DESC, id DESC LIMIT ' . (int)$threadLimit
+        );
         $stmt->execute();
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        $items = [];
-        foreach ($rows as $row) {
-            $items[] = [
-                'id' => (int)$row['id'],
-                'message' => (string)($row['message'] ?? ''),
-                'fontFamily' => (string)($row['font_family'] ?? 'Arial, sans-serif'),
-                'fontSize' => (string)($row['font_size'] ?? '16px'),
-                'color' => (string)($row['color'] ?? '#ff0000'),
-                'scrollSpeed' => isset($row['scroll_speed']) ? (int)$row['scroll_speed'] : 30,
-                'expiresAt' => !empty($row['expires_at']) ? (int)$row['expires_at'] : null,
-                'createdAt' => (int)($row['created_at'] ?? 0),
-                'updatedAt' => (int)($row['updated_at'] ?? 0),
-                'isActive' => ((int)($row['is_active'] ?? 0)) === 1,
+        $threads = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $out = [];
+        foreach ($threads as $t) {
+            $tid = (int)$t['id'];
+            $revStmt = $db->prepare(
+                'SELECT id, thread_id, message, font_family, font_size, color, scroll_speed, expires_at, created_at FROM broadcast_revisions WHERE thread_id = ? ORDER BY created_at DESC, id DESC'
+            );
+            $revStmt->execute([$tid]);
+            $revs = $revStmt->fetchAll(PDO::FETCH_ASSOC);
+            $revOut = [];
+            foreach ($revs as $r) {
+                $revOut[] = [
+                    'id' => (int)$r['id'],
+                    'threadId' => (int)$r['thread_id'],
+                    'message' => (string)($r['message'] ?? ''),
+                    'fontFamily' => (string)($r['font_family'] ?? 'Arial, sans-serif'),
+                    'fontSize' => (string)($r['font_size'] ?? '16px'),
+                    'color' => (string)($r['color'] ?? '#ff0000'),
+                    'scrollSpeed' => isset($r['scroll_speed']) ? (int)$r['scroll_speed'] : 30,
+                    'expiresAt' => !empty($r['expires_at']) ? (int)$r['expires_at'] : null,
+                    'createdAt' => (int)($r['created_at'] ?? 0),
+                ];
+            }
+            $out[] = [
+                'threadId' => $tid,
+                'createdAt' => (int)($t['created_at'] ?? 0),
+                'updatedAt' => (int)($t['updated_at'] ?? 0),
+                'isActive' => ((int)($t['is_active'] ?? 0)) === 1,
+                'revisions' => $revOut,
             ];
         }
-        sendJSON(['items' => $items]);
+        sendJSON(['threads' => $out]);
     } catch (PDOException $e) {
         error_log('Broadcast history PDO: ' . $e->getMessage());
         sendJSON(['error' => 'Failed to load broadcast history'], 500);
@@ -115,8 +178,8 @@ function handleGetBroadcastHistory($db) {
 }
 
 function handleCreateBroadcast($db) {
-    requireAdmin(); // Only admins can create broadcast messages
-    
+    requireAdmin();
+
     $data = getJSONInput();
     $message = $data['message'] ?? '';
     $fontFamily = $data['fontFamily'] ?? 'Arial, sans-serif';
@@ -124,131 +187,133 @@ function handleCreateBroadcast($db) {
     $color = $data['color'] ?? '#ff0000';
     $scrollSpeed = isset($data['scrollSpeed']) ? (int)$data['scrollSpeed'] : 30;
     $expiresAt = isset($data['expiresAt']) && $data['expiresAt'] ? (int)$data['expiresAt'] : null;
-    
+
     if (empty($message)) {
         sendJSON(['error' => 'Message cannot be empty'], 400);
     }
-    
+
     $userId = $_SESSION['user_id'] ?? null;
     $now = time();
-    
+
     try {
-        // Deactivate all existing broadcast messages
-        $stmt = $db->prepare('UPDATE broadcast_messages SET is_active = 0, updated_at = ?');
-        $stmt->execute([$now]);
-        
-        // Create new broadcast message
-        $stmt = $db->prepare('INSERT INTO broadcast_messages (message, font_family, font_size, color, scroll_speed, is_active, expires_at, created_at, updated_at, created_by) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)');
-        $stmt->execute([$message, $fontFamily, $fontSize, $color, $scrollSpeed, $expiresAt, $now, $now, $userId]);
-        
-        $broadcastId = $db->lastInsertId();
-        
+        $db->beginTransaction();
+        $db->exec('UPDATE broadcast_threads SET is_active = 0');
+        $stmt = $db->prepare('INSERT INTO broadcast_threads (created_at, updated_at, deleted_at, is_active) VALUES (?, ?, NULL, 1)');
+        $stmt->execute([$now, $now]);
+        $threadId = (int)$db->lastInsertId();
+
+        $stmt = $db->prepare('INSERT INTO broadcast_revisions (thread_id, message, font_family, font_size, color, scroll_speed, expires_at, created_at, created_by) VALUES (?,?,?,?,?,?,?,?,?)');
+        $stmt->execute([$threadId, $message, $fontFamily, $fontSize, $color, $scrollSpeed, $expiresAt, $now, $userId]);
+        $revisionId = (int)$db->lastInsertId();
+
+        $db->commit();
+
         sendJSON([
             'success' => true,
-            'id' => (int)$broadcastId,
-            'message' => 'Broadcast message created successfully'
+            'id' => $revisionId,
+            'threadId' => $threadId,
+            'message' => 'Broadcast message created successfully',
         ]);
     } catch (PDOException $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
         sendJSON(['error' => 'Failed to create broadcast message: ' . $e->getMessage()], 500);
     }
 }
 
 function handleUpdateBroadcast($db) {
-    requireAdmin(); // Only admins can update broadcast messages
-    
+    requireAdmin();
+
     $data = getJSONInput();
-    $id = isset($data['id']) ? (int)$data['id'] : null;
-    
-    if (!$id) {
-        sendJSON(['error' => 'Message ID is required'], 400);
+    $threadId = resolveBroadcastThreadId($db, $data);
+
+    if (!$threadId) {
+        sendJSON(['error' => 'Thread ID or revision ID is required'], 400);
     }
-    
+
+    $stmt = $db->prepare('SELECT id FROM broadcast_threads WHERE id = ? AND deleted_at IS NULL');
+    $stmt->execute([$threadId]);
+    if (!$stmt->fetch()) {
+        sendJSON(['error' => 'Broadcast thread not found'], 404);
+    }
+
+    $message = $data['message'] ?? null;
+    $fontFamily = $data['fontFamily'] ?? null;
+    $fontSize = $data['fontSize'] ?? null;
+    $color = $data['color'] ?? null;
+    $scrollSpeed = isset($data['scrollSpeed']) ? (int)$data['scrollSpeed'] : null;
+    $expiresAt = array_key_exists('expiresAt', $data) ? ($data['expiresAt'] ? (int)$data['expiresAt'] : null) : null;
+
+    if ($message !== null && $message === '') {
+        sendJSON(['error' => 'Message cannot be empty'], 400);
+    }
+
+    $userId = $_SESSION['user_id'] ?? null;
+    $now = time();
+
     try {
-        // Verify message exists
-        $stmt = $db->prepare('SELECT id FROM broadcast_messages WHERE id = ?');
-        $stmt->execute([$id]);
-        if (!$stmt->fetch()) {
-            sendJSON(['error' => 'Broadcast message not found'], 404);
+        $stmt = $db->prepare('SELECT message, font_family, font_size, color, scroll_speed, expires_at FROM broadcast_revisions WHERE thread_id = ? ORDER BY created_at DESC, id DESC LIMIT 1');
+        $stmt->execute([$threadId]);
+        $prev = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$prev) {
+            sendJSON(['error' => 'No revisions in thread'], 404);
         }
-        
-        $updates = [];
-        $params = [];
-        
-        if (isset($data['message'])) {
-            if (empty($data['message'])) {
-                sendJSON(['error' => 'Message cannot be empty'], 400);
-            }
-            $updates[] = 'message = ?';
-            $params[] = $data['message'];
-        }
-        
-        if (isset($data['fontFamily'])) {
-            $updates[] = 'font_family = ?';
-            $params[] = $data['fontFamily'];
-        }
-        
-        if (isset($data['fontSize'])) {
-            $updates[] = 'font_size = ?';
-            $params[] = $data['fontSize'];
-        }
-        
-        if (isset($data['color'])) {
-            $updates[] = 'color = ?';
-            $params[] = $data['color'];
-        }
-        
-        if (isset($data['scrollSpeed'])) {
-            $updates[] = 'scroll_speed = ?';
-            $params[] = (int)$data['scrollSpeed'];
-        }
-        
-        if (isset($data['isActive'])) {
-            $updates[] = 'is_active = ?';
-            $params[] = $data['isActive'] ? 1 : 0;
-        }
-        
-        if (isset($data['expiresAt'])) {
-            $updates[] = 'expires_at = ?';
-            $params[] = $data['expiresAt'] ? (int)$data['expiresAt'] : null;
-        }
-        
-        if (empty($updates)) {
-            sendJSON(['error' => 'No fields to update'], 400);
-        }
-        
-        $updates[] = 'updated_at = ?';
-        $params[] = time();
-        $params[] = $id;
-        
-        $stmt = $db->prepare('UPDATE broadcast_messages SET ' . implode(', ', $updates) . ' WHERE id = ?');
-        $stmt->execute($params);
-        
-        sendJSON(['success' => true, 'message' => 'Broadcast message updated successfully']);
+
+        $newMessage = $message !== null ? $message : (string)$prev['message'];
+        $newFontFamily = $fontFamily !== null ? $fontFamily : (string)($prev['font_family'] ?? 'Arial, sans-serif');
+        $newFontSize = $fontSize !== null ? $fontSize : (string)($prev['font_size'] ?? '16px');
+        $newColor = $color !== null ? $color : (string)($prev['color'] ?? '#ff0000');
+        $newScroll = $scrollSpeed !== null ? $scrollSpeed : (int)($prev['scroll_speed'] ?? 30);
+        $newExpires = array_key_exists('expiresAt', $data) ? $expiresAt : (!empty($prev['expires_at']) ? (int)$prev['expires_at'] : null);
+
+        $db->beginTransaction();
+        $stmt = $db->prepare('INSERT INTO broadcast_revisions (thread_id, message, font_family, font_size, color, scroll_speed, expires_at, created_at, created_by) VALUES (?,?,?,?,?,?,?,?,?)');
+        $stmt->execute([$threadId, $newMessage, $newFontFamily, $newFontSize, $newColor, $newScroll, $newExpires, $now, $userId]);
+        $revisionId = (int)$db->lastInsertId();
+
+        $stmt = $db->prepare('UPDATE broadcast_threads SET updated_at = ? WHERE id = ?');
+        $stmt->execute([$now, $threadId]);
+
+        $db->commit();
+
+        sendJSON([
+            'success' => true,
+            'id' => $revisionId,
+            'threadId' => $threadId,
+            'message' => 'Broadcast message updated successfully',
+        ]);
     } catch (PDOException $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
         sendJSON(['error' => 'Failed to update broadcast message: ' . $e->getMessage()], 500);
     }
 }
 
 function handleDeleteBroadcast($db) {
-    requireAdmin(); // Only admins can delete broadcast messages
-    
+    requireAdmin();
+
     $data = getJSONInput();
-    $id = isset($data['id']) ? (int)$data['id'] : null;
-    
-    if (!$id) {
-        sendJSON(['error' => 'Message ID is required'], 400);
+    $threadId = resolveBroadcastThreadId($db, $data);
+
+    if (!$threadId) {
+        sendJSON(['error' => 'Thread ID or revision ID is required'], 400);
     }
-    
+
     try {
-        $stmt = $db->prepare('DELETE FROM broadcast_messages WHERE id = ?');
-        $stmt->execute([$id]);
-        
-        if ($stmt->rowCount() === 0) {
-            sendJSON(['error' => 'Broadcast message not found'], 404);
+        $stmt = $db->prepare('SELECT id FROM broadcast_threads WHERE id = ? AND deleted_at IS NULL');
+        $stmt->execute([$threadId]);
+        if (!$stmt->fetch()) {
+            sendJSON(['error' => 'Broadcast thread not found'], 404);
         }
-        
-        sendJSON(['success' => true, 'message' => 'Broadcast message deleted successfully']);
+
+        $now = time();
+        $stmt = $db->prepare('UPDATE broadcast_threads SET deleted_at = ?, is_active = 0, updated_at = ? WHERE id = ?');
+        $stmt->execute([$now, $now, $threadId]);
+
+        sendJSON(['success' => true, 'message' => 'Broadcast thread deleted successfully']);
     } catch (PDOException $e) {
-        sendJSON(['error' => 'Failed to delete broadcast message: ' . $e->getMessage()], 500);
+        sendJSON(['error' => 'Failed to delete broadcast thread: ' . $e->getMessage()], 500);
     }
 }

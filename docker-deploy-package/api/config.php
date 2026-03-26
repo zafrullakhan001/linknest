@@ -862,47 +862,39 @@ function initDatabase() {
             // ignore if index creation fails
         }
 
-        // Create broadcast_messages table for site-wide announcement banner
-        $db->exec('CREATE TABLE IF NOT EXISTS broadcast_messages (
+        // Broadcast: threads (topics) + revisions (message trail per thread)
+        $db->exec('CREATE TABLE IF NOT EXISTS broadcast_threads (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            deleted_at INTEGER,
+            is_active INTEGER DEFAULT 0
+        )');
+
+        $db->exec('CREATE TABLE IF NOT EXISTS broadcast_revisions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            thread_id INTEGER NOT NULL,
             message TEXT NOT NULL,
             font_family TEXT DEFAULT "Arial, sans-serif",
             font_size TEXT DEFAULT "16px",
             color TEXT DEFAULT "#ff0000",
-            is_active INTEGER DEFAULT 1,
+            scroll_speed INTEGER DEFAULT 30,
             expires_at INTEGER,
             created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL,
-            created_by INTEGER,
-            FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+            created_by INTEGER
         )');
 
-
-        // Index for active messages
         try {
-            $db->exec('CREATE INDEX IF NOT EXISTS idx_broadcast_messages_active ON broadcast_messages(is_active)');
-            $db->exec('CREATE INDEX IF NOT EXISTS idx_broadcast_messages_expires ON broadcast_messages(expires_at)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_broadcast_revisions_thread ON broadcast_revisions(thread_id, created_at DESC)');
         } catch (PDOException $e) {
-            // ignore if index creation fails
+            // ignore
         }
 
-        // Migrate existing broadcast_messages table to add scroll_speed column if it doesn't exist
         try {
-            $columns = $db->query("PRAGMA table_info(broadcast_messages)")->fetchAll();
-            $hasScrollSpeed = false;
-            foreach ($columns as $column) {
-                if ($column['name'] === 'scroll_speed') {
-                    $hasScrollSpeed = true;
-                    break;
-                }
-            }
-            if (!$hasScrollSpeed) {
-                $db->exec('ALTER TABLE broadcast_messages ADD COLUMN scroll_speed INTEGER DEFAULT 30');
-            }
-        } catch (PDOException $e) {
-            error_log('Broadcast messages scroll_speed migration warning: ' . $e->getMessage());
+            migrateLegacyBroadcastMessagesToThreads($db);
+        } catch (Throwable $e) {
+            error_log('Broadcast threads migration warning: ' . $e->getMessage());
         }
-
 
         // Create monitors table
         $db->exec('CREATE TABLE IF NOT EXISTS monitors (
@@ -1436,6 +1428,69 @@ function createDatabaseIndexes($db) {
 }
 
 // Get database connection (singleton pattern - reuse connection within same request)
+function migrateLegacyBroadcastMessagesToThreads(PDO $db) {
+    $legacy = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='broadcast_messages'")->fetch();
+    if (!$legacy) {
+        return;
+    }
+
+    $revCount = (int)$db->query('SELECT COUNT(*) FROM broadcast_revisions')->fetchColumn();
+    if ($revCount > 0) {
+        try {
+            $db->exec('DROP TABLE IF EXISTS broadcast_messages');
+        } catch (PDOException $e) {
+            // ignore
+        }
+        return;
+    }
+
+    $oldRows = $db->query('SELECT * FROM broadcast_messages ORDER BY id ASC')->fetchAll(PDO::FETCH_ASSOC);
+    if (empty($oldRows)) {
+        $db->exec('DROP TABLE IF EXISTS broadcast_messages');
+        return;
+    }
+
+    $db->beginTransaction();
+    try {
+        $activeThreadIds = [];
+        foreach ($oldRows as $row) {
+            $created = (int)($row['created_at'] ?? time());
+            $updated = (int)($row['updated_at'] ?? $created);
+            $isAct = ((int)($row['is_active'] ?? 0)) === 1 ? 1 : 0;
+            $stmt = $db->prepare('INSERT INTO broadcast_threads (created_at, updated_at, deleted_at, is_active) VALUES (?, ?, NULL, ?)');
+            $stmt->execute([$created, $updated, $isAct]);
+            $threadId = (int)$db->lastInsertId();
+            if ($isAct === 1) {
+                $activeThreadIds[] = $threadId;
+            }
+            $ins = $db->prepare('INSERT INTO broadcast_revisions (thread_id, message, font_family, font_size, color, scroll_speed, expires_at, created_at, created_by) VALUES (?,?,?,?,?,?,?,?,?)');
+            $ins->execute([
+                $threadId,
+                (string)($row['message'] ?? ''),
+                $row['font_family'] ?? 'Arial, sans-serif',
+                $row['font_size'] ?? '16px',
+                $row['color'] ?? '#ff0000',
+                (int)($row['scroll_speed'] ?? 30),
+                !empty($row['expires_at']) ? (int)$row['expires_at'] : null,
+                $created,
+                isset($row['created_by']) && $row['created_by'] !== null && $row['created_by'] !== '' ? (int)$row['created_by'] : null,
+            ]);
+        }
+        $db->exec('UPDATE broadcast_threads SET is_active = 0');
+        if (!empty($activeThreadIds)) {
+            $keep = max($activeThreadIds);
+            $db->prepare('UPDATE broadcast_threads SET is_active = 1 WHERE id = ?')->execute([$keep]);
+        } else {
+            $db->exec('UPDATE broadcast_threads SET is_active = 1 WHERE id = (SELECT id FROM broadcast_threads ORDER BY updated_at DESC, id DESC LIMIT 1)');
+        }
+        $db->exec('DROP TABLE broadcast_messages');
+        $db->commit();
+    } catch (Throwable $e) {
+        $db->rollBack();
+        throw $e;
+    }
+}
+
 function getDB($clear = false) {
     static $dbInstance = null;
     

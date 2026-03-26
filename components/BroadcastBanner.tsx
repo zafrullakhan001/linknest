@@ -132,7 +132,7 @@ export const BroadcastBanner: React.FC = () => {
   }
 
   const scrollSpeed = broadcast.scrollSpeed || 30;
-  const isUpdatedMessage = broadcast.updatedAt > broadcast.createdAt;
+  const isUpdatedMessage = (broadcast.revisionCount ?? 1) > 1;
 
   const content = (
     <>
@@ -283,7 +283,7 @@ export const BroadcastBanner: React.FC = () => {
       <BroadcastHistoryDialog
         open={showHistory}
         onClose={() => setShowHistory(false)}
-        currentBroadcastId={broadcast.id}
+        currentThreadId={broadcast.threadId}
       />
 
       <style>{`

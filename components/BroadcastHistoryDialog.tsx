@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import ReactDOM from 'react-dom';
-import { broadcastService, BroadcastHistoryItem } from '../services/broadcastService';
+import { broadcastService, BroadcastThreadHistory, BroadcastRevision } from '../services/broadcastService';
 
 function formatDateTime(ts: number): string {
   if (!ts) return '—';
@@ -15,42 +15,44 @@ function csvEscape(value: string): string {
   return s;
 }
 
-function buildHistoryCsv(items: BroadcastHistoryItem[]): string {
+function buildHistoryCsv(threads: BroadcastThreadHistory[]): string {
   const headers = [
-    'id',
+    'threadId',
+    'revisionId',
+    'threadCreatedAt',
+    'threadUpdatedAt',
+    'revisionCreatedAt',
     'message',
     'fontFamily',
     'fontSize',
     'color',
     'scrollSpeed',
     'expiresAt',
-    'createdAt',
-    'updatedAt',
-    'isActive',
-    'status',
+    'threadIsActive',
+    'revisionLabel',
   ];
-  const rows = items.map((row) => {
-    const now = Math.floor(Date.now() / 1000);
-    let status = 'Inactive';
-    if (row.isActive) {
-      status = row.expiresAt && row.expiresAt <= now ? 'Expired' : 'Active';
-    } else if (row.expiresAt && row.expiresAt <= now) {
-      status = 'Expired';
-    }
-    return [
-      String(row.id),
-      row.message,
-      row.fontFamily,
-      row.fontSize,
-      row.color,
-      String(row.scrollSpeed),
-      row.expiresAt ? new Date(row.expiresAt * 1000).toISOString() : '',
-      new Date(row.createdAt * 1000).toISOString(),
-      new Date(row.updatedAt * 1000).toISOString(),
-      row.isActive ? '1' : '0',
-      status,
-    ].map(csvEscape);
-  });
+  const rows: string[][] = [];
+  for (const t of threads) {
+    const revs = t.revisions || [];
+    revs.forEach((r, idx) => {
+      const label = idx === 0 ? 'Latest' : idx === revs.length - 1 ? 'Original' : 'Update';
+      rows.push([
+        String(t.threadId),
+        String(r.id),
+        new Date(t.createdAt * 1000).toISOString(),
+        new Date(t.updatedAt * 1000).toISOString(),
+        new Date(r.createdAt * 1000).toISOString(),
+        r.message,
+        r.fontFamily,
+        r.fontSize,
+        r.color,
+        String(r.scrollSpeed),
+        r.expiresAt ? new Date(r.expiresAt * 1000).toISOString() : '',
+        t.isActive ? '1' : '0',
+        label,
+      ].map(csvEscape));
+    });
+  }
   const lines = [headers.join(','), ...rows.map((r) => r.join(','))];
   return '\uFEFF' + lines.join('\r\n');
 }
@@ -71,15 +73,15 @@ function downloadCsv(content: string, filename: string): void {
 interface BroadcastHistoryDialogProps {
   open: boolean;
   onClose: () => void;
-  currentBroadcastId?: number | null;
+  currentThreadId?: number | null;
 }
 
 export const BroadcastHistoryDialog: React.FC<BroadcastHistoryDialogProps> = ({
   open,
   onClose,
-  currentBroadcastId,
+  currentThreadId,
 }) => {
-  const [items, setItems] = useState<BroadcastHistoryItem[]>([]);
+  const [threads, setThreads] = useState<BroadcastThreadHistory[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -88,10 +90,10 @@ export const BroadcastHistoryDialog: React.FC<BroadcastHistoryDialogProps> = ({
     setError(null);
     try {
       const data = await broadcastService.getBroadcastHistory();
-      setItems(data);
+      setThreads(data);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load history');
-      setItems([]);
+      setThreads([]);
     } finally {
       setLoading(false);
     }
@@ -104,16 +106,18 @@ export const BroadcastHistoryDialog: React.FC<BroadcastHistoryDialogProps> = ({
   }, [open, load]);
 
   const handleExportCsv = () => {
-    if (items.length === 0) return;
+    if (threads.length === 0) return;
     const d = new Date();
     const pad = (n: number) => String(n).padStart(2, '0');
     const fname = `broadcast-history-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.csv`;
-    downloadCsv(buildHistoryCsv(items), fname);
+    downloadCsv(buildHistoryCsv(threads), fname);
   };
 
   if (!open) {
     return null;
   }
+
+  const totalRevisions = threads.reduce((n, t) => n + (t.revisions?.length ?? 0), 0);
 
   const content = (
     <div
@@ -133,14 +137,14 @@ export const BroadcastHistoryDialog: React.FC<BroadcastHistoryDialogProps> = ({
               Broadcast message history
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Newest first. Includes past and current announcements stored on the server.
+              Each topic is a thread: newest update at the top, original at the bottom. Deleted threads are hidden.
             </p>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
               type="button"
               onClick={handleExportCsv}
-              disabled={items.length === 0 || loading}
+              disabled={totalRevisions === 0 || loading}
               className="px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               Export CSV
@@ -167,69 +171,51 @@ export const BroadcastHistoryDialog: React.FC<BroadcastHistoryDialogProps> = ({
           {!loading && error && (
             <p className="text-sm text-red-600 dark:text-red-400 text-center py-8">{error}</p>
           )}
-          {!loading && !error && items.length === 0 && (
+          {!loading && !error && threads.length === 0 && (
             <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No broadcast history yet.</p>
           )}
-          {!loading && !error && items.length > 0 && (
-            <div className="relative" role="list">
-              <div className="absolute left-[11px] top-2 bottom-2 w-px bg-slate-200 dark:bg-slate-600" aria-hidden />
-              {items.map((item) => {
-                const now = Math.floor(Date.now() / 1000);
-                const isCurrent = currentBroadcastId != null && item.id === currentBroadcastId;
-                const expired = item.expiresAt != null && item.expiresAt <= now;
-                const statusLabel = item.isActive ? (expired ? 'Expired' : 'Active') : expired ? 'Expired' : 'Inactive';
-
+          {!loading && !error && threads.length > 0 && (
+            <div className="space-y-8">
+              {threads.map((thread) => {
+                const isCurrentThread = currentThreadId != null && thread.threadId === currentThreadId;
+                const revs = thread.revisions || [];
                 return (
-                  <div key={item.id} className="relative pl-8 pb-8 last:pb-0" role="listitem">
-                    <div
-                      className={`absolute left-0 top-1.5 w-[22px] h-[22px] rounded-full border-2 flex items-center justify-center z-[1] ${
-                        isCurrent
-                          ? 'border-brand-500 bg-brand-500 shadow-[0_0_0_3px_rgba(59,130,246,0.25)]'
-                          : 'border-slate-300 dark:border-slate-500 bg-white dark:bg-slate-800'
-                      }`}
-                      aria-hidden
-                    >
-                      <span className={`w-2 h-2 rounded-full ${isCurrent ? 'bg-white' : 'bg-slate-400 dark:bg-slate-500'}`} />
-                    </div>
-                    <div
-                      className={`rounded-lg border p-3 ${
-                        isCurrent
-                          ? 'border-brand-400/80 bg-brand-50/80 dark:bg-brand-900/20 dark:border-brand-500/40'
-                          : 'border-slate-200 dark:border-slate-600 bg-slate-50/50 dark:bg-slate-900/40'
-                      }`}
-                    >
-                      <div className="flex flex-wrap items-center gap-2 mb-2">
-                        <time className="text-xs font-semibold text-slate-700 dark:text-slate-200" dateTime={new Date(item.createdAt * 1000).toISOString()}>
-                          Created: {formatDateTime(item.createdAt)}
-                        </time>
-                        {item.updatedAt !== item.createdAt && (
-                          <time className="text-xs text-slate-500 dark:text-slate-400" dateTime={new Date(item.updatedAt * 1000).toISOString()}>
-                            · Updated: {formatDateTime(item.updatedAt)}
-                          </time>
-                        )}
-                        <span
-                          className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
-                            item.isActive && !expired
-                              ? 'bg-emerald-600/90 text-white'
-                              : expired
-                                ? 'bg-slate-500 text-white'
-                                : 'bg-slate-400 dark:bg-slate-600 text-white'
-                          }`}
-                        >
-                          {statusLabel}
-                        </span>
-                        {isCurrent && (
-                          <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-brand-600 text-white">Current</span>
-                        )}
-                      </div>
-                      {item.expiresAt != null && (
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
-                          Expires: {formatDateTime(item.expiresAt)}
-                        </p>
+                  <section
+                    key={thread.threadId}
+                    className={`rounded-xl border p-4 ${
+                      isCurrentThread
+                        ? 'border-brand-400/80 bg-brand-50/50 dark:bg-brand-900/15 dark:border-brand-500/40'
+                        : 'border-slate-200 dark:border-slate-600 bg-slate-50/30 dark:bg-slate-900/30'
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center gap-2 mb-3">
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-white">Topic #{thread.threadId}</h3>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                        Started {formatDateTime(thread.createdAt)}
+                      </span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                        · Last activity {formatDateTime(thread.updatedAt)}
+                      </span>
+                      {thread.isActive && (
+                        <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-600 text-white">Active topic</span>
                       )}
-                      <p className="text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap break-words">{item.message}</p>
+                      {isCurrentThread && (
+                        <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-brand-600 text-white">Current banner</span>
+                      )}
                     </div>
-                  </div>
+
+                    <div className="relative pl-2" role="list">
+                      <div className="absolute left-[13px] top-2 bottom-2 w-px bg-slate-200 dark:bg-slate-600" aria-hidden />
+                      {revs.map((rev, rIdx) => (
+                        <RevisionRow
+                          key={rev.id}
+                          rev={rev}
+                          index={rIdx}
+                          total={revs.length}
+                        />
+                      ))}
+                    </div>
+                  </section>
                 );
               })}
             </div>
@@ -251,3 +237,51 @@ export const BroadcastHistoryDialog: React.FC<BroadcastHistoryDialogProps> = ({
 
   return ReactDOM.createPortal(content, document.body);
 };
+
+function RevisionRow({
+  rev,
+  index,
+  total,
+}: {
+  rev: BroadcastRevision;
+  index: number;
+  total: number;
+}) {
+  const role =
+    total <= 1 ? 'Message' : index === 0 ? 'Latest update' : index === total - 1 ? 'Original' : `Update ${total - index}`;
+
+  return (
+    <div className="relative pl-8 pb-6 last:pb-0" role="listitem">
+      <div
+        className={`absolute left-0 top-1.5 w-[22px] h-[22px] rounded-full border-2 flex items-center justify-center z-[1] ${
+          index === 0
+            ? 'border-amber-500 bg-amber-500'
+            : index === total - 1
+              ? 'border-slate-400 dark:border-slate-500 bg-white dark:bg-slate-800'
+              : 'border-slate-300 dark:border-slate-500 bg-white dark:bg-slate-800'
+        }`}
+        aria-hidden
+      >
+        <span
+          className={`w-2 h-2 rounded-full ${
+            index === 0 ? 'bg-white' : 'bg-slate-400 dark:bg-slate-500'
+          }`}
+        />
+      </div>
+      <div className="rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/80 p-3">
+        <div className="flex flex-wrap items-center gap-2 mb-2">
+          <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200">
+            {role}
+          </span>
+          <time className="text-xs font-medium text-slate-600 dark:text-slate-300" dateTime={new Date(rev.createdAt * 1000).toISOString()}>
+            {formatDateTime(rev.createdAt)}
+          </time>
+        </div>
+        {rev.expiresAt != null && (
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">Expires: {formatDateTime(rev.expiresAt)}</p>
+        )}
+        <p className="text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap break-words">{rev.message}</p>
+      </div>
+    </div>
+  );
+}

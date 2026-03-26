@@ -4,6 +4,26 @@ const API_BASE = resolveApiBase();
 
 export interface BroadcastMessage {
   id: number;
+  threadId: number;
+  message: string;
+  fontFamily: string;
+  fontSize: string;
+  color: string;
+  scrollSpeed: number;
+  expiresAt: number | null;
+  /** Thread (topic) start time — first revision */
+  createdAt: number;
+  /** Last change on this thread */
+  updatedAt: number;
+  /** Number of revisions in this thread (1 = only original) */
+  revisionCount: number;
+  /** Timestamp of the latest revision */
+  latestRevisionAt: number;
+}
+
+export interface BroadcastRevision {
+  id: number;
+  threadId: number;
   message: string;
   fontFamily: string;
   fontSize: string;
@@ -11,11 +31,19 @@ export interface BroadcastMessage {
   scrollSpeed: number;
   expiresAt: number | null;
   createdAt: number;
-  updatedAt: number;
 }
 
-export interface BroadcastHistoryItem extends BroadcastMessage {
+export interface BroadcastThreadHistory {
+  threadId: number;
+  createdAt: number;
+  updatedAt: number;
   isActive: boolean;
+  /** Newest revision first */
+  revisions: BroadcastRevision[];
+}
+
+export interface BroadcastHistoryResponse {
+  threads: BroadcastThreadHistory[];
 }
 
 export const broadcastService = {
@@ -30,10 +58,18 @@ export const broadcastService = {
     }
 
     const data = await response.json();
-    return data && data.id ? data : null;
+    if (!data || !data.id) {
+      return null;
+    }
+    return {
+      ...data,
+      threadId: data.threadId ?? 0,
+      revisionCount: typeof data.revisionCount === 'number' ? data.revisionCount : 1,
+      latestRevisionAt: typeof data.latestRevisionAt === 'number' ? data.latestRevisionAt : data.updatedAt ?? 0,
+    } as BroadcastMessage;
   },
 
-  async getBroadcastHistory(): Promise<BroadcastHistoryItem[]> {
+  async getBroadcastHistory(): Promise<BroadcastThreadHistory[]> {
     const response = await fetch(`${API_BASE}/broadcast/history`, {
       method: 'GET',
       credentials: 'include',
@@ -44,9 +80,8 @@ export const broadcastService = {
       throw new Error(errorData.error || `Failed to load broadcast history: ${response.statusText}`);
     }
 
-    const data = await response.json();
-    const items = data?.items;
-    return Array.isArray(items) ? items : [];
+    const data: BroadcastHistoryResponse = await response.json();
+    return Array.isArray(data?.threads) ? data.threads : [];
   },
 
   async createBroadcast(broadcast: {
@@ -56,7 +91,7 @@ export const broadcastService = {
     color?: string;
     scrollSpeed?: number;
     expiresAt?: number | null;
-  }): Promise<{ id: number; message: string }> {
+  }): Promise<{ success: boolean; id: number; threadId: number; message: string }> {
     const response = await fetch(`${API_BASE}/broadcast`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -81,7 +116,8 @@ export const broadcastService = {
   },
 
   async updateBroadcast(broadcast: {
-    id: number;
+    threadId: number;
+    id?: number;
     message?: string;
     fontFamily?: string;
     fontSize?: string;
@@ -89,7 +125,7 @@ export const broadcastService = {
     scrollSpeed?: number;
     expiresAt?: number | null;
     isActive?: boolean;
-  }): Promise<{ success: boolean; message: string }> {
+  }): Promise<{ success: boolean; id?: number; threadId?: number; message: string }> {
     const response = await fetch(`${API_BASE}/broadcast`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -106,12 +142,12 @@ export const broadcastService = {
     return data;
   },
 
-  async deleteBroadcast(id: number): Promise<{ success: boolean; message: string }> {
+  async deleteBroadcast(threadIdOrRevisionId: number): Promise<{ success: boolean; message: string }> {
     const response = await fetch(`${API_BASE}/broadcast`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ id }),
+      body: JSON.stringify({ threadId: threadIdOrRevisionId }),
     });
 
     if (!response.ok) {

@@ -5527,7 +5527,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   try {
                                     setBroadcastLoading(true);
                                     setError('');
-                                    await broadcastService.deleteBroadcast(currentBroadcast.id);
+                                    await broadcastService.deleteBroadcast(currentBroadcast.threadId);
                                     setCurrentBroadcast(null);
                                     setBroadcastMessage('');
                                     setBroadcastFontFamily('Arial, sans-serif');
@@ -5573,7 +5573,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 const expiresAt = broadcastExpiresAt ? Math.floor(new Date(broadcastExpiresAt).getTime() / 1000) : null;
                                 if (currentBroadcast) {
                                   await broadcastService.updateBroadcast({
-                                    id: currentBroadcast.id,
+                                    threadId: currentBroadcast.threadId,
                                     message: broadcastMessage,
                                     fontFamily: broadcastFontFamily,
                                     fontSize: broadcastFontSize,
@@ -5616,7 +5616,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 try {
                                   setBroadcastLoading(true);
                                   setError('');
-                                  await broadcastService.deleteBroadcast(currentBroadcast.id);
+                                  await broadcastService.deleteBroadcast(currentBroadcast.threadId);
                                   setCurrentBroadcast(null);
                                   setBroadcastMessage('');
                                   setBroadcastFontFamily('Arial, sans-serif');
