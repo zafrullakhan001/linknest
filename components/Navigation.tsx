@@ -228,7 +228,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
               </svg>
               </button>
             )}
-            {isWidgetAllowed('fav-organizer') && (
+            {user && isWidgetAllowed('fav-organizer') && (
               <button
                 onClick={toggleFavOrganizer}
                 className={`p-2 rounded-full transition-all ${showFavOrganizer ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}

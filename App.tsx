@@ -291,7 +291,7 @@ const AppContent: React.FC = () => {
         // For logged out users, allow all non-auth widgets
         setAllowedWidgetIds(new Set([
           'clock', 'weather', 'calculator', 'password-generator',
-          'phonetic-alphabet', 'zoom-control', 'theme', 'fav-organizer', 'snake-game'
+          'phonetic-alphabet', 'zoom-control', 'theme', 'snake-game'
         ]));
         setWidgetsLoading(false);
         return;
@@ -330,7 +330,7 @@ const AppContent: React.FC = () => {
     // If user is not authenticated, allow public widgets
     if (!isAuthenticated || !user) {
       // Allow non-auth widgets for logged out users
-      return !['notes', 'chat'].includes(widgetId);
+      return !['notes', 'chat', 'fav-organizer'].includes(widgetId);
     }
     
     // Admins can see all widgets
@@ -1264,7 +1264,7 @@ const AppContent: React.FC = () => {
               <ThemeWidget onClose={toggleThemeWidget} />
             </FloatingThemeWidget>
           )}
-          {showFavOrganizer && isWidgetAllowed('fav-organizer') && (
+          {isAuthenticated && showFavOrganizer && isWidgetAllowed('fav-organizer') && (
             <FloatingFavOrganizerWidget onClose={toggleFavOrganizer}>
               <FavOrganizerWidget />
             </FloatingFavOrganizerWidget>
