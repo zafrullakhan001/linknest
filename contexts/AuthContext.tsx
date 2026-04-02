@@ -5,7 +5,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (username: string, password: string, authMethod?: 'local' | 'ldap', rememberMe?: boolean, ldapServerIndex?: number) => Promise<void>;
-  register: (username: string, email: string, password: string) => Promise<void>;
+  register: (username: string, email: string, password: string, confirmPassword?: string) => Promise<{ pending: boolean; message?: string }>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   isAuthenticated: boolean;
@@ -30,8 +30,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setUser(user);
   };
 
-  const register = async (username: string, email: string, password: string) => {
-    const result = await authService.register(username, email, password);
+  const register = async (username: string, email: string, password: string, confirmPassword?: string) => {
+    const result = await authService.register(username, email, password, confirmPassword);
     // Don't set user if pending approval
     if (!result.pending) {
       // This shouldn't happen with new approval system, but handle it

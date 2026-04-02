@@ -381,7 +381,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         setCurrentMethod(null);
         setSelectedLdapServerIndex(0);
       } else {
-        // Register: validate password strength and confirmation
+        // Register: validate username, password strength and confirmation
+        const trimmedUsername = username.trim();
+        if (trimmedUsername.length < 3) {
+          setError('Username must be at least 3 characters');
+          setLoading(false);
+          return;
+        }
         const pwValidation = validatePassword(password);
         if (!pwValidation.valid) {
           setError(pwValidation.message || 'Invalid password');
@@ -394,7 +400,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           return;
         }
         setAuthState('connecting');
-        const result = await register(username, email, password, confirmPassword);
+        const result = await register(trimmedUsername, email, password, confirmPassword);
         if (result.pending) {
           setSuccess(result.message || 'Registration successful! Your account is pending admin approval.');
           setUsername('');
@@ -727,21 +733,39 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           )}
 
           {mode === 'register' && (
-            <div>
-              <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
-                Email
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                disabled={loading}
-                autoComplete="email"
-                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 sm:px-4 sm:py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                placeholder="Enter your email"
-              />
-            </div>
+            <>
+              <div>
+                <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
+                  Username
+                </label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                  minLength={3}
+                  disabled={loading}
+                  autoComplete="username"
+                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 sm:px-4 sm:py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                  placeholder="Choose a username (min 3 characters)"
+                />
+              </div>
+              <div>
+                <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  disabled={loading}
+                  autoComplete="email"
+                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 sm:px-4 sm:py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                  placeholder="Enter your email"
+                />
+              </div>
+            </>
           )}
 
           {/* Password field - only show if not using SAML */}
