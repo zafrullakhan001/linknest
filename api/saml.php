@@ -16,24 +16,21 @@ if ($action !== 'metadata') {
 }
 
 require_once __DIR__ . '/../config/SamlConfig.php';
+require_once __DIR__ . '/saml_dependency_response.php';
 
 // Composer autoload (OneLogin SAML)
 $vendorAutoload = __DIR__ . '/../vendor/autoload.php';
 if (!file_exists($vendorAutoload)) {
     error_log('SAML: vendor/autoload.php not found. Please run: composer install or see MANUAL_SAML_INSTALL.md');
-    http_response_code(500);
-    header('Content-Type: application/json');
-    echo json_encode([
-        'success' => false, 
-        'message' => 'SAML library not installed. Please install dependencies.',
-        'error' => 'Missing vendor/autoload.php',
-        'instructions' => [
-            'Option 1: Run "composer install" in the project root',
-            'Option 2: See MANUAL_SAML_INSTALL.md for manual installation',
-            'Required: OneLogin PHP-SAML library in vendor/onelogin/php-saml/src/'
+    saml_send_dependency_error(
+        'The SAML PHP library is not installed. LinkNest needs Composer dependencies (OneLogin PHP-SAML) before SAML login or metadata can work.',
+        'Missing vendor/autoload.php',
+        [
+            'Run composer install in the project root (see the page above for commands).',
+            'Or follow MANUAL_SAML_INSTALL.md for a manual copy of onelogin/php-saml.',
+            'Required: vendor/onelogin/php-saml/src/ with Auth.php and Settings.php present.',
         ]
-    ]);
-    exit;
+    );
 }
 
 require_once $vendorAutoload;
@@ -41,14 +38,15 @@ require_once $vendorAutoload;
 // Check if OneLogin classes are available
 if (!class_exists('OneLogin\Saml2\Auth') || !class_exists('OneLogin\Saml2\Settings')) {
     error_log('SAML: OneLogin SAML classes not found. Please ensure composer dependencies are installed.');
-    http_response_code(500);
-    header('Content-Type: application/json');
-    echo json_encode([
-        'success' => false, 
-        'message' => 'SAML library classes not found. Please run: composer install',
-        'error' => 'Missing OneLogin SAML classes'
-    ]);
-    exit;
+    saml_send_dependency_error(
+        'vendor/autoload.php exists, but the OneLogin SAML classes could not be loaded. The package may be incomplete or the autoloader is out of date.',
+        'Missing OneLogin SAML classes',
+        [
+            'Run composer install again from the project root.',
+            'If you installed manually, verify vendor/onelogin/php-saml/src/OneLogin/Saml2/ contains Auth.php and Settings.php.',
+            'Run composer dump-autoload if files exist but classes are not found.',
+        ]
+    );
 }
 
 use OneLogin\Saml2\Auth as OneLoginSamlAuth;
