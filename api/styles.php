@@ -1,9 +1,7 @@
 <?php
 require_once __DIR__ . '/config.php';
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+// Session is started by api/index.php for all routed requests
 
 $method = $_SERVER['REQUEST_METHOD'];
 $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
@@ -60,7 +58,38 @@ switch ($method) {
         sendJSON(['error' => 'Method not allowed'], 405);
 }
 
+const STYLE_PROFILES_SCHEMA_VERSION = 1;
+
+function isStyleProfilesSchemaCurrent($db) {
+    try {
+        $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'style_profiles_schema_version'");
+        $stmt->execute();
+        $version = $stmt->fetchColumn();
+        return $version !== false && (int)$version >= STYLE_PROFILES_SCHEMA_VERSION;
+    } catch (PDOException $e) {
+        return false;
+    }
+}
+
+function markStyleProfilesSchemaCurrent($db) {
+    $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
+    $stmt->execute(['style_profiles_schema_version', (string)STYLE_PROFILES_SCHEMA_VERSION, time()]);
+}
+
 function ensureStyleProfilesTable($db) {
+    // Skip heavy migration if schema was already migrated (write/admin paths only)
+    if (isStyleProfilesSchemaCurrent($db)) {
+        try {
+            $indexExists = $db->query("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_style_profiles_active'")->fetch();
+            if (!$indexExists) {
+                $db->exec('CREATE INDEX IF NOT EXISTS idx_style_profiles_active ON style_profiles(is_active)');
+            }
+        } catch (PDOException $e) {
+            error_log('Error ensuring style_profiles index: ' . $e->getMessage());
+        }
+        return;
+    }
+
     try {
         // Check if table exists
         $tableExists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='style_profiles'")->fetch();
@@ -232,6 +261,8 @@ function ensureStyleProfilesTable($db) {
                 }
             }
         }
+
+        markStyleProfilesSchemaCurrent($db);
     } catch (PDOException $e) {
         error_log('Error ensuring style_profiles table: ' . $e->getMessage());
         throw $e;
@@ -239,54 +270,61 @@ function ensureStyleProfilesTable($db) {
 }
 
 function handleGetStyles() {
-    // Styles are public (for display), but only admins can update
-    $db = getDB();
-    
-    // Ensure style_profiles table exists
-    ensureStyleProfilesTable($db);
-    
-    // Try to get active profile first
-    $stmt = $db->prepare('SELECT styles_data FROM style_profiles WHERE is_active = 1 ORDER BY updated_at DESC LIMIT 1');
-    $stmt->execute();
-    $activeProfile = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if ($activeProfile && !empty($activeProfile['styles_data'])) {
-        $styles = json_decode($activeProfile['styles_data'], true);
-        if ($styles !== null && json_last_error() === JSON_ERROR_NONE) {
-            sendJSON(['styles' => $styles]);
+    $maxAttempts = 2;
+    for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+        try {
+            handleGetStylesRead();
             return;
+        } catch (PDOException $e) {
+            error_log('Error loading styles (attempt ' . $attempt . '): ' . $e->getMessage());
+            if ($attempt < $maxAttempts) {
+                usleep(200000);
+            }
         }
     }
-    
-    // Fallback to old space_styles table for backward compatibility
-    try {
-        $db->exec('CREATE TABLE IF NOT EXISTS space_styles (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            key TEXT UNIQUE NOT NULL,
-            value TEXT NOT NULL,
-            updated_at INTEGER NOT NULL
-        )');
-    } catch (PDOException $e) {
-        // Table might already exist, continue
+    sendJSON(['error' => 'Styles temporarily unavailable', 'retry' => true], 503);
+}
+
+function handleGetStylesRead() {
+    // Styles are public (for display) — read-only path, no DDL/migration
+    $db = getDB();
+
+    $tableExists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='style_profiles'")->fetch();
+    if ($tableExists) {
+        $stmt = $db->prepare('SELECT styles_data FROM style_profiles WHERE is_active = 1 ORDER BY updated_at DESC LIMIT 1');
+        $stmt->execute();
+        $activeProfile = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($activeProfile && !empty($activeProfile['styles_data'])) {
+            $styles = json_decode($activeProfile['styles_data'], true);
+            if ($styles !== null && json_last_error() === JSON_ERROR_NONE) {
+                sendJSON(['styles' => $styles]);
+                return;
+            }
+        }
     }
-    
-    $stmt = $db->prepare('SELECT key, value FROM space_styles');
-    $stmt->execute();
-    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
-    if (empty($rows)) {
-        // Return empty object, frontend will use defaults
+
+    // Fallback to legacy space_styles table (no DDL on read path)
+    $legacyExists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='space_styles'")->fetch();
+    if (!$legacyExists) {
         sendJSON(['styles' => null]);
         return;
     }
-    
-    // Reconstruct styles object from key-value pairs
+
+    $stmt = $db->prepare('SELECT key, value FROM space_styles');
+    $stmt->execute();
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (empty($rows)) {
+        sendJSON(['styles' => null]);
+        return;
+    }
+
     $styles = [];
     foreach ($rows as $row) {
         $key = $row['key'];
         $value = $row['value'];
-        
-        // Handle nested keys (e.g., gridColumns.sm)
+
         if (strpos($key, '.') !== false) {
             $parts = explode('.', $key);
             $current = &$styles;
@@ -298,12 +336,11 @@ function handleGetStyles() {
             }
             $current[$parts[count($parts) - 1]] = json_decode($value, true);
         } else {
-            // Try to decode JSON, fallback to string
             $decoded = json_decode($value, true);
             $styles[$key] = ($decoded !== null && json_last_error() === JSON_ERROR_NONE) ? $decoded : $value;
         }
     }
-    
+
     sendJSON(['styles' => $styles]);
 }
 

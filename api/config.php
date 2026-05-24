@@ -141,8 +141,33 @@ if (!extension_loaded('pdo_sqlite')) {
     exit;
 }
 
+/**
+ * Acquire an exclusive file lock so only one PHP worker runs schema bootstrap at a time.
+ * Prevents SQLite "database is locked" errors on concurrent cold-start requests (XAMPP/Apache).
+ */
+function acquireDatabaseInitLock() {
+    $lockPath = DB_DIR . '/.db_init.lock';
+    $fp = @fopen($lockPath, 'c+');
+    if ($fp === false) {
+        return null;
+    }
+    if (!flock($fp, LOCK_EX)) {
+        fclose($fp);
+        return null;
+    }
+    return $fp;
+}
+
+function releaseDatabaseInitLock($fp) {
+    if ($fp !== null && is_resource($fp)) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
+    }
+}
+
 // Initialize database
 function initDatabase() {
+    $initLock = null;
     try {
         $db = new PDO('sqlite:' . DB_PATH);
         $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -210,6 +235,9 @@ function initDatabase() {
         } catch (PDOException $e) {
             // PRAGMA optimize might not be available in older SQLite versions, ignore
         }
+
+        // Serialize schema bootstrap across concurrent Apache workers
+        $initLock = acquireDatabaseInitLock();
     
         // Create users table
         $db->exec('CREATE TABLE IF NOT EXISTS users (
@@ -1964,12 +1992,25 @@ function initDatabase() {
             $stmt = $db->prepare('INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
             $stmt->execute($setting);
         }
+
+        // Style profiles table (used by /api/styles for theme CSS config)
+        $db->exec('CREATE TABLE IF NOT EXISTS style_profiles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            styles_data TEXT NOT NULL,
+            is_active INTEGER DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )');
         
         // Create indexes for optimal performance
         createDatabaseIndexes($db);
+
+        releaseDatabaseInitLock($initLock);
         
         return $db;
     } catch (PDOException $e) {
+        releaseDatabaseInitLock($initLock);
         http_response_code(500);
         header('Content-Type: application/json');
         echo json_encode(['error' => 'Database initialization failed: ' . $e->getMessage()]);
@@ -2019,6 +2060,13 @@ function createDatabaseIndexes($db) {
         try {
             $db->exec('CREATE INDEX IF NOT EXISTS idx_category_arrangements_user_id ON category_arrangements(user_id)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_category_arrangements_position ON category_arrangements(user_id, position)');
+        } catch (PDOException $e) {
+            // Table might not exist yet, ignore
+        }
+
+        // Style profiles table indexes
+        try {
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_style_profiles_active ON style_profiles(is_active)');
         } catch (PDOException $e) {
             // Table might not exist yet, ignore
         }

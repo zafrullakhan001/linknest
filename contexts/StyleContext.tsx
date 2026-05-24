@@ -13,20 +13,24 @@ interface StyleContextType {
 const StyleContext = createContext<StyleContextType | undefined>(undefined);
 
 const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // Initialize with cached styles if available, otherwise use defaults
+  // Initialize with cached styles if available (including stale cache), otherwise use defaults
   const getInitialStyles = () => {
-    const cached = styleService.getCachedStyles();
+    const cached = styleService.getCachedStyles(true);
     return cached || DEFAULT_STYLES;
   };
+
+  const hasCachedOnMount = styleService.hasCachedStyles(true);
   
   const [styles, setStyles] = useState<SpaceStyles>(getInitialStyles);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!hasCachedOnMount);
   const { isAuthenticated, loading: authLoading } = useAuth();
   const prevAuthRef = useRef<boolean | undefined>(undefined);
   const initialMountRef = useRef(true);
   const applyingStylesRef = useRef(false);
   const styleTagRef = useRef<HTMLStyleElement | null>(null);
   const stylesRef = useRef<SpaceStyles>(getInitialStyles());
+  const backgroundRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadStylesRef = useRef<(options?: { silent?: boolean }) => Promise<void>>();
 
   // Keep styles ref in sync
   useEffect(() => {
@@ -95,10 +99,26 @@ const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     }
   }, []);
 
-  const loadStyles = useCallback(async () => {
-    setIsLoading(true);
+  const scheduleBackgroundStylesRetry = useCallback(() => {
+    if (backgroundRetryTimerRef.current) {
+      clearTimeout(backgroundRetryTimerRef.current);
+    }
+    backgroundRetryTimerRef.current = setTimeout(() => {
+      backgroundRetryTimerRef.current = null;
+      if (styleService.getLastLoadSource() === 'api') {
+        return;
+      }
+      void loadStylesRef.current?.({ silent: true });
+    }, 3000);
+  }, []);
+
+  const loadStyles = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) {
+      setIsLoading(true);
+    }
     try {
       const loadedStyles = await styleService.getStyles();
+      const loadSource = styleService.getLastLoadSource();
       
       // For authenticated users, load their personal zoom preference from database
       // This ensures registered users get their saved zoom preference, not the global styles zoom
@@ -140,10 +160,14 @@ const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
       applyStyles(loadedStyles, false);
       // Cache the loaded styles
       styleService.cacheStyles(loadedStyles);
+
+      if (loadSource === 'stale-cache' || loadSource === 'defaults') {
+        scheduleBackgroundStylesRetry();
+      }
     } catch (error) {
       console.error('Failed to load styles:', error);
-      // Try to use cached styles on error
-      const cached = styleService.getCachedStyles();
+      // Try to use cached styles on error (including stale)
+      const cached = styleService.getCachedStyles(true);
       const fallbackStyles = cached || DEFAULT_STYLES;
       
       // For authenticated users, try to load zoom from database
@@ -180,16 +204,23 @@ const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
       setStyles(fallbackStyles);
       stylesRef.current = fallbackStyles;
       applyStyles(fallbackStyles, false);
+      scheduleBackgroundStylesRetry();
     } finally {
-      setIsLoading(false);
+      if (!options?.silent) {
+        setIsLoading(false);
+      }
     }
-  }, [applyStyles, isAuthenticated]);
+  }, [applyStyles, isAuthenticated, scheduleBackgroundStylesRetry]);
+
+  useEffect(() => {
+    loadStylesRef.current = loadStyles;
+  }, [loadStyles]);
 
   // Apply styles immediately on mount to prevent flash
   // Apply cached or default styles synchronously before React renders
   useEffect(() => {
     // Get cached styles or defaults
-    const cached = styleService.getCachedStyles();
+    const cached = styleService.getCachedStyles(true);
     const initialStyles = cached || DEFAULT_STYLES;
     
     // Apply synchronously immediately
@@ -222,6 +253,10 @@ const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
 
     return () => {
       window.removeEventListener('refreshStyles', handleRefresh);
+      if (backgroundRetryTimerRef.current) {
+        clearTimeout(backgroundRetryTimerRef.current);
+        backgroundRetryTimerRef.current = null;
+      }
     };
   }, [loadStyles]);
 

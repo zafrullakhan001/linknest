@@ -558,17 +558,26 @@ export const DEFAULT_STYLES: SpaceStyles = {
 const STYLES_CACHE_KEY = 'linknest_styles_cache';
 const STYLES_CACHE_TIMESTAMP_KEY = 'linknest_styles_cache_timestamp';
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const STYLE_RETRY_DELAYS = [300, 800];
+
+export type StyleLoadSource = 'api' | 'fresh-cache' | 'stale-cache' | 'defaults';
+
+let lastStylesLoadSource: StyleLoadSource = 'defaults';
 
 export const styleService = {
+  getLastLoadSource(): StyleLoadSource {
+    return lastStylesLoadSource;
+  },
+
   // Get cached styles from localStorage
-  getCachedStyles(): SpaceStyles | null {
+  getCachedStyles(allowStale = false): SpaceStyles | null {
     try {
       const cached = localStorage.getItem(STYLES_CACHE_KEY);
       const timestamp = localStorage.getItem(STYLES_CACHE_TIMESTAMP_KEY);
 
       if (cached && timestamp) {
         const age = Date.now() - parseInt(timestamp, 10);
-        if (age < CACHE_DURATION) {
+        if (allowStale || age < CACHE_DURATION) {
           const parsed = JSON.parse(cached);
           // Merge with defaults to ensure all properties exist
           return { ...DEFAULT_STYLES, ...parsed };
@@ -578,6 +587,10 @@ export const styleService = {
       console.error('Failed to read cached styles:', error);
     }
     return null;
+  },
+
+  hasCachedStyles(allowStale = true): boolean {
+    return this.getCachedStyles(allowStale) !== null;
   },
 
   // Cache styles to localStorage
@@ -601,37 +614,72 @@ export const styleService = {
   },
 
   async getStyles(): Promise<SpaceStyles> {
-    try {
-      const response = await fetch(`${API_BASE}/styles`, {
-        method: 'GET',
-        credentials: 'include',
-        cache: 'no-cache'
-      });
+    const retryableStatuses = new Set([500, 502, 503, 504]);
+    const maxAttempts = 3;
 
-      if (!response.ok) {
-        // If no styles exist, try cache, then return defaults
-        const cached = this.getCachedStyles();
-        return cached || { ...DEFAULT_STYLES };
+    const fallbackFromCache = (): SpaceStyles => {
+      const staleCached = this.getCachedStyles(true);
+      if (staleCached) {
+        lastStylesLoadSource = 'stale-cache';
+        return staleCached;
       }
-
-      const data = await response.json();
-      if (data.styles) {
-        // Merge with defaults to ensure all properties exist
-        const mergedStyles = { ...DEFAULT_STYLES, ...data.styles };
-        // Cache the loaded styles
-        this.cacheStyles(mergedStyles);
-        return mergedStyles;
+      const freshCached = this.getCachedStyles(false);
+      if (freshCached) {
+        lastStylesLoadSource = 'fresh-cache';
+        return freshCached;
       }
+      lastStylesLoadSource = 'defaults';
+      return { ...DEFAULT_STYLES };
+    };
 
-      // Try cache if API returns no styles
-      const cached = this.getCachedStyles();
-      return cached || { ...DEFAULT_STYLES };
-    } catch (error) {
-      console.error('Failed to load styles:', error);
-      // On error, try to use cached styles
-      const cached = this.getCachedStyles();
-      return cached || { ...DEFAULT_STYLES };
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        if (attempt > 0) {
+          await new Promise((resolve) => setTimeout(resolve, STYLE_RETRY_DELAYS[attempt - 1] ?? 800));
+        }
+
+        const response = await fetch(`${API_BASE}/styles`, {
+          method: 'GET',
+          credentials: 'include',
+          cache: 'no-cache'
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.styles) {
+            const mergedStyles = { ...DEFAULT_STYLES, ...data.styles };
+            this.cacheStyles(mergedStyles);
+            lastStylesLoadSource = 'api';
+            return mergedStyles;
+          }
+
+          const cached = this.getCachedStyles(false);
+          if (cached) {
+            lastStylesLoadSource = 'fresh-cache';
+            return cached;
+          }
+          lastStylesLoadSource = 'defaults';
+          return { ...DEFAULT_STYLES };
+        }
+
+        if (retryableStatuses.has(response.status) && attempt < maxAttempts - 1) {
+          console.warn(`[LinkNest] Styles API returned ${response.status}, retrying (${attempt + 1}/${maxAttempts})...`);
+          continue;
+        }
+
+        console.warn(`[LinkNest] Styles API returned ${response.status}, using cache fallback`);
+        return fallbackFromCache();
+      } catch (error) {
+        if (attempt < maxAttempts - 1) {
+          console.warn(`[LinkNest] Styles fetch failed, retrying (${attempt + 1}/${maxAttempts})...`, error);
+          continue;
+        }
+        console.warn('[LinkNest] Styles API unavailable, using cache fallback:', error);
+        return fallbackFromCache();
+      }
     }
+
+    return fallbackFromCache();
   },
 
   async saveStyles(styles: SpaceStyles, profileName?: string): Promise<{ profileId: number; profileName: string }> {
