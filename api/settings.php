@@ -376,7 +376,7 @@ function handleUpdateSettings() {
                 'ldap_user_search_base', 'ldap_user_filter', 'ldap_user_attributes', 
                 'ldap_group_search_base', 'ldap_group_filter', 'ldap_group_attributes', 
                 'ldap_auto_create_users', 'ldap_auto_update_users', 'ldap_sync_interval', 
-                'ldap_require_group_membership', 'ldap_required_groups', 'ldap_timeout', 'ldap_tls',
+                'ldap_require_group_membership', 'ldap_required_groups', 'ldap_denied_groups', 'ldap_timeout', 'ldap_tls',
                 'ldap_search_scope', 'ldap_user_dn_template', 'ldap_nested_groups', 'ldap_case_sensitive',
                 'ldap_ssl_verify', 'ldap_connection_retry', 'ldap_retry_delay', 'ldap_email_attribute',
                 'ldap_display_name_attribute', 'ldap_referrals',

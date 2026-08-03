@@ -67,6 +67,7 @@ export interface AppSettings {
   ldap_sync_interval?: string;
   ldap_require_group_membership?: string;
   ldap_required_groups?: string;
+  ldap_denied_groups?: string;
   ldap_timeout?: string;
   ldap_tls?: string;
   // Advanced LDAP Settings
@@ -168,6 +169,7 @@ export const settingsService = {
       ldap_sync_interval: data.settings?.ldap_sync_interval || '3600',
       ldap_require_group_membership: data.settings?.ldap_require_group_membership || '0',
       ldap_required_groups: data.settings?.ldap_required_groups || '',
+      ldap_denied_groups: data.settings?.ldap_denied_groups || '',
       ldap_timeout: data.settings?.ldap_timeout || '30',
       ldap_tls: data.settings?.ldap_tls || '0',
       // Advanced LDAP defaults

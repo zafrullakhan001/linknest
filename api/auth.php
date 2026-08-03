@@ -505,6 +505,11 @@ function handleLogin() {
                         // Fetch user attributes
                         $attributesStr = $serverConfig['user_attributes'] ?? 'sAMAccountName,mail,displayName';
                         $attributes = array_map('trim', explode(',', $attributesStr));
+                        $needGroups = (!empty($serverConfig['require_group_membership']) && $serverConfig['require_group_membership'] == '1')
+                            || !empty(trim($serverConfig['denied_groups'] ?? ''));
+                        if ($needGroups && !in_array('memberOf', $attributes, true) && !in_array('memberof', array_map('strtolower', $attributes), true)) {
+                            $attributes[] = 'memberOf';
+                        }
                         $result = @ldap_read($ldap, $userDn, '(objectClass=*)', $attributes);
                         if ($result) {
                             $entries = @ldap_get_entries($ldap, $result);
@@ -536,7 +541,14 @@ function handleLogin() {
 
                 $attributesStr = $serverConfig['user_attributes'] ?? 'sAMAccountName,mail,displayName';
                 $attributes = array_map('trim', explode(',', $attributesStr));
-                
+
+                // Ensure memberOf is fetched when evaluating group allow/deny lists
+                $needGroups = (!empty($serverConfig['require_group_membership']) && $serverConfig['require_group_membership'] == '1')
+                    || !empty(trim($serverConfig['denied_groups'] ?? ''));
+                if ($needGroups && !in_array('memberOf', $attributes, true) && !in_array('memberof', array_map('strtolower', $attributes), true)) {
+                    $attributes[] = 'memberOf';
+                }
+
                     // Determine search scope and use appropriate LDAP function
                     $searchScope = strtolower($serverConfig['search_scope'] ?? 'sub');
                     
@@ -672,20 +684,12 @@ function handleLogin() {
                     $ldapEmail = $username . '@' . $domain;
                 }
                 
-                // Check group membership requirements if enabled
+                // Group allow / deny checks
+                $requiredGroups = ldapParseGroupList($serverConfig['required_groups'] ?? '');
+                $deniedGroups = ldapParseGroupList($serverConfig['denied_groups'] ?? '');
                 $requireGroupMembership = !empty($serverConfig['require_group_membership']) && $serverConfig['require_group_membership'] == '1';
-                if ($requireGroupMembership && !empty($serverConfig['required_groups'])) {
-                    $requiredGroups = array_map('trim', explode(',', $serverConfig['required_groups']));
-                    $userGroups = [];
-                    
-                    // Get user's groups
-                    if (isset($userEntry['memberof']) && is_array($userEntry['memberof'])) {
-                        foreach ($userEntry['memberof'] as $group) {
-                            if (is_string($group) && $group !== 'count') {
-                                $userGroups[] = $group;
-                            }
-                        }
-                    }
+                if (($requireGroupMembership && !empty($requiredGroups)) || !empty($deniedGroups)) {
+                    $userGroups = ldapCollectUserGroups($userEntry ?? []);
                     
                     // Check nested groups if enabled
                     $nestedGroups = !empty($serverConfig['nested_groups']) && $serverConfig['nested_groups'] == '1';
@@ -693,25 +697,27 @@ function handleLogin() {
                         // TODO: Implement nested group checking recursively
                         // This would require additional LDAP queries to check group membership
                     }
-                    
-                    // Verify user is in at least one required group
-                    $hasRequiredGroup = false;
-                    foreach ($requiredGroups as $requiredGroup) {
-                        foreach ($userGroups as $userGroup) {
-                            if (stripos($userGroup, $requiredGroup) !== false || $userGroup === $requiredGroup) {
-                                $hasRequiredGroup = true;
-                                break 2;
-                            }
-                        }
-                    }
-                    
-                    if (!$hasRequiredGroup) {
-                        debug_log("LDAP: User not in required groups");
+
+                    // Denied groups take priority — block even if also in an allowed group
+                    if (!empty($deniedGroups) && ldapUserMatchesAnyGroup($userGroups, $deniedGroups)) {
+                        debug_log("LDAP: User is in a denied group");
                         @ldap_close($ldap);
                         $ldapSuccess = false;
                         $ldapUser = null;
-                        $ldapError = "Access denied: User must be a member of one of the required groups";
+                        $ldapError = "Access denied: User is a member of a denied group";
                         throw new Exception($ldapError);
+                    }
+                    
+                    // Verify user is in at least one required/allowed group when enabled
+                    if ($requireGroupMembership && !empty($requiredGroups)) {
+                        if (!ldapUserMatchesAnyGroup($userGroups, $requiredGroups)) {
+                            debug_log("LDAP: User not in required groups");
+                            @ldap_close($ldap);
+                            $ldapSuccess = false;
+                            $ldapUser = null;
+                            $ldapError = "Access denied: User must be a member of one of the allowed groups";
+                            throw new Exception($ldapError);
+                        }
                     }
                 }
                 
@@ -1791,6 +1797,60 @@ function handleBulkToggleApproval() {
     } else {
         sendJSON(['error' => 'Failed to toggle approval'], 500);
     }
+}
+
+/**
+ * Parse LDAP group list from settings.
+ * Prefer one-group-per-line. Also accepts semicolon separators.
+ * Legacy comma-separated short names (no DN "=") are still supported.
+ */
+function ldapParseGroupList(string $raw): array {
+    $raw = trim($raw);
+    if ($raw === '') {
+        return [];
+    }
+    $raw = str_replace(["\r\n", "\r"], "\n", $raw);
+    $raw = str_replace(';', "\n", $raw);
+    // Legacy: comma-separated short names only when no DN attribute markers
+    if (strpos($raw, "\n") === false && strpos($raw, '=') === false) {
+        $raw = str_replace(',', "\n", $raw);
+    }
+    $out = [];
+    foreach (explode("\n", $raw) as $line) {
+        $line = trim($line);
+        if ($line !== '') {
+            $out[] = $line;
+        }
+    }
+    return array_values(array_unique($out));
+}
+
+/** True if any userGroup DN/CN matches any configured pattern (case-insensitive substring or exact). */
+function ldapUserMatchesAnyGroup(array $userGroups, array $patterns): bool {
+    foreach ($patterns as $pattern) {
+        foreach ($userGroups as $userGroup) {
+            if (strcasecmp($userGroup, $pattern) === 0 || stripos($userGroup, $pattern) !== false) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/** Collect memberOf values from an ldap entry. */
+function ldapCollectUserGroups(array $userEntry): array {
+    $userGroups = [];
+    if (isset($userEntry['memberof']) && is_array($userEntry['memberof'])) {
+        foreach ($userEntry['memberof'] as $key => $group) {
+            if ($key === 'count') {
+                continue;
+            }
+            if (is_string($group) && $group !== '') {
+                $userGroups[] = $group;
+            }
+        }
+    }
+    return $userGroups;
 }
 
 function ldapEscapeFilterValue(string $value): string {
@@ -3649,6 +3709,7 @@ function getLdapServers($settings) {
         'group_attributes' => trim($settings['ldap_group_attributes'] ?? 'cn,distinguishedName,member'),
         'require_group_membership' => !empty($settings['ldap_require_group_membership']) && $settings['ldap_require_group_membership'] == '1' ? '1' : '0',
         'required_groups' => trim($settings['ldap_required_groups'] ?? ''),
+        'denied_groups' => trim($settings['ldap_denied_groups'] ?? ''),
         'search_scope' => strtolower($settings['ldap_search_scope'] ?? 'sub'),
         'user_dn_template' => trim($settings['ldap_user_dn_template'] ?? ''),
         'nested_groups' => !empty($settings['ldap_nested_groups']) && $settings['ldap_nested_groups'] == '1' ? '1' : '0',

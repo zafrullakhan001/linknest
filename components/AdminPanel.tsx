@@ -180,6 +180,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     group_attributes: string;
     require_group_membership: string;
     required_groups: string;
+    denied_groups: string;
     search_scope: string;
     user_dn_template: string;
     nested_groups: string;
@@ -666,7 +667,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         try {
           const parsed = JSON.parse(ldapServersJson);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            setLdapServers(parsed);
+            setLdapServers(parsed.map((s: any) => ({
+              ...s,
+              required_groups: s.required_groups ?? '',
+              denied_groups: s.denied_groups ?? '',
+            })));
           } else {
             setLdapServers([]);
           }
@@ -694,6 +699,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             group_attributes: loadedSettings.ldap_group_attributes || 'cn,distinguishedName,member',
             require_group_membership: loadedSettings.ldap_require_group_membership || '0',
             required_groups: loadedSettings.ldap_required_groups || '',
+            denied_groups: (loadedSettings as any).ldap_denied_groups || '',
             search_scope: loadedSettings.ldap_search_scope || 'sub',
             user_dn_template: loadedSettings.ldap_user_dn_template || '',
             nested_groups: loadedSettings.ldap_nested_groups || '0',
@@ -5914,6 +5920,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 group_attributes: 'cn,distinguishedName,member',
                                 require_group_membership: '0',
                                 required_groups: '',
+                                denied_groups: '',
                                 search_scope: 'sub',
                                 user_dn_template: '',
                                 nested_groups: '0',
@@ -6178,25 +6185,40 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                             />
                                             <span className="text-sm text-slate-700 dark:text-slate-300">Require Group Membership</span>
                                           </label>
-                                          <p className="text-[10px] text-slate-500 ml-6">Only allow users who are members of specific groups</p>
+                                          <p className="text-[10px] text-slate-500 ml-6">Only allow users who are members of at least one allowed group below</p>
                                         </div>
                                         {server.require_group_membership === '1' && (
                                           <div>
-                                            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Required Groups (comma-separated)</label>
-                                            <input
-                                              type="text"
-                                              value={server.required_groups}
+                                            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Allowed Groups (one per line)</label>
+                                            <textarea
+                                              value={server.required_groups || ''}
                                               onChange={(e) => {
                                                 const updated = [...ldapServers];
                                                 updated[index].required_groups = e.target.value;
                                                 setLdapServers(updated);
                                               }}
-                                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono"
-                                              placeholder="CN=Admins,CN=Users,DC=example,DC=com"
+                                              rows={6}
+                                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono leading-relaxed resize-y min-h-[8rem]"
+                                              placeholder={"CN=LinkNest-Users,OU=Groups,DC=example,DC=com\nCN=App-Access,OU=Groups,DC=example,DC=com\nDomain Users"}
                                             />
-                                            <p className="text-[10px] text-slate-500 mt-1">User must be a member of at least one of these groups. Enter full DN or partial match.</p>
+                                            <p className="text-[10px] text-slate-500 mt-1">Enter one group per line (full DN or partial CN match). User must match at least one. Semicolons also accepted.</p>
                                           </div>
                                         )}
+                                        <div>
+                                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Denied Groups (one per line)</label>
+                                          <textarea
+                                            value={server.denied_groups || ''}
+                                            onChange={(e) => {
+                                              const updated = [...ldapServers];
+                                              updated[index].denied_groups = e.target.value;
+                                              setLdapServers(updated);
+                                            }}
+                                            rows={6}
+                                            className="w-full bg-white dark:bg-slate-800 border border-red-200 dark:border-red-900/50 rounded-lg px-3 py-2 text-sm font-mono leading-relaxed resize-y min-h-[8rem]"
+                                            placeholder={"CN=Disabled-Users,OU=Groups,DC=example,DC=com\nCN=Contractors-Blocked,OU=Groups,DC=example,DC=com"}
+                                          />
+                                          <p className="text-[10px] text-slate-500 mt-1">Enter one group per line. Users in any denied group are blocked from LDAP login (checked even if Require Group Membership is off).</p>
+                                        </div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                           <div>
                                             <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Group Search Base</label>
@@ -6462,6 +6484,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                             Group Required
                                           </span>
                                         )}
+                                        {(server.denied_groups || '').trim() !== '' && (
+                                          <span className="text-[10px] px-1.5 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded">
+                                            Deny Groups
+                                          </span>
+                                        )}
                                         {server.nested_groups === '1' && (
                                           <span className="text-[10px] px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded">
                                             Nested Groups
@@ -6693,23 +6720,34 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               />
                               <span className="text-sm text-slate-700 dark:text-slate-300">Require Group Membership</span>
                             </label>
-                            <p className="text-[10px] text-slate-500 ml-6">Only allow users who are members of specific groups</p>
+                            <p className="text-[10px] text-slate-500 ml-6">Only allow users who are members of at least one allowed group below</p>
                           </div>
 
                           {settings.ldap_require_group_membership === '1' && (
                             <div>
-                              <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>Required Groups (comma-separated)</label>
-                              <input
-                                type="text"
+                              <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>Allowed Groups (one per line)</label>
+                              <textarea
                                 value={settings.ldap_required_groups || ''}
                                 onChange={(e) => setSettings({ ...settings, ldap_required_groups: e.target.value })}
-                                className={`w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg ${isMobile ? 'px-3 py-2.5 text-sm' : 'px-3 py-2 text-sm'} font-mono touch-manipulation`}
-                                style={isMobile ? { minHeight: '44px' } : {}}
-                                placeholder="CN=Admins,CN=Users,DC=example,DC=com"
+                                rows={6}
+                                className={`w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg ${isMobile ? 'px-3 py-2.5 text-sm' : 'px-3 py-2 text-sm'} font-mono leading-relaxed resize-y min-h-[8rem] touch-manipulation`}
+                                placeholder={"CN=LinkNest-Users,OU=Groups,DC=example,DC=com\nCN=App-Access,OU=Groups,DC=example,DC=com\nDomain Users"}
                               />
-                              <p className="text-[10px] text-slate-500 mt-1">User must be a member of at least one of these groups. Enter full DN or partial match.</p>
+                              <p className="text-[10px] text-slate-500 mt-1">Enter one group per line (full DN or partial CN match). User must match at least one. Semicolons also accepted.</p>
                             </div>
                           )}
+
+                          <div>
+                            <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>Denied Groups (one per line)</label>
+                            <textarea
+                              value={settings.ldap_denied_groups || ''}
+                              onChange={(e) => setSettings({ ...settings, ldap_denied_groups: e.target.value })}
+                              rows={6}
+                              className={`w-full bg-slate-50 dark:bg-slate-900/50 border border-red-200 dark:border-red-900/50 rounded-lg ${isMobile ? 'px-3 py-2.5 text-sm' : 'px-3 py-2 text-sm'} font-mono leading-relaxed resize-y min-h-[8rem] touch-manipulation`}
+                              placeholder={"CN=Disabled-Users,OU=Groups,DC=example,DC=com\nCN=Contractors-Blocked,OU=Groups,DC=example,DC=com"}
+                            />
+                            <p className="text-[10px] text-slate-500 mt-1">Enter one group per line. Users in any denied group are blocked from LDAP login (checked even if Require Group Membership is off).</p>
+                          </div>
                         </div>
                       </div>
 
@@ -7097,7 +7135,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 'ldap_user_search_base', 'ldap_user_filter', 'ldap_user_attributes',
                                 'ldap_group_search_base', 'ldap_group_filter', 'ldap_group_attributes',
                                 'ldap_auto_create_users', 'ldap_auto_update_users', 'ldap_sync_interval',
-                                'ldap_require_group_membership', 'ldap_required_groups', 'ldap_timeout', 'ldap_tls',
+                                'ldap_require_group_membership', 'ldap_required_groups', 'ldap_denied_groups', 'ldap_timeout', 'ldap_tls',
                                 'ldap_search_scope', 'ldap_user_dn_template', 'ldap_nested_groups', 'ldap_case_sensitive',
                                 'ldap_ssl_verify', 'ldap_connection_retry', 'ldap_retry_delay', 'ldap_email_attribute',
                                 'ldap_display_name_attribute', 'ldap_referrals'
@@ -7208,7 +7246,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   'ldap_user_search_base', 'ldap_user_filter', 'ldap_user_attributes',
                                   'ldap_group_search_base', 'ldap_group_filter', 'ldap_group_attributes',
                                   'ldap_auto_create_users', 'ldap_auto_update_users', 'ldap_sync_interval',
-                                  'ldap_require_group_membership', 'ldap_required_groups', 'ldap_timeout', 'ldap_tls',
+                                  'ldap_require_group_membership', 'ldap_required_groups', 'ldap_denied_groups', 'ldap_timeout', 'ldap_tls',
                                   'ldap_search_scope', 'ldap_user_dn_template', 'ldap_nested_groups', 'ldap_case_sensitive',
                                   'ldap_ssl_verify', 'ldap_connection_retry', 'ldap_retry_delay', 'ldap_email_attribute',
                                   'ldap_display_name_attribute', 'ldap_referrals'
