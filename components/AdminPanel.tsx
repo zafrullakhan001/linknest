@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { authService, PendingUser, AllUser } from '../services/authService';
+import { authService, PendingUser, AllUser, LdapUserDetail } from '../services/authService';
 import { settingsService, AppSettings, SEMI_PWA_EXCLUDE_PATHS_DEFAULT } from '../services/settingsService';
 import { databaseService } from '../services/databaseService';
 import { useSettings } from '../contexts/SettingsContext';
@@ -102,6 +102,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [editAuthSource, setEditAuthSource] = useState<'local' | 'ldap' | 'saml'>('local');
   const [editUserLoading, setEditUserLoading] = useState(false);
   const [userActionsDialog, setUserActionsDialog] = useState<{ open: boolean; user: AllUser | null }>({ open: false, user: null });
+  const [ldapUserDetail, setLdapUserDetail] = useState<LdapUserDetail | null>(null);
+  const [ldapUserDetailLoading, setLdapUserDetailLoading] = useState(false);
+  const [ldapUserDetailError, setLdapUserDetailError] = useState('');
+  const [ldapDirectoryExpanded, setLdapDirectoryExpanded] = useState(false);
   const [autoDetecting, setAutoDetecting] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -234,6 +238,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [ldapSearchTerm, setLdapSearchTerm] = useState('');
   const [ldapSearchResults, setLdapSearchResults] = useState<Array<{ username: string; email: string; displayName: string; dn: string }>>([]);
   const [ldapSearchLoading, setLdapSearchLoading] = useState(false);
+  const [ldapSearchPerformed, setLdapSearchPerformed] = useState(false);
   const [selectedLdapUser, setSelectedLdapUser] = useState<{ username: string; email: string; displayName: string; dn: string } | null>(null);
   const [addUserLoading, setAddUserLoading] = useState(false);
 
@@ -2701,9 +2706,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setResetPasswordModal({ open: false, userId: null, username: '' });
       setNewPassword('');
       setResetConfirmPassword('');
-      alert('Password reset successfully!');
+      alert('Password changed successfully!');
     } catch (err: any) {
-      setError(err.message || 'Failed to reset password');
+      setError(err.message || 'Failed to change password');
     } finally {
       setResetPasswordLoading(false);
     }
@@ -2782,21 +2787,46 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     return new Date(timestamp * 1000).toLocaleString();
   };
 
+  const pickLdapUserFromResults = (
+    results: Array<{ username: string; email: string; displayName: string; dn: string }>,
+    term: string
+  ) => {
+    if (results.length === 0) {
+      return null;
+    }
+    const termLower = term.trim().toLowerCase();
+    const exact = results.find((u) => u.username.toLowerCase() === termLower);
+    if (exact) {
+      return exact;
+    }
+    if (results.length === 1) {
+      return results[0];
+    }
+    return null;
+  };
+
   const handleSearchLdapUsers = async () => {
-    if (!ldapSearchTerm.trim() || ldapSearchTerm.length < 2) {
+    const term = ldapSearchTerm.trim();
+    if (term.length < 2) {
       setError('Please enter at least 2 characters to search');
-      return;
+      return [];
     }
 
     try {
       setLdapSearchLoading(true);
       setError('');
-      const results = await authService.searchLdapUsers(ldapSearchTerm);
+      const results = await authService.searchLdapUsers(term);
       setLdapSearchResults(results);
-      setSelectedLdapUser(null);
+      setLdapSearchPerformed(true);
+      const autoSelected = pickLdapUserFromResults(results, term);
+      setSelectedLdapUser(autoSelected);
+      return results;
     } catch (err: any) {
       setError(err.message || 'Failed to search LDAP users');
       setLdapSearchResults([]);
+      setLdapSearchPerformed(true);
+      setSelectedLdapUser(null);
+      return [];
     } finally {
       setLdapSearchLoading(false);
     }
@@ -2837,24 +2867,42 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   };
 
   const handleAddLdapUser = async () => {
-    if (!selectedLdapUser) {
-      setError('Please select an LDAP user');
-      return;
+    let userToAdd = selectedLdapUser;
+
+    // If no selection yet, search and auto-add only when match is unambiguous
+    if (!userToAdd) {
+      const term = ldapSearchTerm.trim();
+      if (term.length < 2) {
+        setError('Please search and select an LDAP user');
+        return;
+      }
+      const results = await handleSearchLdapUsers();
+      userToAdd = pickLdapUserFromResults(results, term);
+      if (!userToAdd) {
+        setError(
+          results.length === 0
+            ? 'No LDAP users found. Try a different search term.'
+            : 'Multiple users matched. Please select one from the list.'
+        );
+        return;
+      }
+      setSelectedLdapUser(userToAdd);
     }
 
     try {
       setAddUserLoading(true);
       setError('');
       await authService.addLdapUser(
-        selectedLdapUser.username,
-        selectedLdapUser.email,
-        selectedLdapUser.dn,
-        selectedLdapUser.displayName
+        userToAdd.username,
+        userToAdd.email,
+        userToAdd.dn,
+        userToAdd.displayName
       );
       setAddUserModal(false);
       setBulkImportMode(false);
       setLdapSearchTerm('');
       setLdapSearchResults([]);
+      setLdapSearchPerformed(false);
       setSelectedLdapUser(null);
       setCsvFile(null);
       setLdapUsersText('');
@@ -2963,6 +3011,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     setLocalPassword('');
     setLdapSearchTerm('');
     setLdapSearchResults([]);
+    setLdapSearchPerformed(false);
     setSelectedLdapUser(null);
     setSamlImportFile(null);
     setError('');
@@ -2993,6 +3042,65 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       };
     }
   }, [addUserModal, adminPasswordModal]);
+
+  // Load LDAP directory details only when the section is expanded
+  useEffect(() => {
+    if (!userActionsDialog.open || !userActionsDialog.user) {
+      setLdapUserDetail(null);
+      setLdapUserDetailError('');
+      setLdapUserDetailLoading(false);
+      setLdapDirectoryExpanded(false);
+      return;
+    }
+
+    const isLdap = (userActionsDialog.user.auth_source || '').toLowerCase() === 'ldap';
+    if (!isLdap || !ldapDirectoryExpanded) {
+      if (!isLdap) {
+        setLdapUserDetail(null);
+        setLdapUserDetailError('');
+        setLdapUserDetailLoading(false);
+        setLdapDirectoryExpanded(false);
+      }
+      return;
+    }
+
+    // Already loaded for this username — skip refetch until dialog user changes
+    if (ldapUserDetail && ldapUserDetail.username.toLowerCase() === userActionsDialog.user.username.toLowerCase()) {
+      return;
+    }
+
+    let cancelled = false;
+    const load = async () => {
+      setLdapUserDetailLoading(true);
+      setLdapUserDetailError('');
+      try {
+        const detail = await authService.getLdapUserDetail(userActionsDialog.user!.username);
+        if (!cancelled) {
+          setLdapUserDetail(detail);
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          setLdapUserDetail(null);
+          setLdapUserDetailError(err.message || 'Failed to load LDAP details');
+        }
+      } finally {
+        if (!cancelled) {
+          setLdapUserDetailLoading(false);
+        }
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [userActionsDialog.open, userActionsDialog.user?.id, userActionsDialog.user?.username, userActionsDialog.user?.auth_source, ldapDirectoryExpanded]);
+
+  // Clear cached LDAP detail when switching users in the dialog
+  useEffect(() => {
+    setLdapUserDetail(null);
+    setLdapUserDetailError('');
+    setLdapDirectoryExpanded(false);
+  }, [userActionsDialog.user?.id]);
 
   return (
     <div className="space-y-6">
@@ -12486,7 +12594,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
 
             <div className="p-6 space-y-4">
               {error && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg whitespace-pre-wrap font-mono text-xs leading-relaxed max-h-64 overflow-y-auto">
                   {error}
                 </div>
               )}
@@ -12866,18 +12974,21 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       <input
                         type="text"
                         value={ldapSearchTerm}
-                        onChange={(e) => setLdapSearchTerm(e.target.value)}
+                        onChange={(e) => {
+                          setLdapSearchTerm(e.target.value);
+                          setLdapSearchPerformed(false);
+                        }}
                         onKeyPress={(e) => {
                           if (e.key === 'Enter') {
                             handleSearchLdapUsers();
                           }
                         }}
                         className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                        placeholder="Enter search term (min 2 characters)"
+                        placeholder="Username, display name, or email (min 2 characters)"
                       />
                       <button
                         onClick={handleSearchLdapUsers}
-                        disabled={ldapSearchLoading || !ldapSearchTerm.trim() || ldapSearchTerm.length < 2}
+                        disabled={ldapSearchLoading || ldapSearchTerm.trim().length < 2}
                         className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
                       >
                         {ldapSearchLoading ? 'Searching...' : 'Search'}
@@ -12902,7 +13013,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                               }`}
                           >
                             <div className="font-medium text-slate-900 dark:text-white">{user.displayName || user.username}</div>
-                            <div className="text-sm text-slate-600 dark:text-slate-400">{user.email}</div>
+                            <div className="text-sm text-slate-600 dark:text-slate-400">{user.email || 'No email in LDAP'}</div>
                             <div className="text-xs text-slate-500 dark:text-slate-500 mt-1">{user.username}</div>
                           </button>
                         ))}
@@ -12910,11 +13021,17 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     </div>
                   )}
 
+                  {ldapSearchPerformed && ldapSearchResults.length === 0 && (
+                    <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4 text-sm text-slate-600 dark:text-slate-400">
+                      No LDAP users found for &quot;{ldapSearchTerm.trim()}&quot;. Try a username, display name, or email prefix (min 2 characters).
+                    </div>
+                  )}
+
                   {selectedLdapUser && (
                     <div className="bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-lg p-4">
                       <div className="text-sm font-medium text-slate-900 dark:text-white mb-1">Selected User:</div>
                       <div className="text-sm text-slate-700 dark:text-slate-300">{selectedLdapUser.displayName || selectedLdapUser.username}</div>
-                      <div className="text-xs text-slate-600 dark:text-slate-400">{selectedLdapUser.email}</div>
+                      <div className="text-xs text-slate-600 dark:text-slate-400">{selectedLdapUser.email || 'Email will be generated on add'}</div>
                     </div>
                   )}
                 </div>
@@ -12929,6 +13046,10 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     setLdapUsersText('');
                     setSamlImportFile(null);
                     setBulkImportResults(null);
+                    setLdapSearchTerm('');
+                    setLdapSearchResults([]);
+                    setLdapSearchPerformed(false);
+                    setSelectedLdapUser(null);
                     setError('');
                   }}
                   className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
@@ -12946,7 +13067,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                 ) : (
                   <button
                     onClick={addUserType === 'local' ? handleAddLocalUser : handleAddLdapUser}
-                    disabled={addUserLoading || addUserType === 'saml' || (addUserType === 'local' ? (!localUsername.trim() || !localEmail.trim() || !localPassword.trim() || !localConfirmPassword.trim() || !validatePassword(localPassword).valid || localPassword !== localConfirmPassword) : !selectedLdapUser)}
+                    disabled={addUserLoading || addUserType === 'saml' || (addUserType === 'local' ? (!localUsername.trim() || !localEmail.trim() || !localPassword.trim() || !localConfirmPassword.trim() || !validatePassword(localPassword).valid || localPassword !== localConfirmPassword) : (!selectedLdapUser && ldapSearchTerm.trim().length < 2))}
                     className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
                   >
                     {addUserLoading ? 'Adding...' : 'Add User'}
@@ -13160,13 +13281,13 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
         </div>
       )}
 
-      {/* Reset Password Modal */}
+      {/* Change Password Modal (admin sets password for a local user) */}
       {resetPasswordModal.open && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[110] p-4">
           <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full">
             <div className="p-6 border-b border-slate-200 dark:border-slate-700">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Reset Password</h2>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Change Password</h2>
                 <button
                   onClick={() => {
                     setResetPasswordModal({ open: false, userId: null, username: '' });
@@ -13181,6 +13302,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                   </svg>
                 </button>
               </div>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Set a new password for local user <span className="font-medium text-slate-700 dark:text-slate-300">{resetPasswordModal.username}</span></p>
             </div>
 
             <div className="p-6 space-y-4">
@@ -13192,7 +13314,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  New Password for {resetPasswordModal.username}
+                  New Password
                 </label>
                 <SecurePasswordInput
                   value={newPassword}
@@ -13238,7 +13360,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                   disabled={resetPasswordLoading || !newPassword.trim() || !resetConfirmPassword.trim() || !validatePassword(newPassword).valid || newPassword !== resetConfirmPassword}
                   className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
                 >
-                  {resetPasswordLoading ? 'Resetting...' : 'Reset Password'}
+                  {resetPasswordLoading ? 'Saving...' : 'Change Password'}
                 </button>
               </div>
             </div>
@@ -16249,25 +16371,33 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
       {userActionsDialog.open && userActionsDialog.user && createPortal(
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setUserActionsDialog({ open: false, user: null })}>
           <div
-            className="bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-2xl border border-slate-200 dark:border-[#333] w-full max-w-md max-h-[85vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200"
+            className={`bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-2xl border border-slate-200 dark:border-[#333] w-full ${(userActionsDialog.user.auth_source || '').toLowerCase() === 'ldap' && ldapDirectoryExpanded ? 'max-w-2xl' : 'max-w-md'} max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
             <div className="px-6 py-4 border-b border-slate-200 dark:border-[#333] flex items-center justify-between bg-slate-50 dark:bg-[#252525]">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-indigo-500/10 text-indigo-500">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-indigo-500/10 text-indigo-500 flex-shrink-0">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
                     <path d="M10 9a3 3 0 100-6 3 3 0 000 6zM6 8a2 2 0 11-4 0 2 2 0 014 0zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-3.385-.572zM16 8a2 2 0 11-4 0 2 2 0 014 0zm-1.615 8.428a1.224 1.224 0 00.569-1.175 5.966 5.966 0 00-2.081-.416 5.967 5.967 0 00-1.788.27A9.953 9.953 0 0013 18a9.953 9.953 0 003.385-.572z" />
                   </svg>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <h2 className="text-lg font-bold text-slate-900 dark:text-white">User Actions</h2>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">{userActionsDialog.user.username}</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 truncate">
+                    {userActionsDialog.user.username}
+                    {(userActionsDialog.user.auth_source || '').toLowerCase() === 'ldap' && (
+                      <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">LDAP</span>
+                    )}
+                    {(userActionsDialog.user.auth_source || 'local').toLowerCase() === 'local' && (
+                      <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200">Local</span>
+                    )}
+                  </p>
                 </div>
               </div>
               <button
                 onClick={() => setUserActionsDialog({ open: false, user: null })}
-                className="p-2 hover:bg-slate-200 dark:hover:bg-[#333] rounded-xl transition-colors text-slate-500"
+                className="p-2 hover:bg-slate-200 dark:hover:bg-[#333] rounded-xl transition-colors text-slate-500 flex-shrink-0"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
                   <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
@@ -16276,7 +16406,153 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto p-4">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* LDAP directory profile — collapsed until expanded (lazy fetch) */}
+              {(userActionsDialog.user.auth_source || '').toLowerCase() === 'ldap' && (
+                <div className="rounded-xl border border-blue-200 dark:border-blue-900/50 bg-blue-50/60 dark:bg-blue-950/20 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setLdapDirectoryExpanded((v) => !v)}
+                    className="w-full px-4 py-2.5 flex items-center justify-between text-left hover:bg-blue-100/50 dark:hover:bg-blue-900/20 transition-colors"
+                  >
+                    <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-200">LDAP Directory Info</h3>
+                    <div className="flex items-center gap-2">
+                      {ldapDirectoryExpanded && ldapUserDetailLoading && (
+                        <svg className="animate-spin h-3.5 w-3.5 text-blue-600 dark:text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      )}
+                      <span className="text-xs text-blue-700 dark:text-blue-300">{ldapDirectoryExpanded ? 'Hide' : 'Show'}</span>
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 text-blue-700 dark:text-blue-300 transition-transform ${ldapDirectoryExpanded ? 'rotate-180' : ''}`}>
+                        <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                  </button>
+                  {ldapDirectoryExpanded && (
+                  <div className="p-4 border-t border-blue-200 dark:border-blue-900/50">
+                    {ldapUserDetailError && (
+                      <div className="mb-3 whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2 max-h-40 overflow-y-auto">
+                        {ldapUserDetailError}
+                      </div>
+                    )}
+                    {ldapUserDetail && (() => {
+                      const fmt = (iso: string | null | undefined) => {
+                        if (!iso) return '—';
+                        const d = new Date(iso);
+                        return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+                      };
+                      const acct = ldapUserDetail.account;
+                      const rows: Array<[string, React.ReactNode]> = [
+                        ['CN', ldapUserDetail.cn || '—'],
+                        ['sAMAccountName', ldapUserDetail.username || '—'],
+                        ['UPN', ldapUserDetail.userPrincipalName || '—'],
+                        ['Display Name', ldapUserDetail.displayName || '—'],
+                        ['Email', ldapUserDetail.email || '—'],
+                        ['DN', <span className="break-all">{ldapUserDetail.dn || '—'}</span>],
+                        ['Title', ldapUserDetail.title || '—'],
+                        ['Department', ldapUserDetail.department || '—'],
+                        ['Company', ldapUserDetail.company || '—'],
+                        ['Office', ldapUserDetail.office || '—'],
+                        ['Phone', ldapUserDetail.telephone || '—'],
+                        ['Mobile', ldapUserDetail.mobile || '—'],
+                        ['Manager', ldapUserDetail.manager ? `${ldapUserDetail.manager.cn}` : '—'],
+                        ['Employee ID', ldapUserDetail.employeeId || ldapUserDetail.employeeNumber || '—'],
+                      ];
+                      return (
+                        <div className="space-y-4">
+                          <div className="flex flex-wrap gap-2">
+                            <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold ${acct.locked ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'}`}>
+                              {acct.locked ? 'Locked' : 'Not locked'}
+                            </span>
+                            <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold ${acct.disabled ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'}`}>
+                              {acct.disabled ? 'Disabled in AD' : 'Enabled in AD'}
+                            </span>
+                            {acct.passwordExpired && (
+                              <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                                Password expired
+                              </span>
+                            )}
+                            {acct.passwordNeverExpires && (
+                              <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                                Password never expires
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                            {rows.map(([label, value]) => (
+                              <div key={label} className="min-w-0">
+                                <div className="text-slate-500 dark:text-slate-400 font-medium">{label}</div>
+                                <div className="text-slate-900 dark:text-slate-100 mt-0.5">{value}</div>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs border-t border-blue-200/70 dark:border-blue-900/40 pt-3">
+                            <div>
+                              <div className="text-slate-500 dark:text-slate-400 font-medium">Lockout time</div>
+                              <div className="text-slate-900 dark:text-slate-100 mt-0.5">{fmt(acct.lockoutTime)}</div>
+                            </div>
+                            <div>
+                              <div className="text-slate-500 dark:text-slate-400 font-medium">Password last set</div>
+                              <div className="text-slate-900 dark:text-slate-100 mt-0.5">{fmt(acct.pwdLastSet)}</div>
+                            </div>
+                            <div>
+                              <div className="text-slate-500 dark:text-slate-400 font-medium">Account expires</div>
+                              <div className="text-slate-900 dark:text-slate-100 mt-0.5">{acct.accountNeverExpires ? 'Never' : fmt(acct.accountExpires)}</div>
+                            </div>
+                            <div>
+                              <div className="text-slate-500 dark:text-slate-400 font-medium">Last logon</div>
+                              <div className="text-slate-900 dark:text-slate-100 mt-0.5">{fmt(acct.lastLogonTimestamp)}</div>
+                            </div>
+                            <div>
+                              <div className="text-slate-500 dark:text-slate-400 font-medium">Created</div>
+                              <div className="text-slate-900 dark:text-slate-100 mt-0.5">{acct.whenCreated || '—'}</div>
+                            </div>
+                            <div>
+                              <div className="text-slate-500 dark:text-slate-400 font-medium">Changed</div>
+                              <div className="text-slate-900 dark:text-slate-100 mt-0.5">{acct.whenChanged || '—'}</div>
+                            </div>
+                            <div className="sm:col-span-2">
+                              <div className="text-slate-500 dark:text-slate-400 font-medium">userAccountControl</div>
+                              <div className="text-slate-900 dark:text-slate-100 mt-0.5">
+                                {acct.userAccountControl.raw}
+                                {acct.userAccountControl.flags.length > 0 && (
+                                  <span className="text-slate-500 dark:text-slate-400"> ({acct.userAccountControl.flags.join(', ')})</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="border-t border-blue-200/70 dark:border-blue-900/40 pt-3">
+                            <div className="text-xs font-semibold text-slate-700 dark:text-slate-200 mb-2">
+                              Group membership ({ldapUserDetail.groupCount})
+                            </div>
+                            {ldapUserDetail.groups.length === 0 ? (
+                              <p className="text-xs text-slate-500 dark:text-slate-400">No memberOf groups returned (may lack read permission or primary group only).</p>
+                            ) : (
+                              <ul className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                                {ldapUserDetail.groups.map((g) => (
+                                  <li key={g.dn} className="text-xs bg-white/70 dark:bg-slate-900/40 border border-blue-100 dark:border-blue-900/40 rounded-lg px-2.5 py-1.5">
+                                    <div className="font-medium text-slate-900 dark:text-slate-100">{g.cn}</div>
+                                    <div className="text-[10px] text-slate-500 dark:text-slate-400 break-all mt-0.5">{g.dn}</div>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    {!ldapUserDetailLoading && !ldapUserDetail && !ldapUserDetailError && (
+                      <p className="text-xs text-slate-500 dark:text-slate-400">No LDAP details available.</p>
+                    )}
+                  </div>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-2">
                 {/* Promote/Demote */}
                 <button
@@ -16374,8 +16650,8 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       Toggle Auth Source
                     </button>
 
-                    {/* Reset Password */}
-                    {userActionsDialog.user.auth_source !== 'ldap' && userActionsDialog.user.auth_source !== 'saml' && (
+                    {/* Change Password (local accounts only) */}
+                    {(userActionsDialog.user.auth_source || 'local').toLowerCase() === 'local' && (
                       <button
                         onClick={() => {
                           setUserActionsDialog({ open: false, user: null });
@@ -16387,7 +16663,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
                           <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
                         </svg>
-                        Reset Password
+                        Change Password
                       </button>
                     )}
 

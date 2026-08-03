@@ -614,6 +614,8 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
                       <li><strong>Local Authentication:</strong> Built-in user management with secure password storage</li>
                       <li><strong>LDAP Integration:</strong> Connect to Active Directory or LDAP servers for centralized user management</li>
+                      <li><strong>LDAP User Search:</strong> Prefix search by username, display name, email, CN, or UPN — short names (2+ characters) supported with AD-friendly fallbacks</li>
+                      <li><strong>LDAP Directory Info:</strong> View lock status, account flags, CN/DN, and group membership from User Actions (expand to load)</li>
                       <li><strong>SAML/SSO:</strong> Enterprise Single Sign-On with SAML 2.0 protocol support</li>
                       <li>Multiple authentication sources can coexist</li>
                       <li>User provisioning and synchronization</li>
@@ -647,7 +649,10 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                   <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
                     <p className="font-medium text-brand-900 dark:text-brand-100">Admin Panel Features:</p>
                     <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
-                      <li><strong>User Management:</strong> Approve pending users, manage all users, reset passwords, edit user details</li>
+                      <li><strong>User Management:</strong> Approve pending users, manage all users, change local user passwords, edit user details</li>
+                      <li><strong>User Actions:</strong> Promote/disable users, impersonate, assign roles, toggle auth source; LDAP users show expandable directory info (lock status, CN, groups, and more)</li>
+                      <li><strong>Add LDAP Users:</strong> Search directory with short or partial names; auto-select exact/single matches; detailed errors when LDAP search fails</li>
+                      <li><strong>Change Password (Local):</strong> Admins can set a new password for non-admin local accounts from User Actions</li>
                       <li><strong>User Groups:</strong> Create and manage user groups, assign members, bulk assign roles to groups</li>
                       <li><strong>Role Management:</strong> Create roles, assign roles to users and groups, manage role permissions</li>
                       <li><strong>Tile Admins:</strong> Assign users and groups as tile admins with granular permission control</li>
@@ -687,8 +692,19 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                   A smart, aesthetic landing page manager
                 </p>
                 <p className="text-sm text-slate-500 dark:text-slate-500">
-                  Version 2.0.0
+                  Version 2.1.0
                 </p>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3">What&apos;s New in 2.1.0</h3>
+                <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 text-sm text-slate-700 dark:text-slate-300">
+                  <ul className="list-disc list-inside space-y-1 ml-2">
+                    <li><strong>LDAP Add User search:</strong> Short/partial name search (2+ chars) with AD-safe filters and fallbacks; richer diagnostics when search fails</li>
+                    <li><strong>LDAP Directory Info:</strong> Expandable User Actions panel with lock status, CN/DN, account flags, and group membership (loads on demand)</li>
+                    <li><strong>Change Password:</strong> Admins can change passwords for local (non-admin) users from User Actions</li>
+                  </ul>
+                </div>
               </section>
 
               <section>
@@ -757,8 +773,11 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     'Access Control & Permissions',
                     'Instance Cloning',
                     'LDAP Authentication',
+                    'LDAP Directory User Details',
+                    'LDAP Short-Name User Search',
                     'SAML/SSO Authentication',
                     'Admin Panel',
+                    'Admin Change Local Password',
                     'Bulk Import/Export',
                     'Database Cleanup Tools',
                     'Custom Widget Development',

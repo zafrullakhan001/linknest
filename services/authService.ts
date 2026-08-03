@@ -29,6 +29,56 @@ export interface AllUser {
   created_at: number;
 }
 
+export interface LdapUserDetail {
+  found: boolean;
+  dn: string;
+  cn: string;
+  username: string;
+  userPrincipalName: string;
+  displayName: string;
+  givenName: string;
+  sn: string;
+  email: string;
+  description: string;
+  title: string;
+  department: string;
+  company: string;
+  office: string;
+  telephone: string;
+  mobile: string;
+  employeeId: string;
+  employeeNumber: string;
+  manager: { cn: string; dn: string } | null;
+  account: {
+    disabled: boolean;
+    locked: boolean;
+    lockoutTime: string | null;
+    passwordNeverExpires: boolean;
+    passwordExpired: boolean;
+    pwdLastSet: string | null;
+    accountExpires: string | null;
+    accountNeverExpires: boolean;
+    lastLogonTimestamp: string | null;
+    whenCreated: string | null;
+    whenChanged: string | null;
+    userAccountControl: {
+      raw: number;
+      flags: string[];
+      disabled: boolean;
+      password_never_expires: boolean;
+      password_expired: boolean;
+      normal_account: boolean;
+    };
+  };
+  groups: Array<{ cn: string; dn: string }>;
+  groupCount: number;
+  meta?: {
+    filter?: string;
+    uri?: string;
+    search_base?: string;
+  };
+}
+
 export interface UserListItem {
   id: number;
   username: string;
@@ -40,6 +90,48 @@ export interface UserListItem {
 // API_BASE uses relative URLs (starting with /) which are protocol-agnostic
 // This ensures the app works with both HTTP and HTTPS automatically
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+
+/** Format LDAP API errors with diagnostic details for admins */
+function formatLdapError(data: { error?: string; details?: Record<string, unknown> }): string {
+  const lines: string[] = [data.error || 'Failed to search LDAP users'];
+  const details = data.details;
+  if (!details || typeof details !== 'object') {
+    return lines.join('\n');
+  }
+
+  const push = (label: string, value: unknown) => {
+    if (value === undefined || value === null || value === '') return;
+    if (typeof value === 'object') return;
+    lines.push(`${label}: ${String(value)}`);
+  };
+
+  push('Errno', details.ldap_errno);
+  push('LDAP error', details.ldap_error);
+  push('Diagnostic', details.diagnostic);
+  push('Server', details.uri);
+  push('Search base', details.search_base);
+  push('Scope', details.search_scope);
+  push('Search term', details.search_term);
+  push('Step', details.step);
+  push('Filter', details.filter);
+  push('Attempt', details.attempt);
+
+  if (Array.isArray(details.attempts) && details.attempts.length > 0) {
+    lines.push('Filter attempts:');
+    details.attempts.forEach((attempt: any, i: number) => {
+      const name = attempt?.attempt || `attempt_${i + 1}`;
+      const err = attempt?.ldap_error || 'unknown';
+      const errno = attempt?.ldap_errno != null ? ` (errno ${attempt.ldap_errno})` : '';
+      const diag = attempt?.diagnostic ? ` — ${attempt.diagnostic}` : '';
+      const filter = attempt?.filter ? `\n    filter: ${attempt.filter}` : '';
+      lines.push(`  ${i + 1}. ${name}: ${err}${errno}${diag}${filter}`);
+    });
+  }
+
+  push('Hint', details.hint);
+
+  return lines.join('\n');
+}
 
 export const authService = {
   async register(username: string, email: string, password: string, confirmPassword?: string): Promise<{ pending: boolean; message?: string }> {
@@ -322,10 +414,30 @@ export const authService = {
     const data = await response.json();
     
     if (!response.ok) {
-      throw new Error(data.error || 'Failed to search LDAP users');
+      throw new Error(formatLdapError(data));
     }
     
     return data.users || [];
+  },
+
+  async getLdapUserDetail(username: string): Promise<LdapUserDetail> {
+    const response = await fetch(`${API_BASE}/auth/ldap-user-detail`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ username })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(formatLdapError({
+        error: data.error || 'Failed to load LDAP user details',
+        details: data.details,
+      }));
+    }
+
+    return data.user as LdapUserDetail;
   },
 
   async addLocalUser(username: string, email: string, password: string): Promise<{ user: AllUser; message: string }> {
