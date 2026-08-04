@@ -10,6 +10,71 @@ interface ShareTileDialogProps {
   onShared?: () => void;
 }
 
+function normalizeAuthSource(source?: string): 'local' | 'ldap' | 'saml' {
+  const s = (source || 'local').toLowerCase().trim();
+  if (s === 'ldap' || s === 'saml') return s;
+  return 'local';
+}
+
+function AuthSourceBadge({ source }: { source?: string }) {
+  const auth = normalizeAuthSource(source);
+  const styles =
+    auth === 'ldap'
+      ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300'
+      : auth === 'saml'
+        ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300'
+        : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300';
+  return (
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${styles}`}>
+      {auth}
+    </span>
+  );
+}
+
+function UserPickRow({
+  userItem,
+  selected,
+  onSelect,
+}: {
+  userItem: UserListItem;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`w-full px-3 py-2.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors ${
+        selected ? 'bg-brand-50 dark:bg-brand-900/30' : ''
+      }`}
+    >
+      <div className="flex items-start gap-2.5 min-w-0">
+        <div className="w-8 h-8 rounded-full bg-brand-500 text-white flex items-center justify-center text-xs font-semibold shrink-0 mt-0.5">
+          {(userItem.username || '?').charAt(0).toUpperCase()}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`text-sm font-medium truncate ${selected ? 'text-brand-700 dark:text-brand-300' : 'text-slate-900 dark:text-white'}`}>
+              {userItem.username}
+            </span>
+            <AuthSourceBadge source={userItem.auth_source} />
+            {userItem.is_admin ? (
+              <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">
+                Admin
+              </span>
+            ) : null}
+          </div>
+          {userItem.email ? (
+            <div className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">{userItem.email}</div>
+          ) : (
+            <div className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">No email on file</div>
+          )}
+        </div>
+      </div>
+    </button>
+  );
+}
+
 export const ShareTileDialog: React.FC<ShareTileDialogProps> = ({ tile, onClose, onShared }) => {
   const { user } = useAuth();
   const [users, setUsers] = useState<UserListItem[]>([]);
@@ -27,7 +92,12 @@ export const ShareTileDialog: React.FC<ShareTileDialogProps> = ({ tile, onClose,
   const filteredUsers = useMemo(() => {
     if (!searchTerm.trim()) return users;
     const q = searchTerm.trim().toLowerCase();
-    return users.filter(u => u.username.toLowerCase().includes(q));
+    return users.filter(
+      (u) =>
+        u.username.toLowerCase().includes(q) ||
+        (u.email || '').toLowerCase().includes(q) ||
+        normalizeAuthSource(u.auth_source).includes(q)
+    );
   }, [users, searchTerm]);
 
   useEffect(() => {
@@ -120,11 +190,15 @@ export const ShareTileDialog: React.FC<ShareTileDialogProps> = ({ tile, onClose,
 
   if (!tile) return null;
 
+  const closedInputLabel = selectedUser
+    ? `${selectedUser.username}${selectedUser.email ? ` · ${selectedUser.email}` : ''}`
+    : '';
+
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50" onClick={onClose}>
       <div
         ref={containerRef}
-        className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full mx-4"
+        className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-lg w-full mx-4"
         onClick={e => e.stopPropagation()}
       >
         <div className="p-6">
@@ -142,24 +216,37 @@ export const ShareTileDialog: React.FC<ShareTileDialogProps> = ({ tile, onClose,
               <p className="text-sm text-slate-500 dark:text-slate-400">Not shared with anyone yet.</p>
             ) : (
               <ul className="rounded-lg border border-slate-200 dark:border-slate-600 divide-y divide-slate-200 dark:divide-slate-600 max-h-40 overflow-y-auto">
-                {currentShares.map((s) => (
-                  <li key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
-                    <span className="text-slate-700 dark:text-slate-300 truncate">{s.receiverUsername}</span>
-                    <span className="shrink-0 flex items-center gap-2">
-                      <span className={`text-xs px-2 py-0.5 rounded ${s.status === 'accepted' ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300' : 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'}`}>
-                        {s.status === 'accepted' ? 'Accepted' : 'Pending'}
+                {currentShares.map((s) => {
+                  const shareUser = users.find((u) => u.id === s.receiverUserId);
+                  return (
+                    <li key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-slate-800 dark:text-slate-200 font-medium truncate">{s.receiverUsername}</span>
+                          {shareUser ? <AuthSourceBadge source={shareUser.auth_source} /> : null}
+                        </div>
+                        {shareUser?.email ? (
+                          <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                            {shareUser.email}
+                          </div>
+                        ) : null}
+                      </div>
+                      <span className="shrink-0 flex items-center gap-2">
+                        <span className={`text-xs px-2 py-0.5 rounded ${s.status === 'accepted' ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300' : 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'}`}>
+                          {s.status === 'accepted' ? 'Accepted' : 'Pending'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleRevoke(s.id)}
+                          disabled={revokingId === s.id}
+                          className="shrink-0 px-2 py-1 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded disabled:opacity-50"
+                        >
+                          {revokingId === s.id ? 'Revoking...' : 'Revoke'}
+                        </button>
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => handleRevoke(s.id)}
-                        disabled={revokingId === s.id}
-                        className="shrink-0 px-2 py-1 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded disabled:opacity-50"
-                      >
-                        {revokingId === s.id ? 'Revoking...' : 'Revoke'}
-                      </button>
-                    </span>
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>
@@ -169,14 +256,17 @@ export const ShareTileDialog: React.FC<ShareTileDialogProps> = ({ tile, onClose,
             <div className="relative">
               <input
                 type="text"
-                value={dropdownOpen ? searchTerm : (selectedUser?.username ?? '')}
+                value={dropdownOpen ? searchTerm : closedInputLabel}
                 onChange={e => {
                   setSearchTerm(e.target.value);
                   setDropdownOpen(true);
                   if (!e.target.value) setSelectedUserId(null);
                 }}
-                onFocus={() => setDropdownOpen(true)}
-                placeholder="Search users..."
+                onFocus={() => {
+                  setDropdownOpen(true);
+                  if (selectedUserId && !searchTerm) setSearchTerm('');
+                }}
+                placeholder="Search by username, email, or auth (ldap, local, saml)..."
                 className="w-full px-3 py-2 pr-9 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400"
               />
               <svg
@@ -189,25 +279,31 @@ export const ShareTileDialog: React.FC<ShareTileDialogProps> = ({ tile, onClose,
               </svg>
             </div>
             {dropdownOpen && (
-              <div className="absolute left-0 right-0 z-10 mt-1 w-full max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-lg py-1">
+              <div className="absolute left-0 right-0 z-10 mt-1 w-full max-h-56 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-lg py-1">
                 {filteredUsers.length === 0 ? (
                   <div className="px-3 py-2 text-sm text-slate-500 dark:text-slate-400">No users found</div>
                 ) : (
                   filteredUsers.map(u => (
-                    <button
+                    <UserPickRow
                       key={u.id}
-                      type="button"
-                      onClick={() => {
+                      userItem={u}
+                      selected={selectedUserId === u.id}
+                      onSelect={() => {
                         setSelectedUserId(u.id);
                         setSearchTerm('');
                         setDropdownOpen(false);
                       }}
-                      className={`w-full px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700 ${selectedUserId === u.id ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300' : 'text-slate-700 dark:text-slate-300'}`}
-                    >
-                      {u.username}
-                    </button>
+                    />
                   ))
                 )}
+              </div>
+            )}
+            {selectedUser && !dropdownOpen && (
+              <div className="mt-2 flex items-center gap-2 flex-wrap">
+                <AuthSourceBadge source={selectedUser.auth_source} />
+                {selectedUser.email ? (
+                  <span className="text-xs text-slate-500 dark:text-slate-400 truncate">{selectedUser.email}</span>
+                ) : null}
               </div>
             )}
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Press Esc to close</p>

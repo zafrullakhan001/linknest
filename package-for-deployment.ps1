@@ -285,7 +285,15 @@ $FilesToInclude = @(
     "composer.json",
     "composer.lock",
     "sw-cache-first.php",
-    "metadata.json"
+    "metadata.json",
+    # Staging AI Offline Kit + related import templates (served by PHP from app root)
+    "staging-ai-import-template.csv",
+    "staging-ai-prompt-guide.md",
+    "bulk-import-template.csv",
+    "section-links-import-template.csv",
+    "bulk-import-ldap-users-template.csv",
+    "bulk-import-saml-users-template.csv",
+    "bulk-import-local-users-template.csv"
 )
 
 # Exclude junk that commonly sneaks into recursive copies

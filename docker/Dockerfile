@@ -85,6 +85,12 @@ COPY api/ ./api/
 COPY scripts/ ./scripts/
 COPY docker/.htaccess ./.htaccess
 
+# Staging AI Offline Kit templates (served by api/tiles.php from app root)
+COPY staging-ai-import-template.csv ./staging-ai-import-template.csv
+COPY staging-ai-prompt-guide.md ./staging-ai-prompt-guide.md
+COPY bulk-import-template.csv ./bulk-import-template.csv
+COPY section-links-import-template.csv ./section-links-import-template.csv
+
 # Copy check_opcache.php to root for system status monitoring (optional - copy if exists)
 # Note: This file is optional and won't break the build if missing
 
@@ -219,8 +225,8 @@ RUN echo "🧹 Cleaning up unnecessary files to reduce image size..." && \
     rm -f /var/www/html/App.tsx /var/www/html/index.tsx /var/www/html/types.ts /var/www/html/index.css 2>/dev/null || true && \
     # Remove any .git directories if present
     find /var/www/html -type d -name ".git" -exec rm -rf {} + 2>/dev/null || true && \
-    # Remove documentation and markdown files
-    find /var/www/html -type f -name "*.md" -delete 2>/dev/null || true && \
+    # Remove documentation and markdown files (keep Staging AI prompt guide — required by API)
+    find /var/www/html -type f -name "*.md" ! -name "staging-ai-prompt-guide.md" -delete 2>/dev/null || true && \
     # Remove test files
     find /var/www/html -type f -name "test_*.php" -delete 2>/dev/null || true && \
     find /var/www/html -type f -name "*.test.*" -delete 2>/dev/null || true && \

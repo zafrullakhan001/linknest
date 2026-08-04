@@ -2,6 +2,8 @@
 
 Use this guide with **ChatGPT**, **Claude**, or other LLMs to generate tile and link configurations offline. Copy the prompts below, paste into your AI chat, customize your requirements, and save the AI's CSV output. Then upload the CSV in the Staging tab to generate an import-ready JSON file.
 
+**Encoding tip:** Keep the file as **UTF-8**. The Staging CSV Template downloads with a UTF-8 BOM so Excel shows emojis correctly. If you re-save from Excel, choose **CSV UTF-8 (Comma delimited)** — otherwise emoji can turn into garbled text like `ðŸš€`.
+
 ---
 
 ## Data Hierarchy

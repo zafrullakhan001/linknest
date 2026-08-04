@@ -1,4 +1,4 @@
-Tile Group,Tile Title,Tile Description,Tile Emoji,Tile Theme Color,Tab Title,Section Title,Link Label,Link URL,Link Icon,Link Visibility,Link Notes,Link Tooltip
+﻿Tile Group,Tile Title,Tile Description,Tile Emoji,Tile Theme Color,Tab Title,Section Title,Link Label,Link URL,Link Icon,Link Visibility,Link Notes,Link Tooltip
 Architecture,Architecture Links,Page for all application architecture,🚀,blue,Default,Architecture Links,Arch Public Repository,https://example.com/arch-public,,public,Public architecture repository,Access public architecture documents
 Architecture,Architecture Links,Page for all application architecture,🚀,blue,Default,Architecture Links,Arch Private Repository,https://example.com/arch-private,,authenticated,Private architecture repository,
 Architecture,Architecture Links,Page for all application architecture,🚀,blue,Default,Department Documents,Architecture Dept Documents,https://example.com/arch-dept,,public,,

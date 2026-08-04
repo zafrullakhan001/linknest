@@ -24,6 +24,12 @@ import { useMobile } from '../hooks/useMobile';
 import { getCustomWidgets, createWidget, updateWidget, deleteWidget, CustomWidget, CreateWidgetRequest, UpdateWidgetRequest } from '../services/widgetService';
 import { GranularPermissionsModal } from './GranularPermissionsModal';
 import { AddonsManagement } from './AddonsManagement';
+import {
+  AccessManagerPanel,
+  AccessSubTab,
+  ACCESS_SUB_TAB_STORAGE_KEY,
+  migrateAccessSubTab,
+} from './AccessManager';
 
 // Resolve API base dynamically based on current location
 // This ensures API calls work in both dev mode and runtime mode with any base path
@@ -416,12 +422,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   // Access Manager state
   const [permissions, setPermissions] = useState<TilePermission[]>([]);
   const [permissionsLoading, setPermissionsLoading] = useState(false);
-  // Initialize accessSubTab from localStorage or default to 'roles'
-  const [accessSubTab, setAccessSubTab] = useState<'roles' | 'assign' | 'admins' | 'groups'>(() => {
-    const savedSubTab = localStorage.getItem('adminPanelAccessSubTab');
-    const validSubTabs: Array<'roles' | 'assign' | 'admins' | 'groups'> = ['roles', 'assign', 'admins', 'groups'];
-    return (savedSubTab && validSubTabs.includes(savedSubTab as any)) ? savedSubTab as any : 'roles';
+  // Initialize accessSubTab from localStorage (migrates legacy assign/admins keys); default Overview hub
+  const [accessSubTab, setAccessSubTab] = useState<AccessSubTab>(() => {
+    try {
+      return migrateAccessSubTab(localStorage.getItem(ACCESS_SUB_TAB_STORAGE_KEY));
+    } catch {
+      return 'hub';
+    }
   });
+  const [showRoleConfigureModal, setShowRoleConfigureModal] = useState(false);
+  const [roleOverflowMenuId, setRoleOverflowMenuId] = useState<number | null>(null);
 
   // User Groups state
   const [userGroups, setUserGroups] = useState<Array<{ id: number; name: string; description: string | null; memberCount: number; roleCount: number; createdAt: number; updatedAt: number }>>([]);
@@ -753,12 +763,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       if (allUsers.length === 0) {
         loadAllUsers();
       }
-      // Only load permissions if we're on the Tile Admins sub-tab
-      if (accessSubTab === 'admins') {
+      // Load permissions for Space editors workspace (and Overview editor stats)
+      if (accessSubTab === 'editors' || accessSubTab === 'hub') {
         loadPermissions();
       }
-      // Load user groups if on groups sub-tab
-      if (accessSubTab === 'groups') {
+      // Load user groups for Teams workspace and Overview stats
+      if (accessSubTab === 'groups' || accessSubTab === 'hub' || accessSubTab === 'roles') {
         loadUserGroups();
       }
     }
@@ -854,7 +864,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
   // Persist accessSubTab to localStorage whenever it changes
   useEffect(() => {
-    localStorage.setItem('adminPanelAccessSubTab', accessSubTab);
+    localStorage.setItem(ACCESS_SUB_TAB_STORAGE_KEY, accessSubTab);
   }, [accessSubTab]);
 
   // ESC key handler for Access Manager modals
@@ -862,7 +872,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     const handleEscKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape' || event.keyCode === 27) {
         // Close modals in priority order (most specific first)
-        if (showTileAdminsModal) {
+        if (showRoleConfigureModal) {
+          setShowRoleConfigureModal(false);
+        } else if (showTileAdminsModal) {
           setShowTileAdminsModal(false);
           setSelectedTileIdsForAdmins(new Set());
           setTileAdminsMap({});
@@ -907,6 +919,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
     // Only attach listener when in Access Manager tab and a modal is open
     if (activeTab === 'access' && (
+      showRoleConfigureModal ||
       showTileAdminsModal ||
       showRoleModal ||
       showRoleTilesModal ||
@@ -922,6 +935,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }
   }, [
     activeTab,
+    showRoleConfigureModal,
     showTileAdminsModal,
     showRoleModal,
     showRoleTilesModal,
@@ -1207,8 +1221,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     try {
       setPermissionsLoading(true);
       setError('');
-      const perms = await accessService.getAllPermissions();
+      const [perms, batchGroupPermissions] = await Promise.all([
+        accessService.getAllPermissions(),
+        groupTilePermissionsService.getBatchPermissions().catch(() => []),
+      ]);
       setPermissions(perms);
+
+      // Populate team (group) space-editor assignments for list view
+      const groupPermissionsMap: Record<string, Array<{ groupId: number; groupName: string; canView: boolean; canEdit: boolean; canDelete: boolean }>> = {};
+      for (const tileGroupPerms of batchGroupPermissions) {
+        const groupAdmins = tileGroupPerms.groupPermissions
+          .filter(perm => perm.canEdit)
+          .map(perm => ({
+            groupId: perm.groupId,
+            groupName: perm.groupName,
+            canView: perm.canView,
+            canEdit: perm.canEdit,
+            canDelete: perm.canDelete,
+          }));
+        groupPermissionsMap[tileGroupPerms.tileId] = groupAdmins;
+      }
+      setTileAdminGroupsMap(groupPermissionsMap);
+
       // Also load tiles if not loaded yet
       if (allTiles.length === 0) {
         await loadAllTilesAndLinks();
@@ -1217,6 +1251,41 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setError(err.message || 'Failed to load permissions');
     } finally {
       setPermissionsLoading(false);
+    }
+  };
+
+  const openAssignAccessModal = async (preselectRoleId?: number) => {
+    setShowBulkAssignModal(true);
+    setBulkSelectedUserIds([]);
+    setBulkSelectedGroupIds([]);
+    setBulkSelectedRoleIds(preselectRoleId ? [preselectRoleId] : []);
+    setBulkAssignMode('add');
+    setBulkAssignTarget('users');
+    setBulkUserSearchTerm('');
+    setBulkRoleSearchTerm('');
+    setBulkGroupSearchTerm('');
+    setError('');
+    await loadUserRolesForBulk();
+    if (userGroups.length === 0 && !userGroupsLoading) {
+      await loadUserGroups();
+    }
+  };
+
+  const handleAccessSubTabChange = (tab: AccessSubTab) => {
+    setAccessSubTab(tab);
+    setRoleOverflowMenuId(null);
+    if (tab === 'editors') {
+      if (permissions.length === 0 && !permissionsLoading) {
+        loadPermissions();
+      }
+    }
+    if (tab === 'groups' || tab === 'hub' || tab === 'roles') {
+      if (userGroups.length === 0 && !userGroupsLoading) {
+        loadUserGroups();
+      }
+    }
+    if (tab === 'hub') {
+      loadPermissions();
     }
   };
 
@@ -8777,84 +8846,54 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
               {/* Access Manager Tab */}
               {activeTab === 'access' && (
-                <div className="space-y-6">
-                  {/* Access Manager Sub-Tabs */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-1">
-                    <div className="flex gap-1">
-                      <button
-                        onClick={() => {
-                          setAccessSubTab('roles');
-                        }}
-                        className={`flex-1 px-4 py-2 text-sm font-medium transition-colors rounded-lg ${accessSubTab === 'roles'
-                          ? 'bg-brand-600 text-white'
-                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
-                          }`}
-                      >
-                        Role-Based Access Control
-                      </button>
-                      <button
-                        onClick={() => {
-                          setAccessSubTab('assign');
-                        }}
-                        className={`flex-1 px-4 py-2 text-sm font-medium transition-colors rounded-lg ${accessSubTab === 'assign'
-                          ? 'bg-brand-600 text-white'
-                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
-                          }`}
-                      >
-                        Assign Roles to Users
-                      </button>
-                      <button
-                        onClick={() => {
-                          setAccessSubTab('admins');
-                          // Load permissions when switching to Tile Admins tab
-                          if (permissions.length === 0 && !permissionsLoading) {
-                            loadPermissions();
-                          }
-                        }}
-                        className={`flex-1 px-4 py-2 text-sm font-medium transition-colors rounded-lg ${accessSubTab === 'admins'
-                          ? 'bg-brand-600 text-white'
-                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
-                          }`}
-                      >
-                        Tile Admins
-                      </button>
-                      <button
-                        onClick={() => {
-                          setAccessSubTab('groups');
-                          // Load user groups when switching to Groups tab
-                          if (userGroups.length === 0 && !userGroupsLoading) {
-                            loadUserGroups();
-                          }
-                        }}
-                        className={`flex-1 px-4 py-2 text-sm font-medium transition-colors rounded-lg ${accessSubTab === 'groups'
-                          ? 'bg-brand-600 text-white'
-                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
-                          }`}
-                      >
-                        User Groups
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Role-Based Access Control Tab */}
-                  {accessSubTab === 'roles' && (
+                <AccessManagerPanel
+                  activeSubTab={accessSubTab}
+                  onSubTabChange={handleAccessSubTabChange}
+                  overview={{
+                    rolesCount: roles.length,
+                    teamsCount: userGroups.length,
+                    configuredRolesCount: roles.filter(
+                      (r) => (r.tileCount || 0) + (r.linkCount || 0) + (r.widgetCount || 0) > 0
+                    ).length,
+                    hasAssignments: roles.some((r) => (r.userCount || 0) > 0) || userGroups.some((g) => (g.roleCount || 0) > 0),
+                    hasSpaceEditors:
+                      permissions.some((p) => p.canEdit) ||
+                      Object.values(tileAdminGroupsMap).some(
+                        (groups) => (groups as Array<{ groupId: number }>).length > 0
+                      ),
+                    onCreateRole: handleAddRole,
+                    onCreateTeam: handleAddUserGroup,
+                    onAssignAccess: () => { void openAssignAccessModal(); },
+                    onAssignEditors: () => { void handleManageTileAdmins(); },
+                  }}
+                  rolesWorkspace={
                     <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                      <div className="flex justify-between items-center mb-4">
+                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-4">
                         <div>
-                          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Role-Based Access Control</h3>
+                          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Roles</h3>
                           <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                            Create roles and assign tiles/links to roles. Users with roles will see only the content assigned to their roles.
+                            Roles control visibility. They do not grant edit rights. Configure what each role can see, then assign it to people or teams.
                           </p>
                         </div>
-                        <button
-                          onClick={handleAddRole}
-                          className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                            <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
-                          </svg>
-                          Create Role
-                        </button>
+                        <div className="flex flex-wrap gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => { void openAssignAccessModal(); }}
+                            className="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-100 rounded-lg text-sm font-medium transition-colors"
+                          >
+                            Assign access
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleAddRole}
+                            className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                              <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+                            </svg>
+                            Create role
+                          </button>
+                        </div>
                       </div>
 
                       {rolesLoading ? (
@@ -8863,85 +8902,244 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         </div>
                       ) : roles.length === 0 ? (
                         <div className="text-center py-12 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl">
-                          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-slate-400">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-sky-100 dark:bg-sky-900/40 flex items-center justify-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-sky-600 dark:text-sky-300">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
                             </svg>
                           </div>
-                          <p className="text-slate-600 dark:text-slate-400 font-medium">No roles configured</p>
-                          <p className="text-slate-500 dark:text-slate-500 text-sm mt-1">Create roles to manage access to tiles and links</p>
+                          <p className="text-slate-700 dark:text-slate-300 font-medium">No roles yet</p>
+                          <p className="text-slate-500 dark:text-slate-500 text-sm mt-1 max-w-sm mx-auto">
+                            Create a role, choose what it can see, then assign it to people or a team.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={handleAddRole}
+                            className="mt-4 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium"
+                          >
+                            Create role
+                          </button>
                         </div>
                       ) : (
                         <div className="overflow-x-auto">
                           <table className="w-full">
                             <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
                               <tr>
-                                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Role Name</th>
-                                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Description</th>
-                                <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Users</th>
-                                <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Tiles</th>
-                                <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Links</th>
-                                <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Widgets</th>
-                                <th className="px-6 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Actions</th>
+                                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Role</th>
+                                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Description</th>
+                                <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">People</th>
+                                <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Spaces</th>
+                                <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Links</th>
+                                <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Widgets</th>
+                                <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Actions</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                               {roles.map((role) => (
                                 <tr key={role.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/50">
-                                  <td className="px-6 py-4 whitespace-nowrap">
+                                  <td className="px-4 py-4 whitespace-nowrap">
                                     <div className="text-sm font-medium text-slate-900 dark:text-white">{role.name}</div>
                                   </td>
-                                  <td className="px-6 py-4">
-                                    <div className="text-sm text-slate-600 dark:text-slate-400">{role.description || '-'}</div>
+                                  <td className="px-4 py-4">
+                                    <div className="text-sm text-slate-600 dark:text-slate-400">{role.description || '—'}</div>
                                   </td>
-                                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                                  <td className="px-4 py-4 whitespace-nowrap text-center">
                                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
                                       {role.userCount || 0}
                                     </span>
                                   </td>
-                                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                                  <td className="px-4 py-4 whitespace-nowrap text-center">
                                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
                                       {role.tileCount || 0}
                                     </span>
                                   </td>
-                                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                                  <td className="px-4 py-4 whitespace-nowrap text-center">
                                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
                                       {role.linkCount || 0}
                                     </span>
                                   </td>
-                                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                                  <td className="px-4 py-4 whitespace-nowrap text-center">
                                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
                                       {role.widgetCount || 0}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                    <div className="flex justify-end items-center gap-2 flex-wrap">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setSelectedRole(role);
+                                          setShowRoleConfigureModal(true);
+                                          setRoleOverflowMenuId(null);
+                                        }}
+                                        className="px-2.5 py-1 rounded-md text-brand-700 dark:text-brand-300 bg-brand-50 dark:bg-brand-500/15 hover:bg-brand-100 dark:hover:bg-brand-500/25 transition-colors"
+                                      >
+                                        Configure
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setRoleOverflowMenuId(null);
+                                          void openAssignAccessModal(role.id);
+                                        }}
+                                        className="px-2.5 py-1 rounded-md text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                                      >
+                                        Who has access
+                                      </button>
+                                      <div className="relative">
+                                        <button
+                                          type="button"
+                                          onClick={() => setRoleOverflowMenuId(roleOverflowMenuId === role.id ? null : role.id)}
+                                          className="px-2 py-1 rounded-md text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                                          aria-label="More actions"
+                                        >
+                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                            <path d="M10 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM11.5 15.5a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z" />
+                                          </svg>
+                                        </button>
+                                        {roleOverflowMenuId === role.id && (
+                                          <div className="absolute right-0 mt-1 w-36 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-20 py-1">
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setRoleOverflowMenuId(null);
+                                                handleEditRole(role);
+                                              }}
+                                              className="w-full text-left px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+                                            >
+                                              Edit name
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setRoleOverflowMenuId(null);
+                                                void handleDeleteRole(role.id);
+                                              }}
+                                              className="w-full text-left px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                            >
+                                              Delete
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                      <p className="text-xs text-slate-500 dark:text-slate-500 mt-4">
+                        Tip: you can also assign roles to a single person from the All Users tab.
+                      </p>
+                    </div>
+                  }
+                  teamsWorkspace={
+                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                      <div className="flex justify-between items-center mb-4 gap-4 flex-wrap">
+                        <div>
+                          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Teams</h3>
+                          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                            Members inherit every role attached to the team. Use teams when a whole department should share the same visibility.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleAddUserGroup}
+                          className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                            <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+                          </svg>
+                          Create team
+                        </button>
+                      </div>
+
+                      {userGroupsLoading ? (
+                        <div className="flex items-center justify-center py-12">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                        </div>
+                      ) : userGroups.length === 0 ? (
+                        <div className="text-center py-12 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl">
+                          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-teal-100 dark:bg-teal-900/40 flex items-center justify-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-teal-600 dark:text-teal-300">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.059 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
+                            </svg>
+                          </div>
+                          <p className="text-slate-700 dark:text-slate-300 font-medium">No teams yet</p>
+                          <p className="text-slate-500 dark:text-slate-500 text-sm mt-1 max-w-sm mx-auto">
+                            Create a team → add members → attach roles. Everyone on the team then sees what those roles allow.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={handleAddUserGroup}
+                            className="mt-4 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium"
+                          >
+                            Create team
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full">
+                            <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                              <tr>
+                                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Team</th>
+                                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Description</th>
+                                <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Members</th>
+                                <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Roles</th>
+                                <th className="px-6 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                              {userGroups.map((group) => (
+                                <tr key={group.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/50">
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                    <div className="text-sm font-medium text-slate-900 dark:text-white">{group.name}</div>
+                                    {(group.roleCount || 0) > 0 && (
+                                      <p className="text-xs text-slate-500 dark:text-slate-500 mt-0.5">
+                                        This team has {group.roleCount} role{group.roleCount === 1 ? '' : 's'} — members inherit that visibility.
+                                      </p>
+                                    )}
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <div className="text-sm text-slate-600 dark:text-slate-400">{group.description || '—'}</div>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
+                                      {group.memberCount || 0}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
+                                      {group.roleCount || 0}
                                     </span>
                                   </td>
                                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                     <div className="flex justify-end gap-2 flex-wrap">
                                       <button
-                                        onClick={() => handleEditRole(role)}
+                                        type="button"
+                                        onClick={() => handleEditUserGroup(group)}
                                         className="text-brand-600 dark:text-brand-400 hover:text-brand-900 dark:hover:text-brand-300 transition-colors"
                                       >
                                         Edit
                                       </button>
                                       <button
-                                        onClick={() => handleManageRoleTiles(role)}
+                                        type="button"
+                                        onClick={() => handleManageGroupMembers(group)}
                                         className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 transition-colors"
                                       >
-                                        Tiles & Links
+                                        Members
                                       </button>
                                       <button
-                                        onClick={() => handleManageRoleTabs(role)}
+                                        type="button"
+                                        onClick={() => handleManageGroupRoles(group)}
                                         className="text-purple-600 dark:text-purple-400 hover:text-purple-900 dark:hover:text-purple-300 transition-colors"
                                       >
-                                        Tabs
+                                        Roles
                                       </button>
                                       <button
-                                        onClick={() => handleManageRoleWidgets(role)}
-                                        className="text-green-600 dark:text-green-400 hover:text-green-900 dark:hover:text-green-300 transition-colors"
-                                      >
-                                        Widgets
-                                      </button>
-                                      <button
-                                        onClick={() => handleDeleteRole(role.id)}
+                                        type="button"
+                                        onClick={() => handleDeleteUserGroup(group.id)}
                                         className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 transition-colors"
                                       >
                                         Delete
@@ -8955,57 +9153,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         </div>
                       )}
                     </div>
-                  )}
-
-                  {/* Assign Roles to Users Tab */}
-                  {accessSubTab === 'assign' && (
-                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                  }
+                  editorsWorkspace={
+<div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
                       <div className="flex justify-between items-center mb-4">
                         <div>
-                          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Assign Roles to Users</h3>
+                          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Space editors</h3>
                           <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                            Assign multiple roles to users. Users will see tiles and links from all their assigned roles.
-                          </p>
-                        </div>
-                        <button
-                          onClick={async () => {
-                            setShowBulkAssignModal(true);
-                            setBulkSelectedUserIds([]);
-                            setBulkSelectedRoleIds([]);
-                            setBulkAssignMode('add');
-                            setBulkUserSearchTerm('');
-                            setBulkRoleSearchTerm('');
-                            setBulkGroupSearchTerm('');
-                            setError('');
-                            // Load user roles when modal opens
-                            await loadUserRolesForBulk();
-                            // Load groups if not already loaded
-                            if (userGroups.length === 0 && !userGroupsLoading) {
-                              await loadUserGroups();
-                            }
-                          }}
-                          className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                            <path d="M10 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM11.5 15.5a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z" />
-                          </svg>
-                          Bulk Assign Roles
-                        </button>
-                      </div>
-                      <div className="text-sm text-slate-600 dark:text-slate-400">
-                        Go to the "All Users" tab to assign roles to specific users, or use "Bulk Assign Roles" to assign roles to multiple users at once. Users can have multiple roles assigned.
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Tile Admins Tab */}
-                  {accessSubTab === 'admins' && (
-                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                      <div className="flex justify-between items-center mb-4">
-                        <div>
-                          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Tile Admins</h3>
-                          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                            Assign users as tile administrators. Tile admins can add, edit, and delete links for their assigned tiles.
+                            Editors can change content on assigned spaces. Defaults allow add/edit links; deletes and sensitive settings stay restricted unless you open Fine-tune permissions.
                           </p>
                         </div>
                         <button
@@ -9015,7 +9170,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                             <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
                           </svg>
-                          Manage Tile Admins
+                          Assign editors
                         </button>
                       </div>
 
@@ -9025,7 +9180,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         <div className="relative">
                           <input
                             type="text"
-                            placeholder="Search tiles by name or description..."
+                            placeholder="Search spaces by name or description..."
                             value={tileAdminsTabSearchTerm}
                             onChange={(e) => setTileAdminsTabSearchTerm(e.target.value)}
                             className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
@@ -9159,7 +9314,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           <div className="space-y-3">
                             {allTiles.length === 0 ? (
                               <div className="text-center py-8 text-slate-600 dark:text-slate-400">
-                                No tiles available. Create tiles first.
+                                No spaces available. Create spaces first.
                               </div>
                             ) : (
                               (() => {
@@ -9202,7 +9357,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                                 return filteredTiles.length === 0 ? (
                                   <div className="text-center py-8 text-slate-600 dark:text-slate-400">
-                                    No tiles found matching the selected filters
+                                    No spaces found matching the selected filters
                                   </div>
                                 ) : (
                                   filteredTiles.map((tile) => {
@@ -9274,11 +9429,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                               </p>
                                             )}
 
-                                            {/* Tile Admins List */}
+                                            {/* Space editors list */}
                                             {tileAdminPerms.length > 0 ? (
                                               <div className="mt-2 space-y-1">
                                                 <div className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                                  Tile Admins ({tileAdminPerms.length}):
+                                                  People editors ({tileAdminPerms.length}):
                                                 </div>
                                                 <div className="flex flex-wrap gap-2">
                                                   {tileAdminPerms.map((perm) => {
@@ -9306,13 +9461,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                                             setSelectedPermissionForEdit(fullPerm || perm);
                                                             setShowGranularPermissionsModal(true);
                                                           }}
-                                                          className={`ml-1 opacity-0 group-hover:opacity-100 transition-opacity ${isOwner
+                                                          className={`ml-1 text-[10px] font-medium opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity ${isOwner
                                                             ? 'text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300'
                                                             : 'text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300'
                                                             }`}
-                                                          title={isOwner ? "View owner permissions (read-only)" : "Configure permissions"}
+                                                          title={isOwner ? "View owner permissions (read-only)" : "Fine-tune permissions"}
                                                         >
-                                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                                          <span className="hidden sm:inline">{isOwner ? 'View' : 'Fine-tune'}</span>
+                                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 sm:hidden">
                                                             <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
                                                           </svg>
                                                         </button>
@@ -9321,11 +9477,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                                   })}
                                                 </div>
                                               </div>
-                                            ) : (
-                                              <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                                                No tile admins assigned
-                                              </div>
-                                            )}
+                                            ) : null}
+                                            {(() => {
+                                              const teamEditors = tileAdminGroupsMap[tile.id] || [];
+                                              if (teamEditors.length === 0 && tileAdminPerms.length === 0) {
+                                                return (
+                                                  <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                                                    No space editors assigned
+                                                  </div>
+                                                );
+                                              }
+                                              if (teamEditors.length === 0) return null;
+                                              return (
+                                                <div className="mt-2 space-y-1">
+                                                  <div className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                                    Team editors ({teamEditors.length}):
+                                                  </div>
+                                                  <div className="flex flex-wrap gap-2">
+                                                    {teamEditors.map((g) => (
+                                                      <div
+                                                        key={`team_${g.groupId}_${tile.id}`}
+                                                        className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs bg-teal-50 dark:bg-teal-900/20 border border-teal-200 dark:border-teal-700 text-teal-700 dark:text-teal-300"
+                                                      >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                                          <path d="M10 9a3 3 0 100-6 3 3 0 000 6zM6 8a2 2 0 11-4 0 2 2 0 014 0zM1.49 15.326a.78.78 0 01-.358-.442 3 3 0 014.308-3.516 6.484 6.484 0 00-1.905 3.959c-.023.222-.014.442.025.654a4.97 4.97 0 01-2.07-.655zM16.44 15.98a4.97 4.97 0 002.07-.654.78.78 0 00.357-.442 3 3 0 00-4.308-3.517 6.484 6.484 0 011.907 3.96 2.32 2.32 0 01-.026.654zM18 8a2 2 0 11-4 0 2 2 0 014 0zM5.304 16.19a.844.844 0 01-.277-.71 5 5 0 019.947 0 .843.843 0 01-.277.71A6.975 6.975 0 0110 18a6.974 6.974 0 01-4.696-1.81z" />
+                                                        </svg>
+                                                        <span>{g.groupName}</span>
+                                                      </div>
+                                                    ))}
+                                                  </div>
+                                                </div>
+                                              );
+                                            })()}
                                           </div>
                                         </div>
                                       </div>
@@ -9338,111 +9521,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         )}
                       </div>
                     </div>
-                  )}
-
-                  {/* User Groups Tab */}
-                  {accessSubTab === 'groups' && (
-                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                      <div className="flex justify-between items-center mb-4">
-                        <div>
-                          <h3 className="text-lg font-bold text-slate-900 dark:text-white">User Groups</h3>
-                          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                            Create and manage user groups. Assign roles to groups and use groups for visibility control.
-                          </p>
-                        </div>
-                        <button
-                          onClick={handleAddUserGroup}
-                          className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                            <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
-                          </svg>
-                          Create Group
-                        </button>
-                      </div>
-
-                      {userGroupsLoading ? (
-                        <div className="flex items-center justify-center py-12">
-                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
-                        </div>
-                      ) : userGroups.length === 0 ? (
-                        <div className="text-center py-12 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl">
-                          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-slate-400">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.059 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
-                            </svg>
-                          </div>
-                          <p className="text-slate-600 dark:text-slate-400 font-medium">No user groups configured</p>
-                          <p className="text-slate-500 dark:text-slate-500 text-sm mt-1">Create groups to organize users and assign roles</p>
-                        </div>
-                      ) : (
-                        <div className="overflow-x-auto">
-                          <table className="w-full">
-                            <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
-                              <tr>
-                                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Group Name</th>
-                                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Description</th>
-                                <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Members</th>
-                                <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Roles</th>
-                                <th className="px-6 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Actions</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                              {userGroups.map((group) => (
-                                <tr key={group.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/50">
-                                  <td className="px-6 py-4 whitespace-nowrap">
-                                    <div className="text-sm font-medium text-slate-900 dark:text-white">{group.name}</div>
-                                  </td>
-                                  <td className="px-6 py-4">
-                                    <div className="text-sm text-slate-600 dark:text-slate-400">{group.description || '-'}</div>
-                                  </td>
-                                  <td className="px-6 py-4 whitespace-nowrap text-center">
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
-                                      {group.memberCount || 0}
-                                    </span>
-                                  </td>
-                                  <td className="px-6 py-4 whitespace-nowrap text-center">
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
-                                      {group.roleCount || 0}
-                                    </span>
-                                  </td>
-                                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                    <div className="flex justify-end gap-2 flex-wrap">
-                                      <button
-                                        onClick={() => handleEditUserGroup(group)}
-                                        className="text-brand-600 dark:text-brand-400 hover:text-brand-900 dark:hover:text-brand-300 transition-colors"
-                                      >
-                                        Edit
-                                      </button>
-                                      <button
-                                        onClick={() => handleManageGroupMembers(group)}
-                                        className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 transition-colors"
-                                      >
-                                        Members
-                                      </button>
-                                      <button
-                                        onClick={() => handleManageGroupRoles(group)}
-                                        className="text-purple-600 dark:text-purple-400 hover:text-purple-900 dark:hover:text-purple-300 transition-colors"
-                                      >
-                                        Roles
-                                      </button>
-                                      <button
-                                        onClick={() => handleDeleteUserGroup(group.id)}
-                                        className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 transition-colors"
-                                      >
-                                        Delete
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
+                  }
+                />
               )}
 
               {/* Settings Tab */}
@@ -11310,7 +11390,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             if (data.success && data.deleted > 0) {
                               alert(`Successfully removed ${data.deleted} duplicate tile(s)! Kept ${data.kept} unique tile(s).`);
                               // Refresh tiles if we're on the tile admins tab
-                              if (activeTab === 'access' && accessSubTab === 'admins') {
+                              if (activeTab === 'access' && accessSubTab === 'editors') {
                                 loadAllTilesAndLinks();
                               }
                             } else if (data.success && data.deleted === 0) {
@@ -11367,7 +11447,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               if (data.success && data.deleted > 0) {
                                 alert(`Successfully removed ${data.deleted} duplicate tile(s)! Kept ${data.kept} unique tile(s).`);
                                 // Refresh tiles if we're on the tile admins tab
-                                if (activeTab === 'access' && accessSubTab === 'admins') {
+                                if (activeTab === 'access' && accessSubTab === 'editors') {
                                   loadAllTilesAndLinks();
                                 }
                               } else if (data.success && data.deleted === 0) {
@@ -11651,7 +11731,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               if (data.success && data.deleted > 0) {
                                 alert(`Successfully removed ${data.deleted} invisible tile(s)!`);
                                 // Refresh tiles if we're on the tile admins tab
-                                if (activeTab === 'access' && accessSubTab === 'admins') {
+                                if (activeTab === 'access' && accessSubTab === 'editors') {
                                   loadAllTilesAndLinks();
                                 }
                               } else if (data.success && data.deleted === 0) {
@@ -13801,10 +13881,10 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                    Manage Tile Admins
+                    Assign space editors
                   </h2>
                   <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                    Select tiles on the left and users/groups on the right to assign tile admin privileges. Tile admins can add and edit links, sections, and tabs by default. Delete, visibility, browser, and clone actions are restricted.
+                    Select spaces on the left and people or teams on the right. Editors can add and edit links, sections, and tabs by default. Delete, visibility, browser, and clone stay restricted unless you fine-tune permissions.
                   </p>
                 </div>
                 <button
@@ -14518,6 +14598,81 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
         </div>
       )}
 
+      {/* Configure Role Access Modal — unified entry for content / app tabs / widgets */}
+      {showRoleConfigureModal && selectedRole && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-lg w-full">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                    Configure: {selectedRole.name}
+                  </h2>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                    Choose what people with this role can see. Roles never grant edit rights.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRoleConfigureModal(false);
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div className="p-6 space-y-3">
+              <button
+                type="button"
+                onClick={() => {
+                  const role = selectedRole;
+                  setShowRoleConfigureModal(false);
+                  void handleManageRoleTiles(role);
+                }}
+                className="w-full text-left p-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-brand-400 dark:hover:border-brand-500 hover:bg-slate-50 dark:hover:bg-slate-900/40 transition-colors"
+              >
+                <div className="font-semibold text-slate-900 dark:text-white">Spaces &amp; links</div>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                  Which spaces and links this role can view
+                </p>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const role = selectedRole;
+                  setShowRoleConfigureModal(false);
+                  void handleManageRoleTabs(role);
+                }}
+                className="w-full text-left p-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-brand-400 dark:hover:border-brand-500 hover:bg-slate-50 dark:hover:bg-slate-900/40 transition-colors"
+              >
+                <div className="font-semibold text-slate-900 dark:text-white">App tabs</div>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                  Home, Favorites, Private, Scheduled, and other navigation tabs
+                </p>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const role = selectedRole;
+                  setShowRoleConfigureModal(false);
+                  void handleManageRoleWidgets(role);
+                }}
+                className="w-full text-left p-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-brand-400 dark:hover:border-brand-500 hover:bg-slate-50 dark:hover:bg-slate-900/40 transition-colors"
+              >
+                <div className="font-semibold text-slate-900 dark:text-white">Widgets</div>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                  Clock, weather, notes, and custom widgets
+                </p>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Role Modal */}
       {showRoleModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -14608,7 +14763,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
             <div className="p-6 border-b border-slate-200 dark:border-slate-700">
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                  {editingUserGroup ? 'Edit User Group' : 'Create User Group'}
+                  {editingUserGroup ? 'Edit team' : 'Create team'}
                 </h2>
                 <button
                   onClick={() => {
@@ -14636,14 +14791,14 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Group Name <span className="text-red-500">*</span>
+                  Team name <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
                   value={userGroupName}
                   onChange={(e) => setUserGroupName(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                  placeholder="Enter group name (e.g., Marketing Team, IT Department)"
+                  placeholder="e.g. Marketing, IT Department"
                 />
               </div>
 
@@ -14678,7 +14833,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                   disabled={!userGroupName.trim() || userGroupSaving}
                   className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
                 >
-                  {userGroupSaving ? 'Saving...' : editingUserGroup ? 'Update Group' : 'Create Group'}
+                  {userGroupSaving ? 'Saving...' : editingUserGroup ? 'Update team' : 'Create team'}
                 </button>
               </div>
             </div>
@@ -14693,7 +14848,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
             <div className="p-6 border-b border-slate-200 dark:border-slate-700">
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                  Manage Group Members
+                  Manage team members
                 </h2>
                 <button
                   onClick={() => {
@@ -14860,7 +15015,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
             <div className="p-6 border-b border-slate-200 dark:border-slate-700">
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                  Manage Group Roles
+                  Manage team roles
                 </h2>
                 <button
                   onClick={() => {
@@ -14996,7 +15151,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
             <div className="p-6 border-b border-slate-200 dark:border-slate-700">
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                  Assign Tiles & Links to Role: {selectedRole.name}
+                  Spaces &amp; links for: {selectedRole.name}
                 </h2>
                 <button
                   onClick={() => {
@@ -15437,7 +15592,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
             <div className="p-6 border-b border-slate-200 dark:border-slate-700">
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                  Assign Widgets to Role: {selectedRole.name}
+                  Widgets for: {selectedRole.name}
                 </h2>
                 <button
                   onClick={() => {
@@ -15572,7 +15727,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
             <div className="p-6 border-b border-slate-200 dark:border-slate-700">
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                  Assign Tabs to Role: {selectedRole.name}
+                  App tabs for: {selectedRole.name}
                 </h2>
                 <button
                   onClick={() => {
@@ -15820,9 +15975,14 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
           <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-slate-200 dark:border-slate-700">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                  Bulk Manage Roles
-                </h2>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                    Assign roles
+                  </h2>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                    Add, replace, or remove roles for people or teams. Choose a mode below before saving.
+                  </p>
+                </div>
                 <button
                   onClick={() => {
                     setShowBulkAssignModal(false);
@@ -15857,7 +16017,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
               {/* Target Selection */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Assign Roles To
+                  Assign roles to
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   <button
@@ -15871,7 +16031,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
                       }`}
                   >
-                    Users
+                    People
                   </button>
                   <button
                     onClick={async () => {
@@ -15893,7 +16053,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
                       }`}
                   >
-                    Groups
+                    Teams
                   </button>
                 </div>
               </div>
@@ -15901,43 +16061,46 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
               {/* Assignment Mode */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Operation Mode
+                  Mode
                 </label>
                 <div className="grid grid-cols-3 gap-2">
                   <button
+                    type="button"
                     onClick={() => setBulkAssignMode('add')}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${bulkAssignMode === 'add'
                       ? 'bg-brand-600 text-white'
                       : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
                       }`}
                   >
-                    Add Roles
+                    Add
                   </button>
                   <button
+                    type="button"
                     onClick={() => setBulkAssignMode('replace')}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${bulkAssignMode === 'replace'
                       ? 'bg-brand-600 text-white'
                       : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
                       }`}
                   >
-                    Replace All
+                    Replace all
                   </button>
                   <button
+                    type="button"
                     onClick={() => setBulkAssignMode('remove')}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${bulkAssignMode === 'remove'
                       ? 'bg-red-600 text-white'
                       : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
                       }`}
                   >
-                    Remove Roles
+                    Remove
                   </button>
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
                   {bulkAssignMode === 'add'
-                    ? `Selected roles will be added to existing ${bulkAssignTarget} roles`
+                    ? `Selected roles will be added alongside existing ${bulkAssignTarget === 'groups' ? 'team' : 'user'} roles`
                     : bulkAssignMode === 'replace'
-                      ? `Selected roles will replace all existing ${bulkAssignTarget} roles`
-                      : `Selected roles will be removed from the selected ${bulkAssignTarget}`}
+                      ? `Selected roles will replace all existing ${bulkAssignTarget === 'groups' ? 'team' : 'user'} roles`
+                      : `Selected roles will be removed from the selected ${bulkAssignTarget === 'groups' ? 'teams' : 'people'}`}
                 </p>
               </div>
 

@@ -1,8 +1,25 @@
 import { Tile } from '../types';
 
-// API_BASE uses relative URLs (starting with /) which are protocol-agnostic
-// This ensures the app works with both HTTP and HTTPS automatically
-const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+/** Resolve API base for subpath deploys (e.g. /linknest) when VITE_API_BASE is unset. */
+function resolveApiBase(): string {
+  const envBase = (import.meta as any)?.env?.VITE_API_BASE;
+  if (envBase) {
+    return envBase;
+  }
+  if (typeof window !== 'undefined') {
+    const path = window.location.pathname || '';
+    if (path !== '/' && path.length > 1) {
+      const cleanPath = path.replace(/\/[^/]*$/, '').replace(/\/$/, '');
+      if (cleanPath && cleanPath !== '/') {
+        return `${cleanPath}/api`;
+      }
+    }
+  }
+  return '/api';
+}
+
+// Relative URLs — protocol-agnostic; re-resolve at call sites when needed for subpaths
+const API_BASE = resolveApiBase();
 
 // Transform API response to Tile format
 const transformTile = (apiTile: any): Tile => {
@@ -300,7 +317,7 @@ export const bulkImportTiles = async (file: File): Promise<{
 export const csvToJson = async (file: File): Promise<unknown> => {
   const formData = new FormData();
   formData.append('file', file);
-  const response = await fetch(`${API_BASE}/tiles/csv-to-json`, {
+  const response = await fetch(`${resolveApiBase()}/tiles/csv-to-json`, {
     method: 'POST',
     credentials: 'include',
     body: formData

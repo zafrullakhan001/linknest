@@ -2560,7 +2560,9 @@ function handleBulkImport() {
         }
         
         // Normalize headers (trim and lowercase for comparison)
-        $headers = array_map('trim', $headers);
+        $headers = array_map(static function ($h) {
+            return trim(lnStripCsvBom((string)$h));
+        }, $headers);
         $headerMap = [];
         
         // Map of expected header keys to possible variations
@@ -2610,20 +2612,20 @@ function handleBulkImport() {
             }
             
             $csvData[] = [
-                'tile_title' => isset($headerMap['tile_title']) ? trim($row[$headerMap['tile_title']]) : '',
-                'tile_description' => isset($headerMap['tile_description']) ? trim($row[$headerMap['tile_description']]) : '',
-                'tile_emoji' => isset($headerMap['tile_emoji']) ? trim($row[$headerMap['tile_emoji']]) : '📁',
-                'tile_theme_color' => isset($headerMap['tile_theme_color']) ? trim($row[$headerMap['tile_theme_color']]) : 'blue',
-                'tile_group' => isset($headerMap['tile_group']) ? trim($row[$headerMap['tile_group']]) : 'General',
-                'section_title' => isset($headerMap['section_title']) ? trim($row[$headerMap['section_title']]) : 'General',
-                'link_label' => isset($headerMap['link_label']) ? trim($row[$headerMap['link_label']]) : '',
-                'link_url' => isset($headerMap['link_url']) ? trim($row[$headerMap['link_url']]) : '',
-                'link_icon' => isset($headerMap['link_icon']) ? trim($row[$headerMap['link_icon']]) : '',
-                'link_browser' => isset($headerMap['link_browser']) ? trim($row[$headerMap['link_browser']]) : '',
-                'link_visibility' => isset($headerMap['link_visibility']) ? trim($row[$headerMap['link_visibility']]) : 'public',
-                'link_notes' => isset($headerMap['link_notes']) ? trim($row[$headerMap['link_notes']]) : '',
-                'link_tooltip' => isset($headerMap['link_tooltip']) ? trim($row[$headerMap['link_tooltip']]) : '',
-                'tab_title' => isset($headerMap['tab_title']) ? trim($row[$headerMap['tab_title']]) : 'Default',
+                'tile_title' => isset($headerMap['tile_title']) ? lnNormalizeCsvField((string)$row[$headerMap['tile_title']]) : '',
+                'tile_description' => isset($headerMap['tile_description']) ? lnNormalizeCsvField((string)$row[$headerMap['tile_description']]) : '',
+                'tile_emoji' => isset($headerMap['tile_emoji']) ? (lnNormalizeCsvField((string)$row[$headerMap['tile_emoji']]) ?: '📁') : '📁',
+                'tile_theme_color' => isset($headerMap['tile_theme_color']) ? lnNormalizeCsvField((string)$row[$headerMap['tile_theme_color']]) : 'blue',
+                'tile_group' => isset($headerMap['tile_group']) ? lnNormalizeCsvField((string)$row[$headerMap['tile_group']]) : 'General',
+                'section_title' => isset($headerMap['section_title']) ? lnNormalizeCsvField((string)$row[$headerMap['section_title']]) : 'General',
+                'link_label' => isset($headerMap['link_label']) ? lnNormalizeCsvField((string)$row[$headerMap['link_label']]) : '',
+                'link_url' => isset($headerMap['link_url']) ? trim((string)$row[$headerMap['link_url']]) : '',
+                'link_icon' => isset($headerMap['link_icon']) ? lnNormalizeCsvField((string)$row[$headerMap['link_icon']]) : '',
+                'link_browser' => isset($headerMap['link_browser']) ? lnNormalizeCsvField((string)$row[$headerMap['link_browser']]) : '',
+                'link_visibility' => isset($headerMap['link_visibility']) ? lnNormalizeCsvField((string)$row[$headerMap['link_visibility']]) : 'public',
+                'link_notes' => isset($headerMap['link_notes']) ? lnNormalizeCsvField((string)$row[$headerMap['link_notes']]) : '',
+                'link_tooltip' => isset($headerMap['link_tooltip']) ? lnNormalizeCsvField((string)$row[$headerMap['link_tooltip']]) : '',
+                'tab_title' => isset($headerMap['tab_title']) ? lnNormalizeCsvField((string)$row[$headerMap['tab_title']]) : 'Default',
                 'row_num' => $rowNum
             ];
         }
@@ -2799,6 +2801,7 @@ function handleBulkImport() {
 
 /**
  * Serve staging CSV template for download. Admin only.
+ * Prefixed with UTF-8 BOM so Excel on Windows opens emoji columns correctly.
  */
 function handleGetStagingTemplate() {
     requireAdmin();
@@ -2806,10 +2809,59 @@ function handleGetStagingTemplate() {
     if (!is_file($path) || !is_readable($path)) {
         sendJSON(['error' => 'Template file not found'], 404);
     }
+    $content = file_get_contents($path);
+    if ($content === false) {
+        sendJSON(['error' => 'Template file not readable'], 500);
+    }
+    // Ensure UTF-8 BOM (Excel otherwise shows mojibake like ðŸš€ for 🚀)
+    if (strncmp($content, "\xEF\xBB\xBF", 3) !== 0) {
+        $content = "\xEF\xBB\xBF" . $content;
+    }
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="linknest-staging-import-template.csv"');
-    readfile($path);
+    header('Content-Length: ' . strlen($content));
+    echo $content;
     exit;
+}
+
+/**
+ * Strip UTF-8 BOM from a CSV header cell (Excel/BOM downloads).
+ */
+function lnStripCsvBom(string $value): string {
+    if (str_starts_with($value, "\xEF\xBB\xBF")) {
+        return substr($value, 3);
+    }
+    // Also handle BOM already decoded oddly as U+FEFF
+    if (str_starts_with($value, "\u{FEFF}")) {
+        return substr($value, strlen("\u{FEFF}"));
+    }
+    return $value;
+}
+
+/**
+ * Repair emoji/text that was UTF-8 bytes misinterpreted as Windows-1252/Latin-1
+ * (e.g. Excel saving without UTF-8: 🚀 becomes ðŸš€).
+ */
+function lnRepairUtf8Mojibake(string $value): string {
+    if ($value === '' || !preg_match('/[ðÃâ]/u', $value)) {
+        return $value;
+    }
+    // Reinterpret Latin-1 code units as the original UTF-8 byte sequence
+    $asBytes = @mb_convert_encoding($value, 'ISO-8859-1', 'UTF-8');
+    if ($asBytes !== false && $asBytes !== '' && mb_check_encoding($asBytes, 'UTF-8')) {
+        // Prefer repaired form when it contains a valid emoji / fewer replacement chars
+        if (preg_match('/[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}]/u', $asBytes)) {
+            return $asBytes;
+        }
+    }
+    return $value;
+}
+
+/**
+ * Normalize a CSV text field (BOM strip + mojibake repair).
+ */
+function lnNormalizeCsvField(string $value): string {
+    return lnRepairUtf8Mojibake(trim(lnStripCsvBom($value)));
 }
 
 /**
@@ -2855,7 +2907,9 @@ function handleCsvToJson() {
         fclose($handle);
         sendJSON(['error' => 'Invalid CSV file. Could not read header row.'], 400);
     }
-    $headers = array_map('trim', $headers);
+    $headers = array_map(static function ($h) {
+        return trim(lnStripCsvBom((string)$h));
+    }, $headers);
     $headerMap = [];
     $headerVariations = [
         'tile_title' => ['tile title', 'tile_title', 'tiletitle'],
@@ -2896,20 +2950,20 @@ function handleCsvToJson() {
             continue;
         }
         $csvData[] = [
-            'tile_title' => isset($headerMap['tile_title']) ? trim($row[$headerMap['tile_title']]) : '',
-            'tile_description' => isset($headerMap['tile_description']) ? trim($row[$headerMap['tile_description']]) : '',
-            'tile_emoji' => isset($headerMap['tile_emoji']) ? trim($row[$headerMap['tile_emoji']]) : '📁',
-            'tile_theme_color' => isset($headerMap['tile_theme_color']) ? trim($row[$headerMap['tile_theme_color']]) : 'blue',
-            'tile_group' => isset($headerMap['tile_group']) ? trim($row[$headerMap['tile_group']]) : 'General',
-            'section_title' => isset($headerMap['section_title']) ? trim($row[$headerMap['section_title']]) : 'General',
-            'link_label' => isset($headerMap['link_label']) ? trim($row[$headerMap['link_label']]) : '',
-            'link_url' => isset($headerMap['link_url']) ? trim($row[$headerMap['link_url']]) : '',
-            'link_icon' => isset($headerMap['link_icon']) ? trim($row[$headerMap['link_icon']]) : '',
-            'link_browser' => isset($headerMap['link_browser']) ? trim($row[$headerMap['link_browser']]) : '',
-            'link_visibility' => isset($headerMap['link_visibility']) ? trim($row[$headerMap['link_visibility']]) : 'public',
-            'link_notes' => isset($headerMap['link_notes']) ? trim($row[$headerMap['link_notes']]) : '',
-            'link_tooltip' => isset($headerMap['link_tooltip']) ? trim($row[$headerMap['link_tooltip']]) : '',
-            'tab_title' => isset($headerMap['tab_title']) ? trim($row[$headerMap['tab_title']]) : 'Default',
+            'tile_title' => isset($headerMap['tile_title']) ? lnNormalizeCsvField((string)$row[$headerMap['tile_title']]) : '',
+            'tile_description' => isset($headerMap['tile_description']) ? lnNormalizeCsvField((string)$row[$headerMap['tile_description']]) : '',
+            'tile_emoji' => isset($headerMap['tile_emoji']) ? (lnNormalizeCsvField((string)$row[$headerMap['tile_emoji']]) ?: '📁') : '📁',
+            'tile_theme_color' => isset($headerMap['tile_theme_color']) ? lnNormalizeCsvField((string)$row[$headerMap['tile_theme_color']]) : 'blue',
+            'tile_group' => isset($headerMap['tile_group']) ? lnNormalizeCsvField((string)$row[$headerMap['tile_group']]) : 'General',
+            'section_title' => isset($headerMap['section_title']) ? lnNormalizeCsvField((string)$row[$headerMap['section_title']]) : 'General',
+            'link_label' => isset($headerMap['link_label']) ? lnNormalizeCsvField((string)$row[$headerMap['link_label']]) : '',
+            'link_url' => isset($headerMap['link_url']) ? trim((string)$row[$headerMap['link_url']]) : '',
+            'link_icon' => isset($headerMap['link_icon']) ? lnNormalizeCsvField((string)$row[$headerMap['link_icon']]) : '',
+            'link_browser' => isset($headerMap['link_browser']) ? lnNormalizeCsvField((string)$row[$headerMap['link_browser']]) : '',
+            'link_visibility' => isset($headerMap['link_visibility']) ? lnNormalizeCsvField((string)$row[$headerMap['link_visibility']]) : 'public',
+            'link_notes' => isset($headerMap['link_notes']) ? lnNormalizeCsvField((string)$row[$headerMap['link_notes']]) : '',
+            'link_tooltip' => isset($headerMap['link_tooltip']) ? lnNormalizeCsvField((string)$row[$headerMap['link_tooltip']]) : '',
+            'tab_title' => isset($headerMap['tab_title']) ? lnNormalizeCsvField((string)$row[$headerMap['tab_title']]) : 'Default',
             'row_num' => $rowNum
         ];
     }

@@ -28,6 +28,8 @@ import { FaTimes } from 'react-icons/fa';
 import { LinkInfoDialog } from './LinkInfoDialog';
 import { useMobile } from '../hooks/useMobile';
 import { MobileTileView } from './MobileTileView';
+import { StagingOverview } from './StagingOverview';
+import { StagingOfflineKit, StagingOfflineKitHandle } from './StagingOfflineKit';
 import { TileInfoDialog } from './TileInfoDialog';
 import { TileFireworks } from './TileFireworks';
 import { TileConfetti } from './TileConfetti';
@@ -2312,8 +2314,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [isAutoRefreshEnabled, setIsAutoRefreshEnabled] = useState(false);
   const [refreshCountdown, setRefreshCountdown] = useState<number>(30);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const stagingCsvInputRef = useRef<HTMLInputElement>(null);
-  const stagingJsonImportRef = useRef<HTMLInputElement>(null);
+  const stagingOfflineKitRef = useRef<StagingOfflineKitHandle>(null);
 
   // Import progress state
   const [importProgress, setImportProgress] = useState<{
@@ -5372,7 +5373,15 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     if (!user?.is_admin) return;
     try {
       const res = await fetch(`${API_BASE}/tiles/staging-template`, { credentials: 'include' });
-      if (!res.ok) throw new Error('Failed to download template');
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        const detail = typeof errBody.error === 'string' ? errBody.error : `HTTP ${res.status}`;
+        throw new Error(
+          detail === 'Template file not found'
+            ? 'Template file not found on the server. Redeploy including staging-ai-import-template.csv at the app root.'
+            : detail
+        );
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -5382,15 +5391,23 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       URL.revokeObjectURL(url);
     } catch (e) {
       console.error(e);
-      alert('Failed to download template.');
+      alert(e instanceof Error ? e.message : 'Failed to download template.');
     }
-  }, [user]);
+  }, [user, API_BASE]);
 
   const handleDownloadStagingPrompt = useCallback(async () => {
     if (!user?.is_admin) return;
     try {
       const res = await fetch(`${API_BASE}/tiles/staging-prompt`, { credentials: 'include' });
-      if (!res.ok) throw new Error('Failed to download prompt guide');
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        const detail = typeof errBody.error === 'string' ? errBody.error : `HTTP ${res.status}`;
+        throw new Error(
+          detail === 'Prompt guide file not found' || detail.toLowerCase().includes('not found')
+            ? 'AI prompt guide not found on the server. Redeploy including staging-ai-prompt-guide.md at the app root.'
+            : detail
+        );
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -5400,9 +5417,18 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       URL.revokeObjectURL(url);
     } catch (e) {
       console.error(e);
-      alert('Failed to download AI prompt guide.');
+      alert(e instanceof Error ? e.message : 'Failed to download AI prompt guide.');
     }
-  }, [user]);
+  }, [user, API_BASE]);
+
+  const focusStagingOfflineKit = useCallback(() => {
+    stagingOfflineKitRef.current?.reveal();
+  }, []);
+
+  const handleDownloadBothStagingTemplates = useCallback(async () => {
+    await handleDownloadStagingTemplate();
+    await handleDownloadStagingPrompt();
+  }, [handleDownloadStagingTemplate, handleDownloadStagingPrompt]);
 
   const handleStagingCsvToJson = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -6530,68 +6556,22 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         )}
       </div>
 
-      {/* Staging AI Offline Kit - Template, Prompt, CSV→JSON, Import */}
+      {/* Staging overview + AI Offline Kit (admin) */}
       {activeTab === 'staging' && isAuthenticated && user?.is_admin && (
-        <div className="flex flex-wrap items-center gap-2 py-3 px-4 bg-amber-50 dark:bg-amber-900/10 border-b border-amber-200 dark:border-amber-800/50">
-          <span className="text-sm font-medium text-amber-800 dark:text-amber-200 mr-1">AI Offline Kit:</span>
-          <button
-            onClick={handleDownloadStagingTemplate}
-            className="px-3 py-1.5 text-sm font-medium text-amber-800 dark:text-amber-200 bg-amber-100 dark:bg-amber-900/30 hover:bg-amber-200 dark:hover:bg-amber-800/50 rounded-lg transition-colors flex items-center gap-1.5"
-            title="Download CSV template for tile hierarchy (categories, tiles, tabs, sections, links)"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-              <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.295a.75.75 0 00-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 2.955V2.75z" />
-              <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
-            </svg>
-            CSV Template
-          </button>
-          <button
-            onClick={handleDownloadStagingPrompt}
-            className="px-3 py-1.5 text-sm font-medium text-amber-800 dark:text-amber-200 bg-amber-100 dark:bg-amber-900/30 hover:bg-amber-200 dark:hover:bg-amber-800/50 rounded-lg transition-colors flex items-center gap-1.5"
-            title="Download AI prompt guide for ChatGPT/Claude offline generation"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-              <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.295a.75.75 0 00-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 2.955V2.75z" />
-              <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
-            </svg>
-            AI Prompt Guide
-          </button>
-          <button
-            onClick={() => stagingCsvInputRef.current?.click()}
-            className="px-3 py-1.5 text-sm font-medium text-amber-800 dark:text-amber-200 bg-amber-100 dark:bg-amber-900/30 hover:bg-amber-200 dark:hover:bg-amber-800/50 rounded-lg transition-colors flex items-center gap-1.5"
-            title="Upload CSV to generate import-ready JSON file"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-              <path d="M9.25 13.25a.75.75 0 001.5 0V4.636l2.955 2.955a.75.75 0 001.09-1.03l-4.25-4.5a.75.75 0 00-1.09 0l-4.25 4.5a.75.75 0 001.09 1.03l2.955-2.955V13.25z" />
-              <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
-            </svg>
-            CSV → JSON
-          </button>
-          <input
-            ref={stagingCsvInputRef}
-            type="file"
-            accept=".csv"
-            onChange={handleStagingCsvToJson}
-            className="hidden"
+        <>
+          <StagingOverview
+            spaceCount={stagingTiles.length}
+            onDownloadTemplates={handleDownloadBothStagingTemplates}
+            onFocusOfflineKit={focusStagingOfflineKit}
           />
-          <button
-            onClick={() => stagingJsonImportRef.current?.click()}
-            className="px-3 py-1.5 text-sm font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/30 hover:bg-emerald-200 dark:hover:bg-emerald-800/50 rounded-lg transition-colors flex items-center gap-1.5"
-            title="Import AI-generated JSON directly into Staging"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-              <path d="M9.25 3.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
-            </svg>
-            Import AI JSON
-          </button>
-          <input
-            ref={stagingJsonImportRef}
-            type="file"
-            accept=".json"
-            onChange={handleStagingImportJson}
-            className="hidden"
+          <StagingOfflineKit
+            ref={stagingOfflineKitRef}
+            onDownloadTemplate={handleDownloadStagingTemplate}
+            onDownloadPrompt={handleDownloadStagingPrompt}
+            onCsvFileChange={handleStagingCsvToJson}
+            onJsonFileChange={handleStagingImportJson}
           />
-        </div>
+        </>
       )}
 
       {/* Your Apps Filter Actions */}

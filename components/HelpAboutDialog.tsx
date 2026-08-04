@@ -146,9 +146,9 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
-                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Roles & Groups</h4>
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Roles &amp; Teams</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Create user groups and roles to manage permissions at scale. Assign tile access, tabs, widgets, and admin privileges to entire teams. Groups and roles work together for flexible access control.
+                      Create teams and roles to manage access at scale. Roles control what people can see; teams share roles across members; space editors let trusted people edit specific spaces.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -188,9 +188,15 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
-                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Access Control & User Groups</h4>
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Access Manager</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Advanced permission system with role-based access control and user groups. Assign tile admin privileges to individual users or entire groups. Granular permissions control add, edit, and delete actions for links, sections, and tabs. Perfect for team collaboration.
+                      Clear access tools for roles (what people can see), teams (shared roles), and space editors (who can edit specific spaces). Fine-tune permissions control add, edit, and delete actions. Built for admins who should not need a training manual.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Staging &amp; AI Offline Kit</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Admin-only sandbox for preparing spaces before they go live. Use the AI Offline Kit to download a CSV template and prompt guide, convert CSV to JSON, and import into Staging — then Move to Public when ready. Staging content is never visible to normal users.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -335,52 +341,81 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
                     <path d="M10 9a3 3 0 100-6 3 3 0 000 6zM6 8a2 2 0 11-4 0 2 2 0 014 0zM1.49 15.326a.78.78 0 01-.358-.442 3 3 0 014.308-3.516 6.484 6.484 0 00-1.905 3.959c-.023.222-.014.442.025.654a4.97 4.97 0 01-2.07-.655zM16.44 15.98a4.97 4.97 0 002.07-.654.78.78 0 00.357-.442 3 3 0 00-4.308-3.517 6.484 6.484 0 011.907 3.96 2.32 2.32 0 01-.026.654zM18 8a2 2 0 11-4 0 2 2 0 014 0zM5.304 16.19a.844.844 0 01-.277-.71 5 5 0 019.947 0 .843.843 0 01-.277.71A6.975 6.975 0 0110 18a6.974 6.974 0 01-4.696-1.81z" />
                   </svg>
-                  User Groups & Access Control
+                  Teams &amp; Access Control
                 </h3>
                 <div className="space-y-3 text-slate-700 dark:text-slate-300">
                   <p>
-                    Manage access to tiles and content using <strong>user groups</strong> and <strong>role-based permissions</strong>.
+                    Manage access using <strong>teams</strong>, <strong>roles</strong>, and <strong>space editors</strong> from Admin → Access Manager.
                   </p>
                   <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
-                    <p className="font-medium text-brand-900 dark:text-brand-100">User Groups:</p>
+                    <p className="font-medium text-brand-900 dark:text-brand-100">Teams:</p>
                     <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
-                      <li>Create groups to organize users by team, department, or project</li>
-                      <li>Assign users to multiple groups for flexible organization</li>
-                      <li>Assign roles to groups - all members inherit group permissions</li>
-                      <li>Manage group membership through the Admin Panel</li>
+                      <li>Create teams to organize users by department or project</li>
+                      <li>Assign users to multiple teams for flexible organization</li>
+                      <li>Assign roles to teams — all members inherit team permissions</li>
+                      <li>Manage membership from Access Manager → Teams</li>
                     </ul>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2">
-                    <p className="font-medium text-slate-900 dark:text-white">Tile Admins with Group Support:</p>
+                    <p className="font-medium text-slate-900 dark:text-white">Space editors with team support:</p>
                     <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
-                      <li><strong>Assign Users & Groups:</strong> Grant tile admin privileges to individual users or entire groups</li>
-                      <li><strong>Visual Distinction:</strong> Users shown with 👤, groups with 👥 icon</li>
-                      <li><strong>Entity Filter:</strong> Filter view to show all entities, users only, or groups only</li>
-                      <li><strong>Combined Search:</strong> Search across both users and groups simultaneously</li>
-                      <li><strong>Admin Count Display:</strong> See breakdown of user and group admins per tile</li>
-                      <li><strong>Simplified Management:</strong> Update entire team permissions at once via groups</li>
+                      <li><strong>Assign people &amp; teams:</strong> Grant edit privileges on specific spaces</li>
+                      <li><strong>Not full admins:</strong> Editors only manage assigned spaces</li>
+                      <li><strong>Fine-tune permissions:</strong> Control add/edit/delete for links, sections, and tabs</li>
+                      <li><strong>Defaults:</strong> Editors can add/edit but not delete or change sensitive settings</li>
                     </ul>
                   </div>
                   <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2">
-                    <p className="font-medium text-emerald-900 dark:text-emerald-100">Granular Permissions:</p>
+                    <p className="font-medium text-emerald-900 dark:text-emerald-100">Fine-tune permissions:</p>
                     <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
                       <li><strong>Add/Edit Control:</strong> Allow or restrict adding/editing links, sections, and tabs</li>
                       <li><strong>Delete Control:</strong> Separate permissions for deleting links, sections, and tabs</li>
-                      <li><strong>Visibility Control:</strong> Control who can change tile visibility settings</li>
+                      <li><strong>Visibility Control:</strong> Control who can change space visibility settings</li>
                       <li><strong>Browser Control:</strong> Manage who can change browser settings</li>
-                      <li><strong>Clone Control:</strong> Restrict tile cloning to specific users</li>
-                      <li><strong>Info Access:</strong> Control access to tile information and statistics</li>
-                      <li>Default: Tile admins can add/edit but not delete or change sensitive settings</li>
+                      <li><strong>Clone Control:</strong> Restrict space cloning to specific users</li>
+                      <li><strong>Info Access:</strong> Control access to space information and statistics</li>
+                      <li>Default: Space editors can add/edit but not delete or change sensitive settings</li>
                     </ul>
                   </div>
                   <div className="bg-violet-50 dark:bg-violet-900/20 rounded-lg p-4 space-y-2">
-                    <p className="font-medium text-violet-900 dark:text-violet-100">Role Management:</p>
+                    <p className="font-medium text-violet-900 dark:text-violet-100">Roles:</p>
                     <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
-                      <li>Create custom roles with specific permissions</li>
-                      <li>Assign roles to individual users or groups</li>
-                      <li>Control access to tiles, tabs, links, and widgets per role</li>
-                      <li>Bulk assign/remove roles from multiple users or groups</li>
-                      <li>View all users/groups with a specific role</li>
+                      <li>Create roles that control what people can <strong>see</strong> (not edit)</li>
+                      <li>Assign roles to people or teams from Access Manager → Roles → Assign access</li>
+                      <li>Configure spaces &amp; links, app tabs, and widgets per role</li>
+                      <li>Bulk add, replace, or remove roles for many people or teams at once</li>
+                    </ul>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <path fillRule="evenodd" d="M6 3.75A2.75 2.75 0 018.75 1h2.5A2.75 2.75 0 0114 3.75v.443c.572.055 1.14.122 1.706.2C17.053 4.582 18 5.75 18 7.07v3.469c0 1.126-.694 2.191-1.759 2.551A41.44 41.44 0 0110 14c-1.392 0-2.767-.128-4.121-.378-1.065-.36-1.759-1.425-1.759-2.55V7.07c0-1.32.947-2.488 2.294-2.676A41.46 41.46 0 016 4.193V3.75zM8.75 2.5a1.25 1.25 0 00-1.25 1.25v.34A41.81 41.81 0 0110 4c.932 0 1.854.04 2.765.118v-.368a1.25 1.25 0 00-1.25-1.25h-2.5zM10 15.5c.967 0 1.92-.073 2.855-.215a.75.75 0 01.845.835l-.112.84a2.75 2.75 0 01-2.728 2.39H9.14a2.75 2.75 0 01-2.728-2.39l-.112-.84a.75.75 0 01.845-.835c.935.142 1.888.215 2.855.215z" clipRule="evenodd" />
+                  </svg>
+                  Staging &amp; Space Lifecycle
+                </h3>
+                <div className="space-y-3 text-slate-700 dark:text-slate-300">
+                  <p>
+                    <strong>Staging</strong> is an admin-only sandbox. Prepare and test spaces there without affecting what normal users see. When ready, open a space and choose <strong>Move to Public</strong>.
+                  </p>
+                  <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-amber-900 dark:text-amber-100">AI Offline Kit:</p>
+                    <ol className="list-decimal list-inside space-y-1 ml-2 text-sm">
+                      <li>Download the CSV Template and AI Prompt Guide</li>
+                      <li>Fill the CSV offline with an AI using the prompt guide</li>
+                      <li>Convert with CSV → JSON (downloads JSON; does not save to the database yet)</li>
+                      <li>Import AI JSON into Staging, review, then Move to Public</li>
+                    </ol>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-slate-900 dark:text-white">After publishing (simplified lifecycle):</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li><strong>Public / Your Apps / Private / Favorites</strong> — live views based on visibility and favorites</li>
+                      <li><strong>Scheduled / Expired</strong> — controlled by visible-from and expires-at dates</li>
+                      <li><strong>Archive</strong> — hide from active browsing but keep for reference</li>
+                      <li><strong>Recycle Bin</strong> — soft-deleted spaces; restore or purge permanently</li>
                     </ul>
                   </div>
                 </div>
@@ -575,8 +610,8 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     <li>Archive old tiles to keep your workspace clean</li>
                     <li>Add rich text content with formatting, emojis, and images to sections</li>
                     <li>Use style profiles to customize the application appearance (admin only)</li>
-                    <li>Create user groups and assign entire teams to tiles (admin only)</li>
-                    <li>Assign tile admin privileges to users or groups with granular permission control (admin only)</li>
+                    <li>Create teams and assign entire teams to spaces (admin only)</li>
+                    <li>Assign space editor privileges to people or teams with fine-tune permission control (admin only)</li>
                     <li>Manage roles and assign them to users and groups for streamlined access control (admin only)</li>
                     <li>Track tile changes with version control - view, compare, and restore versions</li>
                     <li>Clone {appName} instances for testing or backup purposes (admin only)</li>
@@ -653,11 +688,11 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                       <li><strong>User Actions:</strong> Promote/disable users, impersonate, assign roles, toggle auth source; LDAP users show expandable directory info (lock status, CN, groups, and more)</li>
                       <li><strong>Add LDAP Users:</strong> Search directory with short or partial names; auto-select exact/single matches; detailed errors when LDAP search fails</li>
                       <li><strong>Change Password (Local):</strong> Admins can set a new password for non-admin local accounts from User Actions</li>
-                      <li><strong>User Groups:</strong> Create and manage user groups, assign members, bulk assign roles to groups</li>
-                      <li><strong>Role Management:</strong> Create roles, assign roles to users and groups, manage role permissions</li>
-                      <li><strong>Tile Admins:</strong> Assign users and groups as tile admins with granular permission control</li>
-                      <li><strong>Granular Permissions:</strong> Fine-tune what tile admins can do (add/edit/delete links, sections, tabs)</li>
-                      <li><strong>Access Control:</strong> Assign tiles, links, tabs, and widgets to specific roles</li>
+                      <li><strong>Teams:</strong> Create teams, add members, attach roles so everyone inherits the same visibility</li>
+                      <li><strong>Roles:</strong> Control what people can see — spaces, links, app tabs, and widgets</li>
+                      <li><strong>Space editors:</strong> Let people or teams edit specific spaces without full admin rights</li>
+                      <li><strong>Fine-tune permissions:</strong> Control what space editors can add, edit, or delete</li>
+                      <li><strong>Assign access:</strong> Add, replace, or remove roles for people or teams in bulk</li>
                       <li><strong>Style Management:</strong> Create and switch between custom style profiles</li>
                       <li><strong>Instance Cloning:</strong> Clone {appName} installations with progress tracking</li>
                       <li><strong>LDAP Integration:</strong> Configure LDAP authentication for enterprise environments</li>
@@ -712,7 +747,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                 <p className="text-slate-700 dark:text-slate-300">
                   {appName} helps you create beautiful, organized landing pages for your important links. 
                   Organize links into visual tiles, customize their appearance, and share them with your team or make them public. 
-                  With advanced features like <strong>user groups</strong>, <strong>role-based access control</strong>, <strong>granular tile admin permissions</strong>, 
+                  With advanced features like <strong>teams</strong>, <strong>roles for visibility</strong>, <strong>space editors with fine-tuned permissions</strong>, 
                   <strong>version control</strong>, browser integration, scheduling, link health monitoring, rich text content, style management, 
                   flexible visibility controls, system monitoring, email notifications, floating widgets, custom widget development, database cleanup tools, 
                   SAML/SSO authentication, and 200+ tile animations, {appName} makes managing and sharing links simple, powerful, and elegant.
@@ -764,13 +799,14 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     'Tab & Section Organization',
                     'Rich Text Content Editor',
                     'Style Profile Management',
-                    'User Groups Management',
-                    'Role-Based Access Control',
-                    'Tile Admin with User & Group Support',
-                    'Granular Permission System',
+                    'Teams Management',
+                    'Roles & Visibility Access',
+                    'Space Editors with Team Support',
+                    'Fine-tune Permission System',
                     'Version Control & History',
                     'Version Comparison & Restore',
-                    'Access Control & Permissions',
+                    'Access Manager',
+                    'Staging & AI Offline Kit',
                     'Instance Cloning',
                     'LDAP Authentication',
                     'LDAP Directory User Details',

@@ -134,7 +134,7 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                Configure Tile Admin Permissions
+                Fine-tune space editor permissions
               </h2>
               {userName && tileTitle && (
                 <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
