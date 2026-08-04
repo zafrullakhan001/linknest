@@ -16,6 +16,7 @@ export interface Link {
   textColor?: string; // Optional text color for the link (hex color code)
   health?: LinkHealth; // Link health status
   visibility?: LinkVisibility; // Visibility setting: 'public', 'authenticated', or 'private'
+  published?: boolean; // When false, hidden from everyone except platform admins (overrides visibility)
   allowedUsers?: number[]; // Array of user IDs for private links
   allowedGroups?: number[]; // Array of group IDs for private links
   notes?: string; // Optional notes/description for the link
@@ -52,6 +53,7 @@ export interface LinkSection {
   richTextContent?: RichTextContent[]; // Rich text content items in this section
   textColor?: string; // Optional custom text color for section title (hex color code)
   visibility?: LinkVisibility; // Visibility setting: 'public', 'authenticated', or 'private'
+  published?: boolean; // When false, hidden from everyone except platform admins (overrides visibility)
   allowedUsers?: number[]; // Array of user IDs for private sections
   allowedGroups?: number[]; // Array of group IDs for private sections
   visibleFrom?: string; // ISO date string - section becomes visible from this date/time
@@ -67,6 +69,7 @@ export interface Tab {
   sections: LinkSection[];
   textColor?: string; // Optional custom text color for tab title (hex color code)
   visibility?: LinkVisibility; // Visibility setting: 'public', 'authenticated', or 'private'
+  published?: boolean; // When false, hidden from everyone except platform admins (overrides visibility)
   allowedUsers?: number[]; // Array of user IDs for private tabs
   allowedGroups?: number[]; // Array of group IDs for private tabs
   visibleFrom?: string; // ISO date string - tab becomes visible from this date/time
@@ -86,6 +89,7 @@ export interface Tile {
   group?: string; // New: Category/Group for the tile
   createdAt: number;
   visibility?: TileVisibility; // Visibility setting: 'public', 'authenticated', or 'private'
+  published?: boolean; // When false, hidden from everyone except platform admins (overrides visibility)
   sourceTab?: 'public' | 'staging'; // Source tab: public (main) or staging (admin-only staging area)
   allowedUsers?: number[]; // Array of user IDs for private tiles/spaces
   allowedGroups?: number[]; // Array of user group IDs for private tiles/spaces

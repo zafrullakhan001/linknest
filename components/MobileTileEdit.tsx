@@ -12,6 +12,7 @@ interface MobileTileEditProps {
     editEmoji: string;
     editColor: ThemeColor;
     editVisibility: TileVisibility;
+    editPublished: boolean;
     editAllowedUsers: number[];
     editTabs: Tab[];
     onTitleChange: (title: string) => void;
@@ -20,6 +21,7 @@ interface MobileTileEditProps {
     onEmojiChange: (emoji: string) => void;
     onColorChange: (color: ThemeColor) => void;
     onVisibilityChange: (visibility: TileVisibility) => void;
+    onPublishedChange: (published: boolean) => void;
     onAllowedUsersChange: (users: number[]) => void;
     onTabsChange: (tabs: Tab[]) => void;
     onSave: () => void;
@@ -53,6 +55,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
     editEmoji,
     editColor,
     editVisibility,
+    editPublished,
     editAllowedUsers,
     editTabs,
     onTitleChange,
@@ -61,6 +64,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
     onEmojiChange,
     onColorChange,
     onVisibilityChange,
+    onPublishedChange,
     onAllowedUsersChange,
     onTabsChange,
     onSave,
@@ -540,6 +544,36 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                     placeholder="<p>Welcome to my page!</p>"
                                 />
                             </div>
+
+                            {/* Publish Status (admin only) */}
+                            {user?.is_admin && (
+                                <div>
+                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2">
+                                        Publish Status
+                                    </label>
+                                    <div className="flex items-center justify-between gap-4 p-3 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+                                        <div className="flex-1 min-w-0">
+                                            <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                                                {editPublished ? 'Published' : 'Unpublished'}
+                                            </div>
+                                            <div className="text-xs text-slate-600 dark:text-slate-400">
+                                                {editPublished
+                                                    ? 'Visible according to Visibility settings'
+                                                    : 'Hidden from everyone except platform admins'}
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            role="switch"
+                                            aria-checked={editPublished}
+                                            onClick={() => onPublishedChange(!editPublished)}
+                                            className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${editPublished ? 'bg-emerald-500' : 'bg-slate-400 dark:bg-slate-600'}`}
+                                        >
+                                            <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${editPublished ? 'translate-x-6' : 'translate-x-1'}`} />
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Visibility Settings */}
                             <div>

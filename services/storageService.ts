@@ -36,6 +36,7 @@ const transformTile = (apiTile: any): Tile => {
     tabs: apiTile.tabs || undefined, // Include tabs if present (with richTextContent)
     sections: apiTile.sections || [], // Keep for backward compatibility (with richTextContent)
     visibility: apiTile.visibility || 'public',
+    published: apiTile.published === false || apiTile.published === 0 || apiTile.published === '0' ? false : true,
     sourceTab: apiTile.sourceTab === 'staging' ? 'staging' : 'public',
     allowedUsers: apiTile.allowedUsers || undefined,
     allowedGroups: Array.isArray(apiTile.allowedGroups) && apiTile.allowedGroups.length > 0

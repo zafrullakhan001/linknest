@@ -397,6 +397,17 @@ function initDatabase() {
             error_log('Tiles visibility migration warning: ' . $e->getMessage());
         }
 
+        // Migrate tiles table to add published column (admin-only when unpublished)
+        try {
+            $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll();
+            $columnNames = array_column($columns, 'name');
+            if (!in_array('published', $columnNames)) {
+                $db->exec('ALTER TABLE tiles ADD COLUMN published INTEGER DEFAULT 1');
+            }
+        } catch (PDOException $e) {
+            error_log('Tiles published migration warning: ' . $e->getMessage());
+        }
+
         // Migrate existing tiles table to add source_tab column (public | staging; admin-only staging tab)
         try {
             $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll();
@@ -664,6 +675,17 @@ function initDatabase() {
         } catch (PDOException $e) {
             error_log('Tabs visibility migration warning: ' . $e->getMessage());
         }
+
+        // Migrate tabs table to add published column (admin-only when unpublished)
+        try {
+            $columns = $db->query("PRAGMA table_info(tabs)")->fetchAll();
+            $columnNames = array_column($columns, 'name');
+            if (!in_array('published', $columnNames)) {
+                $db->exec('ALTER TABLE tabs ADD COLUMN published INTEGER DEFAULT 1');
+            }
+        } catch (PDOException $e) {
+            error_log('Tabs published migration warning: ' . $e->getMessage());
+        }
         
         // Migrate existing sections table to add tab_id column if it doesn't exist
         try {
@@ -793,6 +815,17 @@ function initDatabase() {
         } catch (PDOException $e) {
             error_log('Sections visibility migration warning: ' . $e->getMessage());
         }
+
+        // Migrate sections table to add published column (admin-only when unpublished)
+        try {
+            $columns = $db->query("PRAGMA table_info(sections)")->fetchAll();
+            $columnNames = array_column($columns, 'name');
+            if (!in_array('published', $columnNames)) {
+                $db->exec('ALTER TABLE sections ADD COLUMN published INTEGER DEFAULT 1');
+            }
+        } catch (PDOException $e) {
+            error_log('Sections published migration warning: ' . $e->getMessage());
+        }
         
         // Create links table
         $db->exec('CREATE TABLE IF NOT EXISTS links (
@@ -846,6 +879,17 @@ function initDatabase() {
             }
         } catch (PDOException $e) {
             error_log('Links visibility migration warning: ' . $e->getMessage());
+        }
+
+        // Migrate links table to add published column (admin-only when unpublished)
+        try {
+            $columns = $db->query("PRAGMA table_info(links)")->fetchAll();
+            $columnNames = array_column($columns, 'name');
+            if (!in_array('published', $columnNames)) {
+                $db->exec('ALTER TABLE links ADD COLUMN published INTEGER DEFAULT 1');
+            }
+        } catch (PDOException $e) {
+            error_log('Links published migration warning: ' . $e->getMessage());
         }
         
         // Migrate existing links table to add allowed_groups column if it doesn't exist
@@ -2309,6 +2353,63 @@ function requireAdmin() {
         exit;
     }
     return $user;
+}
+
+/**
+ * Whether a DB/API row is published. Missing/null defaults to published (true).
+ */
+function isContentPublished($rowOrValue): bool {
+    if (is_array($rowOrValue)) {
+        if (!array_key_exists('published', $rowOrValue) || $rowOrValue['published'] === null || $rowOrValue['published'] === '') {
+            return true;
+        }
+        $value = $rowOrValue['published'];
+    } else {
+        if ($rowOrValue === null || $rowOrValue === '') {
+            return true;
+        }
+        $value = $rowOrValue;
+    }
+    if (is_bool($value)) {
+        return $value;
+    }
+    if (is_string($value)) {
+        $lower = strtolower(trim($value));
+        if ($lower === 'false' || $lower === '0' || $lower === 'no' || $lower === 'off') {
+            return false;
+        }
+        if ($lower === 'true' || $lower === '1' || $lower === 'yes' || $lower === 'on') {
+            return true;
+        }
+    }
+    return (int)$value === 1;
+}
+
+/**
+ * Resolve published flag for create/update.
+ * Only platform admins may set unpublished; non-admins are forced to published.
+ * When the key is omitted, $currentPublished is preserved (defaults to true).
+ */
+function resolvePublishedFlag($data, $user, $currentPublished = true): int {
+    $isAdmin = $user && !empty($user['is_admin']);
+    if (!is_array($data) || !array_key_exists('published', $data)) {
+        return $currentPublished ? 1 : 0;
+    }
+    $wantPublished = isContentPublished(['published' => $data['published']]);
+    if (!$wantPublished && !$isAdmin) {
+        return 1;
+    }
+    return $wantPublished ? 1 : 0;
+}
+
+/**
+ * Non-admins must not see unpublished content (visibility/ACL does not override).
+ */
+function canUserSeePublishedContent($user, $rowOrValue): bool {
+    if (isContentPublished($rowOrValue)) {
+        return true;
+    }
+    return $user && !empty($user['is_admin']);
 }
 
 // Helper function to check if user has permission to edit a tile

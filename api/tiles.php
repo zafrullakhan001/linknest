@@ -268,6 +268,11 @@ function handleGetTiles() {
     
     // Step 3: Filter tiles by visibility and permissions
     foreach ($allTiles as $row) {
+        // Unpublished tiles are admin-only (overrides visibility)
+        if (!canUserSeePublishedContent($user, $row)) {
+            continue;
+        }
+
         // Filter tiles based on visibility
         $tileVisibility = $row['visibility'] ?? 'public';
         $tileAllowedUsers = $row['allowed_users'] ? json_decode($row['allowed_users'], true) : [];
@@ -407,6 +412,7 @@ function handleGetTiles() {
             'createdAt' => (int)$row['created_at'],
             'position' => $position,
             'visibility' => $tileVisibility,
+            'published' => isContentPublished($row),
             'sourceTab' => !empty($row['source_tab']) ? $row['source_tab'] : 'public',
             'allowedUsers' => $tileAllowedUsers,
             'allowedGroups' => $tileAllowedGroups,
@@ -592,6 +598,9 @@ function handleGetTiles() {
             // Process tabs for this tile
             if (isset($tabsByTile[$tileId])) {
                 foreach ($tabsByTile[$tileId] as $tabRow) {
+                    if (!canUserSeePublishedContent($user, $tabRow)) {
+                        continue;
+                    }
                     $tab = [
                         'id' => $tabRow['id'],
                         'title' => $tabRow['title'],
@@ -600,6 +609,7 @@ function handleGetTiles() {
                         'visibleFrom' => $tabRow['visible_from'] ?? null,
                         'expiresAt' => $tabRow['expires_at'] ?? null,
                         'visibility' => $tabRow['visibility'] ?? 'public',
+                        'published' => isContentPublished($tabRow),
                         'allowedUsers' => (isset($tabRow['allowed_users']) && $tabRow['allowed_users'] ? json_decode($tabRow['allowed_users'], true) : null) ?? [],
                         'allowedGroups' => (isset($tabRow['allowed_groups']) && $tabRow['allowed_groups'] ? json_decode($tabRow['allowed_groups'], true) : null) ?? [],
                         'sections' => []
@@ -608,6 +618,9 @@ function handleGetTiles() {
                     // Process sections for this tab
                     if (isset($sectionsByTab[$tabRow['id']])) {
                         foreach ($sectionsByTab[$tabRow['id']] as $sectionRow) {
+                            if (!canUserSeePublishedContent($user, $sectionRow)) {
+                                continue;
+                            }
                             $section = [
                                 'id' => $sectionRow['id'],
                                 'title' => $sectionRow['title'],
@@ -617,6 +630,7 @@ function handleGetTiles() {
                                 'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
                                 'position' => isset($sectionRow['position']) ? (int)$sectionRow['position'] : 0,
                                 'visibility' => $sectionRow['visibility'] ?? 'public',
+                                'published' => isContentPublished($sectionRow),
                                 'allowedUsers' => (isset($sectionRow['allowed_users']) && $sectionRow['allowed_users'] ? json_decode($sectionRow['allowed_users'], true) : null) ?? [],
                                 'allowedGroups' => (isset($sectionRow['allowed_groups']) && $sectionRow['allowed_groups'] ? json_decode($sectionRow['allowed_groups'], true) : null) ?? [],
                                 'links' => []
@@ -625,6 +639,9 @@ function handleGetTiles() {
                             // Process links for this section
                             if (isset($linksBySection[$sectionRow['id']])) {
                                 foreach ($linksBySection[$sectionRow['id']] as $linkRow) {
+                                    if (!canUserSeePublishedContent($user, $linkRow)) {
+                                        continue;
+                                    }
                                     // Filter links based on visibility
                                     $visibility = $linkRow['visibility'] ?? 'public';
                                     $allowedUsers = $linkRow['allowed_users'] ? json_decode($linkRow['allowed_users'], true) : [];
@@ -664,6 +681,7 @@ function handleGetTiles() {
                                         'icon' => isset($linkRow['icon']) ? $linkRow['icon'] : null,
                                         'textColor' => isset($linkRow['text_color']) ? $linkRow['text_color'] : null,
                                         'visibility' => $visibility,
+                                        'published' => isContentPublished($linkRow),
                                         'allowedUsers' => $allowedUsers,
                                         'allowedGroups' => $allowedGroups,
                                         'notes' => isset($linkRow['notes']) ? $linkRow['notes'] : null,
@@ -719,11 +737,15 @@ function handleGetTiles() {
                 $allSections = [];
                 
                 foreach ($legacySectionsByTile[$tileId] as $sectionRow) {
+                    if (!canUserSeePublishedContent($user, $sectionRow)) {
+                        continue;
+                    }
                     $section = [
                         'id' => $sectionRow['id'],
                         'title' => $sectionRow['title'],
                         'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
                         'visibility' => $sectionRow['visibility'] ?? 'public',
+                        'published' => isContentPublished($sectionRow),
                         'allowedUsers' => (isset($sectionRow['allowed_users']) && $sectionRow['allowed_users'] ? json_decode($sectionRow['allowed_users'], true) : null) ?? [],
                         'allowedGroups' => (isset($sectionRow['allowed_groups']) && $sectionRow['allowed_groups'] ? json_decode($sectionRow['allowed_groups'], true) : null) ?? [],
                         'links' => []
@@ -732,6 +754,9 @@ function handleGetTiles() {
                     // Process links for legacy section
                     if (isset($linksBySection[$sectionRow['id']])) {
                         foreach ($linksBySection[$sectionRow['id']] as $linkRow) {
+                            if (!canUserSeePublishedContent($user, $linkRow)) {
+                                continue;
+                            }
                             $visibility = $linkRow['visibility'] ?? 'public';
                             $allowedUsers = $linkRow['allowed_users'] ? json_decode($linkRow['allowed_users'], true) : [];
                             $allowedGroups = $linkRow['allowed_groups'] ? json_decode($linkRow['allowed_groups'], true) : [];
@@ -769,6 +794,7 @@ function handleGetTiles() {
                                 'icon' => $linkRow['icon'] ?? null,
                                 'textColor' => $linkRow['text_color'] ?? null,
                                 'visibility' => $visibility,
+                                'published' => isContentPublished($linkRow),
                                 'allowedUsers' => $allowedUsers,
                                 'allowedGroups' => $allowedGroups,
                                 'notes' => $linkRow['notes'] ?? null,
@@ -899,6 +925,11 @@ function handleGetTile($tileId) {
     if ($rowSourceTab === 'staging' && (!$user || empty($user['is_admin']))) {
         sendJSON(['error' => 'Tile not found'], 404);
     }
+
+    // Unpublished tiles are admin-only
+    if (!canUserSeePublishedContent($user, $row)) {
+        sendJSON(['error' => 'Tile not found'], 404);
+    }
     
     // Filter tiles based on visibility
     $tileVisibility = $row['visibility'] ?? 'public';
@@ -1018,6 +1049,7 @@ function handleGetTile($tileId) {
         'group' => $row['group'],
         'createdAt' => (int)$row['created_at'],
         'visibility' => $tileVisibility,
+        'published' => isContentPublished($row),
         'sourceTab' => !empty($row['source_tab']) ? $row['source_tab'] : 'public',
         'allowedUsers' => $tileAllowedUsers,
         'allowedGroups' => $tileAllowedGroups,
@@ -1095,6 +1127,9 @@ function handleGetTile($tileId) {
     $tabs = [];
     
     while ($tabRow = $tabStmt->fetch()) {
+        if (!canUserSeePublishedContent($user, $tabRow)) {
+            continue;
+        }
         $tabColor = (!empty($tabRow['text_color']) && trim($tabRow['text_color']) !== '') ? trim($tabRow['text_color']) : null;
         error_log("Retrieved tab {$tabRow['id']} ({$tabRow['title']}) with color: " . ($tabColor ?? 'null'));
         $tab = [
@@ -1105,6 +1140,7 @@ function handleGetTile($tileId) {
             'visibleFrom' => $tabRow['visible_from'] ?? null,
             'expiresAt' => $tabRow['expires_at'] ?? null,
             'visibility' => $tabRow['visibility'] ?? 'public',
+            'published' => isContentPublished($tabRow),
             'allowedUsers' => (isset($tabRow['allowed_users']) && $tabRow['allowed_users'] ? json_decode($tabRow['allowed_users'], true) : null) ?? [],
             'allowedGroups' => (isset($tabRow['allowed_groups']) && $tabRow['allowed_groups'] ? json_decode($tabRow['allowed_groups'], true) : null) ?? [],
             'sections' => []
@@ -1115,6 +1151,9 @@ function handleGetTile($tileId) {
         $sectionStmt->execute([$tabRow['id']]);
         
         while ($sectionRow = $sectionStmt->fetch()) {
+            if (!canUserSeePublishedContent($user, $sectionRow)) {
+                continue;
+            }
             $section = [
                 'id' => $sectionRow['id'],
                 'title' => $sectionRow['title'],
@@ -1123,6 +1162,7 @@ function handleGetTile($tileId) {
                 'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
                 'position' => isset($sectionRow['position']) ? (int)$sectionRow['position'] : 0,
                 'visibility' => $sectionRow['visibility'] ?? 'public',
+                'published' => isContentPublished($sectionRow),
                 'allowedUsers' => (isset($sectionRow['allowed_users']) && $sectionRow['allowed_users'] ? json_decode($sectionRow['allowed_users'], true) : null) ?? [],
                 'allowedGroups' => (isset($sectionRow['allowed_groups']) && $sectionRow['allowed_groups'] ? json_decode($sectionRow['allowed_groups'], true) : null) ?? [],
                 'links' => []
@@ -1139,6 +1179,9 @@ function handleGetTile($tileId) {
             }
             
             while ($linkRow = $linkStmt->fetch()) {
+                if (!canUserSeePublishedContent($user, $linkRow)) {
+                    continue;
+                }
                 // Filter links based on visibility
                 $visibility = $linkRow['visibility'] ?? 'public';
                 $allowedUsers = $linkRow['allowed_users'] ? json_decode($linkRow['allowed_users'], true) : [];
@@ -1176,6 +1219,7 @@ function handleGetTile($tileId) {
                     'icon' => isset($linkRow['icon']) ? $linkRow['icon'] : null,
                     'textColor' => isset($linkRow['text_color']) ? $linkRow['text_color'] : null,
                     'visibility' => $visibility,
+                    'published' => isContentPublished($linkRow),
                     'allowedUsers' => $allowedUsers,
                     'allowedGroups' => isset($linkRow['allowed_groups']) && $linkRow['allowed_groups'] ? json_decode($linkRow['allowed_groups'], true) : [],
                     'notes' => isset($linkRow['notes']) ? $linkRow['notes'] : null,
@@ -1430,8 +1474,11 @@ function handleCreateTile() {
     if ($sourceTab === 'staging' && empty($user['is_admin'])) {
         $sourceTab = 'public';
     }
+
+    // Published flag: only admins may create unpublished content
+    $published = resolvePublishedFlag($data, $user, true);
     
-    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, source_tab, published, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     
     if (!$stmt->execute([
         $tileId,
@@ -1462,6 +1509,7 @@ function handleCreateTile() {
         $pageAnimation,
         $linksAnimation,
         $sourceTab,
+        $published,
         $position,
         $data['createdAt'] ?? time()
     ])) {
@@ -1493,7 +1541,8 @@ function handleCreateTile() {
             $tabVisibility = $tab['visibility'] ?? 'public';
             $tabAllowedUsers = isset($tab['allowedUsers']) && is_array($tab['allowedUsers']) ? json_encode($tab['allowedUsers']) : null;
             $tabAllowedGroups = isset($tab['allowedGroups']) && is_array($tab['allowedGroups']) ? json_encode($tab['allowedGroups']) : null;
-            $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, visible_from, expires_at, visibility, allowed_users, allowed_groups) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $tabPublished = resolvePublishedFlag($tab, $user, true);
+            $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, visible_from, expires_at, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             $tabStmt->execute([
                 $tabId,
                 $tileId,
@@ -1504,7 +1553,8 @@ function handleCreateTile() {
                 $tab['expiresAt'] ?? null,
                 $tabVisibility,
                 $tabAllowedUsers,
-                $tabAllowedGroups
+                $tabAllowedGroups,
+                $tabPublished
             ]);
             
             // Insert sections for this tab
@@ -1515,7 +1565,8 @@ function handleCreateTile() {
                     $secVisibility = $section['visibility'] ?? 'public';
                     $secAllowedUsers = isset($section['allowedUsers']) && is_array($section['allowedUsers']) ? json_encode($section['allowedUsers']) : null;
                     $secAllowedGroups = isset($section['allowedGroups']) && is_array($section['allowedGroups']) ? json_encode($section['allowedGroups']) : null;
-                    $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view, position, visibility, allowed_users, allowed_groups) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                    $secPublished = resolvePublishedFlag($section, $user, true);
+                    $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view, position, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                     $sectionStmt->execute([
                         $sectionId,
                         $tileId,
@@ -1528,7 +1579,8 @@ function handleCreateTile() {
                         $sectionPosition,
                         $secVisibility,
                         $secAllowedUsers,
-                        $secAllowedGroups
+                        $secAllowedGroups,
+                        $secPublished
                     ]);
                     
                     // Insert links for this section
@@ -1542,8 +1594,9 @@ function handleCreateTile() {
                             $linkAllowedGroups = isset($link['allowedGroups']) && is_array($link['allowedGroups']) 
                                 ? json_encode($link['allowedGroups']) 
                                 : null;
+                            $linkPublished = resolvePublishedFlag($link, $user, true);
                             try {
-                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, allowed_groups, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, allowed_groups, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                                 $linkStmt->execute([
                                     $linkId,
                                     $sectionId,
@@ -1561,14 +1614,15 @@ function handleCreateTile() {
                                     $link['browser'] ?? null,
                                     isset($link['position']) ? (int)$link['position'] : 0,
                                     $link['richTextContent'] ?? null,
-                                    $link['animation'] ?? null
+                                    $link['animation'] ?? null,
+                                    $linkPublished
                                 ]);
                             } catch (PDOException $e) {
                                 error_log('Error inserting link: ' . $e->getMessage());
                                 error_log('Link data: ' . json_encode($link));
                                 // Try without icon/text_color as fallback
                                 try {
-                                    $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, visibility, allowed_users, allowed_groups, notes, tooltip, visible_from, expires_at, browser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                                    $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, visibility, allowed_users, allowed_groups, notes, tooltip, visible_from, expires_at, browser, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                                     $linkStmt->execute([
                                         $linkId,
                                         $sectionId,
@@ -1581,7 +1635,8 @@ function handleCreateTile() {
                                         $link['tooltip'] ?? null,
                                         $link['visibleFrom'] ?? null,
                                         $link['expiresAt'] ?? null,
-                                        $link['browser'] ?? null
+                                        $link['browser'] ?? null,
+                                        $linkPublished
                                     ]);
                                 } catch (PDOException $e2) {
                                     error_log('Error inserting link (fallback): ' . $e2->getMessage());
@@ -1963,6 +2018,13 @@ function handleCloneTile($tileId) {
         }
         
         if (!$isTileVisible) {
+            $db->rollBack();
+            sendJSON(['error' => 'Tile not found'], 404);
+            return;
+        }
+
+        // Unpublished tiles are admin-only to clone
+        if (!canUserSeePublishedContent($user, $originalTile)) {
             $db->rollBack();
             sendJSON(['error' => 'Tile not found'], 404);
             return;
@@ -3544,6 +3606,21 @@ function handleGetFavoriteLinks() {
             if (!$row['tile_id']) {
                 continue;
             }
+
+            // Unpublished links (or parent tile) are admin-only
+            if (!canUserSeePublishedContent($user, $row)) {
+                continue;
+            }
+            // Also hide if parent tile is unpublished (join may expose tile published via another query;
+            // favorite query selects l.* and t fields but not t.published — check separately)
+            if (!$user['is_admin']) {
+                $tilePubStmt = $db->prepare('SELECT published FROM tiles WHERE id = ?');
+                $tilePubStmt->execute([$row['tile_id']]);
+                $tilePub = $tilePubStmt->fetchColumn();
+                if ($tilePub !== false && !isContentPublished(['published' => $tilePub])) {
+                    continue;
+                }
+            }
             
             // Parse health data if available
             $health = null;
@@ -3563,6 +3640,7 @@ function handleGetFavoriteLinks() {
                 'icon' => $row['icon'] ?? null,
                 'textColor' => $row['text_color'] ?? null,
                 'visibility' => $row['visibility'] ?? 'public',
+                'published' => isContentPublished($row),
                 'notes' => $row['notes'] ?? null,
                 'tooltip' => $row['tooltip'] ?? null,
                 'browser' => $row['browser'] ?? null,
@@ -4475,6 +4553,7 @@ function getTileForVersion($tileId, $db) {
         'themeColor' => $row['theme_color'],
         'group' => $row['group'],
         'visibility' => $row['visibility'] ?? 'public',
+        'published' => isContentPublished($row),
         'allowedUsers' => $row['allowed_users'] ? json_decode($row['allowed_users'], true) : [],
         'isHyperlink' => isset($row['is_hyperlink']) ? (bool)$row['is_hyperlink'] : false,
         'hyperlinkUrl' => $row['hyperlink_url'] ?? null,
@@ -4542,6 +4621,7 @@ function getTileForVersion($tileId, $db) {
             'visibleFrom' => $tabRow['visible_from'] ?? null,
             'expiresAt' => $tabRow['expires_at'] ?? null,
             'visibility' => $tabRow['visibility'] ?? 'public',
+            'published' => isContentPublished($tabRow),
             'allowedUsers' => (isset($tabRow['allowed_users']) && $tabRow['allowed_users'] ? json_decode($tabRow['allowed_users'], true) : null) ?? [],
             'allowedGroups' => (isset($tabRow['allowed_groups']) && $tabRow['allowed_groups'] ? json_decode($tabRow['allowed_groups'], true) : null) ?? [],
             'sections' => []
@@ -4562,6 +4642,7 @@ function getTileForVersion($tileId, $db) {
                 'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
                 'position' => isset($sectionRow['position']) ? (int)$sectionRow['position'] : 0,
                 'visibility' => $sectionRow['visibility'] ?? 'public',
+                'published' => isContentPublished($sectionRow),
                 'allowedUsers' => (isset($sectionRow['allowed_users']) && $sectionRow['allowed_users'] ? json_decode($sectionRow['allowed_users'], true) : null) ?? [],
                 'allowedGroups' => (isset($sectionRow['allowed_groups']) && $sectionRow['allowed_groups'] ? json_decode($sectionRow['allowed_groups'], true) : null) ?? [],
                 'links' => [],
@@ -4579,6 +4660,7 @@ function getTileForVersion($tileId, $db) {
                     'icon' => isset($linkRow['icon']) ? $linkRow['icon'] : null,
                     'textColor' => isset($linkRow['text_color']) ? $linkRow['text_color'] : null,
                     'visibility' => $linkRow['visibility'] ?? 'public',
+                    'published' => isContentPublished($linkRow),
                     'allowedUsers' => $linkRow['allowed_users'] ? json_decode($linkRow['allowed_users'], true) : [],
                     'allowedGroups' => isset($linkRow['allowed_groups']) && $linkRow['allowed_groups'] ? json_decode($linkRow['allowed_groups'], true) : [],
                     'notes' => isset($linkRow['notes']) ? $linkRow['notes'] : null,
@@ -4630,6 +4712,105 @@ function getTileForVersion($tileId, $db) {
     }
     
     return $tile;
+}
+
+/**
+ * Merge unpublished tabs/sections/links from the existing tile into an update payload.
+ * Non-admins never receive unpublished items in GET responses; without this merge,
+ * a non-admin save (delete+reinsert) would permanently destroy unpublished content.
+ */
+function mergeUnpublishedContentForSave($incomingTabs, $existingTabs) {
+    if (!is_array($existingTabs)) {
+        return is_array($incomingTabs) ? $incomingTabs : [];
+    }
+    $incomingTabs = is_array($incomingTabs) ? $incomingTabs : [];
+    $incomingById = [];
+    foreach ($incomingTabs as $tab) {
+        if (isset($tab['id'])) {
+            $incomingById[$tab['id']] = $tab;
+        }
+    }
+
+    $result = $incomingTabs;
+    foreach ($existingTabs as $existingTab) {
+        $tabPublished = !isset($existingTab['published']) || isContentPublished($existingTab);
+        $tabId = $existingTab['id'] ?? null;
+
+        if (!$tabPublished) {
+            // Whole tab unpublished — keep as-is if not already in payload
+            if ($tabId && !isset($incomingById[$tabId])) {
+                $result[] = $existingTab;
+            }
+            continue;
+        }
+
+        if (!$tabId || !isset($incomingById[$tabId])) {
+            continue;
+        }
+
+        // Merge unpublished sections / links into the matching incoming tab
+        $incomingTabIndex = null;
+        foreach ($result as $i => $t) {
+            if (($t['id'] ?? null) === $tabId) {
+                $incomingTabIndex = $i;
+                break;
+            }
+        }
+        if ($incomingTabIndex === null) {
+            continue;
+        }
+
+        $incomingSections = $result[$incomingTabIndex]['sections'] ?? [];
+        $incomingSectionById = [];
+        foreach ($incomingSections as $sec) {
+            if (isset($sec['id'])) {
+                $incomingSectionById[$sec['id']] = true;
+            }
+        }
+
+        foreach ($existingTab['sections'] ?? [] as $existingSection) {
+            $secPublished = !isset($existingSection['published']) || isContentPublished($existingSection);
+            $secId = $existingSection['id'] ?? null;
+
+            if (!$secPublished) {
+                if ($secId && !isset($incomingSectionById[$secId])) {
+                    $incomingSections[] = $existingSection;
+                }
+                continue;
+            }
+
+            if (!$secId || !isset($incomingSectionById[$secId])) {
+                continue;
+            }
+
+            // Find section in incoming and merge unpublished links
+            foreach ($incomingSections as $si => $incSec) {
+                if (($incSec['id'] ?? null) !== $secId) {
+                    continue;
+                }
+                $incomingLinks = $incSec['links'] ?? [];
+                $incomingLinkById = [];
+                foreach ($incomingLinks as $lnk) {
+                    if (isset($lnk['id'])) {
+                        $incomingLinkById[$lnk['id']] = true;
+                    }
+                }
+                foreach ($existingSection['links'] ?? [] as $existingLink) {
+                    $linkPublished = !isset($existingLink['published']) || isContentPublished($existingLink);
+                    $linkId = $existingLink['id'] ?? null;
+                    if (!$linkPublished && $linkId && !isset($incomingLinkById[$linkId])) {
+                        $incomingLinks[] = $existingLink;
+                    }
+                }
+                $incomingSections[$si]['links'] = $incomingLinks;
+                break;
+            }
+        }
+
+        $result[$incomingTabIndex]['sections'] = $incomingSections;
+    }
+
+    return $result;
 }
 
 function saveVersion($tileId, $db, $userId, $summary = null, $isTemp = false) {
@@ -4916,9 +5097,13 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                 }
             }
         }
+
+        // Published flag: only admins may unpublish; preserve when omitted
+        $currentPublished = isset($currentTileData['published']) ? isContentPublished($currentTileData) : true;
+        $published = resolvePublishedFlag($data, $user, $currentPublished);
         
         // Update tile
-        $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, allowed_groups = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ?, visible_from = ?, expires_at = ?, browser = ?, tile_background_color = ?, tile_gradient_enabled = ?, tile_gradient_colors = ?, tile_gradient_color_positions = ?, tile_gradient_direction = ?, tile_gradient_type = ?, tile_border_radius = ?, tile_text_color = ?, page_animation = ?, links_animation = ?, source_tab = ? WHERE id = ?');
+        $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, allowed_groups = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ?, visible_from = ?, expires_at = ?, browser = ?, tile_background_color = ?, tile_gradient_enabled = ?, tile_gradient_colors = ?, tile_gradient_color_positions = ?, tile_gradient_direction = ?, tile_gradient_type = ?, tile_border_radius = ?, tile_text_color = ?, page_animation = ?, links_animation = ?, source_tab = ?, published = ? WHERE id = ?');
         $stmt->execute([
             $data['title'] ?? '',
             $data['description'] ?? '',
@@ -4946,6 +5131,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
             $pageAnimation,
             $linksAnimation,
             $sourceTab,
+            $published,
             $tileId
         ]);
         
@@ -5002,6 +5188,11 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
         }
         
         // Delete existing tabs, sections, links, and rich text content
+        // Non-admins never see unpublished children in GET; merge them back so saves don't destroy them
+        if (empty($user['is_admin']) && isset($currentTileData['tabs']) && is_array($currentTileData['tabs'])) {
+            $data['tabs'] = mergeUnpublishedContentForSave($data['tabs'] ?? [], $currentTileData['tabs']);
+        }
+
         $db->prepare('DELETE FROM rich_text_content WHERE section_id IN (SELECT id FROM sections WHERE tile_id = ?)')->execute([$tileId]);
         $db->prepare('DELETE FROM links WHERE section_id IN (SELECT id FROM sections WHERE tile_id = ?)')->execute([$tileId]);
         $db->prepare('DELETE FROM sections WHERE tile_id = ?')->execute([$tileId]);
@@ -5016,7 +5207,8 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                 $tabVisibility = $tab['visibility'] ?? 'public';
                 $tabAllowedUsers = isset($tab['allowedUsers']) && is_array($tab['allowedUsers']) ? json_encode($tab['allowedUsers']) : null;
                 $tabAllowedGroups = isset($tab['allowedGroups']) && is_array($tab['allowedGroups']) ? json_encode($tab['allowedGroups']) : null;
-                $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, visible_from, expires_at, visibility, allowed_users, allowed_groups) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                $tabPublished = resolvePublishedFlag($tab, $user, true);
+                $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, visible_from, expires_at, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                 $tabStmt->execute([
                     $tabId,
                     $tileId,
@@ -5027,7 +5219,8 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                     $tab['expiresAt'] ?? null,
                     $tabVisibility,
                     $tabAllowedUsers,
-                    $tabAllowedGroups
+                    $tabAllowedGroups,
+                    $tabPublished
                 ]);
                 
                 if (isset($tab['sections']) && is_array($tab['sections'])) {
@@ -5037,7 +5230,8 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                         $secVisibility = $section['visibility'] ?? 'public';
                         $secAllowedUsers = isset($section['allowedUsers']) && is_array($section['allowedUsers']) ? json_encode($section['allowedUsers']) : null;
                         $secAllowedGroups = isset($section['allowedGroups']) && is_array($section['allowedGroups']) ? json_encode($section['allowedGroups']) : null;
-                        $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view, position, visibility, allowed_users, allowed_groups) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                        $secPublished = resolvePublishedFlag($section, $user, true);
+                        $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view, position, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                         $sectionStmt->execute([
                             $sectionId,
                             $tileId,
@@ -5050,7 +5244,8 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                             $sectionPosition,
                             $secVisibility,
                             $secAllowedUsers,
-                            $secAllowedGroups
+                            $secAllowedGroups,
+                            $secPublished
                         ]);
                         
                         // Links
@@ -5060,7 +5255,8 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                                 $visibility = $link['visibility'] ?? 'public';
                                 $allowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) ? json_encode($link['allowedUsers']) : null;
                                 $allowedGroups = isset($link['allowedGroups']) && is_array($link['allowedGroups']) ? json_encode($link['allowedGroups']) : null;
-                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, allowed_groups, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                                $linkPublished = resolvePublishedFlag($link, $user, true);
+                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, allowed_groups, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                                 $linkStmt->execute([
                                     $linkId,
                                     $sectionId,
@@ -5078,7 +5274,8 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                                     $link['browser'] ?? null,
                                     isset($link['position']) ? (int)$link['position'] : 0,
                                     $link['richTextContent'] ?? null,
-                                    $link['animation'] ?? null
+                                    $link['animation'] ?? null,
+                                    $linkPublished
                                 ]);
                             }
                         }

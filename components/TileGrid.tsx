@@ -1812,6 +1812,11 @@ const SortableTile: React.FC<SortableTileProps> = ({
       <div className="flex-1 mb-3">
         <h3 className={`font-bold text-sm leading-tight line-clamp-2 mb-1.5 ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}>
           {tile.title}
+          {tile.published === false && (
+            <span className="ml-1.5 inline-block align-middle text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 font-semibold tracking-wide uppercase">
+              Unpublished
+            </span>
+          )}
         </h3>
         <p className="text-slate-600 dark:text-slate-400 text-xs line-clamp-2 leading-snug">
           {tile.description || 'No description'}

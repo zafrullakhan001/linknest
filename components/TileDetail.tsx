@@ -232,6 +232,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editEmoji, setEditEmoji] = useState(tile.emoji);
     const [editColor, setEditColor] = useState<ThemeColor>(tile.themeColor);
     const [editVisibility, setEditVisibility] = useState<TileVisibility>(tile.visibility || 'public');
+    const [editPublished, setEditPublished] = useState<boolean>(tile.published !== false);
     const [editAllowedUsers, setEditAllowedUsers] = useState<number[]>(() => {
         // Always include owner in allowed users list for initialization
         const allowedUsers = tile.allowedUsers || [];
@@ -278,14 +279,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editSections, setEditSections] = useState<LinkSection[]>(tile.sections || []);
 
     // Temporary State for Adding Links (keyed by section ID)
-    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, browser: string, richTextContent: string, animation: string }>>({});
+    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, browser: string, richTextContent: string, animation: string }>>({});
 
     // Selection State for Bulk Actions
     const [selectedLinkIds, setSelectedLinkIds] = useState<string[]>([]);
 
     // State for Editing Links (keyed by link ID)
     const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
-    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, browser: string, richTextContent: string, animation: string }>>({});
+    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, browser: string, richTextContent: string, animation: string }>>({});
 
     // Available browsers from BrowserLauncher API
     const [availableBrowsers, setAvailableBrowsers] = useState<string[]>([]);
@@ -680,6 +681,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setEditEmoji(tile.emoji);
         setEditColor(tile.themeColor);
         setEditVisibility(tile.visibility || 'public');
+        setEditPublished(tile.published !== false);
 
         // Always include owner in allowed users list
         const allowedUsers = tile.allowedUsers || [];
@@ -1600,6 +1602,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             tabs: clonedTabs,
             sections: clonedSections, // Only include sections if no tabs
             visibility: editVisibility,
+            published: editPublished,
             allowedUsers: editVisibility === 'private' ? finalAllowedUsers : undefined,
             allowedGroups: editVisibility === 'private' ? editAllowedGroups : undefined,
             browser: editBrowser !== 'default' ? editBrowser : undefined,
@@ -1724,6 +1727,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 tabs: reorderedTabs.length > 0 ? reorderedTabs : undefined,
                 sections: reorderedTabs.length > 0 ? undefined : editSections,
                 visibility: editVisibility,
+                published: editPublished,
                 allowedUsers: editVisibility === 'private' ? editAllowedUsers : undefined,
             };
 
@@ -1823,6 +1827,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             t.id === tabId
                 ? { ...t, visibility, allowedUsers: visibility === 'private' ? allowedUsers : undefined, allowedGroups: visibility === 'private' ? allowedGroups : undefined }
                 : t
+        ));
+    };
+
+    const handleUpdateTabPublished = (tabId: string, published: boolean) => {
+        setEditTabs(editTabs.map(t =>
+            t.id === tabId ? { ...t, published } : t
         ));
     };
 
@@ -2065,6 +2075,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     tabs: currentTabs.length > 0 ? currentTabs : undefined,
                     sections: currentTabs.length > 0 ? undefined : editSections,
                     visibility: editVisibility,
+                    published: editPublished,
                     allowedUsers: editVisibility === 'private' ? editAllowedUsers : undefined,
                 };
 
@@ -2208,12 +2219,24 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }));
     };
 
+    const handleUpdateSectionPublished = (tabId: string, sectionId: string, published: boolean) => {
+        setEditTabs(editTabs.map(tab => {
+            if (tab.id !== tabId) return tab;
+            return {
+                ...tab,
+                sections: tab.sections.map(s =>
+                    s.id === sectionId ? { ...s, published } : s
+                )
+            };
+        }));
+    };
+
     // Link Management
-    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'browser' | 'richTextContent' | 'animation', value: string | LinkVisibility | number[]) => {
+    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'browser' | 'richTextContent' | 'animation' | 'published', value: string | LinkVisibility | number[] | boolean) => {
         setNewLinkState(prev => ({
             ...prev,
             [sectionId]: {
-                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '', animation: 'inherit' }),
+                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, published: true, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '', animation: 'inherit' }),
                 [field]: value
             }
         }));
@@ -2246,6 +2269,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             icon: state.icon?.trim() || undefined,
             textColor: state.textColor?.trim() || undefined,
             visibility: state.visibility || 'public',
+            published: state.published !== false,
             allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
             allowedGroups: state.allowedGroups && state.allowedGroups.length > 0 ? state.allowedGroups : undefined,
             notes: state.notes?.trim() || undefined,
@@ -2290,7 +2314,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
 
         // Clear form and hide it
-        setNewLinkState(prev => ({ ...prev, [sectionId]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '', animation: 'inherit' } }));
+        setNewLinkState(prev => ({ ...prev, [sectionId]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, published: true, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '', animation: 'inherit' } }));
         setShowUserPicker(prev => ({ ...prev, [sectionId]: false }));
         setShowLinkEmojiPicker(prev => ({ ...prev, [sectionId]: false }));
         setShowAddLinkForm(prev => ({ ...prev, [sectionId]: false }));
@@ -2558,6 +2582,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 icon: link.icon || '',
                 textColor: link.textColor || '',
                 visibility: link.visibility || 'public',
+                published: link.published !== false,
                 allowedUsers: link.allowedUsers || [],
                 allowedGroups: link.allowedGroups || [],
                 notes: link.notes || '',
@@ -2603,6 +2628,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         icon: state.icon?.trim() || undefined,
                                         textColor: state.textColor?.trim() || undefined,
                                         visibility: state.visibility || 'public',
+                                        published: state.published !== false,
                                         allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
                                         allowedGroups: state.allowedGroups && state.allowedGroups.length > 0 ? state.allowedGroups : undefined,
                                         notes: state.notes?.trim() || undefined,
@@ -2632,6 +2658,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 label: state.label,
                                 url: state.url.startsWith('http') ? state.url : `https://${state.url}`,
                                 visibility: state.visibility || 'public',
+                                published: state.published !== false,
                                 allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
                                 allowedGroups: state.allowedGroups && state.allowedGroups.length > 0 ? state.allowedGroups : undefined,
                                 notes: state.notes?.trim() || undefined,
@@ -2652,7 +2679,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setShowUserPicker(prev => ({ ...prev, [linkId]: false }));
     };
 
-    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'browser' | 'richTextContent' | 'animation', value: string | LinkVisibility | number[]) => {
+    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'browser' | 'richTextContent' | 'animation' | 'published', value: string | LinkVisibility | number[] | boolean) => {
         setEditLinkState(prev => ({
             ...prev,
             [linkId]: { ...prev[linkId], [field]: value }
@@ -4830,6 +4857,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     editEmoji={editEmoji}
                     editColor={editColor}
                     editVisibility={editVisibility}
+                    editPublished={editPublished}
                     editAllowedUsers={editAllowedUsers}
                     editTabs={editTabs}
                     onTitleChange={setEditTitle}
@@ -4838,6 +4866,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     onEmojiChange={setEditEmoji}
                     onColorChange={setEditColor}
                     onVisibilityChange={setEditVisibility}
+                    onPublishedChange={setEditPublished}
                     onAllowedUsersChange={setEditAllowedUsers}
                     onTabsChange={setEditTabs}
                     onSave={handleSaveChanges}
@@ -5037,6 +5066,35 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         placeholder="<p>Welcome to my page!</p>"
                                     />
                                 </div>
+
+                                {/* Publish Status (admin only) */}
+                                {user?.is_admin && (
+                                    <div className="mb-6">
+                                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-3">Publish Status</label>
+                                        <div className="flex items-center justify-between gap-4 p-3 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+                                            <div className="flex-1 min-w-0">
+                                                <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                                                    {editPublished ? 'Published' : 'Unpublished'}
+                                                </div>
+                                                <div className="text-xs text-slate-600 dark:text-slate-400">
+                                                    {editPublished
+                                                        ? 'Visible according to Visibility settings below'
+                                                        : 'Hidden from everyone except platform admins'}
+                                                </div>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                role="switch"
+                                                aria-checked={editPublished}
+                                                onClick={() => setEditPublished(!editPublished)}
+                                                className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${editPublished ? 'bg-emerald-500' : 'bg-slate-400 dark:bg-slate-600'}`}
+                                                title={editPublished ? 'Click to unpublish' : 'Click to publish'}
+                                            >
+                                                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${editPublished ? 'translate-x-6' : 'translate-x-1'}`} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* Visibility Settings */}
                                 <div>
@@ -6059,6 +6117,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             {tab.visibility === 'authenticated' ? '🔒 Auth' : '🔐 Private'}
                                                         </span>
                                                     )}
+                                                    {user?.is_admin && tab.published === false && (
+                                                        <span className="text-xs px-2 py-1 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-medium">
+                                                            Unpublished
+                                                        </span>
+                                                    )}
                                                     <button
                                                         onClick={() => setVisibilityDialogTab(tab.id)}
                                                         className="text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 p-2"
@@ -6391,6 +6454,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             {section.visibility === 'authenticated' ? '🔒' : '🔐'}
                                                                         </span>
                                                                     )}
+                                                                    {user?.is_admin && section.published === false && (
+                                                                        <span className="text-xs px-2 py-1 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-medium">
+                                                                            Unpublished
+                                                                        </span>
+                                                                    )}
                                                                     <button
                                                                         onClick={() => setVisibilityDialogSection({ tabId: tab.id, sectionId: section.id })}
                                                                         className="text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 p-2"
@@ -6587,6 +6655,26 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                 </select>
                                                                                             </div>
                                                                                         </div>
+
+                                                                                        {user?.is_admin && (
+                                                                                            <div className="flex items-center justify-between gap-3 p-3 rounded-lg border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+                                                                                                <div>
+                                                                                                    <div className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Publish Status</div>
+                                                                                                    <div className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                                                                                                        {(editLinkState[link.id]?.published !== false) ? 'Published' : 'Unpublished'}
+                                                                                                    </div>
+                                                                                                </div>
+                                                                                                <button
+                                                                                                    type="button"
+                                                                                                    role="switch"
+                                                                                                    aria-checked={editLinkState[link.id]?.published !== false}
+                                                                                                    onClick={() => updateEditLinkState(link.id, 'published', editLinkState[link.id]?.published === false)}
+                                                                                                    className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${(editLinkState[link.id]?.published !== false) ? 'bg-emerald-500' : 'bg-slate-400 dark:bg-slate-600'}`}
+                                                                                                >
+                                                                                                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${(editLinkState[link.id]?.published !== false) ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                                                                </button>
+                                                                                            </div>
+                                                                                        )}
 
                                                                                         {/* Notes & Tooltip - Side by Side */}
                                                                                         <div className="grid grid-cols-2 gap-3">
@@ -6952,6 +7040,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                         {link.visibility === 'authenticated' ? '🔒' : '🔐'}
                                                                                                     </span>
                                                                                                 )}
+                                                                                                {user?.is_admin && link.published === false && (
+                                                                                                    <span className="text-xs px-1.5 py-0.5 rounded shrink-0 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-medium" title="Unpublished">
+                                                                                                        Unpublished
+                                                                                                    </span>
+                                                                                                )}
                                                                                                 {(link.visibleFrom || link.expiresAt) && (
                                                                                                     <span className="text-xs px-1.5 py-0.5 rounded shrink-0 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">
                                                                                                         📅
@@ -7157,6 +7250,26 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     </select>
                                                                                 </div>
                                                                             </div>
+
+                                                                            {user?.is_admin && (
+                                                                                <div className="flex items-center justify-between gap-3 p-3 rounded-lg border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+                                                                                    <div>
+                                                                                        <div className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Publish Status</div>
+                                                                                        <div className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                                                                                            {(newLinkState[section.id]?.published !== false) ? 'Published' : 'Unpublished'}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        role="switch"
+                                                                                        aria-checked={newLinkState[section.id]?.published !== false}
+                                                                                        onClick={() => updateNewLinkState(section.id, 'published', newLinkState[section.id]?.published === false)}
+                                                                                        className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${(newLinkState[section.id]?.published !== false) ? 'bg-emerald-500' : 'bg-slate-400 dark:bg-slate-600'}`}
+                                                                                    >
+                                                                                        <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${(newLinkState[section.id]?.published !== false) ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                                                    </button>
+                                                                                </div>
+                                                                            )}
 
                                                                             {/* Notes & Tooltip - Side by Side */}
                                                                             <div className="grid grid-cols-2 gap-3">
@@ -7511,6 +7624,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     tabs: editTabs.length > 0 ? editTabs : undefined,
                                                                     sections: editTabs.length > 0 ? undefined : filteredSections,
                                                                     visibility: editVisibility,
+                                                                    published: editPublished,
                                                                     allowedUsers: editVisibility === 'private' ? editAllowedUsers : undefined,
                                                                 };
 
@@ -7575,6 +7689,26 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 </svg>
                                             </button>
                                         </div>
+
+                                        {user?.is_admin && (
+                                            <div className="mb-4 flex items-center justify-between gap-3 p-3 rounded-lg border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+                                                <div>
+                                                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                                                        {tab.published !== false ? 'Published' : 'Unpublished'}
+                                                    </div>
+                                                    <div className="text-xs text-slate-500">Admin-only when unpublished</div>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    role="switch"
+                                                    aria-checked={tab.published !== false}
+                                                    onClick={() => handleUpdateTabPublished(tab.id, tab.published === false)}
+                                                    className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${(tab.published !== false) ? 'bg-emerald-500' : 'bg-slate-400 dark:bg-slate-600'}`}
+                                                >
+                                                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${(tab.published !== false) ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                </button>
+                                            </div>
+                                        )}
 
                                         <div className="space-y-3 mb-6">
                                             {user?.is_admin && (
@@ -7710,6 +7844,26 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 </svg>
                                             </button>
                                         </div>
+
+                                        {user?.is_admin && (
+                                            <div className="mb-4 flex items-center justify-between gap-3 p-3 rounded-lg border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+                                                <div>
+                                                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                                                        {section.published !== false ? 'Published' : 'Unpublished'}
+                                                    </div>
+                                                    <div className="text-xs text-slate-500">Admin-only when unpublished</div>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    role="switch"
+                                                    aria-checked={section.published !== false}
+                                                    onClick={() => handleUpdateSectionPublished(visibilityDialogSection.tabId, section.id, section.published === false)}
+                                                    className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${(section.published !== false) ? 'bg-emerald-500' : 'bg-slate-400 dark:bg-slate-600'}`}
+                                                >
+                                                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${(section.published !== false) ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                </button>
+                                            </div>
+                                        )}
 
                                         <div className="space-y-3 mb-6">
                                             {user?.is_admin && (
