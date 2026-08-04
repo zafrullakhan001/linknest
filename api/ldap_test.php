@@ -41,6 +41,35 @@ if (!extension_loaded('ldap')) {
 }
 
 /**
+ * Decode common Active Directory AcceptSecurityContext "data XXX" hex codes.
+ * See: https://ldapwiki.com/wiki/Wiki.jsp?page=Common%20Active%20Directory%20Bind%20Errors
+ */
+function ldapTestExplainAdBindData($diagnosticMessage): string {
+    if (!is_string($diagnosticMessage) || $diagnosticMessage === '') {
+        return '';
+    }
+    if (!preg_match('/\bdata\s+([0-9a-fA-F]+)\b/', $diagnosticMessage, $m)) {
+        return '';
+    }
+    $code = strtolower($m[1]);
+    $map = [
+        '525' => 'User not found (wrong Bind DN / account name).',
+        '52e' => 'Invalid credentials — wrong password (or wrong account).',
+        '530' => 'Not permitted to logon at this time (logon hours).',
+        '531' => 'Not permitted to logon from this workstation.',
+        '532' => 'Password expired — reset the service account password in AD.',
+        '533' => 'Account disabled in Active Directory.',
+        '701' => 'Account expired in Active Directory.',
+        '773' => 'User must reset password before login (pwdLastSet / must change).',
+        '775' => 'Account is LOCKED OUT in Active Directory. Unlock the service account in ADUC, then retry.',
+    ];
+    if (!isset($map[$code])) {
+        return "AD subcode data {$code} (see Microsoft LDAP bind error data codes).";
+    }
+    return $map[$code];
+}
+
+/**
  * Resolve bind password from the admin test form.
  * UI normally sends plaintext (already decrypted by settings GET).
  * Encrypted blobs are decrypted when recognized; fake-encrypted plaintext is kept as-is.
@@ -150,6 +179,10 @@ try {
             }
             if (is_string($diag) && $diag !== '') {
                 $msg .= "\nServer diagnostic: {$diag}";
+                $explained = ldapTestExplainAdBindData($diag);
+                if ($explained !== '') {
+                    $msg .= "\nMeaning: {$explained}";
+                }
             }
             $msg .= "\nBind DN used: {$serviceBindDn}";
             $msg .= "\nPassword length: {$passLen} characters (value not shown)";

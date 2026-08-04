@@ -7276,6 +7276,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-slate-900 dark:text-white mb-4`}>Export & Import LDAP Settings</h4>
 
                       <div className={`flex ${isMobile ? 'flex-col' : 'flex-wrap'} gap-3 items-start`}>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!confirm('Permanently delete ALL LDAP settings from the database (servers, bind DN/password, groups, etc.)? LDAP will be disabled. This cannot be undone.')) {
+                              return;
+                            }
+                            try {
+                              setSettingsSaving(true);
+                              setError('');
+                              const result = await settingsService.purgeLdapSettings();
+                              setLdapServers([]);
+                              setEditingServerIndex(null);
+                              setShowServerForm(false);
+                              await refreshSettings();
+                              await loadSettings();
+                              alert(result.message || 'LDAP settings purged.');
+                            } catch (err: any) {
+                              setError(err.message || 'Failed to purge LDAP settings');
+                            } finally {
+                              setSettingsSaving(false);
+                            }
+                          }}
+                          disabled={settingsSaving}
+                          className={`bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white ${isMobile ? 'w-full px-4 py-3 text-sm' : 'px-3 py-1.5 text-xs'} rounded-lg font-medium transition-colors flex items-center justify-center gap-1.5 touch-manipulation`}
+                          style={isMobile ? { minHeight: '44px' } : {}}
+                        >
+                          Purge All LDAP Settings
+                        </button>
+
                         {/* Export Section */}
                         <button
                           onClick={async () => {
@@ -7283,27 +7312,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               setLdapExporting(true);
                               setError('');
 
-                              // Filter only LDAP-related settings
-                              const ldapSettings: Partial<AppSettings> = {};
-                              const ldapKeys = [
-                                'ldap_enabled', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
-                                'ldap_login_domain', 'ldap_bind_dn', 'ldap_bind_password',
-                                'ldap_user_search_base', 'ldap_user_filter', 'ldap_user_attributes',
-                                'ldap_group_search_base', 'ldap_group_filter', 'ldap_group_attributes',
-                                'ldap_auto_create_users', 'ldap_auto_update_users', 'ldap_sync_interval',
-                                'ldap_require_group_membership', 'ldap_required_groups', 'ldap_denied_groups', 'ldap_timeout', 'ldap_tls',
-                                'ldap_search_scope', 'ldap_user_dn_template', 'ldap_nested_groups', 'ldap_case_sensitive',
-                                'ldap_ssl_verify', 'ldap_connection_retry', 'ldap_retry_delay', 'ldap_email_attribute',
-                                'ldap_display_name_attribute', 'ldap_referrals'
-                              ];
+                              // Prefer multi-server JSON; only include non-empty flat keys to avoid stale leftovers
+                              const ldapSettings: Partial<AppSettings> & { ldap_servers?: string } = {};
+                              if (ldapServers.length > 0) {
+                                ldapSettings.ldap_enabled = settings.ldap_enabled || '1';
+                                ldapSettings.ldap_servers = JSON.stringify(ldapServers);
+                              } else {
+                                const ldapKeys = [
+                                  'ldap_enabled', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
+                                  'ldap_login_domain', 'ldap_bind_dn', 'ldap_bind_password',
+                                  'ldap_user_search_base', 'ldap_user_filter', 'ldap_user_attributes',
+                                  'ldap_group_search_base', 'ldap_group_filter', 'ldap_group_attributes',
+                                  'ldap_auto_create_users', 'ldap_auto_update_users', 'ldap_sync_interval',
+                                  'ldap_require_group_membership', 'ldap_required_groups', 'ldap_denied_groups', 'ldap_timeout', 'ldap_tls',
+                                  'ldap_search_scope', 'ldap_user_dn_template', 'ldap_nested_groups', 'ldap_case_sensitive',
+                                  'ldap_ssl_verify', 'ldap_connection_retry', 'ldap_retry_delay', 'ldap_email_attribute',
+                                  'ldap_display_name_attribute', 'ldap_referrals'
+                                ] as const;
 
-                              ldapKeys.forEach(key => {
-                                if (settings[key as keyof AppSettings] !== undefined) {
-                                  ldapSettings[key as keyof AppSettings] = settings[key as keyof AppSettings];
-                                }
-                              });
+                                ldapKeys.forEach((key) => {
+                                  const val = settings[key as keyof AppSettings];
+                                  if (val !== undefined && String(val).trim() !== '') {
+                                    (ldapSettings as any)[key] = val;
+                                  }
+                                });
+                              }
 
-                              // Encrypt password before exporting
+                              // Encrypt password before exporting (legacy flat export only)
                               if (ldapSettings.ldap_bind_password && ldapSettings.ldap_bind_password.trim() !== '') {
                                 try {
                                   ldapSettings.ldap_bind_password = await settingsService.encryptPassword(ldapSettings.ldap_bind_password);
@@ -7476,8 +7511,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             setSettingsSaving(true);
                             setError('');
 
-                            // Save LDAP servers as JSON. Empty list clears servers permanently.
-                            const settingsToSave: Partial<AppSettings> = { ...settings };
+                            // Save LDAP servers as JSON. Empty list purges ALL ldap_* rows in DB.
+                            let settingsToSave: Partial<AppSettings>;
                             if (ldapServers.length > 0) {
                               const serversForSave = ldapServers.map((s) => {
                                 const pw = String(s.bind_password || '').trim();
@@ -7486,19 +7521,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 }
                                 return { ...s, bind_dn: String(s.bind_dn || '').trim(), bind_password: pw };
                               });
-                              settingsToSave.ldap_servers = JSON.stringify(serversForSave);
+                              settingsToSave = {
+                                ...settings,
+                                ldap_servers: JSON.stringify(serversForSave),
+                              };
                             } else {
-                              settingsToSave.ldap_servers = '[]';
-                              // Also clear flat legacy fields so loadSettings cannot resurrect the server
-                              settingsToSave.ldap_server = '';
-                              settingsToSave.ldap_bind_dn = '';
-                              settingsToSave.ldap_bind_password = '';
-                              settingsToSave.ldap_user_search_base = '';
-                              settingsToSave.ldap_group_search_base = '';
-                              settingsToSave.ldap_user_dn_template = '';
-                              settingsToSave.ldap_login_domain = '';
-                              settingsToSave.ldap_required_groups = '';
-                              settingsToSave.ldap_denied_groups = '';
+                              // Do NOT send leftover flat ldap_* fields — they would re-insert after purge
+                              settingsToSave = {
+                                ldap_servers: '[]',
+                                ldap_enabled: '0',
+                              };
+                              setLdapServers([]);
                             }
 
                             await settingsService.updateSettings(settingsToSave);

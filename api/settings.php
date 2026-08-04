@@ -31,6 +31,8 @@ switch ($method) {
             handleEncryptPassword();
         } else if ($path === '/decrypt-password') {
             handleDecryptPassword();
+        } else if ($path === '/purge-ldap') {
+            handlePurgeLdapSettings();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -389,6 +391,7 @@ function handleUpdateSettings() {
     
     $db = getDB();
     $db->beginTransaction();
+    $ldapPurged = false;
     
     try {
         foreach ($data['settings'] as $key => $value) {
@@ -417,7 +420,11 @@ function handleUpdateSettings() {
                 'idp_x509cert', 'nameid_format', 'strict', 'debug', 'map_name_to', 'map_email_to',
                 'map_display_name_to', 'auto_provision'
             ];
-            
+
+            // After a full LDAP purge in this request, ignore residual flat ldap_* fields from the client
+            if ($ldapPurged && is_string($key) && strpos($key, 'ldap_') === 0) {
+                continue;
+            }
             // Handle ldap_servers - ensure it's valid JSON; encrypt per-server bind passwords;
             // mirror first server into legacy flat ldap_* keys so older code paths stay consistent.
             // Empty list clears servers AND legacy flat connection keys so deleted servers stay gone.
@@ -450,13 +457,26 @@ function handleUpdateSettings() {
                     'ldap_login_domain', 'ldap_require_group_membership', 'ldap_required_groups', 'ldap_denied_groups',
                 ];
 
-                // Empty server list: clear multi-server JSON and legacy flat connection fields
+                // Empty server list: delete ALL ldap_* settings so export/UI cannot resurrect leftovers
                 if (count($decoded) === 0) {
                     $value = '[]';
-                    $clearStmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
-                    foreach ($legacyMirrorKeys as $clearKey) {
-                        $clearStmt->execute([$clearKey, '', time()]);
+                    try {
+                        $db->exec("DELETE FROM settings WHERE key LIKE 'ldap_%'");
+                    } catch (Exception $e) {
+                        error_log('Failed to purge ldap_* settings: ' . $e->getMessage());
+                        $clearStmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
+                        foreach ($legacyMirrorKeys as $clearKey) {
+                            $clearStmt->execute([$clearKey, '', time()]);
+                        }
                     }
+                    // Keep ldap_servers as [] and ldap_enabled off so the admin UI stays consistent
+                    $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
+                        ->execute(['ldap_servers', '[]', time()]);
+                    $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
+                        ->execute(['ldap_enabled', '0', time()]);
+                    $ldapPurged = true;
+                    // Already persisted special keys — skip the generic INSERT below for this key
+                    continue;
                 } else {
                     // Load previously stored servers so blank passwords keep existing secrets
                     $existingServers = [];
@@ -684,6 +704,34 @@ function handleDecryptPassword() {
         sendJSON(['password' => $decrypted]);
     } catch (Exception $e) {
         sendJSON(['error' => 'Decryption failed: ' . $e->getMessage()], 500);
+    }
+}
+
+/**
+ * Delete every ldap_* settings row so leftover bind accounts cannot appear in export/UI.
+ * Leaves ldap_servers=[] and ldap_enabled=0.
+ */
+function handlePurgeLdapSettings() {
+    requireAdmin();
+    $db = getDB();
+    $db->beginTransaction();
+    try {
+        $countStmt = $db->query("SELECT COUNT(*) AS c FROM settings WHERE key LIKE 'ldap_%'");
+        $before = (int)(($countStmt->fetch()['c'] ?? 0));
+        $db->exec("DELETE FROM settings WHERE key LIKE 'ldap_%'");
+        $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
+            ->execute(['ldap_servers', '[]', time()]);
+        $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
+            ->execute(['ldap_enabled', '0', time()]);
+        $db->commit();
+        sendJSON([
+            'success' => true,
+            'deleted' => $before,
+            'message' => "Purged {$before} LDAP setting row(s). LDAP is disabled with no servers configured."
+        ]);
+    } catch (Exception $e) {
+        $db->rollBack();
+        sendJSON(['error' => 'Failed to purge LDAP settings: ' . $e->getMessage()], 500);
     }
 }
 

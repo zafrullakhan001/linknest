@@ -338,6 +338,23 @@ export const settingsService = {
     return data.password;
   },
 
+  async purgeLdapSettings(): Promise<{ success: boolean; deleted: number; message: string }> {
+    const response = await fetch(`${API_BASE}/settings/purge-ldap`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({})
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to purge LDAP settings');
+    }
+
+    return data;
+  },
+
   async getDatabasePath(): Promise<{ relative: string; absolute: string }> {
     const response = await fetch(`${API_BASE}/settings/database-path`, {
       method: 'GET',
