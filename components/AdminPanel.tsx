@@ -20,6 +20,11 @@ import { broadcastService, BroadcastMessage } from '../services/broadcastService
 import { rolesService, Role } from '../services/rolesService';
 import { userGroupsService, UserGroup } from '../services/userGroupsService';
 import SamlConfigModal from './SamlConfigModal';
+import { BulkAssignRolesModal } from './BulkAssignRolesModal';
+import { TeamFormWizard } from './TeamFormWizard';
+import { TeamMembersWizard } from './TeamMembersWizard';
+import { TeamRolesWizard } from './TeamRolesWizard';
+import { AssignSpaceEditorsWizard } from './AssignSpaceEditorsWizard';
 import { useMobile } from '../hooks/useMobile';
 import { getCustomWidgets, createWidget, updateWidget, deleteWidget, CustomWidget, CreateWidgetRequest, UpdateWidgetRequest } from '../services/widgetService';
 import { GranularPermissionsModal } from './GranularPermissionsModal';
@@ -454,6 +459,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [groupRolesSearchTerm, setGroupRolesSearchTerm] = useState('');
   const [addingMembersLoading, setAddingMembersLoading] = useState(false);
   const [assigningRolesLoading, setAssigningRolesLoading] = useState(false);
+  const [initialGroupRoleIds, setInitialGroupRoleIds] = useState<Set<number>>(new Set());
+  const [removingMembersLoading, setRemovingMembersLoading] = useState(false);
 
   // Tile Admins state
   const [showTileAdminsModal, setShowTileAdminsModal] = useState(false);
@@ -463,6 +470,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [tileAdminGroupsMap, setTileAdminGroupsMap] = useState<Record<string, Array<{ groupId: number; groupName: string; canView: boolean; canEdit: boolean; canDelete: boolean }>>>({});
   const [tileAdminTileSearchTerm, setTileAdminTileSearchTerm] = useState('');
   const [tileAdminUserSearchTerm, setTileAdminUserSearchTerm] = useState('');
+  const [tileAdminGroupSearchTerm, setTileAdminGroupSearchTerm] = useState('');
+  const [tileAdminSelectedUserIds, setTileAdminSelectedUserIds] = useState<Set<number>>(new Set());
+  const [tileAdminSelectedGroupIds, setTileAdminSelectedGroupIds] = useState<Set<number>>(new Set());
+  const [assigningEditorsLoading, setAssigningEditorsLoading] = useState(false);
   const [tileAdminsUsersLoaded, setTileAdminsUsersLoaded] = useState(false);
   const [showGranularPermissionsModal, setShowGranularPermissionsModal] = useState(false);
   const [selectedPermissionForEdit, setSelectedPermissionForEdit] = useState<TilePermission | null>(null);
@@ -472,7 +483,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [tileAdminsFilterCategory, setTileAdminsFilterCategory] = useState('');
   // Modal-specific filters
   const [tileAdminModalFilterUsername, setTileAdminModalFilterUsername] = useState('');
-  const [tileAdminModalFilterMenu, setTileAdminModalFilterMenu] = useState<'public' | 'private'>('public');
+  const [tileAdminModalFilterMenu, setTileAdminModalFilterMenu] = useState<'public' | 'authenticated' | 'private'>('public');
   const [tileAdminModalFilterCategory, setTileAdminModalFilterCategory] = useState('');
   const [tileAdminEntityFilter, setTileAdminEntityFilter] = useState<'all' | 'users' | 'groups'>('all');
 
@@ -500,6 +511,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [bulkAssignTarget, setBulkAssignTarget] = useState<'users' | 'groups'>('users');
   const [bulkSelectedGroupIds, setBulkSelectedGroupIds] = useState<number[]>([]);
   const [bulkGroupSearchTerm, setBulkGroupSearchTerm] = useState('');
+  const [bulkAssignStep, setBulkAssignStep] = useState<1 | 2 | 3>(1);
+  const [expandedBulkRoleTargets, setExpandedBulkRoleTargets] = useState<Set<string>>(new Set());
   const [groupRolesMap, setGroupRolesMap] = useState<Record<number, Array<{ id: number; name: string; description?: string }>>>({});
   const [loadingGroupRoles, setLoadingGroupRoles] = useState<Set<number>>(new Set());
   const [roleForm, setRoleForm] = useState({ name: '', description: '' });
@@ -875,15 +888,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         if (showRoleConfigureModal) {
           setShowRoleConfigureModal(false);
         } else if (showTileAdminsModal) {
-          setShowTileAdminsModal(false);
-          setSelectedTileIdsForAdmins(new Set());
-          setTileAdminsMap({});
-          setTileAdminTileSearchTerm('');
-          setTileAdminUserSearchTerm('');
-          setTileAdminsUsersLoaded(false);
-          setTileAdminModalFilterUsername('');
-          setTileAdminModalFilterMenu('public');
-          setTileAdminModalFilterCategory('');
+          closeTileAdminsModal();
+        } else if (showUserGroupModal) {
+          setShowUserGroupModal(false);
+          setUserGroupName('');
+          setUserGroupDescription('');
+          setEditingUserGroup(null);
+          setError('');
+        } else if (showGroupMembersModal) {
+          closeGroupMembersModal();
+        } else if (showGroupRolesModal) {
+          closeGroupRolesModal();
         } else if (showRoleTilesModal) {
           setShowRoleTilesModal(false);
           setSelectedRole(null);
@@ -899,12 +914,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           setSelectedRole(null);
           setSelectedWidgetIds(new Set());
         } else if (showBulkAssignModal) {
-          setShowBulkAssignModal(false);
-          setBulkSelectedUserIds([]);
-          setBulkSelectedRoleIds([]);
-          setBulkAssignMode('add');
-          setBulkUserSearchTerm('');
-          setBulkRoleSearchTerm('');
+          resetBulkAssignModalState();
         } else if (showUserRolesModal) {
           setShowUserRolesModal(false);
           setSelectedUserForRoles(null);
@@ -921,6 +931,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     if (activeTab === 'access' && (
       showRoleConfigureModal ||
       showTileAdminsModal ||
+      showUserGroupModal ||
+      showGroupMembersModal ||
+      showGroupRolesModal ||
       showRoleModal ||
       showRoleTilesModal ||
       showRoleTabsModal ||
@@ -937,6 +950,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     activeTab,
     showRoleConfigureModal,
     showTileAdminsModal,
+    showUserGroupModal,
+    showGroupMembersModal,
+    showGroupRolesModal,
     showRoleModal,
     showRoleTilesModal,
     showRoleTabsModal,
@@ -1254,6 +1270,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }
   };
 
+  const resetBulkAssignModalState = () => {
+    setShowBulkAssignModal(false);
+    setBulkSelectedUserIds([]);
+    setBulkSelectedGroupIds([]);
+    setBulkSelectedRoleIds([]);
+    setBulkAssignMode('add');
+    setBulkAssignTarget('users');
+    setBulkAssignStep(1);
+    setExpandedBulkRoleTargets(new Set());
+    setBulkUserSearchTerm('');
+    setBulkGroupSearchTerm('');
+    setBulkRoleSearchTerm('');
+    setUserRolesMap({});
+    setGroupRolesMap({});
+    setError('');
+  };
+
+  const toggleExpandedBulkRoleTarget = (key: string) => {
+    setExpandedBulkRoleTargets((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   const openAssignAccessModal = async (preselectRoleId?: number) => {
     setShowBulkAssignModal(true);
     setBulkSelectedUserIds([]);
@@ -1261,6 +1303,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     setBulkSelectedRoleIds(preselectRoleId ? [preselectRoleId] : []);
     setBulkAssignMode('add');
     setBulkAssignTarget('users');
+    setBulkAssignStep(1);
+    setExpandedBulkRoleTargets(new Set());
     setBulkUserSearchTerm('');
     setBulkRoleSearchTerm('');
     setBulkGroupSearchTerm('');
@@ -1447,6 +1491,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     setSelectedTileIdsForAdmins(new Set());
     setTileAdminTileSearchTerm('');
     setTileAdminUserSearchTerm('');
+    setTileAdminGroupSearchTerm('');
+    setTileAdminSelectedUserIds(new Set());
+    setTileAdminSelectedGroupIds(new Set());
     setTileAdminsMap({});
     setTileAdminGroupsMap({});
     setTileAdminsUsersLoaded(false);
@@ -2349,27 +2396,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         }
       }
 
-      setShowBulkAssignModal(false);
-      setBulkSelectedUserIds([]);
-      setBulkSelectedGroupIds([]);
-      setBulkSelectedRoleIds([]);
-      setBulkAssignMode('add');
-      setBulkUserSearchTerm('');
-      setBulkGroupSearchTerm('');
-      setBulkRoleSearchTerm('');
-      setUserRolesMap({});
-      setGroupRolesMap({});
+      const savedTarget = bulkAssignTarget;
+      const savedMode = bulkAssignMode;
+      resetBulkAssignModalState();
 
       await loadRoles();
       await loadData(); // Refresh user list to show updated role counts
-      if (bulkAssignTarget === 'groups') {
+      if (savedTarget === 'groups') {
         await loadUserGroups(); // Refresh group list
       }
 
-      const targetName = bulkAssignTarget === 'users' ? 'user' : 'group';
-      const targetNamePlural = bulkAssignTarget === 'users' ? 'users' : 'groups';
+      const targetName = savedTarget === 'users' ? 'user' : 'group';
+      const targetNamePlural = savedTarget === 'users' ? 'users' : 'groups';
 
-      if (bulkAssignMode === 'remove') {
+      if (savedMode === 'remove') {
         if (result.failed > 0) {
           alert(`Bulk removal completed with some errors:\n- Successfully removed: ${result.removed} ${targetNamePlural}\n- Failed: ${result.failed} ${targetNamePlural}${result.errors ? '\n\nErrors:\n' + result.errors.join('\n') : ''}`);
         } else {
@@ -2495,7 +2535,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       }
       const groupRolesList = await userGroupsService.getGroupRoles(group.id);
       setGroupRoles(groupRolesList);
-      setSelectedRolesToAssign(new Set(groupRolesList.map(r => r.id)));
+      const roleIds = new Set(groupRolesList.map(r => r.id));
+      setSelectedRolesToAssign(roleIds);
+      setInitialGroupRoleIds(new Set(roleIds));
       setGroupRolesSearchTerm('');
       setShowGroupRolesModal(true);
     } catch (err: any) {
@@ -2503,6 +2545,41 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     } finally {
       setGroupRolesLoading(false);
     }
+  };
+
+  const closeGroupMembersModal = () => {
+    setShowGroupMembersModal(false);
+    setGroupMembers([]);
+    setSelectedUsersToAdd(new Set());
+    setGroupMembersSearchTerm('');
+    setSelectedGroupId(null);
+    setError('');
+  };
+
+  const closeGroupRolesModal = () => {
+    setShowGroupRolesModal(false);
+    setGroupRoles([]);
+    setSelectedRolesToAssign(new Set());
+    setInitialGroupRoleIds(new Set());
+    setGroupRolesSearchTerm('');
+    setSelectedGroupId(null);
+    setError('');
+  };
+
+  const closeTileAdminsModal = () => {
+    setShowTileAdminsModal(false);
+    setSelectedTileIdsForAdmins(new Set());
+    setTileAdminSelectedUserIds(new Set());
+    setTileAdminSelectedGroupIds(new Set());
+    setTileAdminsMap({});
+    setTileAdminTileSearchTerm('');
+    setTileAdminUserSearchTerm('');
+    setTileAdminGroupSearchTerm('');
+    setTileAdminsUsersLoaded(false);
+    setTileAdminModalFilterUsername('');
+    setTileAdminModalFilterMenu('public');
+    setTileAdminModalFilterCategory('');
+    setError('');
   };
 
   const handleAddMembersToGroup = async () => {
@@ -2515,15 +2592,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setError('');
       setAddingMembersLoading(true);
       await userGroupsService.addMembersToGroup(selectedGroupId, Array.from(selectedUsersToAdd));
-      // Reload members
-      const members = await userGroupsService.getGroupMembers(selectedGroupId);
-      setGroupMembers(members);
-      setSelectedUsersToAdd(new Set());
-      await loadUserGroups(); // Refresh the group list to update member count
+      await loadUserGroups();
+      closeGroupMembersModal();
     } catch (err: any) {
       setError(err.message || 'Failed to add members to group');
     } finally {
       setAddingMembersLoading(false);
+    }
+  };
+
+  const handleRemoveMembersFromGroupBatch = async (userIds: number[]) => {
+    if (!selectedGroupId || userIds.length === 0) return;
+
+    try {
+      setError('');
+      setRemovingMembersLoading(true);
+      for (const userId of userIds) {
+        await userGroupsService.removeMemberFromGroup(selectedGroupId, userId);
+      }
+      await loadUserGroups();
+      closeGroupMembersModal();
+    } catch (err: any) {
+      setError(err.message || 'Failed to remove members from group');
+    } finally {
+      setRemovingMembersLoading(false);
     }
   };
 
@@ -2553,15 +2645,50 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setError('');
       setAssigningRolesLoading(true);
       await userGroupsService.assignRolesToGroup(selectedGroupId, Array.from(selectedRolesToAssign));
-      // Reload roles
-      const groupRolesList = await userGroupsService.getGroupRoles(selectedGroupId);
-      setGroupRoles(groupRolesList);
-      await loadUserGroups(); // Refresh the group list to update role count
-      alert('Roles assigned successfully!');
+      await loadUserGroups();
+      closeGroupRolesModal();
     } catch (err: any) {
       setError(err.message || 'Failed to assign roles to group');
     } finally {
       setAssigningRolesLoading(false);
+    }
+  };
+
+  const handleAssignSpaceEditorsWizardSubmit = async () => {
+    if (selectedTileIdsForAdmins.size === 0) {
+      setError('Please select at least one space');
+      return;
+    }
+    if (tileAdminSelectedUserIds.size === 0 && tileAdminSelectedGroupIds.size === 0) {
+      setError('Please select at least one person or team');
+      return;
+    }
+
+    try {
+      setError('');
+      setAssigningEditorsLoading(true);
+
+      for (const tileId of selectedTileIdsForAdmins) {
+        for (const userId of tileAdminSelectedUserIds) {
+          const already = tileAdminsMap[tileId]?.some((admin) => admin.userId === userId);
+          if (!already) {
+            await handleAddTileAdmin(userId, tileId);
+          }
+        }
+        for (const groupId of tileAdminSelectedGroupIds) {
+          const already = tileAdminGroupsMap[tileId]?.some((admin) => admin.groupId === groupId);
+          if (!already) {
+            await handleAddGroupTileAdmin(groupId, tileId);
+          }
+        }
+      }
+
+      closeTileAdminsModal();
+      await loadPermissions();
+    } catch (err: any) {
+      setError(err.message || 'Failed to assign space editors');
+    } finally {
+      setAssigningEditorsLoading(false);
     }
   };
 
@@ -13874,804 +14001,36 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
       )}
 
       {/* Tile Admins Modal */}
-      {showTileAdminsModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-6xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                    Assign space editors
-                  </h2>
-                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                    Select spaces on the left and people or teams on the right. Editors can add and edit links, sections, and tabs by default. Delete, visibility, browser, and clone stay restricted unless you fine-tune permissions.
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    setShowTileAdminsModal(false);
-                    setSelectedTileIdsForAdmins(new Set());
-                    setTileAdminsMap({});
-                    setTileAdminTileSearchTerm('');
-                    setTileAdminUserSearchTerm('');
-                    setTileAdminsUsersLoaded(false);
-                    setTileAdminModalFilterUsername('');
-                    setTileAdminModalFilterMenu('public');
-                    setTileAdminModalFilterCategory('');
-                    setError('');
-                  }}
-                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-6">
-              {error && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
-                  {error}
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Tiles Selection */}
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Select Tiles
-                    </label>
-                    <button
-                      onClick={() => {
-                        const filteredTiles = allTiles.filter(tile => {
-                          // Text search filter
-                          if (tileAdminTileSearchTerm) {
-                            const search = tileAdminTileSearchTerm.toLowerCase();
-                            const matchesSearch = (tile.title || '').toLowerCase().includes(search) ||
-                              (tile.description || '').toLowerCase().includes(search);
-                            if (!matchesSearch) return false;
-                          }
-
-                          // Owner filter
-                          if (tileAdminModalFilterUsername) {
-                            const userIdNum = typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId;
-                            const owner = allUsers.find(u => u.id === userIdNum);
-                            const ownerUsername = owner?.username || '';
-                            if (ownerUsername !== tileAdminModalFilterUsername) return false;
-                          }
-
-                          // Tab/Menu filter
-                          const tileVisibility = tile.visibility || 'public';
-                          if (tileVisibility !== tileAdminModalFilterMenu) return false;
-
-                          // Category filter
-                          if (tileAdminModalFilterCategory) {
-                            const category = tile.group || '';
-                            if (category !== tileAdminModalFilterCategory) return false;
-                          }
-
-                          return true;
-                        });
-                        const filteredTileIds = filteredTiles.map(t => t.id);
-                        const allFilteredSelected = filteredTileIds.every(id => selectedTileIdsForAdmins.has(id));
-
-                        if (allFilteredSelected) {
-                          const newSet = new Set(selectedTileIdsForAdmins);
-                          filteredTileIds.forEach(id => newSet.delete(id));
-                          setSelectedTileIdsForAdmins(newSet);
-                        } else {
-                          const newSet = new Set(selectedTileIdsForAdmins);
-                          filteredTileIds.forEach(id => newSet.add(id));
-                          setSelectedTileIdsForAdmins(newSet);
-                        }
-                      }}
-                      className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
-                    >
-                      {(() => {
-                        const filteredTiles = allTiles.filter(tile => {
-                          // Text search filter
-                          if (tileAdminTileSearchTerm) {
-                            const search = tileAdminTileSearchTerm.toLowerCase();
-                            const matchesSearch = (tile.title || '').toLowerCase().includes(search) ||
-                              (tile.description || '').toLowerCase().includes(search);
-                            if (!matchesSearch) return false;
-                          }
-
-                          // Owner filter
-                          if (tileAdminModalFilterUsername) {
-                            const userIdNum = typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId;
-                            const owner = allUsers.find(u => u.id === userIdNum);
-                            const ownerUsername = owner?.username || '';
-                            if (ownerUsername !== tileAdminModalFilterUsername) return false;
-                          }
-
-                          // Tab/Menu filter
-                          const tileVisibility = tile.visibility || 'public';
-                          if (tileVisibility !== tileAdminModalFilterMenu) return false;
-
-                          // Category filter
-                          if (tileAdminModalFilterCategory) {
-                            const category = tile.group || '';
-                            if (category !== tileAdminModalFilterCategory) return false;
-                          }
-
-                          return true;
-                        });
-                        const filteredTileIds = filteredTiles.map(t => t.id);
-                        const allFilteredSelected = filteredTileIds.length > 0 && filteredTileIds.every(id => selectedTileIdsForAdmins.has(id));
-                        return allFilteredSelected ? 'Deselect All' : 'Select All';
-                      })()}
-                    </button>
-                  </div>
-
-                  {/* Search Input */}
-                  <div className="mb-3">
-                    <div className="relative">
-                      <input
-                        type="text"
-                        placeholder="Search tiles..."
-                        value={tileAdminTileSearchTerm}
-                        onChange={(e) => setTileAdminTileSearchTerm(e.target.value)}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                      />
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 20 20"
-                        fill="currentColor"
-                        className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"
-                      >
-                        <path
-                          fillRule="evenodd"
-                          d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
-                      {tileAdminTileSearchTerm && (
-                        <button
-                          onClick={() => setTileAdminTileSearchTerm('')}
-                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                            <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                          </svg>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Filters */}
-                  <div className="mb-3 space-y-2">
-                    {/* Owner Filter */}
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                        Owner
-                      </label>
-                      <select
-                        value={tileAdminModalFilterUsername}
-                        onChange={(e) => setTileAdminModalFilterUsername(e.target.value)}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                      >
-                        <option value="">All Owners</option>
-                        {allUsers
-                          .filter(user => user.is_approved)
-                          .sort((a, b) => a.username.localeCompare(b.username))
-                          .map(user => (
-                            <option key={user.id} value={user.username}>
-                              {user.username}
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-
-                    {/* Tab/Menu Filter */}
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                        Tab
-                      </label>
-                      <select
-                        value={tileAdminModalFilterMenu}
-                        onChange={(e) => setTileAdminModalFilterMenu(e.target.value as 'public' | 'private')}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                      >
-                        <option value="public">Public</option>
-                        <option value="private">Private</option>
-                      </select>
-                    </div>
-
-                    {/* Category Filter */}
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                        Category
-                      </label>
-                      <select
-                        value={tileAdminModalFilterCategory}
-                        onChange={(e) => setTileAdminModalFilterCategory(e.target.value)}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                      >
-                        <option value="">All Categories</option>
-                        {(() => {
-                          const uniqueCategories = new Set<string>();
-                          allTiles.forEach(tile => {
-                            const visibility = tile.visibility || 'public';
-                            if ((visibility === 'public' || visibility === 'private') && tile.group) {
-                              uniqueCategories.add(tile.group);
-                            }
-                          });
-                          return Array.from(uniqueCategories)
-                            .sort((a, b) => a.localeCompare(b))
-                            .map(category => (
-                              <option key={category} value={category}>
-                                {category}
-                              </option>
-                            ));
-                        })()}
-                      </select>
-                    </div>
-
-                    {/* Clear Filters Button */}
-                    {(tileAdminModalFilterUsername || tileAdminModalFilterCategory) && (
-                      <button
-                        onClick={() => {
-                          setTileAdminModalFilterUsername('');
-                          setTileAdminModalFilterMenu('public');
-                          setTileAdminModalFilterCategory('');
-                        }}
-                        className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 font-medium"
-                      >
-                        Clear filters
-                      </button>
-                    )}
-                  </div>
-
-                  {tileAdminsLoading ? (
-                    <div className="flex items-center justify-center py-12 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
-                    </div>
-                  ) : allTiles.length === 0 ? (
-                    <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
-                      No tiles available
-                    </div>
-                  ) : (
-                    <>
-                      <div className="max-h-96 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
-                        <div className="divide-y divide-slate-200 dark:divide-slate-700">
-                          {allTiles
-                            .filter(tile => {
-                              // Text search filter
-                              if (tileAdminTileSearchTerm) {
-                                const search = tileAdminTileSearchTerm.toLowerCase();
-                                const matchesSearch = (tile.title || '').toLowerCase().includes(search) ||
-                                  (tile.description || '').toLowerCase().includes(search);
-                                if (!matchesSearch) return false;
-                              }
-
-                              // Owner filter
-                              if (tileAdminModalFilterUsername) {
-                                const owner = allUsers.find(u => u.id === Number(tile.userId));
-                                const ownerUsername = owner?.username || '';
-                                if (ownerUsername !== tileAdminModalFilterUsername) {
-                                  return false;
-                                }
-                              }
-
-                              // Tab/Menu filter (visibility) - always filter by public or private
-                              const tileVisibility = tile.visibility || 'public';
-                              if (tileVisibility !== tileAdminModalFilterMenu) {
-                                return false;
-                              }
-
-                              // Category filter
-                              if (tileAdminModalFilterCategory) {
-                                const category = tile.group || '';
-                                if (category !== tileAdminModalFilterCategory) {
-                                  return false;
-                                }
-                              }
-
-                              return true;
-                            })
-                            .map((tile) => {
-                              const admins = tileAdminsMap[tile.id] || [];
-                              const groupAdmins = tileAdminGroupsMap[tile.id] || [];
-                              const totalAdmins = admins.length + groupAdmins.length;
-                              return (
-                                <label
-                                  key={tile.id}
-                                  className="flex items-start gap-3 p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50 cursor-pointer transition-colors"
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedTileIdsForAdmins.has(tile.id)}
-                                    onChange={(e) => {
-                                      const newSet = new Set(selectedTileIdsForAdmins);
-                                      if (e.target.checked) {
-                                        newSet.add(tile.id);
-                                      } else {
-                                        newSet.delete(tile.id);
-                                      }
-                                      setSelectedTileIdsForAdmins(newSet);
-                                    }}
-                                    className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2 mt-0.5"
-                                  />
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-1.5 mb-2 flex-wrap">
-                                      <span className="text-base">{tile.emoji || '📄'}</span>
-                                      <div className="text-sm font-medium text-slate-900 dark:text-white">
-                                        {tile.title || tile.id}
-                                      </div>
-                                    </div>
-                                    {/* Owner, Tab/Menu, and Category badges - Always shown */}
-                                    <div className="flex flex-wrap gap-1.5 mb-2">
-                                      {/* Owner badge - Always show */}
-                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
-                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                          <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                                        </svg>
-                                        <span className="font-medium">
-                                          {(() => {
-                                            if (!tile.userId) return 'No Owner';
-                                            // Convert userId to number for comparison
-                                            const userIdNum = typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId;
-                                            // Find owner in allUsers array
-                                            const owner = allUsers.find(u => u.id === userIdNum);
-                                            return owner?.username || `Unknown (ID: ${tile.userId})`;
-                                          })()}
-                                        </span>
-                                      </span>
-                                      {/* Tab/Menu badge */}
-                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-700">
-                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                          <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 4.5zM2.75 9.083a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 12.663a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 16.25a.75.75 0 000 1.5h14.5a.75.75 0 100-1.5H2.75z" />
-                                        </svg>
-                                        <span className="font-medium capitalize">{tile.visibility || 'public'}</span>
-                                      </span>
-                                      {/* Category badge */}
-                                      {tile.group ? (
-                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700">
-                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                            <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 4.5zM2.75 9.083a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 12.663a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 16.25a.75.75 0 000 1.5h14.5a.75.75 0 100-1.5H2.75z" />
-                                          </svg>
-                                          <span className="font-medium">{tile.group}</span>
-                                        </span>
-                                      ) : (
-                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-600">
-                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                            <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 4.5zM2.75 9.083a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 12.663a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 16.25a.75.75 0 000 1.5h14.5a.75.75 0 100-1.5H2.75z" />
-                                          </svg>
-                                          No Category
-                                        </span>
-                                      )}
-                                    </div>
-                                    {tile.description && (
-                                      <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mb-2">
-                                        {tile.description}
-                                      </div>
-                                    )}
-                                    <div className="flex items-center gap-2">
-                                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-300">
-                                        {totalAdmins} admin{totalAdmins !== 1 ? 's' : ''} ({admins.length}👤 {groupAdmins.length}👥)
-                                      </span>
-                                    </div>
-                                  </div>
-                                </label>
-                              );
-                            })}
-                        </div>
-                      </div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                        {selectedTileIdsForAdmins.size} tile{selectedTileIdsForAdmins.size !== 1 ? 's' : ''} selected
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {/* Users & Groups Selection */}
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Select Users & Groups
-                    </label>
-                    <button
-                      onClick={() => {
-                        const filteredUsers = allUsers.filter(user =>
-                          user.is_approved &&
-                          (user.username.toLowerCase().includes(tileAdminUserSearchTerm.toLowerCase()) ||
-                            user.email.toLowerCase().includes(tileAdminUserSearchTerm.toLowerCase()))
-                        );
-                        const filteredUserIds: number[] = filteredUsers.map(u => u.id);
-                        const selectedTileIds: string[] = Array.from(selectedTileIdsForAdmins);
-
-                        if (selectedTileIds.length === 0) return;
-
-                        // Check if all filtered users are already admins for all selected tiles
-                        const allFilteredSelected = filteredUserIds.every(userId => {
-                          return selectedTileIds.every(tileId => {
-                            const admins = tileAdminsMap[tileId] || [];
-                            return admins.some(admin => admin.userId === userId);
-                          });
-                        });
-
-                        // Toggle all filtered users for all selected tiles
-                        filteredUserIds.forEach(async userId => {
-                          for (const tileId of selectedTileIds) {
-                            const admins = tileAdminsMap[tileId] || [];
-                            const isAdmin = admins.some(admin => admin.userId === userId);
-
-                            if (!allFilteredSelected && !isAdmin) {
-                              // Add admin
-                              await handleAddTileAdmin(userId, tileId);
-                            } else if (allFilteredSelected && isAdmin) {
-                              // Remove admin
-                              await handleRemoveTileAdmin(userId, tileId);
-                            }
-                          }
-                        });
-                      }}
-                      className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
-                    >
-                      {(() => {
-                        const filteredUsers = allUsers.filter(user =>
-                          user.is_approved &&
-                          (user.username.toLowerCase().includes(tileAdminUserSearchTerm.toLowerCase()) ||
-                            user.email.toLowerCase().includes(tileAdminUserSearchTerm.toLowerCase()))
-                        );
-                        return filteredUsers.length > 0 ? 'Select All' : '';
-                      })()}
-                    </button>
-                  </div>
-
-                  {/* Entity Type Filter */}
-                  <div className="mb-3">
-                    <select
-                      value={tileAdminEntityFilter}
-                      onChange={(e) => setTileAdminEntityFilter(e.target.value as 'all' | 'users' | 'groups')}
-                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                    >
-                      <option value="all">All Users & Groups</option>
-                      <option value="users">Users Only</option>
-                      <option value="groups">Groups Only</option>
-                    </select>
-                  </div>
-
-                  {/* Search Input */}
-                  <div className="mb-3">
-                    <div className="relative">
-                      <input
-                        type="text"
-                        placeholder="Search users & groups..."
-                        value={tileAdminUserSearchTerm}
-                        onChange={(e) => setTileAdminUserSearchTerm(e.target.value)}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                      />
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 20 20"
-                        fill="currentColor"
-                        className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"
-                      >
-                        <path
-                          fillRule="evenodd"
-                          d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
-                      {tileAdminUserSearchTerm && (
-                        <button
-                          onClick={() => setTileAdminUserSearchTerm('')}
-                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                            <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                          </svg>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {selectedTileIdsForAdmins.size === 0 ? (
-                    <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
-                      Select tiles on the left to manage their admins
-                    </div>
-                  ) : !tileAdminsUsersLoaded || allUsers.length === 0 ? (
-                    <div className="flex items-center justify-center py-12 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
-                    </div>
-                  ) : (() => {
-                    // Filter users
-                    const approvedUsers = allUsers.filter(user => user.is_approved);
-                    const filteredUsers = approvedUsers.filter(user => {
-                      if (!tileAdminUserSearchTerm) return true;
-                      const search = tileAdminUserSearchTerm.toLowerCase();
-                      return user.username.toLowerCase().includes(search) ||
-                        user.email.toLowerCase().includes(search);
-                    });
-
-                    // Filter groups
-                    const filteredGroups = userGroups.filter(group => {
-                      if (!tileAdminUserSearchTerm) return true;
-                      const search = tileAdminUserSearchTerm.toLowerCase();
-                      return group.name.toLowerCase().includes(search) ||
-                        (group.description && group.description.toLowerCase().includes(search));
-                    });
-
-                    // Create combined entity list
-                    const combinedEntities: Array<{
-                      type: 'user' | 'group';
-                      id: string;
-                      entityId: number;
-                      name: string;
-                      subtitle: string;
-                      icon: React.ReactNode;
-                      badgeColor: string;
-                    }> = [];
-
-                    // Add users if filter allows
-                    if (tileAdminEntityFilter === 'all' || tileAdminEntityFilter === 'users') {
-                      filteredUsers.forEach(user => {
-                        combinedEntities.push({
-                          type: 'user',
-                          id: `user-${user.id}`,
-                          entityId: user.id,
-                          name: user.username,
-                          subtitle: user.email,
-                          icon: (
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-600 dark:text-slate-400">
-                              <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                            </svg>
-                          ),
-                          badgeColor: 'bg-slate-200 dark:bg-slate-700'
-                        });
-                      });
-                    }
-
-                    // Add groups if filter allows
-                    if (tileAdminEntityFilter === 'all' || tileAdminEntityFilter === 'groups') {
-                      filteredGroups.forEach(group => {
-                        combinedEntities.push({
-                          type: 'group',
-                          id: `group-${group.id}`,
-                          entityId: group.id,
-                          name: group.name,
-                          subtitle: `${group.memberCount} member${group.memberCount !== 1 ? 's' : ''}`,
-                          icon: (
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-blue-600 dark:text-blue-400">
-                              <path d="M10 9a3 3 0 100-6 3 3 0 000 6zM6 8a2 2 0 11-4 0 2 2 0 014 0zM1.49 15.326a.78.78 0 01-.358-.442 3 3 0 014.308-3.516 6.484 6.484 0 00-1.905 3.959c-.023.222-.014.442.025.654a4.97 4.97 0 01-2.07-.655zM16.44 15.98a4.97 4.97 0 002.07-.654.78.78 0 00.357-.442 3 3 0 00-4.308-3.517 6.484 6.484 0 011.907 3.96 2.32 2.32 0 01-.026.654zM18 8a2 2 0 11-4 0 2 2 0 014 0zM5.304 16.19a.844.844 0 01-.277-.71 5 5 0 019.947 0 .843.843 0 01-.277.71A6.975 6.975 0 0110 18a6.974 6.974 0 01-4.696-1.81z" />
-                            </svg>
-                          ),
-                          badgeColor: 'bg-blue-100 dark:bg-blue-900/30'
-                        });
-                      });
-                    }
-
-                    if (combinedEntities.length === 0) {
-                      return (
-                        <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
-                          No users or groups match your search
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <>
-                        <div className="max-h-96 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
-                          <div className="divide-y divide-slate-200 dark:divide-slate-700">
-                            {combinedEntities.map((entity) => {
-                              const selectedTileIds: string[] = Array.from(selectedTileIdsForAdmins);
-
-                              return (
-                                <div
-                                  key={entity.id}
-                                  className="p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors"
-                                >
-                                  <div className="flex items-center gap-3 mb-2">
-                                    <div className={`w-8 h-8 rounded-full ${entity.badgeColor} flex items-center justify-center flex-shrink-0`}>
-                                      {entity.icon}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-2">
-                                        <div className="text-sm font-medium text-slate-900 dark:text-white truncate">
-                                          {entity.name}
-                                        </div>
-                                        {entity.type === 'group' && (
-                                          <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded">
-                                            GROUP
-                                          </span>
-                                        )}
-                                      </div>
-                                      <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                                        {entity.subtitle}
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  {/* Checkboxes for each selected tile */}
-                                  {selectedTileIds.length > 0 && (
-                                    <div className="ml-11 space-y-1">
-                                      {selectedTileIds.map((tileId: string) => {
-                                        const tile = allTiles.find(t => t.id === tileId);
-                                        const isAdmin = entity.type === 'user'
-                                          ? tileAdminsMap[tileId]?.some(admin => admin.userId === entity.entityId) || false
-                                          : tileAdminGroupsMap[tileId]?.some(admin => admin.groupId === entity.entityId) || false;
-
-                                        return (
-                                          <label
-                                            key={tileId}
-                                            className="flex items-center gap-2 cursor-pointer py-0.5"
-                                          >
-                                            <input
-                                              type="checkbox"
-                                              checked={isAdmin}
-                                              onChange={async (e) => {
-                                                if (entity.type === 'user') {
-                                                  if (e.target.checked) {
-                                                    await handleAddTileAdmin(entity.entityId, tileId);
-                                                  } else {
-                                                    await handleRemoveTileAdmin(entity.entityId, tileId);
-                                                  }
-                                                } else {
-                                                  if (e.target.checked) {
-                                                    await handleAddGroupTileAdmin(entity.entityId, tileId);
-                                                  } else {
-                                                    await handleRemoveGroupTileAdmin(entity.entityId, tileId);
-                                                  }
-                                                }
-                                              }}
-                                              className="w-3.5 h-3.5 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-1"
-                                            />
-                                            <div className="flex-1 min-w-0">
-                                              <div className="flex items-center gap-1.5">
-                                                <span className="text-xs text-slate-700 dark:text-slate-300">
-                                                  {tile?.emoji || '📄'} {tile?.title || tileId}
-                                                </span>
-                                              </div>
-                                              <div className="flex flex-wrap gap-1 mt-0.5">
-                                                {tile?.userId && (() => {
-                                                  const userIdNum = typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId;
-                                                  const owner = allUsers.find(u => u.id === userIdNum);
-                                                  return owner ? (
-                                                    <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                                                      Owner: <span className="font-medium text-slate-600 dark:text-slate-300">{owner.username}</span>
-                                                    </span>
-                                                  ) : (
-                                                    <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                                                      Owner: <span className="font-medium text-slate-600 dark:text-slate-300">Unknown (ID: {tile.userId})</span>
-                                                    </span>
-                                                  );
-                                                })()}
-                                                {tile?.userId && tile?.group && (
-                                                  <span className="text-[10px] text-slate-400">•</span>
-                                                )}
-                                                {tile?.group && (
-                                                  <span className="text-[10px] text-blue-600 dark:text-blue-400">
-                                                    Tab: <span className="font-medium">{tile.group}</span>
-                                                  </span>
-                                                )}
-                                              </div>
-                                            </div>
-                                          </label>
-                                        );
-                                      })}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                          {combinedEntities.length} entit{combinedEntities.length !== 1 ? 'ies' : 'y'}
-                          {tileAdminEntityFilter === 'all' && ` (${filteredUsers.length} user${filteredUsers.length !== 1 ? 's' : ''}, ${filteredGroups.length} group${filteredGroups.length !== 1 ? 's' : ''})`}
-                          {tileAdminEntityFilter === 'users' && ` (${filteredUsers.length} user${filteredUsers.length !== 1 ? 's' : ''})`}
-                          {tileAdminEntityFilter === 'groups' && ` (${filteredGroups.length} group${filteredGroups.length !== 1 ? 's' : ''})`}
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>
-              </div>
-
-              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
-                <button
-                  onClick={() => {
-                    setShowTileAdminsModal(false);
-                    setSelectedTileIdsForAdmins(new Set());
-                    setTileAdminsMap({});
-                    setTileAdminGroupsMap({});
-                    setTileAdminTileSearchTerm('');
-                    setTileAdminUserSearchTerm('');
-                    setTileAdminsUsersLoaded(false);
-                    setTileAdminModalFilterUsername('');
-                    setTileAdminModalFilterMenu('public');
-                    setTileAdminModalFilterCategory('');
-                    setTileAdminEntityFilter('all');
-                    setError('');
-                  }}
-                  className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Configure Role Access Modal — unified entry for content / app tabs / widgets */}
-      {showRoleConfigureModal && selectedRole && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-lg w-full">
-            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                    Configure: {selectedRole.name}
-                  </h2>
-                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                    Choose what people with this role can see. Roles never grant edit rights.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowRoleConfigureModal(false);
-                  }}
-                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-            <div className="p-6 space-y-3">
-              <button
-                type="button"
-                onClick={() => {
-                  const role = selectedRole;
-                  setShowRoleConfigureModal(false);
-                  void handleManageRoleTiles(role);
-                }}
-                className="w-full text-left p-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-brand-400 dark:hover:border-brand-500 hover:bg-slate-50 dark:hover:bg-slate-900/40 transition-colors"
-              >
-                <div className="font-semibold text-slate-900 dark:text-white">Spaces &amp; links</div>
-                <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                  Which spaces and links this role can view
-                </p>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const role = selectedRole;
-                  setShowRoleConfigureModal(false);
-                  void handleManageRoleTabs(role);
-                }}
-                className="w-full text-left p-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-brand-400 dark:hover:border-brand-500 hover:bg-slate-50 dark:hover:bg-slate-900/40 transition-colors"
-              >
-                <div className="font-semibold text-slate-900 dark:text-white">App tabs</div>
-                <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                  Home, Favorites, Private, Scheduled, and other navigation tabs
-                </p>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const role = selectedRole;
-                  setShowRoleConfigureModal(false);
-                  void handleManageRoleWidgets(role);
-                }}
-                className="w-full text-left p-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-brand-400 dark:hover:border-brand-500 hover:bg-slate-50 dark:hover:bg-slate-900/40 transition-colors"
-              >
-                <div className="font-semibold text-slate-900 dark:text-white">Widgets</div>
-                <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                  Clock, weather, notes, and custom widgets
-                </p>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AssignSpaceEditorsWizard
+        isOpen={showTileAdminsModal}
+        tiles={allTiles}
+        users={allUsers}
+        groups={userGroups}
+        selectedTileIds={selectedTileIdsForAdmins}
+        onSelectedTileIdsChange={setSelectedTileIdsForAdmins}
+        selectedUserIds={tileAdminSelectedUserIds}
+        onSelectedUserIdsChange={setTileAdminSelectedUserIds}
+        selectedGroupIds={tileAdminSelectedGroupIds}
+        onSelectedGroupIdsChange={setTileAdminSelectedGroupIds}
+        tileSearchTerm={tileAdminTileSearchTerm}
+        onTileSearchTermChange={setTileAdminTileSearchTerm}
+        userSearchTerm={tileAdminUserSearchTerm}
+        onUserSearchTermChange={setTileAdminUserSearchTerm}
+        groupSearchTerm={tileAdminGroupSearchTerm}
+        onGroupSearchTermChange={setTileAdminGroupSearchTerm}
+        menuFilter={tileAdminModalFilterMenu}
+        onMenuFilterChange={(value) => setTileAdminModalFilterMenu(value as 'public' | 'authenticated' | 'private')}
+        categoryFilter={tileAdminModalFilterCategory}
+        onCategoryFilterChange={setTileAdminModalFilterCategory}
+        ownerFilter={tileAdminModalFilterUsername}
+        onOwnerFilterChange={setTileAdminModalFilterUsername}
+        categories={Array.from(new Set(allTiles.map((t) => t.group).filter((g): g is string => !!g))).sort()}
+        owners={Array.from(new Set(allUsers.map((u) => u.username).filter(Boolean))).sort()}
+        error={error}
+        loading={assigningEditorsLoading || tileAdminsLoading}
+        onClose={closeTileAdminsModal}
+        onSubmit={handleAssignSpaceEditorsWizardSubmit}
+      />
 
       {/* Role Modal */}
       {showRoleModal && (
@@ -14757,392 +14116,59 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
       )}
 
       {/* User Group Modal */}
-      {showUserGroupModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                  {editingUserGroup ? 'Edit team' : 'Create team'}
-                </h2>
-                <button
-                  onClick={() => {
-                    setShowUserGroupModal(false);
-                    setUserGroupName('');
-                    setUserGroupDescription('');
-                    setEditingUserGroup(null);
-                    setError('');
-                  }}
-                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-4">
-              {error && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
-                  {error}
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Team name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={userGroupName}
-                  onChange={(e) => setUserGroupName(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                  placeholder="e.g. Marketing, IT Department"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Description
-                </label>
-                <textarea
-                  value={userGroupDescription}
-                  onChange={(e) => setUserGroupDescription(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                  placeholder="Enter group description (optional)"
-                  rows={3}
-                />
-              </div>
-
-              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
-                <button
-                  onClick={() => {
-                    setShowUserGroupModal(false);
-                    setUserGroupName('');
-                    setUserGroupDescription('');
-                    setEditingUserGroup(null);
-                    setError('');
-                  }}
-                  className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveUserGroup}
-                  disabled={!userGroupName.trim() || userGroupSaving}
-                  className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
-                >
-                  {userGroupSaving ? 'Saving...' : editingUserGroup ? 'Update team' : 'Create team'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <TeamFormWizard
+        isOpen={showUserGroupModal}
+        isEditing={!!editingUserGroup}
+        name={userGroupName}
+        description={userGroupDescription}
+        onNameChange={setUserGroupName}
+        onDescriptionChange={setUserGroupDescription}
+        error={error}
+        saving={userGroupSaving}
+        onClose={() => {
+          setShowUserGroupModal(false);
+          setUserGroupName('');
+          setUserGroupDescription('');
+          setEditingUserGroup(null);
+          setError('');
+        }}
+        onSave={handleSaveUserGroup}
+      />
 
       {/* Group Members Modal */}
-      {showGroupMembersModal && selectedGroupId && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                  Manage team members
-                </h2>
-                <button
-                  onClick={() => {
-                    setShowGroupMembersModal(false);
-                    setGroupMembers([]);
-                    setSelectedUsersToAdd(new Set());
-                    setGroupMembersSearchTerm('');
-                    setSelectedGroupId(null);
-                    setError('');
-                  }}
-                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-4">
-              {error && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
-                  {error}
-                </div>
-              )}
-
-              {/* Add Members Section */}
-              <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Add Members</h3>
-                <div className="space-y-3">
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={groupMembersSearchTerm}
-                      onChange={(e) => setGroupMembersSearchTerm(e.target.value)}
-                      placeholder="Search users by name or email..."
-                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                    />
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 absolute left-3 top-2.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                  </div>
-                  <div className="max-h-48 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900">
-                    {allUsers
-                      .filter(user => {
-                        const searchLower = groupMembersSearchTerm.toLowerCase();
-                        return (
-                          user.username.toLowerCase().includes(searchLower) ||
-                          user.email.toLowerCase().includes(searchLower)
-                        ) && !groupMembers.some(m => m.id === user.id);
-                      })
-                      .map(user => (
-                        <label key={user.id} className="flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer border-b border-slate-200 dark:border-slate-700 last:border-b-0">
-                          <input
-                            type="checkbox"
-                            checked={selectedUsersToAdd.has(user.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedUsersToAdd(prev => new Set([...prev, user.id]));
-                              } else {
-                                setSelectedUsersToAdd(prev => {
-                                  const next = new Set(prev);
-                                  next.delete(user.id);
-                                  return next;
-                                });
-                              }
-                            }}
-                            className="w-4 h-4 text-brand-600 focus:ring-brand-500 border-slate-300 rounded"
-                          />
-                          <div className="flex-1">
-                            <div className="text-sm font-medium text-slate-900 dark:text-white">{user.username}</div>
-                            <div className="text-xs text-slate-500 dark:text-slate-400">{user.email}</div>
-                          </div>
-                          <span className="text-xs px-2 py-1 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
-                            {user.auth_source || 'Local'}
-                          </span>
-                        </label>
-                      ))}
-                    {allUsers.filter(user => {
-                      const searchLower = groupMembersSearchTerm.toLowerCase();
-                      return (
-                        user.username.toLowerCase().includes(searchLower) ||
-                        user.email.toLowerCase().includes(searchLower)
-                      ) && !groupMembers.some(m => m.id === user.id);
-                    }).length === 0 && (
-                        <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400">
-                          {groupMembersSearchTerm ? 'No users found' : 'All users are already members'}
-                        </div>
-                      )}
-                  </div>
-                  <button
-                    onClick={handleAddMembersToGroup}
-                    disabled={selectedUsersToAdd.size === 0 || addingMembersLoading}
-                    className="w-full px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
-                  >
-                    {addingMembersLoading ? 'Adding...' : `Add ${selectedUsersToAdd.size} Member${selectedUsersToAdd.size !== 1 ? 's' : ''}`}
-                  </button>
-                </div>
-              </div>
-
-              {/* Current Members Section */}
-              <div>
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Current Members ({groupMembers.length})</h3>
-                {groupMembersLoading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
-                  </div>
-                ) : groupMembers.length === 0 ? (
-                  <div className="text-center py-8 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-lg">
-                    No members in this group
-                  </div>
-                ) : (
-                  <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
-                    {groupMembers.map(member => (
-                      <div key={member.id} className="flex items-center justify-between p-3 border-b border-slate-200 dark:border-slate-700 last:border-b-0 hover:bg-slate-50 dark:hover:bg-slate-900/50">
-                        <div className="flex-1">
-                          <div className="text-sm font-medium text-slate-900 dark:text-white">{member.username}</div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">{member.email}</div>
-                          <div className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                            Joined: {new Date(member.joinedAt * 1000).toLocaleDateString()}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs px-2 py-1 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
-                            {member.authSource || 'Local'}
-                          </span>
-                          <button
-                            onClick={() => handleRemoveMemberFromGroup(member.id)}
-                            className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 transition-colors text-sm"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
-                <button
-                  onClick={() => {
-                    setShowGroupMembersModal(false);
-                    setGroupMembers([]);
-                    setSelectedUsersToAdd(new Set());
-                    setGroupMembersSearchTerm('');
-                    setSelectedGroupId(null);
-                    setError('');
-                  }}
-                  className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <TeamMembersWizard
+        isOpen={showGroupMembersModal && !!selectedGroupId}
+        teamName={userGroups.find((g) => g.id === selectedGroupId)?.name}
+        members={groupMembers}
+        membersLoading={groupMembersLoading}
+        allUsers={allUsers}
+        selectedUserIds={selectedUsersToAdd}
+        onSelectedUserIdsChange={setSelectedUsersToAdd}
+        searchTerm={groupMembersSearchTerm}
+        onSearchTermChange={setGroupMembersSearchTerm}
+        error={error}
+        loading={addingMembersLoading || removingMembersLoading}
+        onClose={closeGroupMembersModal}
+        onAddMembers={handleAddMembersToGroup}
+        onRemoveMembers={handleRemoveMembersFromGroupBatch}
+      />
 
       {/* Group Roles Modal */}
-      {showGroupRolesModal && selectedGroupId && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                  Manage team roles
-                </h2>
-                <button
-                  onClick={() => {
-                    setShowGroupRolesModal(false);
-                    setGroupRoles([]);
-                    setSelectedRolesToAssign(new Set());
-                    setGroupRolesSearchTerm('');
-                    setSelectedGroupId(null);
-                    setError('');
-                  }}
-                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-4">
-              {error && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
-                  {error}
-                </div>
-              )}
-
-              <p className="text-sm text-slate-600 dark:text-slate-400">
-                Select roles to assign to this group. All members of the group will inherit these roles.
-              </p>
-
-              {/* Search Input */}
-              <div className="relative">
-                <input
-                  type="text"
-                  value={groupRolesSearchTerm}
-                  onChange={(e) => setGroupRolesSearchTerm(e.target.value)}
-                  placeholder="Search roles..."
-                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 pl-10 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                />
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 absolute left-3 top-2.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </div>
-
-              {groupRolesLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
-                </div>
-              ) : roles.length === 0 ? (
-                <div className="text-center py-8 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-lg">
-                  No roles available. Create roles first.
-                </div>
-              ) : (
-                <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden max-h-96 overflow-y-auto">
-                  {roles
-                    .filter(role => {
-                      const searchLower = groupRolesSearchTerm.toLowerCase();
-                      return role.name.toLowerCase().includes(searchLower) ||
-                        (role.description || '').toLowerCase().includes(searchLower);
-                    })
-                    .map(role => (
-                      <label key={role.id} className="flex items-start gap-3 p-4 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer border-b border-slate-200 dark:border-slate-700 last:border-b-0">
-                        <input
-                          type="checkbox"
-                          checked={selectedRolesToAssign.has(role.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedRolesToAssign(prev => new Set([...prev, role.id]));
-                            } else {
-                              setSelectedRolesToAssign(prev => {
-                                const next = new Set(prev);
-                                next.delete(role.id);
-                                return next;
-                              });
-                            }
-                          }}
-                          className="mt-1 w-4 h-4 text-brand-600 focus:ring-brand-500 border-slate-300 rounded"
-                        />
-                        <div className="flex-1">
-                          <div className="text-sm font-medium text-slate-900 dark:text-white">{role.name}</div>
-                          {role.description && (
-                            <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">{role.description}</div>
-                          )}
-                          <div className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                            {role.userCount || 0} users, {role.tileCount || 0} tiles, {role.linkCount || 0} links
-                          </div>
-                        </div>
-                      </label>
-                    ))}
-                  {roles.filter(role => {
-                    const searchLower = groupRolesSearchTerm.toLowerCase();
-                    return role.name.toLowerCase().includes(searchLower) ||
-                      (role.description || '').toLowerCase().includes(searchLower);
-                  }).length === 0 && (
-                      <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400">
-                        No roles found
-                      </div>
-                    )}
-                </div>
-              )}
-
-              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
-                <button
-                  onClick={() => {
-                    setShowGroupRolesModal(false);
-                    setGroupRoles([]);
-                    setSelectedRolesToAssign(new Set());
-                    setGroupRolesSearchTerm('');
-                    setSelectedGroupId(null);
-                    setError('');
-                  }}
-                  className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleAssignRolesToGroup}
-                  disabled={assigningRolesLoading}
-                  className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
-                >
-                  {assigningRolesLoading ? 'Assigning...' : 'Assign Selected Roles'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <TeamRolesWizard
+        isOpen={showGroupRolesModal && !!selectedGroupId}
+        teamName={userGroups.find((g) => g.id === selectedGroupId)?.name}
+        roles={roles}
+        rolesLoading={groupRolesLoading || rolesLoading}
+        selectedRoleIds={selectedRolesToAssign}
+        onSelectedRoleIdsChange={setSelectedRolesToAssign}
+        initialRoleIds={initialGroupRoleIds}
+        searchTerm={groupRolesSearchTerm}
+        onSearchTermChange={setGroupRolesSearchTerm}
+        error={error}
+        loading={assigningRolesLoading}
+        onClose={closeGroupRolesModal}
+        onSave={handleAssignRolesToGroup}
+      />
 
       {/* Role Tiles Modal */}
       {showRoleTilesModal && selectedRole && (
@@ -15970,739 +14996,61 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
       )}
 
       {/* Bulk Assign Roles Modal */}
-      {showBulkAssignModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                    Assign roles
-                  </h2>
-                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                    Add, replace, or remove roles for people or teams. Choose a mode below before saving.
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    setShowBulkAssignModal(false);
-                    setBulkSelectedUserIds([]);
-                    setBulkSelectedGroupIds([]);
-                    setBulkSelectedRoleIds([]);
-                    setBulkAssignMode('add');
-                    setBulkAssignTarget('users');
-                    setBulkUserSearchTerm('');
-                    setBulkGroupSearchTerm('');
-                    setBulkRoleSearchTerm('');
-                    setUserRolesMap({});
-                    setGroupRolesMap({});
-                    setError('');
-                  }}
-                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-6">
-              {error && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
-                  {error}
-                </div>
-              )}
-
-              {/* Target Selection */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Assign roles to
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => {
-                      setBulkAssignTarget('users');
-                      setBulkSelectedGroupIds([]);
-                      setGroupRolesMap({});
-                    }}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${bulkAssignTarget === 'users'
-                      ? 'bg-brand-600 text-white'
-                      : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                      }`}
-                  >
-                    People
-                  </button>
-                  <button
-                    onClick={async () => {
-                      setBulkAssignTarget('groups');
-                      setBulkSelectedUserIds([]);
-                      setUserRolesMap({});
-                      // Load groups if not already loaded
-                      let groupsToUse = userGroups;
-                      if (userGroups.length === 0 && !userGroupsLoading) {
-                        groupsToUse = await loadUserGroups() || [];
-                      }
-                      // Load group roles if groups exist and roles not loaded
-                      if (groupsToUse.length > 0 && Object.keys(groupRolesMap).length === 0) {
-                        await loadGroupRolesForBulk(groupsToUse);
-                      }
-                    }}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${bulkAssignTarget === 'groups'
-                      ? 'bg-brand-600 text-white'
-                      : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                      }`}
-                  >
-                    Teams
-                  </button>
-                </div>
-              </div>
-
-              {/* Assignment Mode */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Mode
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setBulkAssignMode('add')}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${bulkAssignMode === 'add'
-                      ? 'bg-brand-600 text-white'
-                      : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                      }`}
-                  >
-                    Add
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setBulkAssignMode('replace')}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${bulkAssignMode === 'replace'
-                      ? 'bg-brand-600 text-white'
-                      : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                      }`}
-                  >
-                    Replace all
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setBulkAssignMode('remove')}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${bulkAssignMode === 'remove'
-                      ? 'bg-red-600 text-white'
-                      : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                      }`}
-                  >
-                    Remove
-                  </button>
-                </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                  {bulkAssignMode === 'add'
-                    ? `Selected roles will be added alongside existing ${bulkAssignTarget === 'groups' ? 'team' : 'user'} roles`
-                    : bulkAssignMode === 'replace'
-                      ? `Selected roles will replace all existing ${bulkAssignTarget === 'groups' ? 'team' : 'user'} roles`
-                      : `Selected roles will be removed from the selected ${bulkAssignTarget === 'groups' ? 'teams' : 'people'}`}
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Users or Groups Selection */}
-                {bulkAssignTarget === 'users' ? (
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                        Select Users
-                      </label>
-                      <div className="flex gap-2 items-center">
-                        <button
-                          onClick={loadUserRolesForBulk}
-                          className="text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 transition-colors"
-                          title="Refresh user roles"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                            <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => {
-                            const filteredUsers = allUsers.filter(user =>
-                              user.username.toLowerCase().includes(bulkUserSearchTerm.toLowerCase()) ||
-                              user.email.toLowerCase().includes(bulkUserSearchTerm.toLowerCase())
-                            );
-                            const filteredUserIds = filteredUsers.map(u => u.id);
-                            const allFilteredSelected = filteredUserIds.every(id => bulkSelectedUserIds.includes(id));
-
-                            if (allFilteredSelected) {
-                              // Deselect all filtered users
-                              setBulkSelectedUserIds(bulkSelectedUserIds.filter(id => !filteredUserIds.includes(id)));
-                            } else {
-                              // Select all filtered users
-                              const newSelected = [...bulkSelectedUserIds];
-                              filteredUserIds.forEach(id => {
-                                if (!newSelected.includes(id)) {
-                                  newSelected.push(id);
-                                }
-                              });
-                              setBulkSelectedUserIds(newSelected);
-                            }
-                          }}
-                          className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
-                        >
-                          {(() => {
-                            const filteredUsers = allUsers.filter(user =>
-                              user.username.toLowerCase().includes(bulkUserSearchTerm.toLowerCase()) ||
-                              user.email.toLowerCase().includes(bulkUserSearchTerm.toLowerCase())
-                            );
-                            const filteredUserIds = filteredUsers.map(u => u.id);
-                            const allFilteredSelected = filteredUserIds.length > 0 && filteredUserIds.every(id => bulkSelectedUserIds.includes(id));
-                            return allFilteredSelected ? 'Deselect All' : 'Select All';
-                          })()}
-                        </button>
-                      </div>
-                    </div>
-                    {/* Search Input */}
-                    <div className="mb-3">
-                      <div className="relative">
-                        <input
-                          type="text"
-                          placeholder="Search users..."
-                          value={bulkUserSearchTerm}
-                          onChange={(e) => setBulkUserSearchTerm(e.target.value)}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                        />
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 20 20"
-                          fill="currentColor"
-                          className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"
-                        >
-                          <path
-                            fillRule="evenodd"
-                            d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                        {bulkUserSearchTerm && (
-                          <button
-                            onClick={() => setBulkUserSearchTerm('')}
-                            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                              <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                            </svg>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <div className="max-h-96 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
-                      <div className="divide-y divide-slate-200 dark:divide-slate-700">
-                        {(() => {
-                          const filteredUsers = allUsers.filter(user =>
-                            user.username.toLowerCase().includes(bulkUserSearchTerm.toLowerCase()) ||
-                            user.email.toLowerCase().includes(bulkUserSearchTerm.toLowerCase())
-                          );
-
-                          if (filteredUsers.length === 0) {
-                            return (
-                              <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400">
-                                {allUsers.length === 0 ? 'No users available' : 'No users match your search'}
-                              </div>
-                            );
-                          }
-
-                          return filteredUsers.map((user) => {
-                            const userRoles = userRolesMap[user.id] || [];
-                            const isLoading = loadingUserRoles.has(user.id);
-
-                            return (
-                              <label
-                                key={user.id}
-                                className="flex items-start gap-3 p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50 cursor-pointer transition-colors"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={bulkSelectedUserIds.includes(user.id)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setBulkSelectedUserIds([...bulkSelectedUserIds, user.id]);
-                                    } else {
-                                      setBulkSelectedUserIds(bulkSelectedUserIds.filter(id => id !== user.id));
-                                    }
-                                  }}
-                                  className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2 mt-0.5"
-                                />
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <div className="text-sm font-medium text-slate-900 dark:text-white truncate">
-                                      {user.username}
-                                    </div>
-                                    {isLoading && (
-                                      <svg className="animate-spin h-3 w-3 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                      </svg>
-                                    )}
-                                  </div>
-                                  <div className="text-xs text-slate-500 dark:text-slate-400 truncate mb-1">
-                                    {user.email}
-                                  </div>
-                                  {userRoles.length > 0 && (
-                                    <div className="flex flex-wrap gap-1 mt-1">
-                                      {userRoles.map((role) => (
-                                        <span
-                                          key={role.id}
-                                          className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
-                                          title={role.description || role.name}
-                                        >
-                                          {role.name}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {!isLoading && userRoles.length === 0 && (
-                                    <div className="text-xs text-slate-400 dark:text-slate-500 italic mt-1">
-                                      No roles assigned
-                                    </div>
-                                  )}
-                                </div>
-                              </label>
-                            );
-                          });
-                        })()}
-                      </div>
-                    </div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                      {bulkSelectedUserIds.length} user{bulkSelectedUserIds.length !== 1 ? 's' : ''} selected
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                        Select Groups
-                      </label>
-                      <div className="flex gap-2 items-center">
-                        <button
-                          onClick={loadGroupRolesForBulk}
-                          className="text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 transition-colors"
-                          title="Refresh group roles"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                            <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => {
-                            const filteredGroups = userGroups.filter(group =>
-                              group.name.toLowerCase().includes(bulkGroupSearchTerm.toLowerCase()) ||
-                              (group.description && group.description.toLowerCase().includes(bulkGroupSearchTerm.toLowerCase()))
-                            );
-                            const filteredGroupIds = filteredGroups.map(g => g.id);
-                            const allFilteredSelected = filteredGroupIds.every(id => bulkSelectedGroupIds.includes(id));
-
-                            if (allFilteredSelected) {
-                              // Deselect all filtered groups
-                              setBulkSelectedGroupIds(bulkSelectedGroupIds.filter(id => !filteredGroupIds.includes(id)));
-                            } else {
-                              // Select all filtered groups
-                              const newSelected = [...bulkSelectedGroupIds];
-                              filteredGroupIds.forEach(id => {
-                                if (!newSelected.includes(id)) {
-                                  newSelected.push(id);
-                                }
-                              });
-                              setBulkSelectedGroupIds(newSelected);
-                            }
-                          }}
-                          className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
-                        >
-                          {(() => {
-                            const filteredGroups = userGroups.filter(group =>
-                              group.name.toLowerCase().includes(bulkGroupSearchTerm.toLowerCase()) ||
-                              (group.description && group.description.toLowerCase().includes(bulkGroupSearchTerm.toLowerCase()))
-                            );
-                            const filteredGroupIds = filteredGroups.map(g => g.id);
-                            const allFilteredSelected = filteredGroupIds.length > 0 && filteredGroupIds.every(id => bulkSelectedGroupIds.includes(id));
-                            return allFilteredSelected ? 'Deselect All' : 'Select All';
-                          })()}
-                        </button>
-                      </div>
-                    </div>
-                    {/* Search Input */}
-                    <div className="mb-3">
-                      <div className="relative">
-                        <input
-                          type="text"
-                          placeholder="Search groups..."
-                          value={bulkGroupSearchTerm}
-                          onChange={(e) => setBulkGroupSearchTerm(e.target.value)}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                        />
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 20 20"
-                          fill="currentColor"
-                          className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"
-                        >
-                          <path
-                            fillRule="evenodd"
-                            d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                        {bulkGroupSearchTerm && (
-                          <button
-                            onClick={() => setBulkGroupSearchTerm('')}
-                            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                              <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                            </svg>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <div className="max-h-96 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
-                      <div className="divide-y divide-slate-200 dark:divide-slate-700">
-                        {(() => {
-                          const filteredGroups = userGroups.filter(group =>
-                            group.name.toLowerCase().includes(bulkGroupSearchTerm.toLowerCase()) ||
-                            (group.description && group.description.toLowerCase().includes(bulkGroupSearchTerm.toLowerCase()))
-                          );
-
-                          if (filteredGroups.length === 0) {
-                            return (
-                              <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400">
-                                {userGroups.length === 0 ? 'No groups available' : 'No groups match your search'}
-                              </div>
-                            );
-                          }
-
-                          return filteredGroups.map((group) => {
-                            const groupRoles = groupRolesMap[group.id] || [];
-                            const isLoading = loadingGroupRoles.has(group.id);
-
-                            return (
-                              <label
-                                key={group.id}
-                                className="flex items-start gap-3 p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50 cursor-pointer transition-colors"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={bulkSelectedGroupIds.includes(group.id)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setBulkSelectedGroupIds([...bulkSelectedGroupIds, group.id]);
-                                    } else {
-                                      setBulkSelectedGroupIds(bulkSelectedGroupIds.filter(id => id !== group.id));
-                                    }
-                                  }}
-                                  className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2 mt-0.5"
-                                />
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <div className="text-sm font-medium text-slate-900 dark:text-white truncate">
-                                      {group.name}
-                                    </div>
-                                    {isLoading && (
-                                      <svg className="animate-spin h-3 w-3 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                      </svg>
-                                    )}
-                                  </div>
-                                  {group.description && (
-                                    <div className="text-xs text-slate-500 dark:text-slate-400 truncate mb-1">
-                                      {group.description}
-                                    </div>
-                                  )}
-                                  <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">
-                                    {group.memberCount} member{group.memberCount !== 1 ? 's' : ''}
-                                  </div>
-                                  {groupRoles.length > 0 && (
-                                    <div className="flex flex-wrap gap-1 mt-1">
-                                      {groupRoles.map((role) => (
-                                        <span
-                                          key={role.id}
-                                          className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
-                                          title={role.description || role.name}
-                                        >
-                                          {role.name}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {!isLoading && groupRoles.length === 0 && (
-                                    <div className="text-xs text-slate-400 dark:text-slate-500 italic mt-1">
-                                      No roles assigned
-                                    </div>
-                                  )}
-                                </div>
-                              </label>
-                            );
-                          });
-                        })()}
-                      </div>
-                    </div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                      {bulkSelectedGroupIds.length} group{bulkSelectedGroupIds.length !== 1 ? 's' : ''} selected
-                    </div>
-                  </div>
-                )}
-
-                {/* Roles Selection */}
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Select Roles
-                    </label>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => {
-                          const filteredRoles = roles.filter(role =>
-                            role.name.toLowerCase().includes(bulkRoleSearchTerm.toLowerCase()) ||
-                            (role.description && role.description.toLowerCase().includes(bulkRoleSearchTerm.toLowerCase()))
-                          );
-                          const filteredRoleIds = filteredRoles.map(r => r.id);
-                          const allFilteredSelected = filteredRoleIds.every(id => bulkSelectedRoleIds.includes(id));
-
-                          if (allFilteredSelected) {
-                            // Deselect all filtered roles
-                            setBulkSelectedRoleIds(bulkSelectedRoleIds.filter(id => !filteredRoleIds.includes(id)));
-                          } else {
-                            // Select all filtered roles
-                            const newSelected = [...bulkSelectedRoleIds];
-                            filteredRoleIds.forEach(id => {
-                              if (!newSelected.includes(id)) {
-                                newSelected.push(id);
-                              }
-                            });
-                            setBulkSelectedRoleIds(newSelected);
-                          }
-                        }}
-                        className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
-                      >
-                        {(() => {
-                          const filteredRoles = roles.filter(role =>
-                            role.name.toLowerCase().includes(bulkRoleSearchTerm.toLowerCase()) ||
-                            (role.description && role.description.toLowerCase().includes(bulkRoleSearchTerm.toLowerCase()))
-                          );
-                          const filteredRoleIds = filteredRoles.map(r => r.id);
-                          const allFilteredSelected = filteredRoleIds.length > 0 && filteredRoleIds.every(id => bulkSelectedRoleIds.includes(id));
-                          return allFilteredSelected ? 'Deselect All' : 'Select All';
-                        })()}
-                      </button>
-                    </div>
-                  </div>
-                  {/* Search Input */}
-                  <div className="mb-3">
-                    <div className="relative">
-                      <input
-                        type="text"
-                        placeholder="Search roles..."
-                        value={bulkRoleSearchTerm}
-                        onChange={(e) => setBulkRoleSearchTerm(e.target.value)}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                      />
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 20 20"
-                        fill="currentColor"
-                        className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"
-                      >
-                        <path
-                          fillRule="evenodd"
-                          d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
-                      {bulkRoleSearchTerm && (
-                        <button
-                          onClick={() => setBulkRoleSearchTerm('')}
-                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                            <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                          </svg>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  {rolesLoading ? (
-                    <div className="flex items-center justify-center py-12 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
-                    </div>
-                  ) : roles.length === 0 ? (
-                    <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
-                      No roles available. Create roles first.
-                    </div>
-                  ) : (
-                    <>
-                      <div className="max-h-96 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
-                        <div className="divide-y divide-slate-200 dark:divide-slate-700">
-                          {(() => {
-                            let filteredRoles = roles.filter(role =>
-                              role.name.toLowerCase().includes(bulkRoleSearchTerm.toLowerCase()) ||
-                              (role.description && role.description.toLowerCase().includes(bulkRoleSearchTerm.toLowerCase()))
-                            );
-
-                            // In remove mode, only show roles that at least one selected user/group has
-                            if (bulkAssignMode === 'remove') {
-                              if (bulkAssignTarget === 'users' && bulkSelectedUserIds.length > 0) {
-                                const userRoleIds = new Set<number>();
-                                bulkSelectedUserIds.forEach(userId => {
-                                  const userRoles = userRolesMap[userId] || [];
-                                  userRoles.forEach(role => userRoleIds.add(role.id));
-                                });
-
-                                filteredRoles = filteredRoles.filter(role => userRoleIds.has(role.id));
-                              } else if (bulkAssignTarget === 'groups' && bulkSelectedGroupIds.length > 0) {
-                                const groupRoleIds = new Set<number>();
-                                bulkSelectedGroupIds.forEach(groupId => {
-                                  const groupRoles = groupRolesMap[groupId] || [];
-                                  groupRoles.forEach(role => groupRoleIds.add(role.id));
-                                });
-
-                                filteredRoles = filteredRoles.filter(role => groupRoleIds.has(role.id));
-                              }
-                            }
-
-                            if (filteredRoles.length === 0) {
-                              return (
-                                <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400">
-                                  {roles.length === 0
-                                    ? 'No roles available. Create roles first.'
-                                    : bulkAssignMode === 'remove' && (bulkAssignTarget === 'users' ? bulkSelectedUserIds.length > 0 : bulkSelectedGroupIds.length > 0)
-                                      ? `No roles found for selected ${bulkAssignTarget}`
-                                      : 'No roles match your search'}
-                                </div>
-                              );
-                            }
-
-                            return filteredRoles.map((role) => {
-                              // Check if all selected users/groups have this role (for remove mode)
-                              let allTargetsHaveRole = true;
-                              if (bulkAssignMode === 'remove') {
-                                if (bulkAssignTarget === 'users' && bulkSelectedUserIds.length > 0) {
-                                  allTargetsHaveRole = bulkSelectedUserIds.every(userId => {
-                                    const userRoles = userRolesMap[userId] || [];
-                                    return userRoles.some(r => r.id === role.id);
-                                  });
-                                } else if (bulkAssignTarget === 'groups' && bulkSelectedGroupIds.length > 0) {
-                                  allTargetsHaveRole = bulkSelectedGroupIds.every(groupId => {
-                                    const groupRoles = groupRolesMap[groupId] || [];
-                                    return groupRoles.some(r => r.id === role.id);
-                                  });
-                                }
-                              }
-
-                              return (
-                                <label
-                                  key={role.id}
-                                  className={`flex items-center gap-3 p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50 cursor-pointer transition-colors ${!allTargetsHaveRole && bulkAssignMode === 'remove' ? 'opacity-50' : ''
-                                    }`}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={bulkSelectedRoleIds.includes(role.id)}
-                                    disabled={!allTargetsHaveRole && bulkAssignMode === 'remove'}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setBulkSelectedRoleIds([...bulkSelectedRoleIds, role.id]);
-                                      } else {
-                                        setBulkSelectedRoleIds(bulkSelectedRoleIds.filter(id => id !== role.id));
-                                      }
-                                    }}
-                                    className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                                  />
-                                  <div className="flex-1">
-                                    <div className="flex items-center gap-2">
-                                      <div className="text-sm font-medium text-slate-900 dark:text-white">
-                                        {role.name}
-                                      </div>
-                                      {bulkAssignMode === 'remove' && !allTargetsHaveRole && (
-                                        <span className="text-xs text-slate-400 dark:text-slate-500 italic">
-                                          (not all {bulkAssignTarget} have this role)
-                                        </span>
-                                      )}
-                                    </div>
-                                    {role.description && (
-                                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                                        {role.description}
-                                      </div>
-                                    )}
-                                    <div className="flex gap-3 mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                      <span>{role.userCount || 0} users</span>
-                                      <span>•</span>
-                                      <span>{role.tileCount || 0} tiles</span>
-                                      <span>•</span>
-                                      <span>{role.linkCount || 0} links</span>
-                                    </div>
-                                  </div>
-                                </label>
-                              );
-                            });
-                          })()}
-                        </div>
-                      </div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                        {bulkSelectedRoleIds.length} role{bulkSelectedRoleIds.length !== 1 ? 's' : ''} selected
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
-                <button
-                  onClick={() => {
-                    setShowBulkAssignModal(false);
-                    setBulkSelectedUserIds([]);
-                    setBulkSelectedGroupIds([]);
-                    setBulkSelectedRoleIds([]);
-                    setBulkAssignMode('add');
-                    setBulkAssignTarget('users');
-                    setBulkUserSearchTerm('');
-                    setBulkGroupSearchTerm('');
-                    setBulkRoleSearchTerm('');
-                    setUserRolesMap({});
-                    setGroupRolesMap({});
-                    setError('');
-                  }}
-                  className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleBulkAssignRoles}
-                  disabled={
-                    bulkAssignLoading ||
-                    (bulkAssignTarget === 'users' ? bulkSelectedUserIds.length === 0 : bulkSelectedGroupIds.length === 0) ||
-                    bulkSelectedRoleIds.length === 0
-                  }
-                  className={`flex-1 px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors ${bulkAssignMode === 'remove'
-                    ? 'bg-red-600 hover:bg-red-500'
-                    : 'bg-brand-600 hover:bg-brand-500'
-                    }`}
-                >
-                  {bulkAssignLoading ? (
-                    <>
-                      <svg className="animate-spin h-4 w-4 inline-block mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      {bulkAssignMode === 'remove' ? 'Removing...' : 'Assigning...'}
-                    </>
-                  ) : (
-                    bulkAssignMode === 'remove'
-                      ? `Remove ${bulkSelectedRoleIds.length} Role${bulkSelectedRoleIds.length !== 1 ? 's' : ''} from ${bulkAssignTarget === 'users' ? bulkSelectedUserIds.length : bulkSelectedGroupIds.length} ${bulkAssignTarget === 'users' ? 'User' : 'Group'}${(bulkAssignTarget === 'users' ? bulkSelectedUserIds.length : bulkSelectedGroupIds.length) !== 1 ? 's' : ''}`
-                      : `Assign ${bulkSelectedRoleIds.length} Role${bulkSelectedRoleIds.length !== 1 ? 's' : ''} to ${bulkAssignTarget === 'users' ? bulkSelectedUserIds.length : bulkSelectedGroupIds.length} ${bulkAssignTarget === 'users' ? 'User' : 'Group'}${(bulkAssignTarget === 'users' ? bulkSelectedUserIds.length : bulkSelectedGroupIds.length) !== 1 ? 's' : ''}`
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <BulkAssignRolesModal
+        isOpen={showBulkAssignModal}
+        error={error}
+        step={bulkAssignStep}
+        onStepChange={setBulkAssignStep}
+        target={bulkAssignTarget}
+        onTargetChange={(next) => {
+          setBulkAssignTarget(next);
+          if (next === 'users') {
+            setBulkSelectedGroupIds([]);
+            setGroupRolesMap({});
+          }
+        }}
+        mode={bulkAssignMode}
+        onModeChange={setBulkAssignMode}
+        users={allUsers}
+        groups={userGroups}
+        roles={roles}
+        rolesLoading={rolesLoading}
+        selectedUserIds={bulkSelectedUserIds}
+        onSelectedUserIdsChange={setBulkSelectedUserIds}
+        selectedGroupIds={bulkSelectedGroupIds}
+        onSelectedGroupIdsChange={setBulkSelectedGroupIds}
+        selectedRoleIds={bulkSelectedRoleIds}
+        onSelectedRoleIdsChange={setBulkSelectedRoleIds}
+        userSearchTerm={bulkUserSearchTerm}
+        onUserSearchTermChange={setBulkUserSearchTerm}
+        groupSearchTerm={bulkGroupSearchTerm}
+        onGroupSearchTermChange={setBulkGroupSearchTerm}
+        roleSearchTerm={bulkRoleSearchTerm}
+        onRoleSearchTermChange={setBulkRoleSearchTerm}
+        userRolesMap={userRolesMap}
+        groupRolesMap={groupRolesMap}
+        loadingUserRoles={loadingUserRoles}
+        loadingGroupRoles={loadingGroupRoles}
+        expandedRoleTargets={expandedBulkRoleTargets}
+        onToggleExpandedRoleTarget={toggleExpandedBulkRoleTarget}
+        onRefreshUserRoles={loadUserRolesForBulk}
+        onRefreshGroupRoles={loadGroupRolesForBulk}
+        onSelectTeams={async () => {
+          setBulkAssignTarget('groups');
+          setBulkSelectedUserIds([]);
+          setUserRolesMap({});
+          let groupsToUse = userGroups;
+          if (userGroups.length === 0 && !userGroupsLoading) {
+            groupsToUse = await loadUserGroups() || [];
+          }
+          if (groupsToUse.length > 0 && Object.keys(groupRolesMap).length === 0) {
+            await loadGroupRolesForBulk(groupsToUse);
+          }
+        }}
+        loading={bulkAssignLoading}
+        onClose={resetBulkAssignModalState}
+        onSubmit={handleBulkAssignRoles}
+      />
 
       {/* SAML Configuration Modal */}
       <SamlConfigModal

@@ -63,6 +63,9 @@ const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
         const isDark = document.documentElement.classList.contains('dark');
         const css = styleService.generateCSS(styleData, isDark);
         styleTag.textContent = css;
+        // Clear any temporary inline zoom from the HTML bootstrap script
+        // (stylesheet zoom should own this going forward)
+        document.documentElement.style.removeProperty('zoom');
         
         // Trigger zoom adjustment after styles are applied
         // Use a custom event to notify the zoom adjustment effect
@@ -226,6 +229,10 @@ const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     // Apply synchronously immediately
     const applyInitial = () => {
       applyStyles(initialStyles, true);
+      // Ensure pre-rendered CSS exists for the next page load bootstrap
+      if (cached) {
+        styleService.cacheStyles(initialStyles);
+      }
     };
 
     if (document.readyState === 'loading') {

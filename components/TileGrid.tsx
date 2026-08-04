@@ -30,6 +30,7 @@ import { useMobile } from '../hooks/useMobile';
 import { MobileTileView } from './MobileTileView';
 import { StagingOverview } from './StagingOverview';
 import { StagingOfflineKit, StagingOfflineKitHandle } from './StagingOfflineKit';
+import { YourAppsOverview } from './YourAppsOverview';
 import { TileInfoDialog } from './TileInfoDialog';
 import { TileFireworks } from './TileFireworks';
 import { TileConfetti } from './TileConfetti';
@@ -6574,42 +6575,48 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         </>
       )}
 
-      {/* Your Apps Filter Actions */}
+      {/* Your Apps overview + filter actions */}
       {activeTab === 'your-apps' && isAuthenticated && (
-        <div className="flex items-center gap-2 py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 overflow-x-auto">
-          <button
-            onClick={() => setYourAppsFilter('all')}
-            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${yourAppsFilter === 'all'
-              ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm ring-1 ring-slate-200 dark:ring-slate-600'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'
-              }`}
-            title={YOUR_APPS_FILTER_TOOLTIPS.all}
-          >
-            All Apps
-          </button>
-          <button
-            onClick={() => setYourAppsFilter('authenticated')}
-            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors whitespace-nowrap flex items-center gap-1.5 ${yourAppsFilter === 'authenticated'
-              ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm ring-1 ring-slate-200 dark:ring-slate-600'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'
-              }`}
-            title={YOUR_APPS_FILTER_TOOLTIPS.authenticated}
-          >
-            <span className="text-xs">🔒</span>
-            Authenticated
-          </button>
-          <button
-            onClick={() => setYourAppsFilter('assigned')}
-            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors whitespace-nowrap flex items-center gap-1.5 ${yourAppsFilter === 'assigned'
-              ? 'bg-white dark:bg-slate-700 text-purple-600 dark:text-purple-400 shadow-sm ring-1 ring-slate-200 dark:ring-slate-600'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'
-              }`}
-            title={YOUR_APPS_FILTER_TOOLTIPS.assigned}
-          >
-            <span className="text-xs">👤</span>
-            Your Assigned Apps
-          </button>
-        </div>
+        <>
+          <YourAppsOverview
+            spaceCount={Object.values(groupedTiles).reduce((acc: number, group: Tile[]) => acc + group.length, 0)}
+            onSelectFilter={setYourAppsFilter}
+          />
+          <div className="flex items-center gap-2 py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 overflow-x-auto">
+            <button
+              onClick={() => setYourAppsFilter('all')}
+              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${yourAppsFilter === 'all'
+                ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm ring-1 ring-slate-200 dark:ring-slate-600'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'
+                }`}
+              title={YOUR_APPS_FILTER_TOOLTIPS.all}
+            >
+              All Apps
+            </button>
+            <button
+              onClick={() => setYourAppsFilter('authenticated')}
+              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors whitespace-nowrap flex items-center gap-1.5 ${yourAppsFilter === 'authenticated'
+                ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm ring-1 ring-slate-200 dark:ring-slate-600'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'
+                }`}
+              title={YOUR_APPS_FILTER_TOOLTIPS.authenticated}
+            >
+              <span className="text-xs">🔒</span>
+              Authenticated
+            </button>
+            <button
+              onClick={() => setYourAppsFilter('assigned')}
+              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors whitespace-nowrap flex items-center gap-1.5 ${yourAppsFilter === 'assigned'
+                ? 'bg-white dark:bg-slate-700 text-purple-600 dark:text-purple-400 shadow-sm ring-1 ring-slate-200 dark:ring-slate-600'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'
+                }`}
+              title={YOUR_APPS_FILTER_TOOLTIPS.assigned}
+            >
+              <span className="text-xs">👤</span>
+              Your Assigned Apps
+            </button>
+          </div>
+        </>
       )}
 
       {/* Private tab - Sub-tabs: Spaces | Sharing | Blocked + Filter (when Spaces) */}

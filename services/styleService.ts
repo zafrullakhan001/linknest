@@ -557,6 +557,8 @@ export const DEFAULT_STYLES: SpaceStyles = {
 // LocalStorage key for caching styles
 const STYLES_CACHE_KEY = 'linknest_styles_cache';
 const STYLES_CACHE_TIMESTAMP_KEY = 'linknest_styles_cache_timestamp';
+const STYLES_CSS_CACHE_LIGHT_KEY = 'linknest_styles_css_light';
+const STYLES_CSS_CACHE_DARK_KEY = 'linknest_styles_css_dark';
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 const STYLE_RETRY_DELAYS = [300, 800];
 
@@ -593,11 +595,17 @@ export const styleService = {
     return this.getCachedStyles(allowStale) !== null;
   },
 
-  // Cache styles to localStorage
+  // Cache styles to localStorage (and pre-rendered CSS for both themes to avoid refresh FOUC)
   cacheStyles(styles: SpaceStyles): void {
     try {
       localStorage.setItem(STYLES_CACHE_KEY, JSON.stringify(styles));
       localStorage.setItem(STYLES_CACHE_TIMESTAMP_KEY, Date.now().toString());
+      try {
+        localStorage.setItem(STYLES_CSS_CACHE_LIGHT_KEY, this.generateCSS(styles, false));
+        localStorage.setItem(STYLES_CSS_CACHE_DARK_KEY, this.generateCSS(styles, true));
+      } catch (cssError) {
+        console.error('Failed to cache generated CSS:', cssError);
+      }
     } catch (error) {
       console.error('Failed to cache styles:', error);
     }
@@ -608,6 +616,8 @@ export const styleService = {
     try {
       localStorage.removeItem(STYLES_CACHE_KEY);
       localStorage.removeItem(STYLES_CACHE_TIMESTAMP_KEY);
+      localStorage.removeItem(STYLES_CSS_CACHE_LIGHT_KEY);
+      localStorage.removeItem(STYLES_CSS_CACHE_DARK_KEY);
     } catch (error) {
       console.error('Failed to clear style cache:', error);
     }

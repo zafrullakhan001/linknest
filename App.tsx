@@ -346,10 +346,22 @@ const AppContent: React.FC = () => {
     return isAllowed;
   }, [isAuthenticated, user, allowedWidgetIds, widgetsLoading]);
 
-  // Theme State
+  // Theme State — keep in sync with index.html bootstrap + auto-switch defaults
   const [darkMode, setDarkMode] = useState(() => {
-    const saved = localStorage.getItem('linknest_theme');
-    return saved ? saved === 'dark' : true; // Default to dark
+    const autoSwitch = localStorage.getItem('linknest_auto_switch');
+    const autoEnabled = autoSwitch === null || autoSwitch === 'true';
+    let isDark: boolean;
+    if (autoEnabled) {
+      const hour = new Date().getHours();
+      isDark = hour >= 18 || hour < 7;
+    } else {
+      const saved = localStorage.getItem('linknest_theme');
+      isDark = saved ? saved === 'dark' : true; // Default to dark
+    }
+    if (typeof document !== 'undefined') {
+      document.documentElement.classList.toggle('dark', isDark);
+    }
+    return isDark;
   });
 
   // Auto-switch preference (default: enabled)
@@ -796,10 +808,51 @@ const AppContent: React.FC = () => {
 
   // Only show loading if settings are loading OR if we're authenticated and loading tiles
   // When guest access is disabled, also wait for auth to finish so we don't flash login before session is restored
+  // Keep Navigation mounted during load so the top bar does not pop in after the spinner
   if (settingsLoading || stylesLoading || (authLoading && !guestAccessEnabled) || (loading && (isAuthenticated || guestAccessEnabled))) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white transition-colors duration-300">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-500"></div>
+      <div className={`linknest-app-container min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 flex flex-col font-sans ${!isMobile ? 'pt-16' : ''}`}>
+        {!isMobile && (
+          <Navigation
+            darkMode={darkMode}
+            toggleTheme={toggleTheme}
+            showClock={showClock}
+            toggleClock={toggleClock}
+            showPhoneticAlphabet={showPhoneticAlphabet}
+            togglePhoneticAlphabet={togglePhoneticAlphabet}
+            showNotes={showNotes}
+            toggleNotes={toggleNotes}
+            showWeather={showWeather}
+            toggleWeather={toggleWeather}
+            showCalculator={showCalculator}
+            toggleCalculator={toggleCalculator}
+            showPasswordGenerator={showPasswordGenerator}
+            togglePasswordGenerator={togglePasswordGenerator}
+            showZoomControl={showZoomControl}
+            toggleZoomControl={toggleZoomControl}
+            showTheme={showTheme}
+            toggleThemeWidget={toggleThemeWidget}
+            showFavOrganizer={showFavOrganizer}
+            toggleFavOrganizer={toggleFavOrganizer}
+            showChat={showChat}
+            toggleChat={toggleChat}
+            showSnakeGame={showSnakeGame}
+            toggleSnakeGame={toggleSnakeGame}
+            hasUnreadChatMessages={hasUnreadChatMessages}
+            user={user}
+            onLoginClick={() => setAuthModalOpen(true)}
+            onHelpClick={() => setHelpAboutOpen(true)}
+            isWidgetAllowed={isWidgetAllowed}
+          />
+        )}
+        <BroadcastBanner />
+        <div className="flex-grow flex items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-500"></div>
+        </div>
+        <AuthModal
+          isOpen={authModalOpen}
+          onClose={() => setAuthModalOpen(false)}
+        />
       </div>
     );
   }

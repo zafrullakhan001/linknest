@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Suppress theme/layout transitions during bootstrap so refresh doesn't animate into place */
+html.ln-bootstrapping,
+html.ln-bootstrapping *,
+html.ln-bootstrapping *::before,
+html.ln-bootstrapping *::after {
+  transition: none !important;
+  animation-duration: 0.001ms !important;
+  animation-delay: 0s !important;
+}
+
 /* Modern Mobile Animations */
 @keyframes fadeInUp {
   from {
@@ -1726,7 +1736,6 @@ div.linknest-tile.has-local-decoration .tooltip-force-black * {
 /* Add padding when broadcast banner is visible (banner sits below fixed nav on desktop) */
 body.has-broadcast-banner .linknest-app-container {
   padding-top: 40px;
-  transition: padding-top 0.3s ease;
 }
 
 @media (min-width: 768px) {
