@@ -1,13 +1,19 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     LinkNest Deployment Packager
 .DESCRIPTION
     Clean-builds the React frontend with the correct base path, gathers all
-    runtime files, stamps BUILD_INFO.json (for PWA cache busting), and produces
-    a self-contained ZIP ready to deploy/update on another XAMPP machine.
+    runtime files (API, addons, vendor/SAML, dist), stamps BUILD_INFO.json
+    (for PWA cache busting), and produces a self-contained ZIP ready to
+    deploy/update on another XAMPP machine.
+
+    Default: FRESH install package (no live SQLite DB). The target PC creates
+    a new database on first launch. Use -IncludeDatabase to mirror this PC's DB.
 .PARAMETER SkipBuild
     Skip the npm build step (use existing dist/). Not recommended when shipping code changes.
+.PARAMETER IncludeDatabase
+    Include data/linknest.db (and related DB files) from this machine.
 .PARAMETER ExcludeUploads
     Do not include the uploads/ directory in the package.
 .PARAMETER OutputDir
@@ -16,11 +22,13 @@
     Vite base path baked into the frontend. Default: /linknest
 .EXAMPLE
     .\package-for-deployment.ps1
+    .\package-for-deployment.ps1 -IncludeDatabase
     .\package-for-deployment.ps1 -BasePath "/myapp"
     .\package-for-deployment.ps1 -OutputDir "E:\"
 #>
 param(
     [switch]$SkipBuild,
+    [switch]$IncludeDatabase,
     [switch]$ExcludeUploads,
     [string]$OutputDir = "",
     [string]$BasePath = "/linknest"
@@ -81,8 +89,41 @@ function Ensure-Dir([string]$path) {
     }
 }
 
+function Copy-TreeReliable {
+    param(
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Destination,
+        [string[]]$ExcludeDirs = @("node_modules", ".git", "__pycache__", ".vite", "dist"),
+        [string[]]$ExcludeFiles = @()
+    )
+    Ensure-Dir $Destination
+    $roboArgs = @($Source, $Destination, "/E", "/NFL", "/NDL", "/NJH", "/NJS", "/nc", "/ns", "/np")
+    if ($ExcludeDirs.Count -gt 0) {
+        $roboArgs += "/XD"
+        $roboArgs += $ExcludeDirs
+    }
+    if ($ExcludeFiles.Count -gt 0) {
+        $roboArgs += "/XF"
+        $roboArgs += $ExcludeFiles
+    }
+    $proc = Start-Process -FilePath "robocopy.exe" -ArgumentList $roboArgs -Wait -PassThru -NoNewWindow
+    # Robocopy: 0-7 = success / no-op; >= 8 = failure
+    if ($proc.ExitCode -ge 8) {
+        throw "robocopy failed for '$Source' -> '$Destination' (exit $($proc.ExitCode))"
+    }
+    $fileCount = @(Get-ChildItem -LiteralPath $Destination -Recurse -File -ErrorAction SilentlyContinue).Count
+    if ($fileCount -lt 1) {
+        # Fallback if robocopy produced an empty tree (junction/ACL edge cases)
+        Write-Warn "robocopy left 0 files for $(Split-Path $Source -Leaf); falling back to Copy-Item"
+        if (Test-Path $Destination) { Remove-Item -LiteralPath $Destination -Recurse -Force }
+        Copy-Item -LiteralPath $Source -Destination $Destination -Recurse -Force
+        $fileCount = @(Get-ChildItem -LiteralPath $Destination -Recurse -File -ErrorAction SilentlyContinue).Count
+    }
+    return $fileCount
+}
+
 function Get-FileSha256([string]$path) {
-    # Use .NET directly — Get-FileHash is missing in some hosted/constrained PowerShell hosts.
+    # Use .NET directly - Get-FileHash is missing in some hosted/constrained PowerShell hosts.
     $sha = [System.Security.Cryptography.SHA256]::Create()
     try {
         $stream = [System.IO.File]::OpenRead($path)
@@ -110,10 +151,19 @@ Write-Host "     LinkNest - Deployment Packager"           -ForegroundColor Mage
 Write-Host "     $(Get-Date -Format 'yyyy-MM-dd  HH:mm:ss')"                  -ForegroundColor Magenta
 Write-Host "  =============================================" -ForegroundColor Magenta
 Write-Host ""
+$pkgVersion = "unknown"
+try {
+    $pkgJson = Get-Content (Join-Path $ProjectRoot "package.json") -Raw | ConvertFrom-Json
+    if ($pkgJson.version) { $pkgVersion = [string]$pkgJson.version }
+} catch { }
+
 Write-Host "  Project Root : $ProjectRoot" -ForegroundColor Gray
 Write-Host "  Package Name : $PackageName" -ForegroundColor Gray
+Write-Host "  App Version  : $pkgVersion" -ForegroundColor Gray
 Write-Host "  Base Path    : $(if ($BasePath) { $BasePath } else { '/' })" -ForegroundColor Gray
 Write-Host "  Build ID     : $BuildId" -ForegroundColor Gray
+Write-Host "  Database     : $(if ($IncludeDatabase) { 'INCLUDE live DB from this PC' } else { 'FRESH (no live DB - recommended)' })" -ForegroundColor Gray
+Write-Host "  Uploads      : $(if ($ExcludeUploads) { 'excluded' } else { 'included' })" -ForegroundColor Gray
 Write-Host "  Output ZIP   : $ZipOutput"   -ForegroundColor Gray
 Write-Host ""
 
@@ -273,6 +323,9 @@ $FilesToInclude = @(
     "landing.php",
     "clones.php",
     "backup_restore.php",
+    "backup_restore_docker.php",
+    "migrate_templates.php",
+    "check_opcache.php",
     ".htaccess",
     "package.json",
     "package-lock.json",
@@ -284,8 +337,10 @@ $FilesToInclude = @(
     "postcss.config.js",
     "composer.json",
     "composer.lock",
+    "composer.phar",
     "sw-cache-first.php",
     "metadata.json",
+    "README.md",
     # Staging AI Offline Kit + related import templates (served by PHP from app root)
     "staging-ai-import-template.csv",
     "staging-ai-prompt-guide.md",
@@ -297,18 +352,29 @@ $FilesToInclude = @(
 )
 
 # Exclude junk that commonly sneaks into recursive copies
-$ExcludeDirNames = @("node_modules", ".git", "__pycache__", ".vite", "dist", "linknest-deploy-*")
+$ExcludeDirNames = @(
+    "node_modules", ".git", "__pycache__", ".vite", "dist",
+    "linknest-deploy-*", "linknest-deployment-*", "test-bundle",
+    "docker-deploy-package", "api copy", "data - Copy"
+)
+
+# Large / machine-local noise inside analytics (keep workers, schema, dashboard)
+$AnalyticsExcludeFiles = @(
+    "analytics_backup_*.sql",
+    "backup_*.sql",
+    "backup_*.dump",
+    "*.dump"
+)
 
 foreach ($dir in $DirsToInclude) {
     $src = Join-Path $ProjectRoot $dir
     $dst = Join-Path $TempDir $dir
     if (Test-Path $src) {
         Write-Step "Copying $dir/ ..."
-        # Robocopy is more reliable than Copy-Item for large trees and skips node_modules.
-        $null = robocopy $src $dst /E /NFL /NDL /NJH /NJS /nc /ns /np `
-            /XD node_modules .git __pycache__ .vite dist
-        if ($LASTEXITCODE -ge 8) { throw "robocopy failed for $dir/ (exit $LASTEXITCODE)" }
-        Write-OK "$dir/ copied"
+        $xf = @()
+        if ($dir -eq "analytics") { $xf = $AnalyticsExcludeFiles }
+        $copied = Copy-TreeReliable -Source $src -Destination $dst -ExcludeFiles $xf
+        Write-OK ("{0}/ copied ({1} files)" -f $dir, $copied)
     }
     else {
         Write-Warn "$dir/ not found, skipping"
@@ -331,18 +397,42 @@ foreach ($file in $FilesToInclude) {
 }
 Write-OK ("{0} root files copied ({1} skipped)" -f $copiedFiles, $skippedFiles)
 
+# Strip machine-local / secret configs that must NEVER ship
+Write-Step "Scrubbing machine-local secrets from package..."
+$configDst = Join-Path $TempDir "config"
+if (Test-Path $configDst) {
+    Get-ChildItem -LiteralPath $configDst -Filter "*.local.php" -Recurse -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            Write-Warn ("Removing local config (not portable): {0}" -f $_.Name)
+            Remove-Item -LiteralPath $_.FullName -Force
+        }
+}
+# Drop accidental "Copy" duplicates (Windows Explorer leftovers)
+Get-ChildItem -LiteralPath $TempDir -Recurse -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match ' - Copy(\s*\(\d+\))?\.' } |
+    ForEach-Object {
+        Write-Warn ("Removing copy leftover: {0}" -f $_.FullName.Substring($TempDir.Length))
+        Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
+    }
+
 # Verify SAML library ships with the package (avoids "OneLogin library not loaded" on target)
 $samlAutoload = Join-Path $TempDir "vendor\autoload.php"
 $samlAuthClass = Join-Path $TempDir "vendor\onelogin\php-saml\src\OneLogin\Saml2\Auth.php"
 $samlAuthLib = Join-Path $TempDir "vendor\onelogin\php-saml\lib\Saml2\Auth.php"
 if (-not (Test-Path $samlAutoload)) {
-    Write-Warn "vendor/autoload.php missing - SAML will not work on the target until you run composer install"
+    Write-Err "vendor/autoload.php missing after copy - SAML and Composer deps will break on the target."
+    Write-Err "Fix: ensure vendor/ exists on this PC (run composer install), then re-package."
+    Read-Host "Press Enter to exit"
+    exit 1
 }
 elseif ((Test-Path $samlAuthClass) -or (Test-Path $samlAuthLib)) {
-    Write-OK "SAML OneLogin library bundled (vendor/)"
+    $vendorFiles = @(Get-ChildItem (Join-Path $TempDir "vendor") -Recurse -File).Count
+    Write-OK ("SAML OneLogin library bundled (vendor/ - {0} files)" -f $vendorFiles)
 }
 else {
-    Write-Warn "vendor/ present but OneLogin Auth.php not found - check vendor/onelogin/php-saml"
+    Write-Err "vendor/ present but OneLogin Auth.php not found - check vendor/onelogin/php-saml"
+    Read-Host "Press Enter to exit"
+    exit 1
 }
 
 # ---------------------------------------------------------------------------
@@ -365,60 +455,69 @@ else {
 }
 
 # ---------------------------------------------------------------------------
-#  5. Copy SQLite Database
+#  5. SQLite Database (optional - default is FRESH on the other PC)
 # ---------------------------------------------------------------------------
-Write-Header "5 / Copy SQLite Database"
+Write-Header "5 / Database (data/)"
 
 Ensure-Dir (Join-Path $TempDir "data")
-
-$dbCopied = $false
-$dbCandidates = @(
-    (Join-Path $ProjectRoot "data\linknest.db"),
-    (Join-Path $ProjectRoot "linknest.db")
-)
-
-foreach ($dbPath in $dbCandidates) {
-    if (Test-Path $dbPath) {
-        $dbDst = Join-Path $TempDir "data\linknest.db"
-        Copy-Item -Path $dbPath -Destination $dbDst -Force
-        $dbMB = [math]::Round((Get-Item $dbPath).Length / 1MB, 2)
-        Write-OK ("Database copied: {0}  ({1} MB)" -f $dbPath, $dbMB)
-        $dbCopied = $true
-        break
-    }
-}
-
-$appDbSrc = Join-Path $ProjectRoot "data\app.db"
-if (Test-Path $appDbSrc) {
-    Copy-Item -Path $appDbSrc -Destination (Join-Path $TempDir "data\app.db") -Force
-    Write-OK "app.db also copied"
-}
-
-if (-not $dbCopied) {
-    Write-Warn "No SQLite database found. A fresh database will be created on first launch."
-}
-
-# Ensure portable encryption key exists (LDAP bind passwords survive path/machine moves)
-$encKeySrc = Join-Path $ProjectRoot "data\.encryption_key"
-if (-not (Test-Path $encKeySrc)) {
-    # Seed with the same material PHP used historically (absolute DB path + salt)
-    $dbForKey = Join-Path $ProjectRoot "data\linknest.db"
-    if (-not (Test-Path $dbForKey)) { $dbForKey = Join-Path $ProjectRoot "linknest.db" }
-    if (Test-Path $dbForKey) {
-        $keyMaterial = ((Resolve-Path $dbForKey).Path) + "linknest_ldap_encryption_salt_v1"
-        # Write without BOM so PHP trim/hash matches
-        [System.IO.File]::WriteAllText($encKeySrc, $keyMaterial, (New-Object System.Text.UTF8Encoding $false))
-        Write-OK "Created data\.encryption_key for portable LDAP password decrypt"
-    }
-}
-if (Test-Path $encKeySrc) {
-    Copy-Item -Path $encKeySrc -Destination (Join-Path $TempDir "data\.encryption_key") -Force
-    Write-OK "Encryption key copied (data\.encryption_key)"
-}
+Ensure-Dir (Join-Path $TempDir "logs")
 
 $gitkeepSrc = Join-Path $ProjectRoot "data\.gitkeep"
+$gitkeepDst = Join-Path $TempDir "data\.gitkeep"
 if (Test-Path $gitkeepSrc) {
-    Copy-Item -Path $gitkeepSrc -Destination (Join-Path $TempDir "data\.gitkeep") -Force
+    Copy-Item -Path $gitkeepSrc -Destination $gitkeepDst -Force
+}
+else {
+    Set-Content -Path $gitkeepDst -Value "" -Encoding ASCII
+}
+
+if ($IncludeDatabase) {
+    $dbCopied = $false
+    $dbCandidates = @(
+        (Join-Path $ProjectRoot "data\linknest.db"),
+        (Join-Path $ProjectRoot "linknest.db")
+    )
+
+    foreach ($dbPath in $dbCandidates) {
+        if (Test-Path $dbPath) {
+            $dbDst = Join-Path $TempDir "data\linknest.db"
+            Copy-Item -Path $dbPath -Destination $dbDst -Force
+            $dbMB = [math]::Round((Get-Item $dbPath).Length / 1MB, 2)
+            Write-OK ("Database copied: {0}  ({1} MB)" -f $dbPath, $dbMB)
+            $dbCopied = $true
+            break
+        }
+    }
+
+    $appDbSrc = Join-Path $ProjectRoot "data\app.db"
+    if (Test-Path $appDbSrc) {
+        Copy-Item -Path $appDbSrc -Destination (Join-Path $TempDir "data\app.db") -Force
+        Write-OK "app.db also copied"
+    }
+
+    if (-not $dbCopied) {
+        Write-Warn "No SQLite database found despite -IncludeDatabase. Target will create a fresh DB."
+    }
+
+    # Portable encryption key so LDAP bind passwords survive path/machine moves
+    $encKeySrc = Join-Path $ProjectRoot "data\.encryption_key"
+    if (-not (Test-Path $encKeySrc)) {
+        $dbForKey = Join-Path $ProjectRoot "data\linknest.db"
+        if (-not (Test-Path $dbForKey)) { $dbForKey = Join-Path $ProjectRoot "linknest.db" }
+        if (Test-Path $dbForKey) {
+            $keyMaterial = ((Resolve-Path $dbForKey).Path) + "linknest_ldap_encryption_salt_v1"
+            [System.IO.File]::WriteAllText($encKeySrc, $keyMaterial, (New-Object System.Text.UTF8Encoding $false))
+            Write-OK "Created data\.encryption_key for portable LDAP password decrypt"
+        }
+    }
+    if (Test-Path $encKeySrc) {
+        Copy-Item -Path $encKeySrc -Destination (Join-Path $TempDir "data\.encryption_key") -Force
+        Write-OK "Encryption key copied (data\.encryption_key)"
+    }
+}
+else {
+    Write-OK "Fresh mode: NOT copying live databases (target will create linknest.db on first launch)"
+    Write-OK "data/ placeholder ready (.gitkeep + empty logs/)"
 }
 
 # ---------------------------------------------------------------------------
@@ -455,9 +554,8 @@ Write-Header "7 / Copy Deployment Scripts"
 $scriptsSrc = Join-Path $ProjectRoot "scripts"
 $scriptsDst = Join-Path $TempDir "scripts"
 if (Test-Path $scriptsSrc) {
-    $null = robocopy $scriptsSrc $scriptsDst /E /NFL /NDL /NJH /NJS /nc /ns /np /XD __pycache__
-    if ($LASTEXITCODE -ge 8) { throw "robocopy failed for scripts/ (exit $LASTEXITCODE)" }
-    Write-OK "scripts/ copied"
+    $copied = Copy-TreeReliable -Source $scriptsSrc -Destination $scriptsDst -ExcludeDirs @("__pycache__", "node_modules")
+    Write-OK ("scripts/ copied ({0} files)" -f $copied)
 }
 else {
     Write-Warn "scripts/ not found, skipping"
@@ -476,7 +574,9 @@ $buildInfo = [ordered]@{
     buildId     = $BuildId
     builtAt     = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
     packageName = $PackageName
+    appVersion  = $pkgVersion
     basePath    = $(if ($BasePath) { $BasePath } else { "/" })
+    includeDatabase = [bool]$IncludeDatabase
     indexAsset  = $indexAsset
     indexSha12  = $indexHash
     jsAssetCount = $assetJs.Count
@@ -488,12 +588,14 @@ Set-Content -Path (Join-Path $TempDir "dist\BUILD_INFO.json") -Value $buildInfoJ
 Write-OK ("BUILD_INFO.json written (buildId={0}, {1})" -f $BuildId, $indexAsset)
 
 # Write a small .env template so manual deploys get the correct base path
+# Do NOT copy .env.local (may contain GEMINI_API_KEY / secrets)
 $envTemplate = @"
 VITE_BASE_PATH=$(if ($BasePath) { $BasePath } else { "" })
 VITE_API_BASE=$(if ($BasePath) { "$BasePath/api" } else { "/api" })
+# Optional: GEMINI_API_KEY=your_key_here
 "@
 Set-Content -Path (Join-Path $TempDir ".env") -Value $envTemplate -Encoding ASCII
-Write-OK ".env written for target base path"
+Write-OK ".env written for target base path (no secrets copied from this PC)"
 
 # ---------------------------------------------------------------------------
 #  8. Write deployment guide and helper scripts into the package
@@ -501,13 +603,14 @@ Write-OK ".env written for target base path"
 Write-Header "8 / Generating Deployment Files"
 
 $basePathForBat = if ($BasePath) { $BasePath.TrimStart("/") } else { "linknest" }
+$dbModeNote = if ($IncludeDatabase) { "includes live DB from packager PC" } else { "FRESH database on first launch" }
 
-# ── deploy-xampp.bat (fresh install — wipes target folder) ─────────────────
+# -- deploy-xampp.bat (fresh install - wipes target folder) -----------------
 $deployBat = @"
 @echo off
 setlocal enabledelayedexpansion
 REM ==========================================================
-REM  LinkNest XAMPP Deployment Script (Windows) — FRESH INSTALL
+REM  LinkNest XAMPP Deployment Script (Windows) - FRESH INSTALL
 REM  Wipes the target folder, then copies this package in.
 REM  Prefer update-xampp.bat if you want to KEEP data/uploads.
 REM ==========================================================
@@ -515,8 +618,13 @@ echo.
 echo  =============================================
 echo     LinkNest - XAMPP Fresh Deploy (Windows)
 echo     Package build: $BuildId
+echo     App version  : $pkgVersion
+echo     DB mode      : $dbModeNote
 echo  =============================================
 echo.
+
+where docker >nul 2>&1
+REM (Docker not required - this is an XAMPP deploy)
 
 set "XAMPP_ROOT=C:\xampp"
 set /p "XAMPP_ROOT=XAMPP install path (press Enter for C:\xampp): "
@@ -537,11 +645,46 @@ echo.
 
 if not exist "%HTDOCS%" (
     echo  ERROR: Cannot find %HTDOCS%
+    echo  Install XAMPP or enter the correct path.
     pause
     exit /b 1
 )
 
+REM Package integrity (catch incomplete ZIP extracts)
+set "PKG_DIR=%~dp0"
+if "%PKG_DIR:~-1%"=="\" set "PKG_DIR=%PKG_DIR:~0,-1%"
+
+if not exist "%PKG_DIR%\dist\index.html" (
+    echo  ERROR: dist\index.html missing - ZIP extract incomplete or wrong folder.
+    pause
+    exit /b 1
+)
+if not exist "%PKG_DIR%\api\index.php" (
+    echo  ERROR: api\index.php missing - package is incomplete.
+    pause
+    exit /b 1
+)
+if not exist "%PKG_DIR%\.htaccess" (
+    echo  ERROR: .htaccess missing - Apache rewrite will break.
+    pause
+    exit /b 1
+)
+if not exist "%PKG_DIR%\vendor\autoload.php" (
+    echo  ERROR: vendor\autoload.php missing - SAML/Composer libs not packaged.
+    pause
+    exit /b 1
+)
+echo  [OK] Package integrity check passed
+
 if exist "%INSTALL_DIR%" (
+    echo  WARNING: This will DELETE everything in:
+    echo    %INSTALL_DIR%
+    set /p "CONFIRM=Type YES to continue: "
+    if /i not "!CONFIRM!"=="YES" (
+        echo  Cancelled.
+        pause
+        exit /b 1
+    )
     echo  Removing old installation at %INSTALL_DIR% ...
     rd /s /q "%INSTALL_DIR%"
 )
@@ -549,13 +692,16 @@ mkdir "%INSTALL_DIR%"
 echo  [OK] Install directory ready
 
 echo  Copying application files...
-set "PKG_DIR=%~dp0"
-if "%PKG_DIR:~-1%"=="\" set "PKG_DIR=%PKG_DIR:~0,-1%"
-
 xcopy "%PKG_DIR%\*" "%INSTALL_DIR%\" /E /I /Y /Q >nul
+if errorlevel 1 (
+    echo  ERROR: xcopy failed
+    pause
+    exit /b 1
+)
 if exist "%INSTALL_DIR%\deploy-xampp.bat" del /f /q "%INSTALL_DIR%\deploy-xampp.bat"
 if exist "%INSTALL_DIR%\deploy-xampp.sh" del /f /q "%INSTALL_DIR%\deploy-xampp.sh"
 if exist "%INSTALL_DIR%\update-xampp.bat" del /f /q "%INSTALL_DIR%\update-xampp.bat"
+if exist "%INSTALL_DIR%\verify-install.bat" del /f /q "%INSTALL_DIR%\verify-install.bat"
 echo  [OK] Files copied
 
 (
@@ -594,16 +740,20 @@ echo  =============================================
 echo  Deployment Complete!  Build: $BuildId
 echo  =============================================
 echo.
-echo  1. Start Apache in XAMPP
-echo  2. Open: http://localhost/%SUBFOLDER%
-echo  3. Hard refresh once (Ctrl+F5) if you still see the old UI
-echo  4. Confirm build: open http://localhost/%SUBFOLDER%/BUILD_INFO.json
-echo  5. Default login: admin / admin123 — change it immediately
+echo  BEFORE OPENING THE APP:
+echo  1. Start Apache in the XAMPP Control Panel
+echo  2. Confirm AllowOverride All for htdocs ^(mod_rewrite^)
+echo  3. Open: http://localhost/%SUBFOLDER%
+echo  4. Hard refresh once ^(Ctrl+F5^) if you still see an old UI
+echo  5. Confirm build: http://localhost/%SUBFOLDER%/BUILD_INFO.json
+echo  6. Default login: admin / admin123 - change it immediately
+echo.
+echo  Tip: run verify-install.bat from the extracted ZIP if anything looks wrong.
 echo.
 pause
 "@
 
-# ── update-xampp.bat (KEEP data/uploads — recommended for upgrades) ───────
+# -- update-xampp.bat (KEEP data/uploads - recommended for upgrades) -------
 $updateBat = @"
 @echo off
 setlocal enabledelayedexpansion
@@ -617,6 +767,7 @@ echo.
 echo  =============================================
 echo     LinkNest - XAMPP Update (preserve data)
 echo     Package build: $BuildId
+echo     App version  : $pkgVersion
 echo  =============================================
 echo.
 
@@ -645,6 +796,17 @@ if not exist "%INSTALL_DIR%" (
 set "PKG_DIR=%~dp0"
 if "%PKG_DIR:~-1%"=="\" set "PKG_DIR=%PKG_DIR:~0,-1%"
 
+if not exist "%PKG_DIR%\dist\index.html" (
+    echo  ERROR: dist\index.html missing in package.
+    pause
+    exit /b 1
+)
+if not exist "%PKG_DIR%\vendor\autoload.php" (
+    echo  ERROR: vendor\autoload.php missing in package.
+    pause
+    exit /b 1
+)
+
 set "BACKUP_DIR=%TEMP%\linknest-update-backup-%RANDOM%"
 mkdir "%BACKUP_DIR%" >nul 2>&1
 
@@ -660,13 +822,14 @@ if exist "%INSTALL_DIR%\uploads" (
 
 echo  Wiping old dist/ so stale hashed assets cannot remain ...
 if exist "%INSTALL_DIR%\dist" rd /s /q "%INSTALL_DIR%\dist"
+if exist "%INSTALL_DIR%\vendor" rd /s /q "%INSTALL_DIR%\vendor"
 
 echo  Copying updated application files (excluding deploy helpers)...
-REM Copy everything from package, then restore data/uploads
 xcopy "%PKG_DIR%\*" "%INSTALL_DIR%\" /E /I /Y /Q >nul
 if exist "%INSTALL_DIR%\deploy-xampp.bat" del /f /q "%INSTALL_DIR%\deploy-xampp.bat"
 if exist "%INSTALL_DIR%\deploy-xampp.sh" del /f /q "%INSTALL_DIR%\deploy-xampp.sh"
 if exist "%INSTALL_DIR%\update-xampp.bat" del /f /q "%INSTALL_DIR%\update-xampp.bat"
+if exist "%INSTALL_DIR%\verify-install.bat" del /f /q "%INSTALL_DIR%\verify-install.bat"
 
 echo  Restoring preserved data/ and uploads/ ...
 if exist "%BACKUP_DIR%\data" (
@@ -706,7 +869,65 @@ echo.
 pause
 "@
 
-# ── deploy-xampp.sh (Linux/macOS) ──────────────────────────────────────────
+# -- verify-install.bat (quick health check against an install OR this ZIP) -
+$verifyBat = @"
+@echo off
+setlocal enabledelayedexpansion
+echo.
+echo  =============================================
+echo     LinkNest - Package / Install Verifier
+echo     Expected buildId: $BuildId
+echo  =============================================
+echo.
+
+set "TARGET=%~dp0"
+if "%TARGET:~-1%"=="\" set "TARGET=%TARGET:~0,-1%"
+set /p "CUSTOM=Check this folder (Enter = this ZIP folder): "
+if not "!CUSTOM!"=="" set "TARGET=!CUSTOM!"
+
+set "FAIL=0"
+echo  Checking: !TARGET!
+echo.
+
+for %%F in (
+    "dist\index.html"
+    "api\index.php"
+    "api\config.php"
+    ".htaccess"
+    "vendor\autoload.php"
+    "BUILD_INFO.json"
+    "sw-cache-first.php"
+    "public\sw-cache-first.js"
+    "package.json"
+    "App.tsx"
+) do (
+    if exist "!TARGET!\%%~F" (
+        echo  [OK] %%~F
+    ) else (
+        echo  [XX] MISSING %%~F
+        set "FAIL=1"
+    )
+)
+
+if exist "!TARGET!\BUILD_INFO.json" (
+    echo.
+    echo  --- BUILD_INFO.json ---
+    type "!TARGET!\BUILD_INFO.json"
+    echo.
+)
+
+if "!FAIL!"=="1" (
+    echo  RESULT: FAILED - package/install is incomplete.
+    pause
+    exit /b 1
+) else (
+    echo  RESULT: OK - required files present.
+    pause
+    exit /b 0
+)
+"@
+
+# -- deploy-xampp.sh (Linux/macOS) ------------------------------------------
 $deploySh = @"
 #!/usr/bin/env bash
 set -euo pipefail
@@ -720,6 +941,13 @@ echo "     LinkNest - XAMPP Deploy (Linux/macOS)"
 echo "     Package build: `$BUILD_ID"
 echo "  ============================================="
 echo ""
+
+for f in dist/index.html api/index.php .htaccess vendor/autoload.php; do
+    if [ ! -e "`$PKG_DIR/`$f" ]; then
+        echo "  ERROR: missing `$f - incomplete package"
+        exit 1
+    fi
+done
 
 read -rp "  XAMPP install path [/opt/lampp]: " XAMPP_ROOT
 XAMPP_ROOT="`${XAMPP_ROOT:-/opt/lampp}"
@@ -747,7 +975,7 @@ else
 fi
 
 cp -a "`$PKG_DIR"/. "`$INSTALL_DIR/"
-rm -f "`$INSTALL_DIR/deploy-xampp.sh" "`$INSTALL_DIR/deploy-xampp.bat" "`$INSTALL_DIR/update-xampp.bat"
+rm -f "`$INSTALL_DIR/deploy-xampp.sh" "`$INSTALL_DIR/deploy-xampp.bat" "`$INSTALL_DIR/update-xampp.bat" "`$INSTALL_DIR/verify-install.bat"
 
 if [ -n "`$BACKUP_DIR" ]; then
     [ -d "`$BACKUP_DIR/data" ] && rm -rf "`$INSTALL_DIR/data" && cp -a "`$BACKUP_DIR/data" "`$INSTALL_DIR/"
@@ -789,7 +1017,24 @@ $readmeMd = @"
 Created : $createdAt
 Package : $PackageName
 Build ID: $BuildId
+Version : $pkgVersion
 Base    : $(if ($BasePath) { $BasePath } else { "/" })
+Database: $dbModeNote
+
+---
+
+## On the other computer (XAMPP)
+
+1. Install / start **XAMPP** (Apache). Enable ``mod_rewrite`` and ``AllowOverride All`` for ``htdocs``.
+2. Extract this ZIP anywhere (Desktop is fine).
+3. **Fresh install:** double-click ``deploy-xampp.bat``
+4. **Upgrade existing:** double-click ``update-xampp.bat`` (keeps ``data/`` + ``uploads/``)
+5. Open ``http://localhost/$basePathForBat``
+6. Confirm ``http://localhost/$basePathForBat/BUILD_INFO.json`` shows buildId ``$BuildId``
+7. Hard refresh once (Ctrl+F5) if Semi-PWA still shows an old UI
+8. Login: ``admin`` / ``admin123`` - change immediately
+
+Optional: run ``verify-install.bat`` to confirm required files are present.
 
 ---
 
@@ -800,44 +1045,12 @@ This package stamps a unique **buildId** into ``BUILD_INFO.json``. The
 service worker cache name includes that id, so a new deploy automatically
 invalidates the old UI cache.
 
-After updating, open:
-``http://localhost/YOUR_SUBFOLDER/BUILD_INFO.json``
-
-If ``buildId`` is not ``$BuildId``, the new files are not where Apache is serving from.
-
----
-
-## Recommended upgrade (keep database)
-
-1. Extract this ZIP anywhere.
-2. Run **update-xampp.bat** (Windows).
-3. It wipes old ``dist/``, copies the new app, and restores ``data/`` + ``uploads/``.
-4. Hard refresh once (Ctrl+F5).
-5. Confirm ``BUILD_INFO.json`` shows buildId ``$BuildId``.
-
-## Fresh install
-
-1. Run **deploy-xampp.bat** (wipes the target folder completely).
-2. Start Apache and open ``http://localhost/$basePathForBat``.
-
-## Manual copy (if you must)
-
-Do **not** merge folders blindly. Always:
-
-1. Delete the target ``dist/`` folder completely first.
-2. Copy the new package files over.
-3. Keep existing ``data/`` and ``uploads/`` if you need them.
-4. Copy ``BUILD_INFO.json`` and ``sw-cache-first.php`` / ``public/sw-cache-first.js``.
-5. Hard refresh (Ctrl+F5).
-
 ---
 
 ## Default Credentials
 
 Username : admin
 Password : admin123
-
-Change the password immediately after login.
 
 ---
 
@@ -846,21 +1059,80 @@ Change the password immediately after login.
 | Problem | Fix |
 |---------|-----|
 | Old UI after update | Run update-xampp.bat, then Ctrl+F5; check BUILD_INFO.json |
-| Blank / wrong assets | Confirm VITE base path matches folder name; rebuild if different |
-| API oddness after PHP edits | Restart Apache (clears OPcache if enabled) |
-| 404 | Enable AllowOverride All + mod_rewrite in XAMPP |
-| SAML: OneLogin library not loaded | Ensure ``vendor/`` was copied (autoload.php + onelogin/php-saml). Or run ``composer install`` on the server. |
+| Blank / wrong assets | Confirm folder name is ``$basePathForBat`` (or rebuild with Node) |
+| API 404 | Enable AllowOverride All + mod_rewrite in Apache |
+| SAML library missing | Package must include ``vendor/`` - re-run packager on source PC |
+| Permission errors | Ensure ``data/``, ``uploads/``, ``logs/`` are writable by Apache |
 "@
 
 Set-Content -Path (Join-Path $TempDir "deploy-xampp.bat") -Value $deployBat -Encoding ASCII
 Set-Content -Path (Join-Path $TempDir "update-xampp.bat") -Value $updateBat -Encoding ASCII
+Set-Content -Path (Join-Path $TempDir "verify-install.bat") -Value $verifyBat -Encoding ASCII
 Set-Content -Path (Join-Path $TempDir "deploy-xampp.sh") -Value $deploySh -Encoding UTF8
 Set-Content -Path (Join-Path $TempDir "DEPLOYMENT_README.md") -Value $readmeMd -Encoding UTF8
 
 Write-OK "deploy-xampp.bat written"
 Write-OK "update-xampp.bat written (preserve data - use this for upgrades)"
+Write-OK "verify-install.bat written"
 Write-OK "deploy-xampp.sh written"
 Write-OK "DEPLOYMENT_README.md written"
+
+# ---------------------------------------------------------------------------
+#  8b. Pre-ZIP integrity gate (refuse incomplete packages)
+# ---------------------------------------------------------------------------
+Write-Header "8b / Pre-ZIP Integrity Gate"
+
+$requiredInPackage = @(
+    "dist\index.html",
+    "api\index.php",
+    "api\config.php",
+    ".htaccess",
+    "vendor\autoload.php",
+    "App.tsx",
+    "package.json",
+    "public\sw-cache-first.js",
+    "sw-cache-first.php",
+    "BUILD_INFO.json",
+    "deploy-xampp.bat",
+    "update-xampp.bat",
+    "verify-install.bat"
+)
+
+$integrityFailed = $false
+foreach ($rel in $requiredInPackage) {
+    $p = Join-Path $TempDir $rel
+    if (-not (Test-Path $p)) {
+        Write-Err "Required file missing in staging: $rel"
+        $integrityFailed = $true
+    }
+}
+# Confirm hashed assets inside dist
+$stagedJs = @(Get-ChildItem (Join-Path $TempDir "dist\assets") -Recurse -Filter "*.js" -ErrorAction SilentlyContinue)
+if ($stagedJs.Count -lt 1) {
+    Write-Err "No JS assets under staging dist/assets/"
+    $integrityFailed = $true
+}
+# Confirm no machine-local secrets leaked
+$leakedLocal = @(Get-ChildItem (Join-Path $TempDir "config") -Filter "*.local.php" -Recurse -ErrorAction SilentlyContinue)
+if ($leakedLocal.Count -gt 0) {
+    Write-Err "Refusing to ship *.local.php (machine secrets)"
+    $integrityFailed = $true
+}
+if (-not $IncludeDatabase) {
+    $accidentalDb = Join-Path $TempDir "data\linknest.db"
+    if (Test-Path $accidentalDb) {
+        Write-Err "Fresh mode but data/linknest.db is present - aborting"
+        $integrityFailed = $true
+    }
+}
+
+if ($integrityFailed) {
+    Write-Err "Package integrity check FAILED. ZIP was not created."
+    if (Test-Path $TempDir) { Remove-Item $TempDir -Recurse -Force -ErrorAction SilentlyContinue }
+    Read-Host "Press Enter to exit"
+    exit 1
+}
+Write-OK ("Integrity OK ({0} required paths + {1} JS assets)" -f $requiredInPackage.Count, $stagedJs.Count)
 
 # ---------------------------------------------------------------------------
 #  9. Create ZIP
@@ -881,6 +1153,47 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zipMB = [math]::Round((Get-Item $ZipOutput).Length / 1MB, 2)
 Write-OK ("ZIP created: {0}  ({1} MB)" -f $ZipOutput, $zipMB)
 
+# Spot-check the ZIP itself (previous packages silently omitted vendor/)
+Write-Step "Verifying ZIP contents..."
+$zipCheck = [System.IO.Compression.ZipFile]::OpenRead($ZipOutput)
+try {
+    $names = @($zipCheck.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
+    $mustHaveInZip = @(
+        "dist/index.html",
+        "api/index.php",
+        "vendor/autoload.php",
+        "BUILD_INFO.json",
+        "deploy-xampp.bat",
+        "update-xampp.bat",
+        "verify-install.bat",
+        ".htaccess"
+    )
+    $zipBad = $false
+    foreach ($m in $mustHaveInZip) {
+        if ($names -notcontains $m) {
+            Write-Err "ZIP is missing: $m"
+            $zipBad = $true
+        }
+    }
+    $vendorCount = @($names | Where-Object { $_ -like "vendor/*" }).Count
+    if ($vendorCount -lt 5) {
+        Write-Err ("ZIP vendor/ entry count looks wrong: {0}" -f $vendorCount)
+        $zipBad = $true
+    }
+    else {
+        Write-OK ("ZIP vendor/ entries: {0}" -f $vendorCount)
+    }
+    if ($zipBad) {
+        $zipCheck.Dispose()
+        Remove-Item $ZipOutput -Force -ErrorAction SilentlyContinue
+        throw "ZIP failed content verification and was deleted"
+    }
+    Write-OK "ZIP content verification passed"
+}
+finally {
+    $zipCheck.Dispose()
+}
+
 # ---------------------------------------------------------------------------
 #  10. Cleanup
 # ---------------------------------------------------------------------------
@@ -898,13 +1211,17 @@ Write-Host "  =============================================" -ForegroundColor Gr
 Write-Host "  ZIP     : $ZipOutput" -ForegroundColor Green
 Write-Host "  Size    : $zipMB MB"  -ForegroundColor Green
 Write-Host "  BuildId : $BuildId" -ForegroundColor Green
+Write-Host "  Version : $pkgVersion" -ForegroundColor Green
+Write-Host "  DB mode : $(if ($IncludeDatabase) { 'includes live DB' } else { 'FRESH (no live DB)' })" -ForegroundColor Green
 Write-Host "  =============================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "  ON THE TARGET MACHINE:" -ForegroundColor Yellow
-Write-Host "  - Upgrade (keep DB) : extract ZIP -> run update-xampp.bat" -ForegroundColor Yellow
-Write-Host "  - Fresh install     : extract ZIP -> run deploy-xampp.bat" -ForegroundColor Yellow
-Write-Host "  - Then verify       : /BUILD_INFO.json shows buildId above" -ForegroundColor Yellow
-Write-Host "  - If old UI remains : Ctrl+F5 once (service worker refresh)" -ForegroundColor Yellow
+Write-Host "  1. Extract the ZIP" -ForegroundColor Yellow
+Write-Host "  2. Fresh install : run deploy-xampp.bat" -ForegroundColor Yellow
+Write-Host "  3. Upgrade       : run update-xampp.bat (keeps data/)" -ForegroundColor Yellow
+Write-Host "  4. Optional check: run verify-install.bat" -ForegroundColor Yellow
+Write-Host "  5. Open BUILD_INFO.json and confirm buildId above" -ForegroundColor Yellow
+Write-Host "  6. Ctrl+F5 once if old UI remains (service worker)" -ForegroundColor Yellow
 Write-Host ""
 
 $outputFolder = Split-Path $ZipOutput -Parent
