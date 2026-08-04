@@ -31,6 +31,7 @@ import { MobileTileView } from './MobileTileView';
 import { StagingOverview } from './StagingOverview';
 import { StagingOfflineKit, StagingOfflineKitHandle } from './StagingOfflineKit';
 import { YourAppsOverview } from './YourAppsOverview';
+import { PrivateOverview } from './PrivateOverview';
 import { TileInfoDialog } from './TileInfoDialog';
 import { TileFireworks } from './TileFireworks';
 import { TileConfetti } from './TileConfetti';
@@ -6619,65 +6620,76 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         </>
       )}
 
-      {/* Private tab - Sub-tabs: Spaces | Sharing | Blocked + Filter (when Spaces) */}
+      {/* Private overview + sub-tabs: Spaces | Sharing | Blocked + Filter (when Spaces) */}
       {activeTab === 'private' && isAuthenticated && (
-        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setPrivateSubTab('spaces')}
-              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${privateSubTab === 'spaces'
-                ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm border border-slate-200 dark:border-slate-600'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50'
-                }`}
-              title={PRIVATE_SUBTAB_TOOLTIPS.spaces}
-            >
-              Spaces
-            </button>
-            <button
-              onClick={() => setPrivateSubTab('sharing')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${privateSubTab === 'sharing'
-                ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm border border-slate-200 dark:border-slate-600'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50'
-                }`}
-              title={PRIVATE_SUBTAB_TOOLTIPS.sharing}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4" aria-hidden>
-                <path d="M3 4a2 2 0 00-2 2v1.161l8.441 4.221a1.25 1.25 0 001.118 0L19 7.162V6a2 2 0 00-2-2H3z" />
-                <path d="M19 8.839l-7.77 3.885a2.75 2.75 0 01-2.46 0L1 8.839V14a2 2 0 002 2h14a2 2 0 002-2V8.839z" />
-              </svg>
-              Sharing
-              {pendingInvitationsCount > 0 && (
-                <span className="ml-0.5 px-1.5 py-0.5 text-xs font-semibold rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">
-                  {pendingInvitationsCount}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setPrivateSubTab('blocked')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${privateSubTab === 'blocked'
-                ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm border border-slate-200 dark:border-slate-600'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50'
-                }`}
-              title={PRIVATE_SUBTAB_TOOLTIPS.blocked}
-            >
-              Blocked
-              {blockedUsersCount > 0 && (
-                <span className="ml-0.5 px-1.5 py-0.5 text-xs font-semibold rounded-full bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-200">
-                  {blockedUsersCount}
-                </span>
-              )}
-            </button>
+        <>
+          <PrivateOverview
+            spaceCount={
+              privateSubTab === 'spaces'
+                ? Object.values(groupedTiles).reduce((acc: number, group: Tile[]) => acc + group.length, 0)
+                : 0
+            }
+            pendingInvitationsCount={pendingInvitationsCount}
+            onSelectSubTab={setPrivateSubTab}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPrivateSubTab('spaces')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${privateSubTab === 'spaces'
+                  ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm border border-slate-200 dark:border-slate-600'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                  }`}
+                title={PRIVATE_SUBTAB_TOOLTIPS.spaces}
+              >
+                Spaces
+              </button>
+              <button
+                onClick={() => setPrivateSubTab('sharing')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${privateSubTab === 'sharing'
+                  ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm border border-slate-200 dark:border-slate-600'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                  }`}
+                title={PRIVATE_SUBTAB_TOOLTIPS.sharing}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4" aria-hidden>
+                  <path d="M3 4a2 2 0 00-2 2v1.161l8.441 4.221a1.25 1.25 0 001.118 0L19 7.162V6a2 2 0 00-2-2H3z" />
+                  <path d="M19 8.839l-7.77 3.885a2.75 2.75 0 01-2.46 0L1 8.839V14a2 2 0 002 2h14a2 2 0 002-2V8.839z" />
+                </svg>
+                Sharing
+                {pendingInvitationsCount > 0 && (
+                  <span className="ml-0.5 px-1.5 py-0.5 text-xs font-semibold rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">
+                    {pendingInvitationsCount}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setPrivateSubTab('blocked')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${privateSubTab === 'blocked'
+                  ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm border border-slate-200 dark:border-slate-600'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                  }`}
+                title={PRIVATE_SUBTAB_TOOLTIPS.blocked}
+              >
+                Blocked
+                {blockedUsersCount > 0 && (
+                  <span className="ml-0.5 px-1.5 py-0.5 text-xs font-semibold rounded-full bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-200">
+                    {blockedUsersCount}
+                  </span>
+                )}
+              </button>
+            </div>
+            {/* Filter by owner - inline in same bar when Spaces sub-tab */}
+            {privateSubTab === 'spaces' && (
+              <PrivateOwnerFilterDropdown
+                value={privateOwnerFilter}
+                options={privateOwnerOptions}
+                onSelect={(v) => setPrivateOwnerFilter(v)}
+                userCount={privateOwnerOptions.length}
+              />
+            )}
           </div>
-          {/* Filter by owner - inline in same bar when Spaces sub-tab */}
-          {privateSubTab === 'spaces' && (
-            <PrivateOwnerFilterDropdown
-              value={privateOwnerFilter}
-              options={privateOwnerOptions}
-              onSelect={(v) => setPrivateOwnerFilter(v)}
-              userCount={privateOwnerOptions.length}
-            />
-          )}
-        </div>
+        </>
       )}
 
       {/* Private tab - Sharing sub-tab: pending invitations */}
