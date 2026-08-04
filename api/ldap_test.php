@@ -40,6 +40,36 @@ if (!extension_loaded('ldap')) {
     ]);
 }
 
+/**
+ * Resolve bind password from the admin test form.
+ * UI normally sends plaintext (already decrypted by settings GET).
+ * Encrypted blobs are decrypted when recognized; fake-encrypted plaintext is kept as-is.
+ */
+function ldapTestResolveBindPassword($pass): string {
+    if ($pass === null) {
+        return '';
+    }
+    $pass = trim((string)$pass);
+    if ($pass === '') {
+        return '';
+    }
+    if (function_exists('isMaskedPasswordPlaceholder') && isMaskedPasswordPlaceholder($pass)) {
+        throw new Exception(
+            'Bind password looks like a masked placeholder (asterisks). ' .
+            'Click the eye icon to verify the password, re-type it if needed, Save Settings, then test again.'
+        );
+    }
+    if (!isLikelyEncryptedPassword($pass)) {
+        return $pass;
+    }
+    try {
+        return (string)decryptPassword($pass);
+    } catch (Exception $e) {
+        // Unusual plaintext that only *looked* encrypted — bind with the raw value
+        return $pass;
+    }
+}
+
 try {
     // Connect
     $ldap = @ldap_connect($uri);
@@ -91,24 +121,45 @@ try {
     }
     
     // First, bind with service account (if configured) or anonymously
-    $serviceBindDn = $data['ldap_bind_dn'] ?? '';
-    $serviceBindPass = $data['ldap_bind_password'] ?? '';
-    
-    // Decrypt password only when it looks like encryptPassword() output
-    if (!empty($serviceBindPass) && isLikelyEncryptedPassword($serviceBindPass)) {
-        try {
-            $serviceBindPass = decryptPassword($serviceBindPass);
-        } catch (Exception $e) {
-            throw new Exception('Service account bind password could not be decrypted. Re-enter the bind password and Save Settings.');
-        }
-    }
+    $serviceBindDn = trim((string)($data['ldap_bind_dn'] ?? ''));
+    $serviceBindPass = ldapTestResolveBindPassword($data['ldap_bind_password'] ?? '');
+    $passLen = strlen($serviceBindPass);
     
     $bound = false;
     
-    if (!empty($serviceBindDn) && !empty($serviceBindPass)) {
+    if ($serviceBindDn !== '' && $serviceBindPass === '') {
+        throw new Exception(
+            "Bind DN is set but bind password is empty.\n" .
+            "Re-enter the service account password (use the eye icon to verify), click Save Settings, then test again.\n" .
+            "If the password field was blank after deploy, the old encryption key may not have transferred — retyping and saving fixes it."
+        );
+    }
+    
+    if ($serviceBindDn !== '' && $serviceBindPass !== '') {
         $bound = @ldap_bind($ldap, $serviceBindDn, $serviceBindPass);
         if (!$bound) {
-            throw new Exception("Service account bind failed: " . ldap_error($ldap));
+            $ldapErr = ldap_error($ldap);
+            $errno = function_exists('ldap_errno') ? ldap_errno($ldap) : null;
+            $diag = '';
+            if (defined('LDAP_OPT_DIAGNOSTIC_MESSAGE')) {
+                @ldap_get_option($ldap, LDAP_OPT_DIAGNOSTIC_MESSAGE, $diag);
+            }
+            $msg = "Service account bind failed: {$ldapErr}";
+            if ($errno !== null) {
+                $msg .= " (LDAP errno {$errno})";
+            }
+            if (is_string($diag) && $diag !== '') {
+                $msg .= "\nServer diagnostic: {$diag}";
+            }
+            $msg .= "\nBind DN used: {$serviceBindDn}";
+            $msg .= "\nPassword length: {$passLen} characters (value not shown)";
+            $msg .= "\nURI: {$uri}";
+            $msg .= "\n\nTips for Active Directory:";
+            $msg .= "\n• Prefer BIND DN as user@domain.com or DOMAIN\\username (not only CN=... unless that DN is exact).";
+            $msg .= "\n• Use the eye icon to confirm the saved password has no extra spaces.";
+            $msg .= "\n• Account must be enabled and allowed to bind (not locked / expired).";
+            $msg .= "\n• After changing the password here, click Save Settings before Test Connection.";
+            throw new Exception($msg);
         }
     } else {
         $bound = @ldap_bind($ldap); // Anonymous bind
@@ -242,7 +293,7 @@ try {
         // No test credentials provided, just test connection and service account bind
         sendJSON([
             'success' => true,
-            'message' => 'Successfully connected to LDAP server' . (!empty($serviceBindDn) ? " (service account bind successful)" : " (anonymous bind successful)")
+            'message' => 'Successfully connected to LDAP server' . ($serviceBindDn !== '' ? " (service account bind successful)" : " (anonymous bind successful)")
         ]);
     }
     

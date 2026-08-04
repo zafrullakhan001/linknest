@@ -374,6 +374,24 @@ if (-not $dbCopied) {
     Write-Warn "No SQLite database found. A fresh database will be created on first launch."
 }
 
+# Ensure portable encryption key exists (LDAP bind passwords survive path/machine moves)
+$encKeySrc = Join-Path $ProjectRoot "data\.encryption_key"
+if (-not (Test-Path $encKeySrc)) {
+    # Seed with the same material PHP used historically (absolute DB path + salt)
+    $dbForKey = Join-Path $ProjectRoot "data\linknest.db"
+    if (-not (Test-Path $dbForKey)) { $dbForKey = Join-Path $ProjectRoot "linknest.db" }
+    if (Test-Path $dbForKey) {
+        $keyMaterial = ((Resolve-Path $dbForKey).Path) + "linknest_ldap_encryption_salt_v1"
+        # Write without BOM so PHP trim/hash matches
+        [System.IO.File]::WriteAllText($encKeySrc, $keyMaterial, (New-Object System.Text.UTF8Encoding $false))
+        Write-OK "Created data\.encryption_key for portable LDAP password decrypt"
+    }
+}
+if (Test-Path $encKeySrc) {
+    Copy-Item -Path $encKeySrc -Destination (Join-Path $TempDir "data\.encryption_key") -Force
+    Write-OK "Encryption key copied (data\.encryption_key)"
+}
+
 $gitkeepSrc = Join-Path $ProjectRoot "data\.gitkeep"
 if (Test-Path $gitkeepSrc) {
     Copy-Item -Path $gitkeepSrc -Destination (Join-Path $TempDir "data\.gitkeep") -Force

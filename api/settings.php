@@ -479,16 +479,22 @@ function handleUpdateSettings() {
                             continue;
                         }
                         $pw = isset($server['bind_password']) && is_string($server['bind_password'])
-                            ? $server['bind_password']
+                            ? trim($server['bind_password'])
                             : '';
+                        if (isset($server['bind_dn']) && is_string($server['bind_dn'])) {
+                            $server['bind_dn'] = trim($server['bind_dn']);
+                        }
                         // Leave blank = keep previously saved password for this server index
-                        if (trim($pw) === '') {
+                        if ($pw === '') {
                             $existingPw = '';
                             if (isset($existingServers[$idx]['bind_password']) && is_string($existingServers[$idx]['bind_password'])) {
                                 $existingPw = $existingServers[$idx]['bind_password'];
                             }
                             $server['bind_password'] = $existingPw;
                             continue;
+                        }
+                        if (isMaskedPasswordPlaceholder($pw)) {
+                            sendJSON(['error' => 'LDAP bind password looks masked (asterisks). Re-enter the real password and save again.'], 400);
                         }
                         // Encrypt plaintext only; leave already-encrypted values alone
                         if (!isLikelyEncryptedPassword($pw)) {
@@ -497,6 +503,8 @@ function handleUpdateSettings() {
                             } catch (Exception $e) {
                                 error_log('Failed to encrypt LDAP server bind password: ' . $e->getMessage());
                             }
+                        } else {
+                            $server['bind_password'] = $pw;
                         }
                     }
                     unset($server);
@@ -569,12 +577,16 @@ function handleUpdateSettings() {
                 $trimmedValue = is_string($value) ? trim($value) : '';
                 if ($value === null || $trimmedValue === '') {
                     $value = '';
-                } elseif (!isLikelyEncryptedPassword((string)$value)) {
+                } elseif (isMaskedPasswordPlaceholder($trimmedValue)) {
+                    sendJSON(['error' => 'LDAP bind password looks masked (asterisks). Re-enter the real password and save again.'], 400);
+                } elseif (!isLikelyEncryptedPassword($trimmedValue)) {
                     try {
-                        $value = encryptPassword((string)$value);
+                        $value = encryptPassword($trimmedValue);
                     } catch (Exception $e) {
                         error_log('Failed to encrypt LDAP bind password: ' . $e->getMessage());
                     }
+                } else {
+                    $value = $trimmedValue;
                 }
             }
 

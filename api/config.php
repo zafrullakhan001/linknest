@@ -2661,15 +2661,78 @@ function getClientIpAddress(): ?string {
     return $isValidIp($remote) ? $remote : null;
 }
 
-// Encryption secret key for LDAP password encryption
-// In production, this should be stored securely (environment variable, secure vault, etc.)
-// For now, we'll use a key derived from the database path and a constant salt
+/**
+ * Path to portable encryption key material (travels with the data/ folder on deploy).
+ */
+function getEncryptionKeyFilePath(): string {
+    return dirname(DB_PATH) . DIRECTORY_SEPARATOR . '.encryption_key';
+}
+
+/**
+ * Legacy key material used before the portable key file existed.
+ * Kept so existing ciphertext remains decryptable on the original machine.
+ */
+function getLegacyEncryptionKeyMaterial(): string {
+    return DB_PATH . 'linknest_ldap_encryption_salt_v1';
+}
+
+/**
+ * Ensure data/.encryption_key exists. Seeded from the legacy path-based material so
+ * current installs keep working; copying data/ to another machine preserves decryptability.
+ */
+function ensureEncryptionKeyFile(): void {
+    $keyFile = getEncryptionKeyFilePath();
+    if (is_readable($keyFile)) {
+        $existing = trim((string)@file_get_contents($keyFile));
+        if ($existing !== '') {
+            return;
+        }
+    }
+    $dir = dirname($keyFile);
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0755, true);
+    }
+    // Seed with legacy material so already-encrypted LDAP passwords still decrypt
+    @file_put_contents($keyFile, getLegacyEncryptionKeyMaterial());
+    @chmod($keyFile, 0600);
+}
+
+/**
+ * Encryption key candidates for decrypt (portable file first, then legacy path key).
+ *
+ * @return list<string> raw 32-byte keys
+ */
+function getEncryptionKeyCandidates(): array {
+    $candidates = [];
+    ensureEncryptionKeyFile();
+    $keyFile = getEncryptionKeyFilePath();
+    if (is_readable($keyFile)) {
+        $material = trim((string)@file_get_contents($keyFile));
+        if ($material !== '') {
+            $candidates[] = hash('sha256', $material, true);
+        }
+    }
+    $candidates[] = hash('sha256', getLegacyEncryptionKeyMaterial(), true);
+    // Unique by binary content
+    $unique = [];
+    foreach ($candidates as $key) {
+        $unique[bin2hex($key)] = $key;
+    }
+    return array_values($unique);
+}
+
+/**
+ * Encryption secret for LDAP bind passwords (AES-256).
+ * Prefer portable data/.encryption_key so deploy copies keep working across machines.
+ */
 function getEncryptionKey() {
-    // Generate a consistent key based on DB path and a salt
-    // In production, consider using a proper key management system
-    $salt = 'linknest_ldap_encryption_salt_v1';
-    $keySource = DB_PATH . $salt;
-    return hash('sha256', $keySource, true); // Returns 32 bytes for AES-256
+    static $cached = null;
+    if ($cached !== null) {
+        return $cached;
+    }
+    $candidates = getEncryptionKeyCandidates();
+    $cached = $candidates[0] ?? hash('sha256', getLegacyEncryptionKeyMaterial(), true);
+    return $cached;
 }
 
 /**
@@ -2747,6 +2810,7 @@ function isLikelyEncryptedPassword($value): bool {
 /**
  * Decrypt a password encrypted with encryptPassword()
  * Expects format: base64(iv).base64(tag).base64(encrypted_data)
+ * Tries portable key file and legacy path-derived keys (deploy / path moves).
  */
 function decryptPassword($encryptedPassword) {
     if ($encryptedPassword === null || $encryptedPassword === '') {
@@ -2768,21 +2832,31 @@ function decryptPassword($encryptedPassword) {
         throw new Exception('Invalid base64 encoding in encrypted password');
     }
     
-    $key = getEncryptionKey();
-    $decrypted = openssl_decrypt(
-        $encrypted,
-        'aes-256-gcm',
-        $key,
-        OPENSSL_RAW_DATA,
-        $iv,
-        $tag
-    );
-    
-    if ($decrypted === false) {
-        throw new Exception('Decryption failed - invalid password or corrupted data');
+    foreach (getEncryptionKeyCandidates() as $key) {
+        $decrypted = openssl_decrypt(
+            $encrypted,
+            'aes-256-gcm',
+            $key,
+            OPENSSL_RAW_DATA,
+            $iv,
+            $tag
+        );
+        if ($decrypted !== false) {
+            return $decrypted;
+        }
     }
     
-    return $decrypted;
+    throw new Exception('Decryption failed - invalid password or corrupted data');
+}
+
+/**
+ * True when a password value is a UI mask (asterisks/bullets), not a real secret.
+ */
+function isMaskedPasswordPlaceholder($value): bool {
+    if (!is_string($value) || $value === '') {
+        return false;
+    }
+    return (bool)preg_match('/^[\*\x{2022}\x{00B7}\x{25CF}\x{25E6}•·]+$/u', $value);
 }
 
 /**
