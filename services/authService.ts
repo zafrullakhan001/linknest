@@ -403,12 +403,16 @@ export const authService = {
     return { message: data.message, results: data.results };
   },
 
-  async searchLdapUsers(searchTerm: string): Promise<Array<{ username: string; email: string; displayName: string; dn: string }>> {
+  async searchLdapUsers(searchTerm: string, ldapServerIndex?: number): Promise<Array<{ username: string; email: string; displayName: string; dn: string }>> {
+    const body: { search: string; ldap_server_index?: number } = { search: searchTerm };
+    if (ldapServerIndex !== undefined && ldapServerIndex !== null) {
+      body.ldap_server_index = ldapServerIndex;
+    }
     const response = await fetch(`${API_BASE}/auth/search-ldap-users`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ search: searchTerm })
+      body: JSON.stringify(body)
     });
 
     const data = await response.json();
@@ -457,12 +461,21 @@ export const authService = {
     return { user: data.user, message: data.message };
   },
 
-  async addLdapUser(username: string, email: string, dn: string, displayName?: string): Promise<{ user: AllUser; message: string }> {
+  async addLdapUser(username: string, email: string, dn: string, displayName?: string, ldapServerIndex?: number): Promise<{ user: AllUser; message: string }> {
+    const body: { username: string; email: string; dn: string; displayName?: string; ldap_server_index?: number } = {
+      username,
+      email,
+      dn,
+      displayName
+    };
+    if (ldapServerIndex !== undefined && ldapServerIndex !== null) {
+      body.ldap_server_index = ldapServerIndex;
+    }
     const response = await fetch(`${API_BASE}/auth/add-ldap-user`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ username, email, dn, displayName })
+      body: JSON.stringify(body)
     });
 
     const data = await response.json();
@@ -578,12 +591,62 @@ export const authService = {
     };
   },
 
-  async bulkImportLdapUsers(users: Array<{ username: string; email: string; dn: string; displayName?: string }>): Promise<{ results: any; summary: any; message: string }> {
+  async fetchLdapGroupMembers(
+    groupDn: string,
+    ldapServerIndex?: number,
+    includeNested?: boolean
+  ): Promise<{
+    users: Array<{ username: string; email: string; displayName: string; dn: string }>;
+    meta?: {
+      group_dn?: string;
+      group_cn?: string;
+      include_nested?: boolean;
+      result_count?: number;
+      truncated?: boolean;
+      max_members?: number;
+    };
+  }> {
+    const body: { group_dn: string; ldap_server_index?: number; include_nested?: boolean } = {
+      group_dn: groupDn,
+    };
+    if (ldapServerIndex !== undefined && ldapServerIndex !== null) {
+      body.ldap_server_index = ldapServerIndex;
+    }
+    if (includeNested !== undefined) {
+      body.include_nested = includeNested;
+    }
+    const response = await fetch(`${API_BASE}/auth/ldap-group-members`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(body),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(formatLdapError(data));
+    }
+
+    return {
+      users: data.users || [],
+      meta: data.meta,
+    };
+  },
+
+  async bulkImportLdapUsers(
+    users: Array<{ username: string; email: string; dn: string; displayName?: string }>,
+    ldapServerIndex?: number
+  ): Promise<{ results: any; summary: any; message: string }> {
+    const body: { users: typeof users; ldap_server_index?: number } = { users };
+    if (ldapServerIndex !== undefined && ldapServerIndex !== null) {
+      body.ldap_server_index = ldapServerIndex;
+    }
     const response = await fetch(`${API_BASE}/auth/bulk-import-ldap`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ users })
+      body: JSON.stringify(body)
     });
 
     const data = await response.json();

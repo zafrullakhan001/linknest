@@ -128,12 +128,12 @@ try {
     }
     else {
         Write-Step "Running: npm install ..."
-        npm install 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+        cmd /c "npm install"
         if ($LASTEXITCODE -ne 0) { throw "npm install failed with exit code $LASTEXITCODE" }
         Write-OK "npm install completed"
 
         Write-Step "Running: npm run build ..."
-        npm run build 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+        cmd /c "npm run build"
         if ($LASTEXITCODE -ne 0) { throw "npm run build failed with exit code $LASTEXITCODE" }
         Write-OK "Build completed - dist/ is ready"
     }

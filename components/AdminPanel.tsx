@@ -241,6 +241,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [ldapSearchLoading, setLdapSearchLoading] = useState(false);
   const [ldapSearchPerformed, setLdapSearchPerformed] = useState(false);
   const [selectedLdapUser, setSelectedLdapUser] = useState<{ username: string; email: string; displayName: string; dn: string } | null>(null);
+  const [addUserLdapServerIndex, setAddUserLdapServerIndex] = useState(0);
   const [addUserLoading, setAddUserLoading] = useState(false);
 
   // Bulk import state
@@ -249,6 +250,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [ldapUsersText, setLdapUsersText] = useState('');
   const [bulkImportLoading, setBulkImportLoading] = useState(false);
   const [bulkImportResults, setBulkImportResults] = useState<{ results: any; summary: any; message: string } | null>(null);
+  const [ldapGroupDn, setLdapGroupDn] = useState('');
+  const [ldapGroupIncludeNested, setLdapGroupIncludeNested] = useState(true);
+  const [ldapGroupMembersLoading, setLdapGroupMembersLoading] = useState(false);
+  const [ldapGroupMembers, setLdapGroupMembers] = useState<Array<{ username: string; email: string; displayName: string; dn: string }>>([]);
+  const [ldapGroupSelectedDns, setLdapGroupSelectedDns] = useState<Record<string, boolean>>({});
+  const [ldapGroupMeta, setLdapGroupMeta] = useState<{ group_cn?: string; truncated?: boolean; result_count?: number } | null>(null);
 
   // Database Cleanup state
   const [cleanupChecking, setCleanupChecking] = useState(false);
@@ -662,15 +669,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setSettings(settingsWithDefaults);
 
       // Load LDAP servers
-      const ldapServersJson = (loadedSettings as any).ldap_servers as string | undefined;
-      if (ldapServersJson) {
+      // Prefer ldap_servers JSON. Empty [] means intentionally no servers (do NOT resurrect from flat legacy keys).
+      const ldapServersJson = ((loadedSettings as any).ldap_servers as string | undefined) ?? '';
+      const trimmedServersJson = ldapServersJson.trim();
+      if (trimmedServersJson !== '') {
         try {
-          const parsed = JSON.parse(ldapServersJson);
-          if (Array.isArray(parsed) && parsed.length > 0) {
+          const parsed = JSON.parse(trimmedServersJson);
+          if (Array.isArray(parsed)) {
             setLdapServers(parsed.map((s: any) => ({
               ...s,
               required_groups: s.required_groups ?? '',
               denied_groups: s.denied_groups ?? '',
+              bind_password: s.bind_password ?? '',
             })));
           } else {
             setLdapServers([]);
@@ -679,43 +689,41 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           console.error('Failed to parse LDAP servers:', e);
           setLdapServers([]);
         }
+      } else if (loadedSettings.ldap_server) {
+        // Legacy single-server install (ldap_servers never saved) — migrate into UI state once
+        const oldServer = {
+          name: loadedSettings.ldap_login_domain || loadedSettings.ldap_server || 'LDAP Server',
+          server: loadedSettings.ldap_server || '',
+          port: loadedSettings.ldap_port || '389',
+          protocol: loadedSettings.ldap_protocol || 'ldap',
+          tls: loadedSettings.ldap_tls || '0',
+          timeout: loadedSettings.ldap_timeout || '30',
+          bind_dn: loadedSettings.ldap_bind_dn || '',
+          bind_password: loadedSettings.ldap_bind_password || '',
+          user_search_base: loadedSettings.ldap_user_search_base || '',
+          user_filter: loadedSettings.ldap_user_filter || '(sAMAccountName={username})',
+          user_attributes: loadedSettings.ldap_user_attributes || 'sAMAccountName,mail,displayName',
+          group_search_base: loadedSettings.ldap_group_search_base || '',
+          group_filter: loadedSettings.ldap_group_filter || '(objectClass=group)',
+          group_attributes: loadedSettings.ldap_group_attributes || 'cn,distinguishedName,member',
+          require_group_membership: loadedSettings.ldap_require_group_membership || '0',
+          required_groups: loadedSettings.ldap_required_groups || '',
+          denied_groups: (loadedSettings as any).ldap_denied_groups || '',
+          search_scope: loadedSettings.ldap_search_scope || 'sub',
+          user_dn_template: loadedSettings.ldap_user_dn_template || '',
+          nested_groups: loadedSettings.ldap_nested_groups || '0',
+          case_sensitive: loadedSettings.ldap_case_sensitive || '0',
+          ssl_verify: loadedSettings.ldap_ssl_verify || '1',
+          connection_retry: loadedSettings.ldap_connection_retry || '3',
+          retry_delay: loadedSettings.ldap_retry_delay || '1',
+          email_attribute: loadedSettings.ldap_email_attribute || '',
+          display_name_attribute: loadedSettings.ldap_display_name_attribute || '',
+          referrals: loadedSettings.ldap_referrals || '0',
+          login_domain: loadedSettings.ldap_login_domain || ''
+        };
+        setLdapServers([oldServer]);
       } else {
-        // Check if old single-server format exists and convert it
-        if (loadedSettings.ldap_server) {
-          const oldServer = {
-            name: loadedSettings.ldap_login_domain || loadedSettings.ldap_server || 'LDAP Server',
-            server: loadedSettings.ldap_server || '',
-            port: loadedSettings.ldap_port || '389',
-            protocol: loadedSettings.ldap_protocol || 'ldap',
-            tls: loadedSettings.ldap_tls || '0',
-            timeout: loadedSettings.ldap_timeout || '30',
-            bind_dn: loadedSettings.ldap_bind_dn || '',
-            bind_password: loadedSettings.ldap_bind_password || '',
-            user_search_base: loadedSettings.ldap_user_search_base || '',
-            user_filter: loadedSettings.ldap_user_filter || '(sAMAccountName={username})',
-            user_attributes: loadedSettings.ldap_user_attributes || 'sAMAccountName,mail,displayName',
-            group_search_base: loadedSettings.ldap_group_search_base || '',
-            group_filter: loadedSettings.ldap_group_filter || '(objectClass=group)',
-            group_attributes: loadedSettings.ldap_group_attributes || 'cn,distinguishedName,member',
-            require_group_membership: loadedSettings.ldap_require_group_membership || '0',
-            required_groups: loadedSettings.ldap_required_groups || '',
-            denied_groups: (loadedSettings as any).ldap_denied_groups || '',
-            search_scope: loadedSettings.ldap_search_scope || 'sub',
-            user_dn_template: loadedSettings.ldap_user_dn_template || '',
-            nested_groups: loadedSettings.ldap_nested_groups || '0',
-            case_sensitive: loadedSettings.ldap_case_sensitive || '0',
-            ssl_verify: loadedSettings.ldap_ssl_verify || '1',
-            connection_retry: loadedSettings.ldap_connection_retry || '3',
-            retry_delay: loadedSettings.ldap_retry_delay || '1',
-            email_attribute: loadedSettings.ldap_email_attribute || '',
-            display_name_attribute: loadedSettings.ldap_display_name_attribute || '',
-            referrals: loadedSettings.ldap_referrals || '0',
-            login_domain: loadedSettings.ldap_login_domain || ''
-          };
-          setLdapServers([oldServer]);
-        } else {
-          setLdapServers([]);
-        }
+        setLdapServers([]);
       }
       // Update ref with loaded password
       ldapBindPasswordRef.current = loadedSettings.ldap_bind_password || '';
@@ -2821,7 +2829,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     try {
       setLdapSearchLoading(true);
       setError('');
-      const results = await authService.searchLdapUsers(term);
+      const serverIndex = ldapServers.length > 0
+        ? Math.min(Math.max(0, addUserLdapServerIndex), ldapServers.length - 1)
+        : 0;
+      const results = await authService.searchLdapUsers(term, serverIndex);
       setLdapSearchResults(results);
       setLdapSearchPerformed(true);
       const autoSelected = pickLdapUserFromResults(results, term);
@@ -2898,11 +2909,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     try {
       setAddUserLoading(true);
       setError('');
+      const serverIndex = ldapServers.length > 0
+        ? Math.min(Math.max(0, addUserLdapServerIndex), ldapServers.length - 1)
+        : 0;
       await authService.addLdapUser(
         userToAdd.username,
         userToAdd.email,
         userToAdd.dn,
-        userToAdd.displayName
+        userToAdd.displayName,
+        serverIndex
       );
       setAddUserModal(false);
       setBulkImportMode(false);
@@ -2910,6 +2925,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setLdapSearchResults([]);
       setLdapSearchPerformed(false);
       setSelectedLdapUser(null);
+      setAddUserLdapServerIndex(0);
       setCsvFile(null);
       setLdapUsersText('');
       setBulkImportResults(null);
@@ -2978,7 +2994,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     try {
       setBulkImportLoading(true);
       setError('');
-      const result = await authService.bulkImportLdapUsers(users);
+      const serverIndex = ldapServers.length > 0
+        ? Math.min(Math.max(0, addUserLdapServerIndex), ldapServers.length - 1)
+        : 0;
+      const result = await authService.bulkImportLdapUsers(users, serverIndex);
       setBulkImportResults(result);
       setLdapUsersText('');
       await loadData();
@@ -2988,6 +3007,81 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setBulkImportLoading(false);
     }
   };
+
+  const handleFetchLdapGroupMembers = async () => {
+    const groupDn = ldapGroupDn.trim();
+    if (groupDn.length < 3) {
+      setError('Please enter a full LDAP group DN (e.g. CN=MyGroup,OU=Groups,DC=example,DC=com)');
+      return;
+    }
+
+    try {
+      setLdapGroupMembersLoading(true);
+      setError('');
+      setBulkImportResults(null);
+      const serverIndex = ldapServers.length > 0
+        ? Math.min(Math.max(0, addUserLdapServerIndex), ldapServers.length - 1)
+        : 0;
+      const { users, meta } = await authService.fetchLdapGroupMembers(
+        groupDn,
+        serverIndex,
+        ldapGroupIncludeNested
+      );
+      setLdapGroupMembers(users);
+      setLdapGroupMeta(meta ? { group_cn: meta.group_cn, truncated: meta.truncated, result_count: meta.result_count } : null);
+      const selected: Record<string, boolean> = {};
+      users.forEach((u) => {
+        if (u.dn) selected[u.dn] = true;
+      });
+      setLdapGroupSelectedDns(selected);
+      if (users.length === 0) {
+        setError('No users found in that LDAP group. Check the DN, server, and nested-membership option.');
+      }
+    } catch (err: any) {
+      setLdapGroupMembers([]);
+      setLdapGroupSelectedDns({});
+      setLdapGroupMeta(null);
+      setError(err.message || 'Failed to fetch LDAP group members');
+    } finally {
+      setLdapGroupMembersLoading(false);
+    }
+  };
+
+  const handleImportSelectedLdapGroupMembers = async () => {
+    const selectedUsers = ldapGroupMembers.filter((u) => u.dn && ldapGroupSelectedDns[u.dn]);
+    if (selectedUsers.length === 0) {
+      setError('Select at least one group member to import');
+      return;
+    }
+
+    try {
+      setBulkImportLoading(true);
+      setError('');
+      const serverIndex = ldapServers.length > 0
+        ? Math.min(Math.max(0, addUserLdapServerIndex), ldapServers.length - 1)
+        : 0;
+      const result = await authService.bulkImportLdapUsers(
+        selectedUsers.map((u) => ({
+          username: u.username,
+          email: u.email,
+          dn: u.dn,
+          displayName: u.displayName || undefined,
+        })),
+        serverIndex
+      );
+      setBulkImportResults(result);
+      await loadData();
+    } catch (err: any) {
+      setError(err.message || 'Failed to import LDAP group members');
+    } finally {
+      setBulkImportLoading(false);
+    }
+  };
+
+  const selectedLdapGroupCount = ldapGroupMembers.reduce(
+    (count, u) => count + (u.dn && ldapGroupSelectedDns[u.dn] ? 1 : 0),
+    0
+  );
 
   const handleBulkImportSaml = async () => {
     if (!samlImportFile) {
@@ -3019,8 +3113,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     setLdapSearchResults([]);
     setLdapSearchPerformed(false);
     setSelectedLdapUser(null);
+    setAddUserLdapServerIndex(0);
+    setLdapGroupDn('');
+    setLdapGroupMembers([]);
+    setLdapGroupSelectedDns({});
+    setLdapGroupMeta(null);
+    setLdapGroupIncludeNested(true);
     setSamlImportFile(null);
     setError('');
+    // Ensure LDAP server list is available for the multi-server picker
+    if (ldapServers.length === 0) {
+      void loadSettings();
+    }
   };
 
   // Handle ESC key to close modals
@@ -6110,8 +6214,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                               setLdapServers(updated);
                                             }}
                                             className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
-                                            placeholder="********"
+                                            placeholder="Leave blank to keep existing"
                                           />
+                                          <p className="text-[10px] text-slate-500 mt-1">Leave blank when saving to keep the previously stored password</p>
                                         </div>
                                       </div>
                                     </div>
@@ -7320,19 +7425,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             setSettingsSaving(true);
                             setError('');
 
-                            // Save LDAP servers as JSON
+                            // Save LDAP servers as JSON. Empty list clears servers permanently.
                             const settingsToSave: Partial<AppSettings> = { ...settings };
                             if (ldapServers.length > 0) {
                               settingsToSave.ldap_servers = JSON.stringify(ldapServers);
                             } else {
-                              // If no servers, clear the setting
-                              settingsToSave.ldap_servers = '';
+                              settingsToSave.ldap_servers = '[]';
+                              // Also clear flat legacy fields so loadSettings cannot resurrect the server
+                              settingsToSave.ldap_server = '';
+                              settingsToSave.ldap_bind_dn = '';
+                              settingsToSave.ldap_bind_password = '';
+                              settingsToSave.ldap_user_search_base = '';
+                              settingsToSave.ldap_group_search_base = '';
+                              settingsToSave.ldap_user_dn_template = '';
+                              settingsToSave.ldap_login_domain = '';
+                              settingsToSave.ldap_required_groups = '';
+                              settingsToSave.ldap_denied_groups = '';
                             }
 
                             await settingsService.updateSettings(settingsToSave);
-                            // Refresh global settings context so AuthModal sees latest LDAP status
                             await refreshSettings();
-                            alert('LDAP settings saved successfully!');
+                            // Reload local admin LDAP state from DB (decrypted passwords, cleared servers, etc.)
+                            await loadSettings();
+                            alert(ldapServers.length > 0
+                              ? 'LDAP settings saved successfully!'
+                              : 'LDAP settings saved. All LDAP servers were removed.');
                           } catch (err: any) {
                             setError(err.message || 'Failed to save settings');
                           } finally {
@@ -12777,13 +12894,159 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                         <strong>Bulk Import LDAP Users</strong>
                       </p>
                       <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
-                        Enter users in CSV format (one per line): username,email,dn,displayName. Or upload a CSV file.
+                        Import from an LDAP group DN (preview first), or paste CSV rows: username,email,dn,displayName.
                       </p>
                     </div>
-                    <div>
+                    {ldapServers.length > 1 && (
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                          LDAP Server
+                        </label>
+                        <select
+                          value={Math.min(Math.max(0, addUserLdapServerIndex), ldapServers.length - 1)}
+                          onChange={(e) => {
+                            setAddUserLdapServerIndex(parseInt(e.target.value, 10) || 0);
+                            setLdapGroupMembers([]);
+                            setLdapGroupSelectedDns({});
+                            setLdapGroupMeta(null);
+                            setError('');
+                          }}
+                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                        >
+                          {ldapServers.map((server, index) => (
+                            <option key={index} value={index}>
+                              {server.name || server.server || `LDAP Server ${index + 1}`}
+                              {server.login_domain ? ` (${server.login_domain})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          Group lookup and imports use this server only.
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4 space-y-3">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                          LDAP Group DN
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={ldapGroupDn}
+                            onChange={(e) => {
+                              setLdapGroupDn(e.target.value);
+                              setError('');
+                            }}
+                            onKeyPress={(e) => {
+                              if (e.key === 'Enter') {
+                                handleFetchLdapGroupMembers();
+                              }
+                            }}
+                            className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                            placeholder="CN=LinkNest Users,OU=Groups,DC=example,DC=com"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleFetchLdapGroupMembers}
+                            disabled={ldapGroupMembersLoading || ldapGroupDn.trim().length < 3}
+                            className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+                          >
+                            {ldapGroupMembersLoading ? 'Loading...' : 'Fetch Members'}
+                          </button>
+                        </div>
+                      </div>
+                      <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                        <input
+                          type="checkbox"
+                          checked={ldapGroupIncludeNested}
+                          onChange={(e) => setLdapGroupIncludeNested(e.target.checked)}
+                          className="rounded border-slate-300 dark:border-slate-600"
+                        />
+                        Include nested group members (Active Directory)
+                      </label>
+
+                      {ldapGroupMembers.length > 0 && (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm text-slate-700 dark:text-slate-300">
+                              {ldapGroupMeta?.group_cn
+                                ? `Members of ${ldapGroupMeta.group_cn}`
+                                : 'Group members'}{' '}
+                              ({selectedLdapGroupCount}/{ldapGroupMembers.length} selected)
+                              {ldapGroupMeta?.truncated ? ' — list truncated at limit' : ''}
+                            </p>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const all: Record<string, boolean> = {};
+                                  ldapGroupMembers.forEach((u) => {
+                                    if (u.dn) all[u.dn] = true;
+                                  });
+                                  setLdapGroupSelectedDns(all);
+                                }}
+                                className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
+                              >
+                                Select all
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setLdapGroupSelectedDns({})}
+                                className="text-xs text-slate-500 dark:text-slate-400 hover:underline"
+                              >
+                                Clear
+                              </button>
+                            </div>
+                          </div>
+                          <div className="max-h-52 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg">
+                            {ldapGroupMembers.map((user) => (
+                              <label
+                                key={user.dn || user.username}
+                                className="flex items-start gap-3 px-3 py-2 border-b border-slate-200 dark:border-slate-700 last:border-b-0 hover:bg-slate-50 dark:hover:bg-slate-700/40 cursor-pointer"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={!!(user.dn && ldapGroupSelectedDns[user.dn])}
+                                  onChange={(e) => {
+                                    if (!user.dn) return;
+                                    setLdapGroupSelectedDns((prev) => ({
+                                      ...prev,
+                                      [user.dn]: e.target.checked,
+                                    }));
+                                  }}
+                                  className="mt-1 rounded border-slate-300 dark:border-slate-600"
+                                />
+                                <span className="min-w-0">
+                                  <span className="block text-sm font-medium text-slate-900 dark:text-white">
+                                    {user.displayName || user.username}
+                                  </span>
+                                  <span className="block text-xs text-slate-600 dark:text-slate-400 truncate">
+                                    {user.email || 'No email'} · {user.username}
+                                  </span>
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleImportSelectedLdapGroupMembers}
+                            disabled={bulkImportLoading || selectedLdapGroupCount === 0}
+                            className="w-full px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                          >
+                            {bulkImportLoading
+                              ? 'Importing...'
+                              : `Import Selected (${selectedLdapGroupCount})`}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
                       <div className="flex items-center justify-between mb-2">
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                          Upload CSV File (or paste below)
+                          Or upload / paste CSV
                         </label>
                         <button
                           onClick={() => {
@@ -13004,6 +13267,35 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                 </div>
               ) : (
                 <div className="space-y-4">
+                  {ldapServers.length > 1 && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        LDAP Server
+                      </label>
+                      <select
+                        value={Math.min(Math.max(0, addUserLdapServerIndex), ldapServers.length - 1)}
+                        onChange={(e) => {
+                          const nextIndex = parseInt(e.target.value, 10) || 0;
+                          setAddUserLdapServerIndex(nextIndex);
+                          setLdapSearchResults([]);
+                          setLdapSearchPerformed(false);
+                          setSelectedLdapUser(null);
+                          setError('');
+                        }}
+                        className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                      >
+                        {ldapServers.map((server, index) => (
+                          <option key={index} value={index}>
+                            {server.name || server.server || `LDAP Server ${index + 1}`}
+                            {server.login_domain ? ` (${server.login_domain})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Search and bind use only this server — select the directory that owns the user.
+                      </p>
+                    </div>
+                  )}
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                       Search LDAP Users
@@ -13088,6 +13380,12 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     setLdapSearchResults([]);
                     setLdapSearchPerformed(false);
                     setSelectedLdapUser(null);
+                    setAddUserLdapServerIndex(0);
+                    setLdapGroupDn('');
+                    setLdapGroupMembers([]);
+                    setLdapGroupSelectedDns({});
+                    setLdapGroupMeta(null);
+                    setLdapGroupIncludeNested(true);
                     setError('');
                   }}
                   className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"

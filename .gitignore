@@ -36,6 +36,10 @@ uploads/
 uploads/*
 
 # Deployment bundles and artifacts
+*.zip
+linknest-deploy-*/
+linknest-docker-deploy-*/
+docker-deploy-package/
 *-deployment-*/
 test-bundle/
 bundle-*/

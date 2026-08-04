@@ -94,12 +94,12 @@ try {
     $serviceBindDn = $data['ldap_bind_dn'] ?? '';
     $serviceBindPass = $data['ldap_bind_password'] ?? '';
     
-    // Decrypt password if it's encrypted (handles both encrypted and plain text for backward compatibility)
-    if (!empty($serviceBindPass)) {
+    // Decrypt password only when it looks like encryptPassword() output
+    if (!empty($serviceBindPass) && isLikelyEncryptedPassword($serviceBindPass)) {
         try {
             $serviceBindPass = decryptPassword($serviceBindPass);
         } catch (Exception $e) {
-            // If decryption fails, assume it's plain text (backward compatibility)
+            throw new Exception('Service account bind password could not be decrypted. Re-enter the bind password and Save Settings.');
         }
     }
     

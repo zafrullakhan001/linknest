@@ -132,21 +132,13 @@ function handleGetSettings() {
     if (isset($settings['ldap_bind_password']) && !empty($settings['ldap_bind_password'])) {
         $password = $settings['ldap_bind_password'];
         
-        // Check if password is encrypted (contains dots in the format: base64.base64.base64)
-        $isEncrypted = (strpos($password, '.') !== false && substr_count($password, '.') === 2);
-        
-        if ($isEncrypted) {
-            // Password is encrypted, decrypt it for display
+        if (isLikelyEncryptedPassword($password)) {
             try {
-                $decrypted = decryptPassword($password);
-                $settings['ldap_bind_password'] = $decrypted;
+                $settings['ldap_bind_password'] = decryptPassword($password);
             } catch (Exception $e) {
-                // If decryption fails, log the error for debugging
                 error_log('Failed to decrypt LDAP bind password in settings: ' . $e->getMessage());
                 error_log('DB_PATH: ' . (defined('DB_PATH') ? DB_PATH : 'not defined'));
-                error_log('Password format: encrypted (length: ' . strlen($password) . ')');
-                // Keep the original encrypted value - don't show it in UI, show empty instead
-                // This prevents showing the long encrypted string to users
+                // Never expose ciphertext in the UI
                 $settings['ldap_bind_password'] = '';
             }
         } else {
@@ -155,12 +147,50 @@ function handleGetSettings() {
                 $encryptedPassword = encryptPassword($password);
                 $updateStmt = $db->prepare('UPDATE settings SET value = ?, updated_at = ? WHERE key = ?');
                 $updateStmt->execute([$encryptedPassword, time(), 'ldap_bind_password']);
-                // Return the decrypted version for display (frontend will encrypt when saving)
                 $settings['ldap_bind_password'] = $password;
             } catch (Exception $e) {
-                // If encryption fails, log error but continue
                 error_log('Failed to auto-encrypt LDAP bind password: ' . $e->getMessage());
             }
+        }
+    }
+
+    // Decrypt bind passwords inside ldap_servers JSON for the admin UI
+    if (isset($settings['ldap_servers']) && is_string($settings['ldap_servers']) && trim($settings['ldap_servers']) !== '') {
+        $servers = json_decode($settings['ldap_servers'], true);
+        if (is_array($servers)) {
+            $persistEncrypted = null;
+            foreach ($servers as $idx => &$server) {
+                if (!is_array($server) || empty($server['bind_password']) || !is_string($server['bind_password'])) {
+                    continue;
+                }
+                $pw = $server['bind_password'];
+                if (isLikelyEncryptedPassword($pw)) {
+                    try {
+                        $server['bind_password'] = decryptPassword($pw);
+                    } catch (Exception $e) {
+                        error_log('Failed to decrypt ldap_servers bind password: ' . $e->getMessage());
+                        $server['bind_password'] = '';
+                    }
+                } else {
+                    // Auto-encrypt plaintext passwords stored in ldap_servers (persist encrypted, return plaintext)
+                    try {
+                        if ($persistEncrypted === null) {
+                            $persistEncrypted = json_decode($settings['ldap_servers'], true);
+                        }
+                        if (is_array($persistEncrypted) && isset($persistEncrypted[$idx])) {
+                            $persistEncrypted[$idx]['bind_password'] = encryptPassword($pw);
+                        }
+                    } catch (Exception $e) {
+                        error_log('Failed to auto-encrypt ldap_servers bind password: ' . $e->getMessage());
+                    }
+                }
+            }
+            unset($server);
+            if (is_array($persistEncrypted)) {
+                $updateStmt = $db->prepare('UPDATE settings SET value = ?, updated_at = ? WHERE key = ?');
+                $updateStmt->execute([json_encode($persistEncrypted), time(), 'ldap_servers']);
+            }
+            $settings['ldap_servers'] = json_encode($servers);
         }
     }
     
@@ -388,20 +418,136 @@ function handleUpdateSettings() {
                 'map_display_name_to', 'auto_provision'
             ];
             
-            // Handle ldap_servers - ensure it's valid JSON
+            // Handle ldap_servers - ensure it's valid JSON; encrypt per-server bind passwords;
+            // mirror first server into legacy flat ldap_* keys so older code paths stay consistent.
+            // Empty list clears servers AND legacy flat connection keys so deleted servers stay gone.
             if ($key === 'ldap_servers') {
+                $decoded = null;
                 if (is_array($value)) {
-                    $value = json_encode($value);
+                    $decoded = $value;
                 } elseif (is_string($value)) {
-                    // Validate JSON
-                    $decoded = json_decode($value, true);
-                    if (json_last_error() !== JSON_ERROR_NONE) {
-                        continue; // Skip invalid JSON
+                    if (trim($value) === '') {
+                        $decoded = [];
+                        $value = '[]';
+                    } else {
+                        $decoded = json_decode($value, true);
+                        if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) {
+                            continue; // Skip invalid JSON
+                        }
                     }
-                    // Re-encode to ensure consistent format
-                    $value = json_encode($decoded);
                 } else {
                     continue; // Skip invalid types
+                }
+
+                $legacyMirrorKeys = [
+                    'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_tls', 'ldap_timeout',
+                    'ldap_bind_dn', 'ldap_bind_password',
+                    'ldap_user_search_base', 'ldap_user_filter', 'ldap_user_attributes',
+                    'ldap_group_search_base', 'ldap_group_filter', 'ldap_group_attributes',
+                    'ldap_search_scope', 'ldap_user_dn_template', 'ldap_nested_groups', 'ldap_case_sensitive',
+                    'ldap_ssl_verify', 'ldap_connection_retry', 'ldap_retry_delay',
+                    'ldap_email_attribute', 'ldap_display_name_attribute', 'ldap_referrals',
+                    'ldap_login_domain', 'ldap_require_group_membership', 'ldap_required_groups', 'ldap_denied_groups',
+                ];
+
+                // Empty server list: clear multi-server JSON and legacy flat connection fields
+                if (count($decoded) === 0) {
+                    $value = '[]';
+                    $clearStmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
+                    foreach ($legacyMirrorKeys as $clearKey) {
+                        $clearStmt->execute([$clearKey, '', time()]);
+                    }
+                } else {
+                    // Load previously stored servers so blank passwords keep existing secrets
+                    $existingServers = [];
+                    try {
+                        $existingStmt = $db->prepare("SELECT value FROM settings WHERE key = 'ldap_servers' LIMIT 1");
+                        $existingStmt->execute();
+                        $existingRow = $existingStmt->fetch();
+                        if ($existingRow && !empty($existingRow['value'])) {
+                            $parsedExisting = json_decode($existingRow['value'], true);
+                            if (is_array($parsedExisting)) {
+                                $existingServers = $parsedExisting;
+                            }
+                        }
+                    } catch (Exception $e) {
+                        $existingServers = [];
+                    }
+
+                    foreach ($decoded as $idx => &$server) {
+                        if (!is_array($server)) {
+                            continue;
+                        }
+                        $pw = isset($server['bind_password']) && is_string($server['bind_password'])
+                            ? $server['bind_password']
+                            : '';
+                        // Leave blank = keep previously saved password for this server index
+                        if (trim($pw) === '') {
+                            $existingPw = '';
+                            if (isset($existingServers[$idx]['bind_password']) && is_string($existingServers[$idx]['bind_password'])) {
+                                $existingPw = $existingServers[$idx]['bind_password'];
+                            }
+                            $server['bind_password'] = $existingPw;
+                            continue;
+                        }
+                        // Encrypt plaintext only; leave already-encrypted values alone
+                        if (!isLikelyEncryptedPassword($pw)) {
+                            try {
+                                $server['bind_password'] = encryptPassword($pw);
+                            } catch (Exception $e) {
+                                error_log('Failed to encrypt LDAP server bind password: ' . $e->getMessage());
+                            }
+                        }
+                    }
+                    unset($server);
+                    $value = json_encode($decoded);
+
+                    // Mirror first server into legacy flat keys (used by older admin endpoints)
+                    if (!empty($decoded[0]) && is_array($decoded[0])) {
+                        $first = $decoded[0];
+                        $mirrorKeys = [
+                            'ldap_server' => $first['server'] ?? '',
+                            'ldap_port' => (string)($first['port'] ?? '389'),
+                            'ldap_protocol' => $first['protocol'] ?? 'ldap',
+                            'ldap_tls' => (string)($first['tls'] ?? '0'),
+                            'ldap_timeout' => (string)($first['timeout'] ?? '30'),
+                            'ldap_bind_dn' => $first['bind_dn'] ?? '',
+                            'ldap_bind_password' => $first['bind_password'] ?? '',
+                            'ldap_user_search_base' => $first['user_search_base'] ?? '',
+                            'ldap_user_filter' => $first['user_filter'] ?? '(sAMAccountName={username})',
+                            'ldap_user_attributes' => $first['user_attributes'] ?? 'sAMAccountName,mail,displayName',
+                            'ldap_group_search_base' => $first['group_search_base'] ?? '',
+                            'ldap_group_filter' => $first['group_filter'] ?? '(objectClass=group)',
+                            'ldap_group_attributes' => $first['group_attributes'] ?? 'cn,distinguishedName,member',
+                            'ldap_search_scope' => $first['search_scope'] ?? 'sub',
+                            'ldap_user_dn_template' => $first['user_dn_template'] ?? '',
+                            'ldap_nested_groups' => (string)($first['nested_groups'] ?? '0'),
+                            'ldap_case_sensitive' => (string)($first['case_sensitive'] ?? '0'),
+                            'ldap_ssl_verify' => (string)($first['ssl_verify'] ?? '1'),
+                            'ldap_connection_retry' => (string)($first['connection_retry'] ?? '3'),
+                            'ldap_retry_delay' => (string)($first['retry_delay'] ?? '1'),
+                            'ldap_email_attribute' => $first['email_attribute'] ?? '',
+                            'ldap_display_name_attribute' => $first['display_name_attribute'] ?? '',
+                            'ldap_referrals' => (string)($first['referrals'] ?? '0'),
+                            'ldap_login_domain' => $first['login_domain'] ?? '',
+                            'ldap_require_group_membership' => (string)($first['require_group_membership'] ?? '0'),
+                            'ldap_required_groups' => $first['required_groups'] ?? '',
+                            'ldap_denied_groups' => $first['denied_groups'] ?? '',
+                        ];
+                        foreach ($mirrorKeys as $mirrorKey => $mirrorValue) {
+                            if ($mirrorKey === 'ldap_bind_password' && is_string($mirrorValue) && $mirrorValue !== '') {
+                                if (!isLikelyEncryptedPassword($mirrorValue)) {
+                                    try {
+                                        $mirrorValue = encryptPassword($mirrorValue);
+                                    } catch (Exception $e) {
+                                        error_log('Failed to encrypt mirrored LDAP bind password: ' . $e->getMessage());
+                                    }
+                                }
+                            }
+                            $mirrorStmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
+                            $mirrorStmt->execute([$mirrorKey, $mirrorValue, time()]);
+                        }
+                    }
                 }
             }
             if (!in_array($key, $allowedKeys)) {
@@ -418,28 +564,17 @@ function handleUpdateSettings() {
                 $value = preg_replace('#^/[^/]+/uploads/#', '/uploads/', $value);
             }
             
-            // Handle LDAP bind password - encrypt if provided, clear if empty
+            // Handle LDAP bind password - encrypt if provided; leave blank clears only when intentionally empty
             if ($key === 'ldap_bind_password') {
-                // Normalize empty values (null, empty string, whitespace-only)
                 $trimmedValue = is_string($value) ? trim($value) : '';
-                if (empty($value) || $trimmedValue === '') {
-                    // Password is empty - clear it from database (set to empty string)
-                    // This will remove the old encrypted password
+                if ($value === null || $trimmedValue === '') {
                     $value = '';
-                } else {
-                    // Password is provided - encrypt if it's plain text (not already encrypted)
-                    // Check if password is already encrypted (encrypted passwords contain dots)
-                    // Plain text passwords won't have the encrypted format: base64(iv).base64(tag).base64(encrypted)
-                    if (strpos($value, '.') === false || substr_count($value, '.') !== 2) {
-                        // Password is plain text, encrypt it
-                        try {
-                            $value = encryptPassword($value);
-                        } catch (Exception $e) {
-                            // If encryption fails, log error but continue (don't break the save)
-                            error_log('Failed to encrypt LDAP bind password: ' . $e->getMessage());
-                        }
+                } elseif (!isLikelyEncryptedPassword((string)$value)) {
+                    try {
+                        $value = encryptPassword((string)$value);
+                    } catch (Exception $e) {
+                        error_log('Failed to encrypt LDAP bind password: ' . $e->getMessage());
                     }
-                    // If password already contains dots in the right format, assume it's already encrypted
                 }
             }
 

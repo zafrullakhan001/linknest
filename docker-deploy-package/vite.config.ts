@@ -107,9 +107,18 @@ export default defineConfig(({ mode }) => {
               if (id.includes('uuid')) {
                 return 'utils-vendor';
               }
-              // Recharts and its dependencies
-              if (id.includes('recharts') || id.includes('victory-vendor') || id.includes('d3')) {
-                return 'charts-vendor';
+              // Leave Recharts/D3 out of shared vendor (avoid charts-vendor TDZ + keep off critical path)
+              if (
+                id.includes('recharts') ||
+                id.includes('victory-vendor') ||
+                id.includes('d3-') ||
+                id.includes('/d3/') ||
+                id.includes('\\d3\\') ||
+                id.includes('internmap') ||
+                id.includes('delaunator') ||
+                id.includes('robust-predicates')
+              ) {
+                return;
               }
               // Other vendor libraries
               return 'vendor';

@@ -34,6 +34,8 @@ switch ($method) {
             handleLogin();
         } elseif ($path === '/search-ldap-users') {
             handleSearchLdapUsers();
+        } elseif ($path === '/ldap-group-members') {
+            handleFetchLdapGroupMembers();
         } elseif ($path === '/ldap-user-detail') {
             handleGetLdapUserDetail();
         } elseif ($path === '/add-local-user') {
@@ -449,23 +451,13 @@ function handleLogin() {
             $bindDn = trim($serverConfig['bind_dn'] ?? '');
             $bindPass = $serverConfig['bind_password'] ?? '';
             
-            // Decrypt password if it's encrypted (handles both encrypted and plain text for backward compatibility)
             if (!empty($bindPass)) {
-                // Check if password is encrypted (contains dots in format: base64.base64.base64)
-                $isEncrypted = (strpos($bindPass, '.') !== false && substr_count($bindPass, '.') === 2);
-                if ($isEncrypted) {
-                    try {
-                        $bindPass = decryptPassword($bindPass);
-                        debug_log("LDAP: Password decrypted successfully");
-                    } catch (Exception $e) {
-                        debug_log("LDAP: Failed to decrypt bind password: " . $e->getMessage());
-                        debug_log("LDAP: DB_PATH: " . (defined('DB_PATH') ? DB_PATH : 'not defined'));
-                        debug_log("LDAP: Password length: " . strlen($bindPass));
-                        // If decryption fails, clear the password to prevent using corrupted data
-                        $bindPass = '';
-                    }
-                } else {
-                    debug_log("LDAP: Password is plain text (not encrypted)");
+                try {
+                    $bindPass = ldapDecryptBindPassword($bindPass);
+                    debug_log("LDAP: Bind password ready (len=" . strlen($bindPass) . ")");
+                } catch (Exception $e) {
+                    debug_log("LDAP: Failed to decrypt bind password: " . $e->getMessage());
+                    $bindPass = '';
                 }
             }
             
@@ -1887,6 +1879,226 @@ function ldapCollectDiagnostics($ldap, array $context = []): array {
     ], $context);
 }
 
+/**
+ * Decrypt LDAP bind password when stored encrypted; otherwise return plaintext.
+ * Throws when the value looks encrypted but cannot be decrypted.
+ */
+function ldapDecryptBindPassword($bindPass): string {
+    if ($bindPass === null || $bindPass === '') {
+        return '';
+    }
+    $bindPass = (string)$bindPass;
+    if (!isLikelyEncryptedPassword($bindPass)) {
+        return $bindPass;
+    }
+    try {
+        return (string)decryptPassword($bindPass);
+    } catch (Exception $e) {
+        error_log('LDAP: Failed to decrypt bind password: ' . $e->getMessage());
+        throw new Exception('LDAP bind password could not be decrypted. Re-enter the service account password in LDAP settings and Save.');
+    }
+}
+
+/**
+ * Connect and service-bind using a server config from getLdapServers().
+ * Active Directory often accepts anonymous bind then rejects searches with
+ * "successful bind must be completed" — never fall back to anonymous when a bind DN is set.
+ *
+ * @return array{ok:bool,ldap:mixed,uri:string,timeout:int,server_config:array,bind_mode?:string,error?:string,details?:array}
+ */
+function ldapConnectAndServiceBind(array $serverConfig): array {
+    $server = trim($serverConfig['server'] ?? '');
+    $port = (int)($serverConfig['port'] ?? 389);
+    $protocol = trim($serverConfig['protocol'] ?? 'ldap');
+    $tlsFlag = $serverConfig['tls'] ?? '0';
+    $tls = ($tlsFlag === '1' || $tlsFlag === 1 || $tlsFlag === true || $tlsFlag === 'true');
+    $timeout = (int)($serverConfig['timeout'] ?? 30);
+    if ($timeout < 1) {
+        $timeout = 30;
+    }
+
+    if ($server === '') {
+        return [
+            'ok' => false,
+            'ldap' => null,
+            'uri' => '',
+            'timeout' => $timeout,
+            'server_config' => $serverConfig,
+            'error' => 'LDAP server hostname is empty',
+        ];
+    }
+
+    $prefix = ($protocol === 'ldaps') ? 'ldaps://' : 'ldap://';
+    $uri = $prefix . $server . ':' . $port;
+
+    $ldap = @ldap_connect($uri);
+    if (!$ldap) {
+        return [
+            'ok' => false,
+            'ldap' => null,
+            'uri' => $uri,
+            'timeout' => $timeout,
+            'server_config' => $serverConfig,
+            'error' => 'Failed to connect to LDAP server at ' . $uri,
+        ];
+    }
+
+    ldap_set_option($ldap, LDAP_OPT_PROTOCOL_VERSION, 3);
+    // Admin search/detail: referrals often break binds/searches against AD
+    ldap_set_option($ldap, LDAP_OPT_REFERRALS, 0);
+    ldap_set_option($ldap, LDAP_OPT_NETWORK_TIMEOUT, $timeout);
+    ldap_set_option($ldap, LDAP_OPT_TIMELIMIT, $timeout);
+
+    $sslVerifyFlag = $serverConfig['ssl_verify'] ?? '1';
+    $sslVerify = !($sslVerifyFlag === '0' || $sslVerifyFlag === 0 || $sslVerifyFlag === false);
+    if (!$sslVerify && ($protocol === 'ldaps' || $tls)) {
+        if (defined('LDAP_OPT_X_TLS_REQUIRE_CERT') && defined('LDAP_OPT_X_TLS_NEVER')) {
+            @ldap_set_option(null, LDAP_OPT_X_TLS_REQUIRE_CERT, LDAP_OPT_X_TLS_NEVER);
+            @ldap_set_option($ldap, LDAP_OPT_X_TLS_REQUIRE_CERT, LDAP_OPT_X_TLS_NEVER);
+        }
+    }
+
+    if ($tls && $protocol !== 'ldaps') {
+        if (!@ldap_start_tls($ldap)) {
+            $details = ldapCollectDiagnostics($ldap, [
+                'uri' => $uri,
+                'step' => 'start_tls',
+                'hint' => 'TLS negotiation failed. Try ldaps:// on 636 or fix certificates.',
+            ]);
+            @ldap_close($ldap);
+            return [
+                'ok' => false,
+                'ldap' => null,
+                'uri' => $uri,
+                'timeout' => $timeout,
+                'server_config' => $serverConfig,
+                'error' => 'TLS start failed: ' . ($details['ldap_error'] ?: 'unknown'),
+                'details' => $details,
+            ];
+        }
+    }
+
+    $bindDn = trim($serverConfig['bind_dn'] ?? '');
+    try {
+        $bindPass = ldapDecryptBindPassword($serverConfig['bind_password'] ?? '');
+    } catch (Exception $e) {
+        @ldap_close($ldap);
+        return [
+            'ok' => false,
+            'ldap' => null,
+            'uri' => $uri,
+            'timeout' => $timeout,
+            'server_config' => $serverConfig,
+            'error' => $e->getMessage(),
+            'details' => [
+                'step' => 'decrypt_bind_password',
+                'bind_dn' => $bindDn !== '' ? $bindDn : '(none)',
+                'hint' => 'Open Admin → LDAP, re-enter the service account password on the server card, and Save Settings.',
+            ],
+        ];
+    }
+
+    if ($bindDn !== '' && $bindPass === '') {
+        @ldap_close($ldap);
+        return [
+            'ok' => false,
+            'ldap' => null,
+            'uri' => $uri,
+            'timeout' => $timeout,
+            'server_config' => $serverConfig,
+            'error' => 'LDAP bind DN is configured but bind password is empty',
+            'details' => [
+                'step' => 'bind',
+                'bind_dn' => $bindDn,
+                'hint' => 'Add User search uses the same service account as LDAP Test. Re-enter the bind password on the LDAP server entry and Save Settings. Anonymous binds against Active Directory fail searches with "successful bind must be completed".',
+            ],
+        ];
+    }
+
+    if ($bindDn !== '' && $bindPass !== '') {
+        $bound = @ldap_bind($ldap, $bindDn, $bindPass);
+        $bindMode = 'service';
+    } else {
+        $bound = @ldap_bind($ldap);
+        $bindMode = 'anonymous';
+    }
+
+    if (!$bound) {
+        $details = ldapCollectDiagnostics($ldap, [
+            'uri' => $uri,
+            'step' => 'bind',
+            'bind_dn' => $bindDn !== '' ? $bindDn : '(anonymous)',
+            'bind_mode' => $bindMode,
+            'hint' => 'Verify bind DN and password for this LDAP server entry.',
+        ]);
+        @ldap_close($ldap);
+        return [
+            'ok' => false,
+            'ldap' => null,
+            'uri' => $uri,
+            'timeout' => $timeout,
+            'server_config' => $serverConfig,
+            'error' => 'LDAP bind failed: ' . ($details['ldap_error'] ?: 'unknown'),
+            'details' => $details,
+        ];
+    }
+
+    return [
+        'ok' => true,
+        'ldap' => $ldap,
+        'uri' => $uri,
+        'timeout' => $timeout,
+        'server_config' => $serverConfig,
+        'bind_mode' => $bindMode,
+    ];
+}
+
+/**
+ * Load ldap_* settings rows from the database.
+ */
+function ldapLoadSettingsFromDb(): array {
+    $db = getDB();
+    $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'ldap_%'");
+    $stmt->execute();
+    $settings = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $settings[$row['key']] = $row['value'];
+    }
+    return $settings;
+}
+
+/**
+ * Resolve which LDAP server config(s) to use for admin operations.
+ * When ldap_server_index is provided, returns only that server (keyed by original index).
+ * When omitted, defaults to the first server (index 0) — no cross-server guessing.
+ *
+ * @return array{ok:bool,servers?:array,error?:string,selected_index?:int}
+ */
+function ldapResolveServersForAdmin(array $ldapServers, $requestedIndex = null): array {
+    if (empty($ldapServers)) {
+        return ['ok' => false, 'error' => 'No LDAP servers configured'];
+    }
+
+    if ($requestedIndex === null || $requestedIndex === '') {
+        $selected = 0;
+    } else {
+        $selected = (int)$requestedIndex;
+    }
+
+    if ($selected < 0 || $selected >= count($ldapServers)) {
+        return [
+            'ok' => false,
+            'error' => 'Invalid LDAP server selected (index ' . $selected . '). Choose a configured server.',
+        ];
+    }
+
+    return [
+        'ok' => true,
+        'servers' => [$selected => $ldapServers[$selected]],
+        'selected_index' => $selected,
+    ];
+}
+
 function handleSearchLdapUsers() {
     try {
         requireAdmin(); // Only admins can search LDAP
@@ -1909,14 +2121,8 @@ function handleSearchLdapUsers() {
             return;
         }
         
-        // Load LDAP settings from database (same approach as handleLogin)
-        $db = getDB();
-        $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'ldap_%'");
-        $stmt->execute();
-        $settings = [];
-        foreach ($stmt->fetchAll() as $row) {
-            $settings[$row['key']] = $row['value'];
-        }
+        // Same source as login / LDAP test: multi-server JSON or legacy flat settings
+        $settings = ldapLoadSettingsFromDb();
         
         $ldapEnabled = !empty($settings['ldap_enabled']) && $settings['ldap_enabled'] == '1';
         
@@ -1929,291 +2135,263 @@ function handleSearchLdapUsers() {
             sendJSON(['error' => 'LDAP extension is not loaded'], 500);
             return;
         }
-        
-        // Connect to LDAP (reuse connection logic from handleLogin)
-        $server = trim($settings['ldap_server'] ?? '');
-        $port = (int)($settings['ldap_port'] ?? 389);
-        $protocol = trim($settings['ldap_protocol'] ?? 'ldap');
-        $tls = !empty($settings['ldap_tls']) && $settings['ldap_tls'] == '1';
-        $timeout = (int)($settings['ldap_timeout'] ?? 30);
-        
-        if (empty($server)) {
-            sendJSON(['error' => 'LDAP server is not configured'], 400);
-            return;
-        }
-        
-        $prefix = ($protocol === 'ldaps') ? 'ldaps://' : 'ldap://';
-        $uri = $prefix . $server . ':' . $port;
-        
-        $ldap = @ldap_connect($uri);
-        if (!$ldap) {
+
+        $ldapServers = getLdapServers($settings);
+        if (empty($ldapServers)) {
             sendJSON([
-                'error' => 'Failed to connect to LDAP server at ' . $uri,
+                'error' => 'No LDAP servers configured',
                 'details' => [
-                    'uri' => $uri,
-                    'hint' => 'Check ldap_server, ldap_port, and ldap_protocol settings.'
-                ]
-            ], 500);
+                    'hint' => 'Add an LDAP server under Admin → LDAP and Save Settings.',
+                ],
+            ], 400);
             return;
         }
-        
-        ldap_set_option($ldap, LDAP_OPT_PROTOCOL_VERSION, 3);
-        // Admin picker search: referrals often cause "Operations error" on AD — keep disabled for search
-        ldap_set_option($ldap, LDAP_OPT_REFERRALS, 0);
-        ldap_set_option($ldap, LDAP_OPT_NETWORK_TIMEOUT, $timeout);
-        ldap_set_option($ldap, LDAP_OPT_TIMELIMIT, $timeout);
-        
-        if ($tls && $protocol !== 'ldaps') {
-            if (!@ldap_start_tls($ldap)) {
-                $details = ldapCollectDiagnostics($ldap, [
-                    'uri' => $uri,
-                    'step' => 'start_tls',
-                    'hint' => 'TLS negotiation failed. Try ldaps:// on 636 or fix certificates.'
-                ]);
-                $err = $details['ldap_error'] ?: 'unknown';
-                @ldap_close($ldap);
-                sendJSON(['error' => 'TLS start failed: ' . $err, 'details' => $details], 500);
-                return;
-            }
+
+        $requestedIndex = array_key_exists('ldap_server_index', $data) ? $data['ldap_server_index'] : null;
+        $resolved = ldapResolveServersForAdmin($ldapServers, $requestedIndex);
+        if (!$resolved['ok']) {
+            sendJSON(['error' => $resolved['error']], 400);
+            return;
         }
-        
-        // Bind with service account
-        $bindDn = trim($settings['ldap_bind_dn'] ?? '');
-        $bindPass = $settings['ldap_bind_password'] ?? '';
-        
-        // Decrypt password if it's encrypted (handles both encrypted and plain text for backward compatibility)
-        if (!empty($bindPass)) {
-            // Check if password is encrypted (contains dots in format: base64.base64.base64)
-            $isEncrypted = (strpos($bindPass, '.') !== false && substr_count($bindPass, '.') === 2);
-            if ($isEncrypted) {
-                try {
-                    $bindPass = decryptPassword($bindPass);
-                } catch (Exception $e) {
-                    error_log("LDAP: Failed to decrypt bind password: " . $e->getMessage());
-                    error_log("LDAP: DB_PATH: " . (defined('DB_PATH') ? DB_PATH : 'not defined'));
-                    // If decryption fails, clear the password to prevent using corrupted data
-                    $bindPass = '';
+        $serversToSearch = $resolved['servers'];
+        $selectedServerIndex = $resolved['selected_index'];
+
+        $safeSearch = ldapEscapeFilterValue($searchTerm);
+        $users = [];
+        $usedAttempt = null;
+        $usedUri = null;
+        $usedSearchBase = null;
+        $serverErrors = [];
+
+        foreach ($serversToSearch as $serverIndex => $serverConfig) {
+            $searchBase = trim($serverConfig['user_search_base'] ?? '');
+            if ($searchBase === '') {
+                $serverErrors[] = [
+                    'server_index' => $serverIndex,
+                    'server' => $serverConfig['server'] ?? '',
+                    'error' => 'User search base is not configured',
+                ];
+                continue;
+            }
+
+            $conn = ldapConnectAndServiceBind($serverConfig);
+            if (!$conn['ok']) {
+                $serverErrors[] = [
+                    'server_index' => $serverIndex,
+                    'server' => $serverConfig['server'] ?? '',
+                    'name' => $serverConfig['name'] ?? '',
+                    'error' => $conn['error'] ?? 'connect/bind failed',
+                    'details' => $conn['details'] ?? null,
+                ];
+                continue;
+            }
+
+            $ldap = $conn['ldap'];
+            $uri = $conn['uri'];
+            $timeout = $conn['timeout'];
+            $searchScope = strtolower($serverConfig['search_scope'] ?? 'sub');
+
+            $filterAttempts = [
+                [
+                    'name' => 'ad_anr_user',
+                    'filter' => '(&(objectCategory=person)(objectClass=user)(|(anr=' . $safeSearch . ')(sAMAccountName=' . $safeSearch . '*)(mail=' . $safeSearch . '*)(userPrincipalName=' . $safeSearch . '*)))',
+                ],
+                [
+                    'name' => 'samaccount_prefix',
+                    'filter' => '(sAMAccountName=' . $safeSearch . '*)',
+                ],
+                [
+                    'name' => 'samaccount_exact',
+                    'filter' => '(sAMAccountName=' . $safeSearch . ')',
+                ],
+                [
+                    'name' => 'mail_upn_prefix',
+                    'filter' => '(|(mail=' . $safeSearch . '*)(userPrincipalName=' . $safeSearch . '*)(cn=' . $safeSearch . '*)(displayName=' . $safeSearch . '*))',
+                ],
+            ];
+
+            $filterTemplate = trim($serverConfig['user_filter'] ?? '');
+            if ($filterTemplate !== '' && strpos($filterTemplate, '{username}') !== false) {
+                $filterAttempts[] = [
+                    'name' => 'configured_login_filter',
+                    'filter' => str_replace('{username}', $safeSearch, $filterTemplate),
+                ];
+            }
+
+            $attributesStr = $serverConfig['user_attributes'] ?? 'sAMAccountName,mail,displayName,userPrincipalName,cn';
+            $attributes = array_map('trim', explode(',', $attributesStr));
+            $essentialAttrs = ['sAMAccountName', 'mail', 'displayName', 'userPrincipalName', 'cn'];
+            foreach ($essentialAttrs as $attr) {
+                if (!in_array($attr, $attributes, true)) {
+                    $attributes[] = $attr;
                 }
             }
-        }
-        
-        $bound = false;
-        if (!empty($bindDn) && !empty($bindPass)) {
-            $bound = @ldap_bind($ldap, $bindDn, $bindPass);
-        } else {
-            $bound = @ldap_bind($ldap); // Anonymous
-        }
-        
-        if (!$bound) {
-            $details = ldapCollectDiagnostics($ldap, [
-                'uri' => $uri,
-                'step' => 'bind',
-                'bind_dn' => $bindDn !== '' ? $bindDn : '(anonymous)',
-                'hint' => 'Verify bind DN and password. Service account may lack search permission.'
-            ]);
-            $err = $details['ldap_error'] ?: 'unknown';
-            @ldap_close($ldap);
-            sendJSON(['error' => 'LDAP bind failed: ' . $err, 'details' => $details], 500);
-            return;
-        }
-        
-        // Admin picker search: dedicated filters (do not reuse login exact filter)
-        $searchBase = trim($settings['ldap_user_search_base'] ?? '');
-        if (empty($searchBase)) {
-            @ldap_close($ldap);
-            sendJSON(['error' => 'LDAP user search base is not configured'], 400);
-            return;
-        }
-        
-        $safeSearch = ldapEscapeFilterValue($searchTerm);
-        
-        // Progressive filters: broad OR wildcards often cause AD "Operations error".
-        // Try AD-friendly ANR first, then simple sAMAccountName prefix/exact.
-        $filterAttempts = [
-            [
-                'name' => 'ad_anr_user',
-                'filter' => '(&(objectCategory=person)(objectClass=user)(|(anr=' . $safeSearch . ')(sAMAccountName=' . $safeSearch . '*)(mail=' . $safeSearch . '*)(userPrincipalName=' . $safeSearch . '*)))',
-            ],
-            [
-                'name' => 'samaccount_prefix',
-                'filter' => '(sAMAccountName=' . $safeSearch . '*)',
-            ],
-            [
-                'name' => 'samaccount_exact',
-                'filter' => '(sAMAccountName=' . $safeSearch . ')',
-            ],
-            [
-                'name' => 'mail_upn_prefix',
-                'filter' => '(|(mail=' . $safeSearch . '*)(userPrincipalName=' . $safeSearch . '*)(cn=' . $safeSearch . '*)(displayName=' . $safeSearch . '*))',
-            ],
-        ];
-        
-        // Also try configured login filter with exact term (OpenLDAP / custom schemas)
-        $filterTemplate = trim($settings['ldap_user_filter'] ?? '');
-        if ($filterTemplate !== '' && strpos($filterTemplate, '{username}') !== false) {
-            $filterAttempts[] = [
-                'name' => 'configured_login_filter',
-                'filter' => str_replace('{username}', $safeSearch, $filterTemplate),
-            ];
-        }
-        
-        // Get attributes
-        $attributesStr = $settings['ldap_user_attributes'] ?? 'sAMAccountName,mail,displayName,userPrincipalName,cn';
-        $attributes = array_map('trim', explode(',', $attributesStr));
-        $essentialAttrs = ['sAMAccountName', 'mail', 'displayName', 'userPrincipalName', 'cn'];
-        foreach ($essentialAttrs as $attr) {
-            if (!in_array($attr, $attributes)) {
-                $attributes[] = $attr;
+
+            $emailAttr = !empty($serverConfig['email_attribute']) ? $serverConfig['email_attribute'] : null;
+            $displayNameAttr = !empty($serverConfig['display_name_attribute']) ? $serverConfig['display_name_attribute'] : null;
+            if ($emailAttr && !in_array($emailAttr, $attributes, true)) {
+                $attributes[] = $emailAttr;
             }
-        }
-        
-        // Custom attribute mappings
-        $emailAttr = !empty($settings['ldap_email_attribute']) ? $settings['ldap_email_attribute'] : null;
-        $displayNameAttr = !empty($settings['ldap_display_name_attribute']) ? $settings['ldap_display_name_attribute'] : null;
-        
-        if ($emailAttr && !in_array($emailAttr, $attributes)) {
-            $attributes[] = $emailAttr;
-        }
-        if ($displayNameAttr && !in_array($displayNameAttr, $attributes)) {
-            $attributes[] = $displayNameAttr;
-        }
-        
-        // Determine search scope - use same as configured for login
-        $searchScope = strtolower($settings['ldap_search_scope'] ?? 'sub');
-        
-        // Set size limit to prevent aggressive scanning (max 20 results)
-        ldap_set_option($ldap, LDAP_OPT_SIZELIMIT, 20);
-        
-        $result = false;
-        $usedFilter = null;
-        $usedAttempt = null;
-        $attemptErrors = [];
-        
-        foreach ($filterAttempts as $attempt) {
-            $filter = $attempt['filter'];
-            if ($searchScope === 'base') {
-                $result = @ldap_read($ldap, $searchBase, $filter, $attributes, 0, 20, $timeout);
-            } elseif ($searchScope === 'one') {
-                $result = @ldap_list($ldap, $searchBase, $filter, $attributes, 0, 20, $timeout);
-            } else {
-                $result = @ldap_search($ldap, $searchBase, $filter, $attributes, 0, 20, $timeout);
+            if ($displayNameAttr && !in_array($displayNameAttr, $attributes, true)) {
+                $attributes[] = $displayNameAttr;
             }
-            
-            if ($result !== false) {
-                $usedFilter = $filter;
-                $usedAttempt = $attempt['name'];
-                break;
-            }
-            
-            $err = @ldap_error($ldap);
-            $errno = @ldap_errno($ldap);
-            // Size limit exceeded can still return partial results depending on server; treat as soft failure only if no result handle
-            if (is_string($err) && stripos($err, 'Size limit') !== false) {
-                $usedFilter = $filter;
-                $usedAttempt = $attempt['name'] . '_sizelimit';
-                // Some PHP builds leave $result false on sizelimit; continue to next simpler filter
+
+            ldap_set_option($ldap, LDAP_OPT_SIZELIMIT, 20);
+
+            $result = false;
+            $attemptErrors = [];
+            $localAttempt = null;
+
+            foreach ($filterAttempts as $attempt) {
+                $filter = $attempt['filter'];
+                if ($searchScope === 'base') {
+                    $result = @ldap_read($ldap, $searchBase, $filter, $attributes, 0, 20, $timeout);
+                } elseif ($searchScope === 'one') {
+                    $result = @ldap_list($ldap, $searchBase, $filter, $attributes, 0, 20, $timeout);
+                } else {
+                    $result = @ldap_search($ldap, $searchBase, $filter, $attributes, 0, 20, $timeout);
+                }
+
+                if ($result !== false) {
+                    $localAttempt = $attempt['name'];
+                    break;
+                }
+
+                $err = @ldap_error($ldap);
+                $errno = @ldap_errno($ldap);
+                if (is_string($err) && stripos($err, 'Size limit') !== false) {
+                    $attemptErrors[] = ldapCollectDiagnostics($ldap, [
+                        'attempt' => $attempt['name'],
+                        'filter' => $filter,
+                        'note' => 'Size limit reported; trying next filter strategy',
+                    ]);
+                    continue;
+                }
+
                 $attemptErrors[] = ldapCollectDiagnostics($ldap, [
                     'attempt' => $attempt['name'],
                     'filter' => $filter,
-                    'note' => 'Size limit reported; trying next filter strategy'
                 ]);
+                error_log('LDAP admin search attempt failed [' . $attempt['name'] . ']: errno=' . $errno . ' error=' . $err . ' filter=' . $filter);
+            }
+
+            if ($result === false) {
+                $serverErrors[] = [
+                    'server_index' => $serverIndex,
+                    'server' => $serverConfig['server'] ?? '',
+                    'uri' => $uri,
+                    'search_base' => $searchBase,
+                    'bind_mode' => $conn['bind_mode'] ?? 'unknown',
+                    'error' => 'search failed',
+                    'attempts' => $attemptErrors,
+                ];
+                @ldap_close($ldap);
                 continue;
             }
-            
-            $attemptErrors[] = ldapCollectDiagnostics($ldap, [
-                'attempt' => $attempt['name'],
-                'filter' => $filter,
-            ]);
-            error_log('LDAP admin search attempt failed [' . $attempt['name'] . ']: errno=' . $errno . ' error=' . $err . ' filter=' . $filter);
-        }
-        
-        if ($result === false) {
-            $details = ldapCollectDiagnostics($ldap, [
-                'uri' => $uri,
-                'search_base' => $searchBase,
-                'search_scope' => $searchScope,
-                'search_term' => $searchTerm,
-                'referrals' => false,
-                'step' => 'search',
-                'attempts' => $attemptErrors,
-                'hint' => 'AD often returns "Operations error" for broad multi-attribute wildcard searches or when referrals chase to unavailable DCs. Verify search base DN, bind permissions, and try a fuller username (exact sAMAccountName).',
-            ]);
-            $err = $details['ldap_error'] ?: 'unknown';
+
+            $entries = @ldap_get_entries($ldap, $result);
             @ldap_close($ldap);
-            sendJSON([
-                'error' => 'LDAP search failed: ' . $err,
-                'details' => $details,
-            ], 500);
-            return;
-        }
-        
-        $entries = @ldap_get_entries($ldap, $result);
-        if ($entries === false) {
-            $details = ldapCollectDiagnostics($ldap, [
-                'uri' => $uri,
-                'search_base' => $searchBase,
-                'search_scope' => $searchScope,
-                'filter' => $usedFilter,
-                'attempt' => $usedAttempt,
-                'step' => 'get_entries',
-            ]);
-            @ldap_close($ldap);
-            sendJSON(['error' => 'Failed to get LDAP entries', 'details' => $details], 500);
-            return;
-        }
-        @ldap_close($ldap);
-        
-        $users = [];
-        // Limit to first 20 results
-        $entryCount = min(isset($entries['count']) ? (int)$entries['count'] : 0, 20);
-        $searchTermLower = strtolower($searchTerm);
-        
-        for ($i = 0; $i < $entryCount; $i++) {
-            $entry = $entries[$i];
-            
-            // Extract username (sAMAccountName or userPrincipalName)
-            $username = '';
-            if (isset($entry['samaccountname']) && is_array($entry['samaccountname']) && isset($entry['samaccountname'][0])) {
-                $username = $entry['samaccountname'][0];
-            } elseif (isset($entry['userprincipalname']) && is_array($entry['userprincipalname']) && isset($entry['userprincipalname'][0])) {
-                $upn = $entry['userprincipalname'][0];
-                $username = explode('@', $upn)[0]; // Extract username part
+
+            if ($entries === false) {
+                $serverErrors[] = [
+                    'server_index' => $serverIndex,
+                    'server' => $serverConfig['server'] ?? '',
+                    'uri' => $uri,
+                    'error' => 'Failed to get LDAP entries',
+                ];
+                continue;
             }
-            
-            if (empty($username)) {
-                continue; // Skip entries without username
-            }
-            
-            // Extract email
-            $email = '';
-            if ($emailAttr && isset($entry[strtolower($emailAttr)]) && is_array($entry[strtolower($emailAttr)]) && isset($entry[strtolower($emailAttr)][0])) {
-                $email = $entry[strtolower($emailAttr)][0];
-            } elseif (isset($entry['mail']) && is_array($entry['mail']) && isset($entry['mail'][0])) {
-                $email = $entry['mail'][0];
-            } elseif (isset($entry['userprincipalname']) && is_array($entry['userprincipalname']) && isset($entry['userprincipalname'][0])) {
-                $upn = $entry['userprincipalname'][0];
-                if (filter_var($upn, FILTER_VALIDATE_EMAIL)) {
-                    $email = $upn;
+
+            $entryCount = min(isset($entries['count']) ? (int)$entries['count'] : 0, 20);
+            for ($i = 0; $i < $entryCount; $i++) {
+                $entry = $entries[$i];
+
+                $username = '';
+                if (isset($entry['samaccountname']) && is_array($entry['samaccountname']) && isset($entry['samaccountname'][0])) {
+                    $username = $entry['samaccountname'][0];
+                } elseif (isset($entry['userprincipalname']) && is_array($entry['userprincipalname']) && isset($entry['userprincipalname'][0])) {
+                    $upn = $entry['userprincipalname'][0];
+                    $username = explode('@', $upn)[0];
                 }
+
+                if ($username === '') {
+                    continue;
+                }
+
+                $email = '';
+                if ($emailAttr && isset($entry[strtolower($emailAttr)]) && is_array($entry[strtolower($emailAttr)]) && isset($entry[strtolower($emailAttr)][0])) {
+                    $email = $entry[strtolower($emailAttr)][0];
+                } elseif (isset($entry['mail']) && is_array($entry['mail']) && isset($entry['mail'][0])) {
+                    $email = $entry['mail'][0];
+                } elseif (isset($entry['userprincipalname']) && is_array($entry['userprincipalname']) && isset($entry['userprincipalname'][0])) {
+                    $upn = $entry['userprincipalname'][0];
+                    if (filter_var($upn, FILTER_VALIDATE_EMAIL)) {
+                        $email = $upn;
+                    }
+                }
+
+                $displayName = '';
+                if ($displayNameAttr && isset($entry[strtolower($displayNameAttr)]) && is_array($entry[strtolower($displayNameAttr)]) && isset($entry[strtolower($displayNameAttr)][0])) {
+                    $displayName = $entry[strtolower($displayNameAttr)][0];
+                } elseif (isset($entry['displayname']) && is_array($entry['displayname']) && isset($entry['displayname'][0])) {
+                    $displayName = $entry['displayname'][0];
+                }
+
+                $dn = $entry['dn'] ?? '';
+                // Deduplicate across servers by DN
+                $already = false;
+                foreach ($users as $existing) {
+                    if ($existing['dn'] !== '' && $dn !== '' && strcasecmp($existing['dn'], $dn) === 0) {
+                        $already = true;
+                        break;
+                    }
+                    if (strcasecmp($existing['username'], $username) === 0) {
+                        $already = true;
+                        break;
+                    }
+                }
+                if ($already) {
+                    continue;
+                }
+
+                $users[] = [
+                    'username' => $username,
+                    'email' => $email,
+                    'displayName' => $displayName,
+                    'dn' => $dn,
+                ];
             }
-            
-            // Extract display name
-            $displayName = '';
-            if ($displayNameAttr && isset($entry[strtolower($displayNameAttr)]) && is_array($entry[strtolower($displayNameAttr)]) && isset($entry[strtolower($displayNameAttr)][0])) {
-                $displayName = $entry[strtolower($displayNameAttr)][0];
-            } elseif (isset($entry['displayname']) && is_array($entry['displayname']) && isset($entry['displayname'][0])) {
-                $displayName = $entry['displayname'][0];
+
+            $usedAttempt = $localAttempt;
+            $usedUri = $uri;
+            $usedSearchBase = $searchBase;
+
+            // Stop after first server that returns matches
+            if (!empty($users)) {
+                break;
             }
-            
-            $users[] = [
-                'username' => $username,
-                'email' => $email,
-                'displayName' => $displayName,
-                'dn' => $entry['dn'] ?? ''
-            ];
         }
-        
-        // Prefer exact sAMAccountName / username matches first
+
+        if (empty($users) && !empty($serverErrors) && count($serverErrors) === count($serversToSearch)) {
+            $first = $serverErrors[0];
+            $details = [
+                'search_term' => $searchTerm,
+                'ldap_server_index' => $selectedServerIndex,
+                'servers_tried' => count($serversToSearch),
+                'server_errors' => $serverErrors,
+                'hint' => 'Search uses the LDAP server you selected. Confirm bind credentials and search base on that server entry.',
+            ];
+            $msg = $first['error'] ?? 'LDAP search failed';
+            if (!empty($first['details']['diagnostic'])) {
+                $msg .= ' — ' . $first['details']['diagnostic'];
+            } elseif (!empty($first['attempts'][0]['diagnostic'])) {
+                $msg .= ' — ' . $first['attempts'][0]['diagnostic'];
+            }
+            sendJSON(['error' => 'LDAP search failed: ' . $msg, 'details' => $details], 500);
+            return;
+        }
+
+        $searchTermLower = strtolower($searchTerm);
         usort($users, function ($a, $b) use ($searchTermLower) {
             $aExact = (strtolower($a['username']) === $searchTermLower) ? 0 : 1;
             $bExact = (strtolower($b['username']) === $searchTermLower) ? 0 : 1;
@@ -2222,6 +2400,9 @@ function handleSearchLdapUsers() {
             }
             return strcasecmp($a['username'], $b['username']);
         });
+
+        // Cap total results for the picker
+        $users = array_slice($users, 0, 20);
         
         sendJSON([
             'success' => true,
@@ -2230,6 +2411,9 @@ function handleSearchLdapUsers() {
                 'search_term' => $searchTerm,
                 'filter_attempt' => $usedAttempt,
                 'result_count' => count($users),
+                'uri' => $usedUri,
+                'search_base' => $usedSearchBase,
+                'ldap_server_index' => $selectedServerIndex,
             ],
         ]);
         
@@ -2364,13 +2548,7 @@ function handleGetLdapUserDetail() {
             return;
         }
 
-        $db = getDB();
-        $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'ldap_%'");
-        $stmt->execute();
-        $settings = [];
-        foreach ($stmt->fetchAll() as $row) {
-            $settings[$row['key']] = $row['value'];
-        }
+        $settings = ldapLoadSettingsFromDb();
 
         if (empty($settings['ldap_enabled']) || $settings['ldap_enabled'] != '1') {
             sendJSON(['error' => 'LDAP is not enabled'], 400);
@@ -2381,90 +2559,13 @@ function handleGetLdapUserDetail() {
             return;
         }
 
-        $server = trim($settings['ldap_server'] ?? '');
-        $port = (int)($settings['ldap_port'] ?? 389);
-        $protocol = trim($settings['ldap_protocol'] ?? 'ldap');
-        $tls = !empty($settings['ldap_tls']) && $settings['ldap_tls'] == '1';
-        $timeout = (int)($settings['ldap_timeout'] ?? 30);
-        if ($server === '') {
-            sendJSON(['error' => 'LDAP server is not configured'], 400);
-            return;
-        }
-
-        $prefix = ($protocol === 'ldaps') ? 'ldaps://' : 'ldap://';
-        $uri = $prefix . $server . ':' . $port;
-        $ldap = @ldap_connect($uri);
-        if (!$ldap) {
-            sendJSON(['error' => 'Failed to connect to LDAP server at ' . $uri, 'details' => ['uri' => $uri]], 500);
-            return;
-        }
-
-        ldap_set_option($ldap, LDAP_OPT_PROTOCOL_VERSION, 3);
-        ldap_set_option($ldap, LDAP_OPT_REFERRALS, 0);
-        ldap_set_option($ldap, LDAP_OPT_NETWORK_TIMEOUT, $timeout);
-        ldap_set_option($ldap, LDAP_OPT_TIMELIMIT, $timeout);
-
-        if ($tls && $protocol !== 'ldaps') {
-            if (!@ldap_start_tls($ldap)) {
-                $details = ldapCollectDiagnostics($ldap, ['uri' => $uri, 'step' => 'start_tls']);
-                @ldap_close($ldap);
-                sendJSON(['error' => 'TLS start failed: ' . ($details['ldap_error'] ?: 'unknown'), 'details' => $details], 500);
-                return;
-            }
-        }
-
-        $bindDn = trim($settings['ldap_bind_dn'] ?? '');
-        $bindPass = $settings['ldap_bind_password'] ?? '';
-        if (!empty($bindPass)) {
-            $isEncrypted = (strpos($bindPass, '.') !== false && substr_count($bindPass, '.') === 2);
-            if ($isEncrypted) {
-                try {
-                    $bindPass = decryptPassword($bindPass);
-                } catch (Exception $e) {
-                    error_log('LDAP detail: Failed to decrypt bind password: ' . $e->getMessage());
-                    $bindPass = '';
-                }
-            }
-        }
-
-        $bound = false;
-        if ($bindDn !== '' && $bindPass !== '') {
-            $bound = @ldap_bind($ldap, $bindDn, $bindPass);
-        } else {
-            $bound = @ldap_bind($ldap);
-        }
-        if (!$bound) {
-            $details = ldapCollectDiagnostics($ldap, [
-                'uri' => $uri,
-                'step' => 'bind',
-                'bind_dn' => $bindDn !== '' ? $bindDn : '(anonymous)',
-            ]);
-            @ldap_close($ldap);
-            sendJSON(['error' => 'LDAP bind failed: ' . ($details['ldap_error'] ?: 'unknown'), 'details' => $details], 500);
-            return;
-        }
-
-        $searchBase = trim($settings['ldap_user_search_base'] ?? '');
-        if ($searchBase === '') {
-            @ldap_close($ldap);
-            sendJSON(['error' => 'LDAP user search base is not configured'], 400);
+        $ldapServers = getLdapServers($settings);
+        if (empty($ldapServers)) {
+            sendJSON(['error' => 'No LDAP servers configured'], 400);
             return;
         }
 
         $safe = ldapEscapeFilterValue($username);
-        $filterAttempts = [
-            ['name' => 'ad_user_exact', 'filter' => '(&(objectCategory=person)(objectClass=user)(sAMAccountName=' . $safe . '))'],
-            ['name' => 'samaccount_exact', 'filter' => '(sAMAccountName=' . $safe . ')'],
-            ['name' => 'anr_exact', 'filter' => '(&(objectCategory=person)(objectClass=user)(anr=' . $safe . '))'],
-        ];
-        $filterTemplate = trim($settings['ldap_user_filter'] ?? '');
-        if ($filterTemplate !== '' && strpos($filterTemplate, '{username}') !== false) {
-            array_unshift($filterAttempts, [
-                'name' => 'configured_login_filter',
-                'filter' => str_replace('{username}', $safe, $filterTemplate),
-            ]);
-        }
-
         $attributes = [
             'sAMAccountName', 'userPrincipalName', 'mail', 'displayName', 'cn', 'givenName', 'sn',
             'title', 'department', 'company', 'manager', 'telephoneNumber', 'mobile',
@@ -2473,57 +2574,101 @@ function handleGetLdapUserDetail() {
             'distinguishedName', 'description', 'employeeID', 'employeeNumber',
         ];
 
-        $searchScope = strtolower($settings['ldap_search_scope'] ?? 'sub');
-        $result = false;
+        $entries = false;
         $usedFilter = null;
+        $uri = '';
+        $searchBase = '';
         $attemptErrors = [];
+        $serverErrors = [];
 
-        foreach ($filterAttempts as $attempt) {
-            $filter = $attempt['filter'];
-            if ($searchScope === 'base') {
-                $result = @ldap_read($ldap, $searchBase, $filter, $attributes, 0, 5, $timeout);
-            } elseif ($searchScope === 'one') {
-                $result = @ldap_list($ldap, $searchBase, $filter, $attributes, 0, 5, $timeout);
-            } else {
-                $result = @ldap_search($ldap, $searchBase, $filter, $attributes, 0, 5, $timeout);
+        foreach ($ldapServers as $serverIndex => $serverConfig) {
+            $searchBase = trim($serverConfig['user_search_base'] ?? '');
+            if ($searchBase === '') {
+                $serverErrors[] = ['server_index' => $serverIndex, 'error' => 'User search base is not configured'];
+                continue;
             }
-            if ($result !== false) {
-                $entries = @ldap_get_entries($ldap, $result);
-                if ($entries !== false && isset($entries['count']) && (int)$entries['count'] > 0) {
-                    $usedFilter = $filter;
-                    break;
+
+            $conn = ldapConnectAndServiceBind($serverConfig);
+            if (!$conn['ok']) {
+                $serverErrors[] = [
+                    'server_index' => $serverIndex,
+                    'server' => $serverConfig['server'] ?? '',
+                    'error' => $conn['error'] ?? 'connect/bind failed',
+                    'details' => $conn['details'] ?? null,
+                ];
+                continue;
+            }
+
+            $ldap = $conn['ldap'];
+            $uri = $conn['uri'];
+            $timeout = $conn['timeout'];
+            $searchScope = strtolower($serverConfig['search_scope'] ?? 'sub');
+
+            $filterAttempts = [
+                ['name' => 'ad_user_exact', 'filter' => '(&(objectCategory=person)(objectClass=user)(sAMAccountName=' . $safe . '))'],
+                ['name' => 'samaccount_exact', 'filter' => '(sAMAccountName=' . $safe . ')'],
+                ['name' => 'anr_exact', 'filter' => '(&(objectCategory=person)(objectClass=user)(anr=' . $safe . '))'],
+            ];
+            $filterTemplate = trim($serverConfig['user_filter'] ?? '');
+            if ($filterTemplate !== '' && strpos($filterTemplate, '{username}') !== false) {
+                array_unshift($filterAttempts, [
+                    'name' => 'configured_login_filter',
+                    'filter' => str_replace('{username}', $safe, $filterTemplate),
+                ]);
+            }
+
+            $result = false;
+            $localAttempts = [];
+            foreach ($filterAttempts as $attempt) {
+                $filter = $attempt['filter'];
+                if ($searchScope === 'base') {
+                    $result = @ldap_read($ldap, $searchBase, $filter, $attributes, 0, 5, $timeout);
+                } elseif ($searchScope === 'one') {
+                    $result = @ldap_list($ldap, $searchBase, $filter, $attributes, 0, 5, $timeout);
+                } else {
+                    $result = @ldap_search($ldap, $searchBase, $filter, $attributes, 0, 5, $timeout);
                 }
-                $result = false;
+                if ($result !== false) {
+                    $got = @ldap_get_entries($ldap, $result);
+                    if ($got !== false && isset($got['count']) && (int)$got['count'] > 0) {
+                        $usedFilter = $filter;
+                        $entries = $got;
+                        break;
+                    }
+                    $result = false;
+                }
+                $localAttempts[] = ldapCollectDiagnostics($ldap, [
+                    'attempt' => $attempt['name'],
+                    'filter' => $filter,
+                ]);
             }
-            $attemptErrors[] = ldapCollectDiagnostics($ldap, [
-                'attempt' => $attempt['name'],
-                'filter' => $filter,
-            ]);
-        }
 
-        if ($result === false) {
-            $details = ldapCollectDiagnostics($ldap, [
+            @ldap_close($ldap);
+
+            if ($entries !== false) {
+                break;
+            }
+
+            $attemptErrors = array_merge($attemptErrors, $localAttempts);
+            $serverErrors[] = [
+                'server_index' => $serverIndex,
+                'server' => $serverConfig['server'] ?? '',
                 'uri' => $uri,
                 'search_base' => $searchBase,
-                'search_scope' => $searchScope,
-                'username' => $username,
-                'step' => 'search',
-                'attempts' => $attemptErrors,
-                'hint' => 'User not found in LDAP or search failed. Confirm sAMAccountName matches LinkNest username.',
-            ]);
-            @ldap_close($ldap);
-            sendJSON([
-                'error' => 'LDAP user not found or search failed: ' . ($details['ldap_error'] ?: 'no results'),
-                'details' => $details,
-            ], 404);
-            return;
+                'error' => 'no matching user',
+            ];
         }
 
-        $entries = @ldap_get_entries($ldap, $result);
-        @ldap_close($ldap);
-
         if ($entries === false || !isset($entries['count']) || (int)$entries['count'] < 1) {
-            sendJSON(['error' => 'LDAP user not found', 'details' => ['username' => $username]], 404);
+            sendJSON([
+                'error' => 'LDAP user not found or search failed',
+                'details' => [
+                    'username' => $username,
+                    'server_errors' => $serverErrors,
+                    'attempts' => $attemptErrors,
+                    'hint' => 'Confirm sAMAccountName matches LinkNest username and service bind credentials are set on the LDAP server entry.',
+                ],
+            ], 404);
             return;
         }
 
@@ -2704,23 +2849,30 @@ function handleAddLdapUser() {
     $email = trim($data['email'] ?? '');
     $dn = trim($data['dn']);
     $displayName = trim($data['displayName'] ?? '');
+    $requestedServerIndex = array_key_exists('ldap_server_index', $data) ? $data['ldap_server_index'] : null;
     
     if (strlen($username) < 1) {
         sendJSON(['error' => 'Username is required'], 400);
     }
     
     // Load LDAP settings early (needed for email synthesis and verification)
-    $db = getDB();
-    $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'ldap_%'");
-    $stmt->execute();
-    $settings = [];
-    foreach ($stmt->fetchAll() as $row) {
-        $settings[$row['key']] = $row['value'];
+    $settings = ldapLoadSettingsFromDb();
+    $ldapServersAll = getLdapServers($settings);
+    $resolved = ldapResolveServersForAdmin($ldapServersAll, $requestedServerIndex);
+    $selectedServer = null;
+    if ($resolved['ok'] && !empty($resolved['servers'])) {
+        $selectedServer = reset($resolved['servers']);
     }
     
     // Synthesize email when LDAP mail is missing so short/service accounts can still be added
     if ($email === '') {
-        $domain = trim($settings['ldap_login_domain'] ?? '');
+        $domain = '';
+        if ($selectedServer && !empty($selectedServer['login_domain'])) {
+            $domain = trim($selectedServer['login_domain']);
+        }
+        if ($domain === '') {
+            $domain = trim($settings['ldap_login_domain'] ?? '');
+        }
         if ($domain === '') {
             $domain = 'ldap.local';
         }
@@ -2745,79 +2897,39 @@ function handleAddLdapUser() {
     }
     
     try {
-        // Connect to LDAP and verify user exists
-        $server = trim($settings['ldap_server'] ?? '');
-        $port = (int)($settings['ldap_port'] ?? 389);
-        $protocol = trim($settings['ldap_protocol'] ?? 'ldap');
-        $tls = !empty($settings['ldap_tls']);
-        $timeout = (int)($settings['ldap_timeout'] ?? 30);
-        
-        $prefix = ($protocol === 'ldaps') ? 'ldaps://' : 'ldap://';
-        $uri = $prefix . $server . ':' . $port;
-        
-        $ldap = @ldap_connect($uri);
-        if (!$ldap) {
-            sendJSON(['error' => 'Failed to connect to LDAP server'], 500);
+        if (!$resolved['ok']) {
+            sendJSON(['error' => $resolved['error']], 400);
         }
-        
-        ldap_set_option($ldap, LDAP_OPT_PROTOCOL_VERSION, 3);
-        $followReferrals = !empty($settings['ldap_referrals']) && $settings['ldap_referrals'] == '1';
-        ldap_set_option($ldap, LDAP_OPT_REFERRALS, $followReferrals ? 1 : 0);
-        ldap_set_option($ldap, LDAP_OPT_NETWORK_TIMEOUT, $timeout);
-        
-        if ($tls && $protocol !== 'ldaps') {
-            if (!@ldap_start_tls($ldap)) {
+
+        $ldapServers = $resolved['servers'];
+
+        // Verify DN exists on the selected LDAP server only
+        $verified = false;
+        $lastError = 'User not found in LDAP directory';
+        foreach ($ldapServers as $serverConfig) {
+            $conn = ldapConnectAndServiceBind($serverConfig);
+            if (!$conn['ok']) {
+                $lastError = $conn['error'] ?? 'LDAP connect/bind failed';
+                continue;
+            }
+            $ldap = $conn['ldap'];
+            $attributes = ['sAMAccountName', 'mail', 'displayName', 'userPrincipalName'];
+            $result = @ldap_read($ldap, $dn, '(objectClass=*)', $attributes);
+            if ($result === false) {
                 @ldap_close($ldap);
-                sendJSON(['error' => 'TLS start failed: ' . ldap_error($ldap)], 500);
+                $lastError = 'User not found in LDAP directory on the selected server';
+                continue;
+            }
+            $entries = @ldap_get_entries($ldap, $result);
+            @ldap_close($ldap);
+            if ($entries !== false && isset($entries['count']) && (int)$entries['count'] > 0) {
+                $verified = true;
+                break;
             }
         }
-        
-        // Bind with service account
-        $bindDn = trim($settings['ldap_bind_dn'] ?? '');
-        $bindPass = $settings['ldap_bind_password'] ?? '';
-        
-        // Decrypt password if it's encrypted (handles both encrypted and plain text for backward compatibility)
-        if (!empty($bindPass)) {
-            // Check if password is encrypted (contains dots in format: base64.base64.base64)
-            $isEncrypted = (strpos($bindPass, '.') !== false && substr_count($bindPass, '.') === 2);
-            if ($isEncrypted) {
-                try {
-                    $bindPass = decryptPassword($bindPass);
-                } catch (Exception $e) {
-                    error_log("LDAP: Failed to decrypt bind password: " . $e->getMessage());
-                    error_log("LDAP: DB_PATH: " . (defined('DB_PATH') ? DB_PATH : 'not defined'));
-                    // If decryption fails, clear the password to prevent using corrupted data
-                    $bindPass = '';
-                }
-            }
-        }
-        
-        $bound = false;
-        if (!empty($bindDn) && !empty($bindPass)) {
-            $bound = @ldap_bind($ldap, $bindDn, $bindPass);
-        } else {
-            $bound = @ldap_bind($ldap);
-        }
-        
-        if (!$bound) {
-            @ldap_close($ldap);
-            sendJSON(['error' => 'LDAP bind failed: ' . ldap_error($ldap)], 500);
-        }
-        
-        // Verify user exists by reading the DN
-        $attributes = ['sAMAccountName', 'mail', 'displayName', 'userPrincipalName'];
-        $result = @ldap_read($ldap, $dn, '(objectClass=*)', $attributes);
-        
-        if ($result === false) {
-            @ldap_close($ldap);
-            sendJSON(['error' => 'User not found in LDAP directory'], 404);
-        }
-        
-        $entries = @ldap_get_entries($ldap, $result);
-        @ldap_close($ldap);
-        
-        if ($entries === false || $entries['count'] === 0) {
-            sendJSON(['error' => 'User not found in LDAP directory'], 404);
+
+        if (!$verified) {
+            sendJSON(['error' => $lastError], 404);
         }
         
         // User verified in LDAP, now add to database
@@ -3031,6 +3143,349 @@ function handleBulkImportLocalUsers() {
     ]);
 }
 
+/**
+ * Map an LDAP user entry to importable fields.
+ */
+function ldapMapUserEntryForImport(array $entry, ?string $emailAttr = null, ?string $displayNameAttr = null): ?array {
+    $username = '';
+    if (isset($entry['samaccountname']) && is_array($entry['samaccountname']) && isset($entry['samaccountname'][0])) {
+        $username = (string)$entry['samaccountname'][0];
+    } elseif (isset($entry['userprincipalname']) && is_array($entry['userprincipalname']) && isset($entry['userprincipalname'][0])) {
+        $upn = (string)$entry['userprincipalname'][0];
+        $username = explode('@', $upn)[0];
+    } elseif (isset($entry['uid']) && is_array($entry['uid']) && isset($entry['uid'][0])) {
+        $username = (string)$entry['uid'][0];
+    } elseif (isset($entry['cn']) && is_array($entry['cn']) && isset($entry['cn'][0])) {
+        $username = (string)$entry['cn'][0];
+    }
+
+    if ($username === '') {
+        return null;
+    }
+
+    $email = '';
+    if ($emailAttr && isset($entry[strtolower($emailAttr)]) && is_array($entry[strtolower($emailAttr)]) && isset($entry[strtolower($emailAttr)][0])) {
+        $email = (string)$entry[strtolower($emailAttr)][0];
+    } elseif (isset($entry['mail']) && is_array($entry['mail']) && isset($entry['mail'][0])) {
+        $email = (string)$entry['mail'][0];
+    } elseif (isset($entry['userprincipalname']) && is_array($entry['userprincipalname']) && isset($entry['userprincipalname'][0])) {
+        $upn = (string)$entry['userprincipalname'][0];
+        if (filter_var($upn, FILTER_VALIDATE_EMAIL)) {
+            $email = $upn;
+        }
+    }
+
+    $displayName = '';
+    if ($displayNameAttr && isset($entry[strtolower($displayNameAttr)]) && is_array($entry[strtolower($displayNameAttr)]) && isset($entry[strtolower($displayNameAttr)][0])) {
+        $displayName = (string)$entry[strtolower($displayNameAttr)][0];
+    } elseif (isset($entry['displayname']) && is_array($entry['displayname']) && isset($entry['displayname'][0])) {
+        $displayName = (string)$entry['displayname'][0];
+    } elseif (isset($entry['cn']) && is_array($entry['cn']) && isset($entry['cn'][0])) {
+        $displayName = (string)$entry['cn'][0];
+    }
+
+    return [
+        'username' => $username,
+        'email' => $email,
+        'displayName' => $displayName,
+        'dn' => $entry['dn'] ?? '',
+    ];
+}
+
+/**
+ * Admin: list users that are members of an LDAP group DN (preview for bulk import).
+ * Supports direct memberOf and AD nested membership (LDAP_MATCHING_RULE_IN_CHAIN).
+ */
+function handleFetchLdapGroupMembers() {
+    try {
+        requireAdmin();
+
+        $data = getJSONInput();
+        if ($data === null) {
+            sendJSON(['error' => 'Invalid JSON input'], 400);
+            return;
+        }
+
+        $groupDn = trim($data['group_dn'] ?? '');
+        if ($groupDn === '') {
+            sendJSON(['error' => 'Group DN is required'], 400);
+            return;
+        }
+
+        if (!extension_loaded('ldap')) {
+            sendJSON(['error' => 'LDAP extension is not loaded'], 500);
+            return;
+        }
+
+        $settings = ldapLoadSettingsFromDb();
+        if (empty($settings['ldap_enabled']) || $settings['ldap_enabled'] != '1') {
+            sendJSON(['error' => 'LDAP is not enabled'], 400);
+            return;
+        }
+
+        $ldapServers = getLdapServers($settings);
+        $requestedIndex = array_key_exists('ldap_server_index', $data) ? $data['ldap_server_index'] : null;
+        $resolved = ldapResolveServersForAdmin($ldapServers, $requestedIndex);
+        if (!$resolved['ok']) {
+            sendJSON(['error' => $resolved['error']], 400);
+            return;
+        }
+
+        $serverConfig = reset($resolved['servers']);
+        $selectedServerIndex = $resolved['selected_index'];
+
+        $includeNested = array_key_exists('include_nested', $data)
+            ? !empty($data['include_nested'])
+            : (!empty($serverConfig['nested_groups']) && $serverConfig['nested_groups'] == '1');
+
+        $conn = ldapConnectAndServiceBind($serverConfig);
+        if (!$conn['ok']) {
+            sendJSON([
+                'error' => $conn['error'] ?? 'LDAP connect/bind failed',
+                'details' => $conn['details'] ?? null,
+            ], 500);
+            return;
+        }
+
+        $ldap = $conn['ldap'];
+        $uri = $conn['uri'];
+        $timeout = $conn['timeout'];
+        $searchBase = trim($serverConfig['user_search_base'] ?? '');
+        if ($searchBase === '') {
+            @ldap_close($ldap);
+            sendJSON(['error' => 'LDAP user search base is not configured for the selected server'], 400);
+            return;
+        }
+
+        // Confirm the group DN exists
+        $groupCheck = @ldap_read($ldap, $groupDn, '(objectClass=*)', ['cn', 'distinguishedName', 'objectClass', 'member']);
+        if ($groupCheck === false) {
+            $details = ldapCollectDiagnostics($ldap, [
+                'uri' => $uri,
+                'group_dn' => $groupDn,
+                'step' => 'read_group',
+                'hint' => 'Verify the group DN is correct and readable with the service account on the selected server.',
+            ]);
+            @ldap_close($ldap);
+            sendJSON(['error' => 'LDAP group not found or not readable: ' . ($details['ldap_error'] ?: 'unknown'), 'details' => $details], 404);
+            return;
+        }
+        $groupEntries = @ldap_get_entries($ldap, $groupCheck);
+        $groupCn = '';
+        if ($groupEntries !== false && isset($groupEntries[0])) {
+            $groupCn = ldapEntryAttrFirst($groupEntries[0], 'cn');
+        }
+
+        $emailAttr = !empty($serverConfig['email_attribute']) ? $serverConfig['email_attribute'] : null;
+        $displayNameAttr = !empty($serverConfig['display_name_attribute']) ? $serverConfig['display_name_attribute'] : null;
+        $attributes = ['sAMAccountName', 'mail', 'displayName', 'userPrincipalName', 'cn', 'uid', 'objectClass'];
+        if ($emailAttr) {
+            $attributes[] = $emailAttr;
+        }
+        if ($displayNameAttr) {
+            $attributes[] = $displayNameAttr;
+        }
+
+        $maxMembers = 500;
+        $safeGroupDn = ldapEscapeFilterValue($groupDn);
+        $method = 'memberof_direct';
+        if ($includeNested) {
+            // Active Directory: LDAP_MATCHING_RULE_IN_CHAIN
+            $filter = '(&(objectCategory=person)(objectClass=user)(memberOf:1.2.840.113556.1.4.1941:=' . $safeGroupDn . '))';
+            $method = 'memberof_nested_chain';
+        } else {
+            $filter = '(&(objectCategory=person)(objectClass=user)(memberOf=' . $safeGroupDn . '))';
+        }
+
+        ldap_set_option($ldap, LDAP_OPT_SIZELIMIT, $maxMembers);
+        $searchScope = strtolower($serverConfig['search_scope'] ?? 'sub');
+        if ($searchScope === 'base') {
+            $result = @ldap_read($ldap, $searchBase, $filter, $attributes, 0, $maxMembers, $timeout);
+        } elseif ($searchScope === 'one') {
+            $result = @ldap_list($ldap, $searchBase, $filter, $attributes, 0, $maxMembers, $timeout);
+        } else {
+            $result = @ldap_search($ldap, $searchBase, $filter, $attributes, 0, $maxMembers, $timeout);
+        }
+
+        $users = [];
+        $seenDns = [];
+
+        if ($result !== false) {
+            $entries = @ldap_get_entries($ldap, $result);
+            if ($entries !== false) {
+                $count = min(isset($entries['count']) ? (int)$entries['count'] : 0, $maxMembers);
+                for ($i = 0; $i < $count; $i++) {
+                    $mapped = ldapMapUserEntryForImport($entries[$i], $emailAttr, $displayNameAttr);
+                    if ($mapped === null || $mapped['dn'] === '') {
+                        continue;
+                    }
+                    $dnKey = strtolower($mapped['dn']);
+                    if (isset($seenDns[$dnKey])) {
+                        continue;
+                    }
+                    $seenDns[$dnKey] = true;
+                    $users[] = $mapped;
+                }
+            }
+        }
+
+        // Fall back: enumerate the group's member attribute when memberOf search fails or returns no users
+        if (empty($users)) {
+            $method = 'group_member_attribute';
+            $memberDns = [];
+            if ($groupEntries !== false && isset($groupEntries[0])) {
+                $memberDns = ldapEntryAttrAll($groupEntries[0], 'member');
+            }
+
+            // AD large groups may use ranged retrieval; try a couple of ranges if empty/sparse
+            if (empty($memberDns)) {
+                for ($rangeStart = 0; $rangeStart < 3000; $rangeStart += 1500) {
+                    $rangeEnd = $rangeStart + 1499;
+                    $rangeAttr = 'member;range=' . $rangeStart . '-' . $rangeEnd;
+                    $rangeRead = @ldap_read($ldap, $groupDn, '(objectClass=*)', [$rangeAttr]);
+                    if ($rangeRead === false) {
+                        break;
+                    }
+                    $rangeEntries = @ldap_get_entries($ldap, $rangeRead);
+                    if ($rangeEntries === false || !isset($rangeEntries[0])) {
+                        break;
+                    }
+                    $batch = [];
+                    foreach ($rangeEntries[0] as $key => $val) {
+                        if (!is_array($val)) {
+                            continue;
+                        }
+                        if (stripos((string)$key, 'member;range=') === 0 || strtolower((string)$key) === 'member') {
+                            $c = isset($val['count']) ? (int)$val['count'] : 0;
+                            for ($mi = 0; $mi < $c; $mi++) {
+                                if (isset($val[$mi]) && is_string($val[$mi])) {
+                                    $batch[] = $val[$mi];
+                                }
+                            }
+                        }
+                    }
+                    if (empty($batch)) {
+                        break;
+                    }
+                    $memberDns = array_merge($memberDns, $batch);
+                    if (count($batch) < 1500) {
+                        break;
+                    }
+                }
+            }
+
+            $toResolve = $memberDns;
+            $visitedGroups = [strtolower($groupDn) => true];
+            $depth = 0;
+            $maxDepth = $includeNested ? 5 : 0;
+
+            while (!empty($toResolve) && count($users) < $maxMembers && $depth <= $maxDepth) {
+                $nextRound = [];
+                foreach ($toResolve as $memberDn) {
+                    if (count($users) >= $maxMembers) {
+                        break;
+                    }
+                    $memberDn = trim((string)$memberDn);
+                    if ($memberDn === '') {
+                        continue;
+                    }
+                    $read = @ldap_read($ldap, $memberDn, '(objectClass=*)', array_merge($attributes, ['member', 'objectClass']));
+                    if ($read === false) {
+                        continue;
+                    }
+                    $memEntries = @ldap_get_entries($ldap, $read);
+                    if ($memEntries === false || !isset($memEntries[0])) {
+                        continue;
+                    }
+                    $entry = $memEntries[0];
+                    $objectClasses = array_map('strtolower', ldapEntryAttrAll($entry, 'objectClass'));
+                    $isGroup = in_array('group', $objectClasses, true) || in_array('groupofnames', $objectClasses, true) || in_array('groupofuniquenames', $objectClasses, true);
+                    $isUser = in_array('user', $objectClasses, true) || in_array('person', $objectClasses, true) || in_array('inetorgperson', $objectClasses, true);
+
+                    if ($isGroup && $includeNested && $depth < $maxDepth) {
+                        $gKey = strtolower($memberDn);
+                        if (!isset($visitedGroups[$gKey])) {
+                            $visitedGroups[$gKey] = true;
+                            $nestedMembers = ldapEntryAttrAll($entry, 'member');
+                            foreach ($nestedMembers as $n) {
+                                $nextRound[] = $n;
+                            }
+                        }
+                        continue;
+                    }
+
+                    if (!$isUser && !$isGroup) {
+                        // Still try map as user if sAMAccountName present
+                        $isUser = isset($entry['samaccountname']);
+                    }
+
+                    if ($isUser) {
+                        $mapped = ldapMapUserEntryForImport($entry, $emailAttr, $displayNameAttr);
+                        if ($mapped === null || $mapped['dn'] === '') {
+                            continue;
+                        }
+                        $dnKey = strtolower($mapped['dn']);
+                        if (isset($seenDns[$dnKey])) {
+                            continue;
+                        }
+                        $seenDns[$dnKey] = true;
+                        $users[] = $mapped;
+                    }
+                }
+                $toResolve = $nextRound;
+                $depth++;
+                if (!$includeNested) {
+                    break;
+                }
+            }
+        }
+
+        @ldap_close($ldap);
+
+        usort($users, function ($a, $b) {
+            return strcasecmp($a['username'], $b['username']);
+        });
+
+        // Synthesize missing emails for preview consistency with add-ldap-user
+        $domain = trim($serverConfig['login_domain'] ?? '');
+        if ($domain === '') {
+            $domain = trim($settings['ldap_login_domain'] ?? '');
+        }
+        if ($domain === '') {
+            $domain = 'ldap.local';
+        }
+        foreach ($users as &$u) {
+            if ($u['email'] === '') {
+                $u['email'] = $u['username'] . '@' . $domain;
+            }
+        }
+        unset($u);
+
+        $truncated = count($users) >= $maxMembers;
+
+        sendJSON([
+            'success' => true,
+            'users' => $users,
+            'meta' => [
+                'group_dn' => $groupDn,
+                'group_cn' => $groupCn,
+                'ldap_server_index' => $selectedServerIndex,
+                'include_nested' => $includeNested,
+                'method' => $method,
+                'result_count' => count($users),
+                'truncated' => $truncated,
+                'max_members' => $maxMembers,
+                'uri' => $uri,
+                'search_base' => $searchBase,
+            ],
+        ]);
+    } catch (Exception $e) {
+        sendJSON(['error' => 'LDAP group members error: ' . $e->getMessage()], 500);
+    } catch (Error $e) {
+        sendJSON(['error' => 'LDAP group members fatal error: ' . $e->getMessage()], 500);
+    }
+}
+
 function handleBulkImportLdapUsers() {
     requireAdmin(); // Only admins can bulk import LDAP users
     
@@ -3041,15 +3496,9 @@ function handleBulkImportLdapUsers() {
     }
     
     $users = $data['users'];
+    $requestedServerIndex = array_key_exists('ldap_server_index', $data) ? $data['ldap_server_index'] : null;
     
-    // Validate LDAP is enabled
-    $db = getDB();
-    $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'ldap_%'");
-    $stmt->execute();
-    $settings = [];
-    foreach ($stmt->fetchAll() as $row) {
-        $settings[$row['key']] = $row['value'];
-    }
+    $settings = ldapLoadSettingsFromDb();
     
     $ldapEnabled = !empty($settings['ldap_enabled']) && $settings['ldap_enabled'] == '1';
     
@@ -3067,68 +3516,27 @@ function handleBulkImportLdapUsers() {
         'skipped' => []
     ];
     
-    // Connect to LDAP once for all users
+    // Connect to the selected LDAP server once for all users
     try {
-        $server = trim($settings['ldap_server'] ?? '');
-        $port = (int)($settings['ldap_port'] ?? 389);
-        $protocol = trim($settings['ldap_protocol'] ?? 'ldap');
-        $tls = !empty($settings['ldap_tls']);
-        $timeout = (int)($settings['ldap_timeout'] ?? 30);
-        
-        $prefix = ($protocol === 'ldaps') ? 'ldaps://' : 'ldap://';
-        $uri = $prefix . $server . ':' . $port;
-        
-        $ldap = @ldap_connect($uri);
-        if (!$ldap) {
-            sendJSON(['error' => 'Failed to connect to LDAP server'], 500);
+        $ldapServers = getLdapServers($settings);
+        $resolved = ldapResolveServersForAdmin($ldapServers, $requestedServerIndex);
+        if (!$resolved['ok']) {
+            sendJSON(['error' => $resolved['error']], 400);
         }
-        
-        ldap_set_option($ldap, LDAP_OPT_PROTOCOL_VERSION, 3);
-        $followReferrals = !empty($settings['ldap_referrals']) && $settings['ldap_referrals'] == '1';
-        ldap_set_option($ldap, LDAP_OPT_REFERRALS, $followReferrals ? 1 : 0);
-        ldap_set_option($ldap, LDAP_OPT_NETWORK_TIMEOUT, $timeout);
-        
-        if ($tls && $protocol !== 'ldaps') {
-            if (!@ldap_start_tls($ldap)) {
-                @ldap_close($ldap);
-                sendJSON(['error' => 'TLS start failed: ' . ldap_error($ldap)], 500);
-            }
+        $serverConfig = reset($resolved['servers']);
+        $conn = ldapConnectAndServiceBind($serverConfig);
+        if (!$conn['ok']) {
+            sendJSON([
+                'error' => $conn['error'] ?? 'LDAP connect/bind failed',
+                'details' => $conn['details'] ?? null,
+            ], 500);
         }
-        
-        // Bind with service account
-        $bindDn = trim($settings['ldap_bind_dn'] ?? '');
-        $bindPass = $settings['ldap_bind_password'] ?? '';
-        
-        // Decrypt password if it's encrypted (handles both encrypted and plain text for backward compatibility)
-        if (!empty($bindPass)) {
-            // Check if password is encrypted (contains dots in format: base64.base64.base64)
-            $isEncrypted = (strpos($bindPass, '.') !== false && substr_count($bindPass, '.') === 2);
-            if ($isEncrypted) {
-                try {
-                    $bindPass = decryptPassword($bindPass);
-                } catch (Exception $e) {
-                    error_log("LDAP: Failed to decrypt bind password: " . $e->getMessage());
-                    error_log("LDAP: DB_PATH: " . (defined('DB_PATH') ? DB_PATH : 'not defined'));
-                    // If decryption fails, clear the password to prevent using corrupted data
-                    $bindPass = '';
-                }
-            }
-        }
-        
-        $bound = false;
-        if (!empty($bindDn) && !empty($bindPass)) {
-            $bound = @ldap_bind($ldap, $bindDn, $bindPass);
-        } else {
-            $bound = @ldap_bind($ldap);
-        }
-        
-        if (!$bound) {
-            @ldap_close($ldap);
-            sendJSON(['error' => 'LDAP bind failed: ' . ldap_error($ldap)], 500);
-        }
+        $ldap = $conn['ldap'];
     } catch (Exception $e) {
         sendJSON(['error' => 'LDAP connection error: ' . $e->getMessage()], 500);
     }
+    
+    $db = getDB();
     
     // Process each user
     foreach ($users as $index => $userData) {
@@ -3587,14 +3995,11 @@ function checkUserExistsInLdap($username) {
         $bindPass = $settings['ldap_bind_password'] ?? '';
         
         if (!empty($bindPass)) {
-            $isEncrypted = (strpos($bindPass, '.') !== false && substr_count($bindPass, '.') === 2);
-            if ($isEncrypted) {
-                try {
-                    $bindPass = decryptPassword($bindPass);
-                } catch (Exception $e) {
-                    @ldap_close($ldap);
-                    return false;
-                }
+            try {
+                $bindPass = ldapDecryptBindPassword($bindPass);
+            } catch (Exception $e) {
+                @ldap_close($ldap);
+                return false;
             }
         }
         

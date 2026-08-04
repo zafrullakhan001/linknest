@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { Tile, LinkSection, ThemeColor, THEME_COLORS, COLOR_STYLES, POPULAR_EMOJIS, TileVisibility, TileMessage, Link, CelebrationConfig } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
@@ -16,8 +16,12 @@ import { getPublicFavorites, togglePublicFavorite, isPublicFavorite, getPublicAc
 import { linkHealthService } from '../services/linkHealthService';
 import { favoriteLinkHealthService, LinkHealthCheckResult } from '../services/favoriteLinkHealthService';
 import { TileAnimationSelector, useTileAnimation, getTileAnimationClass, getTileDecorationClass, TileAnimation, TileDecoration } from './TileAnimationSelector';
-import { MonitoringDashboard } from './MonitoringDashboard';
-import { Monitorv2Dashboard } from './Monitorv2Dashboard';
+const MonitoringDashboard = lazy(() =>
+  import('./MonitoringDashboard').then((m) => ({ default: m.MonitoringDashboard }))
+);
+const Monitorv2Dashboard = lazy(() =>
+  import('./Monitorv2Dashboard').then((m) => ({ default: m.Monitorv2Dashboard }))
+);
 import { getDisabledTabsFromSettings } from '../services/tabVisibilityService';
 import { rolesService } from '../services/rolesService';
 import { FaTimes } from 'react-icons/fa';
@@ -7149,8 +7153,16 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         return favoriteLinksAbove ? favoriteLinksSection : null;
       })()}
 
-      {activeTab === 'monitoring' && <MonitoringDashboard />}
-      {activeTab === 'monitorv2' && <Monitorv2Dashboard />}
+      {activeTab === 'monitoring' && (
+        <Suspense fallback={<div className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">Loading monitoring…</div>}>
+          <MonitoringDashboard />
+        </Suspense>
+      )}
+      {activeTab === 'monitorv2' && (
+        <Suspense fallback={<div className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">Loading monitoring…</div>}>
+          <Monitorv2Dashboard />
+        </Suspense>
+      )}
 
       {/* Categories View */}
       {viewMode === 'categories' && activeTab !== 'monitoring' && activeTab !== 'monitorv2' && !(activeTab === 'private' && privateSubTab !== 'spaces') && (

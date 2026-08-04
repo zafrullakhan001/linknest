@@ -2704,25 +2704,62 @@ function encryptPassword($password) {
 }
 
 /**
+ * Return true only when $value looks like encryptPassword() output.
+ * Do NOT treat ordinary passwords that happen to contain dots as encrypted.
+ */
+function isLikelyEncryptedPassword($value): bool {
+    if (!is_string($value) || $value === '') {
+        return false;
+    }
+    if (substr_count($value, '.') !== 2) {
+        return false;
+    }
+    $parts = explode('.', $value, 3);
+    if (count($parts) !== 3) {
+        return false;
+    }
+    // Reject obvious plaintext with dots (spaces, short segments, etc.)
+    foreach ($parts as $part) {
+        if ($part === '' || preg_match('/\s/', $part)) {
+            return false;
+        }
+    }
+    $iv = base64_decode($parts[0], true);
+    $tag = base64_decode($parts[1], true);
+    $encrypted = base64_decode($parts[2], true);
+    if ($iv === false || $tag === false || $encrypted === false) {
+        return false;
+    }
+    $expectedIvLen = openssl_cipher_iv_length('aes-256-gcm');
+    if ($expectedIvLen && strlen($iv) !== $expectedIvLen) {
+        return false;
+    }
+    // GCM auth tag is typically 16 bytes
+    if (strlen($tag) !== 16) {
+        return false;
+    }
+    if (strlen($encrypted) < 1) {
+        return false;
+    }
+    return true;
+}
+
+/**
  * Decrypt a password encrypted with encryptPassword()
  * Expects format: base64(iv).base64(tag).base64(encrypted_data)
  */
 function decryptPassword($encryptedPassword) {
-    if (empty($encryptedPassword)) {
+    if ($encryptedPassword === null || $encryptedPassword === '') {
         return '';
     }
-    
-    // Handle plain text passwords (for backward compatibility)
-    // If it doesn't contain dots, assume it's plain text
-    if (strpos($encryptedPassword, '.') === false) {
+    $encryptedPassword = (string)$encryptedPassword;
+
+    // Plain text / non-encrypted values — return unchanged
+    if (!isLikelyEncryptedPassword($encryptedPassword)) {
         return $encryptedPassword;
     }
     
     $parts = explode('.', $encryptedPassword, 3);
-    if (count($parts) !== 3) {
-        throw new Exception('Invalid encrypted password format');
-    }
-    
     $iv = base64_decode($parts[0], true);
     $tag = base64_decode($parts[1], true);
     $encrypted = base64_decode($parts[2], true);

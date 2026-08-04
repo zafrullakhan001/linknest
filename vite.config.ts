@@ -107,9 +107,21 @@ export default defineConfig(({ mode }) => {
               if (id.includes('uuid')) {
                 return 'utils-vendor';
               }
-              // Recharts and its dependencies
-              if (id.includes('recharts') || id.includes('victory-vendor') || id.includes('d3')) {
-                return 'charts-vendor';
+              // Leave Recharts/D3 out of the shared vendor chunk. Forcing
+              // recharts+d3+victory into charts-vendor caused circular TDZ errors
+              // ("Cannot access 'T' before initialization"). Returning nothing
+              // lets Rollup attach them to the lazy monitoring dashboard chunks.
+              if (
+                id.includes('recharts') ||
+                id.includes('victory-vendor') ||
+                id.includes('d3-') ||
+                id.includes('/d3/') ||
+                id.includes('\\d3\\') ||
+                id.includes('internmap') ||
+                id.includes('delaunator') ||
+                id.includes('robust-predicates')
+              ) {
+                return;
               }
               // Other vendor libraries
               return 'vendor';
