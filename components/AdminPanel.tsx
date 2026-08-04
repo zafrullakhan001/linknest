@@ -6210,7 +6210,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                           <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Bind Password</label>
                                           <SecurePasswordInput
                                             value={server.bind_password}
-                                            showToggle
                                             onChange={(e) => {
                                               const updated = [...ldapServers];
                                               updated[index].bind_password = e.target.value;
@@ -6221,7 +6220,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                             autoComplete="new-password"
                                           />
                                           <p className="text-[10px] text-slate-500 mt-1">
-                                            Use the eye icon to verify the saved password. Leave blank when saving to keep the previously stored password.
+                                            Password is never shown after entry. Leave blank when saving to keep the previously stored password.
                                           </p>
                                           {!!server.bind_dn && !String(server.bind_password || '').trim() && (
                                             <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">
@@ -6761,7 +6760,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>Bind Password</label>
                           <SecurePasswordInput
                             value={settings.ldap_bind_password || ''}
-                            showToggle
                             onChange={(e) => {
                               const password = e.target.value;
                               ldapBindPasswordRef.current = password;
@@ -6772,7 +6770,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             placeholder="Enter service account password"
                             autoComplete="new-password"
                           />
-                          <p className="text-[10px] text-slate-500 mt-1">Use the eye icon to show/verify the password before testing or saving.</p>
+                          <p className="text-[10px] text-slate-500 mt-1">Password is never shown after entry for security.</p>
                           {!!(settings.ldap_bind_dn || '').trim() && !(settings.ldap_bind_password || '').trim() && (
                             <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">
                               Bind DN is set but password is empty — re-enter password and Save Settings.
@@ -7097,7 +7095,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               if (isMaskedPassword(bindPassword)) {
                                 setLdapTestResult({
                                   success: false,
-                                  message: 'Bind password looks masked (asterisks). Use the eye icon to verify, re-type the real password, Save Settings, then test again.'
+                                  message: 'Bind password looks masked (asterisks). Clear the field, re-type the real password, Save Settings, then test again.'
                                 });
                                 setLdapTestLoading(false);
                                 return;
@@ -7175,7 +7173,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               if (isMaskedPassword(bindPassword) || bindPassword.includes('•') || bindPassword.includes('â€¢')) {
                                 setLdapTestResult({
                                   success: false,
-                                  message: 'Password field contains invalid/masked characters. Use the eye icon, re-enter the password, Save Settings, then test again.'
+                                  message: 'Password field contains invalid/masked characters. Clear the field, re-enter the real password, Save Settings, then test again.'
                                 });
                                 setLdapTestLoading(false);
                                 return;
@@ -7517,7 +7515,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               const serversForSave = ldapServers.map((s) => {
                                 const pw = String(s.bind_password || '').trim();
                                 if (/^[\*\u2022\u00B7\u25CF\u25E6•·]+$/.test(pw)) {
-                                  throw new Error('A bind password looks masked (asterisks). Use the eye icon, re-type the real password, then save.');
+                                  throw new Error('A bind password looks masked (asterisks). Clear the field, re-type the real password, then save.');
                                 }
                                 return { ...s, bind_dn: String(s.bind_dn || '').trim(), bind_password: pw };
                               });

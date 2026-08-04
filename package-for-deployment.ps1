@@ -259,7 +259,8 @@ $DirsToInclude = @(
     "analytics",
     "monitorv2",
     "docker",
-    "land"
+    "land",
+    "vendor"   # OneLogin php-saml (+ xmlseclibs) required for SAML 2.0
 )
 
 $FilesToInclude = @(
@@ -282,6 +283,7 @@ $FilesToInclude = @(
     "tailwind.config.js",
     "postcss.config.js",
     "composer.json",
+    "composer.lock",
     "sw-cache-first.php",
     "metadata.json"
 )
@@ -320,6 +322,20 @@ foreach ($file in $FilesToInclude) {
     }
 }
 Write-OK ("{0} root files copied ({1} skipped)" -f $copiedFiles, $skippedFiles)
+
+# Verify SAML library ships with the package (avoids "OneLogin library not loaded" on target)
+$samlAutoload = Join-Path $TempDir "vendor\autoload.php"
+$samlAuthClass = Join-Path $TempDir "vendor\onelogin\php-saml\src\OneLogin\Saml2\Auth.php"
+$samlAuthLib = Join-Path $TempDir "vendor\onelogin\php-saml\lib\Saml2\Auth.php"
+if (-not (Test-Path $samlAutoload)) {
+    Write-Warn "vendor/autoload.php missing - SAML will not work on the target until you run composer install"
+}
+elseif ((Test-Path $samlAuthClass) -or (Test-Path $samlAuthLib)) {
+    Write-OK "SAML OneLogin library bundled (vendor/)"
+}
+else {
+    Write-Warn "vendor/ present but OneLogin Auth.php not found - check vendor/onelogin/php-saml"
+}
 
 # ---------------------------------------------------------------------------
 #  4. Copy built frontend (dist/) - wipe then copy
@@ -825,6 +841,7 @@ Change the password immediately after login.
 | Blank / wrong assets | Confirm VITE base path matches folder name; rebuild if different |
 | API oddness after PHP edits | Restart Apache (clears OPcache if enabled) |
 | 404 | Enable AllowOverride All + mod_rewrite in XAMPP |
+| SAML: OneLogin library not loaded | Ensure ``vendor/`` was copied (autoload.php + onelogin/php-saml). Or run ``composer install`` on the server. |
 "@
 
 Set-Content -Path (Join-Path $TempDir "deploy-xampp.bat") -Value $deployBat -Encoding ASCII
