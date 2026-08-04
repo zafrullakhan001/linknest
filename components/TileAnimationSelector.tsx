@@ -4,6 +4,7 @@ import { preferenceService } from '../services/preferenceService';
 import { useAuth } from '../contexts/AuthContext';
 
 export type TileAnimation =
+    | 'inherit'
     | 'none'
     | 'fade-in'
     | 'slide-up'
@@ -154,6 +155,13 @@ interface DecorationOption {
     description: string;
     icon: string;
 }
+
+const INHERIT_OPTION: AnimationOption = {
+    id: 'inherit',
+    name: 'Inherit',
+    description: 'Use space default for all links',
+    icon: '↩️',
+};
 
 const ANIMATION_OPTIONS: AnimationOption[] = [
     { id: 'none', name: 'None', description: 'No animation', icon: '⭕' },
@@ -479,6 +487,8 @@ interface TileAnimationSelectorProps {
     persistGlobal?: boolean;
     /** Hide festive decorations tab (useful for per-link animation picker). */
     animationsOnly?: boolean;
+    /** Show Inherit (space default) as the first choice — for per-link selectors. */
+    includeInherit?: boolean;
     scopeLabel?: string;
     scopeHint?: string;
     buttonTitle?: string;
@@ -491,11 +501,14 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
     value,
     persistGlobal = true,
     animationsOnly = false,
+    includeInherit = false,
     scopeLabel,
     scopeHint,
     buttonTitle,
 }) => {
-    const [selectedAnimation, setSelectedAnimation] = useState<TileAnimation>(value || 'fade-in');
+    const [selectedAnimation, setSelectedAnimation] = useState<TileAnimation>(
+        value || (includeInherit ? 'inherit' : 'fade-in')
+    );
     const [selectedDecoration, setSelectedDecoration] = useState<TileDecoration>('none');
     const [activeTab, setActiveTab] = useState<'animations' | 'decorations'>('animations');
     const [isOpen, setIsOpen] = useState(false);
@@ -507,21 +520,27 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
     // Sync controlled value for local / per-item mode
     useEffect(() => {
         if (persistGlobal) return;
-        if (value && ANIMATION_OPTIONS.find(opt => opt.id === value)) {
+        if (includeInherit && (value === 'inherit' || !value)) {
+            setSelectedAnimation('inherit');
+        } else if (value && ANIMATION_OPTIONS.find(opt => opt.id === value)) {
             setSelectedAnimation(value);
         } else if (value === 'none' || !value) {
             setSelectedAnimation('none');
         }
-    }, [persistGlobal, value]);
+    }, [persistGlobal, value, includeInherit]);
 
     // Load preferences from database or localStorage on mount (global mode only)
     useEffect(() => {
         if (!persistGlobal) {
+            if (includeInherit && (value === 'inherit' || !value)) {
+                setSelectedAnimation('inherit');
+                return;
+            }
             if (value && ANIMATION_OPTIONS.find(opt => opt.id === value)) {
                 setSelectedAnimation(value);
                 return;
             }
-            setSelectedAnimation('none');
+            setSelectedAnimation(includeInherit ? 'inherit' : 'none');
             return;
         }
 
@@ -652,12 +671,13 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
 
     const filteredAnimations = useMemo(() => {
         const query = searchQuery.toLowerCase();
-        return ANIMATION_OPTIONS.map((opt, index) => ({ ...opt, index: index + 1 })).filter(opt =>
+        const options = includeInherit ? [INHERIT_OPTION, ...ANIMATION_OPTIONS] : ANIMATION_OPTIONS;
+        return options.map((opt, index) => ({ ...opt, index: index + 1 })).filter(opt =>
             opt.name.toLowerCase().includes(query) ||
             opt.description.toLowerCase().includes(query) ||
             opt.index.toString() === query
         );
-    }, [searchQuery]);
+    }, [searchQuery, includeInherit]);
 
     const filteredDecorations = useMemo(() => {
         const query = searchQuery.toLowerCase();
@@ -668,7 +688,8 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
         );
     }, [searchQuery]);
 
-    const selectedAnimationOption = ANIMATION_OPTIONS.find(opt => opt.id === selectedAnimation) || ANIMATION_OPTIONS[0];
+    const allAnimationOptions = includeInherit ? [INHERIT_OPTION, ...ANIMATION_OPTIONS] : ANIMATION_OPTIONS;
+    const selectedAnimationOption = allAnimationOptions.find(opt => opt.id === selectedAnimation) || allAnimationOptions[0];
     const selectedDecorationOption = DECORATION_OPTIONS.find(opt => opt.id === selectedDecoration) || DECORATION_OPTIONS[0];
 
     return (
@@ -943,7 +964,7 @@ export const useTileAnimation = () => {
 
 // Helper functions for class names
 export const getTileAnimationClass = (animation: TileAnimation): string => {
-    if (animation === 'none') return '';
+    if (animation === 'none' || animation === 'inherit') return '';
     return `tile-anim-${animation}`;
 };
 
@@ -953,8 +974,23 @@ export const getTileDecorationClass = (decoration: TileDecoration): string => {
 };
 
 export const getAnimationOption = (animation?: string | null) => {
+    if (animation === 'inherit') return INHERIT_OPTION;
     if (!animation) return ANIMATION_OPTIONS[0];
     return ANIMATION_OPTIONS.find(opt => opt.id === animation) || ANIMATION_OPTIONS[0];
 };
 
-export { ANIMATION_OPTIONS };
+/** Resolve effective link entrance animation (inherit → space default). */
+export const resolveLinkAnimation = (
+    linkAnimation?: string | null,
+    spaceLinksAnimation?: string | null
+): TileAnimation => {
+    if (linkAnimation && linkAnimation !== 'inherit') {
+        return linkAnimation as TileAnimation;
+    }
+    if (spaceLinksAnimation && spaceLinksAnimation !== 'none' && spaceLinksAnimation !== 'inherit') {
+        return spaceLinksAnimation as TileAnimation;
+    }
+    return 'none';
+};
+
+export { ANIMATION_OPTIONS, INHERIT_OPTION };

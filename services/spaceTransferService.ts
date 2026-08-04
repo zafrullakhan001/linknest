@@ -3,7 +3,7 @@ import { Tile, LinkSection, Link } from '../types';
 export type SpaceExportType = 'tile' | 'category' | 'all_categories';
 
 export interface SpaceExportFile {
-  // 1.2: decorations, messages (celebration + url/urlLabel), pageAnimation, link animation, allowedGroups (tile + nested)
+  // 1.2: decorations, messages (celebration + url/urlLabel), pageAnimation, linksAnimation, link animation, allowedGroups (tile + nested)
   version: '1.2';
   type: SpaceExportType;
   exportedAt: number;
@@ -347,6 +347,8 @@ export const normalizeImportedTiles = (
       tileTextColor: typeof src.tileTextColor === 'string' ? src.tileTextColor : undefined,
       // Space page entrance animation (link sections)
       pageAnimation: typeof src.pageAnimation === 'string' ? src.pageAnimation : undefined,
+      // Default entrance animation for all links on this space
+      linksAnimation: typeof src.linksAnimation === 'string' ? src.linksAnimation : undefined,
       // Preserve tile messages (message board + celebration effects)
       messages: Array.isArray(src.messages) && src.messages.length > 0
         ? src.messages.map((msg: any) => ({

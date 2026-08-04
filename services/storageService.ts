@@ -63,6 +63,7 @@ const transformTile = (apiTile: any): Tile => {
     tileBorderRadius: apiTile.tileBorderRadius !== undefined && apiTile.tileBorderRadius !== null ? Number(apiTile.tileBorderRadius) : undefined,
     tileTextColor: apiTile.tileTextColor !== undefined && apiTile.tileTextColor !== null && apiTile.tileTextColor !== '' ? apiTile.tileTextColor : undefined,
     pageAnimation: apiTile.pageAnimation && apiTile.pageAnimation !== 'none' ? apiTile.pageAnimation : undefined,
+    linksAnimation: apiTile.linksAnimation && apiTile.linksAnimation !== 'none' ? apiTile.linksAnimation : undefined,
     messages: apiTile.messages || undefined, // Include scheduled messages
     // Shared-with-me: when tile was shared by another user and receiver accepted
     sharedWithMeInvitationId: apiTile.sharedWithMeInvitationId ?? undefined,

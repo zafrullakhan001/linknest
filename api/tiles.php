@@ -442,6 +442,7 @@ function handleGetTiles() {
             'tileBorderRadius' => isset($row['tile_border_radius']) && $row['tile_border_radius'] !== null ? (int)$row['tile_border_radius'] : null,
             'tileTextColor' => !empty($row['tile_text_color']) ? $row['tile_text_color'] : null,
             'pageAnimation' => isset($row['page_animation']) ? $row['page_animation'] : null,
+            'linksAnimation' => isset($row['links_animation']) ? $row['links_animation'] : null,
             'tabs' => [],
             'sharedWithMeInvitationId' => isset($acceptedSharedTiles[$row['id']]) ? $acceptedSharedTiles[$row['id']]['invitationId'] : null,
             'sharedWithMeSharer' => isset($acceptedSharedTiles[$row['id']]) ? ['userId' => $acceptedSharedTiles[$row['id']]['sharerUserId'], 'username' => $acceptedSharedTiles[$row['id']]['sharerUsername']] : null
@@ -1039,6 +1040,7 @@ function handleGetTile($tileId) {
         'tileBorderRadius' => isset($row['tile_border_radius']) && $row['tile_border_radius'] !== null ? (int)$row['tile_border_radius'] : null,
         'tileTextColor' => !empty($row['tile_text_color']) ? $row['tile_text_color'] : null,
         'pageAnimation' => isset($row['page_animation']) ? $row['page_animation'] : null,
+        'linksAnimation' => isset($row['links_animation']) ? $row['links_animation'] : null,
         'tabs' => [],
         'sharedWithMeInvitationId' => null,
         'sharedWithMeSharer' => null
@@ -1394,9 +1396,14 @@ function handleCreateTile() {
     // Don't save #000000 (black) as it's effectively "no decoration" - treat it as null
     $tileTextColor = isset($data['tileTextColor']) && $data['tileTextColor'] !== null && $data['tileTextColor'] !== '' && strtolower(trim($data['tileTextColor'])) !== '#000000' && strtolower(trim($data['tileTextColor'])) !== '000000' ? $data['tileTextColor'] : null;
     
-    // Page entrance animation for links inside this space
+    // Page entrance animation for sections inside this space
     $pageAnimation = isset($data['pageAnimation']) && $data['pageAnimation'] !== '' && $data['pageAnimation'] !== 'none'
         ? $data['pageAnimation']
+        : null;
+
+    // Default entrance animation for all links on this space
+    $linksAnimation = isset($data['linksAnimation']) && $data['linksAnimation'] !== '' && $data['linksAnimation'] !== 'none'
+        ? $data['linksAnimation']
         : null;
 
     // Default browser for links in this space (import/create)
@@ -1424,7 +1431,7 @@ function handleCreateTile() {
         $sourceTab = 'public';
     }
     
-    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     
     if (!$stmt->execute([
         $tileId,
@@ -1453,6 +1460,7 @@ function handleCreateTile() {
         $tileBorderRadius,
         $tileTextColor,
         $pageAnimation,
+        $linksAnimation,
         $sourceTab,
         $position,
         $data['createdAt'] ?? time()
@@ -1987,7 +1995,7 @@ function handleCloneTile($tileId) {
         // Copy source_tab so cloned tile stays in same area (staging vs public)
         $newSourceTab = isset($originalTile['source_tab']) && trim($originalTile['source_tab']) === 'staging' ? 'staging' : 'public';
         
-        $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         
         if (!$insertStmt->execute([
             $newTileId,
@@ -2016,6 +2024,7 @@ function handleCloneTile($tileId) {
             $tileBorderRadius,
             $tileTextColor,
             $originalTile['page_animation'] ?? null,
+            $originalTile['links_animation'] ?? null,
             $newSourceTab,
             $newPosition,
             time()
@@ -2391,7 +2400,7 @@ function handleCloneCategory($categoryName) {
             $tileBorderRadius = isset($originalTile['tile_border_radius']) && $originalTile['tile_border_radius'] !== null ? (int)$originalTile['tile_border_radius'] : null;
             $tileTextColor = !empty($originalTile['tile_text_color']) ? $originalTile['tile_text_color'] : null;
             
-            $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             
             if (!$insertStmt->execute([
                 $newTileId,
@@ -2420,6 +2429,7 @@ function handleCloneCategory($categoryName) {
                 $tileBorderRadius,
                 $tileTextColor,
                 $originalTile['page_animation'] ?? null,
+                $originalTile['links_animation'] ?? null,
                 $sourceTab,
                 $nextPosition++,
                 time()
@@ -3660,6 +3670,7 @@ function handleGetRecycleBin() {
             'tileBorderRadius' => isset($row['tile_border_radius']) && $row['tile_border_radius'] !== null ? (int)$row['tile_border_radius'] : null,
             'tileTextColor' => !empty($row['tile_text_color']) ? $row['tile_text_color'] : null,
             'pageAnimation' => isset($row['page_animation']) ? $row['page_animation'] : null,
+            'linksAnimation' => isset($row['links_animation']) ? $row['links_animation'] : null,
             'tabs' => []
         ];
         
@@ -4006,6 +4017,7 @@ function handleGetArchive() {
                 'tileBorderRadius' => isset($row['tile_border_radius']) && $row['tile_border_radius'] !== null ? (int)$row['tile_border_radius'] : null,
                 'tileTextColor' => !empty($row['tile_text_color']) ? $row['tile_text_color'] : null,
                 'pageAnimation' => isset($row['page_animation']) ? $row['page_animation'] : null,
+                'linksAnimation' => isset($row['links_animation']) ? $row['links_animation'] : null,
                 'tabs' => []
             ];
             
@@ -4479,6 +4491,7 @@ function getTileForVersion($tileId, $db) {
         'tileBorderRadius' => isset($row['tile_border_radius']) && $row['tile_border_radius'] !== null ? (int)$row['tile_border_radius'] : null,
         'tileTextColor' => !empty($row['tile_text_color']) ? $row['tile_text_color'] : null,
         'pageAnimation' => isset($row['page_animation']) ? $row['page_animation'] : null,
+        'linksAnimation' => isset($row['links_animation']) ? $row['links_animation'] : null,
         'tabs' => [],
         'messages' => []
     ];
@@ -4885,6 +4898,13 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                 : null)
             : ($currentTileData['pageAnimation'] ?? $currentTileData['page_animation'] ?? null);
 
+        // Default entrance animation for all links; preserve when omitted.
+        $linksAnimation = array_key_exists('linksAnimation', $data)
+            ? ((isset($data['linksAnimation']) && $data['linksAnimation'] !== '' && $data['linksAnimation'] !== 'none')
+                ? $data['linksAnimation']
+                : null)
+            : ($currentTileData['linksAnimation'] ?? $currentTileData['links_animation'] ?? null);
+
         // Source tab: only admin can change (e.g. move staging -> public)
         $currentSourceTab = isset($currentTileData['sourceTab']) ? $currentTileData['sourceTab'] : (isset($currentTileData['source_tab']) ? $currentTileData['source_tab'] : 'public');
         $sourceTab = $currentSourceTab;
@@ -4898,7 +4918,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
         }
         
         // Update tile
-        $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, allowed_groups = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ?, visible_from = ?, expires_at = ?, browser = ?, tile_background_color = ?, tile_gradient_enabled = ?, tile_gradient_colors = ?, tile_gradient_color_positions = ?, tile_gradient_direction = ?, tile_gradient_type = ?, tile_border_radius = ?, tile_text_color = ?, page_animation = ?, source_tab = ? WHERE id = ?');
+        $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, allowed_groups = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ?, visible_from = ?, expires_at = ?, browser = ?, tile_background_color = ?, tile_gradient_enabled = ?, tile_gradient_colors = ?, tile_gradient_color_positions = ?, tile_gradient_direction = ?, tile_gradient_type = ?, tile_border_radius = ?, tile_text_color = ?, page_animation = ?, links_animation = ?, source_tab = ? WHERE id = ?');
         $stmt->execute([
             $data['title'] ?? '',
             $data['description'] ?? '',
@@ -4924,6 +4944,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
             $tileBorderRadius,
             $tileTextColor,
             $pageAnimation,
+            $linksAnimation,
             $sourceTab,
             $tileId
         ]);
@@ -5309,7 +5330,7 @@ function generateChangelogSummary($old, $new) {
     $changes = [];
     
     // Root level fields
-    $rootFields = ['title', 'description', 'htmlContent', 'group', 'emoji', 'visibility', 'browser', 'themeColor', 'isHyperlink', 'hyperlinkUrl', 'pageAnimation'];
+    $rootFields = ['title', 'description', 'htmlContent', 'group', 'emoji', 'visibility', 'browser', 'themeColor', 'isHyperlink', 'hyperlinkUrl', 'pageAnimation', 'linksAnimation'];
     foreach ($rootFields as $f) {
         $oldVal = is_array($old) ? ($old[$f] ?? null) : null;
         $newVal = is_array($new) ? ($new[$f] ?? null) : null;

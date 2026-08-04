@@ -22,7 +22,17 @@ import { LinkInfoDialog } from './LinkInfoDialog';
 import { MobileTileEdit } from './MobileTileEdit';
 import { useMobile } from '../hooks/useMobile';
 import { VersionDiffViewer } from './VersionDiffViewer';
-import { TileAnimationSelector, getTileAnimationClass, TileAnimation, getAnimationOption } from './TileAnimationSelector';
+import { TileAnimationSelector, getTileAnimationClass, TileAnimation, getAnimationOption, resolveLinkAnimation } from './TileAnimationSelector';
+
+/** Persist link animation: inherit/empty → omit; 'none' and others → store as-is. */
+const linkAnimationForSave = (animation?: string): string | undefined => {
+    if (!animation || animation === 'inherit') return undefined;
+    return animation;
+};
+
+/** UI value for link animation picker (missing → inherit space default). */
+const linkAnimationForEdit = (animation?: string): TileAnimation =>
+    (animation as TileAnimation) || 'inherit';
 
 // Resolve API base dynamically
 function resolveApiBase(): string {
@@ -237,7 +247,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [availableGroups, setAvailableGroups] = useState<Array<{ id: number; name: string; description: string | null; memberCount: number }>>([]);
     const [isLoadingGroups, setIsLoadingGroups] = useState(false);
     const [editBrowser, setEditBrowser] = useState<string>(tile.browser || 'default');
-    const [editPageAnimation, setEditPageAnimation] = useState<TileAnimation>((tile.pageAnimation as TileAnimation) || 'none');
+    const [editLinksAnimation, setEditLinksAnimation] = useState<TileAnimation>((tile.linksAnimation as TileAnimation) || 'none');
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [showTileUserSelector, setShowTileUserSelector] = useState(false);
     const [visibilitySearchTerm, setVisibilitySearchTerm] = useState('');
@@ -688,7 +698,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setEditAllowedGroups(tile.allowedGroups || []);
 
         setEditBrowser(tile.browser || 'default');
-        setEditPageAnimation((tile.pageAnimation as TileAnimation) || 'none');
+        setEditLinksAnimation((tile.linksAnimation as TileAnimation) || 'none');
 
         // Tabs / sections: always reflect the latest tile data when
         // we're *not* editing. While editing, `editTabs` is the source
@@ -1593,7 +1603,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             allowedUsers: editVisibility === 'private' ? finalAllowedUsers : undefined,
             allowedGroups: editVisibility === 'private' ? editAllowedGroups : undefined,
             browser: editBrowser !== 'default' ? editBrowser : undefined,
-            pageAnimation: editPageAnimation && editPageAnimation !== 'none' ? editPageAnimation : undefined,
+            // Preserve section animation from tile (edited via view header); save links default from edit panel
+            pageAnimation: tile.pageAnimation && tile.pageAnimation !== 'none' ? tile.pageAnimation : undefined,
+            linksAnimation: editLinksAnimation && editLinksAnimation !== 'none' ? editLinksAnimation : undefined,
         };
 
         const updatedTiles = allTiles.map(t => t.id === updatedTile.id ? updatedTile : t);
@@ -2201,7 +2213,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setNewLinkState(prev => ({
             ...prev,
             [sectionId]: {
-                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '', animation: 'none' }),
+                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '', animation: 'inherit' }),
                 [field]: value
             }
         }));
@@ -2240,7 +2252,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
             browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
             richTextContent: state.richTextContent?.trim() || undefined,
-            animation: state.animation && state.animation !== 'none' ? state.animation : undefined
+            animation: linkAnimationForSave(state.animation)
         };
 
         if (editTabs.length > 0) {
@@ -2278,7 +2290,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
 
         // Clear form and hide it
-        setNewLinkState(prev => ({ ...prev, [sectionId]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '', animation: 'none' } }));
+        setNewLinkState(prev => ({ ...prev, [sectionId]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '', animation: 'inherit' } }));
         setShowUserPicker(prev => ({ ...prev, [sectionId]: false }));
         setShowLinkEmojiPicker(prev => ({ ...prev, [sectionId]: false }));
         setShowAddLinkForm(prev => ({ ...prev, [sectionId]: false }));
@@ -2552,7 +2564,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 tooltip: link.tooltip || '',
                 browser: link.browser || 'default',
                 richTextContent: link.richTextContent || '',
-                animation: link.animation || 'none'
+                animation: linkAnimationForEdit(link.animation)
             }
         });
         setShowUserPicker(prev => ({ ...prev, [link.id]: false }));
@@ -2597,7 +2609,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
                                         browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
                                         richTextContent: state.richTextContent?.trim() || undefined,
-                                        animation: state.animation && state.animation !== 'none' ? state.animation : undefined
+                                        animation: linkAnimationForSave(state.animation)
                                     }
                                     : l
                             ),
@@ -2626,7 +2638,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
                                 browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
                                 richTextContent: state.richTextContent?.trim() || undefined,
-                                animation: state.animation && state.animation !== 'none' ? state.animation : undefined
+                                animation: linkAnimationForSave(state.animation)
                             }
                             : l
                     ),
@@ -3693,7 +3705,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     ...tile,
                                                     pageAnimation: next,
                                                 };
-                                                setEditPageAnimation(animation);
                                                 const updatedTiles = allTiles.map(t => t.id === updatedTile.id ? updatedTile : t);
                                                 try {
                                                     await updateTilePageAnimation(tile.id, next ?? null);
@@ -4261,7 +4272,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         : isCompact
                                                             ? 'flex items-center gap-2 px-2.5 py-1.5 rounded-lg'
                                                             : 'flex items-center gap-4 p-4'}
-                                                    ${getTileAnimationClass((link.animation as TileAnimation) || 'none')}
+                                                    ${getTileAnimationClass(resolveLinkAnimation(link.animation, tile.linksAnimation))}
                                                 `}
                                                                 title={link.tooltip || link.label}
                                                             >
@@ -5432,24 +5443,24 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     </div>
                                 )}
 
-                                {/* Sections entrance animation (header / page animation) */}
+                                {/* Links entrance animation (space default for all links) */}
                                 <div>
                                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-3">
-                                        Sections Animation
+                                        Links Animation
                                     </label>
                                     <div className="flex items-center gap-3">
                                         <TileAnimationSelector
                                             animationsOnly
                                             persistGlobal={false}
-                                            value={editPageAnimation}
-                                            onAnimationChange={setEditPageAnimation}
-                                            scopeLabel="SECTIONS ANIMATION"
-                                            scopeHint="Animates whole link sections on this page"
-                                            buttonTitle="Choose entrance animation for link sections"
+                                            value={editLinksAnimation}
+                                            onAnimationChange={setEditLinksAnimation}
+                                            scopeLabel="LINKS ANIMATION"
+                                            scopeHint="Default for all links — each link can inherit, disable, or override"
+                                            buttonTitle="Choose default entrance animation for all links"
                                         />
                                         <span className="text-xs text-slate-500 dark:text-slate-400">
-                                            {getAnimationOption(editPageAnimation).name}
-                                            <span className="block text-[10px] mt-0.5">Applies to section cards — links use their own animation in edit mode</span>
+                                            {getAnimationOption(editLinksAnimation).name}
+                                            <span className="block text-[10px] mt-0.5">Applies to all links — each link can inherit, disable, or override</span>
                                         </span>
                                     </div>
                                 </div>
@@ -6638,7 +6649,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                             tooltip: link.tooltip || '',
                                                                                                             browser: link.browser || 'default',
                                                                                                             richTextContent: '',
-                                                                                                            animation: link.animation || 'none'
+                                                                                                            animation: linkAnimationForEdit(link.animation)
                                                                                                         };
                                                                                                         setEditLinkState({
                                                                                                             ...editLinkState,
@@ -6671,7 +6682,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                         tooltip: link.tooltip || '',
                                                                                                         browser: link.browser || 'default',
                                                                                                         richTextContent: '',
-                                                                                                        animation: link.animation || 'none'
+                                                                                                        animation: linkAnimationForEdit(link.animation)
                                                                                                     };
                                                                                                     setEditLinkState({
                                                                                                         ...editLinkState,
@@ -6739,14 +6750,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                 <TileAnimationSelector
                                                                                                     persistGlobal={false}
                                                                                                     animationsOnly
-                                                                                                    value={(editLinkState[link.id]?.animation as TileAnimation) || 'none'}
+                                                                                                    includeInherit
+                                                                                                    value={linkAnimationForEdit(editLinkState[link.id]?.animation)}
                                                                                                     onAnimationChange={(animation) => updateEditLinkState(link.id, 'animation', animation)}
                                                                                                     scopeLabel="Link Animation"
-                                                                                                    scopeHint="This link only"
-                                                                                                    buttonTitle="Choose entrance animation for this link"
+                                                                                                    scopeHint="Overrides space Links Animation when not Inherit"
+                                                                                                    buttonTitle="Choose entrance animation for this link (or inherit space default)"
                                                                                                 />
                                                                                                 <span className="text-xs text-slate-500 dark:text-slate-400">
-                                                                                                    {getAnimationOption(editLinkState[link.id]?.animation).name}
+                                                                                                    {getAnimationOption(linkAnimationForEdit(editLinkState[link.id]?.animation)).name}
                                                                                                 </span>
                                                                                             </div>
                                                                                         </div>
@@ -7037,7 +7049,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     onClick={() => {
                                                                                         setShowAddLinkForm(prev => ({ ...prev, [section.id]: false }));
                                                                                         // Clear form when closing
-                                                                                        setNewLinkState(prev => ({ ...prev, [section.id]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '', animation: 'none' } }));
+                                                                                        setNewLinkState(prev => ({ ...prev, [section.id]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '', animation: 'inherit' } }));
                                                                                     }}
                                                                                     className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded transition-colors"
                                                                                     title="Close form"
@@ -7251,14 +7263,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     <TileAnimationSelector
                                                                                         persistGlobal={false}
                                                                                         animationsOnly
-                                                                                        value={(newLinkState[section.id]?.animation as TileAnimation) || 'none'}
+                                                                                        includeInherit
+                                                                                        value={linkAnimationForEdit(newLinkState[section.id]?.animation)}
                                                                                         onAnimationChange={(animation) => updateNewLinkState(section.id, 'animation', animation)}
                                                                                         scopeLabel="Link Animation"
-                                                                                        scopeHint="This link only"
-                                                                                        buttonTitle="Choose entrance animation for this link"
+                                                                                        scopeHint="Overrides space Links Animation when not Inherit"
+                                                                                        buttonTitle="Choose entrance animation for this link (or inherit space default)"
                                                                                     />
                                                                                     <span className="text-xs text-slate-500 dark:text-slate-400">
-                                                                                        {getAnimationOption(newLinkState[section.id]?.animation).name}
+                                                                                        {getAnimationOption(linkAnimationForEdit(newLinkState[section.id]?.animation)).name}
                                                                                     </span>
                                                                                 </div>
                                                                             </div>

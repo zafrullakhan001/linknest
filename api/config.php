@@ -592,6 +592,23 @@ function initDatabase() {
         } catch (PDOException $e) {
             error_log('Tiles page_animation migration warning: ' . $e->getMessage());
         }
+
+        // Migrate existing tiles table to add links_animation (default for all links) if missing
+        try {
+            $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll();
+            $hasLinksAnimation = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'links_animation') {
+                    $hasLinksAnimation = true;
+                    break;
+                }
+            }
+            if (!$hasLinksAnimation) {
+                $db->exec('ALTER TABLE tiles ADD COLUMN links_animation TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Tiles links_animation migration warning: ' . $e->getMessage());
+        }
         
         // Create tabs table
         $db->exec('CREATE TABLE IF NOT EXISTS tabs (

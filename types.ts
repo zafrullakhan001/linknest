@@ -27,7 +27,10 @@ export interface Link {
   isFavorite?: boolean; // Whether this link is favorited by the current user
   hasRoleAccess?: boolean; // Whether this link is accessible via user roles
   position?: number; // Position for ordering mixed content
-  /** Entrance animation id (same set as space/tile animations). */
+  /**
+   * Entrance animation for this link.
+   * Omitted/undefined = inherit space linksAnimation; 'none' = no animation; other id = override.
+   */
   animation?: string;
 }
 
@@ -123,6 +126,8 @@ export interface Tile {
   tileTextColor?: string; // Text color (hex code)
   /** Entrance animation for link sections on this space page (not individual links). */
   pageAnimation?: string;
+  /** Default entrance animation for all links on this space (links may inherit or override). */
+  linksAnimation?: string;
   messages?: TileMessage[]; // Array of scheduled messages
   // Shared-with-me: when tile was shared by another user and receiver accepted
   sharedWithMeInvitationId?: number | null;
