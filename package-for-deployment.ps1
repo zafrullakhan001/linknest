@@ -3,24 +3,27 @@
 .SYNOPSIS
     LinkNest Deployment Packager
 .DESCRIPTION
-    Builds the React frontend, gathers all source files, copies the SQLite
-    database, and produces a self-contained ZIP file ready to deploy on
-    another computer running XAMPP.
+    Clean-builds the React frontend with the correct base path, gathers all
+    runtime files, stamps BUILD_INFO.json (for PWA cache busting), and produces
+    a self-contained ZIP ready to deploy/update on another XAMPP machine.
 .PARAMETER SkipBuild
-    Skip the npm build step (use existing dist/).
+    Skip the npm build step (use existing dist/). Not recommended when shipping code changes.
 .PARAMETER ExcludeUploads
     Do not include the uploads/ directory in the package.
 .PARAMETER OutputDir
     Where to save the final ZIP. Defaults to the project root.
+.PARAMETER BasePath
+    Vite base path baked into the frontend. Default: /linknest
 .EXAMPLE
     .\package-for-deployment.ps1
-    .\package-for-deployment.ps1 -SkipBuild
+    .\package-for-deployment.ps1 -BasePath "/myapp"
     .\package-for-deployment.ps1 -OutputDir "E:\"
 #>
 param(
     [switch]$SkipBuild,
     [switch]$ExcludeUploads,
-    [string]$OutputDir = ""
+    [string]$OutputDir = "",
+    [string]$BasePath = "/linknest"
 )
 
 Set-StrictMode -Version Latest
@@ -33,6 +36,11 @@ $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $PackageName = "linknest-deploy-$Timestamp"
 $TempDir = Join-Path $env:TEMP $PackageName
+$BuildId = $Timestamp
+
+# Normalize base path: /linknest (no trailing slash)
+$BasePath = "/" + ($BasePath.Trim().Trim("/").Replace("\", "/"))
+if ($BasePath -eq "/") { $BasePath = "" }
 
 if ($OutputDir -ne "") {
     $ZipOutput = Join-Path $OutputDir "$PackageName.zip"
@@ -73,6 +81,25 @@ function Ensure-Dir([string]$path) {
     }
 }
 
+function Get-FileSha256([string]$path) {
+    # Use .NET directly — Get-FileHash is missing in some hosted/constrained PowerShell hosts.
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $stream = [System.IO.File]::OpenRead($path)
+        try {
+            $hashBytes = $sha.ComputeHash($stream)
+            $hex = -join ($hashBytes | ForEach-Object { $_.ToString("x2") })
+            return $hex.Substring(0, 12)
+        }
+        finally {
+            $stream.Dispose()
+        }
+    }
+    finally {
+        $sha.Dispose()
+    }
+}
+
 # ---------------------------------------------------------------------------
 #  Banner
 # ---------------------------------------------------------------------------
@@ -85,6 +112,8 @@ Write-Host "  =============================================" -ForegroundColor Ma
 Write-Host ""
 Write-Host "  Project Root : $ProjectRoot" -ForegroundColor Gray
 Write-Host "  Package Name : $PackageName" -ForegroundColor Gray
+Write-Host "  Base Path    : $(if ($BasePath) { $BasePath } else { '/' })" -ForegroundColor Gray
+Write-Host "  Build ID     : $BuildId" -ForegroundColor Gray
 Write-Host "  Output ZIP   : $ZipOutput"   -ForegroundColor Gray
 Write-Host ""
 
@@ -111,7 +140,7 @@ Write-OK "Project root looks correct"
 if ($nodeVer) { Write-OK "Node.js found: $nodeVer" }
 
 # ---------------------------------------------------------------------------
-#  1. Build frontend
+#  1. Build frontend (always clean unless SkipBuild)
 # ---------------------------------------------------------------------------
 Write-Header "1 / Build React Frontend"
 
@@ -119,27 +148,88 @@ Push-Location $ProjectRoot
 try {
     if ($SkipBuild) {
         Write-Warn "Skipping build (-SkipBuild flag was set)"
-        if (-not (Test-Path (Join-Path $ProjectRoot "dist"))) {
-            Write-Warn "No existing dist/ directory found - package will lack built assets."
+        if (-not (Test-Path (Join-Path $ProjectRoot "dist\index.html"))) {
+            Write-Err "No existing dist/index.html - cannot package without a build."
+            exit 1
         }
-        else {
-            Write-OK "Using existing dist/ directory"
-        }
+        Write-OK "Using existing dist/ directory"
     }
     else {
+        $distPath = Join-Path $ProjectRoot "dist"
+        if (Test-Path $distPath) {
+            Write-Step "Removing old dist/ so stale hashed assets cannot ship..."
+            Remove-Item $distPath -Recurse -Force
+            Write-OK "Old dist/ removed"
+        }
+
         Write-Step "Running: npm install ..."
         cmd /c "npm install"
         if ($LASTEXITCODE -ne 0) { throw "npm install failed with exit code $LASTEXITCODE" }
         Write-OK "npm install completed"
 
-        Write-Step "Running: npm run build ..."
-        cmd /c "npm run build"
-        if ($LASTEXITCODE -ne 0) { throw "npm run build failed with exit code $LASTEXITCODE" }
+        # Force the subdirectory base path into the process env so Vite
+        # cannot silently build for "/" when .env is missing/outdated.
+        if ($BasePath) {
+            $env:VITE_BASE_PATH = $BasePath
+            $env:VITE_API_BASE = "$BasePath/api"
+        }
+        else {
+            $env:VITE_BASE_PATH = ""
+            $env:VITE_API_BASE = "/api"
+        }
+
+        Write-Step "Running: npm run build:prod (VITE_BASE_PATH=$($env:VITE_BASE_PATH)) ..."
+        cmd /c "npm run build:prod"
+        if ($LASTEXITCODE -ne 0) { throw "npm run build:prod failed with exit code $LASTEXITCODE" }
         Write-OK "Build completed - dist/ is ready"
     }
 }
 finally {
     Pop-Location
+}
+
+# ---------------------------------------------------------------------------
+#  1b. Verify built frontend (catch broken packages early)
+# ---------------------------------------------------------------------------
+Write-Header "1b / Verify Built Frontend"
+
+$distIndex = Join-Path $ProjectRoot "dist\index.html"
+if (-not (Test-Path $distIndex)) {
+    Write-Err "dist/index.html missing after build."
+    exit 1
+}
+
+$distHtml = Get-Content $distIndex -Raw
+if ($distHtml -match '/index\.tsx') {
+    Write-Err "dist/index.html still references /index.tsx - this is a DEV shell, not a production build."
+    Write-Err "Aborting so you do not ship a broken/stale bundle."
+    exit 1
+}
+if ($distHtml -notmatch 'assets/.+\.(js|css)') {
+    Write-Err "dist/index.html does not reference hashed assets under assets/."
+    exit 1
+}
+
+$assetJs = @(Get-ChildItem (Join-Path $ProjectRoot "dist\assets") -Recurse -Filter "*.js" -ErrorAction SilentlyContinue)
+if ($assetJs.Count -lt 1) {
+    Write-Err "No JS files found under dist/assets/. Build looks incomplete."
+    exit 1
+}
+
+# Confirm base path was baked in when using a subfolder
+if ($BasePath -and ($distHtml -notmatch [regex]::Escape($BasePath))) {
+    Write-Warn "Built HTML does not mention '$BasePath'. Assets may break when hosted under that subfolder."
+}
+
+$assetCount = $assetJs.Count
+Write-OK ("Production dist/ verified ({0} JS assets)" -f $assetCount)
+
+# Ensure public SW lands in dist (Vite usually copies public/, but be explicit)
+$swPublic = Join-Path $ProjectRoot "public\sw-cache-first.js"
+$swDist = Join-Path $ProjectRoot "dist\sw-cache-first.js"
+if (Test-Path $swPublic) {
+    Copy-Item $swPublic $swDist -Force
+    Write-OK "dist/sw-cache-first.js refreshed from public/"
 }
 
 # ---------------------------------------------------------------------------
@@ -196,12 +286,18 @@ $FilesToInclude = @(
     "metadata.json"
 )
 
+# Exclude junk that commonly sneaks into recursive copies
+$ExcludeDirNames = @("node_modules", ".git", "__pycache__", ".vite", "dist", "linknest-deploy-*")
+
 foreach ($dir in $DirsToInclude) {
     $src = Join-Path $ProjectRoot $dir
     $dst = Join-Path $TempDir $dir
     if (Test-Path $src) {
         Write-Step "Copying $dir/ ..."
-        Copy-Item -Path $src -Destination $dst -Recurse -Force
+        # Robocopy is more reliable than Copy-Item for large trees and skips node_modules.
+        $null = robocopy $src $dst /E /NFL /NDL /NJH /NJS /nc /ns /np `
+            /XD node_modules .git __pycache__ .vite dist
+        if ($LASTEXITCODE -ge 8) { throw "robocopy failed for $dir/ (exit $LASTEXITCODE)" }
         Write-OK "$dir/ copied"
     }
     else {
@@ -223,23 +319,25 @@ foreach ($file in $FilesToInclude) {
         $skippedFiles++
     }
 }
-Write-OK "$copiedFiles root files copied ($skippedFiles skipped)"
+Write-OK ("{0} root files copied ({1} skipped)" -f $copiedFiles, $skippedFiles)
 
 # ---------------------------------------------------------------------------
-#  4. Copy built frontend (dist/)
+#  4. Copy built frontend (dist/) - wipe then copy
 # ---------------------------------------------------------------------------
 Write-Header "4 / Copy Built Frontend (dist/)"
 
 $distSrc = Join-Path $ProjectRoot "dist"
 $distDst = Join-Path $TempDir "dist"
 if (Test-Path $distSrc) {
+    if (Test-Path $distDst) { Remove-Item $distDst -Recurse -Force }
     Copy-Item -Path $distSrc -Destination $distDst -Recurse -Force
-    $distBytes = (Get-ChildItem $distDst -Recurse | Measure-Object -Property Length -Sum).Sum
+    $distBytes = (Get-ChildItem $distDst -Recurse -File | Measure-Object -Property Length -Sum).Sum
     $distKB = [math]::Round($distBytes / 1KB, 1)
-    Write-OK "dist/ copied ($distKB KB total)"
+    Write-OK ("dist/ copied ({0} KB total)" -f $distKB)
 }
 else {
-    Write-Warn "dist/ not found - bundle will not contain pre-built frontend assets"
+    Write-Err "dist/ not found - cannot create a deployable package"
+    exit 1
 }
 
 # ---------------------------------------------------------------------------
@@ -260,7 +358,7 @@ foreach ($dbPath in $dbCandidates) {
         $dbDst = Join-Path $TempDir "data\linknest.db"
         Copy-Item -Path $dbPath -Destination $dbDst -Force
         $dbMB = [math]::Round((Get-Item $dbPath).Length / 1MB, 2)
-        Write-OK "Database copied: $dbPath  ($dbMB MB)"
+        Write-OK ("Database copied: {0}  ({1} MB)" -f $dbPath, $dbMB)
         $dbCopied = $true
         break
     }
@@ -292,9 +390,10 @@ $uploadsDst = Join-Path $TempDir "uploads"
 if (-not $ExcludeUploads) {
     if (Test-Path $uploadsSrc) {
         Copy-Item -Path $uploadsSrc -Destination $uploadsDst -Recurse -Force
-        $upBytes = (Get-ChildItem $uploadsDst -Recurse | Measure-Object -Property Length -Sum).Sum
+        $upBytes = (Get-ChildItem $uploadsDst -Recurse -File -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
+        if (-not $upBytes) { $upBytes = 0 }
         $upKB = [math]::Round($upBytes / 1KB, 1)
-        Write-OK "uploads/ copied ($upKB KB)"
+        Write-OK ("uploads/ copied ({0} KB)" -f $upKB)
     }
     else {
         Write-Warn "uploads/ directory not found - creating empty placeholder"
@@ -303,6 +402,7 @@ if (-not $ExcludeUploads) {
 }
 else {
     Write-Warn "Skipping uploads/ (-ExcludeUploads flag was set)"
+    Ensure-Dir $uploadsDst
 }
 
 # ---------------------------------------------------------------------------
@@ -313,9 +413,8 @@ Write-Header "7 / Copy Deployment Scripts"
 $scriptsSrc = Join-Path $ProjectRoot "scripts"
 $scriptsDst = Join-Path $TempDir "scripts"
 if (Test-Path $scriptsSrc) {
-    Copy-Item -Path $scriptsSrc -Destination $scriptsDst -Recurse -Force
-    $pycache = Join-Path $scriptsDst "__pycache__"
-    if (Test-Path $pycache) { Remove-Item $pycache -Recurse -Force }
+    $null = robocopy $scriptsSrc $scriptsDst /E /NFL /NDL /NJH /NJS /nc /ns /np /XD __pycache__
+    if ($LASTEXITCODE -ge 8) { throw "robocopy failed for scripts/ (exit $LASTEXITCODE)" }
     Write-OK "scripts/ copied"
 }
 else {
@@ -323,52 +422,83 @@ else {
 }
 
 # ---------------------------------------------------------------------------
+#  7b. Write BUILD_INFO.json (used by SW to bust PWA caches)
+# ---------------------------------------------------------------------------
+Write-Header "7b / Stamp BUILD_INFO.json"
+
+$indexAssetMatch = [regex]::Match($distHtml, 'assets/js/index-[^"''\s]+\.js')
+$indexAsset = if ($indexAssetMatch.Success) { $indexAssetMatch.Value } else { "" }
+$indexHash = Get-FileSha256 $distIndex
+
+$buildInfo = [ordered]@{
+    buildId     = $BuildId
+    builtAt     = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+    packageName = $PackageName
+    basePath    = $(if ($BasePath) { $BasePath } else { "/" })
+    indexAsset  = $indexAsset
+    indexSha12  = $indexHash
+    jsAssetCount = $assetJs.Count
+}
+$buildInfoJson = $buildInfo | ConvertTo-Json -Depth 4
+Set-Content -Path (Join-Path $TempDir "BUILD_INFO.json") -Value $buildInfoJson -Encoding UTF8
+# Also keep a copy inside dist for easy discovery
+Set-Content -Path (Join-Path $TempDir "dist\BUILD_INFO.json") -Value $buildInfoJson -Encoding UTF8
+Write-OK ("BUILD_INFO.json written (buildId={0}, {1})" -f $BuildId, $indexAsset)
+
+# Write a small .env template so manual deploys get the correct base path
+$envTemplate = @"
+VITE_BASE_PATH=$(if ($BasePath) { $BasePath } else { "" })
+VITE_API_BASE=$(if ($BasePath) { "$BasePath/api" } else { "/api" })
+"@
+Set-Content -Path (Join-Path $TempDir ".env") -Value $envTemplate -Encoding ASCII
+Write-OK ".env written for target base path"
+
+# ---------------------------------------------------------------------------
 #  8. Write deployment guide and helper scripts into the package
 # ---------------------------------------------------------------------------
 Write-Header "8 / Generating Deployment Files"
 
-# ── deploy-xampp.bat (Windows target) ──────────────────────────────────────
-$deployBat = @'
+$basePathForBat = if ($BasePath) { $BasePath.TrimStart("/") } else { "linknest" }
+
+# ── deploy-xampp.bat (fresh install — wipes target folder) ─────────────────
+$deployBat = @"
 @echo off
 setlocal enabledelayedexpansion
 REM ==========================================================
-REM  LinkNest XAMPP Deployment Script (Windows)
-REM  Run this script ONCE on the target computer to deploy.
-REM  Works in ANY htdocs subfolder - you choose the name!
+REM  LinkNest XAMPP Deployment Script (Windows) — FRESH INSTALL
+REM  Wipes the target folder, then copies this package in.
+REM  Prefer update-xampp.bat if you want to KEEP data/uploads.
 REM ==========================================================
 echo.
 echo  =============================================
-echo     LinkNest - XAMPP Deployment (Windows)
+echo     LinkNest - XAMPP Fresh Deploy (Windows)
+echo     Package build: $BuildId
 echo  =============================================
 echo.
 
-REM ---- Ask for XAMPP location -----------------------------------------
 set "XAMPP_ROOT=C:\xampp"
 set /p "XAMPP_ROOT=XAMPP install path (press Enter for C:\xampp): "
 if "%XAMPP_ROOT%"=="" set "XAMPP_ROOT=C:\xampp"
 set "HTDOCS=%XAMPP_ROOT%\htdocs"
 
-REM ---- Ask for subfolder name -----------------------------------------
-set "SUBFOLDER=linknest"
-set /p "SUBFOLDER=Install subfolder inside htdocs (press Enter for 'linknest'): "
-if "%SUBFOLDER%"=="" set "SUBFOLDER=linknest"
+set "SUBFOLDER=$basePathForBat"
+set /p "SUBFOLDER=Install subfolder inside htdocs (press Enter for '$basePathForBat'): "
+if "%SUBFOLDER%"=="" set "SUBFOLDER=$basePathForBat"
 
 set "INSTALL_DIR=%HTDOCS%\%SUBFOLDER%"
 echo.
 echo  XAMPP root  : %XAMPP_ROOT%
 echo  Install dir : %INSTALL_DIR%
 echo  URL will be : http://localhost/%SUBFOLDER%
+echo  Build ID    : $BuildId
 echo.
 
-REM ---- Verify XAMPP ---------------------------------------------------
 if not exist "%HTDOCS%" (
     echo  ERROR: Cannot find %HTDOCS%
-    echo  Make sure XAMPP is installed and you entered the correct path.
     pause
     exit /b 1
 )
 
-REM ---- Create / wipe install directory --------------------------------
 if exist "%INSTALL_DIR%" (
     echo  Removing old installation at %INSTALL_DIR% ...
     rd /s /q "%INSTALL_DIR%"
@@ -376,247 +506,287 @@ if exist "%INSTALL_DIR%" (
 mkdir "%INSTALL_DIR%"
 echo  [OK] Install directory ready
 
-REM ---- Copy all files from this package -------------------------------
 echo  Copying application files...
 set "PKG_DIR=%~dp0"
 if "%PKG_DIR:~-1%"=="\" set "PKG_DIR=%PKG_DIR:~0,-1%"
 
-for %%D in (api components contexts services dist docker data uploads scripts analytics monitorv2 hooks config migrations public src land) do (
-    if exist "%PKG_DIR%\%%D" (
-        xcopy "%PKG_DIR%\%%D" "%INSTALL_DIR%\%%D\" /E /I /Y >nul 2>&1
-    )
-)
-
-for %%F in (index.html index.tsx index.css App.tsx types.ts router.php landing.php clones.php backup_restore.php .htaccess package.json package-lock.json vite.config.ts vite.docker.config.ts vite.runtime.config.ts tsconfig.json tailwind.config.js postcss.config.js composer.json sw-cache-first.php metadata.json) do (
-    if exist "%PKG_DIR%\%%F" copy /Y "%PKG_DIR%\%%F" "%INSTALL_DIR%\%%F" >nul 2>&1
-)
-
+xcopy "%PKG_DIR%\*" "%INSTALL_DIR%\" /E /I /Y /Q >nul
+if exist "%INSTALL_DIR%\deploy-xampp.bat" del /f /q "%INSTALL_DIR%\deploy-xampp.bat"
+if exist "%INSTALL_DIR%\deploy-xampp.sh" del /f /q "%INSTALL_DIR%\deploy-xampp.sh"
+if exist "%INSTALL_DIR%\update-xampp.bat" del /f /q "%INSTALL_DIR%\update-xampp.bat"
 echo  [OK] Files copied
 
-REM ---- Write .env with the chosen subfolder path ----------------------
-echo  Writing .env ...
 (
 echo VITE_BASE_PATH=/%SUBFOLDER%
 echo VITE_API_BASE=/%SUBFOLDER%/api
 ) > "%INSTALL_DIR%\.env"
 echo  [OK] .env written  (VITE_BASE_PATH=/%SUBFOLDER%)
 
-REM ---- Ensure data/ uploads/ logs/ exist -----------------------------
 if not exist "%INSTALL_DIR%\data"    mkdir "%INSTALL_DIR%\data"
 if not exist "%INSTALL_DIR%\uploads" mkdir "%INSTALL_DIR%\uploads"
 if not exist "%INSTALL_DIR%\logs"    mkdir "%INSTALL_DIR%\logs"
-echo  [OK] data/, uploads/, logs/ directories confirmed
 
-REM ---- Rebuild frontend if subfolder name differs from 'linknest' -----
-if /i NOT "%SUBFOLDER%"=="linknest" (
+if /i NOT "%SUBFOLDER%"=="$basePathForBat" (
     echo.
-    echo  NOTE: You chose a subfolder name other than 'linknest'.
-    echo  The pre-built frontend (dist/) has '/linknest' baked in.
-    echo  Checking if Node.js is available to rebuild...
+    echo  NOTE: Subfolder differs from packaged base '$basePathForBat'.
+    echo  Checking for Node.js to rebuild frontend...
     node --version >nul 2>&1
     if !ERRORLEVEL! EQU 0 (
-        echo  Node.js found - rebuilding frontend for /%SUBFOLDER% ...
         cd /d "%INSTALL_DIR%"
-        call npm install >nul 2>&1
-        call npm run build >nul 2>&1
+        set "VITE_BASE_PATH=/%SUBFOLDER%"
+        set "VITE_API_BASE=/%SUBFOLDER%/api"
+        call npm install
+        call npm run build:prod
         if !ERRORLEVEL! EQU 0 (
             echo  [OK] Frontend rebuilt for /%SUBFOLDER%
         ) else (
-            echo  [!!] Build failed. The app may not display correctly.
-            echo       Try running 'npm install ^&^& npm run build' manually in:
-            echo       %INSTALL_DIR%
+            echo  [!!] Build failed. Run npm install ^&^& npm run build:prod manually.
         )
     ) else (
-        echo  [!!] Node.js not found. The pre-built assets use '/linknest'.
-        echo       To fix: install Node.js, then run in %INSTALL_DIR%:
-        echo         npm install
-        echo         npm run build
-        echo       OR rename your subfolder to 'linknest' to use the pre-built assets.
+        echo  [!!] Node.js not found. Use subfolder '$basePathForBat' or rebuild on a machine with Node.
     )
 )
 
 echo.
 echo  =============================================
-echo  Deployment Complete!
+echo  Deployment Complete!  Build: $BuildId
 echo  =============================================
 echo.
-echo  1. Open XAMPP Control Panel
-echo  2. Click [Start] next to Apache
-echo  3. Browse to:  http://localhost/%SUBFOLDER%
-echo  4. Default login:  admin / admin123
-echo     IMPORTANT: Change the password immediately!
-echo.
-echo  If you see a 404, make sure mod_rewrite is enabled in XAMPP.
-echo  See DEPLOYMENT_README.md for troubleshooting.
+echo  1. Start Apache in XAMPP
+echo  2. Open: http://localhost/%SUBFOLDER%
+echo  3. Hard refresh once (Ctrl+F5) if you still see the old UI
+echo  4. Confirm build: open http://localhost/%SUBFOLDER%/BUILD_INFO.json
+echo  5. Default login: admin / admin123 — change it immediately
 echo.
 pause
-'@
+"@
 
-# ── deploy-xampp.sh (Linux/macOS target) ───────────────────────────────────
-$deploySh = @'
+# ── update-xampp.bat (KEEP data/uploads — recommended for upgrades) ───────
+$updateBat = @"
+@echo off
+setlocal enabledelayedexpansion
+REM ==========================================================
+REM  LinkNest XAMPP UPDATE Script (Windows)
+REM  Replaces app code + dist, PRESERVES data/ and uploads/.
+REM  Use this when manually deploying a new bundle over an
+REM  existing install (fixes "old UI still showing").
+REM ==========================================================
+echo.
+echo  =============================================
+echo     LinkNest - XAMPP Update (preserve data)
+echo     Package build: $BuildId
+echo  =============================================
+echo.
+
+set "XAMPP_ROOT=C:\xampp"
+set /p "XAMPP_ROOT=XAMPP install path (press Enter for C:\xampp): "
+if "%XAMPP_ROOT%"=="" set "XAMPP_ROOT=C:\xampp"
+set "HTDOCS=%XAMPP_ROOT%\htdocs"
+
+set "SUBFOLDER=$basePathForBat"
+set /p "SUBFOLDER=Existing install subfolder (press Enter for '$basePathForBat'): "
+if "%SUBFOLDER%"=="" set "SUBFOLDER=$basePathForBat"
+
+set "INSTALL_DIR=%HTDOCS%\%SUBFOLDER%"
+echo.
+echo  Updating : %INSTALL_DIR%
+echo  Build ID : $BuildId
+echo.
+
+if not exist "%INSTALL_DIR%" (
+    echo  ERROR: %INSTALL_DIR% does not exist.
+    echo  Use deploy-xampp.bat for a fresh install instead.
+    pause
+    exit /b 1
+)
+
+set "PKG_DIR=%~dp0"
+if "%PKG_DIR:~-1%"=="\" set "PKG_DIR=%PKG_DIR:~0,-1%"
+
+set "BACKUP_DIR=%TEMP%\linknest-update-backup-%RANDOM%"
+mkdir "%BACKUP_DIR%" >nul 2>&1
+
+echo  Backing up data/ and uploads/ ...
+if exist "%INSTALL_DIR%\data" (
+    xcopy "%INSTALL_DIR%\data" "%BACKUP_DIR%\data\" /E /I /Y /Q >nul
+    echo  [OK] data/ backed up
+)
+if exist "%INSTALL_DIR%\uploads" (
+    xcopy "%INSTALL_DIR%\uploads" "%BACKUP_DIR%\uploads\" /E /I /Y /Q >nul
+    echo  [OK] uploads/ backed up
+)
+
+echo  Wiping old dist/ so stale hashed assets cannot remain ...
+if exist "%INSTALL_DIR%\dist" rd /s /q "%INSTALL_DIR%\dist"
+
+echo  Copying updated application files (excluding deploy helpers)...
+REM Copy everything from package, then restore data/uploads
+xcopy "%PKG_DIR%\*" "%INSTALL_DIR%\" /E /I /Y /Q >nul
+if exist "%INSTALL_DIR%\deploy-xampp.bat" del /f /q "%INSTALL_DIR%\deploy-xampp.bat"
+if exist "%INSTALL_DIR%\deploy-xampp.sh" del /f /q "%INSTALL_DIR%\deploy-xampp.sh"
+if exist "%INSTALL_DIR%\update-xampp.bat" del /f /q "%INSTALL_DIR%\update-xampp.bat"
+
+echo  Restoring preserved data/ and uploads/ ...
+if exist "%BACKUP_DIR%\data" (
+    if exist "%INSTALL_DIR%\data" rd /s /q "%INSTALL_DIR%\data"
+    xcopy "%BACKUP_DIR%\data" "%INSTALL_DIR%\data\" /E /I /Y /Q >nul
+    echo  [OK] data/ restored
+)
+if exist "%BACKUP_DIR%\uploads" (
+    if exist "%INSTALL_DIR%\uploads" rd /s /q "%INSTALL_DIR%\uploads"
+    xcopy "%BACKUP_DIR%\uploads" "%INSTALL_DIR%\uploads\" /E /I /Y /Q >nul
+    echo  [OK] uploads/ restored
+)
+
+rd /s /q "%BACKUP_DIR%" >nul 2>&1
+
+(
+echo VITE_BASE_PATH=/%SUBFOLDER%
+echo VITE_API_BASE=/%SUBFOLDER%/api
+) > "%INSTALL_DIR%\.env"
+
+if not exist "%INSTALL_DIR%\logs" mkdir "%INSTALL_DIR%\logs"
+
+echo.
+echo  =============================================
+echo  Update Complete!  Build: $BuildId
+echo  =============================================
+echo.
+echo  VERIFY the new build is live:
+echo    http://localhost/%SUBFOLDER%/BUILD_INFO.json
+echo    Expect buildId = $BuildId
+echo.
+echo  If Semi-PWA is enabled, do ONE hard refresh (Ctrl+F5)
+echo  so the service worker picks up the new cache version.
+echo.
+echo  Tip: restart Apache if PHP still serves oddly stale code.
+echo.
+pause
+"@
+
+# ── deploy-xampp.sh (Linux/macOS) ──────────────────────────────────────────
+$deploySh = @"
 #!/usr/bin/env bash
-# ==========================================================
-#  LinkNest XAMPP / Apache Deployment Script (Linux / macOS)
-#  Works in ANY htdocs subfolder - you choose the name!
-# ==========================================================
 set -euo pipefail
-
-PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PKG_DIR="`$(cd "`$(dirname "`${BASH_SOURCE[0]}")" && pwd)"
+BUILD_ID="$BuildId"
+DEFAULT_SUB="$basePathForBat"
 
 echo ""
 echo "  ============================================="
-echo "     LinkNest - XAMPP Deployment (Linux/macOS)"
+echo "     LinkNest - XAMPP Deploy (Linux/macOS)"
+echo "     Package build: `$BUILD_ID"
 echo "  ============================================="
 echo ""
 
-# ---- Ask for XAMPP location -------------------------------------------
 read -rp "  XAMPP install path [/opt/lampp]: " XAMPP_ROOT
-XAMPP_ROOT="${XAMPP_ROOT:-/opt/lampp}"
-HTDOCS="$XAMPP_ROOT/htdocs"
+XAMPP_ROOT="`${XAMPP_ROOT:-/opt/lampp}"
+HTDOCS="`$XAMPP_ROOT/htdocs"
 
-# ---- Ask for subfolder name -------------------------------------------
-read -rp "  Install subfolder inside htdocs [linknest]: " SUBFOLDER
-SUBFOLDER="${SUBFOLDER:-linknest}"
+read -rp "  Install subfolder inside htdocs [`$DEFAULT_SUB]: " SUBFOLDER
+SUBFOLDER="`${SUBFOLDER:-`$DEFAULT_SUB}"
+INSTALL_DIR="`$HTDOCS/`$SUBFOLDER"
 
-INSTALL_DIR="$HTDOCS/$SUBFOLDER"
-echo ""
-echo "  XAMPP root  : $XAMPP_ROOT"
-echo "  Install dir : $INSTALL_DIR"
-echo "  URL will be : http://localhost/$SUBFOLDER"
-echo ""
-
-if [ ! -d "$HTDOCS" ]; then
-    echo "  ERROR: Cannot find $HTDOCS"
-    echo "  Make sure XAMPP is installed and you entered the correct path."
+if [ ! -d "`$HTDOCS" ]; then
+    echo "  ERROR: Cannot find `$HTDOCS"
     exit 1
 fi
 
-if [ -d "$INSTALL_DIR" ]; then
-    echo "  Removing old installation..."
-    rm -rf "$INSTALL_DIR"
+if [ -d "`$INSTALL_DIR" ]; then
+    echo "  Backing up data/uploads then replacing install..."
+    BACKUP_DIR="`$(mktemp -d)"
+    [ -d "`$INSTALL_DIR/data" ] && cp -a "`$INSTALL_DIR/data" "`$BACKUP_DIR/" || true
+    [ -d "`$INSTALL_DIR/uploads" ] && cp -a "`$INSTALL_DIR/uploads" "`$BACKUP_DIR/" || true
+    rm -rf "`$INSTALL_DIR"
+    mkdir -p "`$INSTALL_DIR"
+else
+    mkdir -p "`$INSTALL_DIR"
+    BACKUP_DIR=""
 fi
-mkdir -p "$INSTALL_DIR"
-echo "  [OK] Install directory ready"
 
-echo "  Copying application files..."
-cp -r "$PKG_DIR/." "$INSTALL_DIR/"
-rm -f "$INSTALL_DIR/deploy-xampp.sh"
-rm -f "$INSTALL_DIR/deploy-xampp.bat"
-echo "  [OK] Files copied"
+cp -a "`$PKG_DIR"/. "`$INSTALL_DIR/"
+rm -f "`$INSTALL_DIR/deploy-xampp.sh" "`$INSTALL_DIR/deploy-xampp.bat" "`$INSTALL_DIR/update-xampp.bat"
 
-echo "  Writing .env ..."
-cat > "$INSTALL_DIR/.env" <<ENVEOF
-VITE_BASE_PATH=/$SUBFOLDER
-VITE_API_BASE=/$SUBFOLDER/api
+if [ -n "`$BACKUP_DIR" ]; then
+    [ -d "`$BACKUP_DIR/data" ] && rm -rf "`$INSTALL_DIR/data" && cp -a "`$BACKUP_DIR/data" "`$INSTALL_DIR/"
+    [ -d "`$BACKUP_DIR/uploads" ] && rm -rf "`$INSTALL_DIR/uploads" && cp -a "`$BACKUP_DIR/uploads" "`$INSTALL_DIR/"
+    rm -rf "`$BACKUP_DIR"
+fi
+
+cat > "`$INSTALL_DIR/.env" <<ENVEOF
+VITE_BASE_PATH=/`$SUBFOLDER
+VITE_API_BASE=/`$SUBFOLDER/api
 ENVEOF
-echo "  [OK] .env written (VITE_BASE_PATH=/$SUBFOLDER)"
 
-mkdir -p "$INSTALL_DIR/data"
-mkdir -p "$INSTALL_DIR/uploads"
-mkdir -p "$INSTALL_DIR/logs"
+mkdir -p "`$INSTALL_DIR/data" "`$INSTALL_DIR/uploads" "`$INSTALL_DIR/logs"
+chmod -R 755 "`$INSTALL_DIR"
+chmod -R 777 "`$INSTALL_DIR/data" "`$INSTALL_DIR/uploads" "`$INSTALL_DIR/logs" 2>/dev/null || true
 
-chmod -R 755 "$INSTALL_DIR"
-chmod -R 777 "$INSTALL_DIR/data"    2>/dev/null || true
-chmod -R 777 "$INSTALL_DIR/uploads" 2>/dev/null || true
-chmod -R 777 "$INSTALL_DIR/logs"    2>/dev/null || true
-echo "  [OK] Permissions set"
-
-# ---- Rebuild if subfolder differs from 'linknest' --------------------
-if [ "$SUBFOLDER" != "linknest" ]; then
-    echo ""
-    echo "  NOTE: Subfolder is '$SUBFOLDER', not 'linknest'."
-    echo "  The pre-built dist/ has '/linknest' baked in. Checking for Node.js..."
+if [ "`$SUBFOLDER" != "`$DEFAULT_SUB" ]; then
     if command -v node &>/dev/null; then
-        echo "  Node.js found - rebuilding frontend for /$SUBFOLDER ..."
-        cd "$INSTALL_DIR"
-        npm install --silent
-        npm run build --silent
-        echo "  [OK] Frontend rebuilt for /$SUBFOLDER"
+        cd "`$INSTALL_DIR"
+        export VITE_BASE_PATH="/`$SUBFOLDER"
+        export VITE_API_BASE="/`$SUBFOLDER/api"
+        npm install
+        npm run build:prod
     else
-        echo "  [!!] Node.js not found. The pre-built assets reference '/linknest'."
-        echo "       To fix: install Node.js then run inside $INSTALL_DIR:"
-        echo "         npm install && npm run build"
-        echo "       OR rename the subfolder to 'linknest' to skip rebuilding."
+        echo "  [!!] Node.js not found; use subfolder `$DEFAULT_SUB or rebuild manually."
     fi
 fi
 
 echo ""
-echo "  ============================================="
-echo "  Deployment Complete!"
-echo "  ============================================="
+echo "  Done. Verify: http://localhost/`$SUBFOLDER/BUILD_INFO.json (buildId=`$BUILD_ID)"
+echo "  Hard refresh (Ctrl+F5) once if the old UI still appears."
 echo ""
-echo "  1. Start XAMPP: sudo $XAMPP_ROOT/manager-linux-x64.run"
-echo "  2. Open: http://localhost/$SUBFOLDER"
-echo "  3. Default login: admin / admin123"
-echo "     IMPORTANT: Change the password immediately!"
-echo ""
-'@
+"@
 
-# ── DEPLOYMENT_README.md ───────────────────────────────────────────────────
 $createdAt = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 $readmeMd = @"
 # LinkNest - Deployment Package
 
 Created : $createdAt
 Package : $PackageName
+Build ID: $BuildId
+Base    : $(if ($BasePath) { $BasePath } else { "/" })
 
 ---
 
-## What Is Inside
+## Important: why updates sometimes looked "stuck"
 
-| Path                  | Description                              |
-|-----------------------|------------------------------------------|
-| api/                  | PHP backend                              |
-| components/           | React components (TypeScript)            |
-| contexts/             | React contexts                           |
-| services/             | Frontend service layer                   |
-| dist/                 | Pre-built frontend (ready to serve)      |
-| data/linknest.db      | SQLite database (your live data)         |
-| uploads/              | User-uploaded files (logos, favicons)    |
-| docker/               | Docker / Docker-Compose setup            |
-| scripts/              | Helper scripts                           |
-| deploy-xampp.bat      | One-click deploy for Windows + XAMPP     |
-| deploy-xampp.sh       | One-click deploy for Linux/macOS + XAMPP |
+If Semi-PWA is enabled, the browser service worker uses cache-first.
+This package stamps a unique **buildId** into ``BUILD_INFO.json``. The
+service worker cache name includes that id, so a new deploy automatically
+invalidates the old UI cache.
+
+After updating, open:
+``http://localhost/YOUR_SUBFOLDER/BUILD_INFO.json``
+
+If ``buildId`` is not ``$BuildId``, the new files are not where Apache is serving from.
 
 ---
 
-## Quick Deploy on XAMPP (Recommended)
+## Recommended upgrade (keep database)
 
-### Windows
-1. Extract this ZIP anywhere (e.g. Desktop).
-2. Double-click **deploy-xampp.bat**.
-3. When prompted, enter your XAMPP path (default: C:\xampp).
-4. Enter the subfolder name you want (e.g. linknest, myapp, tools\linknest).
-5. Start XAMPP and click Start next to Apache.
-6. Open http://localhost/YOUR_SUBFOLDER in your browser.
+1. Extract this ZIP anywhere.
+2. Run **update-xampp.bat** (Windows).
+3. It wipes old ``dist/``, copies the new app, and restores ``data/`` + ``uploads/``.
+4. Hard refresh once (Ctrl+F5).
+5. Confirm ``BUILD_INFO.json`` shows buildId ``$BuildId``.
 
-### Linux / macOS
-    chmod +x deploy-xampp.sh
-    ./deploy-xampp.sh
+## Fresh install
 
-The script will ask for XAMPP path and subfolder name interactively.
+1. Run **deploy-xampp.bat** (wipes the target folder completely).
+2. Start Apache and open ``http://localhost/$basePathForBat``.
 
-NOTE: The pre-built dist/ folder has '/linknest' baked into asset paths.
-If you deploy to a DIFFERENT subfolder name, the deploy script will
-automatically rebuild the frontend if Node.js is available on that machine.
-If Node.js is NOT available, rename your subfolder to 'linknest' to use
-the pre-built assets without rebuilding.
+## Manual copy (if you must)
 
----
+Do **not** merge folders blindly. Always:
 
-## Requirements on Target Computer
-
-- XAMPP (Apache + PHP 8.1+) - https://www.apachefriends.org
-- PHP Extensions (pre-installed with XAMPP): pdo_sqlite, sqlite3, json, mbstring, openssl
-
-Node.js / npm are NOT required - the frontend is pre-built (dist/ is included).
-
----
-
-## Database
-
-The package includes data/linknest.db (your live SQLite database).
-It will be used automatically on the new machine. No import steps needed.
+1. Delete the target ``dist/`` folder completely first.
+2. Copy the new package files over.
+3. Keep existing ``data/`` and ``uploads/`` if you need them.
+4. Copy ``BUILD_INFO.json`` and ``sw-cache-first.php`` / ``public/sw-cache-first.js``.
+5. Hard refresh (Ctrl+F5).
 
 ---
 
@@ -625,40 +795,27 @@ It will be used automatically on the new machine. No import steps needed.
 Username : admin
 Password : admin123
 
-IMPORTANT: Change the admin password immediately after logging in!
+Change the password immediately after login.
 
 ---
 
 ## Troubleshooting
 
-| Problem               | Fix                                                      |
-|-----------------------|----------------------------------------------------------|
-| Blank page / 404      | Make sure Apache is started in XAMPP                     |
-| API errors            | Check that mod_rewrite is enabled in XAMPP               |
-| Database errors       | Ensure data/ folder is writeable by Apache (chmod 777)   |
-| Uploads missing       | Check uploads/ folder permissions                        |
-| White screen          | Clear browser cache (Ctrl+Shift+R)                       |
-
-For mod_rewrite on XAMPP Windows:
-Open C:\xampp\apache\conf\httpd.conf and make sure AllowOverride All
-is set for the htdocs directory, then restart Apache.
-
----
-
-## Re-building the Frontend (Optional)
-
-If you want to rebuild the frontend on the target machine (not usually needed):
-
-    npm install
-    npm run build
+| Problem | Fix |
+|---------|-----|
+| Old UI after update | Run update-xampp.bat, then Ctrl+F5; check BUILD_INFO.json |
+| Blank / wrong assets | Confirm VITE base path matches folder name; rebuild if different |
+| API oddness after PHP edits | Restart Apache (clears OPcache if enabled) |
+| 404 | Enable AllowOverride All + mod_rewrite in XAMPP |
 "@
 
-# Write the files
-Set-Content -Path (Join-Path $TempDir "deploy-xampp.bat")       -Value $deployBat  -Encoding ASCII
-Set-Content -Path (Join-Path $TempDir "deploy-xampp.sh")        -Value $deploySh   -Encoding UTF8
-Set-Content -Path (Join-Path $TempDir "DEPLOYMENT_README.md")   -Value $readmeMd   -Encoding UTF8
+Set-Content -Path (Join-Path $TempDir "deploy-xampp.bat") -Value $deployBat -Encoding ASCII
+Set-Content -Path (Join-Path $TempDir "update-xampp.bat") -Value $updateBat -Encoding ASCII
+Set-Content -Path (Join-Path $TempDir "deploy-xampp.sh") -Value $deploySh -Encoding UTF8
+Set-Content -Path (Join-Path $TempDir "DEPLOYMENT_README.md") -Value $readmeMd -Encoding UTF8
 
 Write-OK "deploy-xampp.bat written"
+Write-OK "update-xampp.bat written (preserve data - use this for upgrades)"
 Write-OK "deploy-xampp.sh written"
 Write-OK "DEPLOYMENT_README.md written"
 
@@ -679,7 +836,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 )
 
 $zipMB = [math]::Round((Get-Item $ZipOutput).Length / 1MB, 2)
-Write-OK "ZIP created: $ZipOutput  ($zipMB MB)"
+Write-OK ("ZIP created: {0}  ({1} MB)" -f $ZipOutput, $zipMB)
 
 # ---------------------------------------------------------------------------
 #  10. Cleanup
@@ -695,18 +852,18 @@ Write-Host ""
 Write-Host "  =============================================" -ForegroundColor Green
 Write-Host "  Packaging Complete!" -ForegroundColor Green
 Write-Host "  =============================================" -ForegroundColor Green
-Write-Host "  ZIP  : $ZipOutput" -ForegroundColor Green
-Write-Host "  Size : $zipMB MB"  -ForegroundColor Green
+Write-Host "  ZIP     : $ZipOutput" -ForegroundColor Green
+Write-Host "  Size    : $zipMB MB"  -ForegroundColor Green
+Write-Host "  BuildId : $BuildId" -ForegroundColor Green
 Write-Host "  =============================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "  NEXT STEPS:" -ForegroundColor Yellow
-Write-Host "  1. Copy the ZIP to the target computer"       -ForegroundColor Yellow
-Write-Host "  2. Extract it anywhere"                       -ForegroundColor Yellow
-Write-Host "  3. Run deploy-xampp.bat  (Windows)"           -ForegroundColor Yellow
-Write-Host "     OR  deploy-xampp.sh   (Linux/macOS)"       -ForegroundColor Yellow
+Write-Host "  ON THE TARGET MACHINE:" -ForegroundColor Yellow
+Write-Host "  - Upgrade (keep DB) : extract ZIP -> run update-xampp.bat" -ForegroundColor Yellow
+Write-Host "  - Fresh install     : extract ZIP -> run deploy-xampp.bat" -ForegroundColor Yellow
+Write-Host "  - Then verify       : /BUILD_INFO.json shows buildId above" -ForegroundColor Yellow
+Write-Host "  - If old UI remains : Ctrl+F5 once (service worker refresh)" -ForegroundColor Yellow
 Write-Host ""
 
-# Open output folder in Explorer (Windows only)
 $outputFolder = Split-Path $ZipOutput -Parent
 if (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion") {
     Start-Process explorer.exe -ArgumentList $outputFolder

@@ -39,11 +39,25 @@ try {
     $includedPaths = [];
 }
 
+// Bust service-worker caches on every packaged deploy.
+$cacheVersion = 'v2';
+$buildInfoPath = __DIR__ . '/BUILD_INFO.json';
+if (is_file($buildInfoPath)) {
+    $info = json_decode((string) file_get_contents($buildInfoPath), true);
+    if (is_array($info) && !empty($info['buildId'])) {
+        $cacheVersion = preg_replace('/[^a-zA-Z0-9._-]/', '', (string) $info['buildId']) ?: 'v2';
+    }
+} elseif (is_file($script)) {
+    $cacheVersion = 'src-' . (string) filemtime($script);
+}
+
 $js = file_get_contents($script);
 $js = str_replace('__EXCLUDED_PATHS__', json_encode($excludedPaths), $js);
 $js = str_replace('__INCLUDED_PATHS__', json_encode($includedPaths), $js);
+$js = str_replace('__CACHE_VERSION__', $cacheVersion, $js);
 
 header('Content-Type: application/javascript; charset=utf-8');
-header('Cache-Control: no-cache, max-age=0');
+header('Cache-Control: no-cache, no-store, must-revalidate, max-age=0');
+header('Pragma: no-cache');
 header('Service-Worker-Allowed: /');
 echo $js;

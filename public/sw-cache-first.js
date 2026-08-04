@@ -8,7 +8,9 @@
  * - API calls use stale-while-revalidate to stay fresh
  * - Prevents outdated cache from being served after updates
  */
-const CACHE_NAME = 'linknest-pwa-v2';
+// __CACHE_VERSION__ is replaced by sw-cache-first.php from BUILD_INFO.json on each deploy.
+// Changing this value forces browsers to drop the previous cache and load the new UI.
+const CACHE_NAME = 'linknest-pwa-__CACHE_VERSION__';
 const LOG_PREFIX = '[LinkNest PWA]';
 
 // Track if hard refresh happened recently (to clear caches for subsequent API calls)
@@ -195,21 +197,32 @@ self.addEventListener('fetch', (event) => {
   })());
 });
 
+self.addEventListener('install', (event) => {
+  // Take over immediately so new deploys are not stuck waiting for old tabs to close.
+  self.skipWaiting();
+  console.log(LOG_PREFIX, 'Service worker installed:', CACHE_NAME);
+});
+
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((names) => {
       return Promise.all(
-        names.filter((name) => name !== CACHE_NAME).map((name) => caches.delete(name))
+        names.filter((name) => name !== CACHE_NAME).map((name) => {
+          console.log(LOG_PREFIX, 'Deleting old cache:', name);
+          return caches.delete(name);
+        })
       );
-    })
+    }).then(() => self.clients.claim())
   );
-  self.clients.claim();
-  console.log(LOG_PREFIX, 'Service worker active. Cache-first for GET; hard refresh = network fetch + cache clear.');
+  console.log(LOG_PREFIX, 'Service worker active:', CACHE_NAME);
 });
 
 // Handle messages from clients (e.g., manual cache clear requests)
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'CLEAR_CACHE') {
     event.waitUntil(clearAllCaches());
+  }
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
   }
 });

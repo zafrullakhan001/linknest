@@ -73,10 +73,10 @@ AddDefaultCharset UTF-8
     RewriteCond %{REQUEST_URI} ^/?$
     RewriteRule ^(.*)$ dist/index.html [L]
     
-    # Block direct access to root index.html in production (redirect to dist)
+    # Serve built index via internal rewrite (no 301 — browsers cache permanent redirects)
     RewriteCond %{DOCUMENT_ROOT}%{REQUEST_URI}dist/index.html -f
     RewriteCond %{REQUEST_URI} index\.html?$
-    RewriteRule ^index\.html?$ dist/index.html [L,R=301]
+    RewriteRule ^index\.html?$ dist/index.html [L]
     
     # Production: Force serve dist/index.html for all other SPA routes
     RewriteCond %{DOCUMENT_ROOT}%{REQUEST_URI}dist/index.html -f
@@ -100,4 +100,17 @@ AddDefaultCharset UTF-8
 # DirectoryIndex: Prefer dist/index.html in production
 <IfModule mod_dir.c>
     DirectoryIndex dist/index.html index.html
+</IfModule>
+
+# Prevent browsers / proxies from sticking on an old SPA shell after deploy.
+# Hashed Vite assets can be cached forever; HTML / SW must always revalidate.
+<IfModule mod_headers.c>
+    <FilesMatch "(?i)^(index\.html|BUILD_INFO\.json|sw-cache-first\.php)$">
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+        Header set Pragma "no-cache"
+        Header set Expires "0"
+    </FilesMatch>
+    <FilesMatch "(?i)\.(?:js|css|woff2?|ttf|eot|png|jpe?g|gif|svg|ico|webp)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
 </IfModule>

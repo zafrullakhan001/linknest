@@ -35,6 +35,20 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
         if (semiPwaEnabled) {
           try {
             const reg = await navigator.serviceWorker.register(swPath, { scope: getSwScope() });
+            // Activate an updated worker immediately after deploy (do not wait for tab close).
+            const askWaitingToActivate = (worker: ServiceWorker | null) => {
+              if (worker) worker.postMessage({ type: 'SKIP_WAITING' });
+            };
+            if (reg.waiting) askWaitingToActivate(reg.waiting);
+            reg.addEventListener('updatefound', () => {
+              const installing = reg.installing;
+              if (!installing) return;
+              installing.addEventListener('statechange', () => {
+                if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+                  askWaitingToActivate(installing);
+                }
+              });
+            });
             await reg.update();
             // Log once per session so hard-refresh shows SW fetch messages instead of this again
             if (typeof sessionStorage !== 'undefined' && !sessionStorage.getItem('linknest_pwa_logged')) {

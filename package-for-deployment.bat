@@ -1,11 +1,12 @@
 @echo off
 REM ============================================================
 REM  LinkNest — Deployment Packager Launcher
-REM  Double-click this file to build and package the application.
+REM  Double-click this file to clean-build and package the app.
+REM  On the target PC, prefer update-xampp.bat (keeps data/).
 REM ============================================================
 echo.
 echo  Starting LinkNest Deployment Packager...
-echo  (This window will close when packaging is complete)
+echo  This will wipe dist/, rebuild, and create a fresh ZIP.
 echo.
 
 REM Run the PowerShell script — bypass execution policy for this session only
