@@ -59,6 +59,7 @@ const transformTile = (apiTile: any): Tile => {
     tileGradientType: apiTile.tileGradientType !== undefined && apiTile.tileGradientType !== null && apiTile.tileGradientType !== '' ? apiTile.tileGradientType : undefined,
     tileBorderRadius: apiTile.tileBorderRadius !== undefined && apiTile.tileBorderRadius !== null ? Number(apiTile.tileBorderRadius) : undefined,
     tileTextColor: apiTile.tileTextColor !== undefined && apiTile.tileTextColor !== null && apiTile.tileTextColor !== '' ? apiTile.tileTextColor : undefined,
+    pageAnimation: apiTile.pageAnimation && apiTile.pageAnimation !== 'none' ? apiTile.pageAnimation : undefined,
     messages: apiTile.messages || undefined, // Include scheduled messages
     // Shared-with-me: when tile was shared by another user and receiver accepted
     sharedWithMeInvitationId: apiTile.sharedWithMeInvitationId ?? undefined,
@@ -138,6 +139,28 @@ export const saveTile = async (tile: Tile, isFinal: boolean = false): Promise<vo
     console.error("Failed to save tile", e);
     throw e;
   }
+};
+
+/** Persist sections/page entrance animation for one space without a full tile rewrite. */
+export const updateTilePageAnimation = async (
+  tileId: string,
+  pageAnimation?: string | null
+): Promise<{ success: boolean; pageAnimation: string | null }> => {
+  const response = await fetch(`${API_BASE}/tiles/${tileId}/page-animation`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({
+      pageAnimation: pageAnimation && pageAnimation !== 'none' ? pageAnimation : null,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: 'Failed to save page animation' }));
+    throw new Error(errorData.error || 'Failed to save page animation');
+  }
+
+  return response.json();
 };
 
 export const createTile = async (tile: Tile): Promise<Tile> => {

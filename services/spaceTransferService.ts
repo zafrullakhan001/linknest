@@ -207,7 +207,8 @@ export const normalizeImportedTiles = (
                       richTextContent: typeof link.richTextContent === 'string' ? link.richTextContent : undefined,
                       health: link.health || undefined,
                       visibleFrom: typeof link.visibleFrom === 'string' ? link.visibleFrom : undefined,
-                      expiresAt: typeof link.expiresAt === 'string' ? link.expiresAt : undefined
+                      expiresAt: typeof link.expiresAt === 'string' ? link.expiresAt : undefined,
+                      animation: typeof link.animation === 'string' ? link.animation : undefined
                     }))
                   : [];
 
@@ -267,7 +268,8 @@ export const normalizeImportedTiles = (
                 richTextContent: typeof link.richTextContent === 'string' ? link.richTextContent : undefined,
                 health: link.health || undefined,
                 visibleFrom: typeof link.visibleFrom === 'string' ? link.visibleFrom : undefined,
-                expiresAt: typeof link.expiresAt === 'string' ? link.expiresAt : undefined
+                expiresAt: typeof link.expiresAt === 'string' ? link.expiresAt : undefined,
+                animation: typeof link.animation === 'string' ? link.animation : undefined
               }))
             : [];
 
@@ -333,6 +335,7 @@ export const normalizeImportedTiles = (
       tileGradientColorPositions: Array.isArray(src.tileGradientColorPositions) ? src.tileGradientColorPositions : undefined,
       tileBorderRadius: typeof src.tileBorderRadius === 'number' ? src.tileBorderRadius : undefined,
       tileTextColor: typeof src.tileTextColor === 'string' ? src.tileTextColor : undefined,
+      pageAnimation: typeof src.pageAnimation === 'string' ? src.pageAnimation : undefined,
       // Preserve tile messages (message board messages)
       messages: Array.isArray(src.messages) && src.messages.length > 0
         ? src.messages.map((msg: any) => ({

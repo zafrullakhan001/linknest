@@ -32,6 +32,11 @@ import { StagingOverview } from './StagingOverview';
 import { StagingOfflineKit, StagingOfflineKitHandle } from './StagingOfflineKit';
 import { YourAppsOverview } from './YourAppsOverview';
 import { PrivateOverview } from './PrivateOverview';
+import { ScheduledOverview } from './ScheduledOverview';
+import { ExpiredOverview } from './ExpiredOverview';
+import { ArchiveOverview } from './ArchiveOverview';
+import { MonitoringOverview } from './MonitoringOverview';
+import { RecycleBinOverview } from './RecycleBinOverview';
 import { TileInfoDialog } from './TileInfoDialog';
 import { TileFireworks } from './TileFireworks';
 import { TileConfetti } from './TileConfetti';
@@ -6705,95 +6710,115 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         <BlockedUsersSection onUnblock={() => { getTiles().then(t => onUpdateTiles(t, false)); loadBlockedUsersCount(); }} />
       )}
 
-      {/* Archive Actions */}
-      {activeTab === 'archive' && isAuthenticated && (
-        <div className="flex items-center justify-between py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
-          <div className="text-sm text-slate-600 dark:text-slate-400">
-            {isLoadingArchive ? (
-              'Loading archive...'
-            ) : archiveTiles.length === 0 ? (
-              'Archive is empty'
-            ) : (
-              `${archiveTiles.length} space(s) in archive`
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={async () => {
-                setIsLoadingArchive(true);
-                try {
-                  const updatedTiles = await getArchive();
-                  setArchiveTiles(updatedTiles);
-                } catch (error) {
-                  console.error('Failed to refresh archive:', error);
-                } finally {
-                  setIsLoadingArchive(false);
-                }
-              }}
-              className="px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors flex items-center gap-1.5"
-              title="Refresh archive"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-1.281z" clipRule="evenodd" />
-              </svg>
-              Refresh
-            </button>
-            {archiveTiles.length > 0 && user?.is_admin && (
-              <button
-                onClick={handlePurgeArchive}
-                className="px-4 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"
-                title="Move all archived spaces to recycle bin"
-              >
-                Delete All
-              </button>
-            )}
-          </div>
-        </div>
+      {/* Scheduled overview */}
+      {activeTab === 'scheduled' && isAuthenticated && (
+        <ScheduledOverview
+          spaceCount={Object.values(groupedTiles).reduce((acc: number, group: Tile[]) => acc + group.length, 0)}
+        />
       )}
 
-      {/* Recycle Bin Actions */}
-      {activeTab === 'recycle-bin' && isAuthenticated && (
-        <div className="flex items-center justify-between py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
-          <div className="text-sm text-slate-600 dark:text-slate-400">
-            {isLoadingRecycleBin ? (
-              'Loading recycle bin...'
-            ) : recycleBinTiles.length === 0 ? (
-              'Recycle bin is empty'
-            ) : (
-              `${recycleBinTiles.length} space(s) in recycle bin`
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={async () => {
-                setIsLoadingRecycleBin(true);
-                try {
-                  const updatedTiles = await getRecycleBin();
-                  setRecycleBinTiles(updatedTiles);
-                } catch (error) {
-                  console.error('Failed to refresh recycle bin:', error);
-                } finally {
-                  setIsLoadingRecycleBin(false);
-                }
-              }}
-              className="px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors flex items-center gap-1.5"
-              title="Refresh recycle bin"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-1.281z" clipRule="evenodd" />
-              </svg>
-              Refresh
-            </button>
-            {recycleBinTiles.length > 0 && (
+      {/* Expired overview */}
+      {activeTab === 'expired' && isAuthenticated && (
+        <ExpiredOverview
+          spaceCount={Object.values(groupedTiles).reduce((acc: number, group: Tile[]) => acc + group.length, 0)}
+        />
+      )}
+
+      {/* Archive overview + actions */}
+      {activeTab === 'archive' && isAuthenticated && (
+        <>
+          <ArchiveOverview spaceCount={archiveTiles.length} />
+          <div className="flex items-center justify-between py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
+            <div className="text-sm text-slate-600 dark:text-slate-400">
+              {isLoadingArchive ? (
+                'Loading archive...'
+              ) : archiveTiles.length === 0 ? (
+                'Archive is empty'
+              ) : (
+                `${archiveTiles.length} space(s) in archive`
+              )}
+            </div>
+            <div className="flex items-center gap-2">
               <button
-                onClick={handlePurgeRecycleBin}
-                className="px-4 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                onClick={async () => {
+                  setIsLoadingArchive(true);
+                  try {
+                    const updatedTiles = await getArchive();
+                    setArchiveTiles(updatedTiles);
+                  } catch (error) {
+                    console.error('Failed to refresh archive:', error);
+                  } finally {
+                    setIsLoadingArchive(false);
+                  }
+                }}
+                className="px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors flex items-center gap-1.5"
+                title="Refresh archive"
               >
-                Purge All
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-1.281z" clipRule="evenodd" />
+                </svg>
+                Refresh
               </button>
-            )}
+              {archiveTiles.length > 0 && user?.is_admin && (
+                <button
+                  onClick={handlePurgeArchive}
+                  className="px-4 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                  title="Move all archived spaces to recycle bin"
+                >
+                  Delete All
+                </button>
+              )}
+            </div>
           </div>
-        </div>
+        </>
+      )}
+
+      {/* Recycle Bin overview + actions */}
+      {activeTab === 'recycle-bin' && isAuthenticated && (
+        <>
+          <RecycleBinOverview spaceCount={recycleBinTiles.length} />
+          <div className="flex items-center justify-between py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
+            <div className="text-sm text-slate-600 dark:text-slate-400">
+              {isLoadingRecycleBin ? (
+                'Loading recycle bin...'
+              ) : recycleBinTiles.length === 0 ? (
+                'Recycle bin is empty'
+              ) : (
+                `${recycleBinTiles.length} space(s) in recycle bin`
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={async () => {
+                  setIsLoadingRecycleBin(true);
+                  try {
+                    const updatedTiles = await getRecycleBin();
+                    setRecycleBinTiles(updatedTiles);
+                  } catch (error) {
+                    console.error('Failed to refresh recycle bin:', error);
+                  } finally {
+                    setIsLoadingRecycleBin(false);
+                  }
+                }}
+                className="px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors flex items-center gap-1.5"
+                title="Refresh recycle bin"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-1.281z" clipRule="evenodd" />
+                </svg>
+                Refresh
+              </button>
+              {recycleBinTiles.length > 0 && (
+                <button
+                  onClick={handlePurgeRecycleBin}
+                  className="px-4 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                >
+                  Purge All
+                </button>
+              )}
+            </div>
+          </div>
+        </>
       )}
 
       {/* Compact Stats Bar - hide when on Private sub-tabs Sharing/Blocked */}
@@ -7153,9 +7178,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       })()}
 
       {activeTab === 'monitoring' && (
-        <Suspense fallback={<div className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">Loading monitoring…</div>}>
-          <MonitoringDashboard />
-        </Suspense>
+        <>
+          <MonitoringOverview hasMonitorv2={!isTabDisabledBySettings('monitorv2')} />
+          <Suspense fallback={<div className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">Loading monitoring…</div>}>
+            <MonitoringDashboard />
+          </Suspense>
+        </>
       )}
       {activeTab === 'monitorv2' && (
         <Suspense fallback={<div className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">Loading monitoring…</div>}>

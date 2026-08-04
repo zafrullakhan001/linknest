@@ -39,6 +39,91 @@ html.ln-bootstrapping *::after {
   animation: fadeIn 0.4s ease-out;
 }
 
+/* Auth modal uplift */
+@keyframes authModalIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes authBackdropIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes authFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes authShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes authMethodPop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.03); }
+  100% { transform: scale(1); }
+}
+
+@keyframes authStatusPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.35); }
+  50% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+}
+
+.auth-modal-backdrop {
+  animation: authBackdropIn 0.25s ease-out;
+}
+
+.auth-modal-panel {
+  animation: authModalIn 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.auth-modal-logo {
+  animation: authFloat 3.5s ease-in-out infinite;
+}
+
+.auth-modal-btn-shimmer {
+  background-size: 200% 100%;
+  background-image: linear-gradient(
+    110deg,
+    #2563eb 0%,
+    #2563eb 35%,
+    #7c3aed 50%,
+    #2563eb 65%,
+    #2563eb 100%
+  );
+}
+
+.auth-modal-btn-shimmer:not(:disabled):hover {
+  animation: authShimmer 1.6s linear infinite;
+}
+
+.auth-method-card-selected {
+  animation: authMethodPop 0.35s ease-out;
+}
+
+.auth-status-live {
+  animation: authStatusPulse 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-modal-backdrop,
+  .auth-modal-panel,
+  .auth-modal-logo,
+  .auth-modal-btn-shimmer:not(:disabled):hover,
+  .auth-method-card-selected,
+  .auth-status-live {
+    animation: none !important;
+  }
+}
+
 /* Smooth scroll behavior for mobile */
 @media (max-width: 768px) {
   html {

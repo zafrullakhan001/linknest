@@ -99,7 +99,8 @@ function normalizeImportedLink(raw: unknown): Link | null {
     richTextContent: typeof link.richTextContent === 'string' ? link.richTextContent : undefined,
     health: link.health && typeof link.health === 'object' ? (link.health as Link['health']) : undefined,
     visibleFrom: typeof link.visibleFrom === 'string' ? link.visibleFrom : undefined,
-    expiresAt: typeof link.expiresAt === 'string' ? link.expiresAt : undefined
+    expiresAt: typeof link.expiresAt === 'string' ? link.expiresAt : undefined,
+    animation: typeof link.animation === 'string' ? link.animation : undefined
   };
 }
 

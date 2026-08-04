@@ -732,9 +732,14 @@ const AppContent: React.FC = () => {
     }
   }, [isAuthenticated, authModalOpen]);
 
-  const handleUpdateTiles = async (newTiles: Tile[], skipReload: boolean = false, isFinal: boolean = false) => {
-    if (!isAuthenticated) {
-      // Guest mode: just update local state for viewing
+  const handleUpdateTiles = async (
+    newTiles: Tile[],
+    skipReload: boolean = false,
+    isFinal: boolean = false,
+    localOnly: boolean = false
+  ) => {
+    if (!isAuthenticated || localOnly) {
+      // Guest mode or local-only (already persisted via a dedicated endpoint)
       setTiles(newTiles);
       return;
     }

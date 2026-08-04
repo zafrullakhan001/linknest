@@ -575,6 +575,23 @@ function initDatabase() {
         } catch (PDOException $e) {
             error_log('Tiles decoration migration warning: ' . $e->getMessage());
         }
+
+        // Migrate existing tiles table to add page_animation column if it doesn't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll();
+            $hasPageAnimation = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'page_animation') {
+                    $hasPageAnimation = true;
+                    break;
+                }
+            }
+            if (!$hasPageAnimation) {
+                $db->exec('ALTER TABLE tiles ADD COLUMN page_animation TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Tiles page_animation migration warning: ' . $e->getMessage());
+        }
         
         // Create tabs table
         $db->exec('CREATE TABLE IF NOT EXISTS tabs (
@@ -897,6 +914,23 @@ function initDatabase() {
             }
         } catch (PDOException $e) {
             error_log('Links rich_text_content migration warning: ' . $e->getMessage());
+        }
+
+        // Migrate existing links table to add animation column if it doesn't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(links)")->fetchAll();
+            $hasAnimation = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'animation') {
+                    $hasAnimation = true;
+                    break;
+                }
+            }
+            if (!$hasAnimation) {
+                $db->exec('ALTER TABLE links ADD COLUMN animation TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Links animation migration warning: ' . $e->getMessage());
         }
         
         // Create rich_text_content table

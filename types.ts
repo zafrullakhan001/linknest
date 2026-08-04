@@ -27,6 +27,8 @@ export interface Link {
   isFavorite?: boolean; // Whether this link is favorited by the current user
   hasRoleAccess?: boolean; // Whether this link is accessible via user roles
   position?: number; // Position for ordering mixed content
+  /** Entrance animation id (same set as space/tile animations). */
+  animation?: string;
 }
 
 export interface RichTextContent {
@@ -119,6 +121,8 @@ export interface Tile {
   tileGradientColorPositions?: number[]; // Array of color stop positions (0-100) for each gradient color
   tileBorderRadius?: number; // Border radius in pixels
   tileTextColor?: string; // Text color (hex code)
+  /** Entrance animation for link sections on this space page (not individual links). */
+  pageAnimation?: string;
   messages?: TileMessage[]; // Array of scheduled messages
   // Shared-with-me: when tile was shared by another user and receiver accepted
   sharedWithMeInvitationId?: number | null;

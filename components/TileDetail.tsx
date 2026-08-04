@@ -11,7 +11,7 @@ import {
     parseSectionLinksExport,
     parseTabExport
 } from '../services/sectionTabTransferService';
-import { cloneTile, getTiles, saveTile, toggleLinkFavorite, createTempVersion } from '../services/storageService';
+import { cloneTile, getTiles, saveTile, toggleLinkFavorite, createTempVersion, updateTilePageAnimation } from '../services/storageService';
 import { removeSharedTile } from '../services/tileShareService';
 import { useSettings } from '../contexts/SettingsContext';
 import { RichTextEditor } from './RichTextEditor';
@@ -22,6 +22,7 @@ import { LinkInfoDialog } from './LinkInfoDialog';
 import { MobileTileEdit } from './MobileTileEdit';
 import { useMobile } from '../hooks/useMobile';
 import { VersionDiffViewer } from './VersionDiffViewer';
+import { TileAnimationSelector, getTileAnimationClass, TileAnimation, getAnimationOption } from './TileAnimationSelector';
 
 // Resolve API base dynamically
 function resolveApiBase(): string {
@@ -58,7 +59,7 @@ interface TileVersion {
 interface TileDetailProps {
     tile: Tile;
     allTiles: Tile[];
-    onUpdateTiles: (tiles: Tile[], skipReload?: boolean, isFinal?: boolean) => void;
+    onUpdateTiles: (tiles: Tile[], skipReload?: boolean, isFinal?: boolean, localOnly?: boolean) => void;
     isAuthenticated?: boolean;
     onAuthRequired?: () => void;
     sourceTab?: 'public' | 'your-apps' | 'staging' | 'private' | 'favorites' | 'public-favorites' | null;
@@ -236,6 +237,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [availableGroups, setAvailableGroups] = useState<Array<{ id: number; name: string; description: string | null; memberCount: number }>>([]);
     const [isLoadingGroups, setIsLoadingGroups] = useState(false);
     const [editBrowser, setEditBrowser] = useState<string>(tile.browser || 'default');
+    const [editPageAnimation, setEditPageAnimation] = useState<TileAnimation>((tile.pageAnimation as TileAnimation) || 'none');
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [showTileUserSelector, setShowTileUserSelector] = useState(false);
     const [visibilitySearchTerm, setVisibilitySearchTerm] = useState('');
@@ -266,14 +268,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editSections, setEditSections] = useState<LinkSection[]>(tile.sections || []);
 
     // Temporary State for Adding Links (keyed by section ID)
-    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, browser: string, richTextContent: string }>>({});
+    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, browser: string, richTextContent: string, animation: string }>>({});
 
     // Selection State for Bulk Actions
     const [selectedLinkIds, setSelectedLinkIds] = useState<string[]>([]);
 
     // State for Editing Links (keyed by link ID)
     const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
-    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, browser: string, richTextContent: string }>>({});
+    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, browser: string, richTextContent: string, animation: string }>>({});
 
     // Available browsers from BrowserLauncher API
     const [availableBrowsers, setAvailableBrowsers] = useState<string[]>([]);
@@ -328,11 +330,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             setSelectedTabId(null);
         }
     }, [tile.id]);
-    const [viewLayout, setViewLayout] = useState<'stacked' | 'side-by-side'>(() => {
+    const [viewLayout, setViewLayout] = useState<'stacked' | 'side-by-side' | 'grid' | 'compact'>(() => {
         // Load saved preference from localStorage
         try {
             const saved = localStorage.getItem('linknest_view_layout');
-            return (saved === 'side-by-side' || saved === 'stacked') ? saved : 'side-by-side';
+            return (saved === 'side-by-side' || saved === 'stacked' || saved === 'grid' || saved === 'compact')
+                ? saved
+                : 'side-by-side';
         } catch {
             return 'side-by-side';
         }
@@ -684,6 +688,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setEditAllowedGroups(tile.allowedGroups || []);
 
         setEditBrowser(tile.browser || 'default');
+        setEditPageAnimation((tile.pageAnimation as TileAnimation) || 'none');
 
         // Tabs / sections: always reflect the latest tile data when
         // we're *not* editing. While editing, `editTabs` is the source
@@ -1588,6 +1593,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             allowedUsers: editVisibility === 'private' ? finalAllowedUsers : undefined,
             allowedGroups: editVisibility === 'private' ? editAllowedGroups : undefined,
             browser: editBrowser !== 'default' ? editBrowser : undefined,
+            pageAnimation: editPageAnimation && editPageAnimation !== 'none' ? editPageAnimation : undefined,
         };
 
         const updatedTiles = allTiles.map(t => t.id === updatedTile.id ? updatedTile : t);
@@ -2191,11 +2197,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     // Link Management
-    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'browser' | 'richTextContent', value: string | LinkVisibility | number[]) => {
+    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'browser' | 'richTextContent' | 'animation', value: string | LinkVisibility | number[]) => {
         setNewLinkState(prev => ({
             ...prev,
             [sectionId]: {
-                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '' }),
+                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '', animation: 'none' }),
                 [field]: value
             }
         }));
@@ -2233,7 +2239,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             notes: state.notes?.trim() || undefined,
             tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
             browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
-            richTextContent: state.richTextContent?.trim() || undefined
+            richTextContent: state.richTextContent?.trim() || undefined,
+            animation: state.animation && state.animation !== 'none' ? state.animation : undefined
         };
 
         if (editTabs.length > 0) {
@@ -2271,7 +2278,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
 
         // Clear form and hide it
-        setNewLinkState(prev => ({ ...prev, [sectionId]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '' } }));
+        setNewLinkState(prev => ({ ...prev, [sectionId]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '', animation: 'none' } }));
         setShowUserPicker(prev => ({ ...prev, [sectionId]: false }));
         setShowLinkEmojiPicker(prev => ({ ...prev, [sectionId]: false }));
         setShowAddLinkForm(prev => ({ ...prev, [sectionId]: false }));
@@ -2544,7 +2551,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 notes: link.notes || '',
                 tooltip: link.tooltip || '',
                 browser: link.browser || 'default',
-                richTextContent: link.richTextContent || ''
+                richTextContent: link.richTextContent || '',
+                animation: link.animation || 'none'
             }
         });
         setShowUserPicker(prev => ({ ...prev, [link.id]: false }));
@@ -2588,7 +2596,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         notes: state.notes?.trim() || undefined,
                                         tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
                                         browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
-                                        richTextContent: state.richTextContent?.trim() || undefined
+                                        richTextContent: state.richTextContent?.trim() || undefined,
+                                        animation: state.animation && state.animation !== 'none' ? state.animation : undefined
                                     }
                                     : l
                             ),
@@ -2615,7 +2624,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 allowedGroups: state.allowedGroups && state.allowedGroups.length > 0 ? state.allowedGroups : undefined,
                                 notes: state.notes?.trim() || undefined,
                                 tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
-                                browser: state.browser && state.browser !== 'default' ? state.browser : undefined
+                                browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
+                                richTextContent: state.richTextContent?.trim() || undefined,
+                                animation: state.animation && state.animation !== 'none' ? state.animation : undefined
                             }
                             : l
                     ),
@@ -2629,7 +2640,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setShowUserPicker(prev => ({ ...prev, [linkId]: false }));
     };
 
-    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'browser', value: string | LinkVisibility | number[]) => {
+    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'browser' | 'richTextContent' | 'animation', value: string | LinkVisibility | number[]) => {
         setEditLinkState(prev => ({
             ...prev,
             [linkId]: { ...prev[linkId], [field]: value }
@@ -3667,7 +3678,37 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             </div>
 
                             {/* Controls */}
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-3 flex-wrap justify-center md:justify-end">
+                                {/* Space page entrance animation — applies to whole link sections */}
+                                {tile.canEdit && (
+                                    <div className="relative flex items-center">
+                                        <TileAnimationSelector
+                                            key={`page-anim-${tile.id}-${tile.pageAnimation || 'none'}`}
+                                            animationsOnly
+                                            persistGlobal={false}
+                                            value={(tile.pageAnimation as TileAnimation) || 'none'}
+                                            onAnimationChange={async (animation) => {
+                                                const next = animation && animation !== 'none' ? animation : undefined;
+                                                const updatedTile: Tile = {
+                                                    ...tile,
+                                                    pageAnimation: next,
+                                                };
+                                                setEditPageAnimation(animation);
+                                                const updatedTiles = allTiles.map(t => t.id === updatedTile.id ? updatedTile : t);
+                                                try {
+                                                    await updateTilePageAnimation(tile.id, next ?? null);
+                                                    onUpdateTiles(updatedTiles, true, false, true);
+                                                } catch (e) {
+                                                    console.error('Failed to save page animation:', e);
+                                                    alert(e instanceof Error ? e.message : 'Failed to save page animation');
+                                                }
+                                            }}
+                                            scopeLabel="SECTIONS ANIMATION"
+                                            scopeHint="Animates whole link sections on this page"
+                                            buttonTitle="Choose entrance animation for link sections"
+                                        />
+                                    </div>
+                                )}
                                 {/* Export single space */}
                                 <button
                                     onClick={() => exportTileToFile(tile)}
@@ -3877,6 +3918,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                                                     }`}
                                                 title="Stacked view - sections appear vertically"
+                                                aria-label="Stacked view"
+                                                aria-pressed={viewLayout === 'stacked'}
                                             >
                                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                                                     <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 4.5zM2 10a2.5 2.5 0 012.5-2.5h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 10zM4.5 13.5A2.5 2.5 0 002 16a2.5 2.5 0 002.5 2.5h11a2.5 2.5 0 000-5h-11z" />
@@ -3889,9 +3932,39 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                                                     }`}
                                                 title="Side-by-side view - sections appear horizontally"
+                                                aria-label="Side-by-side view"
+                                                aria-pressed={viewLayout === 'side-by-side'}
                                             >
                                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                                                     <path d="M2 4.5A2.5 2.5 0 014.5 2h3A2.5 2.5 0 0110 4.5v11A2.5 2.5 0 017.5 18h-3A2.5 2.5 0 012 15.5v-11zM10.5 2A2.5 2.5 0 0013 4.5v11a2.5 2.5 0 01-2.5 2.5H13a2.5 2.5 0 002.5-2.5v-11A2.5 2.5 0 0013 2h-.5z" />
+                                                </svg>
+                                            </button>
+                                            <button
+                                                onClick={() => setViewLayout('grid')}
+                                                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${viewLayout === 'grid'
+                                                    ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
+                                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                                                    }`}
+                                                title="Grid cards - links as compact visual cards"
+                                                aria-label="Grid cards view"
+                                                aria-pressed={viewLayout === 'grid'}
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                    <path fillRule="evenodd" d="M4.25 2A2.25 2.25 0 002 4.25v2.5A2.25 2.25 0 004.25 9h2.5A2.25 2.25 0 009 6.75v-2.5A2.25 2.25 0 006.75 2h-2.5zm0 9A2.25 2.25 0 002 13.25v2.5A2.25 2.25 0 004.25 18h2.5A2.25 2.25 0 009 15.75v-2.5A2.25 2.25 0 006.75 11h-2.5zm9-9A2.25 2.25 0 0011 4.25v2.5A2.25 2.25 0 0013.25 9h2.5A2.25 2.25 0 0018 6.75v-2.5A2.25 2.25 0 0015.75 2h-2.5zm0 9A2.25 2.25 0 0011 13.25v2.5A2.25 2.25 0 0013.25 18h2.5A2.25 2.25 0 0018 15.75v-2.5A2.25 2.25 0 0015.75 11h-2.5z" clipRule="evenodd" />
+                                                </svg>
+                                            </button>
+                                            <button
+                                                onClick={() => setViewLayout('compact')}
+                                                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${viewLayout === 'compact'
+                                                    ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
+                                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                                                    }`}
+                                                title="Compact list - dense single-line links"
+                                                aria-label="Compact list view"
+                                                aria-pressed={viewLayout === 'compact'}
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                    <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zM2 10a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10zm0 5.25a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
                                                 </svg>
                                             </button>
                                         </div>
@@ -4097,31 +4170,45 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             </div>
                         ) : (
                             <div
-                                className={viewLayout === 'stacked' ? 'space-y-8' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'}
+                                className={viewLayout === 'side-by-side' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' : 'space-y-8'}
                                 data-view-layout={viewLayout}
                             >
                                 {filteredSections.map((section, sectionIndex) => {
                                     // Check if this section should force stacked view for its content (links/rich text)
                                     const shouldForceStacked = section.forceStackedView === true;
+                                    const linkContainerClass = shouldForceStacked
+                                        ? 'space-y-4'
+                                        : viewLayout === 'grid'
+                                            ? 'linknest-content-link-grid-cards'
+                                            : viewLayout === 'compact'
+                                                ? 'linknest-content-link-list-compact'
+                                                : 'linknest-content-link-grid';
 
                                     return (
                                         <div
                                             key={section.id}
-                                            className="linknest-content-section animate-in fade-in slide-in-from-bottom-2 bg-white/80 dark:bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-200/80 dark:border-slate-700/50 p-6 shadow-sm"
+                                            style={{ animationDelay: `${sectionIndex * 120}ms` }}
+                                            className={`linknest-content-section bg-white/80 dark:bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-200/80 dark:border-slate-700/50 shadow-sm ${
+                                                viewLayout === 'compact' ? 'p-4' : 'p-6'
+                                            } ${
+                                                tile.pageAnimation && tile.pageAnimation !== 'none'
+                                                    ? getTileAnimationClass(tile.pageAnimation as TileAnimation)
+                                                    : 'animate-in fade-in slide-in-from-bottom-2'
+                                            }`}
                                         >
                                             {/* Section Title */}
                                             {section.title && (
                                                 <h3
-                                                    className={`linknest-content-section-title text-lg font-bold mb-5 flex items-center gap-3 ${!section.textColor ? 'text-slate-800 dark:text-white' : ''}`}
+                                                    className={`linknest-content-section-title font-bold flex items-center gap-3 ${viewLayout === 'compact' ? 'text-base mb-3' : 'text-lg mb-5'} ${!section.textColor ? 'text-slate-800 dark:text-white' : ''}`}
                                                     style={section.textColor ? { color: section.textColor } : undefined}
                                                 >
-                                                    <span className={`w-1.5 h-7 rounded-full ${styles.base} shadow-sm`}></span>
+                                                    <span className={`w-1.5 rounded-full ${styles.base} shadow-sm ${viewLayout === 'compact' ? 'h-5' : 'h-7'}`}></span>
                                                     {section.title}
                                                 </h3>
                                             )}
 
-                                            {/* Links and Rich Text - Force stacked if checkbox is checked, otherwise use grid layout (side-by-side) */}
-                                            <div className={shouldForceStacked ? 'space-y-4' : 'linknest-content-link-grid'}>
+                                            {/* Links and Rich Text */}
+                                            <div className={linkContainerClass}>
                                                 {(() => {
                                                     // Merge links and rich text, sort by position
                                                     const sortedItems = [
@@ -4142,7 +4229,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 <div
                                                                     key={item.id}
                                                                     style={{ animationDelay: `${animationDelay}ms` }}
-                                                                    className="linknest-content-rich-text rich-text-content-item animate-in fade-in slide-in-from-bottom-2"
+                                                                    className={`linknest-content-rich-text rich-text-content-item animate-in fade-in slide-in-from-bottom-2 ${
+                                                                        viewLayout === 'grid' ? 'col-span-full' : ''
+                                                                    }`}
                                                                 >
                                                                     <div
                                                                         className="rich-text-content prose prose-sm max-w-none dark:prose-invert prose-p:text-slate-600 dark:prose-p:text-slate-400 prose-a:text-brand-500 dark:prose-a:text-brand-400 prose-headings:text-slate-800 dark:prose-headings:text-slate-200"
@@ -4156,32 +4245,64 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         const link = item as Link;
                                                         const health = linkHealth[link.id];
                                                         const isBroken = health?.status === 'broken';
+                                                        const isGridCards = viewLayout === 'grid' && !shouldForceStacked;
+                                                        const isCompact = viewLayout === 'compact' && !shouldForceStacked;
 
                                                         return (
                                                             <div
                                                                 key={link.id}
                                                                 style={{ animationDelay: `${animationDelay}ms` }}
                                                                 className={`
-                                                    linknest-content-link group relative flex items-center gap-4 p-4 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60
+                                                    linknest-content-link group relative rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60
                                                     hover:border-brand-300 dark:hover:border-brand-500/50 transition-all duration-300 shadow-sm
                                                     ${isBroken ? 'border-red-300 dark:border-red-500/50 bg-red-50/50 dark:bg-red-900/10' : ''}
+                                                    ${isGridCards
+                                                        ? 'flex flex-col items-center text-center gap-2 p-4 pt-5'
+                                                        : isCompact
+                                                            ? 'flex items-center gap-2 px-2.5 py-1.5 rounded-lg'
+                                                            : 'flex items-center gap-4 p-4'}
+                                                    ${getTileAnimationClass((link.animation as TileAnimation) || 'none')}
                                                 `}
                                                                 title={link.tooltip || link.label}
                                                             >
-                                                                {/* Health Indicator */}
-                                                                <div className="linknest-content-link-health flex flex-col items-center gap-1 shrink-0">
-                                                                    {getHealthIndicator(link.id)}
-                                                                </div>
+                                                                {/* Icon + health (grid: alive dot centered above icon) */}
+                                                                <div className={`relative shrink-0 ${
+                                                                    isGridCards
+                                                                        ? 'mb-0.5'
+                                                                        : isCompact
+                                                                            ? 'flex items-center gap-1.5'
+                                                                            : 'flex items-center gap-2'
+                                                                }`}>
+                                                                    <div className={`linknest-content-link-health flex flex-col items-center gap-1 shrink-0 ${
+                                                                        isGridCards
+                                                                            ? 'absolute bottom-full left-1/2 -translate-x-1/2 mb-[5px] z-10'
+                                                                            : ''
+                                                                    }`}>
+                                                                        {getHealthIndicator(link.id)}
+                                                                    </div>
 
-                                                                <div className={`linknest-content-link-icon w-11 h-11 rounded-xl ${styles.iconBg} flex items-center justify-center shrink-0 text-lg select-none shadow-sm border border-white/20`}>
-                                                                    {link.icon || '🔗'}
+                                                                    <div className={`linknest-content-link-icon rounded-xl ${styles.iconBg} flex items-center justify-center select-none shadow-sm border border-white/20 ${
+                                                                        isGridCards
+                                                                            ? 'w-14 h-14 text-2xl rounded-2xl'
+                                                                            : isCompact
+                                                                                ? 'w-7 h-7 text-sm rounded-lg'
+                                                                                : 'w-11 h-11 text-lg'
+                                                                    }`}>
+                                                                        {link.icon || '🔗'}
+                                                                    </div>
                                                                 </div>
 
                                                                 <a
                                                                     href={link.url}
                                                                     target="_blank"
                                                                     rel="noopener noreferrer"
-                                                                    className="flex-1 min-w-0 block focus:outline-none pr-32 overflow-hidden"
+                                                                    className={`min-w-0 block focus:outline-none overflow-hidden ${
+                                                                        isGridCards
+                                                                            ? 'w-full px-1 pb-1'
+                                                                            : isCompact
+                                                                                ? 'flex-1 pr-20'
+                                                                                : 'flex-1 pr-32'
+                                                                    }`}
                                                                     onClick={(e) => {
                                                                         // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                                                                         if (e.ctrlKey || e.metaKey) {
@@ -4228,12 +4349,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         // Menu will only appear when clicking the browser button
                                                                     }}
                                                                 >
-                                                                    <div className="flex items-center gap-2">
+                                                                    <div className={`flex items-center gap-2 ${isGridCards ? 'justify-center' : ''}`}>
                                                                         <h4
-                                                                            className={`linknest-content-link-title text-sm font-semibold break-words ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}
+                                                                            className={`linknest-content-link-title font-semibold ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors ${
+                                                                                isCompact
+                                                                                    ? 'text-xs truncate'
+                                                                                    : isGridCards
+                                                                                        ? 'text-sm text-center line-clamp-2 break-words'
+                                                                                        : 'text-sm break-words'
+                                                                            }`}
                                                                             style={{
-                                                                                wordBreak: 'break-word',
-                                                                                overflowWrap: 'anywhere',
+                                                                                wordBreak: isCompact ? 'normal' : 'break-word',
+                                                                                overflowWrap: isCompact ? 'normal' : 'anywhere',
                                                                                 ...(link.textColor ? {
                                                                                     color: link.textColor,
                                                                                     // Add text shadow for better visibility
@@ -4244,9 +4371,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             dangerouslySetInnerHTML={{ __html: link.label || '' }}
                                                                         />
                                                                     </div>
-                                                                    <div className="flex flex-col gap-0.5 mt-0.5 overflow-hidden">
+                                                                    <div className={`flex flex-col gap-0.5 overflow-hidden ${
+                                                                        isCompact ? 'hidden' : isGridCards ? 'mt-0.5 items-center' : 'mt-0.5'
+                                                                    }`}>
                                                                         <div className="linknest-content-link-domain flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors overflow-hidden">
-                                                                            <span className="break-words">
+                                                                            <span className={`break-words ${isGridCards ? 'line-clamp-1 max-w-full' : ''}`}>
                                                                                 {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
                                                                             </span>
                                                                             {link.visibility && link.visibility !== 'public' && (
@@ -4409,7 +4538,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     document.body
                                                                 )}
 
-                                                                <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all duration-200 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm p-0.5 rounded-lg border border-slate-200/50 dark:border-slate-700/50 z-20 pointer-events-none group-hover:pointer-events-auto">
+                                                                <div className={`absolute flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all duration-200 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm p-0.5 rounded-lg border border-slate-200/50 dark:border-slate-700/50 z-20 pointer-events-none group-hover:pointer-events-auto ${
+                                                                    isGridCards || isCompact ? 'top-1 right-1' : 'top-1.5 right-1.5'
+                                                                }`}>
                                                                     {/* Notes info button - only show if link has notes */}
                                                                     {link.notes && link.notes.trim() && (
                                                                         <button
@@ -5300,6 +5431,28 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         </button>
                                     </div>
                                 )}
+
+                                {/* Sections entrance animation (header / page animation) */}
+                                <div>
+                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-3">
+                                        Sections Animation
+                                    </label>
+                                    <div className="flex items-center gap-3">
+                                        <TileAnimationSelector
+                                            animationsOnly
+                                            persistGlobal={false}
+                                            value={editPageAnimation}
+                                            onAnimationChange={setEditPageAnimation}
+                                            scopeLabel="SECTIONS ANIMATION"
+                                            scopeHint="Animates whole link sections on this page"
+                                            buttonTitle="Choose entrance animation for link sections"
+                                        />
+                                        <span className="text-xs text-slate-500 dark:text-slate-400">
+                                            {getAnimationOption(editPageAnimation).name}
+                                            <span className="block text-[10px] mt-0.5">Applies to section cards — links use their own animation in edit mode</span>
+                                        </span>
+                                    </div>
+                                </div>
 
                                 {/* Version History Section */}
                                 <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 shadow-sm mt-6">
@@ -6484,7 +6637,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                             notes: link.notes || '',
                                                                                                             tooltip: link.tooltip || '',
                                                                                                             browser: link.browser || 'default',
-                                                                                                            richTextContent: ''
+                                                                                                            richTextContent: '',
+                                                                                                            animation: link.animation || 'none'
                                                                                                         };
                                                                                                         setEditLinkState({
                                                                                                             ...editLinkState,
@@ -6512,10 +6666,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                         textColor: link.textColor || '',
                                                                                                         visibility: link.visibility || 'public',
                                                                                                         allowedUsers: link.allowedUsers || [],
+                                                                                                        allowedGroups: link.allowedGroups || [],
                                                                                                         notes: link.notes || '',
                                                                                                         tooltip: link.tooltip || '',
                                                                                                         browser: link.browser || 'default',
-                                                                                                        richTextContent: ''
+                                                                                                        richTextContent: '',
+                                                                                                        animation: link.animation || 'none'
                                                                                                     };
                                                                                                     setEditLinkState({
                                                                                                         ...editLinkState,
@@ -6573,6 +6729,27 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                 </p>
                                                                                             </div>
                                                                                         )}
+
+                                                                                        {/* Link entrance animation */}
+                                                                                        <div>
+                                                                                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
+                                                                                                Entrance Animation
+                                                                                            </label>
+                                                                                            <div className="flex items-center gap-3">
+                                                                                                <TileAnimationSelector
+                                                                                                    persistGlobal={false}
+                                                                                                    animationsOnly
+                                                                                                    value={(editLinkState[link.id]?.animation as TileAnimation) || 'none'}
+                                                                                                    onAnimationChange={(animation) => updateEditLinkState(link.id, 'animation', animation)}
+                                                                                                    scopeLabel="Link Animation"
+                                                                                                    scopeHint="This link only"
+                                                                                                    buttonTitle="Choose entrance animation for this link"
+                                                                                                />
+                                                                                                <span className="text-xs text-slate-500 dark:text-slate-400">
+                                                                                                    {getAnimationOption(editLinkState[link.id]?.animation).name}
+                                                                                                </span>
+                                                                                            </div>
+                                                                                        </div>
 
                                                                                         {/* User and Group Selector for Private Visibility */}
                                                                                         {editLinkState[link.id]?.visibility === 'private' && (
@@ -6860,7 +7037,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     onClick={() => {
                                                                                         setShowAddLinkForm(prev => ({ ...prev, [section.id]: false }));
                                                                                         // Clear form when closing
-                                                                                        setNewLinkState(prev => ({ ...prev, [section.id]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '' } }));
+                                                                                        setNewLinkState(prev => ({ ...prev, [section.id]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '', animation: 'none' } }));
                                                                                     }}
                                                                                     className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded transition-colors"
                                                                                     title="Close form"
@@ -7064,6 +7241,27 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     </p>
                                                                                 </div>
                                                                             )}
+
+                                                                            {/* Link entrance animation */}
+                                                                            <div>
+                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
+                                                                                    Entrance Animation
+                                                                                </label>
+                                                                                <div className="flex items-center gap-3">
+                                                                                    <TileAnimationSelector
+                                                                                        persistGlobal={false}
+                                                                                        animationsOnly
+                                                                                        value={(newLinkState[section.id]?.animation as TileAnimation) || 'none'}
+                                                                                        onAnimationChange={(animation) => updateNewLinkState(section.id, 'animation', animation)}
+                                                                                        scopeLabel="Link Animation"
+                                                                                        scopeHint="This link only"
+                                                                                        buttonTitle="Choose entrance animation for this link"
+                                                                                    />
+                                                                                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                                                                                        {getAnimationOption(newLinkState[section.id]?.animation).name}
+                                                                                    </span>
+                                                                                </div>
+                                                                            </div>
 
                                                                             {/* User and Group Selector for Private Visibility */}
                                                                             {(newLinkState[section.id]?.visibility || 'public') === 'private' && (
