@@ -6151,7 +6151,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             <li><strong>JSON format supports:</strong> All link properties (visibility, notes, tooltips, icons, text colors, browser settings), rich text content with formatting, tabs with scheduling, section and tab text colors, tile-level browser preferences, and visibility controls</li>
                             <li>Category imports preserve the category name from the export file</li>
                             <li>Rich text content, tabs, and all advanced features are preserved in JSON exports and can be imported back</li>
-                            <li>Export version 1.1 includes all new features - older 1.0 exports are still supported for backward compatibility</li>
+                            <li>Export version 1.2 includes animations, celebrations, decorations, and ACLs — older 1.0/1.1 exports are still supported</li>
                           </ul>
                         </div>
                       </div>

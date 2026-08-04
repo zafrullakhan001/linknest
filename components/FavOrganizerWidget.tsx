@@ -1000,7 +1000,7 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
     }
 
     return {
-      version: '1.1',
+      version: '1.2',
       type: 'category',
       exportedAt: Date.now(),
       categoryName: 'Main',
@@ -2252,7 +2252,7 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
       });
 
       const organized = {
-        version: '1.1',
+        version: '1.2',
         type: 'category',
         exportedAt: Date.now(),
         categoryName: 'Main',
@@ -2370,7 +2370,7 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
       });
 
       const organized = {
-        version: '1.1',
+        version: '1.2',
         type: 'category',
         exportedAt: Date.now(),
         categoryName: 'Main',

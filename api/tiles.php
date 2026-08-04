@@ -1399,6 +1399,11 @@ function handleCreateTile() {
         ? $data['pageAnimation']
         : null;
 
+    // Default browser for links in this space (import/create)
+    $browser = isset($data['browser']) && $data['browser'] !== 'default' && $data['browser'] !== ''
+        ? $data['browser']
+        : null;
+
     // Position: use provided value (e.g. from import) or append at end so tile order is preserved
     $position = null;
     if (isset($data['position']) && is_numeric($data['position'])) {
@@ -1419,7 +1424,7 @@ function handleCreateTile() {
         $sourceTab = 'public';
     }
     
-    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     
     if (!$stmt->execute([
         $tileId,
@@ -1438,6 +1443,7 @@ function handleCreateTile() {
         $openInNewTab,
         $visibleFrom,
         $expiresAt,
+        $browser,
         $tileBackgroundColor,
         $tileGradientEnabled,
         $tileGradientColors,
@@ -1472,18 +1478,25 @@ function handleCreateTile() {
     
     // Handle tabs (new structure) or sections (backward compatibility)
     if (isset($data['tabs']) && is_array($data['tabs'])) {
-        // New structure with tabs
+        // New structure with tabs — mirror updateTileInternal so import preserves ACL + schedule fields
         foreach ($data['tabs'] as $tabIndex => $tab) {
             $tabId = $tab['id'] ?? uniqid('tab_', true);
-            $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+            $tabColor = (!empty($tab['textColor']) && trim($tab['textColor']) !== '') ? trim($tab['textColor']) : null;
+            $tabVisibility = $tab['visibility'] ?? 'public';
+            $tabAllowedUsers = isset($tab['allowedUsers']) && is_array($tab['allowedUsers']) ? json_encode($tab['allowedUsers']) : null;
+            $tabAllowedGroups = isset($tab['allowedGroups']) && is_array($tab['allowedGroups']) ? json_encode($tab['allowedGroups']) : null;
+            $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, visible_from, expires_at, visibility, allowed_users, allowed_groups) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             $tabStmt->execute([
                 $tabId,
                 $tileId,
                 $tab['title'] ?? 'New Tab',
                 $tab['position'] ?? $tabIndex,
-                (!empty($tab['textColor']) && trim($tab['textColor']) !== '') ? trim($tab['textColor']) : null,
+                $tabColor,
                 $tab['visibleFrom'] ?? null,
-                $tab['expiresAt'] ?? null
+                $tab['expiresAt'] ?? null,
+                $tabVisibility,
+                $tabAllowedUsers,
+                $tabAllowedGroups
             ]);
             
             // Insert sections for this tab
@@ -1491,7 +1504,10 @@ function handleCreateTile() {
                 foreach ($tab['sections'] as $sectionIndex => $section) {
                     $sectionId = $section['id'] ?? uniqid('section_', true);
                     $sectionPosition = isset($section['position']) ? (int)$section['position'] : $sectionIndex;
-                    $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                    $secVisibility = $section['visibility'] ?? 'public';
+                    $secAllowedUsers = isset($section['allowedUsers']) && is_array($section['allowedUsers']) ? json_encode($section['allowedUsers']) : null;
+                    $secAllowedGroups = isset($section['allowedGroups']) && is_array($section['allowedGroups']) ? json_encode($section['allowedGroups']) : null;
+                    $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view, position, visibility, allowed_users, allowed_groups) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                     $sectionStmt->execute([
                         $sectionId,
                         $tileId,
@@ -1501,18 +1517,21 @@ function handleCreateTile() {
                         $section['visibleFrom'] ?? null,
                         $section['expiresAt'] ?? null,
                         isset($section['forceStackedView']) && $section['forceStackedView'] === true ? 1 : 0,
-                        $sectionPosition
+                        $sectionPosition,
+                        $secVisibility,
+                        $secAllowedUsers,
+                        $secAllowedGroups
                     ]);
                     
                     // Insert links for this section
                     if (isset($section['links']) && is_array($section['links'])) {
                         foreach ($section['links'] as $link) {
                             $linkId = $link['id'] ?? uniqid('link_', true);
-                            $visibility = $link['visibility'] ?? 'public';
-                            $allowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) 
+                            $linkVisibility = $link['visibility'] ?? 'public';
+                            $linkAllowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) 
                                 ? json_encode($link['allowedUsers']) 
                                 : null;
-                            $allowedGroups = isset($link['allowedGroups']) && is_array($link['allowedGroups']) 
+                            $linkAllowedGroups = isset($link['allowedGroups']) && is_array($link['allowedGroups']) 
                                 ? json_encode($link['allowedGroups']) 
                                 : null;
                             try {
@@ -1524,9 +1543,9 @@ function handleCreateTile() {
                                     $link['url'],
                                     $link['icon'] ?? null,
                                     $link['textColor'] ?? null,
-                                    $visibility,
-                                    $allowedUsers,
-                                    $allowedGroups,
+                                    $linkVisibility,
+                                    $linkAllowedUsers,
+                                    $linkAllowedGroups,
                                     $link['notes'] ?? null,
                                     $link['tooltip'] ?? null,
                                     $link['visibleFrom'] ?? null,
@@ -1547,9 +1566,9 @@ function handleCreateTile() {
                                         $sectionId,
                                         $link['label'],
                                         $link['url'],
-                                        $visibility,
-                                        $allowedUsers,
-                                        $allowedGroups ?? null,
+                                        $linkVisibility,
+                                        $linkAllowedUsers,
+                                        $linkAllowedGroups,
                                         $link['notes'] ?? null,
                                         $link['tooltip'] ?? null,
                                         $link['visibleFrom'] ?? null,
@@ -1599,23 +1618,31 @@ function handleCreateTile() {
         foreach ($data['sections'] as $sectionIndex => $section) {
             $sectionId = $section['id'] ?? uniqid('section_', true);
             $sectionPosition = isset($section['position']) ? (int)$section['position'] : $sectionIndex;
-            $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?)');
+            $secVisibility = $section['visibility'] ?? 'public';
+            $secAllowedUsers = isset($section['allowedUsers']) && is_array($section['allowedUsers']) ? json_encode($section['allowedUsers']) : null;
+            $secAllowedGroups = isset($section['allowedGroups']) && is_array($section['allowedGroups']) ? json_encode($section['allowedGroups']) : null;
+            $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view, position, visibility, allowed_users, allowed_groups) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             $sectionStmt->execute([
                 $sectionId,
                 $tileId,
                 $defaultTabId,
                 $section['title'] ?? '',
                 $section['textColor'] ?? null,
+                $section['visibleFrom'] ?? null,
+                $section['expiresAt'] ?? null,
                 isset($section['forceStackedView']) && $section['forceStackedView'] === true ? 1 : 0,
-                $sectionPosition
+                $sectionPosition,
+                $secVisibility,
+                $secAllowedUsers,
+                $secAllowedGroups
             ]);
             
             if (isset($section['links']) && is_array($section['links'])) {
                 foreach ($section['links'] as $link) {
                     $linkId = $link['id'] ?? uniqid('link_', true);
-                    $visibility = $link['visibility'] ?? 'public';
-                    $allowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) ? json_encode($link['allowedUsers']) : null;
-                    $allowedGroups = isset($link['allowedGroups']) && is_array($link['allowedGroups']) ? json_encode($link['allowedGroups']) : null;
+                    $linkVisibility = $link['visibility'] ?? 'public';
+                    $linkAllowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) ? json_encode($link['allowedUsers']) : null;
+                    $linkAllowedGroups = isset($link['allowedGroups']) && is_array($link['allowedGroups']) ? json_encode($link['allowedGroups']) : null;
                     try {
                         $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, allowed_groups, notes, tooltip, browser, animation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                         $linkStmt->execute([
@@ -1625,9 +1652,9 @@ function handleCreateTile() {
                             $link['url'],
                             $link['icon'] ?? null,
                             $link['textColor'] ?? null,
-                            $visibility,
-                            $allowedUsers,
-                            $allowedGroups,
+                            $linkVisibility,
+                            $linkAllowedUsers,
+                            $linkAllowedGroups,
                             $link['notes'] ?? null,
                             $link['tooltip'] ?? null,
                             $link['browser'] ?? null,
@@ -1643,9 +1670,9 @@ function handleCreateTile() {
                                 $sectionId,
                                 $link['label'],
                                 $link['url'],
-                                $visibility,
-                                $allowedUsers,
-                                $allowedGroups,
+                                $linkVisibility,
+                                $linkAllowedUsers,
+                                $linkAllowedGroups,
                                 $link['notes'] ?? null,
                                 $link['tooltip'] ?? null
                             ]);

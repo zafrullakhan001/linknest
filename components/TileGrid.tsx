@@ -5102,9 +5102,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         // Small delay to show progress animation
         await new Promise(resolve => setTimeout(resolve, 100));
 
-        // Prepare export payload
+        // Prepare export payload (keep in sync with spaceTransferService v1.2)
         const payload = {
-          version: '1.1' as const,
+          version: '1.2' as const,
           type: 'category' as const,
           exportedAt: Date.now(),
           categoryName,

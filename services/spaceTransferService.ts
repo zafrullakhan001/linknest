@@ -3,7 +3,8 @@ import { Tile, LinkSection, Link } from '../types';
 export type SpaceExportType = 'tile' | 'category' | 'all_categories';
 
 export interface SpaceExportFile {
-  version: '1.2'; // Includes all current fields: decorations, messages, allowedGroups, link richTextContent, section/tab positions, etc.
+  // 1.2: decorations, messages (celebration + url/urlLabel), pageAnimation, link animation, allowedGroups (tile + nested)
+  version: '1.2';
   type: SpaceExportType;
   exportedAt: number;
   tile?: Tile;
@@ -29,6 +30,55 @@ const slugify = (value: string) =>
     .replace(/^-+|-+$/g, '')
     .slice(0, 50) || 'space';
 
+const asNumberArray = (value: unknown): number[] | undefined =>
+  Array.isArray(value)
+    ? value.filter((v): v is number => typeof v === 'number')
+    : undefined;
+
+const MESSAGE_ANIMATION_TYPES = [
+  'rollover',
+  'still',
+  'flash',
+  'flip-horizontal',
+  'flip-vertical',
+  'bounce',
+  'pulse',
+  'shake',
+  'fade',
+  'slide'
+] as const;
+
+const CELEBRATION_EFFECTS = [
+  'none',
+  'fireworks',
+  'confetti',
+  'snowfall',
+  'hearts-rising',
+  'hearts-falling',
+  'bubbles',
+  'butterflies',
+  'birds-flying',
+  'rocket-launch',
+  'burst-fireworks',
+  'sparkles',
+  'petals',
+  'shooting-stars',
+  'leaves',
+  'fireflies',
+  'balloons',
+  'stars',
+  'rainbow'
+] as const;
+
+const GRADIENT_TYPES = [
+  'linear',
+  'radial',
+  'conic',
+  'repeating-linear',
+  'repeating-radial',
+  'repeating-conic'
+] as const;
+
 const triggerDownload = (data: unknown, filename: string) => {
   const json = JSON.stringify(data, null, 2);
   const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
@@ -40,6 +90,66 @@ const triggerDownload = (data: unknown, filename: string) => {
   a.click();
   document.body.removeChild(a);
   window.URL.revokeObjectURL(url);
+};
+
+/** Normalize a single link from import JSON */
+const normalizeImportedLink = (link: any): Link => ({
+  id: generateId(),
+  label: String(link.label || ''),
+  url: String(link.url || ''),
+  icon: typeof link.icon === 'string' ? link.icon : undefined,
+  textColor: typeof link.textColor === 'string' ? link.textColor : undefined,
+  browser: typeof link.browser === 'string' ? link.browser : undefined,
+  position: typeof link.position === 'number' ? link.position : undefined,
+  visibility: link.visibility || 'public',
+  allowedUsers: asNumberArray(link.allowedUsers),
+  allowedGroups: asNumberArray(link.allowedGroups),
+  notes: link.notes || undefined,
+  tooltip: link.tooltip || undefined,
+  richTextContent: typeof link.richTextContent === 'string' ? link.richTextContent : undefined,
+  health: link.health || undefined,
+  visibleFrom: typeof link.visibleFrom === 'string' ? link.visibleFrom : undefined,
+  expiresAt: typeof link.expiresAt === 'string' ? link.expiresAt : undefined,
+  animation: typeof link.animation === 'string' ? link.animation : undefined
+});
+
+/** Normalize rich text content items from import JSON */
+const normalizeRichTextContent = (rtc: any) => ({
+  id: generateId(),
+  content: String(rtc.content || ''),
+  position: typeof rtc.position === 'number' ? rtc.position : 0,
+  visibility: rtc.visibility || 'public',
+  allowedUsers: asNumberArray(rtc.allowedUsers),
+  allowedGroups: asNumberArray(rtc.allowedGroups),
+  visibleFrom: typeof rtc.visibleFrom === 'string' ? rtc.visibleFrom : undefined,
+  expiresAt: typeof rtc.expiresAt === 'string' ? rtc.expiresAt : undefined
+});
+
+/** Normalize a section (links + rich text) from import JSON */
+const normalizeImportedSection = (section: any): LinkSection => {
+  const links: Link[] = Array.isArray(section.links)
+    ? section.links.map(normalizeImportedLink)
+    : [];
+
+  const richTextContent = Array.isArray(section.richTextContent)
+    ? section.richTextContent.map(normalizeRichTextContent)
+    : undefined;
+
+  return {
+    id: generateId(),
+    title: String(section.title || ''),
+    position: typeof section.position === 'number' ? section.position : undefined,
+    textColor: typeof section.textColor === 'string' ? section.textColor : undefined,
+    forceStackedView:
+      typeof section.forceStackedView === 'boolean' ? section.forceStackedView : undefined,
+    visibility: section.visibility || 'public',
+    allowedUsers: asNumberArray(section.allowedUsers),
+    allowedGroups: asNumberArray(section.allowedGroups),
+    visibleFrom: typeof section.visibleFrom === 'string' ? section.visibleFrom : undefined,
+    expiresAt: typeof section.expiresAt === 'string' ? section.expiresAt : undefined,
+    links,
+    richTextContent
+  };
 };
 
 /** Export a single space/tile to a JSON file */
@@ -182,128 +292,19 @@ export const normalizeImportedTiles = (
           position: typeof tab.position === 'number' ? tab.position : 0,
           textColor: typeof tab.textColor === 'string' ? tab.textColor : undefined,
           visibility: tab.visibility || 'public',
-          allowedUsers: Array.isArray(tab.allowedUsers)
-            ? tab.allowedUsers
-            : undefined,
+          allowedUsers: asNumberArray(tab.allowedUsers),
+          allowedGroups: asNumberArray(tab.allowedGroups),
           visibleFrom: typeof tab.visibleFrom === 'string' ? tab.visibleFrom : undefined,
           expiresAt: typeof tab.expiresAt === 'string' ? tab.expiresAt : undefined,
           sections: Array.isArray(tab.sections)
-            ? tab.sections.map((section: any) => {
-                const links: Link[] = Array.isArray(section.links)
-                  ? section.links.map((link: any) => ({
-                      id: generateId(),
-                      label: String(link.label || ''),
-                      url: String(link.url || ''),
-                      icon: typeof link.icon === 'string' ? link.icon : undefined,
-                      textColor: typeof link.textColor === 'string' ? link.textColor : undefined,
-                      browser: typeof link.browser === 'string' ? link.browser : undefined,
-                      position: typeof link.position === 'number' ? link.position : undefined,
-                      visibility: link.visibility || 'public',
-                      allowedUsers: Array.isArray(link.allowedUsers)
-                        ? link.allowedUsers
-                        : undefined,
-                      notes: link.notes || undefined,
-                      tooltip: link.tooltip || undefined,
-                      richTextContent: typeof link.richTextContent === 'string' ? link.richTextContent : undefined,
-                      health: link.health || undefined,
-                      visibleFrom: typeof link.visibleFrom === 'string' ? link.visibleFrom : undefined,
-                      expiresAt: typeof link.expiresAt === 'string' ? link.expiresAt : undefined,
-                      animation: typeof link.animation === 'string' ? link.animation : undefined
-                    }))
-                  : [];
-
-                // Handle rich text content
-                const richTextContent = Array.isArray(section.richTextContent)
-                  ? section.richTextContent.map((rtc: any) => ({
-                      id: generateId(),
-                      content: String(rtc.content || ''),
-                      position: typeof rtc.position === 'number' ? rtc.position : 0,
-                      visibility: rtc.visibility || 'public',
-                      allowedUsers: Array.isArray(rtc.allowedUsers)
-                        ? rtc.allowedUsers
-                        : undefined,
-                      visibleFrom: typeof rtc.visibleFrom === 'string' ? rtc.visibleFrom : undefined,
-                      expiresAt: typeof rtc.expiresAt === 'string' ? rtc.expiresAt : undefined
-                    }))
-                  : undefined;
-
-                return {
-                  id: generateId(),
-                  title: String(section.title || ''),
-                  position: typeof section.position === 'number' ? section.position : undefined,
-                  textColor: typeof section.textColor === 'string' ? section.textColor : undefined,
-                  forceStackedView: typeof section.forceStackedView === 'boolean' ? section.forceStackedView : undefined,
-                  visibility: section.visibility || 'public',
-                  allowedUsers: Array.isArray(section.allowedUsers)
-                    ? section.allowedUsers
-                    : undefined,
-                  visibleFrom: typeof section.visibleFrom === 'string' ? section.visibleFrom : undefined,
-                  expiresAt: typeof section.expiresAt === 'string' ? section.expiresAt : undefined,
-                  links,
-                  richTextContent
-                };
-              })
+            ? tab.sections.map(normalizeImportedSection)
             : []
         }))
       : [];
 
     // Handle sections structure (backward compatibility)
     const sections: LinkSection[] = Array.isArray(src.sections)
-      ? src.sections.map((section: any) => {
-          const links: Link[] = Array.isArray(section.links)
-            ? section.links.map((link: any) => ({
-                id: generateId(),
-                label: String(link.label || ''),
-                url: String(link.url || ''),
-                icon: typeof link.icon === 'string' ? link.icon : undefined,
-                textColor: typeof link.textColor === 'string' ? link.textColor : undefined,
-                browser: typeof link.browser === 'string' ? link.browser : undefined,
-                position: typeof link.position === 'number' ? link.position : undefined,
-                visibility: link.visibility || 'public',
-                allowedUsers: Array.isArray(link.allowedUsers)
-                  ? link.allowedUsers
-                  : undefined,
-                notes: link.notes || undefined,
-                tooltip: link.tooltip || undefined,
-                richTextContent: typeof link.richTextContent === 'string' ? link.richTextContent : undefined,
-                health: link.health || undefined,
-                visibleFrom: typeof link.visibleFrom === 'string' ? link.visibleFrom : undefined,
-                expiresAt: typeof link.expiresAt === 'string' ? link.expiresAt : undefined,
-                animation: typeof link.animation === 'string' ? link.animation : undefined
-              }))
-            : [];
-
-          // Handle rich text content
-          const richTextContent = Array.isArray(section.richTextContent)
-            ? section.richTextContent.map((rtc: any) => ({
-                id: generateId(),
-                content: String(rtc.content || ''),
-                position: typeof rtc.position === 'number' ? rtc.position : 0,
-                visibility: rtc.visibility || 'public',
-                allowedUsers: Array.isArray(rtc.allowedUsers)
-                  ? rtc.allowedUsers
-                  : undefined,
-                visibleFrom: typeof rtc.visibleFrom === 'string' ? rtc.visibleFrom : undefined,
-                expiresAt: typeof rtc.expiresAt === 'string' ? rtc.expiresAt : undefined
-              }))
-            : undefined;
-
-          return {
-            id: generateId(),
-            title: String(section.title || ''),
-            position: typeof section.position === 'number' ? section.position : undefined,
-            textColor: typeof section.textColor === 'string' ? section.textColor : undefined,
-            forceStackedView: typeof section.forceStackedView === 'boolean' ? section.forceStackedView : undefined,
-            visibility: section.visibility || 'public',
-            allowedUsers: Array.isArray(section.allowedUsers)
-              ? section.allowedUsers
-              : undefined,
-            visibleFrom: typeof section.visibleFrom === 'string' ? section.visibleFrom : undefined,
-            expiresAt: typeof section.expiresAt === 'string' ? section.expiresAt : undefined,
-            links,
-            richTextContent
-          };
-        })
+      ? src.sections.map(normalizeImportedSection)
       : [];
 
     const tile: Tile = {
@@ -318,8 +319,8 @@ export const normalizeImportedTiles = (
       group: baseGroup,
       createdAt: typeof src.createdAt === 'number' ? src.createdAt : now,
       visibility: src.visibility || 'public',
-      allowedUsers: Array.isArray(src.allowedUsers) ? src.allowedUsers : undefined,
-      allowedGroups: Array.isArray(src.allowedGroups) ? src.allowedGroups : undefined,
+      allowedUsers: asNumberArray(src.allowedUsers),
+      allowedGroups: asNumberArray(src.allowedGroups),
       isHyperlink: src.isHyperlink || false,
       hyperlinkUrl: src.hyperlinkUrl || undefined,
       openInNewTab: src.openInNewTab !== undefined ? src.openInNewTab : undefined,
@@ -330,29 +331,63 @@ export const normalizeImportedTiles = (
       tileBackgroundColor: typeof src.tileBackgroundColor === 'string' ? src.tileBackgroundColor : undefined,
       tileGradientEnabled: typeof src.tileGradientEnabled === 'boolean' ? src.tileGradientEnabled : undefined,
       tileGradientColors: Array.isArray(src.tileGradientColors) ? src.tileGradientColors : undefined,
-      tileGradientDirection: (typeof src.tileGradientDirection === 'string' || typeof src.tileGradientDirection === 'number') ? src.tileGradientDirection : undefined,
-      tileGradientType: (typeof src.tileGradientType === 'string' && ['linear', 'radial', 'conic', 'repeating-linear', 'repeating-radial', 'repeating-conic'].includes(src.tileGradientType)) ? src.tileGradientType as any : undefined,
-      tileGradientColorPositions: Array.isArray(src.tileGradientColorPositions) ? src.tileGradientColorPositions : undefined,
+      tileGradientDirection:
+        typeof src.tileGradientDirection === 'string' || typeof src.tileGradientDirection === 'number'
+          ? src.tileGradientDirection
+          : undefined,
+      tileGradientType:
+        typeof src.tileGradientType === 'string' &&
+        (GRADIENT_TYPES as readonly string[]).includes(src.tileGradientType)
+          ? (src.tileGradientType as Tile['tileGradientType'])
+          : undefined,
+      tileGradientColorPositions: Array.isArray(src.tileGradientColorPositions)
+        ? src.tileGradientColorPositions
+        : undefined,
       tileBorderRadius: typeof src.tileBorderRadius === 'number' ? src.tileBorderRadius : undefined,
       tileTextColor: typeof src.tileTextColor === 'string' ? src.tileTextColor : undefined,
+      // Space page entrance animation (link sections)
       pageAnimation: typeof src.pageAnimation === 'string' ? src.pageAnimation : undefined,
-      // Preserve tile messages (message board messages)
+      // Preserve tile messages (message board + celebration effects)
       messages: Array.isArray(src.messages) && src.messages.length > 0
         ? src.messages.map((msg: any) => ({
-            id: generateId(), // Generate new ID for imported message
+            id: generateId(),
             content: String(msg.content || ''),
-            type: (typeof msg.type === 'string' && ['info', 'warning', 'celebration', 'alert', 'custom'].includes(msg.type)) ? msg.type as any : 'info',
+            type:
+              typeof msg.type === 'string' &&
+              ['info', 'warning', 'celebration', 'alert', 'custom'].includes(msg.type)
+                ? (msg.type as any)
+                : 'info',
             startDate: typeof msg.startDate === 'string' ? msg.startDate : new Date().toISOString(),
             endDate: typeof msg.endDate === 'string' ? msg.endDate : new Date().toISOString(),
             isActive: typeof msg.isActive === 'boolean' ? msg.isActive : false,
             priority: typeof msg.priority === 'number' ? msg.priority : undefined,
             textColor: typeof msg.textColor === 'string' ? msg.textColor : undefined,
             fontStyle: typeof msg.fontStyle === 'string' ? msg.fontStyle : undefined,
-            displayLocation: (typeof msg.displayLocation === 'string' && ['tile', 'detail', 'both'].includes(msg.displayLocation)) ? msg.displayLocation as any : 'both',
-            animationType: (typeof msg.animationType === 'string' && ['rollover', 'still', 'flash', 'flip-horizontal', 'flip-vertical', 'bounce', 'pulse', 'shake', 'fade', 'slide'].includes(msg.animationType)) ? msg.animationType as any : 'rollover',
+            displayLocation:
+              typeof msg.displayLocation === 'string' &&
+              ['tile', 'detail', 'both'].includes(msg.displayLocation)
+                ? (msg.displayLocation as any)
+                : 'both',
+            animationType:
+              typeof msg.animationType === 'string' &&
+              (MESSAGE_ANIMATION_TYPES as readonly string[]).includes(msg.animationType)
+                ? (msg.animationType as any)
+                : 'rollover',
             delayBefore: typeof msg.delayBefore === 'number' ? msg.delayBefore : undefined,
-            celebrationEffect: (typeof msg.celebrationEffect === 'string' && ['none', 'fireworks', 'confetti', 'snowfall', 'hearts-rising', 'hearts-falling', 'bubbles', 'butterflies', 'birds-flying', 'rocket-launch', 'burst-fireworks', 'sparkles', 'petals', 'shooting-stars', 'leaves', 'fireflies', 'balloons', 'stars', 'rainbow'].includes(msg.celebrationEffect)) ? msg.celebrationEffect as any : undefined,
-            celebrationConfig: typeof msg.celebrationConfig === 'object' && msg.celebrationConfig !== null ? msg.celebrationConfig : undefined
+            celebrationEffect:
+              typeof msg.celebrationEffect === 'string' &&
+              (CELEBRATION_EFFECTS as readonly string[]).includes(msg.celebrationEffect)
+                ? (msg.celebrationEffect as any)
+                : undefined,
+            celebrationConfig:
+              typeof msg.celebrationConfig === 'object' && msg.celebrationConfig !== null
+                ? msg.celebrationConfig
+                : undefined,
+            url: typeof msg.url === 'string' && msg.url.trim() ? msg.url.trim() : undefined,
+            urlLabel:
+              typeof msg.urlLabel === 'string' && msg.urlLabel.trim()
+                ? msg.urlLabel.trim()
+                : undefined
           }))
         : undefined
     };
@@ -362,14 +397,3 @@ export const normalizeImportedTiles = (
 
   return normalized;
 };
-
-
-
-
-
-
-
-
-
-
-

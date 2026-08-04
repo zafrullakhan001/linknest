@@ -38,6 +38,9 @@ const transformTile = (apiTile: any): Tile => {
     visibility: apiTile.visibility || 'public',
     sourceTab: apiTile.sourceTab === 'staging' ? 'staging' : 'public',
     allowedUsers: apiTile.allowedUsers || undefined,
+    allowedGroups: Array.isArray(apiTile.allowedGroups) && apiTile.allowedGroups.length > 0
+      ? apiTile.allowedGroups
+      : undefined,
     isFavorite: apiTile.isFavorite || false,
     isHyperlink: apiTile.isHyperlink || false,
     hyperlinkUrl: apiTile.hyperlinkUrl || undefined,

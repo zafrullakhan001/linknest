@@ -34,6 +34,80 @@ function extractDomainFromBaseDn(baseDn: string): string | null {
 }
 
 type AuthState = 'idle' | 'connecting' | 'ldap_attempting' | 'ldap_authenticating' | 'local_authenticating' | 'success';
+type AuthMethodChoice = 'local' | 'ldap' | 'auto' | 'saml';
+
+const AUTH_METHOD_STORAGE_KEY = 'linknest_preferred_auth_method';
+const LDAP_SERVER_STORAGE_KEY = 'linknest_preferred_ldap_server_index';
+
+const VALID_AUTH_METHODS: AuthMethodChoice[] = ['local', 'ldap', 'auto', 'saml'];
+
+function readStoredAuthMethod(): AuthMethodChoice | null {
+  try {
+    const stored = localStorage.getItem(AUTH_METHOD_STORAGE_KEY);
+    if (stored && VALID_AUTH_METHODS.includes(stored as AuthMethodChoice)) {
+      return stored as AuthMethodChoice;
+    }
+  } catch {
+    // ignore storage errors (private mode, blocked storage, etc.)
+  }
+  return null;
+}
+
+function writeStoredAuthMethod(method: AuthMethodChoice): void {
+  try {
+    localStorage.setItem(AUTH_METHOD_STORAGE_KEY, method);
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function readStoredLdapServerIndex(): number | null {
+  try {
+    const stored = localStorage.getItem(LDAP_SERVER_STORAGE_KEY);
+    if (stored === null) return null;
+    const index = parseInt(stored, 10);
+    return Number.isFinite(index) && index >= 0 ? index : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredLdapServerIndex(index: number): void {
+  try {
+    localStorage.setItem(LDAP_SERVER_STORAGE_KEY, String(index));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function isAuthMethodAvailable(
+  method: AuthMethodChoice,
+  ldapOn: boolean,
+  localOn: boolean,
+  samlOn: boolean
+): boolean {
+  switch (method) {
+    case 'auto':
+      return ldapOn && localOn;
+    case 'ldap':
+      return ldapOn;
+    case 'local':
+      return localOn;
+    case 'saml':
+      return samlOn;
+    default:
+      return false;
+  }
+}
+
+function resolveDefaultAuthMethod(ldapOn: boolean, localOn: boolean, samlOn: boolean): AuthMethodChoice {
+  if (ldapOn && localOn) return 'auto';
+  if (samlOn && !localOn && !ldapOn) return 'saml';
+  if (ldapOn && !localOn) return 'ldap';
+  if (localOn) return 'local';
+  if (samlOn) return 'saml';
+  return 'local';
+}
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'login' }) => {
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
@@ -41,7 +115,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [authMethod, setAuthMethod] = useState<'local' | 'ldap' | 'auto' | 'saml'>('auto');
+  const [authMethod, setAuthMethod] = useState<AuthMethodChoice>(() => readStoredAuthMethod() ?? 'auto');
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -49,7 +123,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [ldapDomain, setLdapDomain] = useState<string | null>(null);
   const [ldapEnabled, setLdapEnabled] = useState(false);
   const [ldapServers, setLdapServers] = useState<Array<{ name: string; server: string; login_domain?: string }>>([]);
-  const [selectedLdapServerIndex, setSelectedLdapServerIndex] = useState<number>(0);
+  const [selectedLdapServerIndex, setSelectedLdapServerIndex] = useState<number>(() => readStoredLdapServerIndex() ?? 0);
   const [samlEnabled, setSamlEnabled] = useState(false);
   const [localAuthEnabled, setLocalAuthEnabled] = useState(true);
   const [authState, setAuthState] = useState<AuthState>('idle');
@@ -83,52 +157,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       const localAuthEnabledValue = String(appSettings.local_auth_enabled || '1') === '1';
       setLocalAuthEnabled(localAuthEnabledValue);
 
-      // Set default auth method based on available options
-      // Also reset if current method is not available
-      const currentMethod = authMethod;
-      
-      // If LDAP is disabled but current method is 'ldap' or 'auto', switch to available method first
-      if (!enabled && (currentMethod === 'ldap' || currentMethod === 'auto')) {
-        if (samlEnabledValue) {
-          setAuthMethod('saml');
-        } else if (localAuthEnabledValue) {
-          setAuthMethod('local');
-        }
-      } else if (enabled && localAuthEnabledValue) {
-        // If both LDAP and local are enabled, default to 'auto'
-        if (currentMethod !== 'auto' && currentMethod !== 'ldap' && currentMethod !== 'local' && currentMethod !== 'saml') {
-          setAuthMethod('auto');
-        }
-      } else if (samlEnabledValue && !localAuthEnabledValue && !enabled) {
-        // If only SAML is enabled, default to 'saml'
-        if (currentMethod !== 'saml') {
-          setAuthMethod('saml');
-        }
-      } else if (enabled && !localAuthEnabledValue) {
-        // If only LDAP is enabled, default to 'ldap'
-        if (currentMethod !== 'ldap') {
-          setAuthMethod('ldap');
-        }
-      } else if (localAuthEnabledValue && !enabled && !samlEnabledValue) {
-        // If only local is enabled, default to 'local'
-        if (currentMethod !== 'local') {
-          setAuthMethod('local');
-        }
-      } else if (samlEnabledValue && localAuthEnabledValue && !enabled) {
-        // If SAML and local are enabled, default to 'local'
-        if (currentMethod === 'ldap' || currentMethod === 'auto') {
-          setAuthMethod('local');
-        }
-      } else if (samlEnabledValue && enabled && !localAuthEnabledValue) {
-        // If SAML and LDAP are enabled, default to 'saml'
-        if (currentMethod === 'local' || currentMethod === 'auto') {
-          setAuthMethod('saml');
-        }
-      } else if (samlEnabledValue && enabled && localAuthEnabledValue) {
-        // If all three are enabled, default to 'auto'
-        if (currentMethod !== 'auto' && currentMethod !== 'ldap' && currentMethod !== 'local' && currentMethod !== 'saml') {
-          setAuthMethod('auto');
-        }
+      // Prefer last-used auth method from browser storage when still available
+      const storedMethod = readStoredAuthMethod();
+      const preferredMethod = storedMethod && isAuthMethodAvailable(storedMethod, enabled, localAuthEnabledValue, samlEnabledValue)
+        ? storedMethod
+        : resolveDefaultAuthMethod(enabled, localAuthEnabledValue, samlEnabledValue);
+
+      if (!isAuthMethodAvailable(authMethod, enabled, localAuthEnabledValue, samlEnabledValue)) {
+        setAuthMethod(preferredMethod);
+      } else if (storedMethod && storedMethod !== authMethod && isAuthMethodAvailable(storedMethod, enabled, localAuthEnabledValue, samlEnabledValue)) {
+        setAuthMethod(storedMethod);
       }
 
       // Load LDAP servers list if LDAP is enabled
@@ -166,7 +204,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         }
         
         setLdapServers(servers);
-        setSelectedLdapServerIndex(0); // Reset to first server
+
+        const storedLdapIndex = readStoredLdapServerIndex();
+        const restoredIndex =
+          storedLdapIndex !== null && storedLdapIndex < servers.length
+            ? storedLdapIndex
+            : 0;
+        setSelectedLdapServerIndex(restoredIndex);
         
         // Extract domain from first server for display
         if (servers.length > 0) {
@@ -197,7 +241,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       } else {
         setLdapServers([]);
         setLdapDomain(null);
-        setSelectedLdapServerIndex(0);
       }
     } else {
       // Reset when not in login mode
@@ -206,21 +249,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
     }
   }, [isOpen, mode, appSettings]);
 
-  // Reset form when modal closes
+  // Reset form when modal closes (keep preferred auth method / LDAP server in state + localStorage)
   useEffect(() => {
     if (!isOpen) {
       setUsername('');
       setEmail('');
       setPassword('');
       setConfirmPassword('');
-      setAuthMethod('auto');
       setRememberMe(false);
       setError('');
       setSuccess('');
-      setSelectedLdapServerIndex(0);
     }
   }, [isOpen]);
 
+  const selectAuthMethod = (method: AuthMethodChoice) => {
+    setAuthMethod(method);
+    writeStoredAuthMethod(method);
+  };
+
+  const selectLdapServerIndex = (index: number) => {
+    setSelectedLdapServerIndex(index);
+    writeStoredLdapServerIndex(index);
+  };
   // Handle ESC key to close modal
   useEffect(() => {
     if (!isOpen) return;
@@ -374,12 +424,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         setEmail('');
         setPassword('');
         setConfirmPassword('');
-        setAuthMethod('auto');
         setRememberMe(false);
         setAuthState('idle');
         setProgress(0);
         setCurrentMethod(null);
-        setSelectedLdapServerIndex(0);
       } else {
         // Register: validate username, password strength and confirmation
         const trimmedUsername = username.trim();
@@ -575,7 +623,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                           name="authMethod"
                           value="auto"
                           checked={authMethod === 'auto'}
-                          onChange={(e) => setAuthMethod(e.target.value as 'local' | 'ldap' | 'auto' | 'saml')}
+                          onChange={(e) => selectAuthMethod(e.target.value as AuthMethodChoice)}
                           disabled={loading}
                           className="sr-only"
                         />
@@ -594,7 +642,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                           name="authMethod"
                           value="ldap"
                           checked={authMethod === 'ldap'}
-                          onChange={(e) => setAuthMethod(e.target.value as 'local' | 'ldap' | 'auto' | 'saml')}
+                          onChange={(e) => selectAuthMethod(e.target.value as AuthMethodChoice)}
                           disabled={loading || !ldapEnabled}
                           className="sr-only"
                         />
@@ -619,7 +667,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                           name="authMethod"
                           value="local"
                           checked={authMethod === 'local'}
-                          onChange={(e) => setAuthMethod(e.target.value as 'local' | 'ldap' | 'auto' | 'saml')}
+                          onChange={(e) => selectAuthMethod(e.target.value as AuthMethodChoice)}
                           disabled={loading}
                           className="sr-only"
                         />
@@ -638,7 +686,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                           name="authMethod"
                           value="saml"
                           checked={authMethod === 'saml'}
-                          onChange={(e) => setAuthMethod(e.target.value as 'local' | 'ldap' | 'auto' | 'saml')}
+                          onChange={(e) => selectAuthMethod(e.target.value as AuthMethodChoice)}
                           disabled={loading}
                           className="sr-only"
                         />
@@ -691,7 +739,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                   </label>
                   <select
                     value={selectedLdapServerIndex}
-                    onChange={(e) => setSelectedLdapServerIndex(parseInt(e.target.value, 10))}
+                    onChange={(e) => selectLdapServerIndex(parseInt(e.target.value, 10))}
                     disabled={loading}
                     className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 sm:px-4 sm:py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                     title="Select which LDAP server or domain to authenticate against"
@@ -1032,7 +1080,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
               setMode(mode === 'login' ? 'register' : 'login');
               setError('');
               setSuccess('');
-              setAuthMethod('auto');
               setRememberMe(false);
             }}
             className="text-xs sm:text-sm text-brand-600 dark:text-brand-400 hover:underline font-medium"
