@@ -44,8 +44,13 @@ switch ($method) {
 /**
  * Determine health status from HTTP code, curl error, and error message
  * This centralizes the status logic so both single and parallel checks use the same logic
+ *
+ * @param int $httpCode Final HTTP status code
+ * @param int $errno cURL errno
+ * @param string|null $error cURL / status error message
+ * @param int $redirectCount Number of redirects followed (CURLINFO_REDIRECT_COUNT)
  */
-function determineHealthStatus($httpCode, $errno, $error) {
+function determineHealthStatus($httpCode, $errno, $error, $redirectCount = 0) {
     // Determine status based on response
     if ($errno !== 0) {
         // cURL error occurred
@@ -60,10 +65,19 @@ function determineHealthStatus($httpCode, $errno, $error) {
         } elseif ($errno === CURLE_SSL_CONNECT_ERROR) {
             $error = 'SSL connection error';
         }
-    } elseif ($httpCode >= 200 && $httpCode < 400) {
-        // Success (2xx) or Redirect (3xx)
-        $status = 'healthy';
-        $error = null;
+    } elseif ($httpCode >= 300 && $httpCode < 400) {
+        // Final response is still a redirect
+        $status = 'redirected';
+        $error = 'Redirected (HTTP ' . $httpCode . ')';
+    } elseif ($httpCode >= 200 && $httpCode < 300) {
+        // Success (2xx) — mark as redirected when the check followed one or more redirects
+        if ($redirectCount > 0) {
+            $status = 'redirected';
+            $error = 'Reached after ' . (int)$redirectCount . ' redirect(s)';
+        } else {
+            $status = 'healthy';
+            $error = null;
+        }
     } elseif ($httpCode >= 400 && $httpCode < 500) {
         // Client error (4xx)
         if ($httpCode === 404) {
@@ -147,12 +161,13 @@ function checkUrlHealth($url) {
     $serverLatency = round((microtime(true) - $curlStartTime) * 1000); // Convert to milliseconds
     
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $redirectCount = (int)curl_getinfo($ch, CURLINFO_REDIRECT_COUNT);
     $error = curl_error($ch);
     $errno = curl_errno($ch);
     curl_close($ch);
 
     // Determine status using shared logic
-    $statusResult = determineHealthStatus($httpCode, $errno, $error);
+    $statusResult = determineHealthStatus($httpCode, $errno, $error, $redirectCount);
     $status = $statusResult['status'];
     $error = $statusResult['error'];
 
@@ -262,11 +277,12 @@ function checkUrlsParallel($urls, $maxConcurrent = 5) {
         
         $serverLatency = isset($handleStartTimes[$url]) ? round((microtime(true) - $handleStartTimes[$url]) * 1000) : 0;
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $redirectCount = (int)curl_getinfo($ch, CURLINFO_REDIRECT_COUNT);
         $error = curl_error($ch);
         $errno = curl_errno($ch);
         
         // Determine status using shared logic (same as checkUrlHealth)
-        $statusResult = determineHealthStatus($httpCode, $errno, $error);
+        $statusResult = determineHealthStatus($httpCode, $errno, $error, $redirectCount);
         $status = $statusResult['status'];
         $error = $statusResult['error'];
         

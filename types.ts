@@ -1,5 +1,5 @@
 export interface LinkHealth {
-  status: 'unknown' | 'healthy' | 'broken' | 'timeout' | 'checking' | 'restricted' | 'accessible';
+  status: 'unknown' | 'healthy' | 'broken' | 'timeout' | 'checking' | 'restricted' | 'accessible' | 'redirected';
   httpCode?: number | null;
   error?: string | null;
   checkedAt?: number | null;

@@ -808,18 +808,74 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     }, [isEditing, tile.id, tile.canEdit]); // Run when isEditing becomes true or tile changes
 
-    // Load fresh health data on mount
+    // Load stored health on open, then auto-check links when exploring (view mode)
     useEffect(() => {
-        const loadHealth = async () => {
+        let cancelled = false;
+        const tileId = tile.id;
+
+        const loadAndAutoCheckHealth = async () => {
             try {
                 const health = await linkHealthService.getAllHealth();
+                if (cancelled) return;
                 setLinkHealth(health);
             } catch (error) {
                 console.error('Failed to load link health:', error);
             }
+
+            // Only auto-check when viewing/exploring the space (not while editing)
+            if (isEditing || cancelled) return;
+
+            const sections = tile.tabs
+                ? tile.tabs.flatMap(tab => tab.sections || [])
+                : (tile.sections || []);
+            const linkIds = sections.flatMap(s => (s.links || []).map(l => l.id));
+            if (!linkIds.length) return;
+
+            setCheckingHealth(true);
+            setLinkHealth(prev => {
+                const next = { ...prev };
+                linkIds.forEach(id => {
+                    next[id] = { ...(next[id] || {}), status: 'checking' };
+                });
+                return next;
+            });
+
+            try {
+                const results = await linkHealthService.checkTileLinks(tileId);
+                if (cancelled) return;
+                if (results && typeof results === 'object') {
+                    setLinkHealth(prev => ({ ...prev, ...results }));
+                }
+            } catch (error) {
+                console.error('Failed to auto-check tile link health:', error);
+                if (cancelled) return;
+                // Fall back to last stored health so dots are not stuck on "checking"
+                try {
+                    const health = await linkHealthService.getAllHealth();
+                    if (!cancelled) setLinkHealth(health);
+                } catch {
+                    setLinkHealth(prev => {
+                        const next = { ...prev };
+                        linkIds.forEach(id => {
+                            if (next[id]?.status === 'checking') {
+                                next[id] = { ...next[id], status: 'unknown', error: 'Check failed' };
+                            }
+                        });
+                        return next;
+                    });
+                }
+            } finally {
+                if (!cancelled) {
+                    setCheckingHealth(false);
+                }
+            }
         };
-        loadHealth();
-    }, [tile.id]);
+
+        loadAndAutoCheckHealth();
+        return () => {
+            cancelled = true;
+        };
+    }, [tile.id, isEditing]);
 
     // Save view layout preference to localStorage
     useEffect(() => {

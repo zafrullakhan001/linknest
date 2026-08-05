@@ -7071,8 +7071,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             className="absolute -top-2 -left-2 w-5 h-5 rotate-45"
                             style={{
                               backgroundColor: (healthStatus === 'healthy' || healthStatus === 'accessible' || healthStatus === 'restricted') ? '#10b981' :
-                                healthStatus === 'timeout' ? '#f97316' :
-                                  healthStatus === 'broken' ? '#ef4444' : '#94a3b8'
+                                healthStatus === 'broken' ? '#ef4444' :
+                                  (healthStatus === 'timeout' || healthStatus === 'redirected' || healthStatus === 'unknown' || healthStatus === 'checking') ? '#f59e0b' : '#f59e0b'
                             }}
                           />
                         </div>
@@ -7795,8 +7795,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                               className="absolute -top-2 -left-2 w-5 h-5 rotate-45"
                               style={{
                                 backgroundColor: (healthStatus === 'healthy' || healthStatus === 'accessible' || healthStatus === 'restricted') ? '#10b981' :
-                                  healthStatus === 'timeout' ? '#f97316' :
-                                    healthStatus === 'broken' ? '#ef4444' : '#94a3b8'
+                                  healthStatus === 'broken' ? '#ef4444' :
+                                    (healthStatus === 'timeout' || healthStatus === 'redirected' || healthStatus === 'unknown' || healthStatus === 'checking') ? '#f59e0b' : '#f59e0b'
                               }}
                             />
                           </div>

@@ -154,15 +154,17 @@ export const linkHealthService = {
       case 'healthy':
       case 'accessible':
       case 'restricted':
-        return 'bg-emerald-500'; // Show all accessible/online statuses as green
+        return 'bg-emerald-500'; // Active / available
       case 'broken':
         return 'bg-red-500';
+      case 'unknown':
       case 'timeout':
-        return 'bg-amber-500';
+      case 'redirected':
+        return 'bg-amber-500'; // Unsure, timed out, or redirected
       case 'checking':
         return 'bg-blue-500 animate-pulse';
       default:
-        return 'bg-slate-400';
+        return 'bg-amber-500';
     }
   },
 
@@ -179,12 +181,16 @@ export const linkHealthService = {
         return 'Link is broken';
       case 'timeout':
         return 'Link timed out';
+      case 'redirected':
+        return 'Link redirected';
       case 'restricted':
         return 'Link is online (requires authentication)';
       case 'checking':
         return 'Checking...';
+      case 'unknown':
+        return 'Status unsure';
       default:
-        return 'Not checked';
+        return 'Status unsure';
     }
   }
 };

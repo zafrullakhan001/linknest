@@ -170,15 +170,17 @@ class FavoriteLinkHealthService {
             case 'healthy':
             case 'accessible':
             case 'restricted':
-                return 'bg-emerald-500'; // Show all accessible/online statuses as green
+                return 'bg-emerald-500'; // Active / available
             case 'broken':
                 return 'bg-red-500';
+            case 'unknown':
             case 'timeout':
-                return 'bg-orange-500';
+            case 'redirected':
+                return 'bg-amber-500'; // Unsure, timed out, or redirected
             case 'checking':
                 return 'bg-blue-500 animate-pulse';
             default:
-                return 'bg-slate-400';
+                return 'bg-amber-500';
         }
     }
 
