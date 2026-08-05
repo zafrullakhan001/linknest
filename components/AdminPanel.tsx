@@ -162,6 +162,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     const savedLayout = localStorage.getItem('adminPanelTabLayout');
     return (savedLayout === 'vertical') ? 'vertical' : 'horizontal';
   });
+  const [adminNavCollapsed, setAdminNavCollapsed] = useState(() => {
+    const saved = localStorage.getItem('adminPanelNavCollapsed');
+    return saved !== '0';
+  });
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
   const [allUsers, setAllUsers] = useState<AllUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1054,6 +1058,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   useEffect(() => {
     localStorage.setItem('adminPanelTabLayout', tabLayout);
   }, [tabLayout]);
+
+  useEffect(() => {
+    localStorage.setItem('adminPanelNavCollapsed', adminNavCollapsed ? '1' : '0');
+  }, [adminNavCollapsed]);
 
   const disabledTabs = useMemo<Set<AppTabId>>(() => getDisabledTabsFromSettings(settings), [settings.disabled_tabs]);
 
@@ -3688,7 +3696,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       )}
 
       {/* Tabs and Content Container */}
-      <div className={isMobile ? 'space-y-6' : (tabLayout === 'horizontal' ? 'space-y-6' : 'flex gap-6')}>
+      <div className={isMobile ? 'space-y-6' : (tabLayout === 'horizontal' ? 'space-y-6' : `flex ${adminNavCollapsed ? 'gap-3' : 'gap-6'}`)}>
         {/* Tabs - Mobile Sidebar */}
         {isMobile ? (
           <>
@@ -3797,43 +3805,103 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             })}
           </div>
         ) : (
-          <div className="flex flex-col w-72 shrink-0 sticky top-4 self-start max-h-[calc(100vh-6rem)] overflow-hidden rounded-2xl border border-slate-200/90 dark:border-slate-700/80 bg-white/90 dark:bg-slate-900/70 backdrop-blur-md p-2.5 shadow-md shadow-slate-200/40 dark:shadow-black/20">
-            <div className="shrink-0 px-3.5 py-3.5 mb-2 rounded-xl bg-gradient-to-br from-brand-50 via-white to-slate-50 dark:from-brand-900/35 dark:via-slate-800/50 dark:to-slate-800/30 border border-brand-100/70 dark:border-brand-800/40">
-              <p className="text-sm font-bold tracking-tight text-slate-900 dark:text-white">Admin Panel</p>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">Manage users and approvals</p>
-            </div>
+          <div
+            className={`flex flex-col shrink-0 sticky top-4 self-start max-h-[calc(100vh-6rem)] overflow-hidden rounded-2xl border border-slate-200/90 dark:border-slate-700/80 bg-white/90 dark:bg-slate-900/70 backdrop-blur-md shadow-md shadow-slate-200/40 dark:shadow-black/20 transition-[width] duration-200 ${
+              adminNavCollapsed ? 'w-16 p-1.5' : 'w-72 p-2.5'
+            }`}
+          >
+            {adminNavCollapsed ? (
+              <div className="shrink-0 mb-1.5 flex flex-col items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setAdminNavCollapsed(false)}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 ring-1 ring-inset ring-brand-200/80 dark:ring-brand-700/50 hover:bg-brand-100 dark:hover:bg-brand-800/40 transition-colors"
+                  title="Expand menu"
+                  aria-label="Expand menu"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path fillRule="evenodd" d="M3 4.75A.75.75 0 013.75 4h12.5a.75.75 0 010 1.5H3.75A.75.75 0 013 4.75zM3 10a.75.75 0 01.75-.75h12.5a.75.75 0 010 1.5H3.75A.75.75 0 013 10zm0 5.25a.75.75 0 01.75-.75h12.5a.75.75 0 010 1.5H3.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </div>
+            ) : (
+              <div className="shrink-0 px-3.5 py-3.5 mb-2 rounded-xl bg-gradient-to-br from-brand-50 via-white to-slate-50 dark:from-brand-900/35 dark:via-slate-800/50 dark:to-slate-800/30 border border-brand-100/70 dark:border-brand-800/40 relative">
+                <button
+                  type="button"
+                  onClick={() => setAdminNavCollapsed(true)}
+                  className="absolute top-2 right-2 p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-white/70 dark:hover:bg-slate-800/70 transition-colors"
+                  title="Collapse to icons"
+                  aria-label="Collapse to icons"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clipRule="evenodd" />
+                  </svg>
+                </button>
+                <p className="text-sm font-bold tracking-tight text-slate-900 dark:text-white pr-7">Admin Panel</p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">Manage users and approvals</p>
+              </div>
+            )}
 
-            <div className="flex-1 min-h-0 overflow-y-auto admin-nav-scrollbar px-1.5 py-0.5">
-              {ADMIN_NAV_SECTIONS.map((section) => (
-                <div key={section.label} className="mb-2 last:mb-0">
-                  <p className="px-2.5 pt-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400 dark:text-slate-500">
-                    {section.label}
-                  </p>
-                  <div className="flex flex-col gap-1">
+            <div className={`flex-1 min-h-0 overflow-y-auto admin-nav-scrollbar ${adminNavCollapsed ? 'px-0.5 py-0.5' : 'px-1.5 py-0.5'}`}>
+              {ADMIN_NAV_SECTIONS.map((section, sectionIndex) => (
+                <div key={section.label} className={adminNavCollapsed ? 'mb-1.5 last:mb-0' : 'mb-2 last:mb-0'}>
+                  {adminNavCollapsed ? (
+                    sectionIndex > 0 ? (
+                      <div className="mx-auto my-1.5 h-px w-8 bg-slate-200 dark:bg-slate-700" aria-hidden="true" />
+                    ) : null
+                  ) : (
+                    <p className="px-2.5 pt-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400 dark:text-slate-500">
+                      {section.label}
+                    </p>
+                  )}
+                  <div className={`flex flex-col ${adminNavCollapsed ? 'items-center gap-1' : 'gap-1'}`}>
                     {section.items.map((item) => {
                       const isActive = activeTab === item.id;
+                      const pendingCount = item.id === 'pending' ? pendingUsers.length : 0;
                       return (
                         <button
                           key={item.id}
+                          type="button"
                           onClick={() => setActiveTab(item.id)}
-                          className={`px-3 py-2.5 text-sm font-medium transition-all duration-150 rounded-xl text-left flex items-center gap-3 ${isActive
-                            ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 shadow-sm ring-1 ring-inset ring-brand-200/80 dark:ring-brand-700/50'
-                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/90 dark:hover:bg-slate-800/80 hover:text-slate-800 dark:hover:text-slate-200'
-                            }`}
+                          title={adminNavCollapsed ? (pendingCount > 0 ? `${item.label} (${pendingCount})` : item.label) : undefined}
+                          aria-label={item.label}
+                          className={`${
+                            adminNavCollapsed
+                              ? 'relative flex h-10 w-10 items-center justify-center rounded-xl transition-all duration-150'
+                              : 'px-3 py-2.5 text-sm font-medium transition-all duration-150 rounded-xl text-left flex items-center gap-3'
+                          } ${
+                            isActive
+                              ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 shadow-sm ring-1 ring-inset ring-brand-200/80 dark:ring-brand-700/50'
+                              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/90 dark:hover:bg-slate-800/80 hover:text-slate-800 dark:hover:text-slate-200'
+                          }`}
                         >
                           <span
-                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm ${isActive
-                              ? 'bg-brand-100 dark:bg-brand-800/55'
-                              : 'bg-slate-100 dark:bg-slate-800'
-                              }`}
+                            className={`${
+                              adminNavCollapsed
+                                ? 'flex h-8 w-8 items-center justify-center rounded-lg text-base'
+                                : 'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm'
+                            } ${
+                              isActive
+                                ? 'bg-brand-100 dark:bg-brand-800/55'
+                                : 'bg-slate-100 dark:bg-slate-800'
+                            }`}
                             aria-hidden="true"
                           >
                             {item.emoji}
                           </span>
-                          <span className="flex-1 min-w-0 truncate leading-snug">{item.label}</span>
-                          {item.id === 'pending' && pendingUsers.length > 0 && (
-                            <span className="px-1.5 py-0.5 rounded-full bg-brand-100 dark:bg-brand-500/20 text-brand-600 dark:text-brand-400 text-[10px] font-semibold">
-                              {pendingUsers.length}
+                          {!adminNavCollapsed && (
+                            <>
+                              <span className="flex-1 min-w-0 truncate leading-snug">{item.label}</span>
+                              {pendingCount > 0 && (
+                                <span className="px-1.5 py-0.5 rounded-full bg-brand-100 dark:bg-brand-500/20 text-brand-600 dark:text-brand-400 text-[10px] font-semibold">
+                                  {pendingCount}
+                                </span>
+                              )}
+                            </>
+                          )}
+                          {adminNavCollapsed && pendingCount > 0 && (
+                            <span className="absolute -top-0.5 -right-0.5 min-w-[1rem] h-4 px-1 rounded-full bg-brand-600 text-white text-[9px] font-bold leading-4 text-center">
+                              {pendingCount > 9 ? '9+' : pendingCount}
                             </span>
                           )}
                         </button>
