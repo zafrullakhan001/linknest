@@ -117,7 +117,7 @@ const APP_TAB_TOOLTIPS: Record<string, string> = {
   public:
     'Public (Guest): Spaces that are visible to everyone, including users who are not signed in.\n\nThese spaces are intended for general audiences. If a space is public, you can browse it here and open its links/sections according to the public layout settings.',
   'your-apps':
-    'Your Apps (Signed-in): A personalized view of spaces you have access to.\n\nThis tab combines spaces that are available because you are authenticated and spaces you can access via role-based permissions (and/or link-level role access). In other words, it’s the “everything I’m allowed to see” dashboard for your account.',
+    'Your Apps (Signed-in): A personalized view of spaces for your account.\n\nUse Authenticated for spaces that require sign-in (shared with all logged-in users), and Your Assigned Apps for spaces/links granted via roles or groups. Public spaces stay on the Public tab.',
   'public-favorites':
     'Favorites (Guest): A lightweight favorites view for users who are not signed in.\n\nThis typically includes favorite spaces and favorite links you saved locally in your browser. You can quickly return to what you bookmarked without requiring an account.',
   favorites:
@@ -139,10 +139,8 @@ const APP_TAB_TOOLTIPS: Record<string, string> = {
 };
 
 const YOUR_APPS_FILTER_TOOLTIPS: Record<string, string> = {
-  all:
-    'All Apps: Shows every space in “Your Apps” that you can access, regardless of whether it’s available due to being authenticated or due to specific role/group permissions.\n\nThis is the broadest filter.',
   authenticated:
-    'Authenticated: Shows spaces that are visible specifically because you are signed in.\n\nIf a space requires authentication (but does not necessarily grant access via explicit role permissions), it will appear here.',
+    'Authenticated: Shows spaces that are visible specifically because you are signed in.\n\nIf a space requires authentication (but does not necessarily grant access via explicit role permissions), it will appear here. Public spaces stay on the Public tab.',
   assigned:
     'Your Assigned Apps: Shows spaces where access is granted based on explicit assignment (for example, via user/group permissions or role access rules).\n\nThis view helps you focus on spaces that were intentionally granted to you, rather than broadly visible to signed-in users.',
 };
@@ -2123,12 +2121,13 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingTile, setEditingTile] = useState<Tile | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [yourAppsFilter, setYourAppsFilter] = useState<'all' | 'authenticated' | 'assigned'>(() => {
+  const [yourAppsFilter, setYourAppsFilter] = useState<'authenticated' | 'assigned'>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('linknest_your_apps_filter');
-      if (saved === 'all' || saved === 'authenticated' || saved === 'assigned') return saved;
+      if (saved === 'authenticated' || saved === 'assigned') return saved;
+      // Migrate former "all" preference to Authenticated
     }
-    return 'all';
+    return 'authenticated';
   });
   const [privateOwnerFilter, setPrivateOwnerFilter] = useState<number | 'all'>(() => {
     if (typeof window !== 'undefined') {
@@ -3329,10 +3328,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             }
           }
 
-          // Restore Your Apps filter preference
+          // Restore Your Apps filter preference (migrate former "all" → Authenticated)
           const savedFilter = prefs.yourAppsFilter;
-          if (savedFilter === 'all' || savedFilter === 'authenticated' || savedFilter === 'assigned') {
+          if (savedFilter === 'authenticated' || savedFilter === 'assigned') {
             setYourAppsFilter(savedFilter);
+          } else if (savedFilter === 'all') {
+            setYourAppsFilter('authenticated');
           }
 
           // Restore Private tab owner filter preference
@@ -3637,11 +3638,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         );
 
         // Apply sub-filter for 'Your Apps' tab
-        if (yourAppsFilter === 'authenticated') {
-          filteredTiles = filteredTiles.filter(t => t.visibility === 'authenticated');
-        } else if (yourAppsFilter === 'assigned') {
+        if (yourAppsFilter === 'assigned') {
           // Show tiles that are explicitly assigned via roles (not just generically 'authenticated')
           filteredTiles = filteredTiles.filter(t => t.visibility !== 'authenticated');
+        } else {
+          // Default: Authenticated — spaces that require sign-in for all logged-in users
+          filteredTiles = filteredTiles.filter(t => t.visibility === 'authenticated');
         }
       } else {
         filteredTiles = []; // No role-based content for unauthenticated users
@@ -6594,16 +6596,6 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             onSelectFilter={setYourAppsFilter}
           />
           <div className="flex items-center gap-2 py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 overflow-x-auto">
-            <button
-              onClick={() => setYourAppsFilter('all')}
-              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${yourAppsFilter === 'all'
-                ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm ring-1 ring-slate-200 dark:ring-slate-600'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'
-                }`}
-              title={YOUR_APPS_FILTER_TOOLTIPS.all}
-            >
-              All Apps
-            </button>
             <button
               onClick={() => setYourAppsFilter('authenticated')}
               className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors whitespace-nowrap flex items-center gap-1.5 ${yourAppsFilter === 'authenticated'

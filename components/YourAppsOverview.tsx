@@ -6,7 +6,7 @@ const CHECKLIST_DISMISSED_KEY = 'yourAppsChecklistDismissed';
 
 export interface YourAppsOverviewProps {
   spaceCount?: number;
-  onSelectFilter?: (filter: 'all' | 'authenticated' | 'assigned') => void;
+  onSelectFilter?: (filter: 'authenticated' | 'assigned') => void;
 }
 
 export const YourAppsOverview: React.FC<YourAppsOverviewProps> = ({
@@ -146,19 +146,7 @@ export const YourAppsOverview: React.FC<YourAppsOverviewProps> = ({
 
           <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
             <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Filter guide</h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <button
-                type="button"
-                onClick={() => onSelectFilter?.('all')}
-                className="text-left rounded-xl border border-slate-200 dark:border-slate-700 p-4 hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/30 transition-colors"
-              >
-                <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 mb-2">
-                  All Apps
-                </span>
-                <p className="text-sm text-slate-600 dark:text-slate-400">
-                  Everything you can open — authenticated spaces plus role-assigned content. Broadest view.
-                </p>
-              </button>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <button
                 type="button"
                 onClick={() => onSelectFilter?.('authenticated')}
@@ -168,7 +156,7 @@ export const YourAppsOverview: React.FC<YourAppsOverviewProps> = ({
                   <span aria-hidden>🔒</span> Authenticated
                 </span>
                 <p className="text-sm text-slate-600 dark:text-slate-400">
-                  Only spaces visible to every signed-in user. Useful when you want the shared org catalog.
+                  Only spaces that require sign-in and are shared with every logged-in user. Public spaces stay on the Public tab.
                 </p>
               </button>
               <button
@@ -250,16 +238,16 @@ export const YourAppsOverview: React.FC<YourAppsOverviewProps> = ({
               <ol className="space-y-2">
                 {[
                   {
-                    label: 'Start on All Apps for the full list of spaces you can open',
-                    action: () => onSelectFilter?.('all'),
-                  },
-                  {
-                    label: 'Use Authenticated to browse the shared signed-in catalog',
+                    label: 'Start on Authenticated for spaces that require sign-in',
                     action: () => onSelectFilter?.('authenticated'),
                   },
                   {
                     label: 'Switch to Your Assigned Apps for role- or group-granted spaces and links',
                     action: () => onSelectFilter?.('assigned'),
+                  },
+                  {
+                    label: 'Use Public for spaces anyone can browse — including guests',
+                    action: undefined,
                   },
                   {
                     label: 'Star spaces you revisit often — they also appear under Favorites',
@@ -322,7 +310,7 @@ export const YourAppsOverview: React.FC<YourAppsOverviewProps> = ({
                     <tr className="border-b border-slate-100 dark:border-slate-700/60">
                       <td className="py-3 pr-4 font-medium text-slate-900 dark:text-white align-top">Your Apps</td>
                       <td className="py-3 pr-4 align-top">
-                        Authenticated spaces plus spaces/links assigned to you via roles or groups
+                        Authenticated spaces, plus spaces/links assigned to you via roles or groups. Public stays separate.
                       </td>
                       <td className="py-3 align-top">Signed-in users (personalized)</td>
                     </tr>
