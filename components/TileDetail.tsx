@@ -23,6 +23,7 @@ import { MobileTileEdit } from './MobileTileEdit';
 import { useMobile } from '../hooks/useMobile';
 import { VersionDiffViewer } from './VersionDiffViewer';
 import { TileAnimationSelector, getTileAnimationClass, TileAnimation, getAnimationOption, resolveLinkAnimation } from './TileAnimationSelector';
+import { AuthSourceBadge } from './AuthSourceBadge';
 
 /** Persist link animation: inherit/empty → omit; 'none' and others → store as-is. */
 const linkAnimationForSave = (animation?: string): string | undefined => {
@@ -188,8 +189,8 @@ const EmojiPickerTabs: React.FC<{
                 ) : null}
             </div>
 
-            {/* Footer with link to more emojis */}
-            <div className="p-2 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex items-center justify-center">
+            {/* Footer with links to more emojis */}
+            <div className="p-2 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
                 <a
                     href="https://emojipedia.org"
                     target="_blank"
@@ -200,6 +201,17 @@ const EmojiPickerTabs: React.FC<{
                         <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
                     </svg>
                     Get more emojis from Emojipedia
+                </a>
+                <a
+                    href="https://emojidb.org/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 flex items-center gap-1.5"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                    </svg>
+                    Get more emojis from EmojiDB
                 </a>
             </div>
         </div>
@@ -304,6 +316,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [usersList, setUsersList] = useState<UserListItem[]>([]);
     const [loadingUsers, setLoadingUsers] = useState(false);
     const [showUserPicker, setShowUserPicker] = useState<Record<string, boolean>>({});
+    const [linkUserSearch, setLinkUserSearch] = useState<Record<string, string>>({});
+    const [linkGroupSearch, setLinkGroupSearch] = useState<Record<string, string>>({});
 
     // View State
     const [searchTerm, setSearchTerm] = useState('');
@@ -2372,6 +2386,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         // Clear form and hide it
         setNewLinkState(prev => ({ ...prev, [sectionId]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, published: true, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '', animation: 'inherit' } }));
         setShowUserPicker(prev => ({ ...prev, [sectionId]: false }));
+        setLinkUserSearch(prev => ({ ...prev, [sectionId]: '' }));
+        setLinkGroupSearch(prev => ({ ...prev, [sectionId]: '' }));
         setShowLinkEmojiPicker(prev => ({ ...prev, [sectionId]: false }));
         setShowAddLinkForm(prev => ({ ...prev, [sectionId]: false }));
     };
@@ -2649,10 +2665,16 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             }
         });
         setShowUserPicker(prev => ({ ...prev, [link.id]: false }));
+        setLinkUserSearch(prev => ({ ...prev, [link.id]: '' }));
+        setLinkGroupSearch(prev => ({ ...prev, [link.id]: '' }));
         console.log('Starting to edit link:', link.id, 'browser:', link.browser || 'default');
     };
 
     const handleCancelEditLink = () => {
+        if (editingLinkId) {
+            setLinkUserSearch(prev => ({ ...prev, [editingLinkId]: '' }));
+            setLinkGroupSearch(prev => ({ ...prev, [editingLinkId]: '' }));
+        }
         setEditingLinkId(null);
         setEditLinkState({});
     };
@@ -2733,6 +2755,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setEditingLinkId(null);
         setEditLinkState({});
         setShowUserPicker(prev => ({ ...prev, [linkId]: false }));
+        setLinkUserSearch(prev => ({ ...prev, [linkId]: '' }));
+        setLinkGroupSearch(prev => ({ ...prev, [linkId]: '' }));
     };
 
     const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'browser' | 'richTextContent' | 'animation' | 'published', value: string | LinkVisibility | number[] | boolean) => {
@@ -5410,11 +5434,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     Owner
                                                                                 </span>
                                                                             )}
-                                                                            {user.auth_source && user.auth_source !== 'local' && (
-                                                                                <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-[10px] font-semibold">
-                                                                                    {user.auth_source.toUpperCase()}
-                                                                                </span>
-                                                                            )}
+                                                                            <AuthSourceBadge source={user.auth_source} />
                                                                         </label>
                                                                     );
                                                                 })}
@@ -6712,6 +6732,161 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                             </div>
                                                                                         </div>
 
+                                                                                        {/* User and Group Selector for Private Visibility */}
+                                                                                        {editLinkState[link.id]?.visibility === 'private' && (
+                                                                                            <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border-2 border-slate-200 dark:border-slate-700 space-y-3">
+                                                                                                <div>
+                                                                                                    <div className="flex items-center justify-between mb-2">
+                                                                                                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Select Users</label>
+                                                                                                        <button
+                                                                                                            type="button"
+                                                                                                            onClick={() => setShowUserPicker(prev => ({ ...prev, [link.id]: !prev[link.id] }))}
+                                                                                                            className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 font-medium flex items-center gap-1"
+                                                                                                        >
+                                                                                                            {showUserPicker[link.id] ? 'Hide' : 'Show'}
+                                                                                                        </button>
+                                                                                                    </div>
+                                                                                                    {editLinkState[link.id]?.allowedUsers && editLinkState[link.id]!.allowedUsers.length > 0 && (
+                                                                                                        <div className="flex flex-wrap gap-1.5 mb-2">
+                                                                                                            {editLinkState[link.id]!.allowedUsers.map(userId => {
+                                                                                                                const user = usersList.find(u => u.id === userId);
+                                                                                                                return (
+                                                                                                                    <span
+                                                                                                                        key={userId}
+                                                                                                                        className="inline-flex items-center gap-1 px-2 py-1 bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 rounded text-xs font-medium"
+                                                                                                                    >
+                                                                                                                        {user?.username || `User ${userId}`}
+                                                                                                                        <AuthSourceBadge source={user?.auth_source} />
+                                                                                                                        <button
+                                                                                                                            type="button"
+                                                                                                                            onClick={() => toggleEditUserSelection(link.id, userId)}
+                                                                                                                            className="hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                                                                                                                            title="Remove user"
+                                                                                                                        >
+                                                                                                                            ×
+                                                                                                                        </button>
+                                                                                                                    </span>
+                                                                                                                );
+                                                                                                            })}
+                                                                                                        </div>
+                                                                                                    )}
+                                                                                                    {showUserPicker[link.id] && (
+                                                                                                        <div className="space-y-1.5">
+                                                                                                            <div className="relative">
+                                                                                                                <input
+                                                                                                                    type="text"
+                                                                                                                    value={linkUserSearch[link.id] || ''}
+                                                                                                                    onChange={(e) => setLinkUserSearch(prev => ({ ...prev, [link.id]: e.target.value }))}
+                                                                                                                    placeholder="Search users..."
+                                                                                                                    className="w-full bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 pl-7 text-xs text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+                                                                                                                />
+                                                                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 absolute left-2 top-2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                                                                                                </svg>
+                                                                                                                {linkUserSearch[link.id] && (
+                                                                                                                    <button
+                                                                                                                        type="button"
+                                                                                                                        onClick={() => setLinkUserSearch(prev => ({ ...prev, [link.id]: '' }))}
+                                                                                                                        className="absolute right-2 top-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                                                                                                                    >
+                                                                                                                        ×
+                                                                                                                    </button>
+                                                                                                                )}
+                                                                                                            </div>
+                                                                                                            <div className="max-h-32 overflow-y-auto border-2 border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-2 space-y-1">
+                                                                                                                {loadingUsers ? (
+                                                                                                                    <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2">Loading...</div>
+                                                                                                                ) : usersList.length === 0 ? (
+                                                                                                                    <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2">No users available</div>
+                                                                                                                ) : (() => {
+                                                                                                                    const q = (linkUserSearch[link.id] || '').trim().toLowerCase();
+                                                                                                                    const filtered = !q
+                                                                                                                        ? usersList
+                                                                                                                        : usersList.filter(u =>
+                                                                                                                            u.username.toLowerCase().includes(q) ||
+                                                                                                                            (u.email || '').toLowerCase().includes(q) ||
+                                                                                                                            (u.auth_source || 'local').toLowerCase().includes(q)
+                                                                                                                        );
+                                                                                                                    if (filtered.length === 0) {
+                                                                                                                        return <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2">No users found</div>;
+                                                                                                                    }
+                                                                                                                    return filtered.map(user => (
+                                                                                                                        <label key={user.id} className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded cursor-pointer">
+                                                                                                                            <input type="checkbox" checked={editLinkState[link.id]?.allowedUsers?.includes(user.id) || false} onChange={() => toggleEditUserSelection(link.id, user.id)} className="rounded w-3.5 h-3.5" />
+                                                                                                                            <span className="text-xs font-medium">{user.username}</span>
+                                                                                                                            <AuthSourceBadge source={user.auth_source} />
+                                                                                                                        </label>
+                                                                                                                    ));
+                                                                                                                })()}
+                                                                                                            </div>
+                                                                                                        </div>
+                                                                                                    )}
+                                                                                                </div>
+                                                                                                <div>
+                                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2">Select Groups</label>
+                                                                                                    {editLinkState[link.id]?.allowedGroups && editLinkState[link.id]!.allowedGroups.length > 0 && (
+                                                                                                        <div className="flex flex-wrap gap-1.5 mb-2">
+                                                                                                            {editLinkState[link.id]!.allowedGroups.map(groupId => {
+                                                                                                                const group = availableGroups.find(g => g.id === groupId);
+                                                                                                                return (
+                                                                                                                    <span key={groupId} className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 rounded text-xs font-medium">
+                                                                                                                        {group?.name || `Group ${groupId}`}
+                                                                                                                        <button type="button" onClick={() => toggleEditGroupSelection(link.id, groupId)} className="hover:text-red-600 dark:hover:text-red-400">×</button>
+                                                                                                                    </span>
+                                                                                                                );
+                                                                                                            })}
+                                                                                                        </div>
+                                                                                                    )}
+                                                                                                    <div className="space-y-1.5">
+                                                                                                        <div className="relative">
+                                                                                                            <input
+                                                                                                                type="text"
+                                                                                                                value={linkGroupSearch[link.id] || ''}
+                                                                                                                onChange={(e) => setLinkGroupSearch(prev => ({ ...prev, [link.id]: e.target.value }))}
+                                                                                                                placeholder="Search groups..."
+                                                                                                                className="w-full bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 pl-7 text-xs text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+                                                                                                            />
+                                                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 absolute left-2 top-2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                                                                                            </svg>
+                                                                                                            {linkGroupSearch[link.id] && (
+                                                                                                                <button
+                                                                                                                    type="button"
+                                                                                                                    onClick={() => setLinkGroupSearch(prev => ({ ...prev, [link.id]: '' }))}
+                                                                                                                    className="absolute right-2 top-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                                                                                                                >
+                                                                                                                    ×
+                                                                                                                </button>
+                                                                                                            )}
+                                                                                                        </div>
+                                                                                                        <div className="max-h-32 overflow-y-auto border-2 border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-2 space-y-1">
+                                                                                                            {availableGroups.length === 0 ? (
+                                                                                                                <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2">No groups available</div>
+                                                                                                            ) : (() => {
+                                                                                                                const q = (linkGroupSearch[link.id] || '').trim().toLowerCase();
+                                                                                                                const filtered = !q
+                                                                                                                    ? availableGroups
+                                                                                                                    : availableGroups.filter(g =>
+                                                                                                                        g.name.toLowerCase().includes(q) ||
+                                                                                                                        (g.description || '').toLowerCase().includes(q)
+                                                                                                                    );
+                                                                                                                if (filtered.length === 0) {
+                                                                                                                    return <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2">No groups found</div>;
+                                                                                                                }
+                                                                                                                return filtered.map(group => (
+                                                                                                                    <label key={group.id} className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded cursor-pointer">
+                                                                                                                        <input type="checkbox" checked={editLinkState[link.id]?.allowedGroups?.includes(group.id) || false} onChange={() => toggleEditGroupSelection(link.id, group.id)} className="rounded w-3.5 h-3.5" />
+                                                                                                                        <span className="text-xs font-medium">{group.name}</span>
+                                                                                                                        <span className="text-[10px] text-slate-500">({group.memberCount})</span>
+                                                                                                                    </label>
+                                                                                                                ));
+                                                                                                            })()}
+                                                                                                        </div>
+                                                                                                    </div>
+                                                                                                </div>
+                                                                                            </div>
+                                                                                        )}
+
                                                                                         {user?.is_admin && (
                                                                                             <div className="flex items-center justify-between gap-3 p-3 rounded-lg border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
                                                                                                 <div>
@@ -6906,92 +7081,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                 </span>
                                                                                             </div>
                                                                                         </div>
-
-                                                                                        {/* User and Group Selector for Private Visibility */}
-                                                                                        {editLinkState[link.id]?.visibility === 'private' && (
-                                                                                            <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border-2 border-slate-200 dark:border-slate-700 space-y-3">
-                                                                                                <div>
-                                                                                                    <div className="flex items-center justify-between mb-2">
-                                                                                                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Select Users</label>
-                                                                                                        <button
-                                                                                                            type="button"
-                                                                                                            onClick={() => setShowUserPicker(prev => ({ ...prev, [link.id]: !prev[link.id] }))}
-                                                                                                            className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 font-medium flex items-center gap-1"
-                                                                                                        >
-                                                                                                            {showUserPicker[link.id] ? 'Hide' : 'Show'}
-                                                                                                        </button>
-                                                                                                    </div>
-                                                                                                    {editLinkState[link.id]?.allowedUsers && editLinkState[link.id]!.allowedUsers.length > 0 && (
-                                                                                                        <div className="flex flex-wrap gap-1.5 mb-2">
-                                                                                                            {editLinkState[link.id]!.allowedUsers.map(userId => {
-                                                                                                                const user = usersList.find(u => u.id === userId);
-                                                                                                                return (
-                                                                                                                    <span
-                                                                                                                        key={userId}
-                                                                                                                        className="inline-flex items-center gap-1 px-2 py-1 bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 rounded text-xs font-medium"
-                                                                                                                    >
-                                                                                                                        {user?.username || `User ${userId}`}
-                                                                                                                        <button
-                                                                                                                            type="button"
-                                                                                                                            onClick={() => toggleEditUserSelection(link.id, userId)}
-                                                                                                                            className="hover:text-red-600 dark:hover:text-red-400 transition-colors"
-                                                                                                                            title="Remove user"
-                                                                                                                        >
-                                                                                                                            ×
-                                                                                                                        </button>
-                                                                                                                    </span>
-                                                                                                                );
-                                                                                                            })}
-                                                                                                        </div>
-                                                                                                    )}
-                                                                                                    {showUserPicker[link.id] && (
-                                                                                                        <div className="max-h-32 overflow-y-auto border-2 border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-2 space-y-1">
-                                                                                                            {loadingUsers ? (
-                                                                                                                <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2">Loading...</div>
-                                                                                                            ) : usersList.length === 0 ? (
-                                                                                                                <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2">No users available</div>
-                                                                                                            ) : (
-                                                                                                                usersList.map(user => (
-                                                                                                                    <label key={user.id} className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded cursor-pointer">
-                                                                                                                        <input type="checkbox" checked={editLinkState[link.id]?.allowedUsers?.includes(user.id) || false} onChange={() => toggleEditUserSelection(link.id, user.id)} className="rounded w-3.5 h-3.5" />
-                                                                                                                        <span className="text-xs font-medium">{user.username}</span>
-                                                                                                                    </label>
-                                                                                                                ))
-                                                                                                            )}
-                                                                                                        </div>
-                                                                                                    )}
-                                                                                                </div>
-                                                                                                <div>
-                                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2">Select Groups</label>
-                                                                                                    {editLinkState[link.id]?.allowedGroups && editLinkState[link.id]!.allowedGroups.length > 0 && (
-                                                                                                        <div className="flex flex-wrap gap-1.5 mb-2">
-                                                                                                            {editLinkState[link.id]!.allowedGroups.map(groupId => {
-                                                                                                                const group = availableGroups.find(g => g.id === groupId);
-                                                                                                                return (
-                                                                                                                    <span key={groupId} className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 rounded text-xs font-medium">
-                                                                                                                        {group?.name || `Group ${groupId}`}
-                                                                                                                        <button type="button" onClick={() => toggleEditGroupSelection(link.id, groupId)} className="hover:text-red-600 dark:hover:text-red-400">×</button>
-                                                                                                                    </span>
-                                                                                                                );
-                                                                                                            })}
-                                                                                                        </div>
-                                                                                                    )}
-                                                                                                    <div className="max-h-32 overflow-y-auto border-2 border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-2 space-y-1">
-                                                                                                        {availableGroups.length === 0 ? (
-                                                                                                            <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2">No groups available</div>
-                                                                                                        ) : (
-                                                                                                            availableGroups.map(group => (
-                                                                                                                <label key={group.id} className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded cursor-pointer">
-                                                                                                                    <input type="checkbox" checked={editLinkState[link.id]?.allowedGroups?.includes(group.id) || false} onChange={() => toggleEditGroupSelection(link.id, group.id)} className="rounded w-3.5 h-3.5" />
-                                                                                                                    <span className="text-xs font-medium">{group.name}</span>
-                                                                                                                    <span className="text-[10px] text-slate-500">({group.memberCount})</span>
-                                                                                                                </label>
-                                                                                                            ))
-                                                                                                        )}
-                                                                                                    </div>
-                                                                                                </div>
-                                                                                            </div>
-                                                                                        )}
 
                                                                                         {/* Action Buttons */}
                                                                                         <div className="flex gap-2 justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
@@ -7307,6 +7396,141 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 </div>
                                                                             </div>
 
+                                                                            {/* User and Group Selector for Private Visibility */}
+                                                                            {(newLinkState[section.id]?.visibility || 'public') === 'private' && (
+                                                                                <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border-2 border-slate-200 dark:border-slate-700 space-y-3">
+                                                                                    <div>
+                                                                                        <div className="flex items-center justify-between mb-2">
+                                                                                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Select Users</label>
+                                                                                            <button type="button" onClick={() => setShowUserPicker(prev => ({ ...prev, [section.id]: !prev[section.id] }))} className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 font-medium">
+                                                                                                {showUserPicker[section.id] ? 'Hide' : 'Show'}
+                                                                                            </button>
+                                                                                        </div>
+                                                                                        {newLinkState[section.id]?.allowedUsers && newLinkState[section.id]!.allowedUsers.length > 0 && (
+                                                                                            <div className="flex flex-wrap gap-1.5 mb-2">
+                                                                                                {newLinkState[section.id]!.allowedUsers.map(userId => {
+                                                                                                    const user = usersList.find(u => u.id === userId);
+                                                                                                    return (
+                                                                                                        <span key={userId} className="inline-flex items-center gap-1 px-2 py-1 bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 rounded text-xs font-medium">
+                                                                                                            {user?.username || `User ${userId}`}
+                                                                                                            <AuthSourceBadge source={user?.auth_source} />
+                                                                                                            <button type="button" onClick={() => toggleUserSelection(section.id, userId)} className="hover:text-red-600">×</button>
+                                                                                                        </span>
+                                                                                                    );
+                                                                                                })}
+                                                                                            </div>
+                                                                                        )}
+                                                                                        {showUserPicker[section.id] && (
+                                                                                            <div className="space-y-1.5">
+                                                                                                <div className="relative">
+                                                                                                    <input
+                                                                                                        type="text"
+                                                                                                        value={linkUserSearch[section.id] || ''}
+                                                                                                        onChange={(e) => setLinkUserSearch(prev => ({ ...prev, [section.id]: e.target.value }))}
+                                                                                                        placeholder="Search users..."
+                                                                                                        className="w-full bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 pl-7 text-xs text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+                                                                                                    />
+                                                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 absolute left-2 top-2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                                                                                    </svg>
+                                                                                                    {linkUserSearch[section.id] && (
+                                                                                                        <button
+                                                                                                            type="button"
+                                                                                                            onClick={() => setLinkUserSearch(prev => ({ ...prev, [section.id]: '' }))}
+                                                                                                            className="absolute right-2 top-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                                                                                                        >
+                                                                                                            ×
+                                                                                                        </button>
+                                                                                                    )}
+                                                                                                </div>
+                                                                                                <div className="max-h-32 overflow-y-auto border-2 border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-2 space-y-1">
+                                                                                                    {loadingUsers ? <div className="text-xs text-slate-500 text-center py-2">Loading...</div> : usersList.length === 0 ? <div className="text-xs text-slate-500 text-center py-2">No users available</div> : (() => {
+                                                                                                        const q = (linkUserSearch[section.id] || '').trim().toLowerCase();
+                                                                                                        const filtered = !q
+                                                                                                            ? usersList
+                                                                                                            : usersList.filter(u =>
+                                                                                                                u.username.toLowerCase().includes(q) ||
+                                                                                                                (u.email || '').toLowerCase().includes(q) ||
+                                                                                                                (u.auth_source || 'local').toLowerCase().includes(q)
+                                                                                                            );
+                                                                                                        if (filtered.length === 0) {
+                                                                                                            return <div className="text-xs text-slate-500 text-center py-2">No users found</div>;
+                                                                                                        }
+                                                                                                        return filtered.map(user => (
+                                                                                                            <label key={user.id} className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded cursor-pointer">
+                                                                                                                <input type="checkbox" checked={newLinkState[section.id]?.allowedUsers?.includes(user.id) || false} onChange={() => toggleUserSelection(section.id, user.id)} className="rounded w-3.5 h-3.5" />
+                                                                                                                <span className="text-xs font-medium">{user.username}</span>
+                                                                                                                <AuthSourceBadge source={user.auth_source} />
+                                                                                                            </label>
+                                                                                                        ));
+                                                                                                    })()}
+                                                                                                </div>
+                                                                                            </div>
+                                                                                        )}
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2">Select Groups</label>
+                                                                                        {newLinkState[section.id]?.allowedGroups && newLinkState[section.id]!.allowedGroups.length > 0 && (
+                                                                                            <div className="flex flex-wrap gap-1.5 mb-2">
+                                                                                                {newLinkState[section.id]!.allowedGroups.map(groupId => {
+                                                                                                    const group = availableGroups.find(g => g.id === groupId);
+                                                                                                    return (
+                                                                                                        <span key={groupId} className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 rounded text-xs font-medium">
+                                                                                                            {group?.name || `Group ${groupId}`}
+                                                                                                            <button type="button" onClick={() => toggleGroupSelection(section.id, groupId)} className="hover:text-red-600">×</button>
+                                                                                                        </span>
+                                                                                                    );
+                                                                                                })}
+                                                                                            </div>
+                                                                                        )}
+                                                                                        <div className="space-y-1.5">
+                                                                                            <div className="relative">
+                                                                                                <input
+                                                                                                    type="text"
+                                                                                                    value={linkGroupSearch[section.id] || ''}
+                                                                                                    onChange={(e) => setLinkGroupSearch(prev => ({ ...prev, [section.id]: e.target.value }))}
+                                                                                                    placeholder="Search groups..."
+                                                                                                    className="w-full bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 pl-7 text-xs text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+                                                                                                />
+                                                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 absolute left-2 top-2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                                                                                </svg>
+                                                                                                {linkGroupSearch[section.id] && (
+                                                                                                    <button
+                                                                                                        type="button"
+                                                                                                        onClick={() => setLinkGroupSearch(prev => ({ ...prev, [section.id]: '' }))}
+                                                                                                        className="absolute right-2 top-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                                                                                                    >
+                                                                                                        ×
+                                                                                                    </button>
+                                                                                                )}
+                                                                                            </div>
+                                                                                            <div className="max-h-32 overflow-y-auto border-2 border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-2 space-y-1">
+                                                                                                {availableGroups.length === 0 ? <div className="text-xs text-slate-500 text-center py-2">No groups available</div> : (() => {
+                                                                                                    const q = (linkGroupSearch[section.id] || '').trim().toLowerCase();
+                                                                                                    const filtered = !q
+                                                                                                        ? availableGroups
+                                                                                                        : availableGroups.filter(g =>
+                                                                                                            g.name.toLowerCase().includes(q) ||
+                                                                                                            (g.description || '').toLowerCase().includes(q)
+                                                                                                        );
+                                                                                                    if (filtered.length === 0) {
+                                                                                                        return <div className="text-xs text-slate-500 text-center py-2">No groups found</div>;
+                                                                                                    }
+                                                                                                    return filtered.map(group => (
+                                                                                                        <label key={group.id} className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded cursor-pointer">
+                                                                                                            <input type="checkbox" checked={newLinkState[section.id]?.allowedGroups?.includes(group.id) || false} onChange={() => toggleGroupSelection(section.id, group.id)} className="rounded w-3.5 h-3.5" />
+                                                                                                            <span className="text-xs font-medium">{group.name}</span>
+                                                                                                            <span className="text-[10px] text-slate-500">({group.memberCount})</span>
+                                                                                                        </label>
+                                                                                                    ));
+                                                                                                })()}
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+
                                                                             {user?.is_admin && (
                                                                                 <div className="flex items-center justify-between gap-3 p-3 rounded-lg border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
                                                                                     <div>
@@ -7444,68 +7668,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     </span>
                                                                                 </div>
                                                                             </div>
-
-                                                                            {/* User and Group Selector for Private Visibility */}
-                                                                            {(newLinkState[section.id]?.visibility || 'public') === 'private' && (
-                                                                                <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border-2 border-slate-200 dark:border-slate-700 space-y-3">
-                                                                                    <div>
-                                                                                        <div className="flex items-center justify-between mb-2">
-                                                                                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Select Users</label>
-                                                                                            <button type="button" onClick={() => setShowUserPicker(prev => ({ ...prev, [section.id]: !prev[section.id] }))} className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 font-medium">
-                                                                                                {showUserPicker[section.id] ? 'Hide' : 'Show'}
-                                                                                            </button>
-                                                                                        </div>
-                                                                                        {newLinkState[section.id]?.allowedUsers && newLinkState[section.id]!.allowedUsers.length > 0 && (
-                                                                                            <div className="flex flex-wrap gap-1.5 mb-2">
-                                                                                                {newLinkState[section.id]!.allowedUsers.map(userId => {
-                                                                                                    const user = usersList.find(u => u.id === userId);
-                                                                                                    return (
-                                                                                                        <span key={userId} className="inline-flex items-center gap-1 px-2 py-1 bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 rounded text-xs font-medium">
-                                                                                                            {user?.username || `User ${userId}`}
-                                                                                                            <button type="button" onClick={() => toggleUserSelection(section.id, userId)} className="hover:text-red-600">×</button>
-                                                                                                        </span>
-                                                                                                    );
-                                                                                                })}
-                                                                                            </div>
-                                                                                        )}
-                                                                                        {showUserPicker[section.id] && (
-                                                                                            <div className="max-h-32 overflow-y-auto border-2 border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-2 space-y-1">
-                                                                                                {loadingUsers ? <div className="text-xs text-slate-500 text-center py-2">Loading...</div> : usersList.length === 0 ? <div className="text-xs text-slate-500 text-center py-2">No users available</div> : usersList.map(user => (
-                                                                                                    <label key={user.id} className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded cursor-pointer">
-                                                                                                        <input type="checkbox" checked={newLinkState[section.id]?.allowedUsers?.includes(user.id) || false} onChange={() => toggleUserSelection(section.id, user.id)} className="rounded w-3.5 h-3.5" />
-                                                                                                        <span className="text-xs font-medium">{user.username}</span>
-                                                                                                    </label>
-                                                                                                ))}
-                                                                                            </div>
-                                                                                        )}
-                                                                                    </div>
-                                                                                    <div>
-                                                                                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2">Select Groups</label>
-                                                                                        {newLinkState[section.id]?.allowedGroups && newLinkState[section.id]!.allowedGroups.length > 0 && (
-                                                                                            <div className="flex flex-wrap gap-1.5 mb-2">
-                                                                                                {newLinkState[section.id]!.allowedGroups.map(groupId => {
-                                                                                                    const group = availableGroups.find(g => g.id === groupId);
-                                                                                                    return (
-                                                                                                        <span key={groupId} className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 rounded text-xs font-medium">
-                                                                                                            {group?.name || `Group ${groupId}`}
-                                                                                                            <button type="button" onClick={() => toggleGroupSelection(section.id, groupId)} className="hover:text-red-600">×</button>
-                                                                                                        </span>
-                                                                                                    );
-                                                                                                })}
-                                                                                            </div>
-                                                                                        )}
-                                                                                        <div className="max-h-32 overflow-y-auto border-2 border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-2 space-y-1">
-                                                                                            {availableGroups.length === 0 ? <div className="text-xs text-slate-500 text-center py-2">No groups available</div> : availableGroups.map(group => (
-                                                                                                <label key={group.id} className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded cursor-pointer">
-                                                                                                    <input type="checkbox" checked={newLinkState[section.id]?.allowedGroups?.includes(group.id) || false} onChange={() => toggleGroupSelection(section.id, group.id)} className="rounded w-3.5 h-3.5" />
-                                                                                                    <span className="text-xs font-medium">{group.name}</span>
-                                                                                                    <span className="text-[10px] text-slate-500">({group.memberCount})</span>
-                                                                                                </label>
-                                                                                            ))}
-                                                                                        </div>
-                                                                                    </div>
-                                                                                </div>
-                                                                            )}
 
                                                                             {/* Action Button */}
                                                                             <div className="flex justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
@@ -7834,6 +7996,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     className="rounded"
                                                                 />
                                                                 <span className="text-sm">{user.username}</span>
+                                                                <AuthSourceBadge source={user.auth_source} />
                                                             </label>
                                                         ))}
                                                     </div>
@@ -7989,6 +8152,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     className="rounded"
                                                                 />
                                                                 <span className="text-sm">{user.username}</span>
+                                                                <AuthSourceBadge source={user.auth_source} />
                                                             </label>
                                                         ))}
                                                     </div>

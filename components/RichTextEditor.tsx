@@ -2044,7 +2044,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                                 </div>
 
                                 {/* Footer */}
-                                <div className="p-2 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex items-center justify-center">
+                                <div className="p-2 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
                                     <a
                                         href="https://emojipedia.org"
                                         target="_blank"
@@ -2055,6 +2055,17 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
                                         </svg>
                                         Get more emojis from Emojipedia
+                                    </a>
+                                    <a
+                                        href="https://emojidb.org/"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 flex items-center gap-1.5"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                                        </svg>
+                                        Get more emojis from EmojiDB
                                     </a>
                                 </div>
                             </div>
