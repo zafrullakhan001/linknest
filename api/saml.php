@@ -193,6 +193,70 @@ class SamlAPI {
         return new OneLoginSamlAuth($settings);
     }
 
+    /**
+     * Resolve the configured app favicon to an absolute URL (for browser tab icons).
+     */
+    private function getAppFaviconAbsoluteUrl(): string {
+        try {
+            $stmt = $this->db->prepare('SELECT value FROM settings WHERE key = ? LIMIT 1');
+            $stmt->execute(['favicon']);
+            $row = $stmt->fetch();
+            $favicon = is_array($row) ? trim((string)($row['value'] ?? '')) : '';
+            if ($favicon === '') {
+                return '';
+            }
+
+            // Already absolute
+            if (preg_match('#^https?://#i', $favicon)) {
+                return $favicon;
+            }
+
+            $baseUrl = rtrim($this->getDefaultBaseUrl(), '/');
+            if (strpos($favicon, '/') !== 0) {
+                $favicon = '/' . $favicon;
+            }
+            return $baseUrl . $favicon;
+        } catch (Throwable $e) {
+            error_log('SAML getAppFaviconAbsoluteUrl: ' . $e->getMessage());
+            return '';
+        }
+    }
+
+    /**
+     * True when a human opened the metadata URL in a browser tab (not an IdP HTTP client).
+     */
+    private function isBrowserMetadataView(): bool {
+        if (isset($_GET['format']) && strtolower((string)$_GET['format']) === 'xml') {
+            return false;
+        }
+        if (isset($_GET['download']) || isset($_GET['raw'])) {
+            return false;
+        }
+
+        $secFetchDest = strtolower((string)($_SERVER['HTTP_SEC_FETCH_DEST'] ?? ''));
+        if ($secFetchDest === 'document') {
+            return true;
+        }
+
+        $accept = (string)($_SERVER['HTTP_ACCEPT'] ?? '');
+        if ($accept === '' || $accept === '*/*') {
+            return false;
+        }
+        // Prefer HTML document requests; keep raw XML for SAML metadata Accept types
+        if (stripos($accept, 'application/samlmetadata+xml') !== false
+            || stripos($accept, 'application/saml+xml') !== false) {
+            return false;
+        }
+
+        $htmlPos = stripos($accept, 'text/html');
+        $xmlPos = stripos($accept, 'application/xml');
+        if ($htmlPos !== false && ($xmlPos === false || $htmlPos < $xmlPos)) {
+            return true;
+        }
+
+        return false;
+    }
+
     private function metadata() {
         try {
             // Clear any previous output
@@ -220,6 +284,52 @@ class SamlAPI {
             if (!empty($errors)) {
                 error_log('SAML metadata validation warnings: ' . implode(', ', $errors));
                 // Continue anyway - warnings don't prevent metadata generation
+            }
+
+            $faviconUrl = $this->getAppFaviconAbsoluteUrl();
+            if ($faviconUrl !== '') {
+                header('Link: <' . $faviconUrl . '>; rel="icon"');
+            }
+            
+            // Browser tab view: HTML shell so the configured favicon appears in the tab.
+            // IdPs / curl still receive raw XML (use ?format=xml to force raw XML).
+            if ($this->isBrowserMetadataView()) {
+                $rawXmlUrl = htmlspecialchars(
+                    $this->getDefaultBaseUrl() . '/api/saml?action=metadata&format=xml',
+                    ENT_QUOTES,
+                    'UTF-8'
+                );
+                $escapedXml = htmlspecialchars($metadata, ENT_QUOTES, 'UTF-8');
+                $faviconLink = $faviconUrl !== ''
+                    ? '<link rel="icon" href="' . htmlspecialchars($faviconUrl, ENT_QUOTES, 'UTF-8') . '">'
+                    : '';
+                $appName = 'SAML SP Metadata';
+                try {
+                    $stmt = $this->db->prepare('SELECT value FROM settings WHERE key = ? LIMIT 1');
+                    $stmt->execute(['app_name']);
+                    $nameRow = $stmt->fetch();
+                    if (is_array($nameRow) && !empty($nameRow['value'])) {
+                        $appName = (string)$nameRow['value'] . ' — SAML Metadata';
+                    }
+                } catch (Throwable $ignore) {
+                }
+                $title = htmlspecialchars($appName, ENT_QUOTES, 'UTF-8');
+
+                header('Content-Type: text/html; charset=utf-8');
+                header('Cache-Control: no-cache, must-revalidate');
+                header('Pragma: no-cache');
+                echo '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">'
+                    . '<meta name="viewport" content="width=device-width, initial-scale=1">'
+                    . $faviconLink
+                    . '<title>' . $title . '</title>'
+                    . '<style>body{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#0f172a;color:#e2e8f0}'
+                    . 'header{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.75rem 1rem;background:#1e293b;border-bottom:1px solid #334155}'
+                    . 'h1{font-size:.95rem;font-weight:600;margin:0}a{color:#93c5fd;text-decoration:none}a:hover{text-decoration:underline}'
+                    . 'pre{margin:0;padding:1rem;white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.45}</style>'
+                    . '</head><body><header><h1>' . $title . '</h1>'
+                    . '<a href="' . $rawXmlUrl . '">Download raw XML</a></header>'
+                    . '<pre>' . $escapedXml . '</pre></body></html>';
+                exit();
             }
             
             // Set proper headers for XML display in browser

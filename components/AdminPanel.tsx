@@ -78,13 +78,82 @@ interface AdminPanelProps {
   onUserApproved?: () => void;
 }
 
+type AdminNavTabId =
+  | 'pending'
+  | 'all'
+  | 'settings'
+  | 'database'
+  | 'spaces'
+  | 'ldap'
+  | 'saml'
+  | 'tabVisibility'
+  | 'access'
+  | 'clone'
+  | 'browser'
+  | 'broadcast'
+  | 'maintenanceScripts'
+  | 'maintenance'
+  | 'widgets'
+  | 'addons';
+
+const ADMIN_NAV_SECTIONS: Array<{
+  label: string;
+  items: Array<{ id: AdminNavTabId; label: string; emoji: string }>;
+}> = [
+  {
+    label: 'Users',
+    items: [
+      { id: 'pending', label: 'Pending Users', emoji: '⏳' },
+      { id: 'all', label: 'All Users', emoji: '👥' },
+    ],
+  },
+  {
+    label: 'Configuration',
+    items: [
+      { id: 'settings', label: 'Settings', emoji: '⚙️' },
+      { id: 'database', label: 'Database', emoji: '🗄️' },
+      { id: 'spaces', label: 'Spaces', emoji: '📦' },
+      { id: 'tabVisibility', label: 'Enable/Disable Tabs', emoji: '📑' },
+      { id: 'access', label: 'Access Manager', emoji: '🛡️' },
+    ],
+  },
+  {
+    label: 'Authentication',
+    items: [
+      { id: 'ldap', label: 'LDAP', emoji: '🔐' },
+      { id: 'saml', label: 'SAML', emoji: '🔑' },
+    ],
+  },
+  {
+    label: 'Integrations',
+    items: [
+      { id: 'browser', label: 'Browser Extn Integration', emoji: '🌐' },
+      { id: 'broadcast', label: 'Broadcast Message', emoji: '📢' },
+      { id: 'clone', label: 'Clone', emoji: '🧬' },
+    ],
+  },
+  {
+    label: 'Tools',
+    items: [
+      { id: 'maintenanceScripts', label: 'Maintenance Scripts', emoji: '🧰' },
+      { id: 'maintenance', label: 'Maintenance', emoji: '🚧' },
+      { id: 'widgets', label: 'Custom Widgets', emoji: '🧩' },
+      { id: 'addons', label: 'Add-ons', emoji: '🔌' },
+    ],
+  },
+];
+
+const ADMIN_NAV_ITEMS = ADMIN_NAV_SECTIONS.flatMap((section) => section.items);
+
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const { user } = useAuth();
   const { refreshSettings, clearCache } = useSettings();
   const isMobile = useMobile();
   // Initialize activeTab from localStorage or default to 'pending'
+  // Migrate legacy 'footer' tab → Settings › Branding
   const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenanceScripts' | 'maintenance' | 'widgets' | 'addons'>(() => {
     const savedTab = localStorage.getItem('adminPanelActiveTab');
+    if (savedTab === 'footer') return 'settings';
     const validTabs: Array<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenanceScripts' | 'maintenance' | 'widgets' | 'addons'> = ['pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'saml', 'footer', 'tabVisibility', 'access', 'clone', 'browser', 'broadcast', 'maintenanceScripts', 'maintenance', 'widgets', 'addons'];
     return (savedTab && validTabs.includes(savedTab as any)) ? savedTab as any : 'pending';
   });
@@ -126,10 +195,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     page_title: 'LinkNest',
     spaces_title: 'My Spaces',
     logo_type: 'icon',
-    logo_icon: 'ðŸ”—',
+    logo_icon: '🔗',
     logo_image: '',
     favicon: '',
-    footer_text: 'Â© 2025 Adventhealth - Designed and developed by AIT Architecture team',
+    footer_text: '© 2025 Adventhealth - Designed and developed by AIT Architecture team',
     show_database_path_in_footer: '1',
     disabled_tabs: '[]',
     maintenance_enabled: '0',
@@ -140,6 +209,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   });
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsSubTab, setSettingsSubTab] = useState<'branding' | 'general' | 'access'>(() => {
+    if (localStorage.getItem('adminPanelActiveTab') === 'footer') return 'branding';
+    const saved = localStorage.getItem('adminSettingsSubTab');
+    return saved === 'general' || saved === 'access' || saved === 'branding' ? saved : 'branding';
+  });
   const [adminPasswordModal, setAdminPasswordModal] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [adminNewPassword, setAdminNewPassword] = useState('');
@@ -596,6 +670,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [editCloneLoading, setEditCloneLoading] = useState(false);
   const [deleteCloneLoading, setDeleteCloneLoading] = useState<number | null>(null);
   const [rerunCloneLoading, setRerunCloneLoading] = useState<number | null>(null);
+  const [selectedCloneIds, setSelectedCloneIds] = useState<Set<number>>(new Set());
+  const [bulkDeleteClonesLoading, setBulkDeleteClonesLoading] = useState(false);
 
   // Prechecks state
   const [prechecksLoading, setPrechecksLoading] = useState(false);
@@ -874,6 +950,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   useEffect(() => {
     localStorage.setItem('adminPanelActiveTab', activeTab);
   }, [activeTab]);
+
+  // Migrate legacy footer tab → Settings › Branding
+  useEffect(() => {
+    if (activeTab === 'footer') {
+      setActiveTab('settings');
+      setSettingsSubTab('branding');
+    }
+  }, [activeTab]);
+
+  // Persist settingsSubTab to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('adminSettingsSubTab', settingsSubTab);
+  }, [settingsSubTab]);
 
   // Persist accessSubTab to localStorage whenever it changes
   useEffect(() => {
@@ -1181,6 +1270,122 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       console.error('Failed to load clones list:', err);
     } finally {
       setClonesLoading(false);
+    }
+  };
+
+  // Drop stale clone selections when the list changes
+  useEffect(() => {
+    const cloneIds = new Set(clonesList.map((clone) => clone.id));
+    setSelectedCloneIds((prev) => {
+      const next = new Set(Array.from(prev).filter((id) => cloneIds.has(id)));
+      return next.size !== prev.size ? next : prev;
+    });
+  }, [clonesList]);
+
+  const toggleCloneSelection = (cloneId: number) => {
+    setSelectedCloneIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(cloneId)) {
+        next.delete(cloneId);
+      } else {
+        next.add(cloneId);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAllClones = () => {
+    if (selectedCloneIds.size === clonesList.length) {
+      setSelectedCloneIds(new Set());
+    } else {
+      setSelectedCloneIds(new Set(clonesList.map((clone) => clone.id)));
+    }
+  };
+
+  const handleBulkDeleteClones = async () => {
+    const selected = clonesList.filter((clone) => selectedCloneIds.has(clone.id));
+    if (selected.length === 0) {
+      return;
+    }
+
+    const namesPreview = selected
+      .slice(0, 5)
+      .map((clone) => clone.folderName)
+      .join(', ');
+    const moreCount = selected.length > 5 ? ` and ${selected.length - 5} more` : '';
+
+    if (
+      !confirm(
+        `Delete ${selected.length} cloned instance${selected.length === 1 ? '' : 's'}?\n\n` +
+          `${namesPreview}${moreCount}\n\n` +
+          `This will remove each database record and delete the clone folder from disk. This cannot be undone.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setBulkDeleteClonesLoading(true);
+      setError('');
+      const apiBase = resolveApiBase();
+      const results = await Promise.allSettled(
+        selected.map(async (clone) => {
+          const response = await fetch(`${apiBase}/clone/${clone.id}?deleteFolder=1`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(data.error || `Failed to delete "${clone.folderName}" (${response.status})`);
+          }
+          return { clone, data };
+        })
+      );
+
+      const succeeded = results.filter((result) => result.status === 'fulfilled');
+      const failed = results.filter((result) => result.status === 'rejected') as PromiseRejectedResult[];
+      const folderFailures = succeeded.filter(
+        (result) => result.status === 'fulfilled' && result.value.data?.folderDeleted === false
+      );
+
+      if (currentCloneId != null && selectedCloneIds.has(currentCloneId)) {
+        setCurrentCloneId(null);
+        setCloneStatus(null);
+        setCloneProgress(0);
+        setCloneLogs([]);
+      }
+
+      setSelectedCloneIds(new Set());
+      await loadClonesList();
+
+      if (failed.length === 0 && folderFailures.length === 0) {
+        alert(
+          `Successfully deleted ${succeeded.length} cloned instance${succeeded.length === 1 ? '' : 's'} and their folders.`
+        );
+      } else {
+        const failedNames = failed
+          .map((result) => result.reason?.message || 'Unknown error')
+          .join('\n');
+        const folderNotes =
+          folderFailures.length > 0
+            ? `\n${folderFailures.length} record(s) deleted but folder removal failed.`
+            : '';
+        const message =
+          `Deleted ${succeeded.length} of ${selected.length} clones.` +
+          folderNotes +
+          (failed.length > 0 ? `\n\nFailures:\n${failedNames}` : '');
+        if (failed.length > 0) {
+          setError(message);
+        } else {
+          alert(message);
+        }
+      }
+    } catch (err: any) {
+      console.error('Bulk delete clones error:', err);
+      setError(err.message || 'Failed to bulk delete clones.');
+    } finally {
+      setBulkDeleteClonesLoading(false);
     }
   };
 
@@ -3414,8 +3619,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} ${isMobile ? 'gap-4' : ''}`}>
         <div className={`flex ${isMobile ? 'items-center justify-between w-full' : ''}`}>
           <div>
-            <h1 className={`${isMobile ? 'text-xl' : 'text-2xl'} font-bold text-slate-900 dark:text-white`}>Admin Panel</h1>
-            <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-slate-500 dark:text-slate-400 ${isMobile ? 'mt-0.5' : 'mt-1'}`}>Manage users and approvals</p>
+            <h1 className={`${isMobile ? 'text-xl' : 'text-2xl'} font-bold text-slate-900 dark:text-white flex items-center gap-2`}>
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 dark:bg-brand-900/30 text-lg" aria-hidden="true">🛠️</span>
+              Admin Panel
+            </h1>
+            <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-slate-500 dark:text-slate-400 ${isMobile ? 'mt-0.5' : 'mt-1'} ${isMobile ? '' : 'pl-11'}`}>Manage users and approvals</p>
           </div>
           {/* Mobile Hamburger Menu Button */}
           {isMobile && (
@@ -3486,11 +3694,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           <>
             {/* Mobile Sidebar Menu */}
             <div
-              className={`fixed top-0 left-0 h-full w-72 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 z-50 transform transition-transform duration-300 ease-in-out overflow-y-auto ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+              className={`fixed top-0 left-0 h-full w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 z-50 transform transition-transform duration-300 ease-in-out overflow-y-auto shadow-xl ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
                 }`}
             >
-              <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
-                <h2 className="text-lg font-bold text-slate-900 dark:text-white">Menu</h2>
+              <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between bg-gradient-to-r from-brand-50/80 to-transparent dark:from-brand-900/20">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900 dark:text-white">Admin Menu</h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Navigate sections</p>
+                </div>
                 <button
                   onClick={() => setMobileMenuOpen(false)}
                   className="p-2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 rounded-lg transition-colors touch-manipulation"
@@ -3502,526 +3713,141 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </svg>
                 </button>
               </div>
-              <div className="flex flex-col gap-1 p-2">
+              <div className="flex flex-col gap-1 p-3">
                 {/* Home Button */}
                 <button
                   onClick={() => {
                     setMobileMenuOpen(false);
                     window.location.hash = '#/';
                   }}
-                  className="px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent flex items-center gap-2"
+                  className="px-3 py-3 text-sm font-medium transition-colors rounded-xl text-left touch-manipulation text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-3"
                   style={{ minHeight: '44px' }}
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                    <path fillRule="evenodd" d="M9.293 2.293a1 1 0 011.414 0l7 7A1 1 0 0117 11h-1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-3a1 1 0 00-1-1H9a1 1 0 00-1 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-6H3a1 1 0 01-.707-1.707l7-7z" clipRule="evenodd" />
-                  </svg>
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-base" aria-hidden="true">🏠</span>
                   <span>Home</span>
                 </button>
 
-                <div className="my-2 border-t border-slate-200 dark:border-slate-700"></div>
-
-                <button
-                  onClick={() => {
-                    setActiveTab('pending');
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'pending'
-                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                    }`}
-                  style={{ minHeight: '44px' }}
-                >
-                  <div className="flex items-center justify-between">
-                    <span>Pending Users</span>
-                    {pendingUsers.length > 0 && (
-                      <span className="px-2 py-0.5 rounded-full bg-brand-100 dark:bg-brand-500/20 text-brand-600 dark:text-brand-400 text-xs font-semibold">
-                        {pendingUsers.length}
-                      </span>
-                    )}
+                {ADMIN_NAV_SECTIONS.map((section) => (
+                  <div key={section.label} className="mt-2">
+                    <p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                      {section.label}
+                    </p>
+                    <div className="flex flex-col gap-0.5">
+                      {section.items.map((item) => {
+                        const isActive = activeTab === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            onClick={() => {
+                              setActiveTab(item.id);
+                              setMobileMenuOpen(false);
+                            }}
+                            className={`px-3 py-2.5 text-sm font-medium transition-all rounded-xl text-left touch-manipulation flex items-center gap-3 ${isActive
+                              ? 'bg-brand-50 dark:bg-brand-900/25 text-brand-700 dark:text-brand-300 shadow-sm ring-1 ring-brand-200/70 dark:ring-brand-700/40'
+                              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                              }`}
+                            style={{ minHeight: '44px' }}
+                          >
+                            <span
+                              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-base ${isActive
+                                ? 'bg-brand-100 dark:bg-brand-800/50'
+                                : 'bg-slate-100 dark:bg-slate-800'
+                                }`}
+                              aria-hidden="true"
+                            >
+                              {item.emoji}
+                            </span>
+                            <span className="flex-1 min-w-0 truncate">{item.label}</span>
+                            {item.id === 'pending' && pendingUsers.length > 0 && (
+                              <span className="px-2 py-0.5 rounded-full bg-brand-100 dark:bg-brand-500/20 text-brand-600 dark:text-brand-400 text-xs font-semibold">
+                                {pendingUsers.length}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveTab('all');
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'all'
-                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                    }`}
-                  style={{ minHeight: '44px' }}
-                >
-                  All Users
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveTab('settings');
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'settings'
-                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                    }`}
-                  style={{ minHeight: '44px' }}
-                >
-                  Settings
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveTab('database');
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'database'
-                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                    }`}
-                  style={{ minHeight: '44px' }}
-                >
-                  Database
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveTab('spaces');
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'spaces'
-                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                    }`}
-                  style={{ minHeight: '44px' }}
-                >
-                  Spaces
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveTab('ldap');
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'ldap'
-                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                    }`}
-                  style={{ minHeight: '44px' }}
-                >
-                  LDAP
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveTab('saml');
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'saml'
-                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                    }`}
-                  style={{ minHeight: '44px' }}
-                >
-                  SAML
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveTab('footer');
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'footer'
-                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                    }`}
-                  style={{ minHeight: '44px' }}
-                >
-                  Footer
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveTab('tabVisibility');
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'tabVisibility'
-                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                    }`}
-                  style={{ minHeight: '44px' }}
-                >
-                  Enable/Disable Tabs
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveTab('access');
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'access'
-                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                    }`}
-                  style={{ minHeight: '44px' }}
-                >
-                  Access Manager
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveTab('clone');
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'clone'
-                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                    }`}
-                  style={{ minHeight: '44px' }}
-                >
-                  Clone
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveTab('browser');
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'browser'
-                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                    }`}
-                  style={{ minHeight: '44px' }}
-                >
-                  Browser Extn Integration
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveTab('broadcast');
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'broadcast'
-                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                    }`}
-                  style={{ minHeight: '44px' }}
-                >
-                  Broadcast Message
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveTab('maintenanceScripts');
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'maintenanceScripts'
-                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                    }`}
-                  style={{ minHeight: '44px' }}
-                >
-                  Maintenance Scripts
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveTab('maintenance');
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'maintenance'
-                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                    }`}
-                  style={{ minHeight: '44px' }}
-                >
-                  Maintenance
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveTab('widgets');
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'widgets'
-                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                    }`}
-                  style={{ minHeight: '44px' }}
-                >
-                  Custom Widgets
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveTab('addons');
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'addons'
-                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                    }`}
-                  style={{ minHeight: '44px' }}
-                >
-                  Add-ons
-                </button>
+                ))}
               </div>
             </div>
           </>
+        ) : tabLayout === 'horizontal' ? (
+          <div className="flex gap-1.5 border-b border-slate-200 dark:border-slate-700 overflow-x-auto pb-px scrollbar-thin">
+            {ADMIN_NAV_ITEMS.map((item) => {
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id)}
+                  className={`px-3.5 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap flex items-center gap-1.5 ${isActive
+                    ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                    : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                    }`}
+                >
+                  <span className="text-sm leading-none" aria-hidden="true">{item.emoji}</span>
+                  <span>{item.label}</span>
+                  {item.id === 'pending' && pendingUsers.length > 0 && (
+                    <span className="ml-1 px-2 py-0.5 rounded-full bg-brand-100 dark:bg-brand-500/20 text-brand-600 dark:text-brand-400 text-xs font-semibold">
+                      {pendingUsers.length}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         ) : (
-          /* Desktop Tabs */
-          <div className={tabLayout === 'horizontal'
-            ? "flex gap-2 border-b border-slate-200 dark:border-slate-700 overflow-x-auto"
-            : "flex flex-col gap-1 w-64 border-r border-slate-200 dark:border-slate-700 pr-4"
-          }>
-            <button
-              onClick={() => setActiveTab('pending')}
-              className={tabLayout === 'horizontal'
-                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'pending'
-                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`
-                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'pending'
-                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                }`
-              }
-            >
-              Pending Users
-              {pendingUsers.length > 0 && (
-                <span className="ml-2 px-2 py-0.5 rounded-full bg-brand-100 dark:bg-brand-500/20 text-brand-600 dark:text-brand-400 text-xs font-semibold">
-                  {pendingUsers.length}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab('all')}
-              className={tabLayout === 'horizontal'
-                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'all'
-                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`
-                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'all'
-                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                }`
-              }
-            >
-              All Users
-            </button>
-            <button
-              onClick={() => setActiveTab('settings')}
-              className={tabLayout === 'horizontal'
-                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'settings'
-                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`
-                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'settings'
-                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                }`
-              }
-            >
-              Settings
-            </button>
-            <button
-              onClick={() => setActiveTab('database')}
-              className={tabLayout === 'horizontal'
-                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'database'
-                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`
-                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'database'
-                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                }`
-              }
-            >
-              Database
-            </button>
-            <button
-              onClick={() => setActiveTab('spaces')}
-              className={tabLayout === 'horizontal'
-                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'spaces'
-                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`
-                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'spaces'
-                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                }`
-              }
-            >
-              Spaces
-            </button>
-            <button
-              onClick={() => setActiveTab('ldap')}
-              className={tabLayout === 'horizontal'
-                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'ldap'
-                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`
-                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'ldap'
-                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                }`
-              }
-            >
-              LDAP
-            </button>
-            <button
-              onClick={() => setActiveTab('saml')}
-              className={tabLayout === 'horizontal'
-                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'saml'
-                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`
-                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'saml'
-                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                }`
-              }
-            >
-              SAML
-            </button>
-            <button
-              onClick={() => setActiveTab('footer')}
-              className={tabLayout === 'horizontal'
-                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'footer'
-                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`
-                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'footer'
-                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                }`
-              }
-            >
-              Footer
-            </button>
-            <button
-              onClick={() => setActiveTab('tabVisibility')}
-              className={tabLayout === 'horizontal'
-                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'tabVisibility'
-                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`
-                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'tabVisibility'
-                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                }`
-              }
-            >
-              Enable/Disable Tabs
-            </button>
-            <button
-              onClick={() => setActiveTab('access')}
-              className={tabLayout === 'horizontal'
-                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'access'
-                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`
-                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'access'
-                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                }`
-              }
-            >
-              Access Manager
-            </button>
-            <button
-              onClick={() => setActiveTab('clone')}
-              className={tabLayout === 'horizontal'
-                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'clone'
-                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`
-                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'clone'
-                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                }`
-              }
-            >
-              Clone
-            </button>
-            <button
-              onClick={() => setActiveTab('browser')}
-              className={tabLayout === 'horizontal'
-                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'browser'
-                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`
-                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'browser'
-                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                }`
-              }
-            >
-              Browser Extn Integration
-            </button>
-            <button
-              onClick={() => setActiveTab('broadcast')}
-              className={tabLayout === 'horizontal'
-                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'broadcast'
-                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`
-                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'broadcast'
-                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                }`
-              }
-            >
-              Broadcast Message
-            </button>
-            <button
-              onClick={() => setActiveTab('maintenanceScripts')}
-              className={tabLayout === 'horizontal'
-                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'maintenanceScripts'
-                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`
-                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'maintenanceScripts'
-                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                }`
-              }
-            >
-              Maintenance Scripts
-            </button>
-            <button
-              onClick={() => setActiveTab('maintenance')}
-              className={tabLayout === 'horizontal'
-                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'maintenance'
-                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`
-                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'maintenance'
-                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                }`
-              }
-            >
-              Maintenance
-            </button>
-            <button
-              onClick={() => setActiveTab('widgets')}
-              className={tabLayout === 'horizontal'
-                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'widgets'
-                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`
-                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'widgets'
-                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                }`
-              }
-            >
-              Custom Widgets
-            </button>
-            <button
-              onClick={() => setActiveTab('addons')}
-              className={tabLayout === 'horizontal'
-                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'addons'
-                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`
-                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'addons'
-                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-                }`
-              }
-            >
-              Add-ons
-            </button>
+          <div className="flex flex-col w-72 shrink-0 sticky top-4 self-start max-h-[calc(100vh-6rem)] overflow-hidden rounded-2xl border border-slate-200/90 dark:border-slate-700/80 bg-white/90 dark:bg-slate-900/70 backdrop-blur-md p-2.5 shadow-md shadow-slate-200/40 dark:shadow-black/20">
+            <div className="shrink-0 px-3.5 py-3.5 mb-2 rounded-xl bg-gradient-to-br from-brand-50 via-white to-slate-50 dark:from-brand-900/35 dark:via-slate-800/50 dark:to-slate-800/30 border border-brand-100/70 dark:border-brand-800/40">
+              <p className="text-sm font-bold tracking-tight text-slate-900 dark:text-white">Admin Panel</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">Manage users and approvals</p>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto admin-nav-scrollbar px-1.5 py-0.5">
+              {ADMIN_NAV_SECTIONS.map((section) => (
+                <div key={section.label} className="mb-2 last:mb-0">
+                  <p className="px-2.5 pt-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400 dark:text-slate-500">
+                    {section.label}
+                  </p>
+                  <div className="flex flex-col gap-1">
+                    {section.items.map((item) => {
+                      const isActive = activeTab === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => setActiveTab(item.id)}
+                          className={`px-3 py-2.5 text-sm font-medium transition-all duration-150 rounded-xl text-left flex items-center gap-3 ${isActive
+                            ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 shadow-sm ring-1 ring-inset ring-brand-200/80 dark:ring-brand-700/50'
+                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/90 dark:hover:bg-slate-800/80 hover:text-slate-800 dark:hover:text-slate-200'
+                            }`}
+                        >
+                          <span
+                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm ${isActive
+                              ? 'bg-brand-100 dark:bg-brand-800/55'
+                              : 'bg-slate-100 dark:bg-slate-800'
+                              }`}
+                            aria-hidden="true"
+                          >
+                            {item.emoji}
+                          </span>
+                          <span className="flex-1 min-w-0 truncate leading-snug">{item.label}</span>
+                          {item.id === 'pending' && pendingUsers.length > 0 && (
+                            <span className="px-1.5 py-0.5 rounded-full bg-brand-100 dark:bg-brand-500/20 text-brand-600 dark:text-brand-400 text-[10px] font-semibold">
+                              {pendingUsers.length}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
         {/* Content Area */}
-        <div className={isMobile ? 'w-full' : (tabLayout === 'horizontal' ? '' : 'flex-1')}>
+        <div className={isMobile ? 'w-full' : (tabLayout === 'horizontal' ? '' : 'flex-1 min-w-0')}>
           {error && (
             <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 text-sm">
               {error}
@@ -7966,72 +7792,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 </div>
               )}
 
-              {/* Footer Tab */}
-              {activeTab === 'footer' && (
-                <div className="space-y-6">
-                  {settingsLoading ? (
-                    <div className="flex items-center justify-center py-12">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
-                    </div>
-                  ) : (
-                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                      <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Footer Text Settings</h3>
-                      <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
-                        Customize the footer text that appears at the bottom of every page.
-                      </p>
-
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                            Footer Text
-                          </label>
-                          <textarea
-                            value={settings.footer_text || 'Â© 2025 Adventhealth - Designed and developed by AIT Architecture team'}
-                            onChange={(e) => setSettings({ ...settings, footer_text: e.target.value })}
-                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                            placeholder="Â© 2025 Adventhealth - Designed and developed by AIT Architecture team"
-                            rows={3}
-                          />
-                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                            This text will be displayed in the footer of all pages. You can use HTML tags for formatting.
-                          </p>
-                        </div>
-
-                        <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
-                          <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Preview</h4>
-                          <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-                            <footer className="py-6 text-center text-slate-400 dark:text-slate-500 text-sm">
-                              <p dangerouslySetInnerHTML={{ __html: settings.footer_text || 'Â© 2025 Adventhealth - Designed and developed by AIT Architecture team' }}></p>
-                            </footer>
-                          </div>
-                        </div>
-
-                        <button
-                          onClick={async () => {
-                            try {
-                              setSettingsSaving(true);
-                              setError('');
-                              await settingsService.updateSettings(settings);
-                              await loadSettings(); // Reload local settings
-                              await refreshSettings(); // Refresh global settings context
-                              alert('Footer text saved successfully!');
-                            } catch (err: any) {
-                              setError(err.message || 'Failed to save footer text');
-                            } finally {
-                              setSettingsSaving(false);
-                            }
-                          }}
-                          disabled={settingsSaving}
-                          className="w-full bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
-                        >
-                          {settingsSaving ? 'Saving...' : 'Save Footer Text'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
               {/* Enable/Disable Tabs Tab */}
               {activeTab === 'tabVisibility' && (
                 <div className="space-y-6">
@@ -8574,15 +8334,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                   {/* Clones List */}
                   <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex justify-between items-center mb-4">
+                    <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
                       <h3 className="text-lg font-bold text-slate-900 dark:text-white">Cloned Instances</h3>
-                      <button
-                        onClick={loadClonesList}
-                        disabled={clonesLoading}
-                        className="px-3 py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-                      >
-                        {clonesLoading ? 'Loading...' : 'Refresh'}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {selectedCloneIds.size > 0 && (
+                          <button
+                            onClick={handleBulkDeleteClones}
+                            disabled={bulkDeleteClonesLoading || clonesLoading}
+                            className="px-3 py-1.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                              <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                            </svg>
+                            {bulkDeleteClonesLoading
+                              ? 'Deleting...'
+                              : `Delete Selected (${selectedCloneIds.size})`}
+                          </button>
+                        )}
+                        <button
+                          onClick={loadClonesList}
+                          disabled={clonesLoading || bulkDeleteClonesLoading}
+                          className="px-3 py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                        >
+                          {clonesLoading ? 'Loading...' : 'Refresh'}
+                        </button>
+                      </div>
                     </div>
 
                     {clonesList.length === 0 ? (
@@ -8594,6 +8370,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         <table className="w-full">
                           <thead>
                             <tr className="border-b border-slate-200 dark:border-slate-700">
+                              <th className="text-left py-3 px-4 w-10">
+                                <input
+                                  type="checkbox"
+                                  checked={clonesList.length > 0 && selectedCloneIds.size === clonesList.length}
+                                  ref={(el) => {
+                                    if (el) {
+                                      el.indeterminate =
+                                        selectedCloneIds.size > 0 &&
+                                        selectedCloneIds.size < clonesList.length;
+                                    }
+                                  }}
+                                  onChange={toggleSelectAllClones}
+                                  disabled={bulkDeleteClonesLoading}
+                                  className="h-4 w-4 rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                                  aria-label="Select all clones"
+                                />
+                              </th>
                               <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700 dark:text-slate-300">Folder Name</th>
                               <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700 dark:text-slate-300">Source Folder</th>
                               <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700 dark:text-slate-300">Target Folder</th>
@@ -8607,6 +8400,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           <tbody>
                             {clonesList.map((clone) => (
                               <tr key={clone.id} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900/50">
+                                <td className="py-3 px-4">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedCloneIds.has(clone.id)}
+                                    onChange={() => toggleCloneSelection(clone.id)}
+                                    disabled={bulkDeleteClonesLoading || deleteCloneLoading === clone.id}
+                                    className="h-4 w-4 rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                                    aria-label={`Select clone ${clone.folderName}`}
+                                  />
+                                </td>
                                 <td className="py-3 px-4 text-sm text-slate-900 dark:text-white font-medium">{clone.folderName}</td>
                                 <td className="py-3 px-4 text-sm text-slate-600 dark:text-slate-400 font-mono text-xs">
                                   {clone.sourcePath || '-'}
@@ -8774,6 +8577,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                             setCloneLogs([]);
                                           }
 
+                                          setSelectedCloneIds((prev) => {
+                                            if (!prev.has(clone.id)) return prev;
+                                            const next = new Set(prev);
+                                            next.delete(clone.id);
+                                            return next;
+                                          });
+
                                           // Reload list
                                           await loadClonesList();
                                         } catch (err: any) {
@@ -8783,7 +8593,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                           setDeleteCloneLoading(null);
                                         }
                                       }}
-                                      disabled={deleteCloneLoading === clone.id}
+                                      disabled={deleteCloneLoading === clone.id || bulkDeleteClonesLoading}
                                       className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                       title="Delete clone"
                                     >
@@ -9655,169 +9465,156 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      {/* Application Settings */}
-                      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Application Settings</h3>
-                        <div className="space-y-4">
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Application Name
-                            </label>
-                            <input
-                              type="text"
-                              value={settings.app_name}
-                              onChange={(e) => setSettings({ ...settings, app_name: e.target.value })}
-                              className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                              placeholder={settings.app_name || "LinkNest"}
-                            />
-                          </div>
+                    <>
+                      <div className="bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl flex flex-wrap gap-1">
+                        {([
+                          { id: 'branding' as const, label: 'Branding' },
+                          { id: 'general' as const, label: 'General' },
+                          { id: 'access' as const, label: 'Access' },
+                        ]).map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => setSettingsSubTab(item.id)}
+                            className={`flex-1 min-w-[7rem] px-3 py-2 text-sm font-medium transition-colors rounded-lg ${
+                              settingsSubTab === item.id
+                                ? 'bg-brand-600 text-white'
+                                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                            }`}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
 
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Page Title
-                            </label>
-                            <input
-                              type="text"
-                              value={settings.page_title}
-                              onChange={(e) => setSettings({ ...settings, page_title: e.target.value })}
-                              className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                              placeholder={settings.page_title || settings.app_name || "LinkNest"}
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Spaces Page Title
-                            </label>
-                            <input
-                              type="text"
-                              value={settings.spaces_title}
-                              onChange={(e) => setSettings({ ...settings, spaces_title: e.target.value })}
-                              className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                              placeholder="My Spaces"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Logo Type
-                            </label>
-                            <div className="flex gap-3">
-                              <button
-                                onClick={() => {
-                                  setSettings({ ...settings, logo_type: 'icon' });
-                                  setLogoPreview(null);
-                                }}
-                                className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${settings.logo_type === 'icon'
-                                  ? 'bg-brand-600 text-white'
-                                  : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                                  }`}
-                              >
-                                Icon/Emoji
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setSettings({ ...settings, logo_type: 'image' });
-                                  if (settings.logo_image) {
-                                    setLogoPreview(settings.logo_image);
-                                  }
-                                }}
-                                className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${settings.logo_type === 'image'
-                                  ? 'bg-brand-600 text-white'
-                                  : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                                  }`}
-                              >
-                                Image
-                              </button>
-                            </div>
-                          </div>
-
-                          {settings.logo_type === 'icon' ? (
+                      {settingsSubTab === 'branding' && (
+                        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                          <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Branding</h3>
+                          <div className="space-y-4">
                             <div>
                               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                                Logo Icon/Emoji
+                                Application Name
                               </label>
                               <input
                                 type="text"
-                                value={settings.logo_icon}
-                                onChange={(e) => setSettings({ ...settings, logo_icon: e.target.value })}
-                                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-2xl text-center focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                                placeholder="ðŸ”—"
-                                maxLength={2}
+                                value={settings.app_name}
+                                onChange={(e) => setSettings({ ...settings, app_name: e.target.value })}
+                                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                placeholder={settings.app_name || "LinkNest"}
                               />
-                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Enter an emoji or icon character</p>
                             </div>
-                          ) : (
-                            <div className="space-y-4">
+
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Logo Type
+                              </label>
+                              <div className="flex gap-3">
+                                <button
+                                  onClick={() => {
+                                    setSettings({ ...settings, logo_type: 'icon' });
+                                    setLogoPreview(null);
+                                  }}
+                                  className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${settings.logo_type === 'icon'
+                                    ? 'bg-brand-600 text-white'
+                                    : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                                    }`}
+                                >
+                                  Icon/Emoji
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setSettings({ ...settings, logo_type: 'image' });
+                                    if (settings.logo_image) {
+                                      setLogoPreview(settings.logo_image);
+                                    }
+                                  }}
+                                  className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${settings.logo_type === 'image'
+                                    ? 'bg-brand-600 text-white'
+                                    : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                                    }`}
+                                >
+                                  Image
+                                </button>
+                              </div>
+                            </div>
+
+                            {settings.logo_type === 'icon' ? (
                               <div>
                                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                                  Logo Image
+                                  Logo Icon/Emoji
                                 </label>
+                                <input
+                                  type="text"
+                                  value={settings.logo_icon}
+                                  onChange={(e) => setSettings({ ...settings, logo_icon: e.target.value })}
+                                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-2xl text-center focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                  placeholder="🔗"
+                                  maxLength={2}
+                                />
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Enter an emoji or icon character</p>
+                              </div>
+                            ) : (
+                              <div className="space-y-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                    Logo Image
+                                  </label>
 
-                                {/* Image Preview */}
-                                {(logoPreview || settings.logo_image) && (
-                                  <div className="mb-3 p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg">
-                                    <div className="flex items-center gap-3">
-                                      <img
-                                        src={logoPreview || settings.logo_image}
-                                        alt="Logo preview"
-                                        className="w-16 h-16 object-contain rounded border border-slate-200 dark:border-slate-700"
-                                        onError={(e) => {
-                                          (e.target as HTMLImageElement).style.display = 'none';
-                                        }}
-                                      />
-                                      <div className="flex-1">
-                                        <p className="text-xs text-slate-600 dark:text-slate-400">Current logo preview</p>
-                                        {settings.logo_image && (
-                                          <button
-                                            onClick={() => {
-                                              setSettings({ ...settings, logo_image: '' });
-                                              setLogoPreview(null);
-                                            }}
-                                            className="mt-1 text-xs text-red-600 dark:text-red-400 hover:underline"
-                                          >
-                                            Remove logo
-                                          </button>
-                                        )}
+                                  {(logoPreview || settings.logo_image) && (
+                                    <div className="mb-3 p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg">
+                                      <div className="flex items-center gap-3">
+                                        <img
+                                          src={logoPreview || settings.logo_image}
+                                          alt="Logo preview"
+                                          className="w-16 h-16 object-contain rounded border border-slate-200 dark:border-slate-700"
+                                          onError={(e) => {
+                                            (e.target as HTMLImageElement).style.display = 'none';
+                                          }}
+                                        />
+                                        <div className="flex-1">
+                                          <p className="text-xs text-slate-600 dark:text-slate-400">Current logo preview</p>
+                                          {settings.logo_image && (
+                                            <button
+                                              onClick={() => {
+                                                setSettings({ ...settings, logo_image: '' });
+                                                setLogoPreview(null);
+                                              }}
+                                              className="mt-1 text-xs text-red-600 dark:text-red-400 hover:underline"
+                                            >
+                                              Remove logo
+                                            </button>
+                                          )}
+                                        </div>
                                       </div>
                                     </div>
-                                  </div>
-                                )}
+                                  )}
 
-                                {/* File Upload */}
-                                <div className="mb-3">
-                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
-                                    Upload Logo Image
-                                  </label>
-                                  <div className="relative">
-                                    <input
-                                      type="file"
-                                      accept="image/jpeg,image/jpg,image/png,image/gif,image/svg+xml,image/webp"
-                                      onChange={async (e) => {
-                                        const file = e.target.files?.[0];
-                                        if (!file) return;
+                                  <div className="mb-3">
+                                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                                      Upload Logo Image
+                                    </label>
+                                    <div className="relative">
+                                      <input
+                                        type="file"
+                                        accept="image/jpeg,image/jpg,image/png,image/gif,image/svg+xml,image/webp"
+                                        onChange={async (e) => {
+                                          const file = e.target.files?.[0];
+                                          if (!file) return;
 
-                                        // Validate file size (2MB)
-                                        if (file.size > 2 * 1024 * 1024) {
-                                          setError('File size too large. Maximum size: 2MB');
-                                          e.target.value = '';
-                                          return;
-                                        }
+                                          if (file.size > 10 * 1024 * 1024) {
+                                            setError('File size too large. Maximum size: 10MB');
+                                            e.target.value = '';
+                                            return;
+                                          }
 
-                                        // Validate dimensions (skip for SVG)
-                                        const isSVG = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg');
-                                        const objectUrl = URL.createObjectURL(file);
-
-                                        if (isSVG) {
-                                          // For SVG, just show preview and upload
+                                          const objectUrl = URL.createObjectURL(file);
                                           setLogoPreview(objectUrl);
                                           try {
                                             setLogoUploading(true);
                                             setError('');
                                             const url = await settingsService.uploadLogo(file);
                                             setSettings({ ...settings, logo_image: url });
-                                            setLogoPreview(null); // Clear preview after upload
+                                            setLogoPreview(null);
                                             URL.revokeObjectURL(objectUrl);
                                           } catch (err: any) {
                                             setError(err.message || 'Failed to upload logo');
@@ -9827,174 +9624,110 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                             setLogoUploading(false);
                                             e.target.value = '';
                                           }
-                                        } else {
-                                          // For raster images, validate dimensions
-                                          const img = new Image();
-
-                                          img.onload = async () => {
-                                            const maxWidth = 512;
-                                            const maxHeight = 512;
-                                            const minWidth = 32;
-                                            const minHeight = 32;
-
-                                            if (img.width > maxWidth || img.height > maxHeight) {
-                                              setError(`Image dimensions too large. Maximum: ${maxWidth}x${maxHeight}px. Your image: ${img.width}x${img.height}px`);
-                                              URL.revokeObjectURL(objectUrl);
-                                              e.target.value = '';
-                                              return;
-                                            }
-
-                                            if (img.width < minWidth || img.height < minHeight) {
-                                              setError(`Image dimensions too small. Minimum: ${minWidth}x${minHeight}px. Your image: ${img.width}x${img.height}px`);
-                                              URL.revokeObjectURL(objectUrl);
-                                              e.target.value = '';
-                                              return;
-                                            }
-
-                                            // Show preview
-                                            setLogoPreview(objectUrl);
-
-                                            // Upload file
-                                            try {
-                                              setLogoUploading(true);
-                                              setError('');
-                                              const url = await settingsService.uploadLogo(file);
-                                              setSettings({ ...settings, logo_image: url });
-                                              setLogoPreview(null); // Clear preview after upload
-                                              URL.revokeObjectURL(objectUrl);
-                                            } catch (err: any) {
-                                              setError(err.message || 'Failed to upload logo');
-                                              setLogoPreview(null);
-                                              URL.revokeObjectURL(objectUrl);
-                                            } finally {
-                                              setLogoUploading(false);
-                                              e.target.value = '';
-                                            }
-                                          };
-
-                                          img.onerror = () => {
-                                            setError('Invalid image file');
-                                            URL.revokeObjectURL(objectUrl);
-                                            e.target.value = '';
-                                          };
-
-                                          img.src = objectUrl;
-                                        }
-                                      }}
-                                      disabled={logoUploading}
-                                      className="w-full text-sm text-slate-600 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-900/30 dark:file:text-brand-300 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                                    />
-                                  </div>
-                                  {logoUploading && (
-                                    <div className="mt-2 flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
-                                      <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                      </svg>
-                                      Uploading...
-                                    </div>
-                                  )}
-                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                                    Allowed: JPEG, PNG, GIF, SVG, WebP | Max size: 2MB | Dimensions: 32x32px to 512x512px
-                                  </p>
-                                </div>
-
-                                {/* URL Input (Alternative) */}
-                                <div>
-                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
-                                    Or enter Logo Image URL
-                                  </label>
-                                  <input
-                                    type="text"
-                                    value={settings.logo_image}
-                                    onChange={(e) => {
-                                      setSettings({ ...settings, logo_image: e.target.value });
-                                      setLogoPreview(e.target.value || null);
-                                    }}
-                                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                                    placeholder="https://example.com/logo.png"
-                                  />
-                                </div>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Favicon Upload Section */}
-                          <div className="mb-6">
-                            <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Favicon</h4>
-                            <p className="text-xs text-slate-600 dark:text-slate-400 mb-4">
-                              Upload a favicon (16x16px to 512x512px recommended). This appears in browser tabs and bookmarks.
-                            </p>
-
-                            {/* Preview */}
-                            {(faviconPreview || settings.favicon) && (
-                              <div className="mb-3">
-                                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
-                                  Current Favicon Preview
-                                </label>
-                                <div className="flex items-center gap-3">
-                                  <img
-                                    src={faviconPreview || settings.favicon}
-                                    alt="Favicon preview"
-                                    className="w-16 h-16 object-contain border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 p-2"
-                                    onError={(e) => {
-                                      (e.target as HTMLImageElement).style.display = 'none';
-                                    }}
-                                  />
-                                  <div className="flex-1">
-                                    <p className="text-xs text-slate-600 dark:text-slate-400">
-                                      {settings.favicon || 'Preview'}
-                                    </p>
-                                    {settings.favicon && (
-                                      <button
-                                        onClick={() => {
-                                          setSettings({ ...settings, favicon: '' });
-                                          setFaviconPreview(null);
                                         }}
-                                        className="mt-1 text-xs text-red-600 dark:text-red-400 hover:underline"
-                                      >
-                                        Remove favicon
-                                      </button>
+                                        disabled={logoUploading}
+                                        className="w-full text-sm text-slate-600 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-900/30 dark:file:text-brand-300 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                      />
+                                    </div>
+                                    {logoUploading && (
+                                      <div className="mt-2 flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Uploading...
+                                      </div>
                                     )}
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                      JPEG, PNG, GIF, SVG, WebP — auto-converted to PNG (max 512×512). SVG kept as-is. Max 10MB.
+                                    </p>
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                                      Or enter Logo Image URL
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={settings.logo_image}
+                                      onChange={(e) => {
+                                        setSettings({ ...settings, logo_image: e.target.value });
+                                        setLogoPreview(e.target.value || null);
+                                      }}
+                                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                      placeholder="https://example.com/logo.png"
+                                    />
                                   </div>
                                 </div>
                               </div>
                             )}
 
-                            {/* File Upload */}
-                            <div className="mb-3">
-                              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
-                                Upload Favicon
-                              </label>
-                              <div className="relative">
-                                <input
-                                  type="file"
-                                  accept="image/x-icon,image/vnd.microsoft.icon,image/png,image/svg+xml,image/jpeg,image/jpg,image/gif,image/webp,.ico"
-                                  onChange={async (e) => {
-                                    const file = e.target.files?.[0];
-                                    if (!file) return;
+                            <div className="mb-6">
+                              <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Favicon</h4>
+                              <p className="text-xs text-slate-600 dark:text-slate-400 mb-4">
+                                Upload a favicon for browser tabs and bookmarks.
+                              </p>
 
-                                    // Validate file size (1MB)
-                                    if (file.size > 1 * 1024 * 1024) {
-                                      setError('File size too large. Maximum size: 1MB');
-                                      e.target.value = '';
-                                      return;
-                                    }
+                              {(faviconPreview || settings.favicon) && (
+                                <div className="mb-3">
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                                    Current Favicon Preview
+                                  </label>
+                                  <div className="flex items-center gap-3">
+                                    <img
+                                      src={faviconPreview || settings.favicon}
+                                      alt="Favicon preview"
+                                      className="w-16 h-16 object-contain border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 p-2"
+                                      onError={(e) => {
+                                        (e.target as HTMLImageElement).style.display = 'none';
+                                      }}
+                                    />
+                                    <div className="flex-1">
+                                      <p className="text-xs text-slate-600 dark:text-slate-400">
+                                        {settings.favicon || 'Preview'}
+                                      </p>
+                                      {settings.favicon && (
+                                        <button
+                                          onClick={() => {
+                                            setSettings({ ...settings, favicon: '' });
+                                            setFaviconPreview(null);
+                                          }}
+                                          className="mt-1 text-xs text-red-600 dark:text-red-400 hover:underline"
+                                        >
+                                          Remove favicon
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
 
-                                    // Validate dimensions (skip for SVG and ICO)
-                                    const isSVG = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg');
-                                    const isICO = file.name.toLowerCase().endsWith('.ico') || file.type === 'image/x-icon' || file.type === 'image/vnd.microsoft.icon';
-                                    const objectUrl = URL.createObjectURL(file);
+                              <div className="mb-3">
+                                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                                  Upload Favicon
+                                </label>
+                                <div className="relative">
+                                  <input
+                                    type="file"
+                                    accept="image/x-icon,image/vnd.microsoft.icon,image/png,image/svg+xml,image/jpeg,image/jpg,image/gif,image/webp,.ico"
+                                    onChange={async (e) => {
+                                      const file = e.target.files?.[0];
+                                      if (!file) return;
 
-                                    if (isSVG || isICO) {
-                                      // For SVG and ICO, just show preview and upload
+                                      if (file.size > 10 * 1024 * 1024) {
+                                        setError('File size too large. Maximum size: 10MB');
+                                        e.target.value = '';
+                                        return;
+                                      }
+
+                                      const objectUrl = URL.createObjectURL(file);
                                       setFaviconPreview(objectUrl);
                                       try {
                                         setFaviconUploading(true);
                                         setError('');
                                         const url = await settingsService.uploadFavicon(file);
                                         setSettings({ ...settings, favicon: url });
-                                        setFaviconPreview(null); // Clear preview after upload
+                                        setFaviconPreview(null);
                                         URL.revokeObjectURL(objectUrl);
                                       } catch (err: any) {
                                         setError(err.message || 'Failed to upload favicon');
@@ -10004,215 +9737,259 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                         setFaviconUploading(false);
                                         e.target.value = '';
                                       }
-                                    } else {
-                                      // For raster images, validate dimensions
-                                      const img = new Image();
+                                    }}
+                                    disabled={faviconUploading}
+                                    className="w-full text-sm text-slate-600 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-900/30 dark:file:text-brand-300 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                  />
+                                </div>
+                                {faviconUploading && (
+                                  <div className="mt-2 flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Uploading...
+                                  </div>
+                                )}
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                  JPEG, PNG, GIF, SVG, WebP, ICO — auto-converted to 32×32 PNG. SVG kept as-is. Max 10MB.
+                                </p>
+                              </div>
 
-                                      img.onload = async () => {
-                                        const maxWidth = 512;
-                                        const maxHeight = 512;
-                                        const minWidth = 16;
-                                        const minHeight = 16;
-
-                                        if (img.width > maxWidth || img.height > maxHeight) {
-                                          setError(`Image dimensions too large. Maximum: ${maxWidth}x${maxHeight}px. Your image: ${img.width}x${img.height}px`);
-                                          URL.revokeObjectURL(objectUrl);
-                                          e.target.value = '';
-                                          return;
-                                        }
-
-                                        if (img.width < minWidth || img.height < minHeight) {
-                                          setError(`Image dimensions too small. Minimum: ${minWidth}x${minHeight}px. Your image: ${img.width}x${img.height}px`);
-                                          URL.revokeObjectURL(objectUrl);
-                                          e.target.value = '';
-                                          return;
-                                        }
-
-                                        // Show preview
-                                        setFaviconPreview(objectUrl);
-
-                                        // Upload file
-                                        try {
-                                          setFaviconUploading(true);
-                                          setError('');
-                                          const url = await settingsService.uploadFavicon(file);
-                                          setSettings({ ...settings, favicon: url });
-                                          setFaviconPreview(null); // Clear preview after upload
-                                          URL.revokeObjectURL(objectUrl);
-                                        } catch (err: any) {
-                                          setError(err.message || 'Failed to upload favicon');
-                                          setFaviconPreview(null);
-                                          URL.revokeObjectURL(objectUrl);
-                                        } finally {
-                                          setFaviconUploading(false);
-                                          e.target.value = '';
-                                        }
-                                      };
-
-                                      img.onerror = () => {
-                                        setError('Invalid image file');
-                                        URL.revokeObjectURL(objectUrl);
-                                        e.target.value = '';
-                                      };
-
-                                      img.src = objectUrl;
-                                    }
+                              <div>
+                                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                                  Or enter Favicon URL
+                                </label>
+                                <input
+                                  type="text"
+                                  value={settings.favicon}
+                                  onChange={(e) => {
+                                    setSettings({ ...settings, favicon: e.target.value });
+                                    setFaviconPreview(e.target.value || null);
                                   }}
-                                  disabled={faviconUploading}
-                                  className="w-full text-sm text-slate-600 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-900/30 dark:file:text-brand-300 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                  placeholder="https://example.com/favicon.ico"
                                 />
                               </div>
-                              {faviconUploading && (
-                                <div className="mt-2 flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
-                                  <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                  </svg>
-                                  Uploading...
-                                </div>
-                              )}
-                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                                Allowed: ICO, PNG, SVG, JPEG, GIF, WebP | Max size: 1MB | Dimensions: 16x16px to 512x512px
-                              </p>
                             </div>
 
-                            {/* URL Input (Alternative) */}
+                            <div className="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-4">
+                              <div>
+                                <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Footer Text Settings</h4>
+                                <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                                  Customize the footer text that appears at the bottom of every page.
+                                </p>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                  Footer Text
+                                </label>
+                                <textarea
+                                  value={settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team'}
+                                  onChange={(e) => setSettings({ ...settings, footer_text: e.target.value })}
+                                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                  placeholder="© 2025 Adventhealth - Designed and developed by AIT Architecture team"
+                                  rows={3}
+                                />
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                  This text will be displayed in the footer of all pages. You can use HTML tags for formatting.
+                                </p>
+                              </div>
+
+                              <div>
+                                <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Preview</h4>
+                                <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                                  <footer className="py-6 text-center text-slate-400 dark:text-slate-500 text-sm">
+                                    <p dangerouslySetInnerHTML={{ __html: settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team' }}></p>
+                                  </footer>
+                                </div>
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={async () => {
+                                try {
+                                  setSettingsSaving(true);
+                                  setError('');
+                                  await settingsService.updateSettings(settings);
+                                  await loadSettings();
+                                  await refreshSettings();
+                                  alert('Settings saved successfully!');
+                                } catch (err: any) {
+                                  setError(err.message || 'Failed to save settings');
+                                } finally {
+                                  setSettingsSaving(false);
+                                }
+                              }}
+                              disabled={settingsSaving}
+                              className="w-full bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                            >
+                              {settingsSaving ? 'Saving...' : 'Save Settings'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {settingsSubTab === 'general' && (
+                        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                          <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">General</h3>
+                          <div className="space-y-4">
                             <div>
-                              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
-                                Or enter Favicon URL
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Page Title
                               </label>
                               <input
                                 type="text"
-                                value={settings.favicon}
-                                onChange={(e) => {
-                                  setSettings({ ...settings, favicon: e.target.value });
-                                  setFaviconPreview(e.target.value || null);
-                                }}
+                                value={settings.page_title}
+                                onChange={(e) => setSettings({ ...settings, page_title: e.target.value })}
                                 className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                                placeholder="https://example.com/favicon.ico"
+                                placeholder={settings.page_title || settings.app_name || "LinkNest"}
                               />
                             </div>
-                          </div>
 
-                          {/* Guest Access Toggle */}
-                          <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
-                            <label className="flex items-center justify-between cursor-pointer">
-                              <div className="flex-1">
-                                <span className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                  Enable Guest Access
-                                </span>
-                                <span className="block text-xs text-slate-500 dark:text-slate-400">
-                                  Allow unauthenticated users to view public spaces. When disabled, all users must login to see spaces.
-                                </span>
-                              </div>
-                              <div className="ml-4">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSettings({
-                                      ...settings,
-                                      guest_access_enabled: (settings.guest_access_enabled === '1' || settings.guest_access_enabled === undefined) ? '0' : '1'
-                                    });
-                                  }}
-                                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${(settings.guest_access_enabled === '1' || settings.guest_access_enabled === undefined)
-                                    ? 'bg-brand-600'
-                                    : 'bg-slate-300 dark:bg-slate-600'
-                                    }`}
-                                >
-                                  <span
-                                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${(settings.guest_access_enabled === '1' || settings.guest_access_enabled === undefined) ? 'translate-x-6' : 'translate-x-1'
-                                      }`}
-                                  />
-                                </button>
-                              </div>
-                            </label>
-                          </div>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Spaces Page Title
+                              </label>
+                              <input
+                                type="text"
+                                value={settings.spaces_title}
+                                onChange={(e) => setSettings({ ...settings, spaces_title: e.target.value })}
+                                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                placeholder="My Spaces"
+                              />
+                            </div>
 
-                          {/* Footer Settings */}
-                          <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
-                            <label className="flex items-center justify-between cursor-pointer">
-                              <div className="flex-1">
-                                <span className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                  Show Database Path in Footer
-                                </span>
-                                <span className="block text-xs text-slate-500 dark:text-slate-400">
-                                  Display the database file path in the footer for verification
-                                </span>
-                              </div>
-                              <div className="ml-4">
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    const newValue = settings.show_database_path_in_footer === '1' ? '0' : '1';
-                                    try {
-                                      setSettingsSaving(true);
-                                      setError('');
-                                      await settingsService.updateSettings({
-                                        ...settings,
-                                        show_database_path_in_footer: newValue
-                                      });
-                                      setSettings({ ...settings, show_database_path_in_footer: newValue });
-                                      await refreshSettings();
-                                    } catch (err: any) {
-                                      setError(err.message || 'Failed to update setting');
-                                    } finally {
-                                      setSettingsSaving(false);
-                                    }
-                                  }}
-                                  disabled={settingsSaving}
-                                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.show_database_path_in_footer === '1'
-                                    ? 'bg-brand-600'
-                                    : 'bg-slate-300 dark:bg-slate-600'
-                                    }`}
-                                >
-                                  <span
-                                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.show_database_path_in_footer === '1'
-                                      ? 'translate-x-6'
-                                      : 'translate-x-1'
-                                      }`}
-                                  />
-                                </button>
-                              </div>
-                            </label>
+                            <button
+                              onClick={async () => {
+                                try {
+                                  setSettingsSaving(true);
+                                  setError('');
+                                  await settingsService.updateSettings(settings);
+                                  await loadSettings();
+                                  await refreshSettings();
+                                  alert('Settings saved successfully!');
+                                } catch (err: any) {
+                                  setError(err.message || 'Failed to save settings');
+                                } finally {
+                                  setSettingsSaving(false);
+                                }
+                              }}
+                              disabled={settingsSaving}
+                              className="w-full bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                            >
+                              {settingsSaving ? 'Saving...' : 'Save Settings'}
+                            </button>
                           </div>
-
-                          <button
-                            onClick={async () => {
-                              try {
-                                setSettingsSaving(true);
-                                setError('');
-                                await settingsService.updateSettings(settings);
-                                await loadSettings(); // Reload local settings
-                                await refreshSettings(); // Refresh global settings context
-                                alert('Settings saved successfully!');
-                              } catch (err: any) {
-                                setError(err.message || 'Failed to save settings');
-                              } finally {
-                                setSettingsSaving(false);
-                              }
-                            }}
-                            disabled={settingsSaving}
-                            className="w-full bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
-                          >
-                            {settingsSaving ? 'Saving...' : 'Save Settings'}
-                          </button>
                         </div>
-                      </div>
+                      )}
 
-                      {/* Admin Password */}
-                      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Admin Password</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-                          Change your admin account password
-                        </p>
-                        <button
-                          onClick={() => setAdminPasswordModal(true)}
-                          className="w-full bg-amber-600 hover:bg-amber-500 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
-                        >
-                          Change Admin Password
-                        </button>
-                      </div>
-                    </div>
+                      {settingsSubTab === 'access' && (
+                        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                          <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Access</h3>
+                          <div className="space-y-4">
+                            <div>
+                              <label className="flex items-center justify-between cursor-pointer">
+                                <div className="flex-1">
+                                  <span className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                    Enable Guest Access
+                                  </span>
+                                  <span className="block text-xs text-slate-500 dark:text-slate-400">
+                                    Allow unauthenticated users to view public spaces. When disabled, all users must login to see spaces.
+                                  </span>
+                                </div>
+                                <div className="ml-4">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSettings({
+                                        ...settings,
+                                        guest_access_enabled: (settings.guest_access_enabled === '1' || settings.guest_access_enabled === undefined) ? '0' : '1'
+                                      });
+                                    }}
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${(settings.guest_access_enabled === '1' || settings.guest_access_enabled === undefined)
+                                      ? 'bg-brand-600'
+                                      : 'bg-slate-300 dark:bg-slate-600'
+                                      }`}
+                                  >
+                                    <span
+                                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${(settings.guest_access_enabled === '1' || settings.guest_access_enabled === undefined) ? 'translate-x-6' : 'translate-x-1'
+                                        }`}
+                                    />
+                                  </button>
+                                </div>
+                              </label>
+                            </div>
+
+                            <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                              <label className="flex items-center justify-between cursor-pointer">
+                                <div className="flex-1">
+                                  <span className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                    Show Database Path in Footer
+                                  </span>
+                                  <span className="block text-xs text-slate-500 dark:text-slate-400">
+                                    Display the database file path in the footer for verification
+                                  </span>
+                                </div>
+                                <div className="ml-4">
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      const newValue = settings.show_database_path_in_footer === '1' ? '0' : '1';
+                                      try {
+                                        setSettingsSaving(true);
+                                        setError('');
+                                        await settingsService.updateSettings({
+                                          ...settings,
+                                          show_database_path_in_footer: newValue
+                                        });
+                                        setSettings({ ...settings, show_database_path_in_footer: newValue });
+                                        await refreshSettings();
+                                      } catch (err: any) {
+                                        setError(err.message || 'Failed to update setting');
+                                      } finally {
+                                        setSettingsSaving(false);
+                                      }
+                                    }}
+                                    disabled={settingsSaving}
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.show_database_path_in_footer === '1'
+                                      ? 'bg-brand-600'
+                                      : 'bg-slate-300 dark:bg-slate-600'
+                                      }`}
+                                  >
+                                    <span
+                                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.show_database_path_in_footer === '1'
+                                        ? 'translate-x-6'
+                                        : 'translate-x-1'
+                                        }`}
+                                    />
+                                  </button>
+                                </div>
+                              </label>
+                            </div>
+
+                            <button
+                              onClick={async () => {
+                                try {
+                                  setSettingsSaving(true);
+                                  setError('');
+                                  await settingsService.updateSettings(settings);
+                                  await loadSettings();
+                                  await refreshSettings();
+                                  alert('Settings saved successfully!');
+                                } catch (err: any) {
+                                  setError(err.message || 'Failed to save settings');
+                                } finally {
+                                  setSettingsSaving(false);
+                                }
+                              }}
+                              disabled={settingsSaving}
+                              className="w-full bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                            >
+                              {settingsSaving ? 'Saving...' : 'Save Settings'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}
@@ -13882,6 +13659,31 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                 </p>
               </div>
 
+              {editUserModal.userId === user?.id && editAuthSource === 'local' && (
+                <div className="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-3">
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Change Password</h4>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                      Change your admin account password
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditUserModal({ open: false, userId: null, username: '', email: '', auth_source: 'local' });
+                      setEditUsername('');
+                      setEditEmail('');
+                      setEditAuthSource('local');
+                      setError('');
+                      setAdminPasswordModal(true);
+                    }}
+                    className="w-full bg-amber-600 hover:bg-amber-500 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                  >
+                    Change Admin Password
+                  </button>
+                </div>
+              )}
+
               <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
                 <button
                   onClick={() => {
@@ -15526,6 +15328,23 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                   )}
                   {userActionsDialog.user.is_admin ? 'Demote from Admin' : 'Promote to Admin'}
                 </button>
+
+                {userActionsDialog.user.id === user?.id &&
+                  (userActionsDialog.user.auth_source || 'local').toLowerCase() === 'local' && (
+                  <button
+                    onClick={() => {
+                      setUserActionsDialog({ open: false, user: null });
+                      setAdminPasswordModal(true);
+                    }}
+                    disabled={processing === userActionsDialog.user.id}
+                    className="w-full px-4 py-3 text-left text-sm font-medium bg-amber-50 dark:bg-amber-900/10 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 rounded-xl transition-all"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                      <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
+                    </svg>
+                    Change My Password
+                  </button>
+                )}
 
                 {!userActionsDialog.user.is_admin && (
                   <>

@@ -297,6 +297,68 @@ div.linknest-tile.has-local-decoration .tooltip-force-black * {
   background: #475569;
 }
 
+/* Hide scrollbar while preserving scroll (desktop nav panels, etc.) */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* Visible scrollbar for admin vertical nav */
+.admin-nav-scrollbar {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 transparent;
+}
+
+.admin-nav-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.admin-nav-scrollbar::-webkit-scrollbar-track {
+  background: rgba(148, 163, 184, 0.15);
+  border-radius: 999px;
+  margin-block: 4px;
+}
+
+.admin-nav-scrollbar::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.admin-nav-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.dark .admin-nav-scrollbar {
+  scrollbar-color: #64748b transparent;
+}
+
+.dark .admin-nav-scrollbar::-webkit-scrollbar-track {
+  background: rgba(71, 85, 105, 0.35);
+}
+
+.dark .admin-nav-scrollbar::-webkit-scrollbar-thumb {
+  background: #64748b;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.dark .admin-nav-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
 /* Custom scrollbar for theme widget */
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;

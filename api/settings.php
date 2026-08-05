@@ -209,6 +209,192 @@ function handleGetSettings() {
     sendJSON(['settings' => $settings]);
 }
 
+/**
+ * Load a GD image resource from an uploaded temp file.
+ * @return \GdImage|resource|false
+ */
+function loadGdImageFromFile($tmpPath, $mimeType, $extension = '') {
+    $ext = strtolower($extension);
+    switch ($mimeType) {
+        case 'image/jpeg':
+        case 'image/jpg':
+            return @imagecreatefromjpeg($tmpPath);
+        case 'image/png':
+            return @imagecreatefrompng($tmpPath);
+        case 'image/gif':
+            return @imagecreatefromgif($tmpPath);
+        case 'image/webp':
+            return function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($tmpPath) : false;
+        case 'image/bmp':
+        case 'image/x-ms-bmp':
+            return function_exists('imagecreatefrombmp') ? @imagecreatefrombmp($tmpPath) : false;
+        case 'image/x-icon':
+        case 'image/vnd.microsoft.icon':
+            // ICO: try PNG/JPEG decode via getimagesize + GD when possible
+            $info = @getimagesize($tmpPath);
+            if ($info && !empty($info['mime'])) {
+                return loadGdImageFromFile($tmpPath, $info['mime'], $ext);
+            }
+            return false;
+        default:
+            if ($ext === 'jpg' || $ext === 'jpeg') {
+                return @imagecreatefromjpeg($tmpPath);
+            }
+            if ($ext === 'png') {
+                return @imagecreatefrompng($tmpPath);
+            }
+            if ($ext === 'gif') {
+                return @imagecreatefromgif($tmpPath);
+            }
+            if ($ext === 'webp' && function_exists('imagecreatefromwebp')) {
+                return @imagecreatefromwebp($tmpPath);
+            }
+            return false;
+    }
+}
+
+/**
+ * Resize a GD image to fit inside maxW×maxH (aspect preserved). Never upscales.
+ * @param \GdImage|resource $src
+ * @return \GdImage|resource
+ */
+function resizeGdImageFit($src, $maxW, $maxH) {
+    $srcW = imagesx($src);
+    $srcH = imagesy($src);
+    if ($srcW <= 0 || $srcH <= 0) {
+        return $src;
+    }
+
+    $scale = min($maxW / $srcW, $maxH / $srcH, 1.0);
+    $dstW = max(1, (int) round($srcW * $scale));
+    $dstH = max(1, (int) round($srcH * $scale));
+
+    if ($dstW === $srcW && $dstH === $srcH) {
+        return $src;
+    }
+
+    $dst = imagecreatetruecolor($dstW, $dstH);
+    imagealphablending($dst, false);
+    imagesavealpha($dst, true);
+    $transparent = imagecolorallocatealpha($dst, 0, 0, 0, 127);
+    imagefilledrectangle($dst, 0, 0, $dstW, $dstH, $transparent);
+    imagealphablending($dst, true);
+    imagecopyresampled($dst, $src, 0, 0, 0, 0, $dstW, $dstH, $srcW, $srcH);
+    imagedestroy($src);
+    return $dst;
+}
+
+/**
+ * Resize into an exact square canvas (centered, transparent padding).
+ * @param \GdImage|resource $src
+ * @return \GdImage|resource
+ */
+function resizeGdImageExactSquare($src, $size) {
+    $srcW = imagesx($src);
+    $srcH = imagesy($src);
+    $scale = min($size / max(1, $srcW), $size / max(1, $srcH));
+    $dstW = max(1, (int) round($srcW * $scale));
+    $dstH = max(1, (int) round($srcH * $scale));
+    $offsetX = (int) floor(($size - $dstW) / 2);
+    $offsetY = (int) floor(($size - $dstH) / 2);
+
+    $dst = imagecreatetruecolor($size, $size);
+    imagealphablending($dst, false);
+    imagesavealpha($dst, true);
+    $transparent = imagecolorallocatealpha($dst, 0, 0, 0, 127);
+    imagefilledrectangle($dst, 0, 0, $size, $size, $transparent);
+    imagealphablending($dst, true);
+    imagecopyresampled($dst, $src, $offsetX, $offsetY, 0, 0, $dstW, $dstH, $srcW, $srcH);
+    imagedestroy($src);
+    return $dst;
+}
+
+/**
+ * Auto-convert an uploaded image for logo or favicon use.
+ * - SVG: stored as-is
+ * - Raster: converted to PNG, resized to target
+ *
+ * @return array{filename: string, filepath: string, converted: bool, width?: int, height?: int}
+ */
+function processUploadedBrandImage($tmpPath, $originalName, $mimeType, $kind) {
+    if (!extension_loaded('gd')) {
+        sendJSON(['error' => 'GD image extension is required for automatic image conversion'], 500);
+    }
+
+    $uploadDir = __DIR__ . '/../uploads';
+    if (!file_exists($uploadDir) && !mkdir($uploadDir, 0755, true)) {
+        sendJSON(['error' => 'Failed to create uploads directory'], 500);
+    }
+
+    $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+    $isSvg = ($mimeType === 'image/svg+xml' || $extension === 'svg');
+
+    // Keep SVG as-is (vector logos/favicons)
+    if ($isSvg) {
+        $filename = ($kind === 'favicon' ? 'favicon_' : 'logo_') . time() . '_' . uniqid() . '.svg';
+        $filepath = $uploadDir . '/' . $filename;
+        if (!move_uploaded_file($tmpPath, $filepath) && !rename($tmpPath, $filepath) && !copy($tmpPath, $filepath)) {
+            sendJSON(['error' => 'Failed to save uploaded file'], 500);
+        }
+        return ['filename' => $filename, 'filepath' => $filepath, 'converted' => false];
+    }
+
+    $src = loadGdImageFromFile($tmpPath, $mimeType, $extension);
+    if ($src === false) {
+        // Fallback: try getimagesize mime
+        $info = @getimagesize($tmpPath);
+        if ($info && !empty($info['mime'])) {
+            $src = loadGdImageFromFile($tmpPath, $info['mime'], $extension);
+        }
+    }
+    if ($src === false) {
+        // Keep original when GD cannot decode (common for some .ico files)
+        $safeExt = preg_replace('/[^a-z0-9]/', '', $extension) ?: 'bin';
+        if (!in_array($safeExt, ['ico', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'], true)) {
+            sendJSON(['error' => 'Could not read image. Please upload JPEG, PNG, GIF, WebP, SVG, or ICO.'], 400);
+        }
+        $filename = ($kind === 'favicon' ? 'favicon_' : 'logo_') . time() . '_' . uniqid() . '.' . $safeExt;
+        $filepath = $uploadDir . '/' . $filename;
+        if (!move_uploaded_file($tmpPath, $filepath) && !@rename($tmpPath, $filepath) && !@copy($tmpPath, $filepath)) {
+            sendJSON(['error' => 'Failed to save uploaded file'], 500);
+        }
+        return ['filename' => $filename, 'filepath' => $filepath, 'converted' => false];
+    }
+
+    if ($kind === 'favicon') {
+        $dst = resizeGdImageExactSquare($src, 32);
+        $filename = 'favicon_' . time() . '_' . uniqid() . '.png';
+    } else {
+        $dst = resizeGdImageFit($src, 512, 512);
+        $filename = 'logo_' . time() . '_' . uniqid() . '.png';
+    }
+
+    $filepath = $uploadDir . '/' . $filename;
+    imagealphablending($dst, false);
+    imagesavealpha($dst, true);
+    if (!imagepng($dst, $filepath, 6)) {
+        imagedestroy($dst);
+        sendJSON(['error' => 'Failed to save converted image'], 500);
+    }
+
+    $width = imagesx($dst);
+    $height = imagesy($dst);
+    imagedestroy($dst);
+
+    // Clean up temp upload if still present
+    if (is_uploaded_file($tmpPath)) {
+        @unlink($tmpPath);
+    }
+
+    return [
+        'filename' => $filename,
+        'filepath' => $filepath,
+        'converted' => true,
+        'width' => $width,
+        'height' => $height
+    ];
+}
+
 function handleUploadLogo() {
     requireAdmin(); // Only admins can upload
     
@@ -220,7 +406,7 @@ function handleUploadLogo() {
     $file = $_FILES['logo'];
     
     // Validate file type
-    $allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/svg+xml', 'image/webp'];
+    $allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/svg+xml', 'image/webp', 'image/bmp', 'image/x-ms-bmp'];
     $finfo = finfo_open(FILEINFO_MIME_TYPE);
     $mimeType = finfo_file($finfo, $file['tmp_name']);
     finfo_close($finfo);
@@ -229,54 +415,14 @@ function handleUploadLogo() {
         sendJSON(['error' => 'Invalid file type. Allowed: JPEG, PNG, GIF, SVG, WebP'], 400);
     }
     
-    // Validate file size (max 2MB)
-    $maxSize = 2 * 1024 * 1024; // 2MB
+    // Allow larger source files — we auto-convert/resize server-side
+    $maxSize = 10 * 1024 * 1024; // 10MB
     if ($file['size'] > $maxSize) {
-        sendJSON(['error' => 'File size too large. Maximum size: 2MB'], 400);
+        sendJSON(['error' => 'File size too large. Maximum size: 10MB'], 400);
     }
     
-    // Validate dimensions (for non-SVG images)
-    if ($mimeType !== 'image/svg+xml') {
-        $imageInfo = @getimagesize($file['tmp_name']);
-        if ($imageInfo === false) {
-            sendJSON(['error' => 'Invalid image file'], 400);
-        }
-        
-        $maxWidth = 512;
-        $maxHeight = 512;
-        $minWidth = 32;
-        $minHeight = 32;
-        
-        if ($imageInfo[0] > $maxWidth || $imageInfo[1] > $maxHeight) {
-            sendJSON(['error' => "Image dimensions too large. Maximum: {$maxWidth}x{$maxHeight}px. Your image: {$imageInfo[0]}x{$imageInfo[1]}px"], 400);
-        }
-        
-        if ($imageInfo[0] < $minWidth || $imageInfo[1] < $minHeight) {
-            sendJSON(['error' => "Image dimensions too small. Minimum: {$minWidth}x{$minHeight}px. Your image: {$imageInfo[0]}x{$imageInfo[1]}px"], 400);
-        }
-    }
-    
-    // Create uploads directory if it doesn't exist
-    $uploadDir = __DIR__ . '/../uploads';
-    if (!file_exists($uploadDir)) {
-        if (!mkdir($uploadDir, 0755, true)) {
-            sendJSON(['error' => 'Failed to create uploads directory'], 500);
-        }
-    }
-    
-    // Generate unique filename
-    $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
-    $filename = 'logo_' . time() . '_' . uniqid() . '.' . $extension;
-    $filepath = $uploadDir . '/' . $filename;
-    
-    // Move uploaded file
-    if (!move_uploaded_file($file['tmp_name'], $filepath)) {
-        sendJSON(['error' => 'Failed to save uploaded file'], 500);
-    }
-    
-    // Always store as /uploads/filename (without environment prefix)
-    // The URL will be normalized when returned based on current environment
-    $url = '/uploads/' . $filename;
+    $result = processUploadedBrandImage($file['tmp_name'], $file['name'], $mimeType, 'logo');
+    $url = '/uploads/' . $result['filename'];
     
     // Update settings with the new logo URL (stored without prefix)
     $db = getDB();
@@ -289,7 +435,12 @@ function handleUploadLogo() {
     sendJSON([
         'success' => true,
         'url' => $normalizedUrl,
-        'message' => 'Logo uploaded successfully'
+        'converted' => $result['converted'],
+        'width' => $result['width'] ?? null,
+        'height' => $result['height'] ?? null,
+        'message' => $result['converted']
+            ? 'Logo uploaded and auto-converted to PNG (max 512×512)'
+            : 'Logo uploaded successfully'
     ]);
 }
 
@@ -304,66 +455,27 @@ function handleUploadFavicon() {
     $file = $_FILES['favicon'];
     
     // Validate file type (favicon typically supports ICO, PNG, SVG)
-    $allowedTypes = ['image/x-icon', 'image/vnd.microsoft.icon', 'image/png', 'image/svg+xml', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
+    $allowedTypes = ['image/x-icon', 'image/vnd.microsoft.icon', 'image/png', 'image/svg+xml', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp', 'image/bmp', 'image/x-ms-bmp'];
     $finfo = finfo_open(FILEINFO_MIME_TYPE);
     $mimeType = finfo_file($finfo, $file['tmp_name']);
     finfo_close($finfo);
     
     // Also check file extension for ICO files (which might have different MIME types)
     $extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-    $allowedExtensions = ['ico', 'png', 'svg', 'jpg', 'jpeg', 'gif', 'webp'];
+    $allowedExtensions = ['ico', 'png', 'svg', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'];
     
     if (!in_array($mimeType, $allowedTypes) && !in_array($extension, $allowedExtensions)) {
         sendJSON(['error' => 'Invalid file type. Allowed: ICO, PNG, SVG, JPEG, GIF, WebP'], 400);
     }
     
-    // Validate file size (max 1MB for favicon - smaller than logo)
-    $maxSize = 1 * 1024 * 1024; // 1MB
+    // Allow larger source files — we auto-convert to 32×32 PNG
+    $maxSize = 10 * 1024 * 1024; // 10MB
     if ($file['size'] > $maxSize) {
-        sendJSON(['error' => 'File size too large. Maximum size: 1MB'], 400);
+        sendJSON(['error' => 'File size too large. Maximum size: 10MB'], 400);
     }
     
-    // Validate dimensions (for non-SVG images)
-    if ($mimeType !== 'image/svg+xml' && $extension !== 'svg') {
-        $imageInfo = @getimagesize($file['tmp_name']);
-        if ($imageInfo === false) {
-            sendJSON(['error' => 'Invalid image file'], 400);
-        }
-        
-        $maxWidth = 512;
-        $maxHeight = 512;
-        $minWidth = 16;
-        $minHeight = 16;
-        
-        if ($imageInfo[0] > $maxWidth || $imageInfo[1] > $maxHeight) {
-            sendJSON(['error' => "Image dimensions too large. Maximum: {$maxWidth}x{$maxHeight}px. Your image: {$imageInfo[0]}x{$imageInfo[1]}px"], 400);
-        }
-        
-        if ($imageInfo[0] < $minWidth || $imageInfo[1] < $minHeight) {
-            sendJSON(['error' => "Image dimensions too small. Minimum: {$minWidth}x{$minHeight}px. Your image: {$imageInfo[0]}x{$imageInfo[1]}px"], 400);
-        }
-    }
-    
-    // Create uploads directory if it doesn't exist
-    $uploadDir = __DIR__ . '/../uploads';
-    if (!file_exists($uploadDir)) {
-        if (!mkdir($uploadDir, 0755, true)) {
-            sendJSON(['error' => 'Failed to create uploads directory'], 500);
-        }
-    }
-    
-    // Generate unique filename
-    $filename = 'favicon_' . time() . '_' . uniqid() . '.' . $extension;
-    $filepath = $uploadDir . '/' . $filename;
-    
-    // Move uploaded file
-    if (!move_uploaded_file($file['tmp_name'], $filepath)) {
-        sendJSON(['error' => 'Failed to save uploaded file'], 500);
-    }
-    
-    // Always store as /uploads/filename (without environment prefix)
-    // The URL will be normalized when returned based on current environment
-    $url = '/uploads/' . $filename;
+    $result = processUploadedBrandImage($file['tmp_name'], $file['name'], $mimeType, 'favicon');
+    $url = '/uploads/' . $result['filename'];
     
     // Update settings with the new favicon URL (stored without prefix)
     $db = getDB();
@@ -376,7 +488,12 @@ function handleUploadFavicon() {
     sendJSON([
         'success' => true,
         'url' => $normalizedUrl,
-        'message' => 'Favicon uploaded successfully'
+        'converted' => $result['converted'],
+        'width' => $result['width'] ?? null,
+        'height' => $result['height'] ?? null,
+        'message' => $result['converted']
+            ? 'Favicon uploaded and auto-converted to 32×32 PNG'
+            : 'Favicon uploaded successfully'
     ]);
 }
 
