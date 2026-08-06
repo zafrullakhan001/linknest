@@ -2,6 +2,24 @@ import React, { createContext, useContext, useState, useEffect, useMemo, useCall
 import { settingsService, AppSettings } from '../services/settingsService';
 
 export const BRANDING_CACHE_KEY = 'linknest_branding_cache';
+export const BRANDING_CSS_CACHE_KEY = 'linknest_branding_css';
+
+/** Keys to hydrate from localStorage so nav sizes/fonts match before API returns */
+const BRANDING_HYDRATE_KEYS = [
+  'app_name', 'page_title', 'page_title_pattern', 'spaces_title', 'spaces_subtitle',
+  'logo_type', 'logo_icon', 'logo_image', 'logo_size',
+  'header_logo_image', 'header_logo_size', 'app_subheading',
+  'app_name_font_size', 'app_name_font_family', 'app_name_font_weight', 'app_name_font_style',
+  'app_name_font_color', 'app_name_font_color_dark', 'app_name_letter_spacing', 'app_name_line_height',
+  'app_subheading_font_size', 'app_subheading_font_family', 'app_subheading_font_weight', 'app_subheading_font_style',
+  'app_subheading_font_color', 'app_subheading_font_color_dark', 'app_subheading_letter_spacing', 'app_subheading_line_height',
+  'nav_bg_light', 'nav_bg_to_light', 'nav_bg_dark', 'nav_bg_to_dark', 'nav_gradient_angle',
+  'nav_border_light', 'nav_border_dark', 'nav_icon_color_light', 'nav_icon_color_dark',
+  'hero_icon', 'hero_title_color', 'hero_title_color_dark', 'hero_subtitle_color', 'hero_subtitle_color_dark',
+  'hero_bg_from', 'hero_bg_to', 'hero_bg_from_dark', 'hero_bg_to_dark', 'hero_bg_angle',
+  'hero_overlay_color', 'hero_overlay_to', 'hero_overlay_opacity', 'hero_icon_bg_from', 'hero_icon_bg_to',
+  'auth_wash_from', 'auth_wash_to', 'favicon',
+] as const;
 
 /** Branding keys that can be live-previewed before Save Settings */
 export const BRANDING_PREVIEW_KEYS = [
@@ -146,14 +164,10 @@ export function resolvePageTitle(s: Pick<AppSettings, 'page_title' | 'app_name' 
 
 export function cacheBrandingSnapshot(s: AppSettings) {
   try {
-    const snap = {
-      app_name: s.app_name || '',
-      logo_type: s.logo_type,
-      logo_icon: s.logo_icon || '',
-      logo_image: s.logo_image || '',
-      header_logo_image: s.header_logo_image || '',
-      favicon: s.favicon || '',
-    };
+    const snap: Record<string, unknown> = {};
+    for (const key of BRANDING_HYDRATE_KEYS) {
+      snap[key] = (s as Record<string, unknown>)[key] ?? '';
+    }
     localStorage.setItem(BRANDING_CACHE_KEY, JSON.stringify(snap));
   } catch (_) { /* ignore */ }
 }
@@ -166,6 +180,18 @@ export function readBrandingCache(): Partial<AppSettings> | null {
   } catch (_) {
     return null;
   }
+}
+
+export function markBrandingReady() {
+  try {
+    document.documentElement.classList.add('ln-branding-ready');
+  } catch (_) { /* ignore */ }
+}
+
+function getInitialSettings(): AppSettings {
+  const cached = typeof window !== 'undefined' ? readBrandingCache() : null;
+  if (!cached) return emptyBrandingDefaults;
+  return { ...emptyBrandingDefaults, ...cached };
 }
 
 function resolveApiBaseForManifest(): string {
@@ -198,6 +224,9 @@ function applyBrandingCss(s: AppSettings) {
 
   const rules: string[] = [];
 
+  const mobileNameSize = Math.min(nameSize, 17);
+  const mobileSubSize = Math.min(subSize, 10);
+
   rules.push(`
 .auth-modal-app-name,
 nav.linknest-nav .linknest-brand-app-name {
@@ -218,6 +247,11 @@ nav.linknest-nav .linknest-brand-subheading {
   line-height: ${subLh} !important;
   ${subFamily ? `font-family: ${subFamily} !important;` : ''}
   ${s.app_subheading_font_color ? `color: ${s.app_subheading_font_color} !important;` : ''}
+}
+@media (max-width: 767px) {
+  nav.linknest-nav .linknest-brand-app-name { font-size: ${mobileNameSize}px !important; }
+  nav.linknest-nav .linknest-brand-subheading { font-size: ${mobileSubSize}px !important; }
+  nav.linknest-nav .linknest-header-logo img { max-width: 88px !important; }
 }`);
 
   if (s.app_name_font_color_dark) {
@@ -303,6 +337,9 @@ nav.linknest-nav .linknest-brand-subheading {
   }
 
   el.textContent = rules.join('\n').trim();
+  try {
+    localStorage.setItem(BRANDING_CSS_CACHE_KEY, el.textContent || '');
+  } catch (_) { /* ignore */ }
 }
 
 function updatePwaIcons(faviconUrl: string, appName: string) {
@@ -345,7 +382,7 @@ function updatePwaIcons(faviconUrl: string, appName: string) {
 }
 
 export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [settings, setSettings] = useState<AppSettings>(emptyBrandingDefaults);
+  const [settings, setSettings] = useState<AppSettings>(getInitialSettings);
   const [previewOverrides, setPreviewOverrides] = useState<Partial<AppSettings>>({});
   const [loading, setLoading] = useState(true);
 
@@ -419,8 +456,10 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
 
       document.title = resolvePageTitle(loadedSettings);
       updatePwaIcons(loadedSettings.favicon, loadedSettings.app_name);
+      markBrandingReady();
     } catch (error) {
       console.error('Failed to load settings:', error);
+      markBrandingReady();
     } finally {
       setLoading(false);
     }
@@ -459,9 +498,14 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
     loadSettings();
   }, []);
 
+  // Apply branding CSS immediately (and when preview/settings change)
   useEffect(() => {
     applyBrandingCss(effectiveSettings);
     document.title = resolvePageTitle(effectiveSettings);
+    // If we hydrated from cache, reveal nav immediately — API refresh still updates styles
+    if (effectiveSettings.app_name || (typeof localStorage !== 'undefined' && localStorage.getItem(BRANDING_CSS_CACHE_KEY))) {
+      markBrandingReady();
+    }
   }, [effectiveSettings]);
 
   return (

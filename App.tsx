@@ -1156,19 +1156,17 @@ const AppContent: React.FC = () => {
           </div>
         </div>
       )}
-      {/* Hide footer on mobile view */}
-      {!isMobile && (
-        <footer className={`linknest-footer ${showFooterDetails ? 'py-8' : 'py-4'} text-sm relative border-t border-slate-200 dark:border-slate-800 transition-all duration-300`} style={{ zIndex: 0 }}>
-          <div className="container mx-auto max-w-6xl-plus px-4">
-            <div className="flex flex-col items-center gap-6">
+      <footer className={`linknest-footer ${(showFooterDetails || isMobile) ? 'py-6 md:py-8' : 'py-3 md:py-4'} text-xs sm:text-sm relative border-t border-slate-200 dark:border-slate-800 transition-all duration-300`} style={{ zIndex: 0 }}>
+          <div className="container mx-auto max-w-6xl-plus px-3 sm:px-4">
+            <div className="flex flex-col items-center gap-4 sm:gap-6">
               {/* Quick Navigation Links */}
-              <div className={`flex flex-wrap justify-center items-center gap-x-8 gap-y-4 text-slate-500 dark:text-slate-400 ${!showFooterDetails ? 'mb-0' : ''}`}>
+              <div className={`flex flex-wrap justify-center items-center gap-x-3 gap-y-2 sm:gap-x-8 sm:gap-y-4 text-slate-500 dark:text-slate-400 ${!showFooterDetails && !isMobile ? 'mb-0' : ''}`}>
                 {!disabledTabs.has('public') && (
                   <button
                     onClick={() => handleTabClick('public')}
-                    className="hover:text-brand-600 dark:hover:text-brand-400 transition-colors flex items-center gap-1.5 font-medium"
+                    className="hover:text-brand-600 dark:hover:text-brand-400 transition-colors flex items-center gap-1 sm:gap-1.5 font-medium"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 sm:w-4 sm:h-4">
                       <path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" />
                       <path fillRule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
                     </svg>
@@ -1179,9 +1177,9 @@ const AppContent: React.FC = () => {
                 {!disabledTabs.has('favorites') && (
                   <button
                     onClick={() => handleTabClick('favorites')}
-                    className="hover:text-amber-500 transition-colors flex items-center gap-1.5 font-medium"
+                    className="hover:text-amber-500 transition-colors flex items-center gap-1 sm:gap-1.5 font-medium"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 sm:w-4 sm:h-4">
                       <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
                     </svg>
                     Favorites
@@ -1193,9 +1191,9 @@ const AppContent: React.FC = () => {
                     {!disabledTabs.has('private') && (
                       <button
                         onClick={() => handleTabClick('private')}
-                        className="hover:text-violet-500 transition-colors flex items-center gap-1.5 font-medium"
+                        className="hover:text-violet-500 transition-colors flex items-center gap-1 sm:gap-1.5 font-medium"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 sm:w-4 sm:h-4">
                           <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />
                         </svg>
                         Private
@@ -1205,9 +1203,9 @@ const AppContent: React.FC = () => {
                     {!disabledTabs.has('monitoring') && (
                       <button
                         onClick={() => handleTabClick('monitoring')}
-                        className="hover:text-emerald-500 transition-colors flex items-center gap-1.5 font-medium"
+                        className="hover:text-emerald-500 transition-colors flex items-center gap-1 sm:gap-1.5 font-medium"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 sm:w-4 sm:h-4">
                           <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
                         </svg>
                         Monitoring
@@ -1217,9 +1215,9 @@ const AppContent: React.FC = () => {
                     {!disabledTabs.has('scheduled') && (
                       <button
                         onClick={() => handleTabClick('scheduled')}
-                        className="hover:text-blue-500 transition-colors flex items-center gap-1.5 font-medium"
+                        className="hover:text-blue-500 transition-colors flex items-center gap-1 sm:gap-1.5 font-medium"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 sm:w-4 sm:h-4">
                           <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clipRule="evenodd" />
                         </svg>
                         Scheduled
@@ -1229,9 +1227,9 @@ const AppContent: React.FC = () => {
                     {!disabledTabs.has('expired') && (
                       <button
                         onClick={() => handleTabClick('expired')}
-                        className="hover:text-orange-500 transition-colors flex items-center gap-1.5 font-medium"
+                        className="hover:text-orange-500 transition-colors flex items-center gap-1 sm:gap-1.5 font-medium"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 sm:w-4 sm:h-4">
                           <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
                         </svg>
                         Expired
@@ -1241,9 +1239,9 @@ const AppContent: React.FC = () => {
                     {!disabledTabs.has('archive') && (
                       <button
                         onClick={() => handleTabClick('archive')}
-                        className="hover:text-amber-600 transition-colors flex items-center gap-1.5 font-medium"
+                        className="hover:text-amber-600 transition-colors flex items-center gap-1 sm:gap-1.5 font-medium"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 sm:w-4 sm:h-4">
                           <path d="M2 3a1 1 0 00-1 1v1a1 1 0 001 1h16a1 1 0 001-1V4a1 1 0 00-1-1H2z" />
                           <path fillRule="evenodd" d="M2 7.5h16l-.811 7.71a2 2 0 01-1.99 1.79H4.801a2 2 0 01-1.99-1.79L2 7.5zm5.22 1.22a.75.75 0 011.06 0L10 10.94l1.72-1.22a.75.75 0 111.06 1.06L11 12.06l1.72 1.22a.75.75 0 11-1.06 1.06L10 13.06l-1.72 1.22a.75.75 0 01-1.06-1.06L9 12.06l-1.72-1.22a.75.75 0 010-1.06z" clipRule="evenodd" />
                         </svg>
@@ -1254,9 +1252,9 @@ const AppContent: React.FC = () => {
                     {!disabledTabs.has('recycle-bin') && (
                       <button
                         onClick={() => handleTabClick('recycle-bin')}
-                        className="hover:text-red-500 transition-colors flex items-center gap-1.5 font-medium"
+                        className="hover:text-red-500 transition-colors flex items-center gap-1 sm:gap-1.5 font-medium"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 sm:w-4 sm:h-4">
                           <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
                         </svg>
                         Recycle Bin
@@ -1265,32 +1263,34 @@ const AppContent: React.FC = () => {
                   </>
                 )}
 
-                {/* Toggle Footer Details Button */}
-                <button
-                  onClick={() => setShowFooterDetails(!showFooterDetails)}
-                  className={`p-1.5 rounded-full transition-all flex items-center justify-center ${showFooterDetails ? 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-brand-500' : 'bg-brand-50 dark:bg-brand-900/30 text-brand-500 hover:bg-brand-100 dark:hover:bg-brand-900/50'}`}
-                  title={showFooterDetails ? "Hide footer details" : "Show footer details"}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 transition-transform duration-300 ${showFooterDetails ? 'rotate-180' : ''}`}>
-                    <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
-                  </svg>
-                </button>
+                {/* Toggle Footer Details Button — desktop only; mobile always shows text */}
+                {!isMobile && (
+                  <button
+                    onClick={() => setShowFooterDetails(!showFooterDetails)}
+                    className={`p-1.5 rounded-full transition-all flex items-center justify-center ${showFooterDetails ? 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-brand-500' : 'bg-brand-50 dark:bg-brand-900/30 text-brand-500 hover:bg-brand-100 dark:hover:bg-brand-900/50'}`}
+                    title={showFooterDetails ? "Hide footer details" : "Show footer details"}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 transition-transform duration-300 ${showFooterDetails ? 'rotate-180' : ''}`}>
+                      <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                )}
               </div>
 
-              {showFooterDetails && (
-                <div className="flex-1 min-w-0 flex flex-col gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+              {(showFooterDetails || isMobile) && (
+                <div className="w-full max-w-xl flex flex-col gap-2.5 sm:gap-3 animate-in fade-in slide-in-from-top-2 duration-300 px-1">
                   <div className="text-center text-slate-500 dark:text-slate-400">
                     <p
-                      className="font-medium"
+                      className="font-medium text-[11px] sm:text-sm leading-relaxed break-words [&_a]:underline [&_a]:text-brand-600 dark:[&_a]:text-brand-400"
                       dangerouslySetInnerHTML={{ __html: settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team' }}
                     ></p>
                   </div>
                   {((user?.is_admin && databasePathAbsolute) || (databasePath && settings.show_database_path_in_footer !== '0')) && (
-                    <div className="text-center text-xs text-slate-400 dark:text-slate-500">
-                      <div className="inline-flex items-center gap-2 bg-slate-100 dark:bg-slate-800/50 px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700/50 shadow-sm">
-                        <span className="font-semibold text-[10px] uppercase tracking-wider opacity-70">Database</span>
-                        <span className="h-3 w-px bg-slate-300 dark:bg-slate-700"></span>
-                        <span className="font-mono">{user?.is_admin && databasePathAbsolute ? databasePathAbsolute : databasePath}</span>
+                    <div className="text-center text-[10px] sm:text-xs text-slate-400 dark:text-slate-500">
+                      <div className="inline-flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 bg-slate-100 dark:bg-slate-800/50 px-2.5 sm:px-3 py-1.5 rounded-xl sm:rounded-full border border-slate-200 dark:border-slate-700/50 shadow-sm max-w-full">
+                        <span className="font-semibold text-[9px] sm:text-[10px] uppercase tracking-wider opacity-70 shrink-0">Database</span>
+                        <span className="hidden sm:block h-3 w-px bg-slate-300 dark:bg-slate-700 shrink-0"></span>
+                        <span className="font-mono break-all text-left">{user?.is_admin && databasePathAbsolute ? databasePathAbsolute : databasePath}</span>
                       </div>
                     </div>
                   )}
@@ -1299,7 +1299,6 @@ const AppContent: React.FC = () => {
             </div>
           </div>
         </footer>
-      )}
       {/* Hide all widgets on mobile view */}
       {!isMobile && (
         <>

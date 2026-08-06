@@ -166,6 +166,10 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
   const [opacity, setOpacity] = useState(styles?.pageBackgroundOpacity ?? 100);
   const [imagePosition, setImagePosition] = useState(styles?.pageBackgroundImagePosition ?? 'center');
   const [imageSize, setImageSize] = useState(styles?.pageBackgroundImageSize ?? 'cover');
+  const [imageRotation, setImageRotation] = useState(styles?.pageBackgroundImageRotation ?? 0);
+  const [imageFlipH, setImageFlipH] = useState(styles?.pageBackgroundImageFlipH ?? false);
+  const [imageFlipV, setImageFlipV] = useState(styles?.pageBackgroundImageFlipV ?? false);
+  const [imageZoom, setImageZoom] = useState(styles?.pageBackgroundImageZoom ?? 100);
   const [imagePreviewError, setImagePreviewError] = useState(false);
 
   // Center canvas (main content area) state
@@ -286,6 +290,10 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
       setOpacity(styles.pageBackgroundOpacity ?? 100);
       setImagePosition(styles.pageBackgroundImagePosition ?? 'center');
       setImageSize(styles.pageBackgroundImageSize ?? 'cover');
+      setImageRotation(styles.pageBackgroundImageRotation ?? 0);
+      setImageFlipH(styles.pageBackgroundImageFlipH ?? false);
+      setImageFlipV(styles.pageBackgroundImageFlipV ?? false);
+      setImageZoom(styles.pageBackgroundImageZoom ?? 100);
       setCenterCanvasType((styles.centerCanvasBackgroundType as 'none' | 'solid' | 'gradient') ?? DEFAULT_STYLES.centerCanvasBackgroundType);
       setCenterCanvasSolidColor(styles.centerCanvasSolidColor ?? DEFAULT_STYLES.centerCanvasSolidColor);
       setCenterCanvasSolidColorDark(styles.centerCanvasSolidColorDark ?? DEFAULT_STYLES.centerCanvasSolidColorDark);
@@ -341,6 +349,10 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
       pageBackgroundOpacity: opacity,
       pageBackgroundImagePosition: imagePosition,
       pageBackgroundImageSize: imageSize,
+      pageBackgroundImageRotation: imageRotation,
+      pageBackgroundImageFlipH: imageFlipH,
+      pageBackgroundImageFlipV: imageFlipV,
+      pageBackgroundImageZoom: imageZoom,
       celebrationEffectEnabled: celebrationEnabled,
       celebrationEffectType: celebrationType,
       celebrationIntensity: celebrationIntensity,
@@ -413,6 +425,36 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
     apply({ pageBackgroundType: 'image' });
   };
 
+  const handleResetImageSettings = () => {
+    const defaults = {
+      pageBackgroundImagePosition: DEFAULT_STYLES.pageBackgroundImagePosition,
+      pageBackgroundImageSize: DEFAULT_STYLES.pageBackgroundImageSize,
+      pageBackgroundImageRotation: DEFAULT_STYLES.pageBackgroundImageRotation,
+      pageBackgroundImageFlipH: DEFAULT_STYLES.pageBackgroundImageFlipH,
+      pageBackgroundImageFlipV: DEFAULT_STYLES.pageBackgroundImageFlipV,
+      pageBackgroundImageZoom: DEFAULT_STYLES.pageBackgroundImageZoom,
+      pageBackgroundBlur: DEFAULT_STYLES.pageBackgroundBlur,
+      pageBackgroundDarkOverlay: DEFAULT_STYLES.pageBackgroundDarkOverlay,
+      pageBackgroundOpacity: DEFAULT_STYLES.pageBackgroundOpacity,
+    };
+    setImagePosition(defaults.pageBackgroundImagePosition);
+    setImageSize(defaults.pageBackgroundImageSize);
+    setImageRotation(defaults.pageBackgroundImageRotation);
+    setImageFlipH(defaults.pageBackgroundImageFlipH);
+    setImageFlipV(defaults.pageBackgroundImageFlipV);
+    setImageZoom(defaults.pageBackgroundImageZoom);
+    setImageBlur(defaults.pageBackgroundBlur);
+    setImageDarkOverlay(defaults.pageBackgroundDarkOverlay);
+    setOpacity(defaults.pageBackgroundOpacity);
+    if (!imageUrl.trim()) return;
+    onApply({
+      ...styles,
+      pageBackgroundType: 'image',
+      pageBackgroundImageUrl: imageUrl.trim(),
+      ...defaults,
+    });
+  };
+
   const handleImageOptionChange = (overrides: Partial<SpaceStyles> = {}) => {
     if (!imageUrl.trim()) return;
     const next: SpaceStyles = {
@@ -424,6 +466,10 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
       pageBackgroundOpacity: opacity,
       pageBackgroundImagePosition: imagePosition,
       pageBackgroundImageSize: imageSize,
+      pageBackgroundImageRotation: imageRotation,
+      pageBackgroundImageFlipH: imageFlipH,
+      pageBackgroundImageFlipV: imageFlipV,
+      pageBackgroundImageZoom: imageZoom,
       ...overrides
     };
     onApply(next);
@@ -1188,6 +1234,14 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
                         src={styleService.resolvePageBackgroundImageUrl(imageUrl)}
                         alt="Background preview"
                         className="max-w-full max-h-full object-contain"
+                        style={{
+                          transform: [
+                            imageRotation ? `rotate(${imageRotation}deg)` : '',
+                            imageFlipH ? 'scaleX(-1)' : '',
+                            imageFlipV ? 'scaleY(-1)' : '',
+                            imageZoom !== 100 ? `scale(${imageZoom / 100})` : ''
+                          ].filter(Boolean).join(' ') || undefined
+                        }}
                         onError={() => setImagePreviewError(true)}
                         onLoad={() => setImagePreviewError(false)}
                       />
@@ -1230,6 +1284,95 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
                 </div>
               </div>
               <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Orientation</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[0, 90, 180, 270].map((deg) => (
+                    <button
+                      key={deg}
+                      type="button"
+                      onClick={() => {
+                        setImageRotation(deg);
+                        handleImageOptionChange({ pageBackgroundImageRotation: deg });
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                        imageRotation === deg
+                          ? 'bg-brand-600 border-brand-600 text-white'
+                          : 'bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600'
+                      }`}
+                    >
+                      {deg}°
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Mirror image</label>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !imageFlipH;
+                      setImageFlipH(next);
+                      handleImageOptionChange({ pageBackgroundImageFlipH: next });
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                      imageFlipH
+                        ? 'bg-brand-600 border-brand-600 text-white'
+                        : 'bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600'
+                    }`}
+                  >
+                    Flip horizontal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !imageFlipV;
+                      setImageFlipV(next);
+                      handleImageOptionChange({ pageBackgroundImageFlipV: next });
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                      imageFlipV
+                        ? 'bg-brand-600 border-brand-600 text-white'
+                        : 'bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600'
+                    }`}
+                  >
+                    Flip vertical
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Custom zoom: {imageZoom}%
+                </label>
+                <input
+                  type="range"
+                  min={50}
+                  max={300}
+                  step={5}
+                  value={imageZoom}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    setImageZoom(v);
+                    handleImageOptionChange({ pageBackgroundImageZoom: v });
+                  }}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-[10px] text-slate-400 mt-0.5">
+                  <span>50%</span>
+                  <button
+                    type="button"
+                    className="underline hover:text-brand-500"
+                    onClick={() => {
+                      setImageZoom(100);
+                      handleImageOptionChange({ pageBackgroundImageZoom: 100 });
+                    }}
+                  >
+                    Reset 100%
+                  </button>
+                  <span>300%</span>
+                </div>
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Blur: {imageBlur === 0 ? 'None' : `${imageBlur}px`}</label>
                 <input
                   type="range"
@@ -1262,14 +1405,24 @@ export const PageBackgroundDialog: React.FC<PageBackgroundDialogProps> = ({ isOp
                   className="w-full"
                 />
               </div>
-              <button
-                type="button"
-                onClick={handleApplyImage}
-                disabled={!imageUrl.trim()}
-                className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors"
-              >
-                Apply & save image
-              </button>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleApplyImage}
+                  disabled={!imageUrl.trim()}
+                  className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors"
+                >
+                  Apply & save image
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetImageSettings}
+                  className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-sm font-medium transition-colors"
+                  title="Reset position, size, orientation, mirror, zoom, blur, overlay, and opacity (keeps the image)"
+                >
+                  Reset image settings
+                </button>
+              </div>
             </div>
           )}
 

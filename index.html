@@ -79,6 +79,19 @@
           }
         }
 
+        // Apply cached branding CSS before first paint so nav size/fonts don't jump
+        var brandingCss = localStorage.getItem('linknest_branding_css');
+        if (brandingCss) {
+          var brandingTag = document.getElementById('linknest-branding-styles');
+          if (!brandingTag) {
+            brandingTag = document.createElement('style');
+            brandingTag.id = 'linknest-branding-styles';
+            document.head.appendChild(brandingTag);
+          }
+          brandingTag.textContent = brandingCss;
+          document.documentElement.classList.add('ln-branding-ready');
+        }
+
         window.addEventListener('load', function () {
           requestAnimationFrame(function () {
             requestAnimationFrame(function () {

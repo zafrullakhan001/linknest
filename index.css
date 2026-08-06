@@ -12,6 +12,11 @@ html.ln-bootstrapping *::after {
   animation-delay: 0s !important;
 }
 
+/* Hide nav until branding CSS is applied (cached on boot or after settings load) */
+html:not(.ln-branding-ready) nav.linknest-nav {
+  visibility: hidden !important;
+}
+
 /* Modern Mobile Animations */
 @keyframes fadeInUp {
   from {

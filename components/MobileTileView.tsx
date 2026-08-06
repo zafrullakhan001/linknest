@@ -4,7 +4,60 @@ import { useSettings } from '../contexts/SettingsContext';
 import { useAuth } from '../contexts/AuthContext';
 import { COLOR_STYLES } from '../types';
 import { TileAnimationSelector, useTileAnimation, getTileAnimationClass, getTileDecorationClass, TileAnimation, TileDecoration } from './TileAnimationSelector';
-import { getPublicFavorites, checkLocalStorageAvailability, togglePublicFavorite, isPublicFavorite } from '../services/publicFavoritesService';
+import { getPublicFavorites, checkLocalStorageAvailability, togglePublicFavorite, isPublicFavorite, getPublicLinkFavorites } from '../services/publicFavoritesService';
+import { getFavoriteLinks, FavoriteLink } from '../services/storageService';
+
+function stripHtml(html: string): string {
+  if (!html || typeof html !== 'string') return '';
+  if (typeof document === 'undefined') return html.replace(/<[^>]*>/g, '');
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  return div.textContent || div.innerText || html.replace(/<[^>]*>/g, '') || '';
+}
+
+/** Walk tabs and legacy sections to find links on a tile */
+function forEachTileLink(tile: Tile, cb: (link: any) => void) {
+  tile.tabs?.forEach((tab) => {
+    tab.sections?.forEach((section) => {
+      section.links?.forEach((link) => cb(link));
+    });
+  });
+  tile.sections?.forEach((section) => {
+    section.links?.forEach((link) => cb(link));
+  });
+}
+
+function buildGuestFavoriteLinks(allTiles: Tile[], favoriteLinkIds: string[]): FavoriteLink[] {
+  const guestFavoriteLinks: FavoriteLink[] = [];
+  const seen = new Set<string>();
+  allTiles.forEach((tile) => {
+    forEachTileLink(tile, (link) => {
+      if (!favoriteLinkIds.includes(link.id) || seen.has(link.id)) return;
+      seen.add(link.id);
+      guestFavoriteLinks.push({
+        id: link.id,
+        label: link.label,
+        url: link.url,
+        icon: link.icon,
+        textColor: link.textColor,
+        visibility: link.visibility,
+        notes: link.notes,
+        tooltip: link.tooltip,
+        browser: link.browser,
+        richTextContent: link.richTextContent,
+        isFavorite: true,
+        health: link.health,
+        tile: {
+          id: tile.id,
+          title: tile.title,
+          emoji: tile.emoji || '✨',
+          themeColor: tile.themeColor || 'blue'
+        }
+      });
+    });
+  });
+  return guestFavoriteLinks;
+}
 
 interface MobileTileViewProps {
   tiles: Tile[];
@@ -76,6 +129,43 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
     }
     return false;
   });
+
+  const [favoriteLinks, setFavoriteLinks] = useState<FavoriteLink[]>([]);
+  const [isLoadingFavoriteLinks, setIsLoadingFavoriteLinks] = useState(false);
+  const isFavoritesTab = activeTab === 'favorites' || activeTab === 'public-favorites';
+
+  // Load favorite links when Favorites tab is active
+  useEffect(() => {
+    if (!isFavoritesTab) {
+      setFavoriteLinks([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    if (isAuthenticated) {
+      setIsLoadingFavoriteLinks(true);
+      getFavoriteLinks()
+        .then((links) => {
+          if (!cancelled) setFavoriteLinks(links);
+        })
+        .catch((error) => {
+          console.error('Failed to load favorite links (mobile):', error);
+          if (!cancelled) setFavoriteLinks([]);
+        })
+        .finally(() => {
+          if (!cancelled) setIsLoadingFavoriteLinks(false);
+        });
+    } else {
+      const ids = getPublicLinkFavorites();
+      if (!cancelled) setFavoriteLinks(buildGuestFavoriteLinks(tiles, ids));
+      setIsLoadingFavoriteLinks(false);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isFavoritesTab, isAuthenticated, tiles]);
 
   // Update public favorites when not authenticated
   useEffect(() => {
@@ -150,6 +240,20 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
       }, 100);
       return () => document.removeEventListener('click', handleClickOutside);
     }
+  }, [isMenuOpen]);
+
+  // Esc closes the left navigation drawer
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' || e.key === 'Esc') {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsMenuOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [isMenuOpen]);
 
   // Force recalculation when tiles or activeTab changes significantly
@@ -397,19 +501,23 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
     return decorationStyles;
   };
 
+  const logoSize = Math.min(28, Math.max(16, (parseInt(settings.logo_size || '32', 10) || 32) * 0.75));
+  const drawerLogoSize = Math.min(48, Math.max(28, parseInt(settings.header_logo_size || '40', 10) || 40));
+  const navMinHeight = Math.max(52, logoSize + 16, settings.app_subheading ? 56 : 52);
+
   return (
-    <div className="w-full min-h-screen bg-slate-50 dark:bg-slate-900 pb-20">
-      {/* Mobile Header with Logo, Hamburger Menu, Dark Mode, and Help */}
-      <div className="sticky top-0 z-20 bg-white/70 dark:bg-slate-900/50 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
-        <div className="flex items-center justify-between px-3 py-2">
-          {/* Hamburger Menu and Logo */}
-          <div className="flex items-center gap-2">
+    <div className="w-full min-h-screen bg-slate-50 dark:bg-slate-900 pb-6">
+      {/* Mobile header: menu left | brand centered | actions right (company logo lives in drawer) */}
+      <nav className="linknest-nav sticky top-0 z-20 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
+        <div className="relative w-full px-3 py-1.5" style={{ minHeight: navMinHeight }}>
+          {/* Left: hamburger only */}
+          <div className="absolute left-2 top-1/2 -translate-y-1/2 z-20 flex items-center">
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 setIsMenuOpen(!isMenuOpen);
               }}
-              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-all"
+              className="linknest-nav-icon p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-all flex-shrink-0"
               title="Menu"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
@@ -420,68 +528,51 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                 )}
               </svg>
             </button>
-            <div
-              onClick={() => window.location.hash = '#/'}
-              className="flex items-center gap-2 cursor-pointer min-w-0"
-            >
-              {settingsLoading ? (
-                <div className="h-7 min-w-[6rem]" aria-hidden="true" />
-              ) : (
-                <>
-                  {settings.header_logo_image ? (
-                    <img
-                      src={settings.header_logo_image}
-                      alt=""
-                      className="object-contain flex-shrink-0"
-                      style={{
-                        height: Math.min(48, Math.max(20, parseInt(settings.header_logo_size || '40', 10) || 40) * 0.7),
-                        maxWidth: Math.min(120, (Math.max(20, parseInt(settings.header_logo_size || '40', 10) || 40) * 0.7) * 3.5)
-                      }}
-                    />
-                  ) : null}
-                  {settings.logo_type === 'image' && settings.logo_image ? (
-                    <img
-                      src={settings.logo_image}
-                      alt={settings.app_name}
-                      className="rounded-lg object-contain flex-shrink-0"
-                      style={{
-                        height: Math.min(40, Math.max(16, parseInt(settings.logo_size || '32', 10) || 32) * 0.85),
-                        width: Math.min(40, Math.max(16, parseInt(settings.logo_size || '32', 10) || 32) * 0.85)
-                      }}
-                    />
-                  ) : settings.logo_type !== 'image' ? (
-                    <div
-                      className="rounded-lg bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center shadow-lg flex-shrink-0"
-                      style={{
-                        height: Math.min(40, Math.max(16, parseInt(settings.logo_size || '32', 10) || 32) * 0.85),
-                        width: Math.min(40, Math.max(16, parseInt(settings.logo_size || '32', 10) || 32) * 0.85),
-                        fontSize: Math.max(12, Math.min(40, Math.max(16, parseInt(settings.logo_size || '32', 10) || 32) * 0.85) * 0.55)
-                      }}
-                    >
-                      {settings.logo_icon || '🔗'}
-                    </div>
-                  ) : null}
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-base font-bold text-slate-900 dark:text-white leading-tight truncate">
-                      {settings.app_name || ''}
-                    </span>
-                    {settings.app_subheading ? (
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight truncate">
-                        {settings.app_subheading}
-                      </span>
-                    ) : null}
-                  </div>
-                </>
-              )}
-            </div>
           </div>
 
-          {/* Icons Group */}
-          <div className="flex items-center gap-1.5">
-            {/* Favorite Stars Toggle */}
+          {/* Center: app brand — always centered in the bar */}
+          <div
+            onClick={() => { window.location.hash = '#/'; }}
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex items-center justify-center gap-1.5 cursor-pointer min-w-0 max-w-[52vw]"
+          >
+            {settingsLoading && !settings.app_name ? (
+              <div className="h-7 min-w-[5rem]" aria-hidden="true" />
+            ) : (
+              <>
+                {settings.logo_type === 'image' && settings.logo_image ? (
+                  <img
+                    src={settings.logo_image}
+                    alt={settings.app_name}
+                    className="rounded-md object-contain flex-shrink-0"
+                    style={{ height: logoSize, width: logoSize }}
+                  />
+                ) : settings.logo_type !== 'image' && settings.logo_icon ? (
+                  <div
+                    className="rounded-md bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center shadow flex-shrink-0"
+                    style={{ height: logoSize, width: logoSize, fontSize: Math.max(11, logoSize * 0.55) }}
+                  >
+                    {settings.logo_icon}
+                  </div>
+                ) : null}
+                <div className="flex flex-col min-w-0 items-center text-center">
+                  <span className="linknest-page-title linknest-brand-app-name text-base font-bold leading-tight truncate max-w-full">
+                    {settings.app_name || ''}
+                  </span>
+                  {settings.app_subheading ? (
+                    <span className="linknest-brand-subheading text-[10px] text-slate-500 dark:text-slate-400 leading-tight truncate max-w-full">
+                      {settings.app_subheading}
+                    </span>
+                  ) : null}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Right: actions */}
+          <div className="absolute right-2 top-1/2 -translate-y-1/2 z-20 flex items-center gap-0.5">
             <button
               onClick={() => setShowFavoriteStars(!showFavoriteStars)}
-              className={`p-1.5 rounded-full transition-all ${showFavoriteStars
+              className={`linknest-nav-icon p-1.5 rounded-full transition-all ${showFavoriteStars
                 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400'
                 : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
                 }`}
@@ -493,7 +584,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
             </button>
             <button
               onClick={toggleTheme}
-              className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-all"
+              className="linknest-nav-icon p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-all"
               title={darkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
             >
               {darkMode ? (
@@ -508,7 +599,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
             </button>
             <button
               onClick={onHelpClick}
-              className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-all"
+              className="linknest-nav-icon p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-all"
               title="Help & About"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
@@ -517,7 +608,6 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                 <path d="M12 17h.01"></path>
               </svg>
             </button>
-            {/* Tile Animation Selector - Moved to far right and made compact */}
             <TileAnimationSelector
               onAnimationChange={(animation) => setCurrentAnimation(animation)}
               onDecorationChange={(decoration) => setCurrentDecoration(decoration)}
@@ -525,7 +615,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
             />
           </div>
         </div>
-      </div>
+      </nav>
 
       {/* Hamburger Menu Sidebar */}
       {isMenuOpen && (
@@ -544,12 +634,23 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex flex-col h-full">
-              {/* Menu Header */}
-              <div className="px-4 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                <h2 className="text-lg font-bold text-slate-900 dark:text-white">Navigation</h2>
+              {/* Menu Header — company logo at top of drawer */}
+              <div className="px-4 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  {settings.header_logo_image ? (
+                    <img
+                      src={settings.header_logo_image}
+                      alt=""
+                      className="linknest-header-logo object-contain flex-shrink-0"
+                      style={{ height: drawerLogoSize, maxWidth: Math.min(160, drawerLogoSize * 3.5) }}
+                    />
+                  ) : (
+                    <h2 className="text-lg font-bold text-slate-900 dark:text-white truncate">Navigation</h2>
+                  )}
+                </div>
                 <button
                   onClick={() => setIsMenuOpen(false)}
-                  className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                  className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors flex-shrink-0"
                   aria-label="Close menu"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
@@ -557,6 +658,11 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                   </svg>
                 </button>
               </div>
+              {settings.header_logo_image ? (
+                <div className="px-4 py-2 border-b border-slate-200 dark:border-slate-800">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Navigation</p>
+                </div>
+              ) : null}
 
               {/* User Info & Logout - moved to top */}
               {user && (
@@ -731,7 +837,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
       <div className="px-4 py-6">
         {/* Show localStorage warning for guest users on favorites tab */}
         {!isAuthenticated && activeTab === 'public-favorites' && !localStorageAvailable && (
-          <div className="mb-4 mx-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+          <div className="mb-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
             <div className="flex items-start gap-3">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5">
                 <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
@@ -745,6 +851,77 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                 </p>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Favorite Links — mobile cards (Favorites tab only) */}
+        {isFavoritesTab && (isLoadingFavoriteLinks || favoriteLinks.length > 0) && (
+          <div className="mb-8">
+            <div className="flex items-center gap-2 mb-3">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-amber-500">
+                <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
+              </svg>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">Favorite Links</h2>
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                ({isLoadingFavoriteLinks ? '…' : favoriteLinks.length})
+              </span>
+            </div>
+
+            {isLoadingFavoriteLinks ? (
+              <div className="space-y-2">
+                {[0, 1].map((i) => (
+                  <div key={i} className="h-[72px] rounded-xl bg-slate-100 dark:bg-slate-800/60 animate-pulse" />
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-2.5">
+                {favoriteLinks.map((link) => {
+                  const host = (link.url || '').replace(/^https?:\/\/(www\.)?/, '').split('/')[0] || link.url;
+                  return (
+                    <button
+                      key={link.id}
+                      type="button"
+                      onClick={() => {
+                        if (link.richTextContent) {
+                          window.open(link.url, '_blank', 'noopener,noreferrer');
+                          return;
+                        }
+                        window.open(link.url, '_blank', 'noopener,noreferrer');
+                      }}
+                      className="group relative flex items-center gap-3 p-3.5 w-full text-left bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl active:scale-[0.99] transition-all shadow-sm"
+                    >
+                      <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center shrink-0 text-lg border border-slate-200 dark:border-slate-700">
+                        {link.icon || '🔗'}
+                      </div>
+                      <div className="flex-1 min-w-0 overflow-hidden">
+                        <div className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-2">
+                          {stripHtml(link.label)}
+                        </div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5">
+                          {host}
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-1 overflow-hidden">
+                          <span className="text-xs shrink-0">{link.tile.emoji}</span>
+                          <span className="text-xs text-slate-400 dark:text-slate-500 line-clamp-1">
+                            {stripHtml(link.tile.title)}
+                          </span>
+                        </div>
+                      </div>
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-300 dark:text-slate-600 shrink-0">
+                        <path fillRule="evenodd" d="M5.22 14.78a.75.75 0 001.06 0l7.22-7.22v5.69a.75.75 0 001.5 0v-7.5a.75.75 0 00-.75-.75h-7.5a.75.75 0 000 1.5h5.69l-7.22 7.22a.75.75 0 000 1.06z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {isFavoritesTab && filteredTiles.length > 0 && (
+          <div className="flex items-center gap-2 mb-3">
+            <h2 className="text-base font-bold text-slate-900 dark:text-white">Favorite Spaces</h2>
+            <span className="text-xs text-slate-500 dark:text-slate-400">({filteredTiles.length})</span>
           </div>
         )}
 
@@ -855,7 +1032,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
               );
             })}
           </div>
-        ) : (
+        ) : favoriteLinks.length === 0 && !isLoadingFavoriteLinks ? (
           <div className="text-center py-16 animate-fadeIn">
             {!isAuthenticated && activeTab === 'public-favorites' ? (
               <>
@@ -881,6 +1058,18 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                   </button>
                 )}
               </>
+            ) : isFavoritesTab ? (
+              <>
+                <div className="w-20 h-20 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-amber-100 to-amber-200 dark:from-amber-900/30 dark:to-amber-800/30 flex items-center justify-center shadow-lg">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-10 h-10 text-amber-500 dark:text-amber-400">
+                    <path d="M9.653 16.915l-.005-.003-.019-.01a20.759 20.759 0 01-1.162-.682 22.045 22.045 0 01-2.582-1.9C4.045 12.733 2 10.352 2 7.5a4.5 4.5 0 005.29-4.546 4.02 4.02 0 011.582 1.3 4.027 4.027 0 001.524 1.008 4.5 4.5 0 005.884 4.548 4.02 4.02 0 011.582-1.3 4.027 4.027 0 001.524-1.008A4.5 4.5 0 0018 7.5c0 2.852-2.044 5.233-3.885 6.82a22.049 22.049 0 01-3.744 2.582l-.019.01-.005.003h-.002a.739.739 0 01-.69.001l-.002-.001z" />
+                  </svg>
+                </div>
+                <p className="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-2">No favorites yet</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 max-w-xs mx-auto">
+                  Favorite spaces and links will show up here
+                </p>
+              </>
             ) : (
               <>
                 <div className="w-20 h-20 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700 flex items-center justify-center shadow-lg">
@@ -901,7 +1090,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
               </>
             )}
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

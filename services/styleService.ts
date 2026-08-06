@@ -179,6 +179,10 @@ export interface SpaceStyles {
   pageBackgroundDarkOverlay: number; // 0-100 for image readability in dark mode
   pageBackgroundImagePosition: string; // 'center' | 'top' | 'bottom' | 'left' | 'right'
   pageBackgroundImageSize: string; // 'cover' | 'contain' | 'auto'
+  pageBackgroundImageRotation: number; // 0 | 90 | 180 | 270
+  pageBackgroundImageFlipH: boolean; // mirror horizontally
+  pageBackgroundImageFlipV: boolean; // mirror vertically
+  pageBackgroundImageZoom: number; // 50-300 custom zoom percent (100 = default)
 
   // Center canvas background (main content area only: solid or gradient)
   centerCanvasBackgroundType: 'none' | 'solid' | 'gradient';
@@ -430,6 +434,10 @@ export const DEFAULT_STYLES: SpaceStyles = {
   pageBackgroundDarkOverlay: 40,
   pageBackgroundImagePosition: 'center',
   pageBackgroundImageSize: 'cover',
+  pageBackgroundImageRotation: 0,
+  pageBackgroundImageFlipH: false,
+  pageBackgroundImageFlipV: false,
+  pageBackgroundImageZoom: 100,
 
   centerCanvasBackgroundType: 'none',
   centerCanvasSolidColor: '#ffffff',
@@ -452,7 +460,7 @@ export const DEFAULT_STYLES: SpaceStyles = {
   celebrationEffectEnabled: false,
   celebrationEffectType: 'none',
   celebrationIntensity: 50,
-  celebrationParticleSize: 3,
+  celebrationParticleSize: 2,
   celebrationSpeed: 50,
   celebrationColor1: '#ec4899',
   celebrationColor2: '#8b5cf6',
@@ -1909,6 +1917,25 @@ function getPageBackgroundBeforeCSS(styles: SpaceStyles): string {
   const opacity = Math.min(1, Math.max(0, (styles.pageBackgroundOpacity ?? 100) / 100));
   const position = styles.pageBackgroundImagePosition || 'center';
   const size = styles.pageBackgroundImageSize || 'cover';
+  const rotation = [0, 90, 180, 270].includes(Number(styles.pageBackgroundImageRotation))
+    ? Number(styles.pageBackgroundImageRotation)
+    : 0;
+  const flipH = !!styles.pageBackgroundImageFlipH;
+  const flipV = !!styles.pageBackgroundImageFlipV;
+  const zoom = Math.min(300, Math.max(50, Number(styles.pageBackgroundImageZoom) || 100)) / 100;
+  const transformParts: string[] = [];
+  if (rotation) transformParts.push(`rotate(${rotation}deg)`);
+  if (flipH) transformParts.push('scaleX(-1)');
+  if (flipV) transformParts.push('scaleY(-1)');
+  if (zoom !== 1) transformParts.push(`scale(${zoom})`);
+  const transformCss = transformParts.length
+    ? `transform: ${transformParts.join(' ')} !important; transform-origin: center center !important;`
+    : '';
+  // Grow the pseudo-element when rotated/zoomed so corners aren't clipped awkwardly
+  const needsExtraExtent = rotation === 90 || rotation === 270 || zoom > 1;
+  const extentCss = needsExtraExtent
+    ? `inset: -35% !important; width: 170% !important; height: 170% !important;`
+    : `inset: 0 !important; left: 0 !important; right: 0 !important; top: 0 !important; bottom: 0 !important;`;
   const filter = blur > 0 ? `filter: blur(${blur}px);` : '';
   const overlay = styles.pageBackgroundDarkOverlay ?? 40;
   const overlayCss = overlay > 0
@@ -1927,11 +1954,7 @@ function getPageBackgroundBeforeCSS(styles: SpaceStyles): string {
       .dark .linknest-app-container::before {
         content: '' !important;
         position: fixed !important;
-        inset: 0 !important;
-        left: 0 !important;
-        right: 0 !important;
-        top: 0 !important;
-        bottom: 0 !important;
+        ${extentCss}
         background-image: url("${safeUrl}") !important;
         background-position: ${position} !important;
         background-size: ${size} !important;
@@ -1939,6 +1962,7 @@ function getPageBackgroundBeforeCSS(styles: SpaceStyles): string {
         background-attachment: fixed !important;
         opacity: ${opacity} !important;
         ${filter ? filter.replace(';', ' !important;') : ''}
+        ${transformCss}
         z-index: -1 !important;
         pointer-events: none !important;
       }`;

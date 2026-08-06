@@ -526,8 +526,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
             </svg>
           </button>
 
-          {/* Logo and Application Name — wait for branding so default LinkNest does not flash */}
-          <div className="flex items-center justify-center mb-4 sm:mb-6 pt-1">
+          {/* Branding row */}
+          <div className="flex items-center justify-center mb-3 sm:mb-4 pt-1">
             <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-3">
               {settingsLoading ? (
                 <div className="auth-modal-logo w-12 h-12 sm:w-14 sm:h-14" aria-hidden="true" />
@@ -541,7 +541,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                     width: Math.min(80, Math.max(32, parseInt(appSettings.logo_size || '32', 10) || 32) * 1.5)
                   }}
                 />
-              ) : appSettings.logo_type !== 'image' ? (
+              ) : appSettings.logo_type !== 'image' && appSettings.logo_icon ? (
                 <div
                   className="auth-modal-logo rounded-xl bg-white/95 flex items-center justify-center shadow-md ring-1 ring-slate-200/80 dark:ring-slate-600/50"
                   style={{
@@ -550,40 +550,42 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                     fontSize: Math.max(20, Math.min(80, Math.max(32, parseInt(appSettings.logo_size || '32', 10) || 32) * 1.5) * 0.45)
                   }}
                 >
-                  {appSettings.logo_icon || '🔗'}
+                  {appSettings.logo_icon}
                 </div>
               ) : null}
-              <div className="text-center sm:text-left">
-                {!settingsLoading && appSettings.app_name ? (
-                  <>
-                    <p className="linknest-brand-app-name auth-modal-app-name text-lg sm:text-xl font-bold text-slate-800 dark:text-white">
-                      {appSettings.app_name}
-                    </p>
-                    {appSettings.app_subheading ? (
-                      <p className="linknest-brand-subheading auth-modal-app-subheading text-xs sm:text-sm text-slate-500 dark:text-slate-300 mt-0.5">
-                        {appSettings.app_subheading}
-                      </p>
-                    ) : null}
-                  </>
-                ) : null}
-                <h2 className="text-xl sm:text-2xl font-bold text-slate-800 dark:text-white mt-1">
-                  {mode === 'login' ? (
-                    <>
-                      <span className="mr-1.5" aria-hidden>👋</span>Sign In
-                    </>
-                  ) : (
-                    <>
-                      <span className="mr-1.5" aria-hidden>✨</span>Create Account
-                    </>
-                  )}
-                </h2>
-                {!settingsLoading && appSettings.app_name ? (
-                  <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-300 font-medium mt-0.5">
-                    Welcome to {appSettings.app_name}
+              {!settingsLoading && appSettings.app_name ? (
+                <div className="text-center sm:text-left">
+                  <p className="linknest-brand-app-name auth-modal-app-name text-lg sm:text-xl font-bold text-slate-800 dark:text-white">
+                    {appSettings.app_name}
                   </p>
-                ) : null}
-              </div>
+                  {appSettings.app_subheading ? (
+                    <p className="linknest-brand-subheading auth-modal-app-subheading text-xs sm:text-sm text-slate-500 dark:text-slate-300 mt-0.5">
+                      {appSettings.app_subheading}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
+          </div>
+
+          {/* Sign In / Create Account — own centered row */}
+          <div className="text-center mb-4 sm:mb-6">
+            <h2 className="text-xl sm:text-2xl font-bold text-slate-800 dark:text-white">
+              {mode === 'login' ? (
+                <>
+                  <span className="mr-1.5" aria-hidden>👋</span>Sign In
+                </>
+              ) : (
+                <>
+                  <span className="mr-1.5" aria-hidden>✨</span>Create Account
+                </>
+              )}
+            </h2>
+            {!settingsLoading && appSettings.app_name ? (
+              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-300 font-medium mt-0.5">
+                Welcome to {appSettings.app_name}
+              </p>
+            ) : null}
           </div>
 
         {error && (

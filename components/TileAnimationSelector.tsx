@@ -635,6 +635,20 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
         }
     }, [isOpen]);
 
+    // Esc closes the animation/decoration picker on all screen sizes
+    useEffect(() => {
+        if (!isOpen) return;
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape' || e.key === 'Esc') {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsOpen(false);
+            }
+        };
+        window.addEventListener('keydown', onKeyDown, true);
+        return () => window.removeEventListener('keydown', onKeyDown, true);
+    }, [isOpen]);
+
     const handleAnimationSelect = async (animation: TileAnimation) => {
         setSelectedAnimation(animation);
         if (persistGlobal) {

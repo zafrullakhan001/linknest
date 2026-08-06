@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
+import { useMobile } from '../hooks/useMobile';
 import { getDisabledTabsFromSettings } from '../services/tabVisibilityService';
 import { ProfileMenu } from './ProfileMenu';
 
@@ -40,6 +41,8 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
   const { logout } = useAuth();
   const { settings, loading: settingsLoading } = useSettings();
   const disabledTabs = getDisabledTabsFromSettings(settings);
+  // Tablets / narrow desktops: hide company logo so centered brand + widgets don't collide
+  const isCompactNav = useMobile(1280);
 
   const handleLogout = async () => {
     try {
@@ -52,9 +55,10 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
 
   const logoSize = Math.min(80, Math.max(16, parseInt(settings.logo_size || '32', 10) || 32));
   const headerLogoSize = Math.min(120, Math.max(20, parseInt(settings.header_logo_size || '40', 10) || 40));
+  const showCompanyLogo = Boolean(settings.header_logo_image) && !isCompactNav;
   const navMinHeight = Math.max(
     64,
-    (settings.header_logo_image ? headerLogoSize : 0) + 16,
+    (showCompanyLogo ? headerLogoSize : 0) + 16,
     (settings.logo_type === 'image' && settings.logo_image ? logoSize : 32) + 16,
     settings.app_subheading ? 72 : 64
   );
@@ -62,8 +66,8 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
   return (
     <nav className="linknest-nav fixed top-0 left-0 right-0 border-b border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md z-[100] transition-colors duration-300">
       <div className="relative w-full px-4 py-2" style={{ minHeight: navMinHeight }}>
-        {/* Far-left company/header logo — pinned to viewport left */}
-        {!settingsLoading && settings.header_logo_image ? (
+        {/* Far-left company logo — wide screens only */}
+        {showCompanyLogo ? (
           <a
             href="#/"
             onClick={(e) => {
@@ -76,19 +80,23 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
             <img
               src={settings.header_logo_image}
               alt=""
-              className="object-contain"
-              style={{ height: headerLogoSize, maxWidth: headerLogoSize * 4 }}
+              className="object-contain w-auto h-auto max-w-full"
+              style={{ height: headerLogoSize, maxWidth: Math.min(headerLogoSize * 4, 180) }}
             />
           </a>
         ) : null}
 
-        {/* App brand — always exactly centered in the header bar */}
+        {/* App brand — left on tablet/compact, centered on wide screens */}
         <div
           onClick={() => window.location.hash = '#/'}
-          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex items-center justify-center gap-2 group cursor-pointer min-w-0 max-w-[50vw]"
+          className={
+            isCompactNav
+              ? 'absolute left-4 top-1/2 -translate-y-1/2 z-10 flex items-center gap-2 group cursor-pointer min-w-0 max-w-[calc(100%-12rem)] pr-2'
+              : 'absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex items-center justify-center gap-2 group cursor-pointer min-w-0 max-w-[50vw]'
+          }
         >
-          {/* Hide default LinkNest brand until settings/branding have loaded */}
-          {settingsLoading ? (
+          {/* Show from hydrated cache; blank only when nothing to show yet */}
+          {settingsLoading && !settings.app_name && !settings.header_logo_image ? (
             <div className="h-8 min-w-[7rem]" aria-hidden="true" />
           ) : (
             <>
@@ -99,16 +107,16 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
                   className="rounded-lg object-contain group-hover:scale-105 transition-transform flex-shrink-0"
                   style={{ height: logoSize, width: logoSize }}
                 />
-              ) : settings.logo_type !== 'image' ? (
+              ) : settings.logo_type !== 'image' && settings.logo_icon ? (
                 <div
                   className="rounded-lg bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform flex-shrink-0"
                   style={{ height: logoSize, width: logoSize, fontSize: Math.max(14, logoSize * 0.55) }}
                 >
-                  {settings.logo_icon || '🔗'}
+                  {settings.logo_icon}
                 </div>
               ) : null}
-              <div className="flex flex-col min-w-0 items-center text-center">
-                <span className="linknest-page-title linknest-brand-app-name text-xl font-bold leading-tight">
+              <div className={`flex flex-col min-w-0 ${isCompactNav ? 'items-start text-left' : 'items-center text-center'}`}>
+                <span className="linknest-page-title linknest-brand-app-name text-xl font-bold leading-tight truncate max-w-full">
                   {settings.app_name || ''}
                 </span>
                 {settings.app_subheading ? (
