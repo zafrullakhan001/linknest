@@ -1,64 +1,13 @@
 <?php
 require_once __DIR__ . '/config.php';
 
-// Session is started by api/index.php for all routed requests
+// Session is started by api/index.php for all routed requests.
+// Keep helpers above the router: handlers call exit via sendJSON(), so any
+// runtime const/define after the switch never executes.
 
-$method = $_SERVER['REQUEST_METHOD'];
-$path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
-
-// Remove leading slash if present
-$path = ltrim($path, '/');
-
-switch ($method) {
-    case 'GET':
-        if ($path === '' || $path === '/') {
-            handleGetStyles();
-        } else if ($path === 'profiles') {
-            handleGetProfiles();
-        } else if (preg_match('/^profiles\/(\d+)$/', $path, $matches)) {
-            handleGetProfile((int)$matches[1]);
-        } else {
-            sendJSON(['error' => 'Invalid endpoint'], 404);
-        }
-        break;
-        
-    case 'PUT':
-        if ($path === '' || $path === '/') {
-            handleUpdateStyles();
-        } else if ($path === 'active') {
-            handleUpdateActiveProfileStyles();
-        } else if (preg_match('/^profiles\/(\d+)\/activate$/', $path, $matches)) {
-            handleActivateProfile((int)$matches[1]);
-        } else {
-            sendJSON(['error' => 'Invalid endpoint'], 404);
-        }
-        break;
-        
-    case 'POST':
-        if ($path === 'profiles') {
-            handleCreateProfile();
-        } else {
-            sendJSON(['error' => 'Invalid endpoint'], 404);
-        }
-        break;
-        
-    case 'DELETE':
-        if ($path === '' || $path === '/') {
-            handleResetStyles();
-        } else if (preg_match('/^profiles\/(\d+)$/', $path, $matches)) {
-            handleDeleteProfile((int)$matches[1]);
-        } else if ($path === 'profiles/inactive') {
-            handleDeleteInactiveProfiles();
-        } else {
-            sendJSON(['error' => 'Invalid endpoint'], 404);
-        }
-        break;
-        
-    default:
-        sendJSON(['error' => 'Method not allowed'], 405);
+if (!defined('STYLE_PROFILES_SCHEMA_VERSION')) {
+    define('STYLE_PROFILES_SCHEMA_VERSION', 1);
 }
-
-const STYLE_PROFILES_SCHEMA_VERSION = 1;
 
 function isStyleProfilesSchemaCurrent($db) {
     try {
@@ -72,8 +21,12 @@ function isStyleProfilesSchemaCurrent($db) {
 }
 
 function markStyleProfilesSchemaCurrent($db) {
-    $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
-    $stmt->execute(['style_profiles_schema_version', (string)STYLE_PROFILES_SCHEMA_VERSION, time()]);
+    try {
+        $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
+        $stmt->execute(['style_profiles_schema_version', (string)STYLE_PROFILES_SCHEMA_VERSION, time()]);
+    } catch (PDOException $e) {
+        error_log('Error marking style_profiles schema version: ' . $e->getMessage());
+    }
 }
 
 function ensureStyleProfilesTable($db) {
@@ -753,3 +706,57 @@ function handleResetStyles() {
     }
 }
 
+
+// Router must run after all handlers are defined (handlers exit via sendJSON).
+$method = $_SERVER['REQUEST_METHOD'];
+$path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
+$path = ltrim($path, '/');
+
+switch ($method) {
+    case 'GET':
+        if ($path === '' || $path === '/') {
+            handleGetStyles();
+        } else if ($path === 'profiles') {
+            handleGetProfiles();
+        } else if (preg_match('/^profiles\/(\d+)$/', $path, $matches)) {
+            handleGetProfile((int)$matches[1]);
+        } else {
+            sendJSON(['error' => 'Invalid endpoint'], 404);
+        }
+        break;
+
+    case 'PUT':
+        if ($path === '' || $path === '/') {
+            handleUpdateStyles();
+        } else if ($path === 'active') {
+            handleUpdateActiveProfileStyles();
+        } else if (preg_match('/^profiles\/(\d+)\/activate$/', $path, $matches)) {
+            handleActivateProfile((int)$matches[1]);
+        } else {
+            sendJSON(['error' => 'Invalid endpoint'], 404);
+        }
+        break;
+
+    case 'POST':
+        if ($path === 'profiles') {
+            handleCreateProfile();
+        } else {
+            sendJSON(['error' => 'Invalid endpoint'], 404);
+        }
+        break;
+
+    case 'DELETE':
+        if ($path === '' || $path === '/') {
+            handleResetStyles();
+        } else if (preg_match('/^profiles\/(\d+)$/', $path, $matches)) {
+            handleDeleteProfile((int)$matches[1]);
+        } else if ($path === 'profiles/inactive') {
+            handleDeleteInactiveProfiles();
+        } else {
+            sendJSON(['error' => 'Invalid endpoint'], 404);
+        }
+        break;
+
+    default:
+        sendJSON(['error' => 'Method not allowed'], 405);
+}

@@ -136,7 +136,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const { login, register } = useAuth();
-  const { settings: appSettings } = useSettings();
+  const { settings: appSettings, loading: settingsLoading } = useSettings();
 
   // Load settings to check LDAP configuration
   useEffect(() => {
@@ -506,7 +506,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         onClick={onClose}
         aria-hidden
       />
-      <div className="auth-modal-panel relative w-full max-w-md sm:max-w-2xl max-h-[95vh] overflow-y-auto rounded-2xl sm:rounded-3xl border border-white/40 dark:border-slate-600/60 shadow-2xl shadow-brand-900/20 bg-white dark:bg-slate-800">
+      <div className="auth-modal-panel relative w-full max-w-md sm:max-w-2xl max-h-[95vh] overflow-y-auto scrollbar-hide rounded-2xl sm:rounded-3xl border border-white/40 dark:border-slate-600/60 shadow-2xl shadow-brand-900/20 bg-white dark:bg-slate-800">
         {/* Soft faded brand wash — short height, fades quickly into the card */}
         <div className="pointer-events-none absolute inset-x-0 top-0 h-16 sm:h-20 overflow-hidden rounded-t-2xl sm:rounded-t-3xl">
           <div className="absolute inset-0 bg-gradient-to-b from-brand-400/45 via-brand-300/20 to-transparent dark:from-brand-500/35 dark:via-brand-600/15 dark:to-transparent" />
@@ -526,13 +526,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
             </svg>
           </button>
 
-          {/* Logo and Application Name */}
+          {/* Logo and Application Name — wait for branding so default LinkNest does not flash */}
           <div className="flex items-center justify-center mb-4 sm:mb-6 pt-1">
             <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-3">
-              {appSettings.logo_type === 'image' && appSettings.logo_image ? (
+              {settingsLoading ? (
+                <div className="auth-modal-logo w-12 h-12 sm:w-14 sm:h-14" aria-hidden="true" />
+              ) : appSettings.logo_type === 'image' && appSettings.logo_image ? (
                 <img
                   src={appSettings.logo_image}
-                  alt={appSettings.app_name || 'LinkNest'}
+                  alt={appSettings.app_name || ''}
                   className="auth-modal-logo w-12 h-12 sm:w-14 sm:h-14 rounded-xl object-contain bg-white/90 p-1 shadow-md ring-1 ring-slate-200/80 dark:ring-slate-600/50"
                 />
               ) : (
@@ -552,7 +554,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                     </>
                   )}
                 </h2>
-                {appSettings.app_name ? (
+                {!settingsLoading && appSettings.app_name ? (
                   <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-300 font-medium mt-0.5">
                     Welcome to {appSettings.app_name}
                   </p>

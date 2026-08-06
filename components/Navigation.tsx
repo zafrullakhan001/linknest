@@ -38,7 +38,7 @@ interface NavigationProps {
 
 export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: toggleDarkMode, showClock, toggleClock, showPhoneticAlphabet, togglePhoneticAlphabet, showNotes, toggleNotes, showWeather, toggleWeather, showCalculator, toggleCalculator, showPasswordGenerator, togglePasswordGenerator, showZoomControl, toggleZoomControl, showTheme, toggleThemeWidget, showFavOrganizer, toggleFavOrganizer, showChat, toggleChat, showSnakeGame, toggleSnakeGame, hasUnreadChatMessages = false, user, onLoginClick, onHelpClick, isWidgetAllowed }) => {
   const { logout } = useAuth();
-  const { settings } = useSettings();
+  const { settings, loading: settingsLoading } = useSettings();
   const disabledTabs = getDisabledTabsFromSettings(settings);
 
   const handleLogout = async () => {
@@ -57,20 +57,27 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
           onClick={() => window.location.hash = '#/'}
           className="flex items-center gap-2 group cursor-pointer"
         >
-          {settings.logo_type === 'image' && settings.logo_image ? (
-            <img
-              src={settings.logo_image}
-              alt={settings.app_name}
-              className="w-8 h-8 rounded-lg object-contain group-hover:scale-105 transition-transform"
-            />
+          {/* Hide default LinkNest brand until settings/branding have loaded */}
+          {settingsLoading ? (
+            <div className="h-8 min-w-[7rem]" aria-hidden="true" />
           ) : (
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform text-lg">
-              {settings.logo_icon || '🔗'}
-            </div>
+            <>
+              {settings.logo_type === 'image' && settings.logo_image ? (
+                <img
+                  src={settings.logo_image}
+                  alt={settings.app_name}
+                  className="w-8 h-8 rounded-lg object-contain group-hover:scale-105 transition-transform"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform text-lg">
+                  {settings.logo_icon || '🔗'}
+                </div>
+              )}
+              <span className="linknest-page-title text-xl font-bold">
+                {settings.app_name || ''}
+              </span>
+            </>
           )}
-          <span className="linknest-page-title text-xl font-bold">
-            {settings.app_name || 'LinkNest'}
-          </span>
         </div>
 
         <div className="flex items-center gap-2 sm:gap-4">

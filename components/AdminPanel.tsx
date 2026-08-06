@@ -7393,15 +7393,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               setLdapExporting(true);
                               setError('');
 
-                              // Prefer multi-server JSON; only include non-empty flat keys to avoid stale leftovers
+                              // Prefer multi-server JSON; only include non-empty flat keys to avoid stale leftovers.
+                              // Never export bind passwords (multi-server or legacy flat).
                               const ldapSettings: Partial<AppSettings> & { ldap_servers?: string } = {};
                               if (ldapServers.length > 0) {
                                 ldapSettings.ldap_enabled = settings.ldap_enabled || '1';
-                                ldapSettings.ldap_servers = JSON.stringify(ldapServers);
+                                const serversForExport = ldapServers.map((server) => {
+                                  const { bind_password: _omitBindPassword, ...rest } = server;
+                                  return rest;
+                                });
+                                ldapSettings.ldap_servers = JSON.stringify(serversForExport);
                               } else {
                                 const ldapKeys = [
                                   'ldap_enabled', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
-                                  'ldap_login_domain', 'ldap_bind_dn', 'ldap_bind_password',
+                                  'ldap_login_domain', 'ldap_bind_dn',
                                   'ldap_user_search_base', 'ldap_user_filter', 'ldap_user_attributes',
                                   'ldap_group_search_base', 'ldap_group_filter', 'ldap_group_attributes',
                                   'ldap_auto_create_users', 'ldap_auto_update_users', 'ldap_sync_interval',
@@ -7417,15 +7422,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     (ldapSettings as any)[key] = val;
                                   }
                                 });
-                              }
-
-                              // Encrypt password before exporting (legacy flat export only)
-                              if (ldapSettings.ldap_bind_password && ldapSettings.ldap_bind_password.trim() !== '') {
-                                try {
-                                  ldapSettings.ldap_bind_password = await settingsService.encryptPassword(ldapSettings.ldap_bind_password);
-                                } catch (encryptErr: any) {
-                                  throw new Error('Failed to encrypt password: ' + (encryptErr.message || 'Unknown error'));
-                                }
                               }
 
                               // Create JSON blob

@@ -11,12 +11,13 @@ interface SettingsContextType {
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
 
 export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  // Leave branding empty until API load completes so UI never flashes default LinkNest.
   const [settings, setSettings] = useState<AppSettings>({
-    app_name: 'LinkNest',
-    page_title: 'LinkNest',
+    app_name: '',
+    page_title: '',
     spaces_title: 'My Spaces',
     logo_type: 'icon',
-    logo_icon: '🔗',
+    logo_icon: '',
     logo_image: '',
     favicon: '',
     footer_text: '© 2025 Adventhealth - Designed and developed by AIT Architecture team'
@@ -72,8 +73,8 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
         }
       }
 
-      // Update page title
-      document.title = loadedSettings.page_title || 'LinkNest';
+      // Update page title from branding (avoid defaulting to LinkNest)
+      document.title = loadedSettings.page_title || loadedSettings.app_name || '';
 
       // Update favicon
       updateFavicon(loadedSettings.favicon);

@@ -47,6 +47,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const { user: authUser, logout } = useAuth();
+  const { loading: settingsLoading } = useSettings();
   const user = userProp || authUser;
 
   // Public favorites state for non-authenticated users
@@ -423,20 +424,26 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
               onClick={() => window.location.hash = '#/'}
               className="flex items-center gap-2 cursor-pointer"
             >
-              {settings.logo_type === 'image' && settings.logo_image ? (
-                <img
-                  src={settings.logo_image}
-                  alt={settings.app_name}
-                  className="w-7 h-7 rounded-lg object-contain"
-                />
+              {settingsLoading ? (
+                <div className="h-7 min-w-[6rem]" aria-hidden="true" />
               ) : (
-                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center shadow-lg text-base">
-                  {settings.logo_icon || '🔗'}
-                </div>
+                <>
+                  {settings.logo_type === 'image' && settings.logo_image ? (
+                    <img
+                      src={settings.logo_image}
+                      alt={settings.app_name}
+                      className="w-7 h-7 rounded-lg object-contain"
+                    />
+                  ) : (
+                    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center shadow-lg text-base">
+                      {settings.logo_icon || '🔗'}
+                    </div>
+                  )}
+                  <span className="text-base font-bold text-slate-900 dark:text-white">
+                    {settings.app_name || ''}
+                  </span>
+                </>
               )}
-              <span className="text-base font-bold text-slate-900 dark:text-white">
-                {settings.app_name || 'LinkNest'}
-              </span>
             </div>
           </div>
 
