@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 
 export type CelebrationEffectType =
   | 'none'
@@ -346,59 +346,69 @@ export const CelebrationEffects: React.FC<{
 
   const resizeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ratio = window.devicePixelRatio || 1;
+    if (!canvas) return false;
+    const ratio = Math.max(1, window.devicePixelRatio || 1);
     const el = containerRef?.current;
+    let w = 0;
+    let h = 0;
     if (el) {
       const rect = el.getBoundingClientRect();
-      const w = Math.floor(rect.width);
-      const h = Math.floor(rect.height);
-      const bufferW = Math.floor(w * ratio);
-      const bufferH = Math.floor(h * ratio);
-      canvas.width = bufferW;
-      canvas.height = bufferH;
+      w = Math.max(1, Math.floor(rect.width));
+      h = Math.max(1, Math.floor(rect.height));
       canvas.style.width = '100%';
       canvas.style.height = '100%';
       canvas.style.left = '';
       canvas.style.top = '';
     } else {
-      const w = Math.floor(window.innerWidth);
-      const h = Math.floor(window.innerHeight);
-      canvas.width = Math.floor(w * ratio);
-      canvas.height = Math.floor(h * ratio);
+      w = Math.max(1, Math.floor(window.innerWidth));
+      h = Math.max(1, Math.floor(window.innerHeight));
       canvas.style.width = `${w}px`;
       canvas.style.height = `${h}px`;
       canvas.style.left = '0';
       canvas.style.top = '0';
     }
+    const bufferW = Math.floor(w * ratio);
+    const bufferH = Math.floor(h * ratio);
+    // Only reset buffer when size actually changes (setting width clears the canvas + transform)
+    if (canvas.width !== bufferW || canvas.height !== bufferH) {
+      canvas.width = bufferW;
+      canvas.height = bufferH;
+    }
     pixelRatioRef.current = ratio;
     const ctx = canvas.getContext('2d');
     if (ctx) {
-      ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset first
-      ctx.scale(ratio, ratio);
-      // Crisp strokes/shapes — avoid soft browser smoothing on particles
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
       ctx.imageSmoothingEnabled = false;
     }
+    return w >= 2 && h >= 2;
   }, [containerRef]);
+
+  // Resize before paint whenever celebration mounts / turns on (fixes bloated first enable)
+  useLayoutEffect(() => {
+    if (!enabled || effectType === 'none') return;
+    resizeCanvas();
+  }, [enabled, effectType, showOnForeground, resizeCanvas]);
 
   useEffect(() => {
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
     const el = containerRef?.current;
     if (el) {
-      resizeObserverRef.current = new ResizeObserver(resizeCanvas);
+      resizeObserverRef.current = new ResizeObserver(() => resizeCanvas());
       resizeObserverRef.current.observe(el);
-    }
-    const canvas = canvasRef.current;
-    if (canvas && !containerRef) {
-      resizeObserverRef.current = new ResizeObserver(resizeCanvas);
-      resizeObserverRef.current.observe(canvas);
+    } else {
+      const canvas = canvasRef.current;
+      if (canvas) {
+        resizeObserverRef.current = new ResizeObserver(() => resizeCanvas());
+        resizeObserverRef.current.observe(canvas);
+      }
     }
     return () => {
       window.removeEventListener('resize', resizeCanvas);
       resizeObserverRef.current?.disconnect();
+      resizeObserverRef.current = null;
     };
-  }, [resizeCanvas, containerRef]);
+  }, [resizeCanvas, containerRef, enabled]);
 
   useEffect(() => {
     if (!enabled || effectType === 'none') {
@@ -422,18 +432,39 @@ export const CelebrationEffects: React.FC<{
       dandelionRef.current = [];
       butterfliesRef.current = [];
       meteorsRef.current = [];
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
       return;
     }
 
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    // Critical: remounted canvas is 300×150 until resized — draw then = bloated look
+    resizeCanvas();
+    let retryTimer: number | null = null;
+
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    ctx.setTransform(pixelRatioRef.current || 1, 0, 0, pixelRatioRef.current || 1, 0, 0);
+    ctx.imageSmoothingEnabled = false;
 
     const getSize = () => {
       const ratio = pixelRatioRef.current || 1;
-      return { width: canvas.width / ratio, height: canvas.height / ratio };
+      const width = canvas.width / ratio;
+      const height = canvas.height / ratio;
+      return { width, height };
+    };
+
+    const ensureSized = () => {
+      const { width, height } = getSize();
+      if (width >= 32 && height >= 32) return true;
+      resizeCanvas();
+      const next = getSize();
+      return next.width >= 32 && next.height >= 32;
     };
     const baseCount = 30 + Math.floor(intensity * 50);
     const sizeMul = Math.max(0.55, Math.min(1.35, particleSizeScale));
@@ -992,6 +1023,12 @@ export const CelebrationEffects: React.FC<{
     let sparkleSpawnCount = 0;
 
     const animate = () => {
+      if (!ensureSized()) {
+        animationRef.current = requestAnimationFrame(animate);
+        return;
+      }
+      // Keep transform in sync after any buffer resize
+      ctx.setTransform(pixelRatioRef.current || 1, 0, 0, pixelRatioRef.current || 1, 0, 0);
       const { width, height } = getSize();
       const now = Date.now();
       ctx.clearRect(0, 0, Math.ceil(width), Math.ceil(height));
@@ -1516,80 +1553,87 @@ export const CelebrationEffects: React.FC<{
       animationRef.current = requestAnimationFrame(animate);
     };
 
-    // Initial spawn
-    const initialNow = Date.now();
-    if (effectType === 'confetti') {
-      spawnConfetti();
-      lastSpawn = initialNow;
-    }
-    if (effectType === 'balloons') {
-      spawnBalloons();
-      lastSpawn = initialNow;
-    }
-    if (effectType === 'hearts') {
-      spawnHearts();
-      lastSpawn = initialNow;
-    }
-    if (effectType === 'snow') {
-      spawnSnowflakes();
-      lastSpawn = initialNow;
-    }
-    if (effectType === 'bubbles') {
-      spawnBubbles();
-      lastSpawn = initialNow;
-    }
-    if (effectType === 'sparkles') {
-      spawnRandomSparkles();
-      lastSpawn = initialNow;
-    }
-    if (effectType === 'fireworks') {
-      createFireworkBurst();
-      createFireworkBurst();
-      createFireworkBurst();
-      lastFireworkRef.current = initialNow;
-    }
-    if (effectType === 'rocket-fireworks') {
-      createRocket();
-      createRocket();
-      lastFireworkRef.current = initialNow;
-    }
-    if (effectType === 'rain') {
-      spawnRain();
-      lastSpawn = initialNow;
-    }
-    if (effectType === 'leaves') {
-      spawnLeaves();
-      lastSpawn = initialNow;
-    }
-    if (effectType === 'fireflies') {
-      spawnFireflies();
-      lastSpawn = initialNow;
-    }
-    if (effectType === 'petals') {
-      spawnPetals();
-      lastSpawn = initialNow;
-    }
-    if (effectType === 'cosmic') {
-      spawnCosmic();
-      lastSpawn = initialNow;
-    }
-    if (effectType === 'dandelion') {
-      spawnDandelion();
-      lastSpawn = initialNow;
-    }
-    if (effectType === 'butterflies') {
-      spawnButterflies();
-      lastSpawn = initialNow;
-    }
+    // Initial spawn — wait until canvas has a real size (not default 300×150)
+    const startWhenReady = () => {
+      if (!ensureSized()) {
+        retryTimer = window.setTimeout(startWhenReady, 32);
+        return;
+      }
+      const initialNow = Date.now();
+      if (effectType === 'confetti') {
+        spawnConfetti();
+        lastSpawn = initialNow;
+      }
+      if (effectType === 'balloons') {
+        spawnBalloons();
+        lastSpawn = initialNow;
+      }
+      if (effectType === 'hearts') {
+        spawnHearts();
+        lastSpawn = initialNow;
+      }
+      if (effectType === 'snow') {
+        spawnSnowflakes();
+        lastSpawn = initialNow;
+      }
+      if (effectType === 'bubbles') {
+        spawnBubbles();
+        lastSpawn = initialNow;
+      }
+      if (effectType === 'sparkles') {
+        spawnRandomSparkles();
+        lastSpawn = initialNow;
+      }
+      if (effectType === 'fireworks') {
+        createFireworkBurst();
+        createFireworkBurst();
+        createFireworkBurst();
+        lastFireworkRef.current = initialNow;
+      }
+      if (effectType === 'rocket-fireworks') {
+        createRocket();
+        createRocket();
+        lastFireworkRef.current = initialNow;
+      }
+      if (effectType === 'rain') {
+        spawnRain();
+        lastSpawn = initialNow;
+      }
+      if (effectType === 'leaves') {
+        spawnLeaves();
+        lastSpawn = initialNow;
+      }
+      if (effectType === 'fireflies') {
+        spawnFireflies();
+        lastSpawn = initialNow;
+      }
+      if (effectType === 'petals') {
+        spawnPetals();
+        lastSpawn = initialNow;
+      }
+      if (effectType === 'cosmic') {
+        spawnCosmic();
+        lastSpawn = initialNow;
+      }
+      if (effectType === 'dandelion') {
+        spawnDandelion();
+        lastSpawn = initialNow;
+      }
+      if (effectType === 'butterflies') {
+        spawnButterflies();
+        lastSpawn = initialNow;
+      }
+      animationRef.current = requestAnimationFrame(animate);
+    };
 
-    animationRef.current = requestAnimationFrame(animate);
+    startWhenReady();
     return () => {
+      if (retryTimer != null) window.clearTimeout(retryTimer);
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
     };
   }, [enabled, effectType, intensity, particleSizeScale, speedMul, colors, opacityMul, burstIntervalMs, resizeCanvas]);
 
-  if (!enabled || effectType === 'none') return null;
-
+  // Keep canvas mounted so enable/disable doesn't leave a 300×150 buffer stretched fullscreen
   return (
     <canvas
       ref={canvasRef}
@@ -1598,6 +1642,7 @@ export const CelebrationEffects: React.FC<{
         minWidth: 0,
         minHeight: 0,
         display: 'block',
+        visibility: enabled && effectType !== 'none' ? 'visible' : 'hidden',
       }}
       aria-hidden
     />
