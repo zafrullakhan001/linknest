@@ -40,6 +40,58 @@ export interface AppSettings {
   logo_type: 'icon' | 'image';
   logo_icon: string;
   logo_image: string;
+  logo_size?: string; // Brand logo height in px (nav)
+  header_logo_image?: string; // Separate company/org logo for top-left of nav
+  header_logo_size?: string; // Header/company logo height in px (nav)
+  app_subheading?: string; // Text under app name in nav
+  app_name_font_size?: string;
+  app_name_font_family?: string;
+  app_name_font_weight?: string;
+  app_name_font_style?: string;
+  app_name_font_color?: string;
+  app_name_font_color_dark?: string;
+  app_name_letter_spacing?: string; // em units as string e.g. "0.02"
+  app_name_line_height?: string;
+  app_subheading_font_size?: string;
+  app_subheading_font_family?: string;
+  app_subheading_font_weight?: string;
+  app_subheading_font_style?: string;
+  app_subheading_font_color?: string;
+  app_subheading_font_color_dark?: string;
+  app_subheading_letter_spacing?: string;
+  app_subheading_line_height?: string;
+  // Nav chrome
+  nav_bg_light?: string;
+  nav_bg_to_light?: string; // optional gradient end (light)
+  nav_bg_dark?: string;
+  nav_bg_to_dark?: string; // optional gradient end (dark)
+  nav_gradient_angle?: string; // degrees, default 90
+  nav_border_light?: string;
+  nav_border_dark?: string;
+  nav_icon_color_light?: string;
+  nav_icon_color_dark?: string;
+  // Hero branding
+  hero_icon?: string;
+  spaces_subtitle?: string;
+  hero_title_color?: string;
+  hero_title_color_dark?: string;
+  hero_subtitle_color?: string;
+  hero_subtitle_color_dark?: string;
+  hero_bg_from?: string;
+  hero_bg_to?: string;
+  hero_bg_from_dark?: string;
+  hero_bg_to_dark?: string;
+  hero_bg_angle?: string; // degrees, default 135
+  hero_overlay_color?: string;
+  hero_overlay_to?: string; // optional overlay gradient end
+  hero_overlay_opacity?: string; // 0–40
+  hero_icon_bg_from?: string;
+  hero_icon_bg_to?: string;
+  // Auth wash
+  auth_wash_from?: string;
+  auth_wash_to?: string;
+  // Tab title
+  page_title_pattern?: string;
   favicon: string;
   footer_text?: string; // Footer text displayed at the bottom of pages
   guest_access_enabled?: string; // '0' or '1' - controls whether guests can view spaces
@@ -142,6 +194,54 @@ export const settingsService = {
       logo_type: (data.settings?.logo_type || 'icon') as 'icon' | 'image',
       logo_icon: data.settings?.logo_icon || '🔗',
       logo_image: data.settings?.logo_image || '',
+      logo_size: data.settings?.logo_size || '32',
+      header_logo_image: data.settings?.header_logo_image || '',
+      header_logo_size: data.settings?.header_logo_size || '40',
+      app_subheading: data.settings?.app_subheading || '',
+      app_name_font_size: data.settings?.app_name_font_size || '20',
+      app_name_font_family: data.settings?.app_name_font_family || 'inherit',
+      app_name_font_weight: data.settings?.app_name_font_weight || 'bold',
+      app_name_font_style: data.settings?.app_name_font_style || 'normal',
+      app_name_font_color: data.settings?.app_name_font_color || '',
+      app_name_font_color_dark: data.settings?.app_name_font_color_dark || '',
+      app_name_letter_spacing: data.settings?.app_name_letter_spacing || '0',
+      app_name_line_height: data.settings?.app_name_line_height || '1.25',
+      app_subheading_font_size: data.settings?.app_subheading_font_size || '12',
+      app_subheading_font_family: data.settings?.app_subheading_font_family || 'inherit',
+      app_subheading_font_weight: data.settings?.app_subheading_font_weight || 'normal',
+      app_subheading_font_style: data.settings?.app_subheading_font_style || 'normal',
+      app_subheading_font_color: data.settings?.app_subheading_font_color || '',
+      app_subheading_font_color_dark: data.settings?.app_subheading_font_color_dark || '',
+      app_subheading_letter_spacing: data.settings?.app_subheading_letter_spacing || '0',
+      app_subheading_line_height: data.settings?.app_subheading_line_height || '1.3',
+      nav_bg_light: data.settings?.nav_bg_light || '',
+      nav_bg_to_light: data.settings?.nav_bg_to_light || '',
+      nav_bg_dark: data.settings?.nav_bg_dark || '',
+      nav_bg_to_dark: data.settings?.nav_bg_to_dark || '',
+      nav_gradient_angle: data.settings?.nav_gradient_angle || '90',
+      nav_border_light: data.settings?.nav_border_light || '',
+      nav_border_dark: data.settings?.nav_border_dark || '',
+      nav_icon_color_light: data.settings?.nav_icon_color_light || '',
+      nav_icon_color_dark: data.settings?.nav_icon_color_dark || '',
+      hero_icon: data.settings?.hero_icon || '',
+      spaces_subtitle: data.settings?.spaces_subtitle || '',
+      hero_title_color: data.settings?.hero_title_color || '',
+      hero_title_color_dark: data.settings?.hero_title_color_dark || '',
+      hero_subtitle_color: data.settings?.hero_subtitle_color || '',
+      hero_subtitle_color_dark: data.settings?.hero_subtitle_color_dark || '',
+      hero_bg_from: data.settings?.hero_bg_from || '',
+      hero_bg_to: data.settings?.hero_bg_to || '',
+      hero_bg_from_dark: data.settings?.hero_bg_from_dark || '',
+      hero_bg_to_dark: data.settings?.hero_bg_to_dark || '',
+      hero_bg_angle: data.settings?.hero_bg_angle || '135',
+      hero_overlay_color: data.settings?.hero_overlay_color || '',
+      hero_overlay_to: data.settings?.hero_overlay_to || '',
+      hero_overlay_opacity: data.settings?.hero_overlay_opacity || '0',
+      hero_icon_bg_from: data.settings?.hero_icon_bg_from || '',
+      hero_icon_bg_to: data.settings?.hero_icon_bg_to || '',
+      auth_wash_from: data.settings?.auth_wash_from || '',
+      auth_wash_to: data.settings?.auth_wash_to || '',
+      page_title_pattern: data.settings?.page_title_pattern || '{page_title}',
       favicon: data.settings?.favicon || '',
       footer_text: data.settings?.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team',
       guest_access_enabled: data.settings?.guest_access_enabled || '1', // Default to enabled
@@ -232,9 +332,10 @@ export const settingsService = {
     }
   },
 
-  async uploadLogo(file: File): Promise<string> {
+  async uploadLogo(file: File, settingKey: 'logo_image' | 'header_logo_image' = 'logo_image'): Promise<string> {
     const formData = new FormData();
     formData.append('logo', file);
+    formData.append('setting_key', settingKey);
 
     const response = await fetch(`${API_BASE}/settings/upload-logo`, {
       method: 'POST',

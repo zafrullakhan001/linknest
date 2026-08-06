@@ -6218,14 +6218,27 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           <div className="linknest-hero-orb-2 absolute -bottom-40 -left-40 w-80 h-80 rounded-full blur-3xl animate-pulse-slow" style={{ animationDelay: '1s' }}></div>
           <div className="linknest-hero-orb-3 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full blur-3xl animate-pulse-slow" style={{ animationDelay: '2s' }}></div>
         </div>
+        <div className="linknest-hero-brand-overlay" aria-hidden="true" />
 
         {/* Content */}
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
           <div className="flex-1">
             <div className="flex items-center gap-4">
-              <h1 className="linknest-spaces-title text-4xl sm:text-5xl font-bold text-slate-900 dark:text-white">
-                {settings.spaces_title || 'My Spaces'}
-              </h1>
+              {settings.hero_icon ? (
+                <div className="linknest-hero-icon w-12 h-12 rounded-xl bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center shadow-lg text-2xl flex-shrink-0">
+                  {settings.hero_icon}
+                </div>
+              ) : null}
+              <div className="min-w-0">
+                <h1 className="linknest-spaces-title text-4xl sm:text-5xl font-bold text-slate-900 dark:text-white">
+                  {settings.spaces_title || 'My Spaces'}
+                </h1>
+                {settings.spaces_subtitle ? (
+                  <p className="linknest-spaces-subtitle mt-2 text-sm sm:text-base text-slate-600 dark:text-slate-300">
+                    {settings.spaces_subtitle}
+                  </p>
+                ) : null}
+              </div>
             </div>
           </div>
 

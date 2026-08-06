@@ -50,12 +50,42 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
     }
   };
 
+  const logoSize = Math.min(80, Math.max(16, parseInt(settings.logo_size || '32', 10) || 32));
+  const headerLogoSize = Math.min(120, Math.max(20, parseInt(settings.header_logo_size || '40', 10) || 40));
+  const navMinHeight = Math.max(
+    64,
+    (settings.header_logo_image ? headerLogoSize : 0) + 16,
+    (settings.logo_type === 'image' && settings.logo_image ? logoSize : 32) + 16,
+    settings.app_subheading ? 72 : 64
+  );
+
   return (
     <nav className="linknest-nav fixed top-0 left-0 right-0 border-b border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md z-[100] transition-colors duration-300">
-      <div className="container mx-auto px-4 h-16 flex items-center justify-between max-w-6xl">
+      <div className="relative w-full px-4 py-2" style={{ minHeight: navMinHeight }}>
+        {/* Far-left company/header logo — pinned to viewport left */}
+        {!settingsLoading && settings.header_logo_image ? (
+          <a
+            href="#/"
+            onClick={(e) => {
+              e.preventDefault();
+              window.location.hash = '#/';
+            }}
+            className="linknest-header-logo absolute left-4 top-1/2 -translate-y-1/2 z-20 flex items-center"
+            title="Home"
+          >
+            <img
+              src={settings.header_logo_image}
+              alt=""
+              className="object-contain"
+              style={{ height: headerLogoSize, maxWidth: headerLogoSize * 4 }}
+            />
+          </a>
+        ) : null}
+
+        {/* App brand — always exactly centered in the header bar */}
         <div
           onClick={() => window.location.hash = '#/'}
-          className="flex items-center gap-2 group cursor-pointer"
+          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex items-center justify-center gap-2 group cursor-pointer min-w-0 max-w-[50vw]"
         >
           {/* Hide default LinkNest brand until settings/branding have loaded */}
           {settingsLoading ? (
@@ -66,21 +96,32 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
                 <img
                   src={settings.logo_image}
                   alt={settings.app_name}
-                  className="w-8 h-8 rounded-lg object-contain group-hover:scale-105 transition-transform"
+                  className="rounded-lg object-contain group-hover:scale-105 transition-transform flex-shrink-0"
+                  style={{ height: logoSize, width: logoSize }}
                 />
-              ) : (
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform text-lg">
+              ) : settings.logo_type !== 'image' ? (
+                <div
+                  className="rounded-lg bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform flex-shrink-0"
+                  style={{ height: logoSize, width: logoSize, fontSize: Math.max(14, logoSize * 0.55) }}
+                >
                   {settings.logo_icon || '🔗'}
                 </div>
-              )}
-              <span className="linknest-page-title text-xl font-bold">
-                {settings.app_name || ''}
-              </span>
+              ) : null}
+              <div className="flex flex-col min-w-0 items-center text-center">
+                <span className="linknest-page-title linknest-brand-app-name text-xl font-bold leading-tight">
+                  {settings.app_name || ''}
+                </span>
+                {settings.app_subheading ? (
+                  <span className="linknest-brand-subheading text-xs text-slate-500 dark:text-slate-400 leading-tight truncate max-w-full">
+                    {settings.app_subheading}
+                  </span>
+                ) : null}
+              </div>
             </>
           )}
         </div>
 
-        <div className="flex items-center gap-2 sm:gap-4">
+        <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 sm:gap-4 flex-shrink-0 z-10">
           {/* Auth Section */}
           <div className="flex items-center gap-3 order-1 sm:order-none">
             {user ? (
@@ -90,7 +131,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
                     {!disabledTabs.has('admin') && (
                       <button
                         onClick={() => window.location.hash = '#/admin'}
-                        className="p-2 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/30 rounded-lg transition-colors flex items-center gap-2"
+                        className="linknest-nav-icon p-2 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/30 rounded-lg transition-colors flex items-center gap-2"
                         title="Admin Panel"
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
@@ -105,7 +146,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
                           const event = new CustomEvent('openStyleManager');
                           window.dispatchEvent(event);
                         }}
-                        className="p-2 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/30 rounded-lg transition-colors flex items-center gap-2"
+                        className="linknest-nav-icon p-2 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/30 rounded-lg transition-colors flex items-center gap-2"
                         title="Style Manager"
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
@@ -131,7 +172,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
             {isWidgetAllowed('clock') && (
               <button
                 onClick={toggleClock}
-                className={`p-2 rounded-full transition-all ${showClock ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                className={`p-2 rounded-full transition-all linknest-nav-icon ${showClock ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
                 title={showClock ? "Hide Clock Widget" : "Show Clock Widget"}
               >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
@@ -143,7 +184,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
             {isWidgetAllowed('weather') && (
               <button
                 onClick={toggleWeather}
-                className={`p-2 rounded-full transition-all ${showWeather ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                className={`p-2 rounded-full transition-all linknest-nav-icon ${showWeather ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
                 title={showWeather ? "Hide Weather Widget" : "Show Weather Widget"}
               >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
@@ -155,7 +196,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
             {isWidgetAllowed('calculator') && (
               <button
                 onClick={toggleCalculator}
-                className={`p-2 rounded-full transition-all ${showCalculator ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                className={`p-2 rounded-full transition-all linknest-nav-icon ${showCalculator ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
                 title={showCalculator ? "Hide Calculator Widget" : "Show Calculator Widget"}
               >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
@@ -170,7 +211,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
             {user && isWidgetAllowed('notes') && (
               <button
                 onClick={toggleNotes}
-                className={`p-2 rounded-full transition-all ${showNotes ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                className={`p-2 rounded-full transition-all linknest-nav-icon ${showNotes ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
                 title={showNotes ? "Hide Notes Widget" : "Show Notes Widget"}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
@@ -185,7 +226,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
             {isWidgetAllowed('password-generator') && (
               <button
                 onClick={togglePasswordGenerator}
-                className={`p-2 rounded-full transition-all ${showPasswordGenerator ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                className={`p-2 rounded-full transition-all linknest-nav-icon ${showPasswordGenerator ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
                 title={showPasswordGenerator ? "Hide Password Generator Widget" : "Show Password Generator Widget"}
               >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
@@ -197,7 +238,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
             {isWidgetAllowed('phonetic-alphabet') && (
               <button
                 onClick={togglePhoneticAlphabet}
-                className={`p-2 rounded-full transition-all ${showPhoneticAlphabet ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                className={`p-2 rounded-full transition-all linknest-nav-icon ${showPhoneticAlphabet ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
                 title={showPhoneticAlphabet ? "Hide Phonetic Alphabet" : "Show Phonetic Alphabet"}
               >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
@@ -209,7 +250,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
             {isWidgetAllowed('zoom-control') && (
               <button
                 onClick={toggleZoomControl}
-                className={`p-2 rounded-full transition-all ${showZoomControl ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                className={`p-2 rounded-full transition-all linknest-nav-icon ${showZoomControl ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
                 title={showZoomControl ? "Hide Zoom Control Widget" : "Show Zoom Control Widget"}
               >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
@@ -223,7 +264,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
             {isWidgetAllowed('theme') && (
               <button
                 onClick={toggleThemeWidget}
-                className={`p-2 rounded-full transition-all ${showTheme ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                className={`p-2 rounded-full transition-all linknest-nav-icon ${showTheme ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
                 title={showTheme ? "Hide Theme Widget" : "Show Theme Widget"}
               >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
@@ -238,7 +279,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
             {user && isWidgetAllowed('fav-organizer') && (
               <button
                 onClick={toggleFavOrganizer}
-                className={`p-2 rounded-full transition-all ${showFavOrganizer ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                className={`p-2 rounded-full transition-all linknest-nav-icon ${showFavOrganizer ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
                 title={showFavOrganizer ? "Hide Favorite Organizer Widget" : "Show Favorite Organizer Widget"}
               >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
@@ -253,7 +294,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
             {user && isWidgetAllowed('chat') && (
               <button
                 onClick={toggleChat}
-                className={`p-2 rounded-full transition-all relative ${showChat ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : hasUnreadChatMessages ? 'hover:bg-slate-200 dark:hover:bg-slate-700 text-red-500 dark:text-red-400' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                className={`p-2 rounded-full transition-all relative linknest-nav-icon ${showChat ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : hasUnreadChatMessages ? 'hover:bg-slate-200 dark:hover:bg-slate-700 text-red-500 dark:text-red-400' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
                 title={showChat ? "Hide Chat Widget" : hasUnreadChatMessages ? "Show Chat Widget (New messages)" : "Show Chat Widget"}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
@@ -268,7 +309,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
             {isWidgetAllowed('snake-game') && (
               <button
                 onClick={toggleSnakeGame}
-                className={`p-2 rounded-full transition-all ${showSnakeGame ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                className={`p-2 rounded-full transition-all linknest-nav-icon ${showSnakeGame ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
                 title={showSnakeGame ? "Hide Snake Game Widget" : "Show Snake Game Widget"}
               >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
@@ -285,7 +326,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
           <div className="flex items-center gap-1">
             <button
               onClick={toggleDarkMode}
-              className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
+              className="linknest-nav-icon p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
               title={darkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
             >
               {darkMode ? (
@@ -300,7 +341,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
             </button>
             <button
               onClick={onHelpClick}
-              className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
+              className="linknest-nav-icon p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
               title="Help & About"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">

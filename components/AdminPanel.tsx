@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { authService, PendingUser, AllUser, LdapUserDetail } from '../services/authService';
 import { settingsService, AppSettings, SEMI_PWA_EXCLUDE_PATHS_DEFAULT } from '../services/settingsService';
 import { databaseService } from '../services/databaseService';
-import { useSettings } from '../contexts/SettingsContext';
+import { useSettings, resolvePageTitle } from '../contexts/SettingsContext';
 import { useAuth } from '../contexts/AuthContext';
 import { getTiles, createTile, saveTile } from '../services/storageService';
 import { bulkImportTiles } from '../services/storageService';
@@ -145,9 +145,98 @@ const ADMIN_NAV_SECTIONS: Array<{
 
 const ADMIN_NAV_ITEMS = ADMIN_NAV_SECTIONS.flatMap((section) => section.items);
 
+/** Common Windows / web-safe fonts for branding (sans, serif, mono, cursive/script, display). */
+const BRANDING_FONT_FAMILIES: { value: string; label: string; group: string }[] = [
+  { value: 'inherit', label: 'Inherit (Default)', group: 'Default' },
+  // Sans-serif
+  { value: 'Arial, sans-serif', label: 'Arial', group: 'Sans-serif' },
+  { value: "'Arial Black', Gadget, sans-serif", label: 'Arial Black', group: 'Sans-serif' },
+  { value: "'Helvetica Neue', Helvetica, sans-serif", label: 'Helvetica', group: 'Sans-serif' },
+  { value: 'Verdana, Geneva, sans-serif', label: 'Verdana', group: 'Sans-serif' },
+  { value: 'Tahoma, Geneva, sans-serif', label: 'Tahoma', group: 'Sans-serif' },
+  { value: "'Trebuchet MS', Helvetica, sans-serif", label: 'Trebuchet MS', group: 'Sans-serif' },
+  { value: "'Segoe UI', Tahoma, Geneva, sans-serif", label: 'Segoe UI', group: 'Sans-serif' },
+  { value: 'Calibri, Candara, Segoe, sans-serif', label: 'Calibri', group: 'Sans-serif' },
+  { value: 'Candara, Calibri, Segoe, sans-serif', label: 'Candara', group: 'Sans-serif' },
+  { value: 'Corbel, "Century Gothic", sans-serif', label: 'Corbel', group: 'Sans-serif' },
+  { value: '"Century Gothic", CenturyGothic, AppleGothic, sans-serif', label: 'Century Gothic', group: 'Sans-serif' },
+  { value: "'Lucida Sans Unicode', 'Lucida Grande', sans-serif", label: 'Lucida Sans', group: 'Sans-serif' },
+  { value: "'Franklin Gothic Medium', 'Arial Narrow', sans-serif", label: 'Franklin Gothic', group: 'Sans-serif' },
+  { value: 'Optima, Segoe, Candara, sans-serif', label: 'Optima', group: 'Sans-serif' },
+  // Serif
+  { value: "'Times New Roman', Times, serif", label: 'Times New Roman', group: 'Serif' },
+  { value: 'Georgia, serif', label: 'Georgia', group: 'Serif' },
+  { value: "'Palatino Linotype', 'Book Antiqua', Palatino, serif", label: 'Palatino', group: 'Serif' },
+  { value: "'Book Antiqua', Palatino, serif", label: 'Book Antiqua', group: 'Serif' },
+  { value: 'Garamond, Baskerville, serif', label: 'Garamond', group: 'Serif' },
+  { value: "'Century Schoolbook', Century, Georgia, serif", label: 'Century Schoolbook', group: 'Serif' },
+  { value: 'Cambria, Georgia, serif', label: 'Cambria', group: 'Serif' },
+  { value: 'Constantia, Georgia, serif', label: 'Constantia', group: 'Serif' },
+  { value: "'Bookman Old Style', Georgia, serif", label: 'Bookman Old Style', group: 'Serif' },
+  { value: "'Adobe Caslon Pro', 'Big Caslon', 'Book Antiqua', serif", label: 'Caslon', group: 'Serif' },
+  // Monospace
+  { value: "'Courier New', Courier, monospace", label: 'Courier New', group: 'Monospace' },
+  { value: 'Consolas, Monaco, monospace', label: 'Consolas', group: 'Monospace' },
+  { value: "'Lucida Console', Monaco, monospace", label: 'Lucida Console', group: 'Monospace' },
+  { value: "'Cascadia Code', Consolas, monospace", label: 'Cascadia Code', group: 'Monospace' },
+  { value: "'Cascadia Mono', Consolas, monospace", label: 'Cascadia Mono', group: 'Monospace' },
+  // Cursive / script (Windows + common)
+  { value: "'Segoe Script', 'Comic Sans MS', cursive", label: 'Segoe Script', group: 'Cursive / Script' },
+  { value: "'Segoe Print', 'Comic Sans MS', cursive", label: 'Segoe Print', group: 'Cursive / Script' },
+  { value: "'Comic Sans MS', 'Chalkboard SE', cursive", label: 'Comic Sans MS', group: 'Cursive / Script' },
+  { value: "'Bradley Hand ITC', 'Segoe Print', cursive", label: 'Bradley Hand ITC', group: 'Cursive / Script' },
+  { value: "'Brush Script MT', 'Segoe Script', cursive", label: 'Brush Script MT', group: 'Cursive / Script' },
+  { value: "'Lucida Handwriting', 'Segoe Script', cursive", label: 'Lucida Handwriting', group: 'Cursive / Script' },
+  { value: "'Lucida Calligraphy', 'Segoe Script', cursive", label: 'Lucida Calligraphy', group: 'Cursive / Script' },
+  { value: "'Freestyle Script', 'Segoe Script', cursive", label: 'Freestyle Script', group: 'Cursive / Script' },
+  { value: "'French Script MT', 'Segoe Script', cursive", label: 'French Script MT', group: 'Cursive / Script' },
+  { value: "'Edwardian Script ITC', 'Segoe Script', cursive", label: 'Edwardian Script ITC', group: 'Cursive / Script' },
+  { value: "'Kunstler Script', 'Segoe Script', cursive", label: 'Kunstler Script', group: 'Cursive / Script' },
+  { value: "'Vladimir Script', 'Segoe Script', cursive", label: 'Vladimir Script', group: 'Cursive / Script' },
+  { value: "'Palace Script MT', 'Segoe Script', cursive", label: 'Palace Script MT', group: 'Cursive / Script' },
+  { value: "'Script MT Bold', 'Segoe Script', cursive", label: 'Script MT Bold', group: 'Cursive / Script' },
+  { value: "'Vivaldi', 'Segoe Script', cursive", label: 'Vivaldi', group: 'Cursive / Script' },
+  { value: "'Monotype Corsiva', 'Segoe Script', cursive", label: 'Monotype Corsiva', group: 'Cursive / Script' },
+  { value: "'Mistral', 'Segoe Script', cursive", label: 'Mistral', group: 'Cursive / Script' },
+  { value: "'Pristina', 'Segoe Script', cursive", label: 'Pristina', group: 'Cursive / Script' },
+  { value: "'Tempus Sans ITC', 'Comic Sans MS', cursive", label: 'Tempus Sans ITC', group: 'Cursive / Script' },
+  { value: "'Chalkboard', 'Comic Sans MS', cursive", label: 'Chalkboard', group: 'Cursive / Script' },
+  { value: "'Apple Chancery', 'Segoe Script', cursive", label: 'Apple Chancery', group: 'Cursive / Script' },
+  { value: 'cursive', label: 'Generic Cursive', group: 'Cursive / Script' },
+  // Display / decorative
+  { value: 'Impact, Haettenschweiler, sans-serif', label: 'Impact', group: 'Display' },
+  { value: "'Bauhaus 93', Impact, sans-serif", label: 'Bauhaus 93', group: 'Display' },
+  { value: "'Broadway', Impact, sans-serif", label: 'Broadway', group: 'Display' },
+  { value: "'Cooper Black', Georgia, serif", label: 'Cooper Black', group: 'Display' },
+  { value: "'Copperplate Gothic Bold', Copperplate, fantasy", label: 'Copperplate Gothic', group: 'Display' },
+  { value: "'Gill Sans Ultra Bold', Gill Sans, sans-serif", label: 'Gill Sans Ultra Bold', group: 'Display' },
+  { value: "'Haettenschweiler', Impact, sans-serif", label: 'Haettenschweiler', group: 'Display' },
+  { value: "'Playbill', Impact, serif", label: 'Playbill', group: 'Display' },
+  { value: "'Showcard Gothic', Impact, sans-serif", label: 'Showcard Gothic', group: 'Display' },
+  { value: "'Stencil', Impact, sans-serif", label: 'Stencil', group: 'Display' },
+  { value: 'fantasy', label: 'Generic Fantasy', group: 'Display' },
+];
+
+function BrandingFontFamilyOptions() {
+  const groups = Array.from(new Set(BRANDING_FONT_FAMILIES.map((f) => f.group)));
+  return (
+    <>
+      {groups.map((group) => (
+        <optgroup key={group} label={group}>
+          {BRANDING_FONT_FAMILIES.filter((f) => f.group === group).map((f) => (
+            <option key={f.value} value={f.value} style={{ fontFamily: f.value === 'inherit' ? undefined : f.value }}>
+              {f.label}
+            </option>
+          ))}
+        </optgroup>
+      ))}
+    </>
+  );
+}
+
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const { user } = useAuth();
-  const { refreshSettings, clearCache } = useSettings();
+  const { refreshSettings, clearCache, setBrandingPreview, clearBrandingPreview } = useSettings();
   const isMobile = useMobile();
   // Initialize activeTab from localStorage or default to 'pending'
   // Migrate legacy 'footer' tab → Settings › Branding
@@ -201,6 +290,54 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     logo_type: 'icon',
     logo_icon: '🔗',
     logo_image: '',
+    logo_size: '32',
+    header_logo_image: '',
+    header_logo_size: '40',
+    app_subheading: '',
+    app_name_font_size: '20',
+    app_name_font_family: 'inherit',
+    app_name_font_weight: 'bold',
+    app_name_font_style: 'normal',
+    app_name_font_color: '',
+    app_name_font_color_dark: '',
+    app_name_letter_spacing: '0',
+    app_name_line_height: '1.25',
+    app_subheading_font_size: '12',
+    app_subheading_font_family: 'inherit',
+    app_subheading_font_weight: 'normal',
+    app_subheading_font_style: 'normal',
+    app_subheading_font_color: '',
+    app_subheading_font_color_dark: '',
+    app_subheading_letter_spacing: '0',
+    app_subheading_line_height: '1.3',
+    nav_bg_light: '',
+    nav_bg_to_light: '',
+    nav_bg_dark: '',
+    nav_bg_to_dark: '',
+    nav_gradient_angle: '90',
+    nav_border_light: '',
+    nav_border_dark: '',
+    nav_icon_color_light: '',
+    nav_icon_color_dark: '',
+    hero_icon: '',
+    spaces_subtitle: '',
+    hero_title_color: '',
+    hero_title_color_dark: '',
+    hero_subtitle_color: '',
+    hero_subtitle_color_dark: '',
+    hero_bg_from: '',
+    hero_bg_to: '',
+    hero_bg_from_dark: '',
+    hero_bg_to_dark: '',
+    hero_bg_angle: '135',
+    hero_overlay_color: '',
+    hero_overlay_to: '',
+    hero_overlay_opacity: '0',
+    hero_icon_bg_from: '',
+    hero_icon_bg_to: '',
+    auth_wash_from: '',
+    auth_wash_to: '',
+    page_title_pattern: '{page_title}',
     favicon: '',
     footer_text: '© 2025 Adventhealth - Designed and developed by AIT Architecture team',
     show_database_path_in_footer: '1',
@@ -225,9 +362,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [adminPasswordLoading, setAdminPasswordLoading] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [headerLogoUploading, setHeaderLogoUploading] = useState(false);
+  const [headerLogoPreview, setHeaderLogoPreview] = useState<string | null>(null);
   const [faviconUploading, setFaviconUploading] = useState(false);
   const [faviconPreview, setFaviconPreview] = useState<string | null>(null);
   const [samlConfigModalOpen, setSamlConfigModalOpen] = useState(false);
+
+  /** Update local branding form state and live-preview the nav/hero before Save. */
+  const updateBranding = (partial: Partial<AppSettings>) => {
+    setSettings((prev) => ({ ...prev, ...partial }));
+    setBrandingPreview(partial);
+  };
+
+  // Discard unsaved branding preview when leaving Admin
+  useEffect(() => {
+    return () => {
+      clearBrandingPreview();
+    };
+  }, [clearBrandingPreview]);
 
   // Database export/import state
   const [exporting, setExporting] = useState(false);
@@ -833,6 +985,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       // Set preview if logo image exists
       if (loadedSettings.logo_image) {
         setLogoPreview(loadedSettings.logo_image);
+      }
+      if (loadedSettings.header_logo_image) {
+        setHeaderLogoPreview(loadedSettings.header_logo_image);
       }
       // Load maintenance message
       setMaintenanceMessage(loadedSettings.maintenance_message || '');
@@ -9562,10 +9717,197 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               <input
                                 type="text"
                                 value={settings.app_name}
-                                onChange={(e) => setSettings({ ...settings, app_name: e.target.value })}
+                                onChange={(e) => updateBranding({ app_name: e.target.value })}
                                 className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
                                 placeholder={settings.app_name || "LinkNest"}
                               />
+                              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                                    Name Size: {settings.app_name_font_size || '20'}px
+                                  </label>
+                                  <input
+                                    type="range"
+                                    min={12}
+                                    max={40}
+                                    step={1}
+                                    value={parseInt(settings.app_name_font_size || '20', 10) || 20}
+                                    onChange={(e) => updateBranding({ app_name_font_size: e.target.value })}
+                                    className="w-full accent-brand-600"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Font Family</label>
+                                  <select
+                                    value={settings.app_name_font_family || 'inherit'}
+                                    onChange={(e) => updateBranding({ app_name_font_family: e.target.value })}
+                                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"
+                                  >
+                                    <BrandingFontFamilyOptions />
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Font Weight</label>
+                                  <select
+                                    value={settings.app_name_font_weight || 'bold'}
+                                    onChange={(e) => updateBranding({ app_name_font_weight: e.target.value })}
+                                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"
+                                  >
+                                    <option value="normal">Normal</option>
+                                    <option value="bold">Bold</option>
+                                    <option value="300">Light (300)</option>
+                                    <option value="500">Medium (500)</option>
+                                    <option value="600">Semi Bold (600)</option>
+                                    <option value="700">Bold (700)</option>
+                                    <option value="800">Extra Bold (800)</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Font Style</label>
+                                  <select
+                                    value={settings.app_name_font_style || 'normal'}
+                                    onChange={(e) => updateBranding({ app_name_font_style: e.target.value })}
+                                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"
+                                  >
+                                    <option value="normal">Normal</option>
+                                    <option value="italic">Italic</option>
+                                  </select>
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Text Color (Light)</label>
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="color"
+                                      value={settings.app_name_font_color || '#1e293b'}
+                                      onChange={(e) => updateBranding({ app_name_font_color: e.target.value })}
+                                      className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent"
+                                      title="App name text color"
+                                    />
+                                    <input
+                                      type="text"
+                                      value={settings.app_name_font_color || ''}
+                                      onChange={(e) => updateBranding({ app_name_font_color: e.target.value })}
+                                      className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"
+                                      placeholder="Default (theme)"
+                                    />
+                                    {settings.app_name_font_color ? (
+                                      <button type="button" onClick={() => updateBranding({ app_name_font_color: '' })} className="text-xs text-slate-500 hover:text-red-600 dark:hover:text-red-400 whitespace-nowrap">Reset</button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Text Color (Dark mode)</label>
+                                  <div className="flex items-center gap-2">
+                                    <input type="color" value={settings.app_name_font_color_dark || '#f8fafc'} onChange={(e) => updateBranding({ app_name_font_color_dark: e.target.value })} className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent" />
+                                    <input type="text" value={settings.app_name_font_color_dark || ''} onChange={(e) => updateBranding({ app_name_font_color_dark: e.target.value })} className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" placeholder="Default (theme)" />
+                                    {settings.app_name_font_color_dark ? (
+                                      <button type="button" onClick={() => updateBranding({ app_name_font_color_dark: '' })} className="text-xs text-slate-500 hover:text-red-600 dark:hover:text-red-400 whitespace-nowrap">Reset</button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Letter Spacing: {settings.app_name_letter_spacing || '0'}em</label>
+                                  <input type="range" min={-0.05} max={0.2} step={0.01} value={parseFloat(settings.app_name_letter_spacing || '0') || 0} onChange={(e) => updateBranding({ app_name_letter_spacing: e.target.value })} className="w-full accent-brand-600" />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Line Height: {settings.app_name_line_height || '1.25'}</label>
+                                  <input type="range" min={1} max={2} step={0.05} value={parseFloat(settings.app_name_line_height || '1.25') || 1.25} onChange={(e) => updateBranding({ app_name_line_height: e.target.value })} className="w-full accent-brand-600" />
+                                </div>
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                App Subheading
+                              </label>
+                              <input
+                                type="text"
+                                value={settings.app_subheading || ''}
+                                onChange={(e) => updateBranding({ app_subheading: e.target.value })}
+                                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                placeholder="Your landing page for links"
+                              />
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Shown under the app name in the navigation bar — changes preview live</p>
+                              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                                    Subheading Size: {settings.app_subheading_font_size || '12'}px
+                                  </label>
+                                  <input
+                                    type="range"
+                                    min={10}
+                                    max={24}
+                                    step={1}
+                                    value={parseInt(settings.app_subheading_font_size || '12', 10) || 12}
+                                    onChange={(e) => updateBranding({ app_subheading_font_size: e.target.value })}
+                                    className="w-full accent-brand-600"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Font Family</label>
+                                  <select
+                                    value={settings.app_subheading_font_family || 'inherit'}
+                                    onChange={(e) => updateBranding({ app_subheading_font_family: e.target.value })}
+                                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"
+                                  >
+                                    <BrandingFontFamilyOptions />
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Font Weight</label>
+                                  <select
+                                    value={settings.app_subheading_font_weight || 'normal'}
+                                    onChange={(e) => updateBranding({ app_subheading_font_weight: e.target.value })}
+                                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"
+                                  >
+                                    <option value="normal">Normal</option>
+                                    <option value="bold">Bold</option>
+                                    <option value="300">Light (300)</option>
+                                    <option value="500">Medium (500)</option>
+                                    <option value="600">Semi Bold (600)</option>
+                                    <option value="700">Bold (700)</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Font Style</label>
+                                  <select
+                                    value={settings.app_subheading_font_style || 'normal'}
+                                    onChange={(e) => updateBranding({ app_subheading_font_style: e.target.value })}
+                                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"
+                                  >
+                                    <option value="normal">Normal</option>
+                                    <option value="italic">Italic</option>
+                                  </select>
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Text Color (Light)</label>
+                                  <div className="flex items-center gap-2">
+                                    <input type="color" value={settings.app_subheading_font_color || '#64748b'} onChange={(e) => updateBranding({ app_subheading_font_color: e.target.value })} className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent" title="Subheading text color" />
+                                    <input type="text" value={settings.app_subheading_font_color || ''} onChange={(e) => updateBranding({ app_subheading_font_color: e.target.value })} className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" placeholder="Default (theme)" />
+                                    {settings.app_subheading_font_color ? (
+                                      <button type="button" onClick={() => updateBranding({ app_subheading_font_color: '' })} className="text-xs text-slate-500 hover:text-red-600 dark:hover:text-red-400 whitespace-nowrap">Reset</button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Text Color (Dark mode)</label>
+                                  <div className="flex items-center gap-2">
+                                    <input type="color" value={settings.app_subheading_font_color_dark || '#94a3b8'} onChange={(e) => updateBranding({ app_subheading_font_color_dark: e.target.value })} className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent" />
+                                    <input type="text" value={settings.app_subheading_font_color_dark || ''} onChange={(e) => updateBranding({ app_subheading_font_color_dark: e.target.value })} className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" placeholder="Default (theme)" />
+                                    {settings.app_subheading_font_color_dark ? (
+                                      <button type="button" onClick={() => updateBranding({ app_subheading_font_color_dark: '' })} className="text-xs text-slate-500 hover:text-red-600 dark:hover:text-red-400 whitespace-nowrap">Reset</button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Letter Spacing: {settings.app_subheading_letter_spacing || '0'}em</label>
+                                  <input type="range" min={-0.05} max={0.2} step={0.01} value={parseFloat(settings.app_subheading_letter_spacing || '0') || 0} onChange={(e) => updateBranding({ app_subheading_letter_spacing: e.target.value })} className="w-full accent-brand-600" />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Line Height: {settings.app_subheading_line_height || '1.3'}</label>
+                                  <input type="range" min={1} max={2} step={0.05} value={parseFloat(settings.app_subheading_line_height || '1.3') || 1.3} onChange={(e) => updateBranding({ app_subheading_line_height: e.target.value })} className="w-full accent-brand-600" />
+                                </div>
+                              </div>
                             </div>
 
                             <div>
@@ -9575,7 +9917,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               <div className="flex gap-3">
                                 <button
                                   onClick={() => {
-                                    setSettings({ ...settings, logo_type: 'icon' });
+                                    updateBranding({ logo_type: 'icon' });
                                     setLogoPreview(null);
                                   }}
                                   className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${settings.logo_type === 'icon'
@@ -9587,7 +9929,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 </button>
                                 <button
                                   onClick={() => {
-                                    setSettings({ ...settings, logo_type: 'image' });
+                                    updateBranding({ logo_type: 'image' });
                                     if (settings.logo_image) {
                                       setLogoPreview(settings.logo_image);
                                     }
@@ -9610,12 +9952,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 <input
                                   type="text"
                                   value={settings.logo_icon}
-                                  onChange={(e) => setSettings({ ...settings, logo_icon: e.target.value })}
+                                  onChange={(e) => updateBranding({ logo_icon: e.target.value })}
                                   className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-2xl text-center focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
                                   placeholder="🔗"
                                   maxLength={2}
                                 />
                                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Enter an emoji or icon character</p>
+                                <div className="mt-3">
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                                    Logo Size: {settings.logo_size || '32'}px
+                                  </label>
+                                  <input
+                                    type="range"
+                                    min={16}
+                                    max={80}
+                                    step={1}
+                                    value={parseInt(settings.logo_size || '32', 10) || 32}
+                                    onChange={(e) => updateBranding({ logo_size: e.target.value })}
+                                    className="w-full accent-brand-600"
+                                  />
+                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                    Display size of the brand icon in the navigation bar (live preview)
+                                  </p>
+                                </div>
                               </div>
                             ) : (
                               <div className="space-y-4">
@@ -9640,7 +9999,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                           {settings.logo_image && (
                                             <button
                                               onClick={() => {
-                                                setSettings({ ...settings, logo_image: '' });
+                                                updateBranding({ logo_image: '' });
                                                 setLogoPreview(null);
                                               }}
                                               className="mt-1 text-xs text-red-600 dark:text-red-400 hover:underline"
@@ -9677,7 +10036,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                             setLogoUploading(true);
                                             setError('');
                                             const url = await settingsService.uploadLogo(file);
-                                            setSettings({ ...settings, logo_image: url });
+                                            updateBranding({ logo_image: url });
                                             setLogoPreview(null);
                                             URL.revokeObjectURL(objectUrl);
                                           } catch (err: any) {
@@ -9715,21 +10074,285 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       type="text"
                                       value={settings.logo_image}
                                       onChange={(e) => {
-                                        setSettings({ ...settings, logo_image: e.target.value });
+                                        updateBranding({ logo_image: e.target.value });
                                         setLogoPreview(e.target.value || null);
                                       }}
                                       className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
                                       placeholder="https://example.com/logo.png"
                                     />
                                   </div>
+
+                                  <div>
+                                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                                      Logo Size: {settings.logo_size || '32'}px
+                                    </label>
+                                    <input
+                                      type="range"
+                                      min={16}
+                                      max={80}
+                                      step={1}
+                                      value={parseInt(settings.logo_size || '32', 10) || 32}
+                                      onChange={(e) => updateBranding({ logo_size: e.target.value })}
+                                      className="w-full accent-brand-600"
+                                    />
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                      Display height of the brand logo in the navigation bar (live preview)
+                                    </p>
+                                  </div>
                                 </div>
                               </div>
                             )}
 
+                            <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
+                              <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-1">Header / Company Logo</h4>
+                              <p className="text-xs text-slate-600 dark:text-slate-400 mb-3">
+                                Optional logo shown on the far left of the navigation bar (separate from the brand logo).
+                              </p>
+
+                              {(headerLogoPreview || settings.header_logo_image) && (
+                                <div className="mb-3 p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg">
+                                  <div className="flex items-center gap-3">
+                                    <img
+                                      src={headerLogoPreview || settings.header_logo_image}
+                                      alt="Header logo preview"
+                                      className="w-16 h-16 object-contain rounded border border-slate-200 dark:border-slate-700"
+                                      onError={(e) => {
+                                        (e.target as HTMLImageElement).style.display = 'none';
+                                      }}
+                                    />
+                                    <div className="flex-1">
+                                      <p className="text-xs text-slate-600 dark:text-slate-400">Current header logo preview</p>
+                                      {settings.header_logo_image && (
+                                        <button
+                                          onClick={() => {
+                                            updateBranding({ header_logo_image: '' });
+                                            setHeaderLogoPreview(null);
+                                          }}
+                                          className="mt-1 text-xs text-red-600 dark:text-red-400 hover:underline"
+                                        >
+                                          Remove header logo
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className="mb-3">
+                                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                                  Upload Header Logo
+                                </label>
+                                <div className="relative">
+                                  <input
+                                    type="file"
+                                    accept="image/jpeg,image/jpg,image/png,image/gif,image/svg+xml,image/webp"
+                                    onChange={async (e) => {
+                                      const file = e.target.files?.[0];
+                                      if (!file) return;
+
+                                      if (file.size > 10 * 1024 * 1024) {
+                                        setError('File size too large. Maximum size: 10MB');
+                                        e.target.value = '';
+                                        return;
+                                      }
+
+                                      const objectUrl = URL.createObjectURL(file);
+                                      setHeaderLogoPreview(objectUrl);
+                                      try {
+                                        setHeaderLogoUploading(true);
+                                        setError('');
+                                        const url = await settingsService.uploadLogo(file, 'header_logo_image');
+                                        updateBranding({ header_logo_image: url });
+                                        setHeaderLogoPreview(null);
+                                        URL.revokeObjectURL(objectUrl);
+                                      } catch (err: any) {
+                                        setError(err.message || 'Failed to upload header logo');
+                                        setHeaderLogoPreview(null);
+                                        URL.revokeObjectURL(objectUrl);
+                                      } finally {
+                                        setHeaderLogoUploading(false);
+                                        e.target.value = '';
+                                      }
+                                    }}
+                                    disabled={headerLogoUploading}
+                                    className="w-full text-sm text-slate-600 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-900/30 dark:file:text-brand-300 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                  />
+                                </div>
+                                {headerLogoUploading && (
+                                  <div className="mt-2 flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Uploading...
+                                  </div>
+                                )}
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                  JPEG, PNG, GIF, SVG, WebP — auto-converted to PNG (max 512×512). SVG kept as-is. Max 10MB.
+                                </p>
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                                  Or enter Header Logo Image URL
+                                </label>
+                                <input
+                                  type="text"
+                                  value={settings.header_logo_image || ''}
+                                  onChange={(e) => {
+                                    updateBranding({ header_logo_image: e.target.value });
+                                    setHeaderLogoPreview(e.target.value || null);
+                                  }}
+                                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                  placeholder="https://example.com/company-logo.png"
+                                />
+                              </div>
+
+                              <div className="mt-3">
+                                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                                  Header Logo Size: {settings.header_logo_size || '40'}px
+                                </label>
+                                <input
+                                  type="range"
+                                  min={20}
+                                  max={120}
+                                  step={1}
+                                  value={parseInt(settings.header_logo_size || '40', 10) || 40}
+                                  onChange={(e) => updateBranding({ header_logo_size: e.target.value })}
+                                  className="w-full accent-brand-600"
+                                />
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                  Display height of the company logo on the far left of the navigation bar (live preview)
+                                </p>
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Hero Icon / Emoji
+                              </label>
+                              <input
+                                type="text"
+                                value={settings.hero_icon || ''}
+                                onChange={(e) => updateBranding({ hero_icon: e.target.value })}
+                                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-2xl text-center focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                placeholder="🚀"
+                                maxLength={4}
+                              />
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Shown to the left of the spaces page title in the hero section</p>
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Spaces Subtitle
+                              </label>
+                              <input
+                                type="text"
+                                value={settings.spaces_subtitle || ''}
+                                onChange={(e) => updateBranding({ spaces_subtitle: e.target.value })}
+                                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                placeholder="Organize and share your important links"
+                              />
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Shown under the spaces page title in the hero section</p>
+                            </div>
+
+                            <div className="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-4">
+                              <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Nav Bar Colors</h4>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">Set From + To for a gradient, or only From for a solid fill. Leave empty for default translucent look.</p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {([
+                                  ['nav_bg_light', 'Background From (Light)', '#ffffff'],
+                                  ['nav_bg_to_light', 'Background To (Light)', '#e0e7ff'],
+                                  ['nav_bg_dark', 'Background From (Dark)', '#0f172a'],
+                                  ['nav_bg_to_dark', 'Background To (Dark)', '#1e3a5f'],
+                                  ['nav_border_light', 'Border (Light)', '#e2e8f0'],
+                                  ['nav_border_dark', 'Border (Dark)', '#1e293b'],
+                                  ['nav_icon_color_light', 'Icon Tint (Light)', '#475569'],
+                                  ['nav_icon_color_dark', 'Icon Tint (Dark)', '#94a3b8'],
+                                ] as const).map(([key, label, fallback]) => (
+                                  <div key={key}>
+                                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">{label}</label>
+                                    <div className="flex items-center gap-2">
+                                      <input type="color" value={(settings as any)[key] || fallback} onChange={(e) => updateBranding({ [key]: e.target.value })} className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent" />
+                                      <input type="text" value={(settings as any)[key] || ''} onChange={(e) => updateBranding({ [key]: e.target.value })} className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm" placeholder="Default" />
+                                      {(settings as any)[key] ? (
+                                        <button type="button" onClick={() => updateBranding({ [key]: '' })} className="text-xs text-slate-500 hover:text-red-600 whitespace-nowrap">Reset</button>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                ))}
+                                <div className="sm:col-span-2">
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Gradient Angle: {settings.nav_gradient_angle || '90'}°</label>
+                                  <input type="range" min={0} max={360} step={1} value={parseInt(settings.nav_gradient_angle || '90', 10) || 90} onChange={(e) => updateBranding({ nav_gradient_angle: e.target.value })} className="w-full accent-brand-600" />
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-4">
+                              <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Hero Branding</h4>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {([
+                                  ['hero_bg_from', 'Background From (Light)', '#eff6ff'],
+                                  ['hero_bg_to', 'Background To (Light)', '#ede9fe'],
+                                  ['hero_bg_from_dark', 'Background From (Dark)', '#1e293b'],
+                                  ['hero_bg_to_dark', 'Background To (Dark)', '#312e81'],
+                                  ['hero_title_color', 'Title Color (Light)', '#0f172a'],
+                                  ['hero_title_color_dark', 'Title Color (Dark)', '#f8fafc'],
+                                  ['hero_subtitle_color', 'Subtitle Color (Light)', '#475569'],
+                                  ['hero_subtitle_color_dark', 'Subtitle Color (Dark)', '#cbd5e1'],
+                                  ['hero_overlay_color', 'Overlay From', '#4f46e5'],
+                                  ['hero_overlay_to', 'Overlay To', '#7c3aed'],
+                                  ['hero_icon_bg_from', 'Icon Gradient From', '#3b82f6'],
+                                  ['hero_icon_bg_to', 'Icon Gradient To', '#7c3aed'],
+                                ] as const).map(([key, label, fallback]) => (
+                                  <div key={key}>
+                                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">{label}</label>
+                                    <div className="flex items-center gap-2">
+                                      <input type="color" value={(settings as any)[key] || fallback} onChange={(e) => updateBranding({ [key]: e.target.value })} className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent" />
+                                      <input type="text" value={(settings as any)[key] || ''} onChange={(e) => updateBranding({ [key]: e.target.value })} className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm" placeholder="Default" />
+                                      {(settings as any)[key] ? (
+                                        <button type="button" onClick={() => updateBranding({ [key]: '' })} className="text-xs text-slate-500 hover:text-red-600 whitespace-nowrap">Reset</button>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                ))}
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Background Angle: {settings.hero_bg_angle || '135'}°</label>
+                                  <input type="range" min={0} max={360} step={1} value={parseInt(settings.hero_bg_angle || '135', 10) || 135} onChange={(e) => updateBranding({ hero_bg_angle: e.target.value })} className="w-full accent-brand-600" />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Overlay Opacity: {settings.hero_overlay_opacity || '0'}%</label>
+                                  <input type="range" min={0} max={40} step={1} value={parseInt(settings.hero_overlay_opacity || '0', 10) || 0} onChange={(e) => updateBranding({ hero_overlay_opacity: e.target.value })} className="w-full accent-brand-600" />
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-4">
+                              <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Auth Modal Wash</h4>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">Optional gradient on the login panel header. Empty keeps the default brand wash.</p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {([
+                                  ['auth_wash_from', 'Wash From', '#60a5fa'],
+                                  ['auth_wash_to', 'Wash To', '#a78bfa'],
+                                ] as const).map(([key, label, fallback]) => (
+                                  <div key={key}>
+                                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">{label}</label>
+                                    <div className="flex items-center gap-2">
+                                      <input type="color" value={(settings as any)[key] || fallback} onChange={(e) => updateBranding({ [key]: e.target.value })} className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent" />
+                                      <input type="text" value={(settings as any)[key] || ''} onChange={(e) => updateBranding({ [key]: e.target.value })} className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm" placeholder="Default" />
+                                      {(settings as any)[key] ? (
+                                        <button type="button" onClick={() => updateBranding({ [key]: '' })} className="text-xs text-slate-500 hover:text-red-600 whitespace-nowrap">Reset</button>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
                             <div className="mb-6">
                               <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Favicon</h4>
                               <p className="text-xs text-slate-600 dark:text-slate-400 mb-4">
-                                Upload a favicon for browser tabs and bookmarks.
+                                Upload a favicon for browser tabs and bookmarks. Also used for PWA / home-screen icon.
                               </p>
 
                               {(faviconPreview || settings.favicon) && (
@@ -9903,10 +10526,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               <input
                                 type="text"
                                 value={settings.page_title}
-                                onChange={(e) => setSettings({ ...settings, page_title: e.target.value })}
+                                onChange={(e) => updateBranding({ page_title: e.target.value })}
                                 className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
                                 placeholder={settings.page_title || settings.app_name || "LinkNest"}
                               />
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Tab Title Pattern
+                              </label>
+                              <input
+                                type="text"
+                                value={settings.page_title_pattern || '{page_title}'}
+                                onChange={(e) => updateBranding({ page_title_pattern: e.target.value })}
+                                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                placeholder="{page_title}"
+                              />
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                Tokens: {'{page_title}'}, {'{app_name}'}. Preview: <span className="font-medium text-slate-700 dark:text-slate-200">{resolvePageTitle(settings) || '(empty)'}</span>
+                              </p>
                             </div>
 
                             <div>
@@ -9916,7 +10555,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               <input
                                 type="text"
                                 value={settings.spaces_title}
-                                onChange={(e) => setSettings({ ...settings, spaces_title: e.target.value })}
+                                onChange={(e) => updateBranding({ spaces_title: e.target.value })}
                                 className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
                                 placeholder="My Spaces"
                               />

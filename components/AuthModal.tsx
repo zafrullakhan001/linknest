@@ -508,7 +508,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       />
       <div className="auth-modal-panel relative w-full max-w-md sm:max-w-2xl max-h-[95vh] overflow-y-auto scrollbar-hide rounded-2xl sm:rounded-3xl border border-white/40 dark:border-slate-600/60 shadow-2xl shadow-brand-900/20 bg-white dark:bg-slate-800">
         {/* Soft faded brand wash — short height, fades quickly into the card */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-16 sm:h-20 overflow-hidden rounded-t-2xl sm:rounded-t-3xl">
+        <div className="auth-modal-wash pointer-events-none absolute inset-x-0 top-0 h-16 sm:h-20 overflow-hidden rounded-t-2xl sm:rounded-t-3xl">
           <div className="absolute inset-0 bg-gradient-to-b from-brand-400/45 via-brand-300/20 to-transparent dark:from-brand-500/35 dark:via-brand-600/15 dark:to-transparent" />
           <div className="absolute -top-10 -right-8 w-32 h-32 rounded-full bg-violet-300/20 blur-2xl" />
           <div className="absolute top-4 -left-8 w-24 h-24 rounded-full bg-sky-300/15 blur-2xl" />
@@ -535,15 +535,38 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 <img
                   src={appSettings.logo_image}
                   alt={appSettings.app_name || ''}
-                  className="auth-modal-logo w-12 h-12 sm:w-14 sm:h-14 rounded-xl object-contain bg-white/90 p-1 shadow-md ring-1 ring-slate-200/80 dark:ring-slate-600/50"
+                  className="auth-modal-logo rounded-xl object-contain bg-white/90 p-1 shadow-md ring-1 ring-slate-200/80 dark:ring-slate-600/50"
+                  style={{
+                    height: Math.min(80, Math.max(32, parseInt(appSettings.logo_size || '32', 10) || 32) * 1.5),
+                    width: Math.min(80, Math.max(32, parseInt(appSettings.logo_size || '32', 10) || 32) * 1.5)
+                  }}
                 />
-              ) : (
-                <div className="auth-modal-logo w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-white/95 flex items-center justify-center shadow-md ring-1 ring-slate-200/80 dark:ring-slate-600/50 text-2xl sm:text-3xl">
+              ) : appSettings.logo_type !== 'image' ? (
+                <div
+                  className="auth-modal-logo rounded-xl bg-white/95 flex items-center justify-center shadow-md ring-1 ring-slate-200/80 dark:ring-slate-600/50"
+                  style={{
+                    height: Math.min(80, Math.max(32, parseInt(appSettings.logo_size || '32', 10) || 32) * 1.5),
+                    width: Math.min(80, Math.max(32, parseInt(appSettings.logo_size || '32', 10) || 32) * 1.5),
+                    fontSize: Math.max(20, Math.min(80, Math.max(32, parseInt(appSettings.logo_size || '32', 10) || 32) * 1.5) * 0.45)
+                  }}
+                >
                   {appSettings.logo_icon || '🔗'}
                 </div>
-              )}
+              ) : null}
               <div className="text-center sm:text-left">
-                <h2 className="text-xl sm:text-2xl font-bold text-slate-800 dark:text-white">
+                {!settingsLoading && appSettings.app_name ? (
+                  <>
+                    <p className="linknest-brand-app-name auth-modal-app-name text-lg sm:text-xl font-bold text-slate-800 dark:text-white">
+                      {appSettings.app_name}
+                    </p>
+                    {appSettings.app_subheading ? (
+                      <p className="linknest-brand-subheading auth-modal-app-subheading text-xs sm:text-sm text-slate-500 dark:text-slate-300 mt-0.5">
+                        {appSettings.app_subheading}
+                      </p>
+                    ) : null}
+                  </>
+                ) : null}
+                <h2 className="text-xl sm:text-2xl font-bold text-slate-800 dark:text-white mt-1">
                   {mode === 'login' ? (
                     <>
                       <span className="mr-1.5" aria-hidden>👋</span>Sign In

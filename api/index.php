@@ -83,6 +83,8 @@ if ($path === '/') {
     $remainingPath = substr($path, 9); // Remove '/settings'
     $_SERVER['PATH_INFO'] = (empty($remainingPath) || $remainingPath === '/') ? '/' : (($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath);
     require __DIR__ . '/settings.php';
+} elseif ($path === '/manifest' || strpos($path, '/manifest') === 0) {
+    require __DIR__ . '/manifest.php';
 } elseif (strpos($path, '/database') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 9); // Remove '/database'
     require __DIR__ . '/database.php';

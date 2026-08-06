@@ -5,7 +5,7 @@ import { settingsService } from './services/settingsService';
 import { authService } from './services/authService';
 import { Navigation } from './components/Navigation';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { SettingsProvider, useSettings } from './contexts/SettingsContext';
+import { SettingsProvider, useSettings, readBrandingCache } from './contexts/SettingsContext';
 import { StyleProvider, useStyles } from './contexts/StyleContext';
 import { AuthModal } from './components/AuthModal';
 import { TimezoneDisplay } from './components/TimezoneDisplay';
@@ -851,7 +851,28 @@ const AppContent: React.FC = () => {
           />
         )}
         <BroadcastBanner />
-        <div className="flex-grow flex items-center justify-center">
+        <div className="flex-grow flex flex-col items-center justify-center gap-4 px-4">
+          {(() => {
+            const cached = readBrandingCache();
+            const brand = settingsLoading && cached ? cached : settings;
+            const headerLogo = brand.header_logo_image;
+            const logoImage = brand.logo_type === 'image' ? brand.logo_image : '';
+            const logoIcon = brand.logo_type !== 'image' ? (brand.logo_icon || '') : '';
+            if (headerLogo) {
+              return <img src={headerLogo} alt="" className="h-12 max-w-[12rem] object-contain opacity-90" />;
+            }
+            if (logoImage) {
+              return <img src={logoImage} alt="" className="h-12 w-12 rounded-xl object-contain opacity-90" />;
+            }
+            if (logoIcon) {
+              return (
+                <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center text-2xl shadow-lg">
+                  {logoIcon}
+                </div>
+              );
+            }
+            return null;
+          })()}
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-500"></div>
         </div>
         <AuthModal

@@ -422,26 +422,55 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
             </button>
             <div
               onClick={() => window.location.hash = '#/'}
-              className="flex items-center gap-2 cursor-pointer"
+              className="flex items-center gap-2 cursor-pointer min-w-0"
             >
               {settingsLoading ? (
                 <div className="h-7 min-w-[6rem]" aria-hidden="true" />
               ) : (
                 <>
+                  {settings.header_logo_image ? (
+                    <img
+                      src={settings.header_logo_image}
+                      alt=""
+                      className="object-contain flex-shrink-0"
+                      style={{
+                        height: Math.min(48, Math.max(20, parseInt(settings.header_logo_size || '40', 10) || 40) * 0.7),
+                        maxWidth: Math.min(120, (Math.max(20, parseInt(settings.header_logo_size || '40', 10) || 40) * 0.7) * 3.5)
+                      }}
+                    />
+                  ) : null}
                   {settings.logo_type === 'image' && settings.logo_image ? (
                     <img
                       src={settings.logo_image}
                       alt={settings.app_name}
-                      className="w-7 h-7 rounded-lg object-contain"
+                      className="rounded-lg object-contain flex-shrink-0"
+                      style={{
+                        height: Math.min(40, Math.max(16, parseInt(settings.logo_size || '32', 10) || 32) * 0.85),
+                        width: Math.min(40, Math.max(16, parseInt(settings.logo_size || '32', 10) || 32) * 0.85)
+                      }}
                     />
-                  ) : (
-                    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center shadow-lg text-base">
+                  ) : settings.logo_type !== 'image' ? (
+                    <div
+                      className="rounded-lg bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center shadow-lg flex-shrink-0"
+                      style={{
+                        height: Math.min(40, Math.max(16, parseInt(settings.logo_size || '32', 10) || 32) * 0.85),
+                        width: Math.min(40, Math.max(16, parseInt(settings.logo_size || '32', 10) || 32) * 0.85),
+                        fontSize: Math.max(12, Math.min(40, Math.max(16, parseInt(settings.logo_size || '32', 10) || 32) * 0.85) * 0.55)
+                      }}
+                    >
                       {settings.logo_icon || '🔗'}
                     </div>
-                  )}
-                  <span className="text-base font-bold text-slate-900 dark:text-white">
-                    {settings.app_name || ''}
-                  </span>
+                  ) : null}
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-base font-bold text-slate-900 dark:text-white leading-tight truncate">
+                      {settings.app_name || ''}
+                    </span>
+                    {settings.app_subheading ? (
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight truncate">
+                        {settings.app_subheading}
+                      </span>
+                    ) : null}
+                  </div>
                 </>
               )}
             </div>

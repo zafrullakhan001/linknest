@@ -200,6 +200,11 @@ function handleGetSettings() {
     if (isset($settings['logo_image']) && !empty($settings['logo_image'])) {
         $settings['logo_image'] = normalizeLogoUrl($settings['logo_image']);
     }
+
+    // Normalize header_logo_image URL for current environment
+    if (isset($settings['header_logo_image']) && !empty($settings['header_logo_image'])) {
+        $settings['header_logo_image'] = normalizeLogoUrl($settings['header_logo_image']);
+    }
     
     // Normalize favicon URL for current environment
     if (isset($settings['favicon']) && !empty($settings['favicon'])) {
@@ -423,11 +428,17 @@ function handleUploadLogo() {
     
     $result = processUploadedBrandImage($file['tmp_name'], $file['name'], $mimeType, 'logo');
     $url = '/uploads/' . $result['filename'];
+
+    // Optional target setting key (brand logo vs header/company logo)
+    $settingKey = $_POST['setting_key'] ?? 'logo_image';
+    if (!in_array($settingKey, ['logo_image', 'header_logo_image'], true)) {
+        $settingKey = 'logo_image';
+    }
     
     // Update settings with the new logo URL (stored without prefix)
     $db = getDB();
     $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
-    $stmt->execute(['logo_image', $url, time()]);
+    $stmt->execute([$settingKey, $url, time()]);
     
     // Return normalized URL for current environment
     $normalizedUrl = normalizeLogoUrl($url);
@@ -514,7 +525,20 @@ function handleUpdateSettings() {
         foreach ($data['settings'] as $key => $value) {
             // Validate allowed keys
             $allowedKeys = [
-                'app_name', 'page_title', 'spaces_title', 'logo_type', 'logo_icon', 'logo_image', 'favicon',
+                'app_name', 'page_title', 'page_title_pattern', 'spaces_title', 'logo_type', 'logo_icon', 'logo_image',
+                'logo_size', 'header_logo_image', 'header_logo_size', 'app_subheading',
+                'app_name_font_size', 'app_name_font_family', 'app_name_font_weight', 'app_name_font_style',
+                'app_name_font_color', 'app_name_font_color_dark', 'app_name_letter_spacing', 'app_name_line_height',
+                'app_subheading_font_size', 'app_subheading_font_family', 'app_subheading_font_weight', 'app_subheading_font_style',
+                'app_subheading_font_color', 'app_subheading_font_color_dark', 'app_subheading_letter_spacing', 'app_subheading_line_height',
+                'nav_bg_light', 'nav_bg_to_light', 'nav_bg_dark', 'nav_bg_to_dark', 'nav_gradient_angle',
+                'nav_border_light', 'nav_border_dark', 'nav_icon_color_light', 'nav_icon_color_dark',
+                'hero_icon', 'spaces_subtitle',
+                'hero_title_color', 'hero_title_color_dark', 'hero_subtitle_color', 'hero_subtitle_color_dark',
+                'hero_bg_from', 'hero_bg_to', 'hero_bg_from_dark', 'hero_bg_to_dark', 'hero_bg_angle',
+                'hero_overlay_color', 'hero_overlay_to', 'hero_overlay_opacity', 'hero_icon_bg_from', 'hero_icon_bg_to',
+                'auth_wash_from', 'auth_wash_to',
+                'favicon',
                 'footer_text',
                 'guest_access_enabled',
                 'show_database_path_in_footer',
@@ -701,6 +725,11 @@ function handleUpdateSettings() {
             
             // Normalize logo_image URL before storing (remove any base path prefix)
             if ($key === 'logo_image' && !empty($value)) {
+                $value = preg_replace('#^/[^/]+/uploads/#', '/uploads/', $value);
+            }
+
+            // Normalize header_logo_image URL before storing (remove any base path prefix)
+            if ($key === 'header_logo_image' && !empty($value)) {
                 $value = preg_replace('#^/[^/]+/uploads/#', '/uploads/', $value);
             }
             
