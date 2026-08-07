@@ -6,6 +6,7 @@ import { COLOR_STYLES } from '../types';
 import { TileAnimationSelector, useTileAnimation, getTileAnimationClass, getTileDecorationClass, TileAnimation, TileDecoration } from './TileAnimationSelector';
 import { getPublicFavorites, checkLocalStorageAvailability, togglePublicFavorite, isPublicFavorite, getPublicLinkFavorites } from '../services/publicFavoritesService';
 import { getFavoriteLinks, FavoriteLink } from '../services/storageService';
+import { getDisplayUrl } from '../utils/urlDisplay';
 
 function stripHtml(html: string): string {
   if (!html || typeof html !== 'string') return '';
@@ -876,7 +877,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
             ) : (
               <div className="grid grid-cols-1 gap-2.5">
                 {favoriteLinks.map((link) => {
-                  const host = (link.url || '').replace(/^https?:\/\/(www\.)?/, '').split('/')[0] || link.url;
+                  const host = getDisplayUrl(link.url || '');
                   return (
                     <button
                       key={link.id}
@@ -897,7 +898,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                         <div className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-2">
                           {stripHtml(link.label)}
                         </div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5">
+                        <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" title={link.url}>
                           {host}
                         </div>
                         <div className="flex items-center gap-1.5 mt-1 overflow-hidden">

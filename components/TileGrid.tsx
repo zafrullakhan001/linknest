@@ -27,6 +27,7 @@ import { rolesService } from '../services/rolesService';
 import { FaTimes } from 'react-icons/fa';
 import { LinkInfoDialog } from './LinkInfoDialog';
 import { useMobile } from '../hooks/useMobile';
+import { getDisplayUrl } from '../utils/urlDisplay';
 import { MobileTileView } from './MobileTileView';
 import { StagingOverview } from './StagingOverview';
 import { StagingOfflineKit, StagingOfflineKitHandle } from './StagingOfflineKit';
@@ -3614,7 +3615,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             const filteredSections = tab.sections?.map(section => ({
               ...section,
               links: section.links?.filter(link => link.hasRoleAccess) || []
-            })).filter(section => section.links && section.links.length > 0);
+            })).filter(section =>
+              (section.links && section.links.length > 0) ||
+              (section.richTextContent?.length ?? 0) > 0
+            );
             const filteredTabLinks = tab.links?.filter(link => link.hasRoleAccess) || [];
             return {
               ...tab,
@@ -7093,8 +7097,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         <div className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-2 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
                           {stripHtml(link.label)}
                         </div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
-                          {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
+                        <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }} title={link.url}>
+                          {getDisplayUrl(link.url)}
                         </div>
                         {/* Browser Indicator */}
                         {settings.browser_specific_links_enabled === '1' && browserToUse && (
@@ -7105,7 +7109,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         {/* Parent Tile Info */}
                         <div className="flex items-center gap-1.5 mt-1 overflow-hidden">
                           <span className="text-xs shrink-0">{link.tile.emoji}</span>
-                          <span className="text-xs text-slate-400 dark:text-slate-500 line-clamp-1" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{stripHtml(link.tile.title)}</span>
+                          <span className="text-xs text-slate-400 dark:text-slate-500 line-clamp-1">
+                            {stripHtml(link.tile.title)}
+                          </span>
                         </div>
                       </div>
 
@@ -7556,8 +7562,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         <div className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-2 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
                           {stripHtml(link.label)}
                         </div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
-                          {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
+                        <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }} title={link.url}>
+                          {getDisplayUrl(link.url)}
                         </div>
                         {/* Browser Indicator */}
                         {settings.browser_specific_links_enabled === '1' && browserToUse && (
@@ -7817,8 +7823,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           <div className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-2 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
                             {stripHtml(link.label)}
                           </div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
-                            {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
+                          <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }} title={link.url}>
+                            {getDisplayUrl(link.url)}
                           </div>
                           {/* Browser Indicator */}
                           {settings.browser_specific_links_enabled === '1' && browserToUse && (

@@ -24,6 +24,31 @@ import { useMobile } from '../hooks/useMobile';
 import { VersionDiffViewer } from './VersionDiffViewer';
 import { TileAnimationSelector, getTileAnimationClass, TileAnimation, getAnimationOption, resolveLinkAnimation } from './TileAnimationSelector';
 import { AuthSourceBadge } from './AuthSourceBadge';
+import { getDisplayUrl } from '../utils/urlDisplay';
+
+type ViewLayoutMode = 'stacked' | 'side-by-side' | 'grid' | 'compact';
+
+const isViewLayoutMode = (value: string | null | undefined): value is ViewLayoutMode =>
+    value === 'stacked' || value === 'side-by-side' || value === 'grid' || value === 'compact';
+
+const sectionLinkLayoutsStorageKey = (tileId: string) => `linknest_section_link_layouts_${tileId}`;
+
+const loadSectionLinkLayouts = (tileId: string): Record<string, ViewLayoutMode> => {
+    try {
+        const raw = localStorage.getItem(sectionLinkLayoutsStorageKey(tileId));
+        if (!raw) return {};
+        const parsed = JSON.parse(raw) as Record<string, unknown>;
+        const result: Record<string, ViewLayoutMode> = {};
+        Object.entries(parsed).forEach(([sectionId, layout]) => {
+            if (typeof layout === 'string' && isViewLayoutMode(layout)) {
+                result[sectionId] = layout;
+            }
+        });
+        return result;
+    } catch {
+        return {};
+    }
+};
 
 /** Persist link animation: inherit/empty → omit; 'none' and others → store as-is. */
 const linkAnimationForSave = (animation?: string): string | undefined => {
@@ -355,17 +380,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             setSelectedTabId(null);
         }
     }, [tile.id]);
-    const [viewLayout, setViewLayout] = useState<'stacked' | 'side-by-side' | 'grid' | 'compact'>(() => {
+    const [viewLayout, setViewLayout] = useState<ViewLayoutMode>(() => {
         // Load saved preference from localStorage
         try {
             const saved = localStorage.getItem('linknest_view_layout');
-            return (saved === 'side-by-side' || saved === 'stacked' || saved === 'grid' || saved === 'compact')
-                ? saved
-                : 'side-by-side';
+            return isViewLayoutMode(saved) ? saved : 'side-by-side';
         } catch {
             return 'side-by-side';
         }
     });
+    const [sectionLinkLayouts, setSectionLinkLayouts] = useState<Record<string, ViewLayoutMode>>(() =>
+        loadSectionLinkLayouts(tile.id)
+    );
 
     // Visibility Dialog State
     const [visibilityDialogTab, setVisibilityDialogTab] = useState<string | null>(null);
@@ -899,6 +925,29 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             console.error('Failed to save view layout preference:', error);
         }
     }, [viewLayout]);
+
+    // Reload per-section link layouts when switching tiles
+    useEffect(() => {
+        setSectionLinkLayouts(loadSectionLinkLayouts(tile.id));
+    }, [tile.id]);
+
+    // Persist per-section link layouts for this tile
+    useEffect(() => {
+        try {
+            localStorage.setItem(sectionLinkLayoutsStorageKey(tile.id), JSON.stringify(sectionLinkLayouts));
+        } catch (error) {
+            console.error('Failed to save section link layout preferences:', error);
+        }
+    }, [tile.id, sectionLinkLayouts]);
+
+    const getSectionLinkLayout = (section: { id: string; forceStackedView?: boolean }): ViewLayoutMode => {
+        if (section.forceStackedView) return 'stacked';
+        return sectionLinkLayouts[section.id] || viewLayout;
+    };
+
+    const setSectionLinkLayout = (sectionId: string, layout: ViewLayoutMode) => {
+        setSectionLinkLayouts(prev => ({ ...prev, [sectionId]: layout }));
+    };
 
     // Handle ESC key to close visibility and scheduling dialogs
     useEffect(() => {
@@ -3736,19 +3785,29 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         return true;
                     })
                 }))
-                .filter(section => section.links.length > 0);
+                .filter(section =>
+                    section.links.length > 0 ||
+                    (section.richTextContent?.length ?? 0) > 0
+                );
         }
 
         // Apply search filter if search term exists
         if (!searchTerm) return sectionsToFilter;
 
+        const lowerSearch = searchTerm.toLowerCase();
         return sectionsToFilter.map(section => ({
             ...section,
             links: section.links.filter(link =>
-                link.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                link.url.toLowerCase().includes(searchTerm.toLowerCase())
+                link.label.toLowerCase().includes(lowerSearch) ||
+                link.url.toLowerCase().includes(lowerSearch)
+            ),
+            richTextContent: (section.richTextContent || []).filter(rt =>
+                rt.content.toLowerCase().includes(lowerSearch)
             )
-        })).filter(section => section.links.length > 0);
+        })).filter(section =>
+            section.links.length > 0 ||
+            (section.richTextContent?.length ?? 0) > 0
+        );
     };
 
     const filteredSections = getFilteredSections();
@@ -4289,44 +4348,119 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         ) : (
                             <div
                                 className={viewLayout === 'side-by-side' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' : 'space-y-8'}
-                                data-view-layout={viewLayout}
+                                data-sections-layout={viewLayout}
                             >
                                 {filteredSections.map((section, sectionIndex) => {
-                                    // Check if this section should force stacked view for its content (links/rich text)
+                                    // Per-section link layout: saved preference > forceStackedView > global view
                                     const shouldForceStacked = section.forceStackedView === true;
-                                    const linkContainerClass = shouldForceStacked
-                                        ? 'space-y-4'
-                                        : viewLayout === 'grid'
+                                    const sectionLinkLayout = getSectionLinkLayout(section);
+                                    const resolvedLinkContainerClass =
+                                        sectionLinkLayout === 'grid'
                                             ? 'linknest-content-link-grid-cards'
-                                            : viewLayout === 'compact'
+                                            : sectionLinkLayout === 'compact'
                                                 ? 'linknest-content-link-list-compact'
-                                                : 'linknest-content-link-grid';
+                                                : sectionLinkLayout === 'stacked'
+                                                    ? 'space-y-4'
+                                                    : 'linknest-content-link-grid';
 
                                     return (
                                         <div
                                             key={section.id}
                                             style={{ animationDelay: `${sectionIndex * 120}ms` }}
+                                            data-view-layout={sectionLinkLayout}
                                             className={`linknest-content-section bg-white/80 dark:bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-200/80 dark:border-slate-700/50 shadow-sm ${
-                                                viewLayout === 'compact' ? 'p-4' : 'p-6'
+                                                sectionLinkLayout === 'compact' ? 'p-4' : 'p-6'
                                             } ${
                                                 tile.pageAnimation && tile.pageAnimation !== 'none'
                                                     ? getTileAnimationClass(tile.pageAnimation as TileAnimation)
                                                     : 'animate-in fade-in slide-in-from-bottom-2'
                                             }`}
                                         >
-                                            {/* Section Title */}
-                                            {section.title && (
-                                                <h3
-                                                    className={`linknest-content-section-title font-bold flex items-center gap-3 ${viewLayout === 'compact' ? 'text-base mb-3' : 'text-lg mb-5'} ${!section.textColor ? 'text-slate-800 dark:text-white' : ''}`}
-                                                    style={section.textColor ? { color: section.textColor } : undefined}
-                                                >
-                                                    <span className={`w-1.5 rounded-full ${styles.base} shadow-sm ${viewLayout === 'compact' ? 'h-5' : 'h-7'}`}></span>
-                                                    {section.title}
-                                                </h3>
-                                            )}
+                                            {/* Section Title + per-section link view toggle */}
+                                            <div className={`flex items-start justify-between gap-3 ${sectionLinkLayout === 'compact' ? 'mb-3' : 'mb-5'}`}>
+                                                {section.title ? (
+                                                    <h3
+                                                        className={`linknest-content-section-title font-bold flex items-center gap-3 min-w-0 ${sectionLinkLayout === 'compact' ? 'text-base' : 'text-lg'} ${!section.textColor ? 'text-slate-800 dark:text-white' : ''}`}
+                                                        style={section.textColor ? { color: section.textColor } : undefined}
+                                                    >
+                                                        <span className={`w-1.5 rounded-full shrink-0 ${styles.base} shadow-sm ${sectionLinkLayout === 'compact' ? 'h-5' : 'h-7'}`}></span>
+                                                        <span className="truncate">{section.title}</span>
+                                                    </h3>
+                                                ) : (
+                                                    <div />
+                                                )}
+                                                {!shouldForceStacked && (
+                                                    <div
+                                                        className="flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 shrink-0"
+                                                        title="Link layout for this section"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    >
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setSectionLinkLayout(section.id, 'stacked')}
+                                                            className={`p-1.5 rounded-md transition-all ${sectionLinkLayout === 'stacked'
+                                                                ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
+                                                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                                                                }`}
+                                                            title="Stacked list"
+                                                            aria-label="Stacked list"
+                                                            aria-pressed={sectionLinkLayout === 'stacked'}
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                                                <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 4.5zM2 10a2.5 2.5 0 012.5-2.5h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 10zM4.5 13.5A2.5 2.5 0 002 16a2.5 2.5 0 002.5 2.5h11a2.5 2.5 0 000-5h-11z" />
+                                                            </svg>
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setSectionLinkLayout(section.id, 'side-by-side')}
+                                                            className={`p-1.5 rounded-md transition-all ${sectionLinkLayout === 'side-by-side'
+                                                                ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
+                                                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                                                                }`}
+                                                            title="Columns"
+                                                            aria-label="Columns"
+                                                            aria-pressed={sectionLinkLayout === 'side-by-side'}
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                                                <path d="M2 4.5A2.5 2.5 0 014.5 2h3A2.5 2.5 0 0110 4.5v11A2.5 2.5 0 017.5 18h-3A2.5 2.5 0 012 15.5v-11zM10.5 2A2.5 2.5 0 0013 4.5v11a2.5 2.5 0 01-2.5 2.5H13a2.5 2.5 0 002.5-2.5v-11A2.5 2.5 0 0013 2h-.5z" />
+                                                            </svg>
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setSectionLinkLayout(section.id, 'grid')}
+                                                            className={`p-1.5 rounded-md transition-all ${sectionLinkLayout === 'grid'
+                                                                ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
+                                                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                                                                }`}
+                                                            title="Grid cards"
+                                                            aria-label="Grid cards"
+                                                            aria-pressed={sectionLinkLayout === 'grid'}
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                                                <path fillRule="evenodd" d="M4.25 2A2.25 2.25 0 002 4.25v2.5A2.25 2.25 0 004.25 9h2.5A2.25 2.25 0 009 6.75v-2.5A2.25 2.25 0 006.75 2h-2.5zm0 9A2.25 2.25 0 002 13.25v2.5A2.25 2.25 0 004.25 18h2.5A2.25 2.25 0 009 15.75v-2.5A2.25 2.25 0 006.75 11h-2.5zm9-9A2.25 2.25 0 0011 4.25v2.5A2.25 2.25 0 0013.25 9h2.5A2.25 2.25 0 0018 6.75v-2.5A2.25 2.25 0 0015.75 2h-2.5zm0 9A2.25 2.25 0 0011 13.25v2.5A2.25 2.25 0 0013.25 18h2.5A2.25 2.25 0 0018 15.75v-2.5A2.25 2.25 0 0015.75 11h-2.5z" clipRule="evenodd" />
+                                                            </svg>
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setSectionLinkLayout(section.id, 'compact')}
+                                                            className={`p-1.5 rounded-md transition-all ${sectionLinkLayout === 'compact'
+                                                                ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
+                                                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                                                                }`}
+                                                            title="Compact list"
+                                                            aria-label="Compact list"
+                                                            aria-pressed={sectionLinkLayout === 'compact'}
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                                                <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zM2 10a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10zm0 5.25a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
+                                                            </svg>
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
 
                                             {/* Links and Rich Text */}
-                                            <div className={linkContainerClass}>
+                                            <div className={resolvedLinkContainerClass}>
                                                 {(() => {
                                                     // Merge links and rich text, sort by position
                                                     const sortedItems = [
@@ -4348,7 +4482,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     key={item.id}
                                                                     style={{ animationDelay: `${animationDelay}ms` }}
                                                                     className={`linknest-content-rich-text rich-text-content-item animate-in fade-in slide-in-from-bottom-2 ${
-                                                                        viewLayout === 'grid' ? 'col-span-full' : ''
+                                                                        sectionLinkLayout === 'grid' ? 'col-span-full' : ''
                                                                     }`}
                                                                 >
                                                                     <div
@@ -4363,8 +4497,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         const link = item as Link;
                                                         const health = linkHealth[link.id];
                                                         const isBroken = health?.status === 'broken';
-                                                        const isGridCards = viewLayout === 'grid' && !shouldForceStacked;
-                                                        const isCompact = viewLayout === 'compact' && !shouldForceStacked;
+                                                        const isGridCards = sectionLinkLayout === 'grid';
+                                                        const isCompact = sectionLinkLayout === 'compact';
 
                                                         return (
                                                             <div
@@ -4493,8 +4627,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         isCompact ? 'hidden' : isGridCards ? 'mt-0.5 items-center' : 'mt-0.5'
                                                                     }`}>
                                                                         <div className="linknest-content-link-domain flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors overflow-hidden">
-                                                                            <span className={`break-words ${isGridCards ? 'line-clamp-1 max-w-full' : ''}`}>
-                                                                                {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
+                                                                            <span className="truncate max-w-full" title={link.url}>
+                                                                                {getDisplayUrl(link.url)}
                                                                             </span>
                                                                             {link.visibility && link.visibility !== 'public' && (
                                                                                 <span
@@ -7196,7 +7330,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     </span>
                                                                                                 )}
                                                                                             </div>
-                                                                                            <div className="text-xs text-slate-500 truncate font-mono">{link.url}</div>
+                                                                                            <div className="text-xs text-slate-500 truncate font-mono" title={link.url}>{getDisplayUrl(link.url)}</div>
                                                                                             {settings.browser_specific_links_enabled === '1' && (() => {
                                                                                                 // Determine which browser is being used for this link
                                                                                                 // Priority: link-specific browser > tile default browser > system default

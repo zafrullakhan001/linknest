@@ -173,6 +173,16 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
         if (selection && selection.rangeCount > 0 && editorRef.current) {
             const range = selection.getRangeAt(0);
             if (editorRef.current.contains(range.commonAncestorContainer)) {
+                // Toolbar focus often collapses the live selection. Keep a prior
+                // non-collapsed editor range so heading/font controls can still apply.
+                if (
+                    range.collapsed &&
+                    savedRangeRef.current &&
+                    !savedRangeRef.current.collapsed &&
+                    editorRef.current.contains(savedRangeRef.current.commonAncestorContainer)
+                ) {
+                    return;
+                }
                 savedRangeRef.current = range.cloneRange();
             }
         }
@@ -213,6 +223,26 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
         return null;
     };
 
+    /** Remove CSS properties from descendants so wrapper/heading styles can take effect on pasted HTML. */
+    const clearStylePropertiesOnDescendants = (root: HTMLElement, properties: string[]) => {
+        if (!properties.length) return;
+        root.querySelectorAll('*').forEach((node) => {
+            const el = node as HTMLElement;
+            if (!el.style) return;
+            properties.forEach((prop) => el.style.removeProperty(prop));
+            if (!el.getAttribute('style')?.trim()) {
+                el.removeAttribute('style');
+            }
+        });
+    };
+
+    const stylePropertiesFromDeclaration = (styleDecl: string): string[] => {
+        return styleDecl
+            .split(';')
+            .map((part) => part.split(':')[0]?.trim().toLowerCase())
+            .filter((prop): prop is string => Boolean(prop));
+    };
+
     const wrapSelection = (tagName: string, attributes: Record<string, string> = {}) => {
         if (!editorRef.current) return;
 
@@ -232,6 +262,10 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
             }
             return;
         }
+
+        const conflictingProps = attributes.style
+            ? stylePropertiesFromDeclaration(attributes.style)
+            : [];
 
         if (range.collapsed) {
             // No selection, just insert the element
@@ -254,6 +288,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
             }
         } else {
             // Has selection, wrap it
+            let wrapped: HTMLElement | null = null;
             try {
                 const element = document.createElement(tagName);
                 Object.entries(attributes).forEach(([key, value]) => {
@@ -264,6 +299,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                     }
                 });
                 range.surroundContents(element);
+                wrapped = element;
             } catch (e) {
                 // surroundContents failed, try alternative
                 const contents = range.extractContents();
@@ -277,6 +313,24 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 });
                 element.appendChild(contents);
                 range.insertNode(element);
+                wrapped = element;
+            }
+
+            // Pasted HTML often has nested spans with absolute font-size/family/color;
+            // clear those so the newly applied wrapper style is visible.
+            if (wrapped && conflictingProps.length > 0) {
+                clearStylePropertiesOnDescendants(wrapped, conflictingProps);
+            }
+
+            if (wrapped) {
+                const selection = window.getSelection();
+                if (selection) {
+                    const newRange = document.createRange();
+                    newRange.selectNodeContents(wrapped);
+                    selection.removeAllRanges();
+                    selection.addRange(newRange);
+                    savedRangeRef.current = newRange.cloneRange();
+                }
             }
         }
 
@@ -351,8 +405,49 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     };
 
     const applyHeading = (level: string) => {
+        if (!editorRef.current) return;
+
+        editorRef.current.focus();
+        restoreSelection();
+
         const tagName = `h${level}`;
-        wrapSelection(tagName, {});
+        try {
+            // Use formatBlock so headings replace the block instead of nesting invalid wrappers
+            document.execCommand('formatBlock', false, tagName);
+        } catch (e) {
+            console.warn('formatBlock heading failed, falling back to wrap', e);
+            wrapSelection(tagName, {});
+            return;
+        }
+
+        // Strip paste font sizing so editor heading CSS can apply
+        const selection = window.getSelection();
+        if (selection && selection.rangeCount > 0) {
+            let node: Node | null = selection.getRangeAt(0).commonAncestorContainer;
+            if (node.nodeType === Node.TEXT_NODE) {
+                node = node.parentNode;
+            }
+            while (node && node !== editorRef.current) {
+                if (node.nodeType === Node.ELEMENT_NODE) {
+                    const el = node as HTMLElement;
+                    const tag = el.tagName.toLowerCase();
+                    if (tag === tagName || /^h[1-6]$/.test(tag)) {
+                        clearStylePropertiesOnDescendants(el, ['font-size', 'font-family', 'font-weight', 'line-height']);
+                        el.style.removeProperty('font-size');
+                        el.style.removeProperty('font-family');
+                        el.style.removeProperty('font-weight');
+                        el.style.removeProperty('line-height');
+                        break;
+                    }
+                }
+                node = node.parentNode;
+            }
+        }
+
+        setTimeout(() => {
+            handleInput();
+            saveSelection();
+        }, 0);
     };
 
     const insertLink = () => {
@@ -1324,7 +1419,6 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 {/* Headings */}
                 <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
                     <select
-                        onFocus={saveSelection}
                         onMouseDown={(e) => {
                             e.stopPropagation();
                             saveSelection();
@@ -1481,7 +1575,6 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 {/* Font Size */}
                 <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
                     <select
-                        onFocus={saveSelection}
                         onMouseDown={(e) => {
                             e.stopPropagation();
                             saveSelection();
@@ -1510,7 +1603,6 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 {/* Font Family */}
                 <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
                     <select
-                        onFocus={saveSelection}
                         onMouseDown={(e) => {
                             e.stopPropagation();
                             saveSelection();
@@ -1544,7 +1636,6 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
                     <input
                         type="color"
-                        onFocus={saveSelection}
                         onMouseDown={(e) => {
                             e.stopPropagation();
                             saveSelection();
@@ -1561,7 +1652,6 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
                     <input
                         type="color"
-                        onFocus={saveSelection}
                         onMouseDown={(e) => {
                             e.stopPropagation();
                             saveSelection();

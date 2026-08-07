@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useSettings } from '../contexts/SettingsContext';
+import { getDisplayUrl } from '../utils/urlDisplay';
 
 interface LinkInfoDialogProps {
   isOpen: boolean;
@@ -231,10 +232,12 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
                 ℹ️
               </div>
             )}
-            <div>
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{linkLabel}</h2>
+            <div className="min-w-0 overflow-hidden">
+              <h2 className="text-2xl font-bold text-slate-900 dark:text-white truncate">{linkLabel}</h2>
               {linkUrl && (
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{linkUrl}</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5 truncate" title={linkUrl}>
+                  {getDisplayUrl(linkUrl)}
+                </p>
               )}
             </div>
           </div>
