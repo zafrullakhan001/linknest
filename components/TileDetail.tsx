@@ -5303,12 +5303,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                                 {/* Intro Content */}
                                 <div>
-                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2.5">Intro Content (HTML)</label>
-                                    <textarea
+                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2.5">Intro Content</label>
+                                    <RichTextEditor
                                         value={editHtml}
-                                        onChange={(e) => setEditHtml(e.target.value)}
-                                        className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-600 dark:text-slate-300 font-mono text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none resize-none leading-relaxed h-40 transition-all"
-                                        placeholder="<p>Welcome to my page!</p>"
+                                        onChange={setEditHtml}
+                                        placeholder="Enter intro content with formatting..."
+                                        className="min-h-[160px]"
                                     />
                                 </div>
 

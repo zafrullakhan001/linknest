@@ -535,13 +535,12 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                             {/* Intro Content */}
                             <div>
                                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2">
-                                    Intro Content (HTML)
+                                    Intro Content
                                 </label>
-                                <textarea
+                                <MobileRichTextEditor
                                     value={editHtml}
-                                    onChange={(e) => onHtmlChange(e.target.value)}
-                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-600 dark:text-slate-300 font-mono text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none resize-none h-32"
-                                    placeholder="<p>Welcome to my page!</p>"
+                                    onChange={onHtmlChange}
+                                    placeholder="Enter intro content with formatting..."
                                 />
                             </div>
 
