@@ -1125,7 +1125,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
   };
 
   const styles = COLOR_STYLES[tile.themeColor] || COLOR_STYLES['blue'];
-  const linkCount = tile.isHyperlink ? 0 : (() => {
+  const linkCount = tile.isHyperlink ? 0 : (typeof tile.linkCount === 'number' ? tile.linkCount : (() => {
     const uniqueLinks = new Set<string>();
     const processLink = (link: any) => {
       const key = `${(link.label || '').toLowerCase()}|${(link.url || '').toLowerCase()}`;
@@ -1144,7 +1144,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
       });
     }
     return uniqueLinks.size;
-  })();
+  })());
 
   const activeMessages = (tile.messages?.filter(m => m.isActive && (!m.startDate || new Date(m.startDate) <= new Date()) && (!m.endDate || new Date(m.endDate) >= new Date()) && (m.displayLocation === 'tile' || m.displayLocation === 'both' || !m.displayLocation)) || []).sort((a, b) => (a.priority || 0) - (b.priority || 0));
 

@@ -110,6 +110,8 @@ define('DB_PATH', __DIR__ . '/../data/linknest.db');
 define('DB_DIR', __DIR__ . '/../data');
 define('SYSTEM_TOKEN', 'linknest_secret_token_123'); // Change this for production!
 
+require_once __DIR__ . '/response_cache.php';
+
 // Create data directory if it doesn't exist
 if (!file_exists(DB_DIR)) {
     if (!mkdir(DB_DIR, 0755, true)) {

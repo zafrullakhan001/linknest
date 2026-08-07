@@ -152,6 +152,20 @@ function handleGetTiles() {
             sendJSON(['error' => 'Only administrators can view staging tiles.'], 403);
         }
     }
+
+    // Lightweight home-grid payload: card fields only (no tabs/sections/links/messages/html)
+    $summaryRaw = isset($_GET['summary']) ? strtolower(trim((string)$_GET['summary'])) : '';
+    $summaryMode = in_array($summaryRaw, ['1', 'true', 'yes'], true);
+
+    // Short-TTL guest cache (public summary only — no per-user favorites/permissions)
+    if ($summaryMode && !$user && $sourceTab === 'public') {
+        $cached = responseCacheGet('tiles_summary_guest_public');
+        if (is_array($cached)) {
+            responseCacheHitHeader(true);
+            sendJSON($cached);
+            return;
+        }
+    }
     
     // OPTIMIZED: Batch fetch all data using JOINs instead of N+1 queries
     // This dramatically reduces the number of database queries from hundreds to just a few
@@ -218,19 +232,21 @@ function handleGetTiles() {
             }
         }
         
-        // Batch fetch all link favorites
-        $linkFavStmt = $db->prepare('SELECT link_id FROM user_link_favorites WHERE user_id = ?');
-        $linkFavStmt->execute([$user['id']]);
-        while ($linkFav = $linkFavStmt->fetch()) {
-            $linkFavorites[$linkFav['link_id']] = true;
-        }
-        
-        // Batch fetch all link role access
-        if (!empty($userRoleIds) && !$user['is_admin']) {
-            $linkRoleStmt = $db->prepare("SELECT DISTINCT link_id FROM role_link_permissions WHERE role_id IN ($placeholders) AND can_view = 1");
-            $linkRoleStmt->execute($userRoleIds);
-            while ($linkRole = $linkRoleStmt->fetch()) {
-                $linkRoleAccess[$linkRole['link_id']] = true;
+        // Batch fetch all link favorites (full list only — summary omits links)
+        if (!$summaryMode) {
+            $linkFavStmt = $db->prepare('SELECT link_id FROM user_link_favorites WHERE user_id = ?');
+            $linkFavStmt->execute([$user['id']]);
+            while ($linkFav = $linkFavStmt->fetch()) {
+                $linkFavorites[$linkFav['link_id']] = true;
+            }
+            
+            // Batch fetch all link role access
+            if (!empty($userRoleIds) && !$user['is_admin']) {
+                $linkRoleStmt = $db->prepare("SELECT DISTINCT link_id FROM role_link_permissions WHERE role_id IN ($placeholders) AND can_view = 1");
+                $linkRoleStmt->execute($userRoleIds);
+                while ($linkRole = $linkRoleStmt->fetch()) {
+                    $linkRoleAccess[$linkRole['link_id']] = true;
+                }
             }
         }
         
@@ -405,7 +421,6 @@ function handleGetTiles() {
             'userId' => isset($row['user_id']) ? (int)$row['user_id'] : null,
             'title' => $row['title'],
             'description' => $row['description'],
-            'htmlContent' => $row['html_content'],
             'emoji' => $row['emoji'],
             'themeColor' => $row['theme_color'],
             'group' => $row['group'],
@@ -453,8 +468,60 @@ function handleGetTiles() {
             'sharedWithMeInvitationId' => isset($acceptedSharedTiles[$row['id']]) ? $acceptedSharedTiles[$row['id']]['invitationId'] : null,
             'sharedWithMeSharer' => isset($acceptedSharedTiles[$row['id']]) ? ['userId' => $acceptedSharedTiles[$row['id']]['sharerUserId'], 'username' => $acceptedSharedTiles[$row['id']]['sharerUsername']] : null
         ];
+
+        // Full list includes htmlContent; summary omits nested/heavy fields
+        if (!$summaryMode) {
+            $tile['htmlContent'] = $row['html_content'];
+        }
         
         $tilesById[$row['id']] = $tile;
+    }
+
+    // Summary mode: return card fields only (home grid). Detail loads via GET /tiles/{id}.
+    if ($summaryMode) {
+        // Optional link counts for card badges (one aggregate query, no nested graph)
+        $linkCounts = [];
+        if (!empty($visibleTileIds)) {
+            $placeholders = implode(',', array_fill(0, count($visibleTileIds), '?'));
+            $countStmt = $db->prepare(
+                "SELECT s.tile_id, COUNT(l.id) AS link_count
+                 FROM sections s
+                 INNER JOIN links l ON l.section_id = s.id
+                 WHERE s.tile_id IN ($placeholders)
+                 GROUP BY s.tile_id"
+            );
+            $countStmt->execute($visibleTileIds);
+            while ($c = $countStmt->fetch(PDO::FETCH_ASSOC)) {
+                $linkCounts[$c['tile_id']] = (int)$c['link_count'];
+            }
+        }
+
+        foreach ($visibleTileIds as $tileId) {
+            if (!isset($tilesById[$tileId])) {
+                continue;
+            }
+            $tile = $tilesById[$tileId];
+            $tile['linkCount'] = $linkCounts[$tileId] ?? 0;
+            $tile['tabs'] = [];
+            $tile['sections'] = [];
+            $tiles[] = $tile;
+        }
+
+        usort($tiles, function($a, $b) {
+            return ($a['position'] ?? 0) - ($b['position'] ?? 0);
+        });
+
+        if ($hasDuplicatePositions) {
+            error_log('Warning: duplicate tile positions detected on GET /tiles?summary=1 (count=' . count($tiles) . '); skipping write-on-read normalization');
+        }
+
+        if (!$user && $sourceTab === 'public') {
+            responseCacheSet('tiles_summary_guest_public', $tiles);
+            responseCacheHitHeader(false);
+        }
+
+        sendJSON($tiles);
+        return;
     }
     
     // Step 4: Batch fetch all tabs, sections, links, and rich_text_content for visible tiles
@@ -836,49 +903,29 @@ function handleGetTiles() {
                 }
                 
                 $tile['sections'] = $allSections;
+            } else {
+                // Avoid duplicating nested section bytes when tabs already carry them
+                $tile['sections'] = [];
             }
-            
-            // Backward compatibility: also include sections array for old clients
-            $allSections = [];
-            foreach ($tabs as $tab) {
-                $allSections = array_merge($allSections, $tab['sections']);
-            }
-            $tile['sections'] = $allSections;
             
             $tiles[] = $tile;
         }
     }
     
-    // Step 6: Sort tiles by position
+    // Step 6: Sort tiles by position (response order only — do not write on GET).
     usort($tiles, function($a, $b) {
         return ($a['position'] ?? 0) - ($b['position'] ?? 0);
     });
-    
-    // Original code continues with position normalization...
-    // (keeping the existing position normalization logic)
-    foreach ($tiles as $tile) {
-        $position = (int)($tile['position'] ?? 0);
-        if (isset($positions[$position])) {
-            $hasDuplicatePositions = true;
-        }
-        $positions[$position] = true;
-    }
-    
-    // Continue with existing position normalization code...
-    if (($hasDuplicatePositions || (count($positions) === 1 && isset($positions[0]))) && count($tiles) > 0) {
-        try {
-            $db->beginTransaction();
-            $updateStmt = $db->prepare('UPDATE tiles SET position = ? WHERE id = ?');
-            foreach ($tiles as $index => $tile) {
-                $updateStmt->execute([$index, $tile['id']]);
-                $tiles[$index]['position'] = $index;
-            }
-            $db->commit();
-            error_log('Normalized tile positions: assigned sequential positions to ' . count($tiles) . ' tiles');
-        } catch (PDOException $e) {
-            $db->rollBack();
-            error_log('Failed to normalize tile positions: ' . $e->getMessage());
-        }
+
+    // IMPORTANT: Never UPDATE tiles inside a list GET.
+    // A previous "normalize positions" block re-scanned an already-filled $positions map,
+    // always treated positions as duplicates, and UPDATEd every tile on every request.
+    // Under concurrent home loads that serialized SQLite writes (busy_timeout / lock waits)
+    // and drove Home p95 to multi-second latency. Positions are assigned on create/reorder;
+    // if repair is ever needed, do it from an admin/migration path — not from GET.
+    // $hasDuplicatePositions is still computed above for diagnostics if needed later.
+    if ($hasDuplicatePositions) {
+        error_log('Warning: duplicate tile positions detected on GET /tiles (count=' . count($tiles) . '); skipping write-on-read normalization');
     }
     
     // We now rely on the tiles.position column for ordering.
@@ -1374,12 +1421,9 @@ function handleGetTile($tileId) {
     
     $tile['tabs'] = $tabs;
     
-    // Backward compatibility: also include sections array for old clients
-    $allSections = [];
-    foreach ($tabs as $tab) {
-        $allSections = array_merge($allSections, $tab['sections']);
-    }
-    $tile['sections'] = $allSections;
+    // Avoid duplicating nested section bytes when tabs already carry them.
+    // Legacy-only tiles are wrapped into a default tab above, so sections stay empty here.
+    $tile['sections'] = [];
     
     sendJSON($tile);
 }
@@ -1777,6 +1821,7 @@ function handleCreateTile() {
         }
     }
 
+    invalidateGuestTilesListCache();
     sendJSON(['success' => true, 'id' => $tileId], 201);
     } catch (PDOException $e) {
         error_log('Database error in handleCreateTile: ' . $e->getMessage());
@@ -1845,6 +1890,7 @@ function handleDeleteTile($tileId) {
     $stmt = $db->prepare('UPDATE tiles SET deleted_at = ?, archived_at = NULL WHERE id = ?');
     $stmt->execute([time(), $tileId]);
     
+    invalidateGuestTilesListCache();
     sendJSON(['success' => true]);
 }
 
@@ -2300,6 +2346,7 @@ function handleCloneTile($tileId) {
     // Commit transaction
     $db->commit();
     
+    invalidateGuestTilesListCache();
     sendJSON(['success' => true, 'id' => $newTileId], 201);
     
     } catch (PDOException $e) {
@@ -2674,6 +2721,7 @@ function handleCloneCategory($categoryName) {
         
         $db->commit();
         
+        invalidateGuestTilesListCache();
         sendJSON([
             'success' => true,
             'newCategoryName' => $finalCategoryName,
@@ -2946,6 +2994,7 @@ function handleBulkImport() {
         
         $db->commit();
         
+        invalidateGuestTilesListCache();
         sendJSON([
             'success' => true,
             'created' => count($created),
@@ -3388,6 +3437,7 @@ function handleArchiveCategory($categoryName) {
         
         $db->commit();
         
+        invalidateGuestTilesListCache();
         sendJSON([
             'success' => true,
             'archivedCount' => $archivedCount,
@@ -3454,6 +3504,7 @@ function handleUnarchiveCategory($categoryName) {
         
         $db->commit();
         
+        invalidateGuestTilesListCache();
         sendJSON([
             'success' => true,
             'unarchivedCount' => $unarchivedCount,
@@ -3901,6 +3952,7 @@ function handleRestoreTile($tileId) {
     $stmt = $db->prepare('UPDATE tiles SET deleted_at = NULL WHERE id = ?');
     $stmt->execute([$tileId]);
     
+    invalidateGuestTilesListCache();
     sendJSON(['success' => true]);
 }
 
@@ -4256,6 +4308,7 @@ function handleArchiveTile($tileId) {
             return;
         }
         
+        invalidateGuestTilesListCache();
         sendJSON(['success' => true, 'message' => 'Tile archived successfully']);
     } catch (PDOException $e) {
         error_log('Database error in handleArchiveTile: ' . $e->getMessage());
@@ -4299,6 +4352,7 @@ function handleUnarchiveTile($tileId) {
     $stmt = $db->prepare('UPDATE tiles SET archived_at = NULL WHERE id = ?');
     $stmt->execute([$tileId]);
     
+    invalidateGuestTilesListCache();
     sendJSON(['success' => true]);
 }
 
@@ -4336,6 +4390,7 @@ function handlePermanentDeleteTile($tileId) {
     $stmt = $db->prepare('DELETE FROM tiles WHERE id = ?');
     $stmt->execute([$tileId]);
     
+    invalidateGuestTilesListCache();
     sendJSON(['success' => true]);
 }
 
@@ -5385,6 +5440,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
         }
 
         $db->commit();
+        invalidateGuestTilesListCache();
 
         $afterTileData = getTileForVersion($tileId, $db);
         if ($afterTileData && $currentTileData && areTilesEqual($currentTileData, $afterTileData)) {

@@ -33,7 +33,7 @@ const transformTile = (apiTile: any): Tile => {
     themeColor: (apiTile.themeColor || 'blue') as any,
     group: apiTile.group || 'General',
     createdAt: apiTile.createdAt || Date.now(),
-    tabs: apiTile.tabs || undefined, // Include tabs if present (with richTextContent)
+    tabs: apiTile.tabs || [], // Include tabs if present (with richTextContent); empty for summary lists
     sections: apiTile.sections || [], // Keep for backward compatibility (with richTextContent)
     visibility: apiTile.visibility || 'public',
     published: apiTile.published === false || apiTile.published === 0 || apiTile.published === '0' ? false : true,
@@ -66,15 +66,34 @@ const transformTile = (apiTile: any): Tile => {
     pageAnimation: apiTile.pageAnimation && apiTile.pageAnimation !== 'none' ? apiTile.pageAnimation : undefined,
     linksAnimation: apiTile.linksAnimation && apiTile.linksAnimation !== 'none' ? apiTile.linksAnimation : undefined,
     messages: apiTile.messages || undefined, // Include scheduled messages
+    linkCount: typeof apiTile.linkCount === 'number' ? apiTile.linkCount : undefined,
     // Shared-with-me: when tile was shared by another user and receiver accepted
     sharedWithMeInvitationId: apiTile.sharedWithMeInvitationId ?? undefined,
     sharedWithMeSharer: apiTile.sharedWithMeSharer ?? undefined
   };
 };
 
+/** Card-only fields for home grid state (drop nested graph after detail updates). */
+export const toSummaryTile = (tile: Tile): Tile => ({
+  ...tile,
+  tabs: [],
+  sections: [],
+  htmlContent: undefined,
+  messages: undefined,
+  linkCount: tile.linkCount ?? (tile.tabs?.reduce(
+    (n, tab) => n + (tab.sections?.reduce((sn, s) => sn + (s.links?.length || 0), 0) || 0),
+    0
+  ) ?? tile.sections?.reduce((n, s) => n + (s.links?.length || 0), 0))
+});
+
 export interface GetTilesOptions {
   /** 'public' = main tab tiles (default); 'staging' = staging tab tiles (admin only) */
   sourceTab?: 'public' | 'staging';
+  /**
+   * When true (default), request card fields only via ?summary=1.
+   * Pass false only if callers need the full nested tabs/links graph in the list.
+   */
+  summary?: boolean;
 }
 
 export const getTiles = async (options?: GetTilesOptions): Promise<Tile[]> => {
@@ -83,6 +102,11 @@ export const getTiles = async (options?: GetTilesOptions): Promise<Tile[]> => {
     params.set('source_tab', 'staging');
   } else if (options?.sourceTab === 'public') {
     params.set('source_tab', 'public');
+  }
+  // Default to summary for home-grid loads; opt out with summary: false
+  const useSummary = options?.summary !== false;
+  if (useSummary) {
+    params.set('summary', '1');
   }
   const url = params.toString() ? `${API_BASE}/tiles?${params.toString()}` : `${API_BASE}/tiles`;
   const response = await fetch(url, {

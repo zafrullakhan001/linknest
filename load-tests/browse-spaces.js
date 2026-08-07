@@ -14,7 +14,6 @@
 import http from 'k6/http';
 import { check, group, sleep } from 'k6';
 import { Counter, Rate, Trend } from 'k6/metrics';
-import { SharedArray } from 'k6/data';
 
 const BASE_URL = (__ENV.BASE_URL || 'http://localhost/linknest').replace(/\/$/, '');
 const API = `${BASE_URL}/api`;
@@ -170,13 +169,14 @@ function loginIfNeeded() {
 
 function loadHome() {
   const start = Date.now();
+  let tiles = [];
   group('home', () => {
     // Parallel batch matches SPA startup traffic
     const responses = http.batch([
       ['GET', `${API}/auth/me`, null, { tags: { name: 'auth_me', endpoint: '/auth/me' } }],
       ['GET', `${API}/settings`, null, { tags: { name: 'settings', endpoint: '/settings' } }],
       ['GET', `${API}/styles`, null, { tags: { name: 'styles', endpoint: '/styles' } }],
-      ['GET', `${API}/tiles`, null, { tags: { name: 'tiles_list', endpoint: '/tiles' } }],
+      ['GET', `${API}/tiles?summary=1`, null, { tags: { name: 'tiles_list', endpoint: '/tiles' } }],
       ['GET', `${API}/arrangements`, null, { tags: { name: 'arrangements', endpoint: '/arrangements' } }],
     ]);
 
@@ -190,12 +190,13 @@ function loadHome() {
       'tiles list ok': (r) => r.status === 200,
       'tiles is array': (r) => Array.isArray(parseJson(r)),
     });
+
+    // Reuse tiles from the home batch (avoid a second full /tiles fetch)
+    const parsed = parseJson(responses[3]);
+    tiles = Array.isArray(parsed) ? parsed : [];
   });
   homeLatency.add(Date.now() - start);
-
-  const tilesRes = apiGet('/tiles', { name: 'tiles_list_refresh' });
-  const tiles = parseJson(tilesRes);
-  return Array.isArray(tiles) ? tiles : [];
+  return tiles;
 }
 
 function openSpace(tileId) {
@@ -313,29 +314,29 @@ function textSummary(data, opts) {
   // Lightweight local summary so we don't require k6-summary-helper import
   const indent = (opts && opts.indent) || '';
   const m = data.metrics || {};
-  const line = (name, metric) => {
+  const line = (name, metric, asPercent = false) => {
     if (!metric || !metric.values) return '';
     const v = metric.values;
     const parts = [];
-    if (v.avg !== undefined) parts.push(`avg=${v.avg.toFixed?.(1) ?? v.avg}`);
+    if (v.avg !== undefined) parts.push(`avg=${Number(v.avg).toFixed(1)}`);
     if (v['p(95)'] !== undefined) parts.push(`p95=${Number(v['p(95)']).toFixed(1)}`);
     if (v['p(99)'] !== undefined) parts.push(`p99=${Number(v['p(99)']).toFixed(1)}`);
-    if (v.rate !== undefined) parts.push(`rate=${(v.rate * 100).toFixed(2)}%`);
+    if (v.rate !== undefined) {
+      parts.push(asPercent ? `rate=${(v.rate * 100).toFixed(2)}%` : `rate=${Number(v.rate).toFixed(2)}/s`);
+    }
     if (v.count !== undefined) parts.push(`count=${v.count}`);
-    if (v.passes !== undefined) parts.push(`passes=${v.passes}`);
-    if (v.fails !== undefined) parts.push(`fails=${v.fails}`);
     return `${indent}${name}: ${parts.join(' ')}\n`;
   };
 
   let out = `\n${indent}LinkNest load test summary\n`;
   out += `${indent}BASE_URL=${BASE_URL}  VUS=${VUS}  DURATION=${DURATION}\n`;
-  out += line('http_reqs', m.http_reqs);
-  out += line('http_req_failed', m.http_req_failed);
-  out += line('http_req_duration', m.http_req_duration);
-  out += line('linknest_api_ok', m.linknest_api_ok);
-  out += line('linknest_home_ms', m.linknest_home_ms);
-  out += line('linknest_space_ms', m.linknest_space_ms);
-  out += line('linknest_api_errors', m.linknest_api_errors);
+  out += line('http_reqs', m.http_reqs, false);
+  out += line('http_req_failed', m.http_req_failed, true);
+  out += line('http_req_duration', m.http_req_duration, false);
+  out += line('linknest_api_ok', m.linknest_api_ok, true);
+  out += line('linknest_home_ms', m.linknest_home_ms, false);
+  out += line('linknest_space_ms', m.linknest_space_ms, false);
+  out += line('linknest_api_errors', m.linknest_api_errors, false);
 
   const failed = (data.root_group && data.root_group.checks) || [];
   // Also surface threshold results

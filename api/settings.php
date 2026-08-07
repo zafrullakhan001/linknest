@@ -129,7 +129,29 @@ function handleGetSettings() {
     foreach ($rows as $row) {
         $settings[$row['key']] = $row['value'];
     }
-    
+
+    // Only admins need plaintext LDAP secrets (AdminPanel). Public/home callers
+    // must not pay for openssl decrypt on every GET /settings — and must not receive secrets.
+    $user = getAuthenticatedUser();
+    $isAdmin = $user && !empty($user['is_admin']);
+
+    if (!$isAdmin) {
+        if (isset($settings['ldap_bind_password'])) {
+            $settings['ldap_bind_password'] = '';
+        }
+        if (isset($settings['ldap_servers']) && is_string($settings['ldap_servers']) && trim($settings['ldap_servers']) !== '') {
+            $servers = json_decode($settings['ldap_servers'], true);
+            if (is_array($servers)) {
+                foreach ($servers as &$server) {
+                    if (is_array($server) && array_key_exists('bind_password', $server)) {
+                        $server['bind_password'] = '';
+                    }
+                }
+                unset($server);
+                $settings['ldap_servers'] = json_encode($servers);
+            }
+        }
+    } else {
     // Handle LDAP bind password: decrypt if encrypted, or auto-encrypt if plain text
     if (isset($settings['ldap_bind_password']) && !empty($settings['ldap_bind_password'])) {
         $password = $settings['ldap_bind_password'];
@@ -195,6 +217,7 @@ function handleGetSettings() {
             $settings['ldap_servers'] = json_encode($servers);
         }
     }
+    } // end admin-only LDAP decrypt
     
     // Normalize logo_image URL for current environment
     if (isset($settings['logo_image']) && !empty($settings['logo_image'])) {

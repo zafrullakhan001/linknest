@@ -180,6 +180,7 @@ function handleSaveArrangement() {
         error_log('Successfully saved ' . $count . ' tile arrangements (and updated tiles.position)');
         error_log('Normalized all tile positions to be sequential (0, 1, 2, ...)');
         
+        invalidateGuestTilesListCache();
         sendJSON(['success' => true, 'count' => $count]);
         
     } catch (PDOException $e) {

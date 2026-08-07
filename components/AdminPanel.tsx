@@ -94,7 +94,8 @@ type AdminNavTabId =
   | 'maintenanceScripts'
   | 'maintenance'
   | 'widgets'
-  | 'addons';
+  | 'addons'
+  | 'loadTest';
 
 const ADMIN_NAV_SECTIONS: Array<{
   label: string;
@@ -139,6 +140,7 @@ const ADMIN_NAV_SECTIONS: Array<{
       { id: 'maintenance', label: 'Maintenance', emoji: '🚧' },
       { id: 'widgets', label: 'Custom Widgets', emoji: '🧩' },
       { id: 'addons', label: 'Add-ons', emoji: '🔌' },
+      { id: 'loadTest', label: 'Load Test', emoji: '📈' },
     ],
   },
 ];
@@ -240,10 +242,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const isMobile = useMobile();
   // Initialize activeTab from localStorage or default to 'pending'
   // Migrate legacy 'footer' tab → Settings › Branding
-  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenanceScripts' | 'maintenance' | 'widgets' | 'addons'>(() => {
+  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenanceScripts' | 'maintenance' | 'widgets' | 'addons' | 'loadTest'>(() => {
     const savedTab = localStorage.getItem('adminPanelActiveTab');
     if (savedTab === 'footer') return 'settings';
-    const validTabs: Array<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenanceScripts' | 'maintenance' | 'widgets' | 'addons'> = ['pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'saml', 'footer', 'tabVisibility', 'access', 'clone', 'browser', 'broadcast', 'maintenanceScripts', 'maintenance', 'widgets', 'addons'];
+    const validTabs: Array<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenanceScripts' | 'maintenance' | 'widgets' | 'addons' | 'loadTest'> = ['pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'saml', 'footer', 'tabVisibility', 'access', 'clone', 'browser', 'broadcast', 'maintenanceScripts', 'maintenance', 'widgets', 'addons', 'loadTest'];
     return (savedTab && validTabs.includes(savedTab as any)) ? savedTab as any : 'pending';
   });
   // Initialize tab layout from localStorage or default to 'horizontal'
@@ -644,6 +646,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [healthResult, setHealthResult] = useState<{
     success: boolean; integrity_ok?: boolean; health_status?: string; size_kb?: number; journal_mode?: string;
     table_counts?: Record<string, number | null>; suggestions?: string[]; error?: string;
+  } | null>(null);
+
+  // Load Test report (admin)
+  const [loadTestMetaLoading, setLoadTestMetaLoading] = useState(false);
+  const [loadTestMetaError, setLoadTestMetaError] = useState('');
+  const [loadTestIframeKey, setLoadTestIframeKey] = useState(0);
+  const [loadTestOpenPrompt, setLoadTestOpenPrompt] = useState(false);
+  const [loadTestMeta, setLoadTestMeta] = useState<{
+    success?: boolean;
+    available?: boolean;
+    appName?: string;
+    title?: string;
+    testedAt?: string | null;
+    testedAtDisplay?: string | null;
+    generatedAtDisplay?: string | null;
+    overallPass?: boolean | null;
+    passedCount?: number | null;
+    thresholdTotal?: number | null;
+    vus?: number | null;
+    duration?: string | null;
+    p95?: number | null;
+    homeP95?: number | null;
+    spaceP95?: number | null;
+    httpReqFailedRate?: number | null;
+    apiOkRate?: number | null;
+    error?: string;
   } | null>(null);
 
   // SQLite RAM / performance health check
@@ -1139,6 +1167,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     if (activeTab === 'widgets') {
       loadCustomWidgets();
     }
+    if (activeTab === 'loadTest') {
+      void loadLoadTestMeta({ showPrompt: true });
+    }
   }, [activeTab]);
 
   // Load user roles when All Users tab is active and users are loaded
@@ -1152,6 +1183,40 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
     loadUserRolesWhenReady();
   }, [activeTab, allUsers.length]);
+
+  const getLoadTestReportUrl = () => `${resolveApiBase()}/load-test-report`;
+
+  const openLoadTestReportInOwnTab = () => {
+    const url = getLoadTestReportUrl();
+    window.open(url, '_blank', 'noopener,noreferrer');
+    setLoadTestOpenPrompt(false);
+  };
+
+  const loadLoadTestMeta = async (opts?: { showPrompt?: boolean }) => {
+    try {
+      setLoadTestMetaLoading(true);
+      setLoadTestMetaError('');
+      const response = await fetch(`${resolveApiBase()}/load-test-report?meta=1`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to load load-test metadata');
+      }
+      setLoadTestMeta(data);
+      setLoadTestIframeKey((k) => k + 1);
+      if (opts?.showPrompt && data?.available !== false) {
+        setLoadTestOpenPrompt(true);
+      }
+    } catch (err: any) {
+      setLoadTestMeta(null);
+      setLoadTestMetaError(err?.message || 'Failed to load load-test report metadata');
+    } finally {
+      setLoadTestMetaLoading(false);
+    }
+  };
 
   const loadSnapshots = async () => {
     try {
@@ -13728,6 +13793,180 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
               {activeTab === 'addons' && (
                 <div className="mt-6">
                   <AddonsManagement />
+                </div>
+              )}
+
+              {activeTab === 'loadTest' && (
+                <div className="space-y-6 mt-6">
+                  {loadTestOpenPrompt && loadTestMeta?.available !== false && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" role="dialog" aria-modal="true" aria-labelledby="load-test-open-title">
+                      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-700">
+                        <h3 id="load-test-open-title" className="text-lg font-bold text-slate-900 dark:text-white">
+                          Open load test report?
+                        </h3>
+                        <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+                          View the full {(loadTestMeta?.appName || settings.app_name || 'Application')} Load Test Report in its own browser tab for charts, thresholds, and run instructions.
+                        </p>
+                        {loadTestMeta?.testedAtDisplay && (
+                          <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                            Test run: <span className="font-medium text-slate-700 dark:text-slate-200">{loadTestMeta.testedAtDisplay}</span>
+                          </p>
+                        )}
+                        <div className="mt-5 flex flex-wrap gap-2 justify-end">
+                          <button
+                            type="button"
+                            onClick={() => setLoadTestOpenPrompt(false)}
+                            className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+                          >
+                            Stay here
+                          </button>
+                          <button
+                            type="button"
+                            onClick={openLoadTestReportInOwnTab}
+                            className="px-4 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-sm font-medium"
+                          >
+                            Open in its own tab
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                          {(loadTestMeta?.appName || settings.app_name || 'Application')} Load Test Report
+                        </h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1 max-w-3xl">
+                          View the latest concurrent-user load test results for this application, including when the test was run and how to run it again.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void loadLoadTestMeta()}
+                          className="px-4 py-2 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-sm font-medium hover:opacity-90"
+                        >
+                          {loadTestMetaLoading ? 'Refreshing…' : 'Refresh'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={openLoadTestReportInOwnTab}
+                          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-sm font-medium"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4" aria-hidden="true">
+                            <path fillRule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clipRule="evenodd" />
+                            <path fillRule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z" clipRule="evenodd" />
+                          </svg>
+                          Open report in its own tab
+                        </button>
+                      </div>
+                    </div>
+
+                    {loadTestMetaError && (
+                      <div className="mt-4 p-3 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 text-sm text-red-800 dark:text-red-200">
+                        {loadTestMetaError}
+                      </div>
+                    )}
+
+                    <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+                      <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Test run date</div>
+                        <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                          {loadTestMeta?.testedAtDisplay || (loadTestMetaLoading ? 'Loading…' : 'Not available yet')}
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Report status</div>
+                        <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                          {loadTestMeta?.available
+                            ? (loadTestMeta.overallPass ? 'Thresholds passed' : `Thresholds missed (${loadTestMeta.passedCount ?? '—'}/${loadTestMeta.thresholdTotal ?? '—'})`)
+                            : 'No report generated'}
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Peak concurrent users</div>
+                        <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                          {loadTestMeta?.vus ?? '—'}
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Overall p95</div>
+                        <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                          {loadTestMeta?.p95 != null ? `${Math.round(loadTestMeta.p95).toLocaleString()} ms` : '—'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                    <h4 className="text-base font-bold text-slate-900 dark:text-white mb-2">Run this load test again</h4>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                      Use these steps on the server that hosts {(loadTestMeta?.appName || settings.app_name || 'the application')}.
+                    </p>
+                    <ol className="space-y-3 text-sm text-slate-700 dark:text-slate-300 list-decimal list-inside">
+                      <li>Make sure Apache is running and the app opens in a browser.</li>
+                      <li>Install k6 once if needed: <code className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-900 text-xs">winget install --id GrafanaLabs.k6 -e --source winget</code></li>
+                      <li>Open PowerShell and go to the project folder: <code className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-900 text-xs">cd c:\xampp\htdocs\linknest</code></li>
+                      <li>Run the 100-user test: <code className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-900 text-xs">.\load-tests\run.ps1</code></li>
+                      <li>Come back here and click <strong>Refresh</strong> to load the new report and test-run date.</li>
+                    </ol>
+                    <div className="mt-4 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-400 font-mono whitespace-pre-wrap">
+{`.\\load-tests\\run.ps1 -Smoke
+.\\load-tests\\run.ps1 -Login -Username admin -Password admin123
+node .\\load-tests\\generate-report.js`}
+                    </div>
+                  </div>
+
+                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                    <div className="px-6 py-3 border-b border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                      <div>
+                        <h4 className="text-base font-bold text-slate-900 dark:text-white">Full report</h4>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {loadTestMeta?.generatedAtDisplay
+                            ? `Report generated: ${loadTestMeta.generatedAtDisplay}`
+                            : 'Charts, thresholds, solutions, and metric explanations'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={openLoadTestReportInOwnTab}
+                        className="inline-flex items-center gap-1.5 text-sm font-medium text-teal-700 dark:text-teal-400 hover:underline"
+                      >
+                        Open in its own tab
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path fillRule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clipRule="evenodd" />
+                          <path fillRule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    </div>
+                    {loadTestMeta?.available !== false && (
+                      <div className="px-6 py-3 bg-teal-50 dark:bg-teal-950/40 border-b border-teal-100 dark:border-teal-900 text-sm text-teal-900 dark:text-teal-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                        <span>Want more room for charts and details?</span>
+                        <button
+                          type="button"
+                          onClick={openLoadTestReportInOwnTab}
+                          className="font-semibold underline underline-offset-2 hover:text-teal-700 dark:hover:text-teal-200 text-left"
+                        >
+                          Open the report in its own tab →
+                        </button>
+                      </div>
+                    )}
+                    {loadTestMeta?.available !== false ? (
+                      <iframe
+                        key={loadTestIframeKey}
+                        title={(loadTestMeta?.title || `${settings.app_name || 'Application'} Load Test Report`)}
+                        src={getLoadTestReportUrl()}
+                        className="w-full border-0 bg-white"
+                        style={{ minHeight: '75vh', height: '1100px' }}
+                      />
+                    ) : (
+                      <div className="p-8 text-sm text-slate-600 dark:text-slate-400">
+                        No report file found yet. Run <code className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-900 text-xs">.\load-tests\run.ps1</code> first, then refresh.
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </>

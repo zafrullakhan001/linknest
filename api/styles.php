@@ -240,6 +240,13 @@ function handleGetStyles() {
 
 function handleGetStylesRead() {
     // Styles are public (for display) — read-only path, no DDL/migration
+    $cached = responseCacheGet('styles_public');
+    if (is_array($cached) && array_key_exists('styles', $cached)) {
+        responseCacheHitHeader(true);
+        sendJSON($cached);
+        return;
+    }
+
     $db = getDB();
 
     $tableExists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='style_profiles'")->fetch();
@@ -251,7 +258,10 @@ function handleGetStylesRead() {
         if ($activeProfile && !empty($activeProfile['styles_data'])) {
             $styles = json_decode($activeProfile['styles_data'], true);
             if ($styles !== null && json_last_error() === JSON_ERROR_NONE) {
-                sendJSON(['styles' => $styles]);
+                $payload = ['styles' => $styles];
+                responseCacheSet('styles_public', $payload);
+                responseCacheHitHeader(false);
+                sendJSON($payload);
                 return;
             }
         }
@@ -260,7 +270,10 @@ function handleGetStylesRead() {
     // Fallback to legacy space_styles table (no DDL on read path)
     $legacyExists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='space_styles'")->fetch();
     if (!$legacyExists) {
-        sendJSON(['styles' => null]);
+        $payload = ['styles' => null];
+        responseCacheSet('styles_public', $payload);
+        responseCacheHitHeader(false);
+        sendJSON($payload);
         return;
     }
 
@@ -269,7 +282,10 @@ function handleGetStylesRead() {
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     if (empty($rows)) {
-        sendJSON(['styles' => null]);
+        $payload = ['styles' => null];
+        responseCacheSet('styles_public', $payload);
+        responseCacheHitHeader(false);
+        sendJSON($payload);
         return;
     }
 
@@ -294,7 +310,10 @@ function handleGetStylesRead() {
         }
     }
 
-    sendJSON(['styles' => $styles]);
+    $payload = ['styles' => $styles];
+    responseCacheSet('styles_public', $payload);
+    responseCacheHitHeader(false);
+    sendJSON($payload);
 }
 
 function handleUpdateStyles() {
@@ -420,6 +439,7 @@ function handleUpdateStyles() {
         $profileId = $db->lastInsertId();
         
         $db->commit();
+        invalidateStylesCache();
         sendJSON([
             'success' => true, 
             'message' => 'Style profile created and activated successfully',
@@ -459,12 +479,14 @@ function handleUpdateActiveProfileStyles() {
         if ($active) {
             $stmt = $db->prepare('UPDATE style_profiles SET styles_data = ?, updated_at = ? WHERE id = ?');
             $stmt->execute([$stylesData, $timestamp, (int)$active['id']]);
+            invalidateStylesCache();
             sendJSON(['success' => true, 'message' => 'Active profile updated', 'profileId' => (int)$active['id']]);
         } else {
             $db->exec('UPDATE style_profiles SET is_active = 0');
             $stmt = $db->prepare('INSERT INTO style_profiles (name, styles_data, is_active, created_at, updated_at) VALUES (?, ?, 1, ?, ?)');
             $stmt->execute(['Default', $stylesData, $timestamp, $timestamp]);
             $profileId = (int)$db->lastInsertId();
+            invalidateStylesCache();
             sendJSON(['success' => true, 'message' => 'Default profile created and activated', 'profileId' => $profileId]);
         }
     } catch (Exception $e) {
@@ -561,6 +583,7 @@ function handleActivateProfile($profileId) {
         $stmt->execute([time(), $profileId]);
         
         $db->commit();
+        invalidateStylesCache();
         sendJSON(['success' => true, 'message' => 'Profile activated successfully']);
     } catch (Exception $e) {
         $db->rollBack();
@@ -672,6 +695,9 @@ function handleCreateProfile() {
         
         $profileId = $db->lastInsertId();
         
+        if ($activate) {
+            invalidateStylesCache();
+        }
         sendJSON([
             'success' => true,
             'message' => 'Profile created successfully',
@@ -700,6 +726,7 @@ function handleResetStyles() {
         // Clear all styles
         $db->exec('DELETE FROM space_styles');
         
+        invalidateStylesCache();
         sendJSON(['success' => true, 'message' => 'Styles reset to default']);
     } catch (Exception $e) {
         sendJSON(['error' => 'Failed to reset styles: ' . $e->getMessage()], 500);

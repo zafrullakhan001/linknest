@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { Tile, Link } from './types';
-import { getTiles, getTile, saveTiles, createTile, deleteTile, cloneTile } from './services/storageService';
+import { getTiles, getTile, saveTiles, createTile, deleteTile, cloneTile, toSummaryTile } from './services/storageService';
 import { settingsService } from './services/settingsService';
 import { authService } from './services/authService';
 import { Navigation } from './components/Navigation';
@@ -103,10 +103,10 @@ const AppContent: React.FC = () => {
   const [allowedWidgetIds, setAllowedWidgetIds] = useState<Set<string>>(new Set());
   const [widgetsLoading, setWidgetsLoading] = useState(false);
 
-  // Staging tile detail (when opening a staging tile that is not in main tiles list)
-  const [stagingDetailTile, setStagingDetailTile] = useState<Tile | null>(null);
-  const [stagingDetailLoading, setStagingDetailLoading] = useState(false);
-  const [stagingDetailError, setStagingDetailError] = useState<string | null>(null);
+  // Full space detail (home list is summary-only; detail always loads GET /tiles/{id})
+  const [detailTile, setDetailTile] = useState<Tile | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
 
   // Footer Details Toggle State
   const [showFooterDetails, setShowFooterDetails] = useState(() => {
@@ -661,53 +661,43 @@ const AppContent: React.FC = () => {
     loadDatabasePath();
   }, []);
 
-  // Fetch staging tile when opening #/tile/id?from=staging and tile is not in main list
+  // Fetch full tile when opening #/tile/id (home list is card summary only)
   useEffect(() => {
     if (!route.startsWith('#/tile/')) {
-      setStagingDetailTile(null);
-      setStagingDetailLoading(false);
-      setStagingDetailError(null);
+      setDetailTile(null);
+      setDetailLoading(false);
+      setDetailError(null);
       return;
     }
     const tilePath = route.split('/tile/')[1];
-    const [tileId, queryString] = (tilePath || '').split('?');
-    const urlParams = new URLSearchParams(queryString || '');
-    const sourceTab = urlParams.get('from') || null;
-    if (sourceTab !== 'staging') {
-      setStagingDetailTile(null);
-      setStagingDetailLoading(false);
-      setStagingDetailError(null);
-      return;
-    }
-    const tile = tiles.find((t) => t.id === tileId);
-    if (tile) {
-      setStagingDetailTile(null);
-      setStagingDetailLoading(false);
-      setStagingDetailError(null);
+    const [tileId] = (tilePath || '').split('?');
+    if (!tileId) {
+      setDetailTile(null);
+      setDetailLoading(false);
+      setDetailError('Space not found.');
       return;
     }
     let cancelled = false;
-    setStagingDetailLoading(true);
-    setStagingDetailTile(null);
-    setStagingDetailError(null);
+    setDetailLoading(true);
+    setDetailError(null);
     getTile(tileId)
       .then((t) => {
         if (cancelled) return;
-        setStagingDetailLoading(false);
-        setStagingDetailTile(t || null);
-        if (!t) setStagingDetailError('Space not found or you do not have permission to view it.');
+        setDetailLoading(false);
+        setDetailTile(t || null);
+        if (!t) setDetailError('Space not found or you do not have permission to view it.');
       })
       .catch((err) => {
         if (!cancelled) {
-          setStagingDetailLoading(false);
-          setStagingDetailTile(null);
-          setStagingDetailError(err?.message || 'Unable to load this space.');
+          setDetailLoading(false);
+          setDetailTile(null);
+          setDetailError(err?.message || 'Unable to load this space.');
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [route, tiles]);
+  }, [route, isAuthenticated]);
 
   // If guest access is disabled and user is not authenticated, we show login dialog (computed here so hooks below run unconditionally).
   // Require !authLoading so we never show/open login until session check has finished (fixes refresh with existing session).
@@ -738,29 +728,69 @@ const AppContent: React.FC = () => {
     isFinal: boolean = false,
     localOnly: boolean = false
   ) => {
+    // Home list stays card-sized; never keep nested graphs in App tiles state
+    setTiles(newTiles.map(toSummaryTile));
+
+    if (detailTile) {
+      const updatedDetail = newTiles.find((t) => t.id === detailTile.id);
+      if (updatedDetail) {
+        const hasNested =
+          (updatedDetail.tabs?.length ?? 0) > 0 ||
+          (updatedDetail.sections?.length ?? 0) > 0 ||
+          !!updatedDetail.htmlContent ||
+          (updatedDetail.messages?.length ?? 0) > 0;
+        if (hasNested) {
+          setDetailTile(updatedDetail);
+        } else {
+          // Card-level refresh: keep nested detail content
+          setDetailTile({
+            ...detailTile,
+            ...updatedDetail,
+            tabs: detailTile.tabs,
+            sections: detailTile.sections,
+            htmlContent: detailTile.htmlContent,
+            messages: detailTile.messages,
+          });
+        }
+      }
+    }
+
     if (!isAuthenticated || localOnly) {
-      // Guest mode or local-only (already persisted via a dedicated endpoint)
-      setTiles(newTiles);
       return;
     }
 
-    try {
-      setTiles(newTiles);
-      await saveTiles(newTiles, isFinal);
+    // Only PUT tiles that include nested content. Summary/card payloads must not
+    // be bulk-saved — updateTileInternal deletes tabs/sections and would wipe spaces.
+    const tilesToPersist = newTiles.filter(
+      (t) =>
+        (t.tabs?.length ?? 0) > 0 ||
+        (t.sections?.length ?? 0) > 0 ||
+        !!t.htmlContent ||
+        (t.messages?.length ?? 0) > 0
+    );
 
-      // Reload from server after successful save to ensure we have the latest data
-      // This is especially important for tabs/sections which are stored separately
-      // Skip reload if requested (e.g., during auto-save to preserve edit mode)
+    try {
+      if (tilesToPersist.length > 0) {
+        await saveTiles(tilesToPersist, isFinal);
+      }
+
       if (!skipReload) {
         const stored = await getTiles();
         setTiles(stored);
+        if (detailTile) {
+          const fresh = await getTile(detailTile.id);
+          if (fresh) setDetailTile(fresh);
+        }
       }
     } catch (error) {
       console.error('Failed to save tiles:', error);
-      // Reload from server on error (unless we're skipping reload)
       if (!skipReload) {
         const stored = await getTiles();
         setTiles(stored);
+        if (detailTile) {
+          const fresh = await getTile(detailTile.id);
+          if (fresh) setDetailTile(fresh);
+        }
       }
     }
   };
@@ -773,7 +803,7 @@ const AppContent: React.FC = () => {
 
     try {
       const created = await createTile(tile);
-      setTiles([...tiles, created]);
+      setTiles([...tiles, toSummaryTile(created)]);
     } catch (error) {
       console.error('Failed to create tile:', error);
       throw error;
@@ -999,17 +1029,16 @@ const AppContent: React.FC = () => {
     const urlParams = new URLSearchParams(queryString || '');
     const sourceTab = urlParams.get('from') || null;
 
-    const tile = tiles.find((t) => t.id === tileId);
-    const displayTile = tile || (sourceTab === 'staging' ? stagingDetailTile : null);
-    const isLoadingStaging = !tile && sourceTab === 'staging' && stagingDetailLoading;
-    const isStagingError = !tile && sourceTab === 'staging' && !stagingDetailLoading && stagingDetailError;
+    const displayTile = detailTile && detailTile.id === tileId ? detailTile : null;
+    const isLoadingDetail = detailLoading || (!displayTile && !detailError);
+    const isDetailError = !detailLoading && !!detailError;
 
     if (displayTile) {
       content = (
         <Suspense fallback={<LoadingFallback />}>
           <TileDetail
             tile={displayTile}
-            allTiles={tile ? tiles : (stagingDetailTile ? [stagingDetailTile] : [])}
+            allTiles={[displayTile, ...tiles.filter((t) => t.id !== displayTile.id)]}
             onUpdateTiles={handleUpdateTiles}
             isAuthenticated={isAuthenticated}
             onAuthRequired={() => setAuthModalOpen(true)}
@@ -1018,10 +1047,10 @@ const AppContent: React.FC = () => {
           />
         </Suspense>
       );
-    } else if (isStagingError) {
+    } else if (isDetailError) {
       content = (
         <div className="flex flex-col items-center justify-center min-h-[50vh] px-4">
-          <p className="text-slate-600 dark:text-slate-400 mb-4">{stagingDetailError}</p>
+          <p className="text-slate-600 dark:text-slate-400 mb-4">{detailError}</p>
           <button
             type="button"
             onClick={() => { window.location.hash = '#/'; }}
@@ -1031,7 +1060,7 @@ const AppContent: React.FC = () => {
           </button>
         </div>
       );
-    } else if (isLoadingStaging || (!tile && sourceTab === 'staging')) {
+    } else if (isLoadingDetail) {
       content = <LoadingFallback />;
     } else {
       window.location.hash = '#/';

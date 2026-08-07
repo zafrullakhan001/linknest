@@ -257,6 +257,12 @@ if ($path === '/') {
     }
     require __DIR__ . '/opcache_status.php';
     exit;
+} elseif (strpos($path, '/load-test-report') === 0) {
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    require __DIR__ . '/load-test-report.php';
+    exit;
 } elseif (strpos($path, '/monitor-notifications') === 0) {
     // Remove '/monitor-notifications' prefix (22 characters)
     $prefixLength = strlen('/monitor-notifications');

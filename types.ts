@@ -133,6 +133,8 @@ export interface Tile {
   /** Default entrance animation for all links on this space (links may inherit or override). */
   linksAnimation?: string;
   messages?: TileMessage[]; // Array of scheduled messages
+  /** Link count for home-grid cards when nested graph is omitted (summary mode). */
+  linkCount?: number;
   // Shared-with-me: when tile was shared by another user and receiver accepted
   sharedWithMeInvitationId?: number | null;
   sharedWithMeSharer?: { userId: number; username: string } | null;
