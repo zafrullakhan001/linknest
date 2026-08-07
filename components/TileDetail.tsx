@@ -15,7 +15,6 @@ import { cloneTile, getTiles, saveTile, toggleLinkFavorite, createTempVersion, u
 import { removeSharedTile } from '../services/tileShareService';
 import { useSettings } from '../contexts/SettingsContext';
 import { RichTextEditor } from './RichTextEditor';
-import { RichTextEditorShell } from './RichTextEditorShell';
 import { RichTextContentItem } from './RichTextContentItem';
 import { RichTextContent } from '../types';
 import { isPublicLinkFavorite, togglePublicLinkFavorite } from '../services/publicFavoritesService';
@@ -6404,7 +6403,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         const sectionBgClass = bgColors[colorIndex];
 
                                                         return (
-                                                            <div key={section.id} className={`bg-slate-50 dark:bg-slate-900/50 border-2 border-l-2 border-t-2 border-b-2 border-slate-200 dark:border-slate-700 ${sectionColorClass} rounded-xl overflow-visible shadow-sm`}>
+                                                            <div key={section.id} className={`bg-slate-50 dark:bg-slate-900/50 border-2 border-l-2 border-t-2 border-b-2 border-slate-200 dark:border-slate-700 ${sectionColorClass} rounded-xl overflow-hidden shadow-sm`}>
                                                                 {/* Section Header */}
                                                                 <div className={`p-4 border-b-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 ${sectionBgClass} flex gap-3 items-center`}>
                                                                     {/* Reorder Buttons */}
@@ -7820,28 +7819,42 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         </div>
                                                                     )}
 
-                                                                    {/* Add Rich Text Form — full-viewport TinyMCE shell */}
+                                                                    {/* Add Rich Text Form */}
                                                                     {showAddRichTextForm[section.id] && (
-                                                                        <RichTextEditorShell
-                                                                            open
-                                                                            title="Add Rich Text Content"
-                                                                            value={newRichTextContent[section.id] || ''}
-                                                                            onChange={(value) => setNewRichTextContent(prev => ({ ...prev, [section.id]: value }))}
-                                                                            onSave={() => handleAddRichTextToSection(tab.id, section.id)}
-                                                                            onCancel={() => {
-                                                                                setShowAddRichTextForm(prev => ({ ...prev, [section.id]: false }));
-                                                                                setNewRichTextContent(prev => ({ ...prev, [section.id]: '' }));
-                                                                            }}
-                                                                            saveLabel="Add Rich Text"
-                                                                            saveDisabled={!(newRichTextContent[section.id] || '').replace(/<[^>]*>/g, '').trim()}
-                                                                            placeholder="Enter rich text content with formatting..."
-                                                                            sectionId={section.id}
-                                                                            inlinePlaceholder={
-                                                                                <div className="mt-3 bg-slate-50 dark:bg-slate-900/40 border border-dashed border-emerald-400 dark:border-emerald-700 rounded-xl p-4 text-sm text-slate-500 dark:text-slate-400">
-                                                                                    Adding rich text…
-                                                                                </div>
-                                                                            }
-                                                                        />
+                                                                        <div className="mt-3 bg-white dark:bg-slate-800 border-2 border-emerald-500 dark:border-emerald-500/50 rounded-xl p-4 shadow-lg space-y-3">
+                                                                            <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
+                                                                                <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Add Rich Text Content</h4>
+                                                                                <button
+                                                                                    onClick={() => {
+                                                                                        setShowAddRichTextForm(prev => ({ ...prev, [section.id]: false }));
+                                                                                        setNewRichTextContent(prev => ({ ...prev, [section.id]: '' }));
+                                                                                    }}
+                                                                                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded transition-colors"
+                                                                                    title="Close form"
+                                                                                >
+                                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                                                    </svg>
+                                                                                </button>
+                                                                            </div>
+                                                                            <RichTextEditor
+                                                                                value={newRichTextContent[section.id] || ''}
+                                                                                onChange={(value) => setNewRichTextContent(prev => ({ ...prev, [section.id]: value }))}
+                                                                                placeholder="Enter rich text content with formatting..."
+                                                                            />
+                                                                            <div className="flex justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
+                                                                                <button
+                                                                                    onClick={() => handleAddRichTextToSection(tab.id, section.id)}
+                                                                                    disabled={!newRichTextContent[section.id]?.trim()}
+                                                                                    className="px-4 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-all shadow-md hover:shadow-lg shadow-emerald-500/30 flex items-center gap-1.5"
+                                                                                >
+                                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                                                                    </svg>
+                                                                                    Add Rich Text
+                                                                                </button>
+                                                                            </div>
+                                                                        </div>
                                                                     )}
 
                                                                     {/* Add Link and Rich Text Buttons - Show when forms are collapsed - At bottom of section */}

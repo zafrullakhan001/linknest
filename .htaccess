@@ -53,11 +53,6 @@ AddDefaultCharset UTF-8
     # Allow direct access to uploads/ directory
     RewriteCond %{REQUEST_URI} ^.*/uploads/
     RewriteRule . - [L]
-
-    # Serve TinyMCE self-hosted assets from dist/tinymce/ (same pattern as assets/)
-    RewriteCond %{REQUEST_URI} ^.*/tinymce/
-    RewriteCond %{REQUEST_FILENAME} !-f
-    RewriteRule ^tinymce/(.*)$ dist/tinymce/$1 [L]
     
     # SECOND: Serve static assets from dist/assets/
     # Rewrite /assets/ to /dist/assets/ (works for any base path)
@@ -88,7 +83,6 @@ AddDefaultCharset UTF-8
     RewriteCond %{REQUEST_URI} !api/
     RewriteCond %{REQUEST_URI} !dist/
     RewriteCond %{REQUEST_URI} !assets/
-    RewriteCond %{REQUEST_URI} !tinymce/
     RewriteCond %{REQUEST_URI} !uploads/
     RewriteCond %{REQUEST_URI} !\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$
     RewriteCond %{REQUEST_FILENAME} !-f
