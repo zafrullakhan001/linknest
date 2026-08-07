@@ -14,10 +14,14 @@ $requestMethod = $_SERVER['REQUEST_METHOD'];
 // Get path from query parameter (for Vite proxy or .htaccess rewrite) or from REQUEST_URI
 $path = $_GET['path'] ?? '';
 
-// Log for debugging
-error_log("api/index.php: REQUEST_URI = " . $requestUri);
-error_log("api/index.php: REQUEST_METHOD = " . $requestMethod);
-error_log("api/index.php: _GET['path'] = " . ($_GET['path'] ?? 'not set'));
+// Verbose request logging is extremely expensive under load tests — keep off unless debugging
+$apiDebugLog = getenv('LINKNEST_API_DEBUG') === '1'
+    || (defined('LINKNEST_API_DEBUG') && LINKNEST_API_DEBUG);
+if ($apiDebugLog) {
+    error_log("api/index.php: REQUEST_URI = " . $requestUri);
+    error_log("api/index.php: REQUEST_METHOD = " . $requestMethod);
+    error_log("api/index.php: _GET['path'] = " . ($_GET['path'] ?? 'not set'));
+}
 
 // If path comes from query parameter (via .htaccess rewrite or Vite proxy)
 if (!empty($path)) {
@@ -27,11 +31,15 @@ if (!empty($path)) {
     }
     // Path from query parameter - ensure it starts with /
     $path = '/' . ltrim($path, '/');
-    error_log("api/index.php: Path from query parameter: $path");
+    if ($apiDebugLog) {
+        error_log("api/index.php: Path from query parameter: $path");
+    }
 } else {
     // Parse from REQUEST_URI (direct access or other routing)
     $parsedPath = parse_url($requestUri, PHP_URL_PATH);
-    error_log("api/index.php: Parsed path from REQUEST_URI: $parsedPath");
+    if ($apiDebugLog) {
+        error_log("api/index.php: Parsed path from REQUEST_URI: $parsedPath");
+    }
     
     // Dynamically detect base path instead of hardcoding /linknest/api
     // Find /api in the path and extract everything after it
@@ -238,6 +246,12 @@ if ($path === '/') {
         session_start();
     }
     require __DIR__ . '/check_sqlite_memory.php';
+    exit;
+} elseif (strpos($path, '/system-specs-check') === 0) {
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    require __DIR__ . '/system_specs_check.php';
     exit;
 } elseif (strpos($path, '/maintenance-stats') === 0) {
     if (session_status() === PHP_SESSION_NONE) {

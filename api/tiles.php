@@ -128,34 +128,57 @@ switch ($method) {
 
 function handleGetTiles() {
     try {
-        $user = getAuthenticatedUser();
-        $db = getDB();
-    
-    // Check if guest access is enabled
-    $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'guest_access_enabled'");
-    $stmt->execute();
-    $guestAccessSetting = $stmt->fetchColumn();
-    $guestAccessEnabled = ($guestAccessSetting === null || $guestAccessSetting === '1'); // Default to enabled if not set
-    
-    // If guest access is disabled and user is not authenticated, require login
-    if (!$guestAccessEnabled && !$user) {
-        sendJSON(['error' => 'Authentication required. Guest access is disabled.'], 401);
-    }
+    // Lightweight home-grid payload: card fields only (no tabs/sections/links/messages/html)
+    $summaryRaw = isset($_GET['summary']) ? strtolower(trim((string)$_GET['summary'])) : '';
+    $summaryMode = in_array($summaryRaw, ['1', 'true', 'yes'], true);
 
     // Source tab filter: public (default) or staging (admin only)
     $sourceTab = isset($_GET['source_tab']) ? trim((string)$_GET['source_tab']) : (isset($_GET['sourceTab']) ? trim((string)$_GET['sourceTab']) : 'public');
     if ($sourceTab !== 'public' && $sourceTab !== 'staging') {
         $sourceTab = 'public';
     }
+
+    // Ultra-fast path: guest public summary can be served from file cache without opening SQLite
+    if ($summaryMode && $sourceTab === 'public') {
+        if (session_status() === PHP_SESSION_NONE) {
+            @session_start();
+        }
+        if (empty($_SESSION['user_id'])) {
+            $cached = responseCacheGet('tiles_summary_guest_public');
+            if (is_array($cached)) {
+                responseCacheHitHeader(true);
+                sendJSON($cached);
+                return;
+            }
+        }
+    }
+
+        $user = getAuthenticatedUser();
+        $db = getDB();
+    
+    // Check if guest access is enabled
+    $guestAccessEnabled = true;
+    $cachedGuest = responseCacheGet('setting_guest_access_enabled', 120);
+    if ($cachedGuest !== null) {
+        $guestAccessEnabled = ($cachedGuest === '1' || $cachedGuest === 1 || $cachedGuest === true);
+    } else {
+        $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'guest_access_enabled'");
+        $stmt->execute();
+        $guestAccessSetting = $stmt->fetchColumn();
+        $guestAccessEnabled = ($guestAccessSetting === null || $guestAccessSetting === '1');
+        responseCacheSet('setting_guest_access_enabled', $guestAccessSetting === null ? '1' : (string)$guestAccessSetting, 120);
+    }
+    
+    // If guest access is disabled and user is not authenticated, require login
+    if (!$guestAccessEnabled && !$user) {
+        sendJSON(['error' => 'Authentication required. Guest access is disabled.'], 401);
+    }
+
     if ($sourceTab === 'staging') {
         if (!$user || empty($user['is_admin'])) {
             sendJSON(['error' => 'Only administrators can view staging tiles.'], 403);
         }
     }
-
-    // Lightweight home-grid payload: card fields only (no tabs/sections/links/messages/html)
-    $summaryRaw = isset($_GET['summary']) ? strtolower(trim((string)$_GET['summary'])) : '';
-    $summaryMode = in_array($summaryRaw, ['1', 'true', 'yes'], true);
 
     // Short-TTL guest cache (public summary only — no per-user favorites/permissions)
     if ($summaryMode && !$user && $sourceTab === 'public') {
@@ -171,12 +194,16 @@ function handleGetTiles() {
     // This dramatically reduces the number of database queries from hundreds to just a few
     
     // Step 1: Get visible tiles filtered by source_tab
+    // Summary mode skips html_content and other heavy columns
+    $tileCols = $summaryMode
+        ? 'id, user_id, title, description, emoji, theme_color, "group", position, created_at, visibility, allowed_users, allowed_groups, source_tab, deleted_at, archived_at, is_hyperlink, hyperlink_url, open_in_new_tab, browser, visible_from, expires_at, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, published'
+        : '*';
     $baseWhere = 'deleted_at IS NULL AND archived_at IS NULL';
     if ($sourceTab === 'staging') {
-        $stmt = $db->prepare('SELECT * FROM tiles WHERE ' . $baseWhere . ' AND source_tab = ? ORDER BY position ASC');
+        $stmt = $db->prepare('SELECT ' . $tileCols . ' FROM tiles WHERE ' . $baseWhere . ' AND source_tab = ? ORDER BY position ASC');
         $stmt->execute(['staging']);
     } else {
-        $stmt = $db->prepare('SELECT * FROM tiles WHERE ' . $baseWhere . ' AND (source_tab IS NULL OR source_tab = ? OR source_tab = \'\') ORDER BY position ASC');
+        $stmt = $db->prepare('SELECT ' . $tileCols . ' FROM tiles WHERE ' . $baseWhere . ' AND (source_tab IS NULL OR source_tab = ? OR source_tab = \'\') ORDER BY position ASC');
         $stmt->execute(['public']);
     }
     

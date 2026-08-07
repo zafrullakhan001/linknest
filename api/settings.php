@@ -120,6 +120,21 @@ function normalizeLogoUrl($url) {
 
 function handleGetSettings() {
     // Settings are public (for display), but only admins can update
+    if (session_status() === PHP_SESSION_NONE) {
+        @session_start();
+    }
+    $hasSessionUser = !empty($_SESSION['user_id']);
+
+    // Guest/home load: serve cached public settings without decrypt work
+    if (!$hasSessionUser) {
+        $cached = responseCacheGet('settings_public');
+        if (is_array($cached)) {
+            responseCacheHitHeader(true);
+            sendJSON(['settings' => $cached]);
+            return;
+        }
+    }
+
     $db = getDB();
     $stmt = $db->prepare('SELECT key, value FROM settings');
     $stmt->execute();
@@ -232,6 +247,11 @@ function handleGetSettings() {
     // Normalize favicon URL for current environment
     if (isset($settings['favicon']) && !empty($settings['favicon'])) {
         $settings['favicon'] = normalizeLogoUrl($settings['favicon']);
+    }
+
+    if (!$isAdmin) {
+        responseCacheSet('settings_public', $settings);
+        responseCacheHitHeader(false);
     }
     
     sendJSON(['settings' => $settings]);
@@ -835,6 +855,8 @@ function handleUpdateSettings() {
         }
         
         $db->commit();
+        responseCacheInvalidate('settings_public');
+        responseCacheInvalidate('setting_guest_access_enabled');
         sendJSON(['success' => true, 'message' => 'Settings updated successfully']);
     } catch (Exception $e) {
         $db->rollBack();

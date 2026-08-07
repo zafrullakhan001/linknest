@@ -110,6 +110,11 @@ define('DB_PATH', __DIR__ . '/../data/linknest.db');
 define('DB_DIR', __DIR__ . '/../data');
 define('SYSTEM_TOKEN', 'linknest_secret_token_123'); // Change this for production!
 
+// Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
+if (!defined('LINKNEST_SCHEMA_VERSION')) {
+    define('LINKNEST_SCHEMA_VERSION', 60);
+}
+
 require_once __DIR__ . '/response_cache.php';
 
 // Create data directory if it doesn't exist
@@ -171,17 +176,10 @@ function releaseDatabaseInitLock($fp) {
  * Apply SQLite 3.53+ performance pragmas on an open connection.
  * Safe to call on every connection; values are connection-scoped except journal_mode.
  *
- * RAM strategy (multi-worker Apache safe):
- * - Keep the on-disk DB as the source of truth (WAL commits).
- * - Size the SQLite page cache to hold ~2x the DB so hot pages stay in process RAM.
- * - Enable mmap so the OS can serve the file from virtual memory.
- * - Prefetch the DB file into the OS page cache on connect (small DBs).
- * A shared process-wide ":memory:" primary DB is NOT used — each Apache worker
- * would get a divergent copy and writes would corrupt / lose updates.
- *
+ * @param bool $heavy When false (default hot path), skip PRAGMA optimize + OS prefetch
  * @return array<string, mixed> Applied / verified pragma values
  */
-function applySqlitePerformancePragmas(PDO $db): array {
+function applySqlitePerformancePragmas(PDO $db, bool $heavy = false): array {
     $applied = [];
 
     // Concurrent access under Apache multi-worker
@@ -198,13 +196,6 @@ function applySqlitePerformancePragmas(PDO $db): array {
         $applied['journal_mode'] = (string)$db->query('PRAGMA journal_mode')->fetchColumn();
     } catch (PDOException $e) {
         // Ignore if unavailable
-    }
-
-    // Page size only applies to empty DBs
-    try {
-        $db->exec('PRAGMA page_size = 4096');
-    } catch (PDOException $e) {
-        // Ignore
     }
 
     // Memory-mapped I/O — entire small DBs are effectively addressable as RAM
@@ -251,15 +242,18 @@ function applySqlitePerformancePragmas(PDO $db): array {
         // Ignore if not in WAL
     }
 
-    // Prefetch DB into OS page cache so the first real queries hit RAM
-    $applied['ram_prefetch'] = warmSqliteOsPageCache();
-
-    // Query-planner stats; SQLite 3.46+ auto-limits analysis so this stays fast
-    try {
-        $db->exec('PRAGMA optimize');
-        $applied['optimize'] = true;
-    } catch (PDOException $e) {
-        // Ignore
+    // Heavy work only during schema bootstrap / explicit maintenance — never on hot path
+    if ($heavy) {
+        $applied['ram_prefetch'] = warmSqliteOsPageCache();
+        try {
+            $db->exec('PRAGMA optimize');
+            $applied['optimize'] = true;
+        } catch (PDOException $e) {
+            // Ignore
+        }
+    } else {
+        $applied['ram_prefetch'] = false;
+        $applied['optimize'] = false;
     }
 
     try {
@@ -354,11 +348,46 @@ function initDatabase() {
         $db = new PDO('sqlite:' . DB_PATH);
         $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-        
-        applySqlitePerformancePragmas($db);
 
-        // Serialize schema bootstrap across concurrent Apache workers
+        // Hot path: light pragmas only (no optimize / file warmup)
+        applySqlitePerformancePragmas($db, false);
+
+        // Fast path: schema already migrated — skip hundreds of CREATE/ALTER statements.
+        // Critical under Apache ZTS where each thread has its own static getDB() cache.
+        $currentVersion = 0;
+        try {
+            $currentVersion = (int)$db->query('PRAGMA user_version')->fetchColumn();
+        } catch (PDOException $e) {
+            $currentVersion = 0;
+        }
+        if ($currentVersion >= (int)LINKNEST_SCHEMA_VERSION) {
+            return $db;
+        }
+
+        // Serialize schema bootstrap across concurrent Apache workers/threads
         $initLock = acquireDatabaseInitLock();
+
+        // Re-check after lock (another thread may have finished migrating)
+        try {
+            $currentVersion = (int)$db->query('PRAGMA user_version')->fetchColumn();
+        } catch (PDOException $e) {
+            $currentVersion = 0;
+        }
+        if ($currentVersion >= (int)LINKNEST_SCHEMA_VERSION) {
+            releaseDatabaseInitLock($initLock);
+            $initLock = null;
+            return $db;
+        }
+
+        // Page size only applies to empty DBs; try during bootstrap
+        try {
+            $db->exec('PRAGMA page_size = 4096');
+        } catch (PDOException $e) {
+            // Ignore
+        }
+
+        // One-time OS prefetch + optimize during schema bootstrap only
+        applySqlitePerformancePragmas($db, true);
     
         // Create users table
         $db->exec('CREATE TABLE IF NOT EXISTS users (
@@ -2222,7 +2251,11 @@ function initDatabase() {
         // Create indexes for optimal performance
         createDatabaseIndexes($db);
 
+        // Stamp schema version so subsequent connections take the fast path
+        $db->exec('PRAGMA user_version = ' . (int)LINKNEST_SCHEMA_VERSION);
+
         releaseDatabaseInitLock($initLock);
+        $initLock = null;
         
         return $db;
     } catch (PDOException $e) {
@@ -2384,7 +2417,7 @@ function migrateLegacyBroadcastMessagesToThreads(PDO $db) {
     }
 }
 
-// Get database connection (singleton pattern - reuse connection within same request)
+// Get database connection (singleton pattern - reuse connection within same request/thread)
 function getDB($clear = false) {
     static $dbInstance = null;
     
@@ -2399,7 +2432,7 @@ function getDB($clear = false) {
         return $dbInstance;
     }
     
-    // Create new connection and cache it
+    // Create new connection (fast-path when schema version is current)
     $dbInstance = initDatabase();
     return $dbInstance;
 }

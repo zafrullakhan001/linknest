@@ -705,6 +705,46 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     timing_ms?: { getDB_connect?: number; warmup_read?: number };
   } | null>(null);
 
+  // System specs / target host parity check
+  const [systemSpecsLoading, setSystemSpecsLoading] = useState(false);
+  const [systemSpecsResult, setSystemSpecsResult] = useState<{
+    success: boolean;
+    summary?: string;
+    error?: string;
+    verdict?: {
+      ready_for_target_parity?: boolean;
+      checks_passed?: number;
+      checks_failed?: number;
+      checks_total?: number;
+    };
+    checks?: Array<{
+      id: string;
+      category: string;
+      ok: boolean;
+      severity?: string;
+      required: string;
+      actual: string;
+      advice?: string;
+    }>;
+    target_specs?: {
+      php?: string;
+      extensions?: string[];
+      sqlite?: string;
+      sqlite_pragmas?: string[];
+      schema?: string;
+      directories?: string[];
+      memory_limit?: string;
+      deploy_hint?: string;
+      reference_host?: Record<string, string>;
+    };
+    snapshot?: {
+      php_version?: string;
+      sqlite_version?: string;
+      schema_version?: number;
+      journal_mode?: string;
+    };
+  } | null>(null);
+
   // Tile & Link Statistics state
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsImpersonating, setStatsImpersonating] = useState(false);
@@ -11709,7 +11749,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 </div>
               )}
 
-              {/* Maintenance Scripts Tab - DB cleanup, duplicates, invisible, optimize, vacuum, health, SQLite RAM */}
+              {/* Maintenance Scripts Tab - DB cleanup, duplicates, invisible, optimize, vacuum, health, SQLite RAM, system specs */}
               {activeTab === 'maintenanceScripts' && (
                 <div className="space-y-6 mt-6">
                   {/* Database Cleanup Section */}
@@ -12925,6 +12965,142 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     </div>
                   </div>
 
+                  {/* System Specs / Target Host Parity */}
+                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                    <div className="flex items-start gap-3 mb-4">
+                      <div className="flex-shrink-0 w-10 h-10 bg-indigo-500 rounded-lg flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
+                          <path fillRule="evenodd" d="M4.25 2A2.25 2.25 0 002 4.25v11.5A2.25 2.25 0 004.25 18h11.5A2.25 2.25 0 0018 15.75V4.25A2.25 2.25 0 0015.75 2H4.25zM6 6.75A.75.75 0 016.75 6h6.5a.75.75 0 010 1.5h-6.5A.75.75 0 016 6.75zM6.75 9a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zM6 12.75a.75.75 0 01.75-.75h3.5a.75.75 0 010 1.5h-3.5a.75.75 0 01-.75-.75z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">System Specs Check</h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-400">
+                          Validate PHP, SQLite 3.53+, WAL/mmap/cache, writable dirs, and response cache against this known-good host so a target server can match the same specs.
+                        </p>
+                      </div>
+                    </div>
+                    {systemSpecsResult && (
+                      <div className={`mb-6 p-4 rounded-lg border ${
+                        systemSpecsResult.success && systemSpecsResult.verdict?.ready_for_target_parity
+                          ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                          : systemSpecsResult.success
+                            ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
+                            : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+                      }`}>
+                        {systemSpecsResult.success ? (
+                          <div className="space-y-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              {systemSpecsResult.verdict?.ready_for_target_parity ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-semibold bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-200">
+                                  <span className="w-2 h-2 rounded-full bg-green-500" /> Specs match
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-semibold bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200">
+                                  <span className="w-2 h-2 rounded-full bg-amber-500" /> Gaps found
+                                </span>
+                              )}
+                              {systemSpecsResult.verdict && (
+                                <span className="text-sm text-slate-500 dark:text-slate-400">
+                                  {systemSpecsResult.verdict.checks_passed}/{systemSpecsResult.verdict.checks_total} passed
+                                </span>
+                              )}
+                              {systemSpecsResult.snapshot?.sqlite_version && (
+                                <span className="text-sm text-slate-600 dark:text-slate-400">
+                                  · PHP {systemSpecsResult.snapshot.php_version} · SQLite {systemSpecsResult.snapshot.sqlite_version}
+                                </span>
+                              )}
+                            </div>
+                            {systemSpecsResult.summary && (
+                              <p className="text-sm text-slate-700 dark:text-slate-300">{systemSpecsResult.summary}</p>
+                            )}
+                            {systemSpecsResult.checks && systemSpecsResult.checks.length > 0 && (
+                              <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                                {Array.from(new Set(systemSpecsResult.checks.map((c) => c.category))).map((cat) => (
+                                  <div key={cat}>
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1">{cat}</p>
+                                    <ul className="space-y-1 text-xs">
+                                      {systemSpecsResult.checks!.filter((c) => c.category === cat).map((c) => (
+                                        <li key={c.id} className="flex items-start gap-2 text-slate-700 dark:text-slate-300">
+                                          <span className={c.ok ? 'text-green-600 dark:text-green-400 font-bold' : 'text-amber-600 dark:text-amber-400 font-bold'}>
+                                            {c.ok ? '✓' : '!'}
+                                          </span>
+                                          <span>
+                                            <span className="font-medium">{c.id}</span>
+                                            {' — '}
+                                            <span className="text-slate-500 dark:text-slate-400">{c.required}</span>
+                                            {': '}
+                                            <span className="font-mono">{c.actual}</span>
+                                            {!c.ok && c.advice ? (
+                                              <span className="block mt-0.5 text-amber-700 dark:text-amber-300">Fix: {c.advice}</span>
+                                            ) : null}
+                                          </span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {systemSpecsResult.target_specs && (
+                              <details className="text-xs text-slate-600 dark:text-slate-400">
+                                <summary className="cursor-pointer font-semibold text-slate-700 dark:text-slate-300">
+                                  Target system checklist (copy for deploy docs)
+                                </summary>
+                                <pre className="mt-2 p-3 rounded-lg bg-slate-900 text-slate-100 overflow-x-auto whitespace-pre-wrap">
+{JSON.stringify(systemSpecsResult.target_specs, null, 2)}
+                                </pre>
+                              </details>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-red-800 dark:text-red-200">{systemSpecsResult.error || 'System specs check failed'}</span>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        onClick={async () => {
+                          try {
+                            setSystemSpecsLoading(true);
+                            setError('');
+                            setSystemSpecsResult(null);
+                            const res = await fetch(`${resolveApiBase()}/system-specs-check`, { credentials: 'include' });
+                            const data = await res.json().catch(() => ({ success: false, error: 'Invalid response' }));
+                            if (!res.ok && !data.error) {
+                              data.success = false;
+                              data.error = data.error || `HTTP ${res.status}`;
+                            }
+                            setSystemSpecsResult(data);
+                          } catch (e: any) {
+                            setSystemSpecsResult({ success: false, error: e.message || 'Failed' });
+                          } finally {
+                            setSystemSpecsLoading(false);
+                          }
+                        }}
+                        disabled={systemSpecsLoading}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold transition-colors"
+                      >
+                        {systemSpecsLoading ? (
+                          <>
+                            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                            Checking...
+                          </>
+                        ) : (
+                          <>Run System Specs Check</>
+                        )}
+                      </button>
+                      {systemSpecsResult && (
+                        <button
+                          onClick={() => setSystemSpecsResult(null)}
+                          className="px-4 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium"
+                        >
+                          Clear Results
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
                   {/* PHP OPcache Status */}
                   <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
                     <div className="flex items-start gap-3 mb-4">
@@ -13417,7 +13593,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       <p className="font-semibold text-slate-900 dark:text-white mb-1">Include in PWA (allowed strings)</p>
                       <p className="mb-1 text-slate-600 dark:text-slate-400">Path segments that may be cached when Include is set. Leave Include <strong>empty</strong> to cache all requests except those in Exclude.</p>
                       <p className="mb-2 font-mono text-xs bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded break-all">
-                        tiles, settings, arrangements, styles, database, linkhealth, chat, access, roles, user-groups, group-tile-permissions, widgets, clone, browsers, uploads, timezones, alarms, notes, broadcast, analytics, addons, optimize-database, vacuum-database, check-sqlite-memory
+                        tiles, settings, arrangements, styles, database, linkhealth, chat, access, roles, user-groups, group-tile-permissions, widgets, clone, browsers, uploads, timezones, alarms, notes, broadcast, analytics, addons, optimize-database, vacuum-database, check-sqlite-memory, system-specs-check
                       </p>
                       <p className="font-semibold text-slate-900 dark:text-white mb-1">Exclude from PWA (allowed strings, recommended)</p>
                       <p className="mb-1 text-slate-600 dark:text-slate-400">Path segments that must never be cached (always live). Default excludes:</p>

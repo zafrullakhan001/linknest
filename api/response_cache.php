@@ -5,8 +5,8 @@
  */
 
 if (!defined('RESPONSE_CACHE_TTL_SECONDS')) {
-    // Short TTL: absorbs stampeding home loads; writes invalidate immediately
-    define('RESPONSE_CACHE_TTL_SECONDS', 30);
+    // Absorbs concurrent home stampede; writes invalidate immediately
+    define('RESPONSE_CACHE_TTL_SECONDS', 60);
 }
 
 function getResponseCacheDir(): string {

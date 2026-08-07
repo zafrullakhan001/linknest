@@ -33,6 +33,13 @@ switch ($method) {
 
 function handleGetArrangement() {
     // Global arrangement - no authentication required
+    $cached = responseCacheGet('arrangements_global_tiles');
+    if (is_array($cached)) {
+        responseCacheHitHeader(true);
+        sendJSON($cached);
+        return;
+    }
+
     $db = getDB();
     
     // Get global tile arrangement (user_id = 0 for global)
@@ -47,7 +54,9 @@ function handleGetArrangement() {
             'groupName' => $row['group_name']
         ];
     }
-    
+
+    responseCacheSet('arrangements_global_tiles', $arrangement);
+    responseCacheHitHeader(false);
     sendJSON($arrangement);
 }
 
@@ -181,6 +190,7 @@ function handleSaveArrangement() {
         error_log('Normalized all tile positions to be sequential (0, 1, 2, ...)');
         
         invalidateGuestTilesListCache();
+        responseCacheInvalidate('arrangements_global_tiles');
         sendJSON(['success' => true, 'count' => $count]);
         
     } catch (PDOException $e) {
