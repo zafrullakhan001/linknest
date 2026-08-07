@@ -112,7 +112,7 @@ define('SYSTEM_TOKEN', 'linknest_secret_token_123'); // Change this for producti
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 64);
+    define('LINKNEST_SCHEMA_VERSION', 65);
 }
 
 require_once __DIR__ . '/response_cache.php';
@@ -1175,6 +1175,9 @@ function initDatabase() {
                 'box_footer_font_size' => "TEXT DEFAULT 'sm'",
                 'box_header_emoji' => 'TEXT',
                 'box_importance' => "TEXT DEFAULT 'notes'",
+                'visibility' => "TEXT DEFAULT 'public'",
+                'allowed_users' => 'TEXT',
+                'allowed_groups' => 'TEXT',
             ];
             foreach ($rtMigrations as $colName => $colType) {
                 if (empty($existingCols[$colName])) {
@@ -2598,6 +2601,71 @@ function canUserSeePublishedContent($user, $rowOrValue): bool {
     return $user && !empty($user['is_admin']);
 }
 
+/**
+ * Check whether the current user may see content by visibility / ACL.
+ * Accepts DB rows (snake_case) or already-mapped arrays (camelCase).
+ * Does not apply role-based link overrides — callers handle those separately.
+ *
+ * @param array|null $user Authenticated user or null for guests
+ * @param array $row Content row with visibility / allowed users / groups
+ * @param array $userGroupIds Group IDs for the current user
+ */
+function canUserSeeByVisibility(?array $user, array $row, array $userGroupIds = []): bool {
+    if ($user && !empty($user['is_admin'])) {
+        return true;
+    }
+
+    $visibility = $row['visibility'] ?? 'public';
+    if ($visibility === '' || $visibility === null) {
+        $visibility = 'public';
+    }
+
+    if ($visibility === 'public') {
+        return true;
+    }
+
+    if ($visibility === 'authenticated') {
+        return (bool)$user;
+    }
+
+    if ($visibility === 'private') {
+        if (!$user) {
+            return false;
+        }
+
+        $allowedUsers = $row['allowed_users'] ?? $row['allowedUsers'] ?? [];
+        if (is_string($allowedUsers)) {
+            $allowedUsers = json_decode($allowedUsers, true) ?: [];
+        }
+        if (!is_array($allowedUsers)) {
+            $allowedUsers = [];
+        }
+
+        if (in_array($user['id'], $allowedUsers, false) || in_array((int)$user['id'], array_map('intval', $allowedUsers), true)) {
+            return true;
+        }
+
+        $allowedGroups = $row['allowed_groups'] ?? $row['allowedGroups'] ?? [];
+        if (is_string($allowedGroups)) {
+            $allowedGroups = json_decode($allowedGroups, true) ?: [];
+        }
+        if (!is_array($allowedGroups)) {
+            $allowedGroups = [];
+        }
+
+        if (!empty($allowedGroups) && !empty($userGroupIds)) {
+            $allowedGroupInts = array_map('intval', $allowedGroups);
+            $userGroupInts = array_map('intval', $userGroupIds);
+            return !empty(array_intersect($userGroupInts, $allowedGroupInts));
+        }
+
+        return false;
+    }
+
+    // Unknown visibility values default to public for backward compatibility
+    return true;
+}
+
 // Helper function to check if user has permission to edit a tile
 function canUserEditTile($userId, $tileId, $db) {
     // Admins can always edit - check if current authenticated user is admin
@@ -2941,10 +3009,24 @@ function isRichTextBoxedFlag($value): bool {
 
 // Map a rich_text_content DB row to the API shape used by the frontend
 function mapRichTextRow(array $row): array {
+    $allowedUsers = [];
+    if (!empty($row['allowed_users'])) {
+        $decoded = is_string($row['allowed_users']) ? json_decode($row['allowed_users'], true) : $row['allowed_users'];
+        $allowedUsers = is_array($decoded) ? $decoded : [];
+    }
+    $allowedGroups = [];
+    if (!empty($row['allowed_groups'])) {
+        $decoded = is_string($row['allowed_groups']) ? json_decode($row['allowed_groups'], true) : $row['allowed_groups'];
+        $allowedGroups = is_array($decoded) ? $decoded : [];
+    }
+
     return [
         'id' => $row['id'],
         'content' => $row['content'] ?? '',
         'position' => (int)($row['position'] ?? 0),
+        'visibility' => $row['visibility'] ?? 'public',
+        'allowedUsers' => $allowedUsers,
+        'allowedGroups' => $allowedGroups,
         'boxed' => isRichTextBoxedFlag($row['boxed'] ?? 0),
         'boxTitle' => isset($row['box_title']) && $row['box_title'] !== '' ? $row['box_title'] : null,
         'boxFooter' => isset($row['box_footer']) && $row['box_footer'] !== '' ? $row['box_footer'] : null,
@@ -3000,6 +3082,9 @@ function insertRichTextContent(PDO $db, string $id, string $sectionId, array $ri
                 'box_footer_font_size' => "TEXT DEFAULT 'sm'",
                 'box_header_emoji' => 'TEXT',
                 'box_importance' => "TEXT DEFAULT 'notes'",
+                'visibility' => "TEXT DEFAULT 'public'",
+                'allowed_users' => 'TEXT',
+                'allowed_groups' => 'TEXT',
             ];
             foreach ($needed as $name => $type) {
                 if (empty($have[$name])) {
@@ -3012,12 +3097,31 @@ function insertRichTextContent(PDO $db, string $id, string $sectionId, array $ri
         $styleColumnsEnsured = true;
     }
 
+    $visibility = $richText['visibility'] ?? 'public';
+    if (!in_array($visibility, ['public', 'authenticated', 'private'], true)) {
+        $visibility = 'public';
+    }
+    $allowedUsers = $richText['allowedUsers'] ?? $richText['allowed_users'] ?? [];
+    if (is_string($allowedUsers)) {
+        $allowedUsers = json_decode($allowedUsers, true) ?: [];
+    }
+    if (!is_array($allowedUsers)) {
+        $allowedUsers = [];
+    }
+    $allowedGroups = $richText['allowedGroups'] ?? $richText['allowed_groups'] ?? [];
+    if (is_string($allowedGroups)) {
+        $allowedGroups = json_decode($allowedGroups, true) ?: [];
+    }
+    if (!is_array($allowedGroups)) {
+        $allowedGroups = [];
+    }
+
     $stmt = $db->prepare('INSERT INTO rich_text_content (
         id, section_id, content, position, boxed, box_title, box_footer,
         box_header_align, box_footer_align, box_header_bg, box_footer_bg, box_body_bg,
         box_header_font_weight, box_footer_font_weight, box_header_font_size, box_footer_font_size,
-        box_header_emoji, box_importance
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        box_header_emoji, box_importance, visibility, allowed_users, allowed_groups
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     $stmt->execute([
         $id,
         $sectionId,
@@ -3037,6 +3141,9 @@ function insertRichTextContent(PDO $db, string $id, string $sectionId, array $ri
         $boxed ? normalizeBoxFontSize(pickRichTextField($richText, 'boxFooterFontSize', 'box_footer_font_size') ?? 'sm') : 'sm',
         $boxed ? normalizeBoxHeaderEmoji(pickRichTextField($richText, 'boxHeaderEmoji', 'box_header_emoji')) : null,
         $boxed ? normalizeBoxImportance(pickRichTextField($richText, 'boxImportance', 'box_importance') ?? 'notes') : 'notes',
+        $visibility,
+        !empty($allowedUsers) ? json_encode(array_values($allowedUsers)) : null,
+        !empty($allowedGroups) ? json_encode(array_values($allowedGroups)) : null,
     ]);
 }
 

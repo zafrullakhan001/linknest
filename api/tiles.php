@@ -695,6 +695,9 @@ function handleGetTiles() {
                     if (!canUserSeePublishedContent($user, $tabRow)) {
                         continue;
                     }
+                    if (!canUserSeeByVisibility($user, $tabRow, $userGroupIds)) {
+                        continue;
+                    }
                     $tab = [
                         'id' => $tabRow['id'],
                         'title' => $tabRow['title'],
@@ -713,6 +716,9 @@ function handleGetTiles() {
                     if (isset($sectionsByTab[$tabRow['id']])) {
                         foreach ($sectionsByTab[$tabRow['id']] as $sectionRow) {
                             if (!canUserSeePublishedContent($user, $sectionRow)) {
+                                continue;
+                            }
+                            if (!canUserSeeByVisibility($user, $sectionRow, $userGroupIds)) {
                                 continue;
                             }
                             $section = [
@@ -740,34 +746,25 @@ function handleGetTiles() {
                                     $visibility = $linkRow['visibility'] ?? 'public';
                                     $allowedUsers = $linkRow['allowed_users'] ? json_decode($linkRow['allowed_users'], true) : [];
                                     $allowedGroups = $linkRow['allowed_groups'] ? json_decode($linkRow['allowed_groups'], true) : [];
-                                    
-                                    // Check if link should be visible to current user
-                                    $isVisible = false;
-                                    if ($user && $user['is_admin']) {
-                                        $isVisible = true;
-                                    } elseif ($visibility === 'public') {
-                                        $isVisible = true;
-                                    } elseif ($visibility === 'authenticated' && $user) {
-                                        $isVisible = true;
-                                    } elseif ($visibility === 'private' && $user) {
-                                        $isVisible = in_array($user['id'], $allowedUsers);
-                                        
-                                        // Also check if user is in any allowed groups
-                                        if (!$isVisible && !empty($allowedGroups) && !empty($userGroupIds)) {
-                                            $isVisible = !empty(array_intersect($userGroupIds, $allowedGroups));
-                                        }
+                                    if (!is_array($allowedUsers)) {
+                                        $allowedUsers = [];
                                     }
-                                    
+                                    if (!is_array($allowedGroups)) {
+                                        $allowedGroups = [];
+                                    }
+
+                                    $isVisible = canUserSeeByVisibility($user, $linkRow, $userGroupIds);
+
                                     // Check role-based access from batched data
                                     $linkHasRoleAccess = isset($linkRoleAccess[$linkRow['id']]);
                                     if ($linkHasRoleAccess && !$isVisible) {
                                         $isVisible = true;
                                     }
-                                    
+
                                     if (!$isVisible) {
                                         continue;
                                     }
-                                    
+
                                     $link = [
                                         'id' => $linkRow['id'],
                                         'label' => $linkRow['label'],
@@ -808,6 +805,9 @@ function handleGetTiles() {
                             $section['richTextContent'] = [];
                             if (isset($richTextBySection[$sectionRow['id']])) {
                                 foreach ($richTextBySection[$sectionRow['id']] as $richTextRow) {
+                                    if (!canUserSeeByVisibility($user, $richTextRow, $userGroupIds)) {
+                                        continue;
+                                    }
                                     $section['richTextContent'][] = mapRichTextRow($richTextRow);
                                 }
                             }
@@ -830,6 +830,9 @@ function handleGetTiles() {
                     if (!canUserSeePublishedContent($user, $sectionRow)) {
                         continue;
                     }
+                    if (!canUserSeeByVisibility($user, $sectionRow, $userGroupIds)) {
+                        continue;
+                    }
                     $section = [
                         'id' => $sectionRow['id'],
                         'title' => $sectionRow['title'],
@@ -850,33 +853,25 @@ function handleGetTiles() {
                             $visibility = $linkRow['visibility'] ?? 'public';
                             $allowedUsers = $linkRow['allowed_users'] ? json_decode($linkRow['allowed_users'], true) : [];
                             $allowedGroups = $linkRow['allowed_groups'] ? json_decode($linkRow['allowed_groups'], true) : [];
-                            
-                            $isVisible = false;
-                            if ($user && $user['is_admin']) {
-                                $isVisible = true;
-                            } elseif ($visibility === 'public') {
-                                $isVisible = true;
-                            } elseif ($visibility === 'authenticated' && $user) {
-                                $isVisible = true;
-                            } elseif ($visibility === 'private' && $user) {
-                                $isVisible = in_array($user['id'], $allowedUsers);
-                                
-                                // Also check if user is in any allowed groups
-                                if (!$isVisible && !empty($allowedGroups) && !empty($userGroupIds)) {
-                                    $isVisible = !empty(array_intersect($userGroupIds, $allowedGroups));
-                                }
+                            if (!is_array($allowedUsers)) {
+                                $allowedUsers = [];
                             }
-                            
+                            if (!is_array($allowedGroups)) {
+                                $allowedGroups = [];
+                            }
+
+                            $isVisible = canUserSeeByVisibility($user, $linkRow, $userGroupIds);
+
                             // Check role-based access from batched data
                             $linkHasRoleAccess = isset($linkRoleAccess[$linkRow['id']]);
                             if ($linkHasRoleAccess && !$isVisible) {
                                 $isVisible = true;
                             }
-                            
+
                             if (!$isVisible) {
                                 continue;
                             }
-                            
+
                             $link = [
                                 'id' => $linkRow['id'],
                                 'label' => $linkRow['label'],
@@ -914,6 +909,9 @@ function handleGetTiles() {
                     $section['richTextContent'] = [];
                     if (isset($richTextBySection[$sectionRow['id']])) {
                         foreach ($richTextBySection[$sectionRow['id']] as $richTextRow) {
+                            if (!canUserSeeByVisibility($user, $richTextRow, $userGroupIds)) {
+                                continue;
+                            }
                             $section['richTextContent'][] = mapRichTextRow($richTextRow);
                         }
                     }
@@ -1196,6 +1194,9 @@ function handleGetTile($tileId) {
         if (!canUserSeePublishedContent($user, $tabRow)) {
             continue;
         }
+        if (!canUserSeeByVisibility($user, $tabRow, $userGroupIds)) {
+            continue;
+        }
         $tabColor = (!empty($tabRow['text_color']) && trim($tabRow['text_color']) !== '') ? trim($tabRow['text_color']) : null;
         error_log("Retrieved tab {$tabRow['id']} ({$tabRow['title']}) with color: " . ($tabColor ?? 'null'));
         $tab = [
@@ -1218,6 +1219,9 @@ function handleGetTile($tileId) {
         
         while ($sectionRow = $sectionStmt->fetch()) {
             if (!canUserSeePublishedContent($user, $sectionRow)) {
+                continue;
+            }
+            if (!canUserSeeByVisibility($user, $sectionRow, $userGroupIds)) {
                 continue;
             }
             $section = [
@@ -1251,20 +1255,12 @@ function handleGetTile($tileId) {
                 // Filter links based on visibility
                 $visibility = $linkRow['visibility'] ?? 'public';
                 $allowedUsers = $linkRow['allowed_users'] ? json_decode($linkRow['allowed_users'], true) : [];
-                
-                // Check if link should be visible to current user
-                // Admin users can see all links regardless of visibility
-                $isVisible = false;
-                if ($user && $user['is_admin']) {
-                    $isVisible = true; // Admins see everything
-                } elseif ($visibility === 'public') {
-                    $isVisible = true;
-                } elseif ($visibility === 'authenticated' && $user) {
-                    $isVisible = true;
-                } elseif ($visibility === 'private' && $user) {
-                    $isVisible = in_array($user['id'], $allowedUsers);
+                if (!is_array($allowedUsers)) {
+                    $allowedUsers = [];
                 }
-                
+
+                $isVisible = canUserSeeByVisibility($user, $linkRow, $userGroupIds);
+
                 // Always check role-based access for authenticated users (for "Your Apps" tab)
                 $linkHasRoleAccess = false;
                 if ($user && !$user['is_admin']) {
@@ -1273,11 +1269,11 @@ function handleGetTile($tileId) {
                         $isVisible = true; // Grant access if role-based
                     }
                 }
-                
+
                 if (!$isVisible) {
                     continue;
                 }
-                
+
                 $link = [
                     'id' => $linkRow['id'],
                     'label' => $linkRow['label'],
@@ -1318,6 +1314,9 @@ function handleGetTile($tileId) {
             $richTextStmt->execute([$sectionRow['id']]);
             $section['richTextContent'] = [];
             while ($richTextRow = $richTextStmt->fetch()) {
+                if (!canUserSeeByVisibility($user, $richTextRow, $userGroupIds)) {
+                    continue;
+                }
                 $section['richTextContent'][] = mapRichTextRow($richTextRow);
             }
             
@@ -1343,6 +1342,12 @@ function handleGetTile($tileId) {
             ];
             
             while ($sectionRow = $legacySectionStmt->fetch()) {
+                if (!canUserSeePublishedContent($user, $sectionRow)) {
+                    continue;
+                }
+                if (!canUserSeeByVisibility($user, $sectionRow, $userGroupIds)) {
+                    continue;
+                }
                 $section = [
                     'id' => $sectionRow['id'],
                     'title' => $sectionRow['title'],
@@ -1352,7 +1357,6 @@ function handleGetTile($tileId) {
                     'links' => []
                 ];
                 
-                $user = getAuthenticatedUser();
                 if ($user) {
                     $linkStmt = $db->prepare('SELECT links.*, (SELECT 1 FROM user_link_favorites WHERE user_id = ? AND link_id = links.id) as is_favorite FROM links WHERE section_id = ? ORDER BY position ASC, id ASC');
                     $linkStmt->execute([$user['id'], $sectionRow['id']]);
@@ -1362,26 +1366,21 @@ function handleGetTile($tileId) {
                 }
                 
                 while ($linkRow = $linkStmt->fetch()) {
+                    if (!canUserSeePublishedContent($user, $linkRow)) {
+                        continue;
+                    }
                     $visibility = $linkRow['visibility'] ?? 'public';
                     $allowedUsers = $linkRow['allowed_users'] ? json_decode($linkRow['allowed_users'], true) : [];
                     $allowedGroups = $linkRow['allowed_groups'] ? json_decode($linkRow['allowed_groups'], true) : [];
-                    
-                    $isVisible = false;
-                    if ($user && $user['is_admin']) {
-                        $isVisible = true;
-                    } elseif ($visibility === 'public') {
-                        $isVisible = true;
-                    } elseif ($visibility === 'authenticated' && $user) {
-                        $isVisible = true;
-                    } elseif ($visibility === 'private' && $user) {
-                        $isVisible = in_array($user['id'], $allowedUsers);
-                        
-                        // Also check if user is in any allowed groups
-                        if (!$isVisible && !empty($allowedGroups) && !empty($userGroupIds)) {
-                            $isVisible = !empty(array_intersect($userGroupIds, $allowedGroups));
-                        }
+                    if (!is_array($allowedUsers)) {
+                        $allowedUsers = [];
                     }
-                    
+                    if (!is_array($allowedGroups)) {
+                        $allowedGroups = [];
+                    }
+
+                    $isVisible = canUserSeeByVisibility($user, $linkRow, $userGroupIds);
+
                     // Always check role-based access for authenticated users (for "Your Apps" tab)
                     $linkHasRoleAccess = false;
                     if ($user && !$user['is_admin']) {
@@ -1390,11 +1389,11 @@ function handleGetTile($tileId) {
                             $isVisible = true; // Grant access if role-based
                         }
                     }
-                    
+
                     if (!$isVisible) {
                         continue;
                     }
-                    
+
                     $link = [
                         'id' => $linkRow['id'],
                         'label' => $linkRow['label'],
@@ -1412,7 +1411,7 @@ function handleGetTile($tileId) {
                         'hasRoleAccess' => $linkHasRoleAccess,
                         'position' => (int)($linkRow['position'] ?? 0)
                     ];
-                    
+
                     if (isset($linkRow['health_status'])) {
                         $link['health'] = [
                             'status' => $linkRow['health_status'] ?? 'unknown',
@@ -1421,13 +1420,23 @@ function handleGetTile($tileId) {
                             'checkedAt' => $linkRow['health_checked_at'] ? (int)$linkRow['health_checked_at'] : null
                         ];
                     }
-                    
+
                     $section['links'][] = $link;
                 }
-                
+
+                $section['richTextContent'] = [];
+                $richTextStmt = $db->prepare('SELECT * FROM rich_text_content WHERE section_id = ? ORDER BY position ASC');
+                $richTextStmt->execute([$sectionRow['id']]);
+                while ($richTextRow = $richTextStmt->fetch()) {
+                    if (!canUserSeeByVisibility($user, $richTextRow, $userGroupIds)) {
+                        continue;
+                    }
+                    $section['richTextContent'][] = mapRichTextRow($richTextRow);
+                }
+
                 $defaultTab['sections'][] = $section;
             }
-            
+
             if (!empty($defaultTab['sections'])) {
                 $tabs[] = $defaultTab;
             }
@@ -2229,6 +2238,9 @@ function handleCloneTile($tileId) {
                     insertRichTextContent($db, $newRichTextId, $newSectionId, [
                         'content' => $richText['content'] ?? '',
                         'position' => isset($richText['position']) ? (int)$richText['position'] : 0,
+                        'visibility' => $richText['visibility'] ?? 'public',
+                        'allowed_users' => $richText['allowed_users'] ?? null,
+                        'allowed_groups' => $richText['allowed_groups'] ?? null,
                         'boxed' => !empty($richText['boxed']),
                         'box_title' => $richText['box_title'] ?? null,
                         'box_footer' => $richText['box_footer'] ?? null,
@@ -2322,6 +2334,9 @@ function handleCloneTile($tileId) {
                     insertRichTextContent($db, $newRichTextId, $newSectionId, [
                         'content' => $richText['content'] ?? '',
                         'position' => isset($richText['position']) ? (int)$richText['position'] : 0,
+                        'visibility' => $richText['visibility'] ?? 'public',
+                        'allowed_users' => $richText['allowed_users'] ?? null,
+                        'allowed_groups' => $richText['allowed_groups'] ?? null,
                         'boxed' => !empty($richText['boxed']),
                         'box_title' => $richText['box_title'] ?? null,
                         'box_footer' => $richText['box_footer'] ?? null,

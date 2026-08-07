@@ -3804,13 +3804,38 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         return true;
     };
 
+    // Helper to enforce public / authenticated / private visibility for the current viewer
+    const canViewerSeeByVisibility = (item: {
+        visibility?: LinkVisibility;
+        allowedUsers?: number[];
+        allowedGroups?: number[];
+        hasRoleAccess?: boolean;
+    }) => {
+        const visibility = item.visibility || 'public';
+        if (user?.is_admin) return true;
+        if (visibility === 'public') return true;
+        if (visibility === 'authenticated') return !!isAuthenticated && !!user;
+        if (visibility === 'private') {
+            if (!user) return false;
+            const allowedUsers = item.allowedUsers || [];
+            const allowedGroups = item.allowedGroups || [];
+            if (allowedUsers.includes(user.id)) return true;
+            if (item.hasRoleAccess === true) return true;
+            // Group membership isn't available on the client; when groups are configured,
+            // trust that the API already filtered and keep the item for authenticated users.
+            if (allowedGroups.length > 0) return true;
+            return false;
+        }
+        return true;
+    };
+
     // Initialize selected tab: restore from localStorage if valid, otherwise select first visible tab
     useEffect(() => {
         if (tile.tabs && tile.tabs.length > 0) {
             // Sort tabs by position and filter visible ones
             const sortedTabs = [...tile.tabs]
                 .sort((a, b) => (a.position || 0) - (b.position || 0))
-                .filter(tab => isEditing || isContentVisible(tab)); // Show all in edit mode
+                .filter(tab => isEditing || (isContentVisible(tab) && canViewerSeeByVisibility(tab))); // Show all in edit mode
 
             if (sortedTabs.length > 0) {
                 // Check if saved tab ID is still valid (exists and is visible)
@@ -3851,13 +3876,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         if (tile.tabs && tile.tabs.length > 0) {
             const sortedTabs = [...tile.tabs]
                 .sort((a, b) => (a.position || 0) - (b.position || 0))
-                .filter(tab => isEditing || isContentVisible(tab)); // Show all in edit mode
+                .filter(tab => isEditing || (isContentVisible(tab) && canViewerSeeByVisibility(tab))); // Show all in edit mode
 
             // If selected tab is not visible (e.g. expired while viewing), switch to first visible
             let tabIdToUse = selectedTabId;
             if (tabIdToUse && !isEditing) {
                 const selectedTab = tile.tabs.find(t => t.id === tabIdToUse);
-                if (selectedTab && !isContentVisible(selectedTab)) {
+                if (selectedTab && (!isContentVisible(selectedTab) || !canViewerSeeByVisibility(selectedTab))) {
                     tabIdToUse = null;
                 }
             }
@@ -3882,7 +3907,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             sectionsToFilter = getAllSections();
         }
 
-        // Filter sections and links by schedule in view mode
+        // Filter sections and links by schedule + visibility in view mode
         // Apply role-based filtering ONLY if sourceTab is "your-apps"
         // For all other tabs (public, private, etc.), show all links based on their own visibility settings
         if (!isEditing) {
@@ -3891,19 +3916,24 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             const shouldApplyRoleFiltering = sourceTab === 'your-apps' && tile.visibility !== 'authenticated';
 
             sectionsToFilter = sectionsToFilter
-                .filter(section => isContentVisible(section))
+                .filter(section => isContentVisible(section) && canViewerSeeByVisibility(section))
                 .map(section => ({
                     ...section,
                     links: section.links.filter(link => {
                         // Always filter by schedule
                         if (!isContentVisible(link)) return false;
+                        // Hide authenticated / private links from guests and unauthorized users
+                        if (!canViewerSeeByVisibility(link)) return false;
                         // Only apply role-based filtering if source is "Your Apps" tab
                         // For all other tabs (public, private, authenticated), show all links based on their visibility
                         if (shouldApplyRoleFiltering) {
                             return link.hasRoleAccess === true;
                         }
                         return true;
-                    })
+                    }),
+                    richTextContent: (section.richTextContent || []).filter(rt =>
+                        isContentVisible(rt) && canViewerSeeByVisibility(rt)
+                    )
                 }))
                 .filter(section =>
                     section.links.length > 0 ||
@@ -3934,11 +3964,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const allSections = getAllSections();
     const totalLinks = allSections?.reduce((acc, s) => acc + (s.links?.length || 0), 0) || 0;
 
-    // Get tabs for view mode (for tab navigation) - sort by position and filter by schedule
+    // Get tabs for view mode (for tab navigation) - sort by position and filter by schedule + visibility
     const displayTabs = tile.tabs && tile.tabs.length > 0
         ? [...tile.tabs]
             .sort((a, b) => (a.position || 0) - (b.position || 0))
-            .filter(tab => isEditing || isContentVisible(tab)) // Show all in edit mode
+            .filter(tab => isEditing || (isContentVisible(tab) && canViewerSeeByVisibility(tab))) // Show all in edit mode
         : [];
 
 
