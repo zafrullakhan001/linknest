@@ -608,13 +608,73 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
   // Vacuum Database script state
   const [vacuumDbLoading, setVacuumDbLoading] = useState(false);
-  const [vacuumDbResult, setVacuumDbResult] = useState<{ success: boolean; message?: string; error?: string } | null>(null);
+  const [vacuumDbResult, setVacuumDbResult] = useState<{
+    success: boolean;
+    message?: string;
+    error?: string;
+    before?: {
+      db_human?: string;
+      wal_human?: string;
+      total_disk_human?: string;
+      logical_human?: string;
+      page_count?: number;
+      freelist_count?: number;
+      total_disk_bytes?: number;
+    };
+    after?: {
+      db_human?: string;
+      wal_human?: string;
+      total_disk_human?: string;
+      logical_human?: string;
+      page_count?: number;
+      freelist_count?: number;
+      total_disk_bytes?: number;
+    };
+    reclaimed?: {
+      disk_human?: string;
+      logical_human?: string;
+      disk_bytes?: number;
+      percent?: number;
+      freelist_pages?: number;
+    };
+  } | null>(null);
 
   // Database Health Report state
   const [healthLoading, setHealthLoading] = useState(false);
   const [healthResult, setHealthResult] = useState<{
     success: boolean; integrity_ok?: boolean; health_status?: string; size_kb?: number; journal_mode?: string;
     table_counts?: Record<string, number | null>; suggestions?: string[]; error?: string;
+  } | null>(null);
+
+  // SQLite RAM / performance health check
+  const [sqliteRamLoading, setSqliteRamLoading] = useState(false);
+  const [sqliteRamResult, setSqliteRamResult] = useState<{
+    success: boolean;
+    summary?: string;
+    checks_passed?: string;
+    error?: string;
+    verdict?: {
+      in_memory_primary_db?: boolean;
+      ram_fast_reads?: boolean;
+      durable_commits_to_disk?: boolean;
+      database_path?: string | null;
+    };
+    sizes?: {
+      database_human?: string;
+      cache_human?: string;
+      mmap_human?: string;
+      cache_holds_entire_db?: boolean;
+      mmap_covers_entire_db?: boolean;
+    };
+    pragmas?: {
+      sqlite_version?: string;
+      journal_mode?: string;
+      threads?: number;
+      temp_store?: number;
+      synchronous?: number;
+    };
+    checks?: Array<{ id: string; ok: boolean; detail: string }>;
+    timing_ms?: { getDB_connect?: number; warmup_read?: number };
   } | null>(null);
 
   // Tile & Link Statistics state
@@ -11584,7 +11644,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 </div>
               )}
 
-              {/* Maintenance Scripts Tab - DB cleanup, duplicates, invisible, optimize, vacuum */}
+              {/* Maintenance Scripts Tab - DB cleanup, duplicates, invisible, optimize, vacuum, health, SQLite RAM */}
               {activeTab === 'maintenanceScripts' && (
                 <div className="space-y-6 mt-6">
                   {/* Database Cleanup Section */}
@@ -12489,11 +12549,49 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     {vacuumDbResult && (
                       <div className={`mb-6 p-4 rounded-lg border ${vacuumDbResult.success ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
                         {vacuumDbResult.success ? (
-                          <div className="flex items-center gap-2">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-green-600 dark:text-green-400">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
-                            </svg>
-                            <span className="font-semibold text-green-900 dark:text-green-100">{vacuumDbResult.message || 'Vacuum completed successfully.'}</span>
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-2">
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-green-600 dark:text-green-400">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                              </svg>
+                              <span className="font-semibold text-green-900 dark:text-green-100">{vacuumDbResult.message || 'Vacuum completed successfully.'}</span>
+                            </div>
+                            {(vacuumDbResult.before || vacuumDbResult.after) && (
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                                <div className="bg-white dark:bg-slate-800/50 rounded-lg px-3 py-2 border border-slate-200 dark:border-slate-600">
+                                  <div className="text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium mb-1">Before</div>
+                                  <div className="text-lg font-bold text-slate-900 dark:text-white">{vacuumDbResult.before?.total_disk_human || '—'}</div>
+                                  <div className="text-slate-500 dark:text-slate-400 mt-0.5">
+                                    DB {vacuumDbResult.before?.db_human || '—'}
+                                    {vacuumDbResult.before?.wal_human && vacuumDbResult.before.wal_human !== '0 B' ? ` · WAL ${vacuumDbResult.before.wal_human}` : ''}
+                                  </div>
+                                  {vacuumDbResult.before?.freelist_count != null && (
+                                    <div className="text-slate-400 dark:text-slate-500 mt-0.5">Freelist: {vacuumDbResult.before.freelist_count} pages</div>
+                                  )}
+                                </div>
+                                <div className="bg-white dark:bg-slate-800/50 rounded-lg px-3 py-2 border border-slate-200 dark:border-slate-600">
+                                  <div className="text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium mb-1">After</div>
+                                  <div className="text-lg font-bold text-slate-900 dark:text-white">{vacuumDbResult.after?.total_disk_human || '—'}</div>
+                                  <div className="text-slate-500 dark:text-slate-400 mt-0.5">
+                                    DB {vacuumDbResult.after?.db_human || '—'}
+                                    {vacuumDbResult.after?.wal_human && vacuumDbResult.after.wal_human !== '0 B' ? ` · WAL ${vacuumDbResult.after.wal_human}` : ''}
+                                  </div>
+                                  {vacuumDbResult.after?.freelist_count != null && (
+                                    <div className="text-slate-400 dark:text-slate-500 mt-0.5">Freelist: {vacuumDbResult.after.freelist_count} pages</div>
+                                  )}
+                                </div>
+                                <div className="bg-white dark:bg-slate-800/50 rounded-lg px-3 py-2 border border-emerald-200 dark:border-emerald-800">
+                                  <div className="text-emerald-600 dark:text-emerald-400 uppercase tracking-wider font-medium mb-1">Reclaimed</div>
+                                  <div className="text-lg font-bold text-emerald-700 dark:text-emerald-300">
+                                    {vacuumDbResult.reclaimed?.disk_human || '0 B'}
+                                  </div>
+                                  <div className="text-slate-500 dark:text-slate-400 mt-0.5">
+                                    {vacuumDbResult.reclaimed?.percent != null ? `${vacuumDbResult.reclaimed.percent}% of previous size` : ''}
+                                    {vacuumDbResult.reclaimed?.freelist_pages ? ` · ${vacuumDbResult.reclaimed.freelist_pages} free pages cleared` : ''}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <div className="flex items-center gap-2">
@@ -12514,8 +12612,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             setVacuumDbResult(null);
                             const response = await fetch(`${resolveApiBase()}/vacuum-database`, { credentials: 'include' });
                             const data = await response.json().catch(() => ({ success: false, error: 'Invalid response' }));
-                            setVacuumDbResult({ success: data.success, message: data.message, error: data.error || (!response.ok ? `HTTP ${response.status}` : undefined) });
-                            if (data.success) alert('Database vacuum completed successfully.');
+                            setVacuumDbResult({
+                              success: data.success,
+                              message: data.message,
+                              error: data.error || (!response.ok ? `HTTP ${response.status}` : undefined),
+                              before: data.before,
+                              after: data.after,
+                              reclaimed: data.reclaimed,
+                            });
+                            if (data.success) {
+                              const reclaimMsg = data.reclaimed?.disk_human
+                                ? `Reclaimed ${data.reclaimed.disk_human} (before ${data.before?.total_disk_human || '?'} → after ${data.after?.total_disk_human || '?'}).`
+                                : (data.message || 'Vacuum completed.');
+                              alert(reclaimMsg);
+                            }
                           } catch (err: any) {
                             setVacuumDbResult({ success: false, error: err.message || 'Vacuum failed' });
                           } finally {
@@ -12617,6 +12727,136 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         {healthLoading ? <><svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Checking...</> : <>Run Health Report</>}
                       </button>
                       {healthResult && <button onClick={() => setHealthResult(null)} className="px-4 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium">Clear Results</button>}
+                    </div>
+                  </div>
+
+                  {/* SQLite RAM / Performance Health Check */}
+                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                    <div className="flex items-start gap-3 mb-4">
+                      <div className="flex-shrink-0 w-10 h-10 bg-violet-500 rounded-lg flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
+                          <path d="M4.632 3.533A2 2 0 016.577 2h6.846a2 2 0 011.945 1.533l1.976 8.234A3.498 3.498 0 0017 11.5a3.5 3.5 0 01-3.5 3.5h-7A3.5 3.5 0 013 11.5c0-.864.312-1.654.832-2.268L4.632 3.533zM11.25 15.5a.75.75 0 00-1.5 0v.25a.75.75 0 001.5 0v-.25zm3.75-1.5a.75.75 0 01.75.75v.25a.75.75 0 01-1.5 0v-.25a.75.75 0 01.75-.75zm-9 0a.75.75 0 01.75.75v.25a.75.75 0 01-1.5 0v-.25a.75.75 0 01.75-.75z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">SQLite RAM / Performance Check</h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-400">
+                          Verify SQLite version, page cache, mmap, WAL, and whether the database fits in memory for fast reads (commits still go to disk).
+                        </p>
+                      </div>
+                    </div>
+                    {sqliteRamResult && (
+                      <div className={`mb-6 p-4 rounded-lg border ${
+                        sqliteRamResult.success && sqliteRamResult.verdict?.ram_fast_reads
+                          ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                          : sqliteRamResult.success
+                            ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
+                            : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+                      }`}>
+                        {sqliteRamResult.success ? (
+                          <div className="space-y-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              {sqliteRamResult.verdict?.ram_fast_reads ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-semibold bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-200">
+                                  <span className="w-2 h-2 rounded-full bg-green-500" /> RAM-fast reads
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-semibold bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200">
+                                  <span className="w-2 h-2 rounded-full bg-amber-500" /> Setup incomplete
+                                </span>
+                              )}
+                              {sqliteRamResult.pragmas?.sqlite_version && (
+                                <span className="text-sm text-slate-600 dark:text-slate-400">SQLite {sqliteRamResult.pragmas.sqlite_version}</span>
+                              )}
+                              {sqliteRamResult.checks_passed && (
+                                <span className="text-sm text-slate-500 dark:text-slate-400">• {sqliteRamResult.checks_passed} checks</span>
+                              )}
+                            </div>
+                            {sqliteRamResult.summary && (
+                              <p className="text-sm text-slate-700 dark:text-slate-300">{sqliteRamResult.summary}</p>
+                            )}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                              <div className="bg-white dark:bg-slate-800/50 rounded px-2 py-1.5 border border-slate-200 dark:border-slate-600">
+                                <span className="text-slate-500 dark:text-slate-400">DB size:</span>{' '}
+                                <span className="font-semibold text-slate-900 dark:text-white">{sqliteRamResult.sizes?.database_human || '—'}</span>
+                              </div>
+                              <div className="bg-white dark:bg-slate-800/50 rounded px-2 py-1.5 border border-slate-200 dark:border-slate-600">
+                                <span className="text-slate-500 dark:text-slate-400">Page cache:</span>{' '}
+                                <span className="font-semibold text-slate-900 dark:text-white">{sqliteRamResult.sizes?.cache_human || '—'}</span>
+                              </div>
+                              <div className="bg-white dark:bg-slate-800/50 rounded px-2 py-1.5 border border-slate-200 dark:border-slate-600">
+                                <span className="text-slate-500 dark:text-slate-400">mmap:</span>{' '}
+                                <span className="font-semibold text-slate-900 dark:text-white">{sqliteRamResult.sizes?.mmap_human || '—'}</span>
+                              </div>
+                              <div className="bg-white dark:bg-slate-800/50 rounded px-2 py-1.5 border border-slate-200 dark:border-slate-600">
+                                <span className="text-slate-500 dark:text-slate-400">journal:</span>{' '}
+                                <span className="font-semibold text-slate-900 dark:text-white">{sqliteRamResult.pragmas?.journal_mode || '—'}</span>
+                              </div>
+                            </div>
+                            {sqliteRamResult.checks && sqliteRamResult.checks.length > 0 && (
+                              <ul className="space-y-1 text-xs">
+                                {sqliteRamResult.checks.map((c) => (
+                                  <li key={c.id} className="flex items-start gap-2 text-slate-700 dark:text-slate-300">
+                                    <span className={c.ok ? 'text-green-600 dark:text-green-400 font-bold' : 'text-amber-600 dark:text-amber-400 font-bold'}>
+                                      {c.ok ? '✓' : '!'}
+                                    </span>
+                                    <span><span className="font-medium">{c.id}</span> — {c.detail}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                            {sqliteRamResult.timing_ms && (
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                Connect {sqliteRamResult.timing_ms.getDB_connect ?? '—'} ms · sample read {sqliteRamResult.timing_ms.warmup_read ?? '—'} ms
+                                {sqliteRamResult.verdict?.durable_commits_to_disk ? ' · durable commits to disk (WAL)' : ''}
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-red-800 dark:text-red-200">{sqliteRamResult.error || 'SQLite RAM check failed'}</span>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        onClick={async () => {
+                          try {
+                            setSqliteRamLoading(true);
+                            setError('');
+                            setSqliteRamResult(null);
+                            const res = await fetch(`${resolveApiBase()}/check-sqlite-memory`, { credentials: 'include' });
+                            const data = await res.json().catch(() => ({ success: false, error: 'Invalid response' }));
+                            if (!res.ok && !data.error) {
+                              data.success = false;
+                              data.error = data.error || `HTTP ${res.status}`;
+                            }
+                            setSqliteRamResult(data);
+                          } catch (e: any) {
+                            setSqliteRamResult({ success: false, error: e.message || 'Failed' });
+                          } finally {
+                            setSqliteRamLoading(false);
+                          }
+                        }}
+                        disabled={sqliteRamLoading}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold transition-colors"
+                      >
+                        {sqliteRamLoading ? (
+                          <>
+                            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                            Checking...
+                          </>
+                        ) : (
+                          <>Run SQLite RAM Check</>
+                        )}
+                      </button>
+                      {sqliteRamResult && (
+                        <button
+                          onClick={() => setSqliteRamResult(null)}
+                          className="px-4 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium"
+                        >
+                          Clear Results
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -13112,14 +13352,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       <p className="font-semibold text-slate-900 dark:text-white mb-1">Include in PWA (allowed strings)</p>
                       <p className="mb-1 text-slate-600 dark:text-slate-400">Path segments that may be cached when Include is set. Leave Include <strong>empty</strong> to cache all requests except those in Exclude.</p>
                       <p className="mb-2 font-mono text-xs bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded break-all">
-                        tiles, settings, arrangements, styles, database, linkhealth, chat, access, roles, user-groups, group-tile-permissions, widgets, clone, browsers, uploads, timezones, alarms, notes, broadcast, analytics, addons, optimize-database, vacuum-database
+                        tiles, settings, arrangements, styles, database, linkhealth, chat, access, roles, user-groups, group-tile-permissions, widgets, clone, browsers, uploads, timezones, alarms, notes, broadcast, analytics, addons, optimize-database, vacuum-database, check-sqlite-memory
                       </p>
                       <p className="font-semibold text-slate-900 dark:text-white mb-1">Exclude from PWA (allowed strings, recommended)</p>
                       <p className="mb-1 text-slate-600 dark:text-slate-400">Path segments that must never be cached (always live). Default excludes:</p>
                       <ul className="list-disc list-inside text-slate-600 dark:text-slate-400 mb-2">
                         <li><code className="bg-slate-200 dark:bg-slate-600 px-1 rounded">monitors</code>, <code className="bg-slate-200 dark:bg-slate-600 px-1 rounded">monitorv2</code> — real-time monitor APIs</li>
                         <li><code className="bg-slate-200 dark:bg-slate-600 px-1 rounded">auth</code> — login, logout, impersonation</li>
-                        <li><code className="bg-slate-200 dark:bg-slate-600 px-1 rounded">maintenance</code> — maintenance-stats, maintenance-health, etc.</li>
+                        <li><code className="bg-slate-200 dark:bg-slate-600 px-1 rounded">maintenance</code> — maintenance-stats, maintenance-health, check-sqlite-memory, etc.</li>
                         <li><code className="bg-slate-200 dark:bg-slate-600 px-1 rounded">opcache</code> — OPcache status</li>
                         <li><code className="bg-slate-200 dark:bg-slate-600 px-1 rounded">settings</code> — app settings (so this page and toggles stay up to date)</li>
                       </ul>

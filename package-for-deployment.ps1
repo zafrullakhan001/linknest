@@ -5,17 +5,23 @@
 .DESCRIPTION
     Clean-builds the React frontend with the correct base path, gathers all
     runtime files (API, addons, vendor/SAML, dist), stamps BUILD_INFO.json
-    (for PWA cache busting), and produces a self-contained ZIP ready to
-    deploy/update on another XAMPP machine.
+    (for PWA cache busting), bundles SQLite 3.53.4 for XAMPP PHP, and
+    produces a self-contained ZIP ready to deploy/update on another XAMPP machine.
 
     Default: FRESH install package (no live SQLite DB). The target PC creates
     a new database on first launch. Use -IncludeDatabase to mirror this PC's DB.
+
+    SQLite: ships runtime/sqlite/ (libsqlite3.dll 3.53.4) plus install-sqlite-xampp.bat.
+    deploy/update scripts install that DLL into the target XAMPP PHP folder so
+    performance pragmas in api/config.php (WAL, mmap, cache, worker threads) take effect.
 .PARAMETER SkipBuild
     Skip the npm build step (use existing dist/). Not recommended when shipping code changes.
 .PARAMETER IncludeDatabase
     Include data/linknest.db (and related DB files) from this machine.
 .PARAMETER ExcludeUploads
     Do not include the uploads/ directory in the package.
+.PARAMETER SkipSqliteRuntime
+    Do not bundle/download SQLite 3.53.4 DLL for XAMPP (not recommended).
 .PARAMETER OutputDir
     Where to save the final ZIP. Defaults to the project root.
 .PARAMETER BasePath
@@ -25,11 +31,13 @@
     .\package-for-deployment.ps1 -IncludeDatabase
     .\package-for-deployment.ps1 -BasePath "/myapp"
     .\package-for-deployment.ps1 -OutputDir "E:\"
+    .\package-for-deployment.ps1 -SkipSqliteRuntime
 #>
 param(
     [switch]$SkipBuild,
     [switch]$IncludeDatabase,
     [switch]$ExcludeUploads,
+    [switch]$SkipSqliteRuntime,
     [string]$OutputDir = "",
     [string]$BasePath = "/linknest"
 )
@@ -45,6 +53,13 @@ $Timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $PackageName = "linknest-deploy-$Timestamp"
 $TempDir = Join-Path $env:TEMP $PackageName
 $BuildId = $Timestamp
+
+# Official SQLite Windows x64 build shipped with the package (https://sqlite.org/)
+$SqliteTargetVersion = "3.53.4"
+$SqliteDllZipUrl = "https://www.sqlite.org/2026/sqlite-dll-win-x64-3530400.zip"
+$SqliteToolsZipUrl = "https://www.sqlite.org/2026/sqlite-tools-win-x64-3530400.zip"
+$SqliteVersionShipped = $null
+$SqliteRuntimeBundled = $false
 
 # Normalize base path: /linknest (no trailing slash)
 $BasePath = "/" + ($BasePath.Trim().Trim("/").Replace("\", "/"))
@@ -164,6 +179,7 @@ Write-Host "  Base Path    : $(if ($BasePath) { $BasePath } else { '/' })" -Fore
 Write-Host "  Build ID     : $BuildId" -ForegroundColor Gray
 Write-Host "  Database     : $(if ($IncludeDatabase) { 'INCLUDE live DB from this PC' } else { 'FRESH (no live DB - recommended)' })" -ForegroundColor Gray
 Write-Host "  Uploads      : $(if ($ExcludeUploads) { 'excluded' } else { 'included' })" -ForegroundColor Gray
+Write-Host "  SQLite DLL   : $(if ($SkipSqliteRuntime) { 'SKIPPED' } else { "bundle $SqliteTargetVersion for target XAMPP" })" -ForegroundColor Gray
 Write-Host "  Output ZIP   : $ZipOutput"   -ForegroundColor Gray
 Write-Host ""
 
@@ -521,6 +537,103 @@ else {
 }
 
 # ---------------------------------------------------------------------------
+#  5b. Bundle SQLite 3.53.4 runtime for target XAMPP PHP
+# ---------------------------------------------------------------------------
+Write-Header "5b / Bundle SQLite Runtime ($SqliteTargetVersion)"
+
+$runtimeSqliteDir = Join-Path $TempDir "runtime\sqlite"
+Ensure-Dir $runtimeSqliteDir
+
+if ($SkipSqliteRuntime) {
+    Write-Warn "Skipping SQLite runtime bundle (-SkipSqliteRuntime)"
+    Set-Content -Path (Join-Path $runtimeSqliteDir "SKIPPED.txt") -Value "SQLite runtime was not packaged. Target keeps its existing XAMPP SQLite." -Encoding ASCII
+}
+else {
+    $dllStaged = $false
+    $downloadTmp = Join-Path $env:TEMP ("linknest-sqlite-pack-" + [guid]::NewGuid().ToString("N"))
+    Ensure-Dir $downloadTmp
+
+    try {
+        Write-Step "Downloading official SQLite $SqliteTargetVersion Windows x64 DLL..."
+        $dllZip = Join-Path $downloadTmp "sqlite-dll.zip"
+        Invoke-WebRequest -Uri $SqliteDllZipUrl -OutFile $dllZip -UseBasicParsing
+        Expand-Archive -Path $dllZip -DestinationPath (Join-Path $downloadTmp "dll") -Force
+        $downloadedDll = Get-ChildItem (Join-Path $downloadTmp "dll") -Filter "sqlite3.dll" -Recurse | Select-Object -First 1
+        if (-not $downloadedDll) { throw "sqlite3.dll missing from official zip" }
+
+        Copy-Item $downloadedDll.FullName (Join-Path $runtimeSqliteDir "sqlite3.dll") -Force
+        Copy-Item $downloadedDll.FullName (Join-Path $runtimeSqliteDir "libsqlite3.dll") -Force
+        $dllStaged = $true
+        $SqliteVersionShipped = $SqliteTargetVersion
+        Write-OK ("Official sqlite3.dll staged ({0:N0} bytes)" -f $downloadedDll.Length)
+
+        Write-Step "Downloading SQLite CLI tools..."
+        try {
+            $toolsZip = Join-Path $downloadTmp "sqlite-tools.zip"
+            Invoke-WebRequest -Uri $SqliteToolsZipUrl -OutFile $toolsZip -UseBasicParsing
+            Expand-Archive -Path $toolsZip -DestinationPath (Join-Path $downloadTmp "tools") -Force
+            $cli = Get-ChildItem (Join-Path $downloadTmp "tools") -Filter "sqlite3.exe" -Recurse | Select-Object -First 1
+            if ($cli) {
+                Copy-Item $cli.FullName (Join-Path $runtimeSqliteDir "sqlite3.exe") -Force
+                Write-OK "sqlite3.exe CLI bundled"
+            }
+        }
+        catch {
+            Write-Warn ("CLI tools download skipped: {0}" -f $_.Exception.Message)
+        }
+    }
+    catch {
+        Write-Warn ("Official download failed: {0}" -f $_.Exception.Message)
+        Write-Step "Falling back to local XAMPP libsqlite3.dll if version matches..."
+
+        $localCandidates = @(
+            "C:\xampp\php\libsqlite3.dll",
+            "C:\xampp\php\sqlite3.dll",
+            (Join-Path $env:ProgramFiles "xampp\php\libsqlite3.dll")
+        )
+        $localPhpVer = $null
+        try {
+            $localPhpVer = (& php -r "echo SQLite3::version()['versionString'];" 2>$null)
+        } catch { }
+
+        $localDll = $localCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+        if ($localDll -and $localPhpVer -and ($localPhpVer -eq $SqliteTargetVersion)) {
+            Copy-Item $localDll (Join-Path $runtimeSqliteDir "libsqlite3.dll") -Force
+            Copy-Item $localDll (Join-Path $runtimeSqliteDir "sqlite3.dll") -Force
+            $dllStaged = $true
+            $SqliteVersionShipped = $localPhpVer
+            Write-OK ("Using local DLL from {0} (PHP reports {1})" -f $localDll, $localPhpVer)
+        }
+        else {
+            Write-Err "Could not obtain SQLite $SqliteTargetVersion DLL for the package."
+            Write-Err "Re-run with network access, or install 3.53.4 on this PC first."
+            if (Test-Path $downloadTmp) { Remove-Item $downloadTmp -Recurse -Force -ErrorAction SilentlyContinue }
+            Read-Host "Press Enter to exit"
+            exit 1
+        }
+    }
+    finally {
+        if (Test-Path $downloadTmp) { Remove-Item $downloadTmp -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+
+    if ($dllStaged) {
+        $SqliteRuntimeBundled = $true
+        $versionTxt = @"
+SQLite $SqliteVersionShipped for LinkNest XAMPP deployments
+Source: https://sqlite.org/ (Windows x64 precompiled binary)
+Packaged: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+Build ID: $BuildId
+
+Install on target with install-sqlite-xampp.bat (also run by deploy/update scripts).
+Replaces %XAMPP%\php\libsqlite3.dll so PHP PDO/SQLite3 use this version.
+LinkNest api/config.php then applies WAL, mmap 256MB, 32MB cache, 4 worker threads.
+"@
+        Set-Content -Path (Join-Path $runtimeSqliteDir "SQLITE_VERSION.txt") -Value $versionTxt -Encoding ASCII
+        Write-OK ("SQLite runtime bundled: version {0}" -f $SqliteVersionShipped)
+    }
+}
+
+# ---------------------------------------------------------------------------
 #  6. Copy uploads (logos, favicons, etc.)
 # ---------------------------------------------------------------------------
 Write-Header "6 / Copy Uploads"
@@ -577,6 +690,15 @@ $buildInfo = [ordered]@{
     appVersion  = $pkgVersion
     basePath    = $(if ($BasePath) { $BasePath } else { "/" })
     includeDatabase = [bool]$IncludeDatabase
+    sqliteRuntime = $(if ($SqliteRuntimeBundled) { $SqliteVersionShipped } else { $null })
+    sqlitePerformance = @(
+        "journal_mode=WAL",
+        "synchronous=NORMAL",
+        "mmap_size=256MB",
+        "cache_size=32MB",
+        "threads=4",
+        "temp_store=MEMORY"
+    )
     indexAsset  = $indexAsset
     indexSha12  = $indexHash
     jsAssetCount = $assetJs.Count
@@ -604,6 +726,115 @@ Write-Header "8 / Generating Deployment Files"
 
 $basePathForBat = if ($BasePath) { $BasePath.TrimStart("/") } else { "linknest" }
 $dbModeNote = if ($IncludeDatabase) { "includes live DB from packager PC" } else { "FRESH database on first launch" }
+$sqliteShipNote = if ($SqliteRuntimeBundled) { "SQLite $SqliteVersionShipped bundled for XAMPP PHP" } else { "SQLite runtime not bundled" }
+
+# -- install-sqlite-xampp.bat (upgrade target XAMPP PHP SQLite DLL) ---------
+$installSqliteBat = @"
+@echo off
+setlocal enabledelayedexpansion
+REM ==========================================================
+REM  LinkNest - Install SQLite $SqliteTargetVersion into XAMPP PHP
+REM  Replaces php\libsqlite3.dll (backed up first). Needs Admin.
+REM ==========================================================
+echo.
+echo  =============================================
+echo     LinkNest - SQLite XAMPP Upgrade
+echo     Target version: $SqliteTargetVersion
+echo     Package build : $BuildId
+echo  =============================================
+echo.
+
+net session >nul 2>&1
+if errorlevel 1 (
+    echo  Administrator rights required to replace PHP SQLite DLL.
+    echo  Re-launching elevated...
+    powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -ArgumentList '%*' -Verb RunAs -Wait"
+    exit /b %ERRORLEVEL%
+)
+
+set "PKG_DIR=%~dp0"
+if "%PKG_DIR:~-1%"=="\" set "PKG_DIR=%PKG_DIR:~0,-1%"
+set "SRC_DLL=%PKG_DIR%\runtime\sqlite\libsqlite3.dll"
+if not exist "%SRC_DLL%" set "SRC_DLL=%PKG_DIR%\runtime\sqlite\sqlite3.dll"
+
+if /i "%~2"=="quiet" set "LINKNEST_SQLITE_QUIET=1"
+if /i "%~1"=="quiet" (
+    set "LINKNEST_SQLITE_QUIET=1"
+    set "XAMPP_ROOT=C:\xampp"
+)
+
+if not exist "%SRC_DLL%" (
+    echo  ERROR: runtime\sqlite\libsqlite3.dll not found in this package.
+    echo  Re-package with network access, or omit -SkipSqliteRuntime.
+    pause
+    exit /b 1
+)
+
+if /i not "%~1"=="quiet" if not "%~1"=="" set "XAMPP_ROOT=%~1"
+if "%XAMPP_ROOT%"=="" (
+    set "XAMPP_ROOT=C:\xampp"
+    set /p "XAMPP_ROOT=XAMPP install path (press Enter for C:\xampp): "
+)
+if "%XAMPP_ROOT%"=="" set "XAMPP_ROOT=C:\xampp"
+
+set "PHP_DIR=%XAMPP_ROOT%\php"
+if not exist "%PHP_DIR%\php.exe" (
+    echo  ERROR: Cannot find "%PHP_DIR%\php.exe"
+    pause
+    exit /b 1
+)
+
+echo  XAMPP PHP : %PHP_DIR%
+echo  Source DLL: %SRC_DLL%
+echo.
+
+echo  Current SQLite (before):
+"%PHP_DIR%\php.exe" -r "echo '  PHP SQLite: '.SQLite3::version()['versionString'].PHP_EOL;" 2>nul
+echo.
+
+echo  Stopping Apache so the DLL can be replaced...
+net stop Apache2.4 >nul 2>&1
+taskkill /F /IM httpd.exe >nul 2>&1
+timeout /t 2 /nobreak >nul
+
+set "DEST=%PHP_DIR%\libsqlite3.dll"
+set "DEST2=%PHP_DIR%\windowsXamppPhp\libsqlite3.dll"
+set "BACKUP=%PHP_DIR%\libsqlite3.dll.bak-before-linknest"
+
+if exist "%DEST%" (
+    if not exist "%BACKUP%" copy /Y "%DEST%" "%BACKUP%" >nul
+    echo  [OK] Backup: %BACKUP%
+)
+
+copy /Y "%SRC_DLL%" "%DEST%" >nul
+if errorlevel 1 (
+    echo  ERROR: Could not write %DEST%
+    net start Apache2.4 >nul 2>&1
+    pause
+    exit /b 1
+)
+echo  [OK] Installed %DEST%
+
+if exist "%PHP_DIR%\windowsXamppPhp" (
+    copy /Y "%SRC_DLL%" "%DEST2%" >nul 2>&1
+    copy /Y "%SRC_DLL%" "%PHP_DIR%\sqlite3.dll" >nul 2>&1
+    echo  [OK] Also updated windowsXamppPhp copy / sqlite3.dll
+) else (
+    copy /Y "%SRC_DLL%" "%PHP_DIR%\sqlite3.dll" >nul 2>&1
+)
+
+echo  Starting Apache...
+net start Apache2.4 >nul 2>&1
+
+echo.
+echo  SQLite after upgrade:
+"%PHP_DIR%\php.exe" -r "echo '  PHP SQLite: '.SQLite3::version()['versionString'].PHP_EOL; `$p=new PDO('sqlite::memory:'); echo '  PDO SQLite: '.`$p->query('select sqlite_version()')->fetchColumn().PHP_EOL;" 2>nul
+echo.
+echo  LinkNest performance pragmas (WAL / mmap / cache / threads) apply on next API request.
+echo.
+if "%LINKNEST_SQLITE_QUIET%"=="1" exit /b 0
+pause
+"@
 
 # -- deploy-xampp.bat (fresh install - wipes target folder) -----------------
 $deployBat = @"
@@ -620,6 +851,7 @@ echo     LinkNest - XAMPP Fresh Deploy (Windows)
 echo     Package build: $BuildId
 echo     App version  : $pkgVersion
 echo     DB mode      : $dbModeNote
+echo     SQLite       : $sqliteShipNote
 echo  =============================================
 echo.
 
@@ -702,6 +934,7 @@ if exist "%INSTALL_DIR%\deploy-xampp.bat" del /f /q "%INSTALL_DIR%\deploy-xampp.
 if exist "%INSTALL_DIR%\deploy-xampp.sh" del /f /q "%INSTALL_DIR%\deploy-xampp.sh"
 if exist "%INSTALL_DIR%\update-xampp.bat" del /f /q "%INSTALL_DIR%\update-xampp.bat"
 if exist "%INSTALL_DIR%\verify-install.bat" del /f /q "%INSTALL_DIR%\verify-install.bat"
+if exist "%INSTALL_DIR%\install-sqlite-xampp.bat" del /f /q "%INSTALL_DIR%\install-sqlite-xampp.bat"
 echo  [OK] Files copied
 
 (
@@ -736,6 +969,14 @@ if /i NOT "%SUBFOLDER%"=="$basePathForBat" (
 )
 
 echo.
+echo  Upgrading XAMPP PHP SQLite to $SqliteTargetVersion (recommended)...
+if exist "%PKG_DIR%\install-sqlite-xampp.bat" (
+    call "%PKG_DIR%\install-sqlite-xampp.bat" "%XAMPP_ROOT%" quiet
+) else (
+    echo  [!!] install-sqlite-xampp.bat missing - skip SQLite DLL upgrade
+)
+
+echo.
 echo  =============================================
 echo  Deployment Complete!  Build: $BuildId
 echo  =============================================
@@ -747,6 +988,7 @@ echo  3. Open: http://localhost/%SUBFOLDER%
 echo  4. Hard refresh once ^(Ctrl+F5^) if you still see an old UI
 echo  5. Confirm build: http://localhost/%SUBFOLDER%/BUILD_INFO.json
 echo  6. Default login: admin / admin123 - change it immediately
+echo  7. Confirm SQLite: "%XAMPP_ROOT%\php\php.exe" -r "echo SQLite3::version()['versionString'];"
 echo.
 echo  Tip: run verify-install.bat from the extracted ZIP if anything looks wrong.
 echo.
@@ -768,6 +1010,7 @@ echo  =============================================
 echo     LinkNest - XAMPP Update (preserve data)
 echo     Package build: $BuildId
 echo     App version  : $pkgVersion
+echo     SQLite       : $sqliteShipNote
 echo  =============================================
 echo.
 
@@ -830,6 +1073,7 @@ if exist "%INSTALL_DIR%\deploy-xampp.bat" del /f /q "%INSTALL_DIR%\deploy-xampp.
 if exist "%INSTALL_DIR%\deploy-xampp.sh" del /f /q "%INSTALL_DIR%\deploy-xampp.sh"
 if exist "%INSTALL_DIR%\update-xampp.bat" del /f /q "%INSTALL_DIR%\update-xampp.bat"
 if exist "%INSTALL_DIR%\verify-install.bat" del /f /q "%INSTALL_DIR%\verify-install.bat"
+if exist "%INSTALL_DIR%\install-sqlite-xampp.bat" del /f /q "%INSTALL_DIR%\install-sqlite-xampp.bat"
 
 echo  Restoring preserved data/ and uploads/ ...
 if exist "%BACKUP_DIR%\data" (
@@ -853,6 +1097,14 @@ echo VITE_API_BASE=/%SUBFOLDER%/api
 if not exist "%INSTALL_DIR%\logs" mkdir "%INSTALL_DIR%\logs"
 
 echo.
+echo  Upgrading XAMPP PHP SQLite to $SqliteTargetVersion ...
+if exist "%PKG_DIR%\install-sqlite-xampp.bat" (
+    call "%PKG_DIR%\install-sqlite-xampp.bat" "%XAMPP_ROOT%" quiet
+) else (
+    echo  [!!] install-sqlite-xampp.bat missing - skip SQLite DLL upgrade
+)
+
+echo.
 echo  =============================================
 echo  Update Complete!  Build: $BuildId
 echo  =============================================
@@ -865,11 +1117,19 @@ echo  If Semi-PWA is enabled, do ONE hard refresh (Ctrl+F5)
 echo  so the service worker picks up the new cache version.
 echo.
 echo  Tip: restart Apache if PHP still serves oddly stale code.
+echo  Confirm SQLite: "%XAMPP_ROOT%\php\php.exe" -r "echo SQLite3::version()['versionString'];"
 echo.
 pause
 "@
 
 # -- verify-install.bat (quick health check against an install OR this ZIP) -
+$verifySqliteChecks = if ($SqliteRuntimeBundled) {
+@"
+    "runtime\sqlite\libsqlite3.dll"
+    "install-sqlite-xampp.bat"
+"@
+} else { "" }
+
 $verifyBat = @"
 @echo off
 setlocal enabledelayedexpansion
@@ -900,6 +1160,7 @@ for %%F in (
     "public\sw-cache-first.js"
     "package.json"
     "App.tsx"
+$verifySqliteChecks
 ) do (
     if exist "!TARGET!\%%~F" (
         echo  [OK] %%~F
@@ -907,6 +1168,13 @@ for %%F in (
         echo  [XX] MISSING %%~F
         set "FAIL=1"
     )
+)
+
+if exist "!TARGET!\runtime\sqlite\SQLITE_VERSION.txt" (
+    echo.
+    echo  --- SQLite runtime ---
+    type "!TARGET!\runtime\sqlite\SQLITE_VERSION.txt"
+    echo.
 )
 
 if exist "!TARGET!\BUILD_INFO.json" (
@@ -975,7 +1243,7 @@ else
 fi
 
 cp -a "`$PKG_DIR"/. "`$INSTALL_DIR/"
-rm -f "`$INSTALL_DIR/deploy-xampp.sh" "`$INSTALL_DIR/deploy-xampp.bat" "`$INSTALL_DIR/update-xampp.bat" "`$INSTALL_DIR/verify-install.bat"
+rm -f "`$INSTALL_DIR/deploy-xampp.sh" "`$INSTALL_DIR/deploy-xampp.bat" "`$INSTALL_DIR/update-xampp.bat" "`$INSTALL_DIR/verify-install.bat" "`$INSTALL_DIR/install-sqlite-xampp.bat"
 
 if [ -n "`$BACKUP_DIR" ]; then
     [ -d "`$BACKUP_DIR/data" ] && rm -rf "`$INSTALL_DIR/data" && cp -a "`$BACKUP_DIR/data" "`$INSTALL_DIR/"
@@ -1020,6 +1288,7 @@ Build ID: $BuildId
 Version : $pkgVersion
 Base    : $(if ($BasePath) { $BasePath } else { "/" })
 Database: $dbModeNote
+SQLite  : $sqliteShipNote
 
 ---
 
@@ -1029,12 +1298,34 @@ Database: $dbModeNote
 2. Extract this ZIP anywhere (Desktop is fine).
 3. **Fresh install:** double-click ``deploy-xampp.bat``
 4. **Upgrade existing:** double-click ``update-xampp.bat`` (keeps ``data/`` + ``uploads/``)
-5. Open ``http://localhost/$basePathForBat``
-6. Confirm ``http://localhost/$basePathForBat/BUILD_INFO.json`` shows buildId ``$BuildId``
-7. Hard refresh once (Ctrl+F5) if Semi-PWA still shows an old UI
-8. Login: ``admin`` / ``admin123`` - change immediately
+5. Approve the UAC prompt so ``install-sqlite-xampp.bat`` can upgrade XAMPP PHP to SQLite **$SqliteTargetVersion**
+6. Open ``http://localhost/$basePathForBat``
+7. Confirm ``http://localhost/$basePathForBat/BUILD_INFO.json`` shows buildId ``$BuildId``
+8. Hard refresh once (Ctrl+F5) if Semi-PWA still shows an old UI
+9. Login: ``admin`` / ``admin123`` - change immediately
 
-Optional: run ``verify-install.bat`` to confirm required files are present.
+Optional: run ``verify-install.bat`` to confirm required files (including ``runtime/sqlite/``) are present.
+Optional: run ``install-sqlite-xampp.bat`` alone if you skipped it during deploy.
+
+---
+
+## SQLite 3.53.4 + performance (ships with this package)
+
+| Piece | What it does |
+|-------|----------------|
+| ``runtime/sqlite/libsqlite3.dll`` | Official Windows x64 SQLite **$SqliteTargetVersion** for XAMPP PHP |
+| ``install-sqlite-xampp.bat`` | Replaces ``%XAMPP%\php\libsqlite3.dll`` (backs up the old one) |
+| ``api/config.php`` | Applies WAL, mmap 256MB, 32MB cache, 4 worker threads, temp in memory |
+
+After install, confirm on the target PC:
+
+``````
+C:\xampp\php\php.exe -r "echo SQLite3::version()['versionString'];"
+``````
+
+Expect ``$SqliteTargetVersion``.
+
+> Linux/macOS XAMPP: the DLL installer is Windows-only. Use your distro/PHP package for a recent SQLite; app pragmas in ``api/config.php`` still apply.
 
 ---
 
@@ -1063,17 +1354,28 @@ Password : admin123
 | API 404 | Enable AllowOverride All + mod_rewrite in Apache |
 | SAML library missing | Package must include ``vendor/`` - re-run packager on source PC |
 | Permission errors | Ensure ``data/``, ``uploads/``, ``logs/`` are writable by Apache |
+| Old SQLite (3.39.x) | Run ``install-sqlite-xampp.bat`` as Administrator; restart Apache |
+| DLL locked / copy failed | Stop Apache in XAMPP Control Panel, re-run install-sqlite-xampp.bat |
 "@
 
 Set-Content -Path (Join-Path $TempDir "deploy-xampp.bat") -Value $deployBat -Encoding ASCII
 Set-Content -Path (Join-Path $TempDir "update-xampp.bat") -Value $updateBat -Encoding ASCII
 Set-Content -Path (Join-Path $TempDir "verify-install.bat") -Value $verifyBat -Encoding ASCII
+if ($SqliteRuntimeBundled) {
+    Set-Content -Path (Join-Path $TempDir "install-sqlite-xampp.bat") -Value $installSqliteBat -Encoding ASCII
+}
 Set-Content -Path (Join-Path $TempDir "deploy-xampp.sh") -Value $deploySh -Encoding UTF8
 Set-Content -Path (Join-Path $TempDir "DEPLOYMENT_README.md") -Value $readmeMd -Encoding UTF8
 
 Write-OK "deploy-xampp.bat written"
 Write-OK "update-xampp.bat written (preserve data - use this for upgrades)"
 Write-OK "verify-install.bat written"
+if ($SqliteRuntimeBundled) {
+    Write-OK "install-sqlite-xampp.bat written (SQLite $SqliteTargetVersion -> XAMPP PHP)"
+}
+else {
+    Write-Warn "install-sqlite-xampp.bat omitted (SQLite runtime not bundled)"
+}
 Write-OK "deploy-xampp.sh written"
 Write-OK "DEPLOYMENT_README.md written"
 
@@ -1097,6 +1399,14 @@ $requiredInPackage = @(
     "update-xampp.bat",
     "verify-install.bat"
 )
+
+if ($SqliteRuntimeBundled) {
+    $requiredInPackage += @(
+        "runtime\sqlite\libsqlite3.dll",
+        "runtime\sqlite\SQLITE_VERSION.txt",
+        "install-sqlite-xampp.bat"
+    )
+}
 
 $integrityFailed = $false
 foreach ($rel in $requiredInPackage) {
@@ -1168,6 +1478,12 @@ try {
         "verify-install.bat",
         ".htaccess"
     )
+    if ($SqliteRuntimeBundled) {
+        $mustHaveInZip += @(
+            "runtime/sqlite/libsqlite3.dll",
+            "install-sqlite-xampp.bat"
+        )
+    }
     $zipBad = $false
     foreach ($m in $mustHaveInZip) {
         if ($names -notcontains $m) {
@@ -1213,15 +1529,17 @@ Write-Host "  Size    : $zipMB MB"  -ForegroundColor Green
 Write-Host "  BuildId : $BuildId" -ForegroundColor Green
 Write-Host "  Version : $pkgVersion" -ForegroundColor Green
 Write-Host "  DB mode : $(if ($IncludeDatabase) { 'includes live DB' } else { 'FRESH (no live DB)' })" -ForegroundColor Green
+Write-Host "  SQLite  : $(if ($SqliteRuntimeBundled) { "bundled $SqliteVersionShipped + install-sqlite-xampp.bat" } else { 'not bundled' })" -ForegroundColor Green
 Write-Host "  =============================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "  ON THE TARGET MACHINE:" -ForegroundColor Yellow
 Write-Host "  1. Extract the ZIP" -ForegroundColor Yellow
 Write-Host "  2. Fresh install : run deploy-xampp.bat" -ForegroundColor Yellow
 Write-Host "  3. Upgrade       : run update-xampp.bat (keeps data/)" -ForegroundColor Yellow
-Write-Host "  4. Optional check: run verify-install.bat" -ForegroundColor Yellow
-Write-Host "  5. Open BUILD_INFO.json and confirm buildId above" -ForegroundColor Yellow
-Write-Host "  6. Ctrl+F5 once if old UI remains (service worker)" -ForegroundColor Yellow
+Write-Host "  4. Approve UAC   : installs SQLite $SqliteTargetVersion into XAMPP PHP" -ForegroundColor Yellow
+Write-Host "  5. Optional check: run verify-install.bat" -ForegroundColor Yellow
+Write-Host "  6. Open BUILD_INFO.json and confirm buildId above" -ForegroundColor Yellow
+Write-Host "  7. Ctrl+F5 once if old UI remains (service worker)" -ForegroundColor Yellow
 Write-Host ""
 
 $outputFolder = Split-Path $ZipOutput -Parent

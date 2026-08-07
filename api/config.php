@@ -165,6 +165,186 @@ function releaseDatabaseInitLock($fp) {
     }
 }
 
+/**
+ * Apply SQLite 3.53+ performance pragmas on an open connection.
+ * Safe to call on every connection; values are connection-scoped except journal_mode.
+ *
+ * RAM strategy (multi-worker Apache safe):
+ * - Keep the on-disk DB as the source of truth (WAL commits).
+ * - Size the SQLite page cache to hold ~2x the DB so hot pages stay in process RAM.
+ * - Enable mmap so the OS can serve the file from virtual memory.
+ * - Prefetch the DB file into the OS page cache on connect (small DBs).
+ * A shared process-wide ":memory:" primary DB is NOT used — each Apache worker
+ * would get a divergent copy and writes would corrupt / lose updates.
+ *
+ * @return array<string, mixed> Applied / verified pragma values
+ */
+function applySqlitePerformancePragmas(PDO $db): array {
+    $applied = [];
+
+    // Concurrent access under Apache multi-worker
+    $db->exec('PRAGMA busy_timeout = 5000');
+    $applied['busy_timeout'] = 5000;
+
+    // Project convention: FK enforcement off at engine level
+    $db->exec('PRAGMA foreign_keys = OFF');
+    $applied['foreign_keys'] = 'OFF';
+
+    // WAL: concurrent readers + faster commits (disk is for durable commit only)
+    try {
+        $db->exec('PRAGMA journal_mode = WAL');
+        $applied['journal_mode'] = (string)$db->query('PRAGMA journal_mode')->fetchColumn();
+    } catch (PDOException $e) {
+        // Ignore if unavailable
+    }
+
+    // Page size only applies to empty DBs
+    try {
+        $db->exec('PRAGMA page_size = 4096');
+    } catch (PDOException $e) {
+        // Ignore
+    }
+
+    // Memory-mapped I/O — entire small DBs are effectively addressable as RAM
+    try {
+        $db->exec('PRAGMA mmap_size = 268435456'); // 256 MB cap; only maps file size
+        $applied['mmap_size'] = (int)$db->query('PRAGMA mmap_size')->fetchColumn();
+    } catch (PDOException $e) {
+        error_log('Warning: mmap_size not available: ' . $e->getMessage());
+    }
+
+    // Page cache sized to hold the whole DB (+ working set) in RAM
+    $cacheKiB = sizeSqlitePageCacheForDatabase($db);
+    $applied['cache_size'] = (int)$db->query('PRAGMA cache_size')->fetchColumn();
+    $applied['cache_size_kib'] = $cacheKiB;
+
+    // With WAL, NORMAL is durable against corruption and much faster than FULL
+    $db->exec('PRAGMA synchronous = NORMAL');
+    $applied['synchronous'] = (int)$db->query('PRAGMA synchronous')->fetchColumn();
+
+    // Keep sorts / temp tables in memory
+    $db->exec('PRAGMA temp_store = MEMORY');
+    $applied['temp_store'] = (int)$db->query('PRAGMA temp_store')->fetchColumn();
+
+    // Parallel sort / index build threads (MAX_WORKER_THREADS=8 in SQLite 3.53.4)
+    try {
+        $db->exec('PRAGMA threads = 4');
+        $applied['threads'] = (int)$db->query('PRAGMA threads')->fetchColumn();
+    } catch (PDOException $e) {
+        // Older builds without worker threads — ignore
+    }
+
+    // Prevent unbounded WAL growth (hurts read latency)
+    try {
+        $db->exec('PRAGMA journal_size_limit = 67108864'); // 64 MB
+        $applied['journal_size_limit'] = (int)$db->query('PRAGMA journal_size_limit')->fetchColumn();
+    } catch (PDOException $e) {
+        // Ignore
+    }
+
+    try {
+        $db->exec('PRAGMA wal_autocheckpoint = 1000');
+        $applied['wal_autocheckpoint'] = 1000;
+    } catch (PDOException $e) {
+        // Ignore if not in WAL
+    }
+
+    // Prefetch DB into OS page cache so the first real queries hit RAM
+    $applied['ram_prefetch'] = warmSqliteOsPageCache();
+
+    // Query-planner stats; SQLite 3.46+ auto-limits analysis so this stays fast
+    try {
+        $db->exec('PRAGMA optimize');
+        $applied['optimize'] = true;
+    } catch (PDOException $e) {
+        // Ignore
+    }
+
+    try {
+        $applied['sqlite_version'] = (string)$db->query('SELECT sqlite_version()')->fetchColumn();
+    } catch (PDOException $e) {
+        // Ignore
+    }
+
+    try {
+        $pageCount = (int)$db->query('PRAGMA page_count')->fetchColumn();
+        $pageSize = (int)$db->query('PRAGMA page_size')->fetchColumn();
+        $applied['database_bytes'] = $pageCount * $pageSize;
+        $applied['ram_resident'] = ($cacheKiB * 1024) >= ($pageCount * $pageSize);
+    } catch (PDOException $e) {
+        // Ignore
+    }
+
+    return $applied;
+}
+
+/**
+ * Size SQLite's page cache so the working set (≈ entire LinkNest DB) stays in RAM.
+ * Negative PRAGMA cache_size is KiB. Min 32 MiB, max 512 MiB.
+ */
+function sizeSqlitePageCacheForDatabase(PDO $db): int {
+    $dbBytes = 0;
+    try {
+        $pageCount = (int)$db->query('PRAGMA page_count')->fetchColumn();
+        $pageSize = (int)$db->query('PRAGMA page_size')->fetchColumn();
+        $dbBytes = $pageCount * $pageSize;
+    } catch (PDOException $e) {
+        // Ignore
+    }
+    if ($dbBytes <= 0 && defined('DB_PATH') && is_file(DB_PATH)) {
+        $dbBytes = (int)@filesize(DB_PATH);
+    }
+
+    // 2x file size covers pages + indexes + query scratch; floor/ceiling for safety
+    $kib = (int)ceil(($dbBytes * 2) / 1024);
+    $kib = max($kib, 32768);   // at least 32 MiB
+    $kib = min($kib, 524288);  // at most 512 MiB
+
+    $db->exec('PRAGMA cache_size = -' . $kib);
+    return $kib;
+}
+
+/**
+ * Pull the on-disk DB into the OS page cache (and help mmap fault pages in).
+ * Safe for multi-worker: read-only prefetch; commits still go to the file via WAL.
+ * Runs at most once per PHP worker. Skips files larger than 64 MiB.
+ */
+function warmSqliteOsPageCache(): bool {
+    static $done = false;
+    if ($done) {
+        return true;
+    }
+    if (!defined('DB_PATH') || !is_readable(DB_PATH)) {
+        return false;
+    }
+    $size = @filesize(DB_PATH);
+    if ($size === false || $size <= 0 || $size > 64 * 1024 * 1024) {
+        return false;
+    }
+
+    $fh = @fopen(DB_PATH, 'rb');
+    if ($fh === false) {
+        return false;
+    }
+    try {
+        while (!feof($fh)) {
+            $chunk = fread($fh, 1024 * 1024);
+            if ($chunk === false || $chunk === '') {
+                break;
+            }
+        }
+        foreach ([DB_PATH . '-wal', DB_PATH . '-shm'] as $side) {
+            if (is_readable($side) && (@filesize($side) ?: 0) > 0 && (@filesize($side) ?: 0) <= 16 * 1024 * 1024) {
+                @file_get_contents($side);
+            }
+        }
+        $done = true;
+        return true;
+    } finally {
+        fclose($fh);
+    }
+}
+
 // Initialize database
 function initDatabase() {
     $initLock = null;
@@ -173,68 +353,7 @@ function initDatabase() {
         $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
         
-        // Enterprise SQLite Configuration
-        // Set busy timeout for concurrent access handling
-        $db->exec('PRAGMA busy_timeout = 5000'); // 5000 ms timeout
-        
-        // Foreign keys disabled for enterprise (as per requirements)
-        $db->exec('PRAGMA foreign_keys = OFF');
-        
-        // Use WAL mode for better concurrent access (enterprise standard)
-        try {
-            $db->exec('PRAGMA journal_mode = WAL');
-        } catch (PDOException $e) {
-            // WAL might not be available, ignore
-        }
-        
-        // Optimize SQLite performance settings
-        try {
-            // Set page size to 4096 (4 KB) for enterprise standard
-            // Note: This only works if the database is empty, so we try it but don't fail if it doesn't work
-            $db->exec('PRAGMA page_size = 4096');
-        } catch (PDOException $e) {
-            // Page size can only be set on empty database, ignore if already set
-        }
-        
-        // IN-MEMORY OPTIMIZATION FOR SMALL DATABASES
-        // Memory-map the entire database file into RAM for maximum performance
-        // This allows SQLite to access the database directly from memory
-        // Value in bytes: 100 MB should be more than enough for small databases
-        try {
-            $db->exec('PRAGMA mmap_size = 104857600'); // 100 MB
-        } catch (PDOException $e) {
-            // mmap_size might not be available in all SQLite versions, ignore
-            error_log('Warning: mmap_size not available: ' . $e->getMessage());
-        }
-        
-        // Increase cache size to hold entire database in memory
-        // For small databases (< 1 MB), use 4 MB cache to ensure everything fits
-        // Negative value = KB, so -4096 = 4 MB
-        $db->exec('PRAGMA cache_size = -4096'); // 4 MB cache
-        
-        // Set synchronous mode to NORMAL (1) for better performance with WAL mode
-        // WAL mode provides durability, so NORMAL is safe and much faster than FULL
-        // This significantly improves write performance for small databases
-        $db->exec('PRAGMA synchronous = NORMAL');
-        
-        // Store temporary data in memory instead of disk
-        // This speeds up queries that use temporary tables, sorts, etc.
-        $db->exec('PRAGMA temp_store = MEMORY');
-        
-        // Set WAL auto checkpoint to 1000 pages for enterprise
-        try {
-            $db->exec('PRAGMA wal_autocheckpoint = 1000');
-        } catch (PDOException $e) {
-            // WAL checkpoint might not be available if not in WAL mode, ignore
-        }
-        
-        // Additional optimizations for small databases
-        // Optimize the query planner to use better algorithms
-        try {
-            $db->exec('PRAGMA optimize');
-        } catch (PDOException $e) {
-            // PRAGMA optimize might not be available in older SQLite versions, ignore
-        }
+        applySqlitePerformancePragmas($db);
 
         // Serialize schema bootstrap across concurrent Apache workers
         $initLock = acquireDatabaseInitLock();

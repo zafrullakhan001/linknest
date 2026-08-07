@@ -39,51 +39,8 @@ header('Content-Type: application/json; charset=utf-8');
 try {
     $db = getDB();
     
-    // Enterprise SQLite Configuration
-    // Enable WAL mode for better concurrent access
-    $db->exec('PRAGMA journal_mode = WAL');
-    
-    // Set page size to 4096 (4 KB) - only takes effect on empty DB; skip if DB has data
-    try {
-        $db->exec('PRAGMA page_size = 4096');
-    } catch (PDOException $e) {
-        // Ignore - page_size cannot be changed on existing non-empty database
-    }
-    
-    // Foreign keys disabled for enterprise (as per requirements)
-    $db->exec('PRAGMA foreign_keys = OFF');
-    
-    // IN-MEMORY OPTIMIZATION FOR SMALL DATABASES
-    // Memory-map the entire database file into RAM for maximum performance
-    try {
-        $db->exec('PRAGMA mmap_size = 104857600'); // 100 MB
-    } catch (PDOException $e) {
-        // mmap_size might not be available in all SQLite versions, ignore
-    }
-    
-    // Increase cache size to hold entire database in memory
-    // For small databases (< 1 MB), use 4 MB cache to ensure everything fits
-    $db->exec('PRAGMA cache_size = -4096'); // 4 MB cache
-    
-    // Set synchronous mode to NORMAL (1) for better performance with WAL mode
-    // WAL mode provides durability, so NORMAL is safe and much faster than FULL
-    $db->exec('PRAGMA synchronous = NORMAL');
-    
-    // Store temporary data in memory instead of disk
-    $db->exec('PRAGMA temp_store = MEMORY');
-    
-    // Set busy timeout for concurrent access handling
-    $db->exec('PRAGMA busy_timeout = 5000'); // 5000 ms
-    
-    // Set WAL auto checkpoint to 1000 pages for enterprise
-    $db->exec('PRAGMA wal_autocheckpoint = 1000');
-    
-    // Additional optimizations for small databases
-    try {
-        $db->exec('PRAGMA optimize');
-    } catch (PDOException $e) {
-        // PRAGMA optimize might not be available in older SQLite versions, ignore
-    }
+    // SQLite 3.53+ performance pragmas (WAL, mmap, cache, worker threads, etc.)
+    $pragmaSettings = applySqlitePerformancePragmas($db);
     
     // Begin transaction for all index creation
     $db->beginTransaction();
@@ -308,8 +265,12 @@ try {
         'page_count' => $db->query('PRAGMA page_count')->fetchColumn(),
         'page_size' => $db->query('PRAGMA page_size')->fetchColumn(),
         'cache_size' => $db->query('PRAGMA cache_size')->fetchColumn(),
+        'mmap_size' => $db->query('PRAGMA mmap_size')->fetchColumn(),
         'journal_mode' => $db->query('PRAGMA journal_mode')->fetchColumn(),
         'synchronous' => $db->query('PRAGMA synchronous')->fetchColumn(),
+        'threads' => $db->query('PRAGMA threads')->fetchColumn(),
+        'temp_store' => $db->query('PRAGMA temp_store')->fetchColumn(),
+        'sqlite_version' => $db->query('SELECT sqlite_version()')->fetchColumn(),
     ];
     
     // Get all indexes
@@ -318,6 +279,7 @@ try {
     $result = [
         'success' => true,
         'message' => 'Database optimization completed successfully',
+        'pragma_settings' => $pragmaSettings,
         'indexes_created' => count($indexesCreated),
         'indexes_skipped' => count($indexesSkipped),
         'indexesCreated' => $indexesCreated,

@@ -233,6 +233,12 @@ if ($path === '/') {
     }
     require __DIR__ . '/maintenance_health.php';
     exit;
+} elseif (strpos($path, '/check-sqlite-memory') === 0) {
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    require __DIR__ . '/check_sqlite_memory.php';
+    exit;
 } elseif (strpos($path, '/maintenance-stats') === 0) {
     if (session_status() === PHP_SESSION_NONE) {
         session_start();
