@@ -1019,7 +1019,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                     className="w-full px-4 py-3 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-semibold active:bg-brand-700 touch-manipulation"
                                                                     style={{ minHeight: '44px' }}
                                                                 >
-                                                                    Add Link
+                                                                    Save Link
                                                                 </button>
                                                             </div>
                                                         )}

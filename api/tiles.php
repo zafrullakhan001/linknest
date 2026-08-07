@@ -2232,6 +2232,17 @@ function handleCloneTile($tileId) {
                         'boxed' => !empty($richText['boxed']),
                         'box_title' => $richText['box_title'] ?? null,
                         'box_footer' => $richText['box_footer'] ?? null,
+                        'box_header_align' => $richText['box_header_align'] ?? 'left',
+                        'box_footer_align' => $richText['box_footer_align'] ?? 'left',
+                        'box_header_bg' => $richText['box_header_bg'] ?? null,
+                        'box_footer_bg' => $richText['box_footer_bg'] ?? null,
+                        'box_body_bg' => $richText['box_body_bg'] ?? null,
+                        'box_header_font_weight' => $richText['box_header_font_weight'] ?? 'bold',
+                        'box_footer_font_weight' => $richText['box_footer_font_weight'] ?? 'normal',
+                        'box_header_font_size' => $richText['box_header_font_size'] ?? 'md',
+                        'box_footer_font_size' => $richText['box_footer_font_size'] ?? 'sm',
+                        'box_header_emoji' => $richText['box_header_emoji'] ?? null,
+                        'box_importance' => $richText['box_importance'] ?? 'notes',
                     ]);
                 }
             }
@@ -2314,6 +2325,17 @@ function handleCloneTile($tileId) {
                         'boxed' => !empty($richText['boxed']),
                         'box_title' => $richText['box_title'] ?? null,
                         'box_footer' => $richText['box_footer'] ?? null,
+                        'box_header_align' => $richText['box_header_align'] ?? 'left',
+                        'box_footer_align' => $richText['box_footer_align'] ?? 'left',
+                        'box_header_bg' => $richText['box_header_bg'] ?? null,
+                        'box_footer_bg' => $richText['box_footer_bg'] ?? null,
+                        'box_body_bg' => $richText['box_body_bg'] ?? null,
+                        'box_header_font_weight' => $richText['box_header_font_weight'] ?? 'bold',
+                        'box_footer_font_weight' => $richText['box_footer_font_weight'] ?? 'normal',
+                        'box_header_font_size' => $richText['box_header_font_size'] ?? 'md',
+                        'box_footer_font_size' => $richText['box_footer_font_size'] ?? 'sm',
+                        'box_header_emoji' => $richText['box_header_emoji'] ?? null,
+                        'box_importance' => $richText['box_importance'] ?? 'notes',
                     ]);
                 }
             }

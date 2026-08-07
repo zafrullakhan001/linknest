@@ -17,6 +17,18 @@ import { useSettings } from '../contexts/SettingsContext';
 import { RichTextEditor } from './RichTextEditor';
 import { RichTextContentItem } from './RichTextContentItem';
 import { RichTextBoxedView } from './RichTextBoxedView';
+import {
+    RichTextBoxOptionsFields,
+    buildBoxMetaFromFields,
+    DEFAULT_HEADER_BG,
+    DEFAULT_FOOTER_BG,
+    DEFAULT_BODY_BG,
+    type RichTextBoxMeta,
+    type BoxFontWeight,
+    type BoxFontSize,
+    type BoxImportance,
+} from './RichTextBoxOptionsFields';
+import type { BoxAlign } from './RichTextBoxedView';
 import { RichTextContent } from '../types';
 import { isPublicLinkFavorite, togglePublicLinkFavorite } from '../services/publicFavoritesService';
 import { LinkInfoDialog } from './LinkInfoDialog';
@@ -27,7 +39,6 @@ import { VersionDiffViewer } from './VersionDiffViewer';
 import { TileAnimationSelector, getTileAnimationClass, TileAnimation, getAnimationOption, resolveLinkAnimation } from './TileAnimationSelector';
 import { AuthSourceBadge } from './AuthSourceBadge';
 import { getDisplayUrl } from '../utils/urlDisplay';
-import type { RichTextBoxMeta } from './RichTextContentItem';
 
 type ViewLayoutMode = 'stacked' | 'side-by-side' | 'grid' | 'compact';
 
@@ -425,6 +436,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [newRichTextBoxed, setNewRichTextBoxed] = useState<Record<string, boolean>>({});
     const [newRichTextBoxTitle, setNewRichTextBoxTitle] = useState<Record<string, string>>({});
     const [newRichTextBoxFooter, setNewRichTextBoxFooter] = useState<Record<string, string>>({});
+    const [newRichTextHeaderAlign, setNewRichTextHeaderAlign] = useState<Record<string, BoxAlign>>({});
+    const [newRichTextFooterAlign, setNewRichTextFooterAlign] = useState<Record<string, BoxAlign>>({});
+    const [newRichTextHeaderBg, setNewRichTextHeaderBg] = useState<Record<string, string>>({});
+    const [newRichTextFooterBg, setNewRichTextFooterBg] = useState<Record<string, string>>({});
+    const [newRichTextBodyBg, setNewRichTextBodyBg] = useState<Record<string, string>>({});
+    const [newRichTextHeaderWeight, setNewRichTextHeaderWeight] = useState<Record<string, BoxFontWeight>>({});
+    const [newRichTextFooterWeight, setNewRichTextFooterWeight] = useState<Record<string, BoxFontWeight>>({});
+    const [newRichTextHeaderSize, setNewRichTextHeaderSize] = useState<Record<string, BoxFontSize>>({});
+    const [newRichTextFooterSize, setNewRichTextFooterSize] = useState<Record<string, BoxFontSize>>({});
+    const [newRichTextHeaderEmoji, setNewRichTextHeaderEmoji] = useState<Record<string, string>>({});
+    const [newRichTextImportance, setNewRichTextImportance] = useState<Record<string, BoxImportance>>({});
 
     // Link Search State (for edit mode)
     const [linkSearchTerm, setLinkSearchTerm] = useState('');
@@ -2894,18 +2916,51 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     // Rich Text Content Handlers
+    const clearAddRichTextForm = (sectionId: string) => {
+        setNewRichTextContent(prev => ({ ...prev, [sectionId]: '' }));
+        setNewRichTextBoxed(prev => ({ ...prev, [sectionId]: false }));
+        setNewRichTextBoxTitle(prev => ({ ...prev, [sectionId]: '' }));
+        setNewRichTextBoxFooter(prev => ({ ...prev, [sectionId]: '' }));
+        setNewRichTextHeaderAlign(prev => ({ ...prev, [sectionId]: 'left' }));
+        setNewRichTextFooterAlign(prev => ({ ...prev, [sectionId]: 'left' }));
+        setNewRichTextHeaderBg(prev => ({ ...prev, [sectionId]: DEFAULT_HEADER_BG }));
+        setNewRichTextFooterBg(prev => ({ ...prev, [sectionId]: DEFAULT_FOOTER_BG }));
+        setNewRichTextBodyBg(prev => ({ ...prev, [sectionId]: DEFAULT_BODY_BG }));
+        setNewRichTextHeaderWeight(prev => ({ ...prev, [sectionId]: 'bold' }));
+        setNewRichTextFooterWeight(prev => ({ ...prev, [sectionId]: 'normal' }));
+        setNewRichTextHeaderSize(prev => ({ ...prev, [sectionId]: 'md' }));
+        setNewRichTextFooterSize(prev => ({ ...prev, [sectionId]: 'sm' }));
+        setNewRichTextHeaderEmoji(prev => ({ ...prev, [sectionId]: '' }));
+        setNewRichTextImportance(prev => ({ ...prev, [sectionId]: 'notes' }));
+        setShowAddRichTextForm(prev => ({ ...prev, [sectionId]: false }));
+    };
+
     const handleAddRichTextToSection = (tabId: string, sectionId: string) => {
         const content = newRichTextContent[sectionId]?.trim();
         if (!content) return;
 
-        const boxed = !!newRichTextBoxed[sectionId];
+        const meta = buildBoxMetaFromFields({
+            boxed: !!newRichTextBoxed[sectionId],
+            boxTitle: newRichTextBoxTitle[sectionId] || '',
+            boxFooter: newRichTextBoxFooter[sectionId] || '',
+            boxHeaderAlign: newRichTextHeaderAlign[sectionId] || 'left',
+            boxFooterAlign: newRichTextFooterAlign[sectionId] || 'left',
+            boxHeaderBg: newRichTextHeaderBg[sectionId] || DEFAULT_HEADER_BG,
+            boxFooterBg: newRichTextFooterBg[sectionId] || DEFAULT_FOOTER_BG,
+            boxBodyBg: newRichTextBodyBg[sectionId] || DEFAULT_BODY_BG,
+            boxHeaderFontWeight: newRichTextHeaderWeight[sectionId] || 'bold',
+            boxFooterFontWeight: newRichTextFooterWeight[sectionId] || 'normal',
+            boxHeaderFontSize: newRichTextHeaderSize[sectionId] || 'md',
+            boxFooterFontSize: newRichTextFooterSize[sectionId] || 'sm',
+            boxHeaderEmoji: newRichTextHeaderEmoji[sectionId] || '',
+            boxImportance: newRichTextImportance[sectionId] || 'notes',
+        });
+
         const newRichText: RichTextContent = {
             id: generateId(),
-            content: content,
-            position: 0, // Will be set based on current items
-            boxed,
-            boxTitle: boxed ? (newRichTextBoxTitle[sectionId]?.trim() || undefined) : undefined,
-            boxFooter: boxed ? (newRichTextBoxFooter[sectionId]?.trim() || undefined) : undefined,
+            content,
+            position: 0,
+            ...meta,
         };
 
         const updateSection = (s: LinkSection) => {
@@ -2921,7 +2976,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         };
 
         if (editTabs.length > 0) {
-            setEditTabs(editTabs.map(tab => {
+            setEditTabs(prev => prev.map(tab => {
                 if (tab.id !== tabId) return tab;
                 return {
                     ...tab,
@@ -2929,34 +2984,60 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 };
             }));
         } else {
-            setEditSections(editSections.map(updateSection));
+            setEditSections(prev => prev.map(updateSection));
         }
 
-        setNewRichTextContent(prev => ({ ...prev, [sectionId]: '' }));
-        setNewRichTextBoxed(prev => ({ ...prev, [sectionId]: false }));
-        setNewRichTextBoxTitle(prev => ({ ...prev, [sectionId]: '' }));
-        setNewRichTextBoxFooter(prev => ({ ...prev, [sectionId]: '' }));
-        setShowAddRichTextForm(prev => ({ ...prev, [sectionId]: false }));
+        clearAddRichTextForm(sectionId);
     };
 
     const handleUpdateRichText = (tabId: string, sectionId: string, richTextId: string, content: string, meta?: RichTextBoxMeta) => {
         const applyUpdate = (rt: RichTextContent) => {
             if (rt.id !== richTextId) return rt;
+            if (!meta) {
+                return { ...rt, content };
+            }
+            if (!meta.boxed) {
+                return {
+                    ...rt,
+                    content,
+                    boxed: false,
+                    boxTitle: undefined,
+                    boxFooter: undefined,
+                    boxHeaderAlign: undefined,
+                    boxFooterAlign: undefined,
+                    boxHeaderBg: undefined,
+                    boxFooterBg: undefined,
+                    boxBodyBg: undefined,
+                    boxHeaderFontWeight: undefined,
+                    boxFooterFontWeight: undefined,
+                    boxHeaderFontSize: undefined,
+                    boxFooterFontSize: undefined,
+                    boxHeaderEmoji: undefined,
+                    boxImportance: undefined,
+                };
+            }
             return {
                 ...rt,
                 content,
-                ...(meta
-                    ? {
-                          boxed: !!meta.boxed,
-                          boxTitle: meta.boxed ? (meta.boxTitle || undefined) : undefined,
-                          boxFooter: meta.boxed ? (meta.boxFooter || undefined) : undefined,
-                      }
-                    : {}),
+                boxed: true,
+                boxTitle: meta.boxTitle,
+                boxFooter: meta.boxFooter,
+                boxHeaderAlign: meta.boxHeaderAlign || 'left',
+                boxFooterAlign: meta.boxFooterAlign || 'left',
+                boxHeaderBg: meta.boxHeaderBg || DEFAULT_HEADER_BG,
+                boxFooterBg: meta.boxFooterBg || DEFAULT_FOOTER_BG,
+                boxBodyBg: meta.boxBodyBg || DEFAULT_BODY_BG,
+                boxHeaderFontWeight: meta.boxHeaderFontWeight || 'bold',
+                boxFooterFontWeight: meta.boxFooterFontWeight || 'normal',
+                boxHeaderFontSize: meta.boxHeaderFontSize || 'md',
+                boxFooterFontSize: meta.boxFooterFontSize || 'sm',
+                boxHeaderEmoji: meta.boxHeaderEmoji,
+                boxImportance: meta.boxImportance || 'notes',
             };
         };
 
         if (editTabs.length > 0) {
-            setEditTabs(editTabs.map(tab => {
+            setEditTabs(prev => prev.map(tab => {
                 if (tab.id !== tabId) return tab;
                 return {
                     ...tab,
@@ -2970,7 +3051,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 };
             }));
         } else {
-            setEditSections(editSections.map(s => {
+            setEditSections(prev => prev.map(s => {
                 if (s.id !== sectionId) return s;
                 return {
                     ...s,
@@ -3257,6 +3338,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         boxed: richTextToClone.boxed,
                         boxTitle: richTextToClone.boxTitle,
                         boxFooter: richTextToClone.boxFooter,
+                        boxHeaderAlign: richTextToClone.boxHeaderAlign,
+                        boxFooterAlign: richTextToClone.boxFooterAlign,
+                        boxHeaderBg: richTextToClone.boxHeaderBg,
+                        boxFooterBg: richTextToClone.boxFooterBg,
+                        boxBodyBg: richTextToClone.boxBodyBg,
+                        boxHeaderFontWeight: richTextToClone.boxHeaderFontWeight,
+                        boxFooterFontWeight: richTextToClone.boxFooterFontWeight,
+                        boxHeaderFontSize: richTextToClone.boxHeaderFontSize,
+                        boxFooterFontSize: richTextToClone.boxFooterFontSize,
+                        boxHeaderEmoji: richTextToClone.boxHeaderEmoji,
+                        boxImportance: richTextToClone.boxImportance,
                     };
 
                     // Insert cloned rich text after the original in the sorted list
@@ -4518,6 +4610,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         boxed={!!item.boxed}
                                                                         boxTitle={item.boxTitle}
                                                                         boxFooter={item.boxFooter}
+                                                                        boxHeaderAlign={item.boxHeaderAlign}
+                                                                        boxFooterAlign={item.boxFooterAlign}
+                                                                        boxHeaderBg={item.boxHeaderBg}
+                                                                        boxFooterBg={item.boxFooterBg}
+                                                                        boxBodyBg={item.boxBodyBg}
+                                                                        boxHeaderFontWeight={item.boxHeaderFontWeight}
+                                                                        boxFooterFontWeight={item.boxFooterFontWeight}
+                                                                        boxHeaderFontSize={item.boxHeaderFontSize}
+                                                                        boxFooterFontSize={item.boxFooterFontSize}
+                                                                        boxHeaderEmoji={item.boxHeaderEmoji}
+                                                                        boxImportance={item.boxImportance}
                                                                         bodyClassName="prose-p:text-slate-600 dark:prose-p:text-slate-400 prose-a:text-brand-500 dark:prose-a:text-brand-400"
                                                                     />
                                                                 </div>
@@ -6797,7 +6900,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                 content={richText}
                                                                                                 sectionId={section.id}
                                                                                                 tabId={tab.id}
-                                                                                                onUpdate={(id, content) => handleUpdateRichText(tab.id, section.id, id, content)}
+                                                                                                onUpdate={(id, content, meta) => handleUpdateRichText(tab.id, section.id, id, content, meta)}
                                                                                                 onDelete={(id) => handleDeleteRichText(tab.id, section.id, id)}
                                                                                                 onMoveUp={() => handleMoveItem(tab.id, section.id, richText.id, 'up')}
                                                                                                 onMoveDown={() => handleMoveItem(tab.id, section.id, richText.id, 'down')}
@@ -7871,9 +7974,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     className="px-4 py-2 text-xs font-semibold bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-all shadow-md hover:shadow-lg shadow-brand-500/30 flex items-center gap-1.5"
                                                                                 >
                                                                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-                                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
                                                                                     </svg>
-                                                                                    Add Link
+                                                                                    Save Link
                                                                                 </button>
                                                                             </div>
                                                                         </div>
@@ -7886,11 +7989,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Add Rich Text Content</h4>
                                                                                 <button
                                                                                     onClick={() => {
-                                                                                        setShowAddRichTextForm(prev => ({ ...prev, [section.id]: false }));
-                                                                                        setNewRichTextContent(prev => ({ ...prev, [section.id]: '' }));
-                                                                                        setNewRichTextBoxed(prev => ({ ...prev, [section.id]: false }));
-                                                                                        setNewRichTextBoxTitle(prev => ({ ...prev, [section.id]: '' }));
-                                                                                        setNewRichTextBoxFooter(prev => ({ ...prev, [section.id]: '' }));
+                                                                                        clearAddRichTextForm(section.id);
                                                                                     }}
                                                                                     className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded transition-colors"
                                                                                     title="Close form"
@@ -7905,47 +8004,37 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 onChange={(value) => setNewRichTextContent(prev => ({ ...prev, [section.id]: value }))}
                                                                                 placeholder="Enter rich text content with formatting..."
                                                                             />
-                                                                            <div className="space-y-2 pt-1">
-                                                                                <label className="flex items-center gap-2 cursor-pointer select-none">
-                                                                                    <input
-                                                                                        type="checkbox"
-                                                                                        checked={!!newRichTextBoxed[section.id]}
-                                                                                        onChange={(e) => setNewRichTextBoxed(prev => ({ ...prev, [section.id]: e.target.checked }))}
-                                                                                        className="rounded border-slate-300 dark:border-slate-600 text-emerald-600 focus:ring-emerald-500"
-                                                                                    />
-                                                                                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                                                                        Wrap in styled box
-                                                                                    </span>
-                                                                                </label>
-                                                                                {newRichTextBoxed[section.id] && (
-                                                                                    <div className="grid gap-2 sm:grid-cols-2 pl-6">
-                                                                                        <div>
-                                                                                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
-                                                                                                Header title
-                                                                                            </label>
-                                                                                            <input
-                                                                                                type="text"
-                                                                                                value={newRichTextBoxTitle[section.id] || ''}
-                                                                                                onChange={(e) => setNewRichTextBoxTitle(prev => ({ ...prev, [section.id]: e.target.value }))}
-                                                                                                placeholder="e.g. Architecture Guidelines"
-                                                                                                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
-                                                                                            />
-                                                                                        </div>
-                                                                                        <div>
-                                                                                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
-                                                                                                Footer <span className="font-normal normal-case">(optional)</span>
-                                                                                            </label>
-                                                                                            <input
-                                                                                                type="text"
-                                                                                                value={newRichTextBoxFooter[section.id] || ''}
-                                                                                                onChange={(e) => setNewRichTextBoxFooter(prev => ({ ...prev, [section.id]: e.target.value }))}
-                                                                                                placeholder="Optional footer text"
-                                                                                                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
-                                                                                            />
-                                                                                        </div>
-                                                                                    </div>
-                                                                                )}
-                                                                            </div>
+                                                                            <RichTextBoxOptionsFields
+                                                                                boxed={!!newRichTextBoxed[section.id]}
+                                                                                onBoxedChange={(boxed) => setNewRichTextBoxed(prev => ({ ...prev, [section.id]: boxed }))}
+                                                                                boxTitle={newRichTextBoxTitle[section.id] || ''}
+                                                                                onBoxTitleChange={(value) => setNewRichTextBoxTitle(prev => ({ ...prev, [section.id]: value }))}
+                                                                                boxFooter={newRichTextBoxFooter[section.id] || ''}
+                                                                                onBoxFooterChange={(value) => setNewRichTextBoxFooter(prev => ({ ...prev, [section.id]: value }))}
+                                                                                boxHeaderAlign={newRichTextHeaderAlign[section.id] || 'left'}
+                                                                                onBoxHeaderAlignChange={(value) => setNewRichTextHeaderAlign(prev => ({ ...prev, [section.id]: value }))}
+                                                                                boxFooterAlign={newRichTextFooterAlign[section.id] || 'left'}
+                                                                                onBoxFooterAlignChange={(value) => setNewRichTextFooterAlign(prev => ({ ...prev, [section.id]: value }))}
+                                                                                boxHeaderBg={newRichTextHeaderBg[section.id] || DEFAULT_HEADER_BG}
+                                                                                onBoxHeaderBgChange={(value) => setNewRichTextHeaderBg(prev => ({ ...prev, [section.id]: value }))}
+                                                                                boxFooterBg={newRichTextFooterBg[section.id] || DEFAULT_FOOTER_BG}
+                                                                                onBoxFooterBgChange={(value) => setNewRichTextFooterBg(prev => ({ ...prev, [section.id]: value }))}
+                                                                                boxBodyBg={newRichTextBodyBg[section.id] || DEFAULT_BODY_BG}
+                                                                                onBoxBodyBgChange={(value) => setNewRichTextBodyBg(prev => ({ ...prev, [section.id]: value }))}
+                                                                                boxHeaderFontWeight={newRichTextHeaderWeight[section.id] || 'bold'}
+                                                                                onBoxHeaderFontWeightChange={(value) => setNewRichTextHeaderWeight(prev => ({ ...prev, [section.id]: value }))}
+                                                                                boxFooterFontWeight={newRichTextFooterWeight[section.id] || 'normal'}
+                                                                                onBoxFooterFontWeightChange={(value) => setNewRichTextFooterWeight(prev => ({ ...prev, [section.id]: value }))}
+                                                                                boxHeaderFontSize={newRichTextHeaderSize[section.id] || 'md'}
+                                                                                onBoxHeaderFontSizeChange={(value) => setNewRichTextHeaderSize(prev => ({ ...prev, [section.id]: value }))}
+                                                                                boxFooterFontSize={newRichTextFooterSize[section.id] || 'sm'}
+                                                                                onBoxFooterFontSizeChange={(value) => setNewRichTextFooterSize(prev => ({ ...prev, [section.id]: value }))}
+                                                                                boxHeaderEmoji={newRichTextHeaderEmoji[section.id] || ''}
+                                                                                onBoxHeaderEmojiChange={(value) => setNewRichTextHeaderEmoji(prev => ({ ...prev, [section.id]: value }))}
+                                                                                boxImportance={newRichTextImportance[section.id] || 'notes'}
+                                                                                onBoxImportanceChange={(value) => setNewRichTextImportance(prev => ({ ...prev, [section.id]: value }))}
+                                                                                accent="emerald"
+                                                                            />
                                                                             <div className="flex justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
                                                                                 <button
                                                                                     onClick={() => handleAddRichTextToSection(tab.id, section.id)}
@@ -7953,9 +8042,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     className="px-4 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-all shadow-md hover:shadow-lg shadow-emerald-500/30 flex items-center gap-1.5"
                                                                                 >
                                                                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-                                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
                                                                                     </svg>
-                                                                                    Add Rich Text
+                                                                                    Save Rich Text
                                                                                 </button>
                                                                             </div>
                                                                         </div>
@@ -7967,6 +8056,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             <button
                                                                                 onClick={() => {
                                                                                     setShowAddRichTextForm(prev => ({ ...prev, [section.id]: true }));
+                                                                                    setNewRichTextHeaderAlign(prev => ({ ...prev, [section.id]: prev[section.id] || 'left' }));
+                                                                                    setNewRichTextFooterAlign(prev => ({ ...prev, [section.id]: prev[section.id] || 'left' }));
+                                                                                    setNewRichTextHeaderBg(prev => ({ ...prev, [section.id]: prev[section.id] || DEFAULT_HEADER_BG }));
+                                                                                    setNewRichTextFooterBg(prev => ({ ...prev, [section.id]: prev[section.id] || DEFAULT_FOOTER_BG }));
+                                                                                    setNewRichTextBodyBg(prev => ({ ...prev, [section.id]: prev[section.id] || DEFAULT_BODY_BG }));
+                                                                                    setNewRichTextHeaderWeight(prev => ({ ...prev, [section.id]: prev[section.id] || 'bold' }));
+                                                                                    setNewRichTextFooterWeight(prev => ({ ...prev, [section.id]: prev[section.id] || 'normal' }));
+                                                                                    setNewRichTextHeaderSize(prev => ({ ...prev, [section.id]: prev[section.id] || 'md' }));
+                                                                                    setNewRichTextFooterSize(prev => ({ ...prev, [section.id]: prev[section.id] || 'sm' }));
+                                                                                    setNewRichTextHeaderEmoji(prev => ({ ...prev, [section.id]: prev[section.id] || '' }));
+                                                                                    setNewRichTextImportance(prev => ({ ...prev, [section.id]: prev[section.id] || 'notes' }));
                                                                                 }}
                                                                                 className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/40 flex items-center justify-center gap-2"
                                                                             >

@@ -112,7 +112,7 @@ define('SYSTEM_TOKEN', 'linknest_secret_token_123'); // Change this for producti
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 61);
+    define('LINKNEST_SCHEMA_VERSION', 64);
 }
 
 require_once __DIR__ . '/response_cache.php';
@@ -1156,28 +1156,30 @@ function initDatabase() {
         // Migrate rich_text_content boxed container columns
         try {
             $columns = $db->query("PRAGMA table_info(rich_text_content)")->fetchAll();
-            $hasBoxed = false;
-            $hasBoxTitle = false;
-            $hasBoxFooter = false;
+            $existingCols = [];
             foreach ($columns as $column) {
-                if ($column['name'] === 'boxed') {
-                    $hasBoxed = true;
-                }
-                if ($column['name'] === 'box_title') {
-                    $hasBoxTitle = true;
-                }
-                if ($column['name'] === 'box_footer') {
-                    $hasBoxFooter = true;
-                }
+                $existingCols[$column['name']] = true;
             }
-            if (!$hasBoxed) {
-                $db->exec('ALTER TABLE rich_text_content ADD COLUMN boxed INTEGER DEFAULT 0');
-            }
-            if (!$hasBoxTitle) {
-                $db->exec('ALTER TABLE rich_text_content ADD COLUMN box_title TEXT');
-            }
-            if (!$hasBoxFooter) {
-                $db->exec('ALTER TABLE rich_text_content ADD COLUMN box_footer TEXT');
+            $rtMigrations = [
+                'boxed' => 'INTEGER DEFAULT 0',
+                'box_title' => 'TEXT',
+                'box_footer' => 'TEXT',
+                'box_header_align' => "TEXT DEFAULT 'left'",
+                'box_footer_align' => "TEXT DEFAULT 'left'",
+                'box_header_bg' => 'TEXT',
+                'box_footer_bg' => 'TEXT',
+                'box_body_bg' => 'TEXT',
+                'box_header_font_weight' => "TEXT DEFAULT 'bold'",
+                'box_footer_font_weight' => "TEXT DEFAULT 'normal'",
+                'box_header_font_size' => "TEXT DEFAULT 'md'",
+                'box_footer_font_size' => "TEXT DEFAULT 'sm'",
+                'box_header_emoji' => 'TEXT',
+                'box_importance' => "TEXT DEFAULT 'notes'",
+            ];
+            foreach ($rtMigrations as $colName => $colType) {
+                if (empty($existingCols[$colName])) {
+                    $db->exec("ALTER TABLE rich_text_content ADD COLUMN {$colName} {$colType}");
+                }
             }
         } catch (PDOException $e) {
             error_log('Rich text boxed columns migration warning: ' . $e->getMessage());
@@ -2880,29 +2882,161 @@ function requireAuth() {
     return $user;
 }
 
+function normalizeBoxAlign($value): string {
+    $v = is_string($value) ? strtolower(trim($value)) : '';
+    return in_array($v, ['left', 'center', 'right'], true) ? $v : 'left';
+}
+
+function normalizeBoxFontWeight($value): string {
+    $v = is_string($value) ? strtolower(trim($value)) : '';
+    return $v === 'bold' ? 'bold' : 'normal';
+}
+
+function normalizeBoxFontSize($value): string {
+    $v = is_string($value) ? strtolower(trim($value)) : '';
+    return in_array($v, ['sm', 'md', 'lg'], true) ? $v : 'md';
+}
+
+function normalizeBoxBgColor($value): ?string {
+    if (!is_string($value)) {
+        return null;
+    }
+    $v = trim($value);
+    if ($v === '') {
+        return null;
+    }
+    if ($v[0] !== '#') {
+        $v = '#' . $v;
+    }
+    if (preg_match('/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/', $v)) {
+        return strtolower($v);
+    }
+    return null;
+}
+
+function normalizeBoxImportance($value): string {
+    $v = is_string($value) ? strtolower(trim($value)) : '';
+    $allowed = ['notes', 'info', 'tip', 'important', 'warning', 'critical'];
+    return in_array($v, $allowed, true) ? $v : 'notes';
+}
+
+function normalizeBoxHeaderEmoji($value): ?string {
+    if (!is_string($value)) {
+        return null;
+    }
+    $v = trim($value);
+    if ($v === '') {
+        return null;
+    }
+    // Keep short emoji/icon strings only
+    if (mb_strlen($v) > 16) {
+        return mb_substr($v, 0, 16);
+    }
+    return $v;
+}
+
+function isRichTextBoxedFlag($value): bool {
+    return $value === true || $value === 1 || $value === '1' || $value === 'true';
+}
+
 // Map a rich_text_content DB row to the API shape used by the frontend
 function mapRichTextRow(array $row): array {
     return [
         'id' => $row['id'],
         'content' => $row['content'] ?? '',
         'position' => (int)($row['position'] ?? 0),
-        'boxed' => !empty($row['boxed']),
+        'boxed' => isRichTextBoxedFlag($row['boxed'] ?? 0),
         'boxTitle' => isset($row['box_title']) && $row['box_title'] !== '' ? $row['box_title'] : null,
         'boxFooter' => isset($row['box_footer']) && $row['box_footer'] !== '' ? $row['box_footer'] : null,
+        'boxHeaderAlign' => normalizeBoxAlign($row['box_header_align'] ?? 'left'),
+        'boxFooterAlign' => normalizeBoxAlign($row['box_footer_align'] ?? 'left'),
+        'boxHeaderBg' => normalizeBoxBgColor($row['box_header_bg'] ?? null),
+        'boxFooterBg' => normalizeBoxBgColor($row['box_footer_bg'] ?? null),
+        'boxBodyBg' => normalizeBoxBgColor($row['box_body_bg'] ?? null),
+        'boxHeaderFontWeight' => normalizeBoxFontWeight($row['box_header_font_weight'] ?? 'bold'),
+        'boxFooterFontWeight' => normalizeBoxFontWeight($row['box_footer_font_weight'] ?? 'normal'),
+        'boxHeaderFontSize' => normalizeBoxFontSize($row['box_header_font_size'] ?? 'md'),
+        'boxFooterFontSize' => normalizeBoxFontSize($row['box_footer_font_size'] ?? 'sm'),
+        'boxHeaderEmoji' => normalizeBoxHeaderEmoji($row['box_header_emoji'] ?? null),
+        'boxImportance' => normalizeBoxImportance($row['box_importance'] ?? 'notes'),
     ];
+}
+
+function pickRichTextField(array $richText, string $camel, string $snake) {
+    if (array_key_exists($camel, $richText) && $richText[$camel] !== '' && $richText[$camel] !== null) {
+        return $richText[$camel];
+    }
+    if (array_key_exists($snake, $richText) && $richText[$snake] !== '' && $richText[$snake] !== null) {
+        return $richText[$snake];
+    }
+    return null;
 }
 
 // Insert a rich text content row (supports optional boxed container fields)
 function insertRichTextContent(PDO $db, string $id, string $sectionId, array $richText): void {
-    $stmt = $db->prepare('INSERT INTO rich_text_content (id, section_id, content, position, boxed, box_title, box_footer) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    $boxed = isRichTextBoxedFlag($richText['boxed'] ?? false);
+
+    // Ensure newer style columns exist even if a prior version bump skipped them
+    static $styleColumnsEnsured = false;
+    if (!$styleColumnsEnsured) {
+        try {
+            $cols = $db->query('PRAGMA table_info(rich_text_content)')->fetchAll(PDO::FETCH_ASSOC);
+            $have = [];
+            foreach ($cols as $c) {
+                $have[$c['name']] = true;
+            }
+            $needed = [
+                'boxed' => 'INTEGER DEFAULT 0',
+                'box_title' => 'TEXT',
+                'box_footer' => 'TEXT',
+                'box_header_align' => "TEXT DEFAULT 'left'",
+                'box_footer_align' => "TEXT DEFAULT 'left'",
+                'box_header_bg' => 'TEXT',
+                'box_footer_bg' => 'TEXT',
+                'box_body_bg' => 'TEXT',
+                'box_header_font_weight' => "TEXT DEFAULT 'bold'",
+                'box_footer_font_weight' => "TEXT DEFAULT 'normal'",
+                'box_header_font_size' => "TEXT DEFAULT 'md'",
+                'box_footer_font_size' => "TEXT DEFAULT 'sm'",
+                'box_header_emoji' => 'TEXT',
+                'box_importance' => "TEXT DEFAULT 'notes'",
+            ];
+            foreach ($needed as $name => $type) {
+                if (empty($have[$name])) {
+                    $db->exec("ALTER TABLE rich_text_content ADD COLUMN {$name} {$type}");
+                }
+            }
+        } catch (PDOException $e) {
+            error_log('ensure rich_text style columns: ' . $e->getMessage());
+        }
+        $styleColumnsEnsured = true;
+    }
+
+    $stmt = $db->prepare('INSERT INTO rich_text_content (
+        id, section_id, content, position, boxed, box_title, box_footer,
+        box_header_align, box_footer_align, box_header_bg, box_footer_bg, box_body_bg,
+        box_header_font_weight, box_footer_font_weight, box_header_font_size, box_footer_font_size,
+        box_header_emoji, box_importance
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     $stmt->execute([
         $id,
         $sectionId,
         $richText['content'] ?? '',
         isset($richText['position']) ? (int)$richText['position'] : 0,
-        !empty($richText['boxed']) ? 1 : 0,
-        isset($richText['boxTitle']) && $richText['boxTitle'] !== '' ? $richText['boxTitle'] : ($richText['box_title'] ?? null),
-        isset($richText['boxFooter']) && $richText['boxFooter'] !== '' ? $richText['boxFooter'] : ($richText['box_footer'] ?? null),
+        $boxed ? 1 : 0,
+        $boxed ? pickRichTextField($richText, 'boxTitle', 'box_title') : null,
+        $boxed ? pickRichTextField($richText, 'boxFooter', 'box_footer') : null,
+        $boxed ? normalizeBoxAlign(pickRichTextField($richText, 'boxHeaderAlign', 'box_header_align') ?? 'left') : 'left',
+        $boxed ? normalizeBoxAlign(pickRichTextField($richText, 'boxFooterAlign', 'box_footer_align') ?? 'left') : 'left',
+        $boxed ? (normalizeBoxBgColor(pickRichTextField($richText, 'boxHeaderBg', 'box_header_bg')) ?: '#e2e8f0') : null,
+        $boxed ? (normalizeBoxBgColor(pickRichTextField($richText, 'boxFooterBg', 'box_footer_bg')) ?: '#f1f5f9') : null,
+        $boxed ? (normalizeBoxBgColor(pickRichTextField($richText, 'boxBodyBg', 'box_body_bg')) ?: '#ffffff') : null,
+        $boxed ? normalizeBoxFontWeight(pickRichTextField($richText, 'boxHeaderFontWeight', 'box_header_font_weight') ?? 'bold') : 'bold',
+        $boxed ? normalizeBoxFontWeight(pickRichTextField($richText, 'boxFooterFontWeight', 'box_footer_font_weight') ?? 'normal') : 'normal',
+        $boxed ? normalizeBoxFontSize(pickRichTextField($richText, 'boxHeaderFontSize', 'box_header_font_size') ?? 'md') : 'md',
+        $boxed ? normalizeBoxFontSize(pickRichTextField($richText, 'boxFooterFontSize', 'box_footer_font_size') ?? 'sm') : 'sm',
+        $boxed ? normalizeBoxHeaderEmoji(pickRichTextField($richText, 'boxHeaderEmoji', 'box_header_emoji')) : null,
+        $boxed ? normalizeBoxImportance(pickRichTextField($richText, 'boxImportance', 'box_importance') ?? 'notes') : 'notes',
     ]);
 }
 

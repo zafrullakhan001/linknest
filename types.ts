@@ -47,6 +47,17 @@ export interface RichTextContent {
   boxed?: boolean; // Wrap content in a styled box with header/footer
   boxTitle?: string; // Header title when boxed
   boxFooter?: string; // Optional footer text when boxed
+  boxHeaderAlign?: 'left' | 'center' | 'right';
+  boxFooterAlign?: 'left' | 'center' | 'right';
+  boxHeaderBg?: string; // Header background hex color
+  boxFooterBg?: string; // Footer background hex color
+  boxBodyBg?: string; // Content/body background hex color
+  boxHeaderFontWeight?: 'normal' | 'bold';
+  boxFooterFontWeight?: 'normal' | 'bold';
+  boxHeaderFontSize?: 'sm' | 'md' | 'lg';
+  boxFooterFontSize?: 'sm' | 'md' | 'lg';
+  boxHeaderEmoji?: string; // Optional emoji shown left of header title
+  boxImportance?: 'notes' | 'info' | 'tip' | 'important' | 'warning' | 'critical';
 }
 
 export interface LinkSection {
