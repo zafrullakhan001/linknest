@@ -1,6 +1,7 @@
 <?php
-// Serve uploaded files (logos, etc.) and handle image uploads for rich text
+// Serve uploaded files (logos, etc.) and handle image uploads for rich text / tile headers
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/image_helpers.php';
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
@@ -8,6 +9,16 @@ $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
 // Handle POST requests for image uploads
 if ($method === 'POST' && $path === '/rich-text-image') {
     handleRichTextImageUpload();
+    exit;
+}
+
+if ($method === 'POST' && $path === '/tile-header-image') {
+    handleTileHeaderImageUpload();
+    exit;
+}
+
+if ($method === 'POST' && $path === '/tile-emoji-image') {
+    handleTileEmojiImageUpload();
     exit;
 }
 
@@ -56,6 +67,18 @@ header('Cache-Control: public, max-age=31536000'); // Cache for 1 year
 // Output file
 readfile($filepath);
 exit;
+
+function uploadsBasePath() {
+    $requestUri = $_SERVER['REQUEST_URI'] ?? '';
+    if (($pos = strpos($requestUri, '?')) !== false) {
+        $requestUri = substr($requestUri, 0, $pos);
+    }
+    $apiPos = strpos($requestUri, '/api/');
+    if ($apiPos !== false) {
+        return substr($requestUri, 0, $apiPos);
+    }
+    return '';
+}
 
 function handleRichTextImageUpload() {
     requireAuth(); // Require authentication
@@ -106,27 +129,7 @@ function handleRichTextImageUpload() {
         return;
     }
     
-    // Determine base path for URL
-    // e.g. /linknest/api/index.php -> /linknest
-    // Determine base path for URL
-    // e.g. /linknest/api/index.php -> /linknest
-    $requestUri = $_SERVER['REQUEST_URI'];
-    // Remove query string if present
-    if (($pos = strpos($requestUri, '?')) !== false) {
-        $requestUri = substr($requestUri, 0, $pos);
-    }
-    
-    // Find where /api/ starts
-    $apiPos = strpos($requestUri, '/api/');
-    if ($apiPos !== false) {
-        $basePath = substr($requestUri, 0, $apiPos);
-    } else {
-        // Fallback or root
-        $basePath = '';
-    }
-    
-    // Return URL
-    $url = $basePath . '/uploads/' . $filename;
+    $url = uploadsBasePath() . '/uploads/' . $filename;
     
     sendJSON([
         'success' => true,
@@ -134,3 +137,118 @@ function handleRichTextImageUpload() {
     ]);
 }
 
+function handleTileHeaderImageUpload() {
+    requireAuth();
+
+    $removeBackground = !empty($_POST['remove_background']) && (
+        $_POST['remove_background'] === '1' ||
+        $_POST['remove_background'] === 'true' ||
+        $_POST['remove_background'] === true
+    );
+    $bgColor = isset($_POST['bg_color']) ? trim((string)$_POST['bg_color']) : '';
+    if ($bgColor === '') {
+        $bgColor = null;
+    }
+
+    // Reprocess an existing uploaded header image (no new file)
+    $sourceUrl = isset($_POST['source_url']) ? trim((string)$_POST['source_url']) : '';
+    if ($sourceUrl !== '' && (!isset($_FILES['image']) || $_FILES['image']['error'] === UPLOAD_ERR_NO_FILE)) {
+        $filename = basename(parse_url($sourceUrl, PHP_URL_PATH) ?: $sourceUrl);
+        if (!preg_match('/^[a-zA-Z0-9._-]+$/', $filename) || strpos($filename, 'tileheader_') !== 0) {
+            sendJSON(['error' => 'Invalid source image'], 400);
+            return;
+        }
+        $filepath = __DIR__ . '/../uploads/' . $filename;
+        if (!is_file($filepath)) {
+            sendJSON(['error' => 'Source image not found'], 404);
+            return;
+        }
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mimeType = finfo_file($finfo, $filepath);
+        finfo_close($finfo);
+        $result = processUploadedTileHeaderImage($filepath, $filename, $mimeType ?: 'image/png', 400, 80, $removeBackground, $bgColor);
+        $url = uploadsBasePath() . '/uploads/' . $result['filename'];
+        sendJSON([
+            'success' => true,
+            'url' => $url,
+            'converted' => true,
+            'width' => $result['width'] ?? null,
+            'height' => $result['height'] ?? null
+        ]);
+        return;
+    }
+
+    if (!isset($_FILES['image']) || $_FILES['image']['error'] !== UPLOAD_ERR_OK) {
+        sendJSON(['error' => 'No file uploaded or upload error'], 400);
+        return;
+    }
+
+    $file = $_FILES['image'];
+    $allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/bmp', 'image/x-ms-bmp'];
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mimeType = finfo_file($finfo, $file['tmp_name']);
+    finfo_close($finfo);
+
+    if (!in_array($mimeType, $allowedTypes, true)) {
+        sendJSON(['error' => 'Invalid file type. Allowed: JPEG, PNG, GIF, WebP, BMP'], 400);
+        return;
+    }
+
+    $maxSize = 5 * 1024 * 1024;
+    if ($file['size'] > $maxSize) {
+        sendJSON(['error' => 'File size too large. Maximum size: 5MB'], 400);
+        return;
+    }
+
+    $result = processUploadedTileHeaderImage($file['tmp_name'], $file['name'], $mimeType, 400, 80, $removeBackground, $bgColor);
+    $url = uploadsBasePath() . '/uploads/' . $result['filename'];
+
+    sendJSON([
+        'success' => true,
+        'url' => $url,
+        'converted' => !empty($result['converted']),
+        'width' => $result['width'] ?? null,
+        'height' => $result['height'] ?? null
+    ]);
+}
+
+/**
+ * Emoji-slot image: convert to PNG and fit inside ~80×80 (2× the 40×40 card badge).
+ */
+function handleTileEmojiImageUpload() {
+    requireAuth();
+
+    if (!isset($_FILES['image']) || $_FILES['image']['error'] !== UPLOAD_ERR_OK) {
+        sendJSON(['error' => 'No file uploaded or upload error'], 400);
+        return;
+    }
+
+    $file = $_FILES['image'];
+    $allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/bmp', 'image/x-ms-bmp'];
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mimeType = finfo_file($finfo, $file['tmp_name']);
+    finfo_close($finfo);
+
+    if (!in_array($mimeType, $allowedTypes, true)) {
+        sendJSON(['error' => 'Invalid file type. Allowed: JPEG, PNG, GIF, WebP, BMP'], 400);
+        return;
+    }
+
+    $maxSize = 5 * 1024 * 1024;
+    if ($file['size'] > $maxSize) {
+        sendJSON(['error' => 'File size too large. Maximum size: 5MB'], 400);
+        return;
+    }
+
+    // Fit inside emoji badge (40px display → 80px @2x), aspect preserved
+    $result = processUploadedTileHeaderImage($file['tmp_name'], $file['name'], $mimeType, 80, 80, false, null, 'tileemoji_');
+    $url = uploadsBasePath() . '/uploads/' . $result['filename'];
+
+    sendJSON([
+        'success' => true,
+        'url' => $url,
+        'converted' => !empty($result['converted']),
+        'width' => $result['width'] ?? null,
+        'height' => $result['height'] ?? null
+    ]);
+}

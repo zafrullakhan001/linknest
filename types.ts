@@ -97,6 +97,20 @@ export interface Tile {
   description: string; // Short description for the dashboard card
   htmlContent?: string; // Rich HTML content for the landing page
   emoji: string;
+  /** When false, the emoji badge is hidden on the space/tile card. Default true. */
+  showEmoji?: boolean | null;
+  /** Optional PNG URL shown inside the emoji badge (replaces the emoji character when set). */
+  emojiImage?: string | null;
+  /** Optional PNG shown in the tile card top-right header region (behind admin controls). */
+  headerImage?: string | null;
+  /** Horizontal alignment of the header image within the controls region. */
+  headerImageAlign?: 'left' | 'center' | 'right' | null;
+  /** Opacity of the header image (0–100). Default 100. */
+  headerImageOpacity?: number | null;
+  /** Fine horizontal offset in pixels (−100…100). Default 0. */
+  headerImageOffsetX?: number | null;
+  /** How the image scales in the header region: contain (center fit) or cover (fill). */
+  headerImageFit?: 'contain' | 'cover' | null;
   themeColor: ThemeColor;
   tabs: Tab[]; // Tabs contain sections
   sections?: LinkSection[]; // Deprecated: kept for backward compatibility, use tabs instead

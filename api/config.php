@@ -112,7 +112,7 @@ define('SYSTEM_TOKEN', 'linknest_secret_token_123'); // Change this for producti
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 65);
+    define('LINKNEST_SCHEMA_VERSION', 71);
 }
 
 require_once __DIR__ . '/response_cache.php';
@@ -341,6 +341,41 @@ function warmSqliteOsPageCache(): bool {
     }
 }
 
+/**
+ * Ensure tile header-image / emoji visibility columns exist even when user_version already matches SCHEMA_VERSION.
+ * Guards against version bumps that raced ahead of column ALTERs.
+ */
+function ensureTilesHeaderImageColumns(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $columns = $db->query('PRAGMA table_info(tiles)')->fetchAll(PDO::FETCH_ASSOC);
+        if (empty($columns)) {
+            return;
+        }
+        $names = array_column($columns, 'name');
+        $needed = [
+            'header_image' => 'TEXT',
+            'header_image_align' => 'TEXT',
+            'header_image_opacity' => 'INTEGER',
+            'header_image_offset_x' => 'INTEGER',
+            'header_image_fit' => 'TEXT',
+            'show_emoji' => 'INTEGER DEFAULT 1',
+            'emoji_image' => 'TEXT',
+        ];
+        foreach ($needed as $col => $type) {
+            if (!in_array($col, $names, true)) {
+                $db->exec("ALTER TABLE tiles ADD COLUMN {$col} {$type}");
+            }
+        }
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureTilesHeaderImageColumns warning: ' . $e->getMessage());
+    }
+}
+
 // Initialize database
 function initDatabase() {
     $initLock = null;
@@ -361,6 +396,7 @@ function initDatabase() {
             $currentVersion = 0;
         }
         if ($currentVersion >= (int)LINKNEST_SCHEMA_VERSION) {
+            ensureTilesHeaderImageColumns($db);
             return $db;
         }
 
@@ -374,6 +410,7 @@ function initDatabase() {
             $currentVersion = 0;
         }
         if ($currentVersion >= (int)LINKNEST_SCHEMA_VERSION) {
+            ensureTilesHeaderImageColumns($db);
             releaseDatabaseInitLock($initLock);
             $initLock = null;
             return $db;
@@ -769,6 +806,92 @@ function initDatabase() {
             }
         } catch (PDOException $e) {
             error_log('Tiles links_animation migration warning: ' . $e->getMessage());
+        }
+
+        // Migrate existing tiles table to add header_image (PNG shown in tile card header region)
+        try {
+            $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll();
+            $hasHeaderImage = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'header_image') {
+                    $hasHeaderImage = true;
+                    break;
+                }
+            }
+            if (!$hasHeaderImage) {
+                $db->exec('ALTER TABLE tiles ADD COLUMN header_image TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Tiles header_image migration warning: ' . $e->getMessage());
+        }
+
+        // Migrate: header image alignment (left|center|right)
+        try {
+            $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll();
+            $hasHeaderImageAlign = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'header_image_align') {
+                    $hasHeaderImageAlign = true;
+                    break;
+                }
+            }
+            if (!$hasHeaderImageAlign) {
+                $db->exec('ALTER TABLE tiles ADD COLUMN header_image_align TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Tiles header_image_align migration warning: ' . $e->getMessage());
+        }
+
+        // Migrate: header image opacity, fine offset, fit mode
+        try {
+            $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll();
+            $columnNames = array_column($columns, 'name');
+            $headerStyleCols = [
+                'header_image_opacity' => 'INTEGER',
+                'header_image_offset_x' => 'INTEGER',
+                'header_image_fit' => 'TEXT'
+            ];
+            foreach ($headerStyleCols as $columnName => $columnType) {
+                if (!in_array($columnName, $columnNames, true)) {
+                    $db->exec("ALTER TABLE tiles ADD COLUMN $columnName $columnType");
+                }
+            }
+        } catch (PDOException $e) {
+            error_log('Tiles header image style migration warning: ' . $e->getMessage());
+        }
+
+        // Migrate: show_emoji toggle (1 = show, 0 = hide on card)
+        try {
+            $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll();
+            $hasShowEmoji = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'show_emoji') {
+                    $hasShowEmoji = true;
+                    break;
+                }
+            }
+            if (!$hasShowEmoji) {
+                $db->exec('ALTER TABLE tiles ADD COLUMN show_emoji INTEGER DEFAULT 1');
+            }
+        } catch (PDOException $e) {
+            error_log('Tiles show_emoji migration warning: ' . $e->getMessage());
+        }
+
+        // Migrate: emoji_image (PNG shown inside the emoji badge)
+        try {
+            $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll();
+            $hasEmojiImage = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'emoji_image') {
+                    $hasEmojiImage = true;
+                    break;
+                }
+            }
+            if (!$hasEmojiImage) {
+                $db->exec('ALTER TABLE tiles ADD COLUMN emoji_image TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Tiles emoji_image migration warning: ' . $e->getMessage());
         }
         
         // Create tabs table

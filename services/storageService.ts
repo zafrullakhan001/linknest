@@ -30,6 +30,21 @@ const transformTile = (apiTile: any): Tile => {
     description: apiTile.description || '',
     htmlContent: apiTile.htmlContent || '',
     emoji: apiTile.emoji || '📁',
+    showEmoji: apiTile.showEmoji === false || apiTile.showEmoji === 0 || apiTile.showEmoji === '0' ? false : true,
+    emojiImage: apiTile.emojiImage || undefined,
+    headerImage: apiTile.headerImage || undefined,
+    headerImageAlign: apiTile.headerImageAlign === 'left' || apiTile.headerImageAlign === 'center' || apiTile.headerImageAlign === 'right'
+      ? apiTile.headerImageAlign
+      : undefined,
+    headerImageOpacity: typeof apiTile.headerImageOpacity === 'number'
+      ? Math.max(0, Math.min(100, apiTile.headerImageOpacity))
+      : undefined,
+    headerImageOffsetX: typeof apiTile.headerImageOffsetX === 'number'
+      ? Math.max(-100, Math.min(100, apiTile.headerImageOffsetX))
+      : undefined,
+    headerImageFit: apiTile.headerImageFit === 'cover' || apiTile.headerImageFit === 'contain'
+      ? apiTile.headerImageFit
+      : undefined,
     themeColor: (apiTile.themeColor || 'blue') as any,
     group: apiTile.group || 'General',
     createdAt: apiTile.createdAt || Date.now(),
@@ -154,11 +169,34 @@ export const saveTiles = async (tiles: Tile[], isFinal: boolean = false): Promis
 
 export const saveTile = async (tile: Tile, isFinal: boolean = false): Promise<void> => {
   try {
+    const hasNestedContent =
+      (tile.tabs?.length ?? 0) > 0 ||
+      (tile.sections?.length ?? 0) > 0 ||
+      !!(tile.htmlContent && String(tile.htmlContent).trim());
+
+    // Home-grid / card edits often have empty tabs; never send that as a full replace.
+    const payload: Record<string, unknown> = hasNestedContent
+      ? { ...tile, is_final: isFinal }
+      : (() => {
+          const {
+            tabs: _tabs,
+            sections: _sections,
+            htmlContent: _html,
+            messages: _messages,
+            ...meta
+          } = tile as Tile & Record<string, unknown>;
+          return {
+            ...meta,
+            preserve_nested: true,
+            is_final: isFinal,
+          };
+        })();
+
     const response = await fetch(`${API_BASE}/tiles/${tile.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ ...tile, is_final: isFinal })
+      body: JSON.stringify(payload)
     });
 
     if (!response.ok) {
@@ -168,6 +206,71 @@ export const saveTile = async (tile: Tile, isFinal: boolean = false): Promise<vo
     console.error("Failed to save tile", e);
     throw e;
   }
+};
+
+/** Upload an image for the emoji badge; server converts to PNG (~80×80) and returns the URL. */
+export const uploadTileEmojiImage = async (file: File): Promise<string> => {
+  const formData = new FormData();
+  formData.append('image', file);
+
+  const response = await fetch(`${API_BASE}/uploads/tile-emoji-image`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error((data as { error?: string }).error || 'Failed to upload emoji image');
+  }
+
+  const url = (data as { url?: string }).url;
+  if (!url) {
+    throw new Error('Upload succeeded but no image URL was returned');
+  }
+  return url;
+};
+
+/** Upload a raster image; server converts to PNG and returns the public URL. */
+export const uploadTileHeaderImage = async (
+  file: File | null,
+  options?: {
+    removeBackground?: boolean;
+    bgColor?: string;
+    /** Reprocess an existing tileheader URL without uploading a new file. */
+    sourceUrl?: string;
+  }
+): Promise<string> => {
+  const formData = new FormData();
+  if (file) {
+    formData.append('image', file);
+  }
+  if (options?.sourceUrl) {
+    formData.append('source_url', options.sourceUrl);
+  }
+  if (options?.removeBackground) {
+    formData.append('remove_background', '1');
+  }
+  if (options?.bgColor) {
+    formData.append('bg_color', options.bgColor);
+  }
+
+  const response = await fetch(`${API_BASE}/uploads/tile-header-image`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error((data as { error?: string }).error || 'Failed to upload header image');
+  }
+
+  const url = (data as { url?: string }).url;
+  if (!url) {
+    throw new Error('Upload succeeded but no image URL was returned');
+  }
+  return url;
 };
 
 /** Persist sections/page entrance animation for one space without a full tile rewrite. */

@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef, lazy, Suspens
 import { createPortal } from 'react-dom';
 import { Tile, LinkSection, ThemeColor, THEME_COLORS, COLOR_STYLES, POPULAR_EMOJIS, TileVisibility, TileMessage, Link, CelebrationConfig } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
-import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite, saveTile, createTile, getTiles, cloneCategory, toggleCategoryFavorite, getRecycleBin, restoreTile, purgeRecycleBin, permanentDeleteTile, permanentDeleteCategory, deleteTile, getArchive, archiveTile, unarchiveTile, purgeArchive, archiveCategory, unarchiveCategory, getFavoriteLinks, FavoriteLink, csvToJson } from '../services/storageService';
+import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite, saveTile, createTile, getTiles, cloneCategory, toggleCategoryFavorite, getRecycleBin, restoreTile, purgeRecycleBin, permanentDeleteTile, permanentDeleteCategory, deleteTile, getArchive, archiveTile, unarchiveTile, purgeArchive, archiveCategory, unarchiveCategory, getFavoriteLinks, FavoriteLink, csvToJson, uploadTileHeaderImage, uploadTileEmojiImage } from '../services/storageService';
 import {
   exportCategoryToFile,
   exportTileToFile,
@@ -1464,15 +1464,47 @@ const SortableTile: React.FC<SortableTileProps> = ({
 
       {/* Compact Header — min-w-0 + flex-wrap on actions so controls stay visible in narrow tiles */}
       <div className="flex items-start gap-2 mb-3 min-w-0">
-        <div className="flex items-center gap-2 shrink-0">
-          <div className={`
-            w-10 h-10 rounded-lg ${styles.soft} flex items-center justify-center text-lg 
-            border ${styles.border} transition-shadow duration-200 ease-out group-hover:shadow-md
-          `}>
-            {tile.emoji}
+        {tile.showEmoji !== false ? (
+          <div className="flex items-center gap-2 shrink-0">
+            <div className={`
+              w-10 h-10 rounded-lg ${styles.soft} flex items-center justify-center text-lg 
+              border ${styles.border} transition-shadow duration-200 ease-out group-hover:shadow-md overflow-hidden
+            `}>
+              {tile.emojiImage ? (
+                <img
+                  src={tile.emojiImage}
+                  alt=""
+                  className="w-full h-full object-contain p-0.5 pointer-events-none select-none"
+                  draggable={false}
+                />
+              ) : (
+                tile.emoji
+              )}
+            </div>
           </div>
-        </div>
-        <div className={`${isAuthenticated ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'} transition-opacity flex flex-wrap items-center gap-1 justify-end flex-1 min-w-0`}>
+        ) : null}
+        <div className="relative flex-1 min-w-0 min-h-[40px] overflow-hidden">
+          {tile.headerImage ? (
+            <img
+              src={tile.headerImage}
+              alt=""
+              className={`absolute inset-0 z-0 w-full h-full pointer-events-none select-none ${
+                tile.headerImageFit === 'cover' ? 'object-cover' : 'object-contain'
+              } ${
+                tile.headerImageAlign === 'left'
+                  ? 'object-left'
+                  : tile.headerImageAlign === 'center'
+                    ? 'object-center'
+                    : 'object-right'
+              }`}
+              style={{
+                opacity: Math.max(0, Math.min(100, tile.headerImageOpacity ?? 100)) / 100,
+                transform: `translateX(${Math.max(-100, Math.min(100, tile.headerImageOffsetX ?? 0))}px)`
+              }}
+              draggable={false}
+            />
+          ) : null}
+          <div className={`relative z-10 ${isAuthenticated ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'} transition-opacity flex flex-wrap items-center gap-1 justify-end w-full min-w-0`}>
           {isAuthenticated && (
             <>
               {/* Category Selector */}
@@ -1804,6 +1836,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
               )}
             </>
           ) : null}
+          </div>
         </div>
       </div>
 
@@ -2357,6 +2390,18 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [newDesc, setNewDesc] = useState('');
   const [newGroup, setNewGroup] = useState('');
   const [newEmoji, setNewEmoji] = useState('📁');
+  const [newShowEmoji, setNewShowEmoji] = useState(true);
+  const [newEmojiImage, setNewEmojiImage] = useState<string>('');
+  const [emojiImageUploading, setEmojiImageUploading] = useState(false);
+  const [newHeaderImage, setNewHeaderImage] = useState<string>('');
+  const [newHeaderImageAlign, setNewHeaderImageAlign] = useState<'left' | 'center' | 'right'>('right');
+  const [newHeaderImageOpacity, setNewHeaderImageOpacity] = useState(100);
+  const [newHeaderImageOffsetX, setNewHeaderImageOffsetX] = useState(0);
+  const [newHeaderImageFit, setNewHeaderImageFit] = useState<'contain' | 'cover'>('contain');
+  const [headerRemoveBg, setHeaderRemoveBg] = useState(false);
+  const [headerBgMode, setHeaderBgMode] = useState<'auto' | 'custom'>('auto');
+  const [headerBgColor, setHeaderBgColor] = useState('#ffffff');
+  const [headerImageUploading, setHeaderImageUploading] = useState(false);
   const [newColor, setNewColor] = useState<ThemeColor>('blue');
   const [newVisibility, setNewVisibility] = useState<TileVisibility>('public');
   const [visibleFrom, setVisibleFrom] = useState<string>('');
@@ -4137,6 +4182,13 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       title: newTitle,
       description: newDesc,
       emoji: newEmoji,
+      showEmoji: newShowEmoji,
+      emojiImage: newEmojiImage.trim() || null,
+      headerImage: newHeaderImage.trim() || null,
+      headerImageAlign: newHeaderImage.trim() ? newHeaderImageAlign : null,
+      headerImageOpacity: newHeaderImage.trim() ? newHeaderImageOpacity : null,
+      headerImageOffsetX: newHeaderImage.trim() ? newHeaderImageOffsetX : null,
+      headerImageFit: newHeaderImage.trim() ? newHeaderImageFit : null,
       themeColor: newColor,
       group: tileType === 'space' ? (newGroup.trim() || 'General') : (newGroup.trim() || 'General'),
       sections: tileType === 'space' ? [
@@ -4195,6 +4247,18 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setNewDesc('');
     setNewGroup('');
     setNewEmoji('📁');
+    setNewShowEmoji(true);
+    setNewEmojiImage('');
+    setEmojiImageUploading(false);
+    setNewHeaderImage('');
+    setNewHeaderImageAlign('right');
+    setNewHeaderImageOpacity(100);
+    setNewHeaderImageOffsetX(0);
+    setNewHeaderImageFit('contain');
+    setHeaderRemoveBg(false);
+    setHeaderBgMode('auto');
+    setHeaderBgColor('#ffffff');
+    setHeaderImageUploading(false);
     setNewColor('blue');
     setShowEmojiPicker(false);
     setNewVisibility('public');
@@ -4618,6 +4682,24 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setNewDesc(tile.description);
     setNewGroup(tile.group || '');
     setNewEmoji(tile.emoji);
+    setNewShowEmoji(tile.showEmoji !== false);
+    setNewEmojiImage(tile.emojiImage || '');
+    setNewHeaderImage(tile.headerImage || '');
+    setNewHeaderImageAlign(
+      tile.headerImageAlign === 'left' || tile.headerImageAlign === 'center' || tile.headerImageAlign === 'right'
+        ? tile.headerImageAlign
+        : 'right'
+    );
+    setNewHeaderImageOpacity(
+      typeof tile.headerImageOpacity === 'number' ? Math.max(0, Math.min(100, tile.headerImageOpacity)) : 100
+    );
+    setNewHeaderImageOffsetX(
+      typeof tile.headerImageOffsetX === 'number' ? Math.max(-100, Math.min(100, tile.headerImageOffsetX)) : 0
+    );
+    setNewHeaderImageFit(tile.headerImageFit === 'cover' ? 'cover' : 'contain');
+    setHeaderRemoveBg(false);
+    setHeaderBgMode('auto');
+    setHeaderBgColor('#ffffff');
     setNewColor(tile.themeColor);
     setTileType(tile.isHyperlink ? 'hyperlink' : 'space');
     setHyperlinkUrl(tile.hyperlinkUrl || '');
@@ -4861,6 +4943,13 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       title: newTitle,
       description: newDesc,
       emoji: newEmoji,
+      showEmoji: newShowEmoji,
+      emojiImage: newEmojiImage.trim() || null,
+      headerImage: newHeaderImage.trim() || null,
+      headerImageAlign: newHeaderImage.trim() ? newHeaderImageAlign : null,
+      headerImageOpacity: newHeaderImage.trim() ? newHeaderImageOpacity : null,
+      headerImageOffsetX: newHeaderImage.trim() ? newHeaderImageOffsetX : null,
+      headerImageFit: newHeaderImage.trim() ? newHeaderImageFit : null,
       themeColor: newColor,
       group: newGroup.trim() || 'General',
       visibility: newVisibility,
@@ -4877,12 +4966,14 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
     try {
       const updatedTiles = tiles.map(t => t.id === updatedTile.id ? updatedTile : t);
-      onUpdateTiles(updatedTiles);
 
-      // Save to backend if authenticated
+      // Save first so a subsequent list reload cannot wipe headerImage with stale data
       if (isAuthenticated) {
         await saveTile(updatedTile);
       }
+
+      // skipReload=true: avoid race with getTiles() overwriting local header fields
+      onUpdateTiles(updatedTiles, true);
 
       resetForm();
       setIsEditModalOpen(false);
@@ -8419,9 +8510,13 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         <button
                           type="button"
                           onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                          className="w-full h-12 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-brand-500/50"
+                          className="w-full h-12 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-brand-500/50 overflow-hidden"
                         >
-                          {newEmoji || '✨'}
+                          {newEmojiImage ? (
+                            <img src={newEmojiImage} alt="" className="w-8 h-8 object-contain" />
+                          ) : (
+                            newEmoji || '✨'
+                          )}
                         </button>
 
                         {/* Emoji Picker Popover */}
@@ -8443,7 +8538,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                 {POPULAR_EMOJIS.map((emoji) => (
                                   <button
                                     key={emoji}
-                                    onClick={() => { setNewEmoji(emoji); setShowEmojiPicker(false); }}
+                                    onClick={() => { setNewEmoji(emoji); setNewEmojiImage(''); setShowEmojiPicker(false); }}
                                     className="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
                                   >
                                     {emoji}
@@ -8453,6 +8548,40 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             </div>
                           </>
                         )}
+                        <div className="mt-1.5 flex flex-col gap-1">
+                          <label className={`inline-flex items-center justify-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border cursor-pointer transition-colors ${emojiImageUploading ? 'opacity-60 pointer-events-none' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'} text-slate-700 dark:text-slate-200`}>
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/gif,image/webp,image/bmp,.jpg,.jpeg,.png,.gif,.webp,.bmp"
+                              className="hidden"
+                              disabled={emojiImageUploading}
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                e.target.value = '';
+                                if (!file) return;
+                                setEmojiImageUploading(true);
+                                try {
+                                  const url = await uploadTileEmojiImage(file);
+                                  setNewEmojiImage(url);
+                                } catch (err) {
+                                  alert(err instanceof Error ? err.message : 'Failed to upload emoji image');
+                                } finally {
+                                  setEmojiImageUploading(false);
+                                }
+                              }}
+                            />
+                            {emojiImageUploading ? '…' : (newEmojiImage ? 'Replace' : 'Image')}
+                          </label>
+                          {newEmojiImage ? (
+                            <button
+                              type="button"
+                              onClick={() => setNewEmojiImage('')}
+                              className="text-[11px] text-rose-600 dark:text-rose-400 hover:underline"
+                            >
+                              Remove image
+                            </button>
+                          ) : null}
+                        </div>
                       </div>
 
                       <div className="flex-1">
@@ -8472,6 +8601,205 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             </button>
                           ))}
                         </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {tileType === 'space' && (
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={newShowEmoji}
+                        onChange={(e) => setNewShowEmoji(e.target.checked)}
+                        className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                      />
+                      <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show emoji on card</span>
+                    </label>
+                  )}
+
+                  {/* Header image - space cards only */}
+                  {tileType === 'space' && (
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Header image</label>
+                      <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+                        Shown on the space card beside the icon. Other formats are converted to PNG automatically.
+                      </p>
+                      <div className="flex flex-wrap items-center gap-3 mb-3">
+                        {newHeaderImage ? (
+                          <div className={`h-12 w-40 rounded-lg border border-slate-200 dark:border-slate-700 bg-[length:12px_12px] bg-[linear-gradient(45deg,#e2e8f0_25%,transparent_25%,transparent_75%,#e2e8f0_75%),linear-gradient(45deg,#e2e8f0_25%,transparent_25%,transparent_75%,#e2e8f0_75%)] bg-[position:0_0,6px_6px] dark:bg-[linear-gradient(45deg,#334155_25%,transparent_25%,transparent_75%,#334155_75%),linear-gradient(45deg,#334155_25%,transparent_25%,transparent_75%,#334155_75%)] overflow-hidden relative`}>
+                            <img
+                              src={newHeaderImage}
+                              alt="Header preview"
+                              className={`absolute inset-0 w-full h-full ${newHeaderImageFit === 'cover' ? 'object-cover' : 'object-contain'} ${newHeaderImageAlign === 'left' ? 'object-left' : newHeaderImageAlign === 'center' ? 'object-center' : 'object-right'}`}
+                              style={{
+                                opacity: newHeaderImageOpacity / 100,
+                                transform: `translateX(${newHeaderImageOffsetX}px)`
+                              }}
+                            />
+                          </div>
+                        ) : null}
+                        <label className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border cursor-pointer transition-colors ${headerImageUploading ? 'opacity-60 pointer-events-none' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'} text-slate-700 dark:text-slate-200`}>
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/gif,image/webp,image/bmp,.jpg,.jpeg,.png,.gif,.webp,.bmp"
+                            className="hidden"
+                            disabled={headerImageUploading}
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              e.target.value = '';
+                              if (!file) return;
+                              setHeaderImageUploading(true);
+                              try {
+                                const url = await uploadTileHeaderImage(file, {
+                                  removeBackground: headerRemoveBg,
+                                  bgColor: headerRemoveBg && headerBgMode === 'custom' ? headerBgColor : undefined
+                                });
+                                setNewHeaderImage(url);
+                              } catch (err) {
+                                console.error(err);
+                                alert(err instanceof Error ? err.message : 'Failed to upload header image');
+                              } finally {
+                                setHeaderImageUploading(false);
+                              }
+                            }}
+                          />
+                          {headerImageUploading ? 'Uploading…' : (newHeaderImage ? 'Replace image' : 'Upload image')}
+                        </label>
+                        {newHeaderImage ? (
+                          <button
+                            type="button"
+                            onClick={() => setNewHeaderImage('')}
+                            className="text-sm text-red-600 dark:text-red-400 hover:underline"
+                          >
+                            Clear
+                          </button>
+                        ) : null}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-4 mb-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-slate-600 dark:text-slate-400 mr-1">Align</span>
+                          {(['left', 'center', 'right'] as const).map((align) => (
+                            <button
+                              key={align}
+                              type="button"
+                              onClick={() => setNewHeaderImageAlign(align)}
+                              className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${newHeaderImageAlign === align ? 'bg-brand-500 text-white border-brand-500' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'}`}
+                            >
+                              {align.charAt(0).toUpperCase() + align.slice(1)}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-slate-600 dark:text-slate-400 mr-1">Fit</span>
+                          <button
+                            type="button"
+                            onClick={() => setNewHeaderImageFit('contain')}
+                            className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${newHeaderImageFit === 'contain' ? 'bg-brand-500 text-white border-brand-500' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'}`}
+                            title="Scale image to fit inside the region (no crop)"
+                          >
+                            Center fit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewHeaderImageFit('cover')}
+                            className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${newHeaderImageFit === 'cover' ? 'bg-brand-500 text-white border-brand-500' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'}`}
+                            title="Scale image to fill the region completely (may crop)"
+                          >
+                            Fill region
+                          </button>
+                        </div>
+                      </div>
+                      {newHeaderImage ? (
+                        <div className="space-y-2 mb-3">
+                          <label className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+                            <span className="w-20 shrink-0">Opacity</span>
+                            <input
+                              type="range"
+                              min={0}
+                              max={100}
+                              value={newHeaderImageOpacity}
+                              onChange={(e) => setNewHeaderImageOpacity(Number(e.target.value))}
+                              className="flex-1 accent-brand-500"
+                            />
+                            <span className="w-10 text-right tabular-nums">{newHeaderImageOpacity}%</span>
+                          </label>
+                          <label className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+                            <span className="w-20 shrink-0">Position</span>
+                            <input
+                              type="range"
+                              min={-100}
+                              max={100}
+                              value={newHeaderImageOffsetX}
+                              onChange={(e) => setNewHeaderImageOffsetX(Number(e.target.value))}
+                              className="flex-1 accent-brand-500"
+                            />
+                            <span className="w-12 text-right tabular-nums">{newHeaderImageOffsetX}px</span>
+                            <button
+                              type="button"
+                              onClick={() => setNewHeaderImageOffsetX(0)}
+                              className="text-[11px] text-brand-600 dark:text-brand-400 hover:underline"
+                            >
+                              Reset
+                            </button>
+                          </label>
+                        </div>
+                      ) : null}
+                      <div className="flex flex-wrap items-center gap-3">
+                        <label className="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={headerRemoveBg}
+                            onChange={(e) => setHeaderRemoveBg(e.target.checked)}
+                            className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                          />
+                          Remove background
+                        </label>
+                        {headerRemoveBg ? (
+                          <>
+                            <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                              <input type="radio" name="headerBgModeCreate" checked={headerBgMode === 'auto'} onChange={() => setHeaderBgMode('auto')} />
+                              Auto (corners)
+                            </label>
+                              <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                              <input type="radio" name="headerBgModeCreate" checked={headerBgMode === 'custom'} onChange={() => setHeaderBgMode('custom')} />
+                              Pick color
+                            </label>
+                            {headerBgMode === 'custom' ? (
+                              <input
+                                type="color"
+                                value={headerBgColor}
+                                onChange={(e) => setHeaderBgColor(e.target.value)}
+                                className="w-7 h-7 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent"
+                                title="Background color to remove"
+                              />
+                            ) : null}
+                          </>
+                        ) : null}
+                        {newHeaderImage && headerRemoveBg ? (
+                          <button
+                            type="button"
+                            disabled={headerImageUploading}
+                            onClick={async () => {
+                              setHeaderImageUploading(true);
+                              try {
+                                const url = await uploadTileHeaderImage(null, {
+                                  sourceUrl: newHeaderImage,
+                                  removeBackground: true,
+                                  bgColor: headerBgMode === 'custom' ? headerBgColor : undefined
+                                });
+                                setNewHeaderImage(url);
+                              } catch (err) {
+                                console.error(err);
+                                alert(err instanceof Error ? err.message : 'Failed to remove background');
+                              } finally {
+                                setHeaderImageUploading(false);
+                              }
+                            }}
+                            className="text-xs font-medium px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                          >
+                            Apply to current image
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                   )}
@@ -10382,9 +10710,13 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         <button
                           type="button"
                           onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                          className="w-full h-12 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-brand-500/50"
+                          className="w-full h-12 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-brand-500/50 overflow-hidden"
                         >
-                          {newEmoji || (tileType === 'hyperlink' ? '🔗' : '📁')}
+                          {tileType === 'space' && newEmojiImage ? (
+                            <img src={newEmojiImage} alt="" className="w-8 h-8 object-contain" />
+                          ) : (
+                            newEmoji || (tileType === 'hyperlink' ? '🔗' : '📁')
+                          )}
                         </button>
 
                         {/* Emoji Picker Popover */}
@@ -10406,7 +10738,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                 {POPULAR_EMOJIS.map((emoji) => (
                                   <button
                                     key={emoji}
-                                    onClick={() => { setNewEmoji(emoji); setShowEmojiPicker(false); }}
+                                    onClick={() => { setNewEmoji(emoji); if (tileType === 'space') setNewEmojiImage(''); setShowEmojiPicker(false); }}
                                     className="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
                                   >
                                     {emoji}
@@ -10415,6 +10747,42 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                               </div>
                             </div>
                           </>
+                        )}
+                        {tileType === 'space' && (
+                          <div className="mt-1.5 flex flex-col gap-1">
+                            <label className={`inline-flex items-center justify-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border cursor-pointer transition-colors ${emojiImageUploading ? 'opacity-60 pointer-events-none' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'} text-slate-700 dark:text-slate-200`}>
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png,image/gif,image/webp,image/bmp,.jpg,.jpeg,.png,.gif,.webp,.bmp"
+                                className="hidden"
+                                disabled={emojiImageUploading}
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  e.target.value = '';
+                                  if (!file) return;
+                                  setEmojiImageUploading(true);
+                                  try {
+                                    const url = await uploadTileEmojiImage(file);
+                                    setNewEmojiImage(url);
+                                  } catch (err) {
+                                    alert(err instanceof Error ? err.message : 'Failed to upload emoji image');
+                                  } finally {
+                                    setEmojiImageUploading(false);
+                                  }
+                                }}
+                              />
+                              {emojiImageUploading ? '…' : (newEmojiImage ? 'Replace' : 'Image')}
+                            </label>
+                            {newEmojiImage ? (
+                              <button
+                                type="button"
+                                onClick={() => setNewEmojiImage('')}
+                                className="text-[11px] text-rose-600 dark:text-rose-400 hover:underline"
+                              >
+                                Remove image
+                              </button>
+                            ) : null}
+                          </div>
                         )}
                       </div>
 
@@ -10437,6 +10805,205 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         </div>
                       </div>
                     </div>
+
+                    {tileType === 'space' && (
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={newShowEmoji}
+                          onChange={(e) => setNewShowEmoji(e.target.checked)}
+                          className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                        />
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show emoji on card</span>
+                      </label>
+                    )}
+
+                    {/* Header image - space cards only */}
+                    {tileType === 'space' && (
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Header image</label>
+                        <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+                          Shown on the space card beside the icon. Other formats are converted to PNG automatically.
+                        </p>
+                        <div className="flex flex-wrap items-center gap-3 mb-3">
+                          {newHeaderImage ? (
+                            <div className={`h-12 w-40 rounded-lg border border-slate-200 dark:border-slate-700 bg-[length:12px_12px] bg-[linear-gradient(45deg,#e2e8f0_25%,transparent_25%,transparent_75%,#e2e8f0_75%),linear-gradient(45deg,#e2e8f0_25%,transparent_25%,transparent_75%,#e2e8f0_75%)] bg-[position:0_0,6px_6px] dark:bg-[linear-gradient(45deg,#334155_25%,transparent_25%,transparent_75%,#334155_75%),linear-gradient(45deg,#334155_25%,transparent_25%,transparent_75%,#334155_75%)] overflow-hidden relative`}>
+                              <img
+                                src={newHeaderImage}
+                                alt="Header preview"
+                                className={`absolute inset-0 w-full h-full ${newHeaderImageFit === 'cover' ? 'object-cover' : 'object-contain'} ${newHeaderImageAlign === 'left' ? 'object-left' : newHeaderImageAlign === 'center' ? 'object-center' : 'object-right'}`}
+                                style={{
+                                  opacity: newHeaderImageOpacity / 100,
+                                  transform: `translateX(${newHeaderImageOffsetX}px)`
+                                }}
+                              />
+                            </div>
+                          ) : null}
+                          <label className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border cursor-pointer transition-colors ${headerImageUploading ? 'opacity-60 pointer-events-none' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'} text-slate-700 dark:text-slate-200`}>
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/gif,image/webp,image/bmp,.jpg,.jpeg,.png,.gif,.webp,.bmp"
+                              className="hidden"
+                              disabled={headerImageUploading}
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                e.target.value = '';
+                                if (!file) return;
+                                setHeaderImageUploading(true);
+                                try {
+                                  const url = await uploadTileHeaderImage(file, {
+                                    removeBackground: headerRemoveBg,
+                                    bgColor: headerRemoveBg && headerBgMode === 'custom' ? headerBgColor : undefined
+                                  });
+                                  setNewHeaderImage(url);
+                                } catch (err) {
+                                  console.error(err);
+                                  alert(err instanceof Error ? err.message : 'Failed to upload header image');
+                                } finally {
+                                  setHeaderImageUploading(false);
+                                }
+                              }}
+                            />
+                            {headerImageUploading ? 'Uploading…' : (newHeaderImage ? 'Replace image' : 'Upload image')}
+                          </label>
+                          {newHeaderImage ? (
+                            <button
+                              type="button"
+                              onClick={() => setNewHeaderImage('')}
+                              className="text-sm text-red-600 dark:text-red-400 hover:underline"
+                            >
+                              Clear
+                            </button>
+                          ) : null}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-4 mb-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs text-slate-600 dark:text-slate-400 mr-1">Align</span>
+                            {(['left', 'center', 'right'] as const).map((align) => (
+                              <button
+                                key={align}
+                                type="button"
+                                onClick={() => setNewHeaderImageAlign(align)}
+                                className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${newHeaderImageAlign === align ? 'bg-brand-500 text-white border-brand-500' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'}`}
+                              >
+                                {align.charAt(0).toUpperCase() + align.slice(1)}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs text-slate-600 dark:text-slate-400 mr-1">Fit</span>
+                            <button
+                              type="button"
+                              onClick={() => setNewHeaderImageFit('contain')}
+                              className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${newHeaderImageFit === 'contain' ? 'bg-brand-500 text-white border-brand-500' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'}`}
+                              title="Scale image to fit inside the region (no crop)"
+                            >
+                              Center fit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setNewHeaderImageFit('cover')}
+                              className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${newHeaderImageFit === 'cover' ? 'bg-brand-500 text-white border-brand-500' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'}`}
+                              title="Scale image to fill the region completely (may crop)"
+                            >
+                              Fill region
+                            </button>
+                          </div>
+                        </div>
+                        {newHeaderImage ? (
+                          <div className="space-y-2 mb-3">
+                            <label className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+                              <span className="w-20 shrink-0">Opacity</span>
+                              <input
+                                type="range"
+                                min={0}
+                                max={100}
+                                value={newHeaderImageOpacity}
+                                onChange={(e) => setNewHeaderImageOpacity(Number(e.target.value))}
+                                className="flex-1 accent-brand-500"
+                              />
+                              <span className="w-10 text-right tabular-nums">{newHeaderImageOpacity}%</span>
+                            </label>
+                            <label className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+                              <span className="w-20 shrink-0">Position</span>
+                              <input
+                                type="range"
+                                min={-100}
+                                max={100}
+                                value={newHeaderImageOffsetX}
+                                onChange={(e) => setNewHeaderImageOffsetX(Number(e.target.value))}
+                                className="flex-1 accent-brand-500"
+                              />
+                              <span className="w-12 text-right tabular-nums">{newHeaderImageOffsetX}px</span>
+                              <button
+                                type="button"
+                                onClick={() => setNewHeaderImageOffsetX(0)}
+                                className="text-[11px] text-brand-600 dark:text-brand-400 hover:underline"
+                              >
+                                Reset
+                              </button>
+                            </label>
+                          </div>
+                        ) : null}
+                        <div className="flex flex-wrap items-center gap-3">
+                          <label className="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={headerRemoveBg}
+                              onChange={(e) => setHeaderRemoveBg(e.target.checked)}
+                              className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                            />
+                            Remove background
+                          </label>
+                          {headerRemoveBg ? (
+                            <>
+                              <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                                <input type="radio" name="headerBgModeEdit" checked={headerBgMode === 'auto'} onChange={() => setHeaderBgMode('auto')} />
+                                Auto (corners)
+                              </label>
+                              <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                                <input type="radio" name="headerBgModeEdit" checked={headerBgMode === 'custom'} onChange={() => setHeaderBgMode('custom')} />
+                                Pick color
+                              </label>
+                              {headerBgMode === 'custom' ? (
+                                <input
+                                  type="color"
+                                  value={headerBgColor}
+                                  onChange={(e) => setHeaderBgColor(e.target.value)}
+                                  className="w-7 h-7 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent"
+                                  title="Background color to remove"
+                                />
+                              ) : null}
+                            </>
+                          ) : null}
+                          {newHeaderImage && headerRemoveBg ? (
+                            <button
+                              type="button"
+                              disabled={headerImageUploading}
+                              onClick={async () => {
+                                setHeaderImageUploading(true);
+                                try {
+                                  const url = await uploadTileHeaderImage(null, {
+                                    sourceUrl: newHeaderImage,
+                                    removeBackground: true,
+                                    bgColor: headerBgMode === 'custom' ? headerBgColor : undefined
+                                  });
+                                  setNewHeaderImage(url);
+                                } catch (err) {
+                                  console.error(err);
+                                  alert(err instanceof Error ? err.message : 'Failed to remove background');
+                                } finally {
+                                  setHeaderImageUploading(false);
+                                }
+                              }}
+                              className="text-xs font-medium px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                            >
+                              Apply to current image
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Category */}
                     <div>
