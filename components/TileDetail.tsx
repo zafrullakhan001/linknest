@@ -19,6 +19,7 @@ import { RichTextContentItem } from './RichTextContentItem';
 import { RichTextContent } from '../types';
 import { isPublicLinkFavorite, togglePublicLinkFavorite } from '../services/publicFavoritesService';
 import { LinkInfoDialog } from './LinkInfoDialog';
+import { QRCodeDialog } from './QRCodeDialog';
 import { MobileTileEdit } from './MobileTileEdit';
 import { useMobile } from '../hooks/useMobile';
 import { VersionDiffViewer } from './VersionDiffViewer';
@@ -426,6 +427,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [notesDialogState, setNotesDialogState] = useState<{ linkId: string; notes: string; linkLabel: string } | null>(null);
     const [notesCopied, setNotesCopied] = useState(false);
     const [linkInfoDialog, setLinkInfoDialog] = useState<{ link: Link } | null>(null);
+    const [qrDialogState, setQrDialogState] = useState<{ url: string; label: string } | null>(null);
 
     // Version Control State
     const [showVersions, setShowVersions] = useState(false);
@@ -4891,6 +4893,27 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         )}
                                                                     </button>
 
+                                                                    {/* QR code button */}
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.preventDefault();
+                                                                            e.stopPropagation();
+                                                                            const tempDiv = document.createElement('div');
+                                                                            tempDiv.innerHTML = link.label || '';
+                                                                            const plainLabel = tempDiv.textContent || tempDiv.innerText || link.label || link.url;
+                                                                            setQrDialogState({
+                                                                                url: link.url,
+                                                                                label: plainLabel
+                                                                            });
+                                                                        }}
+                                                                        className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all"
+                                                                        title="Show QR code"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                                            <path fillRule="evenodd" d="M3 4a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm2 1v1h1V5H5zm8-2a1 1 0 00-1 1v3a1 1 0 001 1h3a1 1 0 001-1V4a1 1 0 00-1-1h-3zm1 2v1h1V5h-1zM3 13a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3zm2 1v1h1v-1H5zm5-1a1 1 0 011-1h.01a1 1 0 110 2H11a1 1 0 01-1-1zm3 0a1 1 0 011-1h.01a1 1 0 110 2H14a1 1 0 01-1-1zm-3 3a1 1 0 011-1h.01a1 1 0 110 2H11a1 1 0 01-1-1zm3 0a1 1 0 011-1h.01a1 1 0 110 2H14a1 1 0 01-1-1zm3-3a1 1 0 011-1h.01a1 1 0 110 2H17a1 1 0 01-1-1zm0 3a1 1 0 011-1h.01a1 1 0 110 2H17a1 1 0 01-1-1z" clipRule="evenodd" />
+                                                                        </svg>
+                                                                    </button>
+
                                                                     {/* Browser selection button - only show when extension is enabled, user is authenticated, and has canChangeBrowser */}
                                                                     {settings.browser_specific_links_enabled === '1' && isAuthenticated && tile.canChangeBrowser === true && typeof window !== 'undefined' && (window as any).BrowserLauncher && (
                                                                         <button
@@ -5054,6 +5077,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         browser={linkInfoDialog.link.browser}
                     />
                 )}
+
+                {/* QR Code Dialog */}
+                <QRCodeDialog
+                    isOpen={!!qrDialogState}
+                    onClose={() => setQrDialogState(null)}
+                    url={qrDialogState?.url || ''}
+                    label={qrDialogState?.label || ''}
+                />
             </>
         );
     }
