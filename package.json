@@ -5,20 +5,24 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "build:prod": "vite build --mode production",
-    "preview": "vite preview"
+    "build": "npm run copy:tinymce && vite build",
+    "build:prod": "npm run copy:tinymce && vite build --mode production",
+    "preview": "vite preview",
+    "copy:tinymce": "node scripts/copy-tinymce.mjs",
+    "postinstall": "node scripts/copy-tinymce.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@google/genai": "^1.30.0",
+    "@tinymce/tinymce-react": "^6.3.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-icons": "^5.5.0",
     "react-is": "^19.2.3",
     "recharts": "2.15",
+    "tinymce": "^8.8.2",
     "uuid": "^13.0.0"
   },
   "devDependencies": {

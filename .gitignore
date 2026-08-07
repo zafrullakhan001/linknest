@@ -35,6 +35,9 @@ data/
 uploads/
 uploads/*
 
+# Self-hosted TinyMCE (copied from node_modules on postinstall)
+public/tinymce/
+
 # Deployment bundles and artifacts
 *.zip
 linknest-deploy-*/

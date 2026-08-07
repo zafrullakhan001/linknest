@@ -1,6 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { RichTextContent } from '../types';
-import { RichTextEditor } from './RichTextEditor';
+import { RichTextEditorShell } from './RichTextEditorShell';
 
 interface RichTextContentItemProps {
     content: RichTextContent;
@@ -46,63 +46,10 @@ export const RichTextContentItem: React.FC<RichTextContentItemProps> = ({
     expiresAt
 }) => {
     const [localContent, setLocalContent] = useState(content.content);
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    const [uploading, setUploading] = useState(false);
 
-    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        // Validate file type
-        if (!file.type.startsWith('image/')) {
-            alert('Please select an image file');
-            return;
-        }
-
-        // Validate file size (max 5MB)
-        if (file.size > 5 * 1024 * 1024) {
-            alert('Image size must be less than 5MB');
-            return;
-        }
-
-        setUploading(true);
-        const formData = new FormData();
-        formData.append('image', file);
-        formData.append('section_id', sectionId);
-
-        try {
-            const API_BASE = import.meta.env.VITE_API_BASE || '/api';
-            const response = await fetch(`${API_BASE}/uploads/rich-text-image`, {
-                method: 'POST',
-                body: formData
-            });
-
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || 'Upload failed');
-            }
-
-            const data = await response.json();
-            const imageUrl = data.url;
-
-            // Insert image into content
-            const imageHtml = `<img src="${imageUrl}" alt="Uploaded image" style="max-width: 100%; height: auto; margin: 10px 0;" />`;
-            const newContent = localContent + imageHtml;
-            setLocalContent(newContent);
-            onUpdate(content.id, newContent);
-        } catch (error: any) {
-            alert('Failed to upload image: ' + error.message);
-        } finally {
-            setUploading(false);
-            if (fileInputRef.current) {
-                fileInputRef.current.value = '';
-            }
-        }
-    };
-
-    const handleContentChange = (value: string) => {
-        setLocalContent(value);
-    };
+    useEffect(() => {
+        if (isEditing) setLocalContent(content.content);
+    }, [isEditing, content.content]);
 
     const handleSave = () => {
         onUpdate(content.id, localContent);
@@ -116,49 +63,22 @@ export const RichTextContentItem: React.FC<RichTextContentItemProps> = ({
 
     if (isEditing) {
         return (
-            <div className="bg-white dark:bg-slate-800 border-2 border-brand-500 dark:border-brand-500/50 rounded-xl p-4 shadow-lg space-y-3">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
-                    <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Edit Rich Text Content</h4>
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={() => fileInputRef.current?.click()}
-                            disabled={uploading}
-                            className="px-3 py-1.5 text-xs font-medium bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg transition-colors disabled:opacity-50"
-                        >
-                            {uploading ? 'Uploading...' : '📷 Add Image'}
-                        </button>
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept="image/*"
-                            onChange={handleImageUpload}
-                            className="hidden"
-                        />
-                        <button
-                            onClick={handleCancel}
-                            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded transition-colors"
-                            title="Cancel"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                        </button>
+            <RichTextEditorShell
+                open
+                title="Edit Rich Text Content"
+                value={localContent}
+                onChange={setLocalContent}
+                onSave={handleSave}
+                onCancel={handleCancel}
+                saveLabel="Save"
+                placeholder="Enter rich text content..."
+                sectionId={sectionId}
+                inlinePlaceholder={
+                    <div className="bg-slate-50 dark:bg-slate-900/40 border border-dashed border-brand-300 dark:border-brand-700 rounded-xl p-4 text-sm text-slate-500 dark:text-slate-400">
+                        Editing rich text…
                     </div>
-                </div>
-                <RichTextEditor
-                    value={localContent}
-                    onChange={handleContentChange}
-                    placeholder="Enter rich text content..."
-                />
-                <div className="flex justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
-                    <button
-                        onClick={handleSave}
-                        className="px-4 py-2 text-xs font-semibold bg-brand-600 hover:bg-brand-500 text-white rounded-lg transition-all shadow-md hover:shadow-lg shadow-brand-500/30 flex items-center gap-1.5"
-                    >
-                        Save
-                    </button>
-                </div>
-            </div>
+                }
+            />
         );
     }
 
@@ -261,4 +181,3 @@ export const RichTextContentItem: React.FC<RichTextContentItemProps> = ({
         </div>
     );
 };
-
