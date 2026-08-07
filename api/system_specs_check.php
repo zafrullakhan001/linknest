@@ -8,6 +8,7 @@
  *
  * Usage (CLI):
  *   php api/system_specs_check.php
+ *   php api/system_specs_check.php --json
  *
  * Usage (API / Admin):
  *   GET /api/system-specs-check  (admin)
@@ -17,6 +18,7 @@
 require_once __DIR__ . '/config.php';
 
 $isCli = (PHP_SAPI === 'cli' || PHP_SAPI === 'phpdbg');
+$cliJson = $isCli && in_array('--json', $argv ?? [], true);
 
 if (!$isCli) {
     if (session_status() === PHP_SESSION_NONE) {
@@ -383,6 +385,10 @@ try {
     ];
 
     if ($isCli) {
+        if ($cliJson) {
+            echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            exit($allCriticalOk ? 0 : 2);
+        }
         echo "============================================\n";
         echo "  LinkNest System Specs Check\n";
         echo "============================================\n";

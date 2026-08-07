@@ -1,12 +1,13 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     LinkNest Deployment Packager
 .DESCRIPTION
     Clean-builds the React frontend with the correct base path, gathers all
     runtime files (API, addons, vendor/SAML, dist), stamps BUILD_INFO.json
-    (for PWA cache busting), bundles SQLite 3.53.4 for XAMPP PHP, and
-    produces a self-contained ZIP ready to deploy/update on another XAMPP machine.
+    (for PWA cache busting), bundles SQLite 3.53.4 for XAMPP PHP, captures a
+    SOURCE_SPECS.json snapshot from this known-good host, and produces a
+    self-contained ZIP ready to deploy/update on another XAMPP machine.
 
     Default: FRESH install package (no live SQLite DB). The target PC creates
     a new database on first launch. Use -IncludeDatabase to mirror this PC's DB.
@@ -14,6 +15,12 @@
     SQLite: ships runtime/sqlite/ (libsqlite3.dll 3.53.4) plus install-sqlite-xampp.bat.
     deploy/update scripts install that DLL into the target XAMPP PHP folder so
     performance pragmas in api/config.php (WAL, mmap, cache, worker threads) take effect.
+
+    Specs: api/system_specs_check.php (Admin -> Maintenance Scripts -> System Specs Check)
+    validates that the target matches this packager host (PHP/SQLite/dirs/cache).
+
+    Showcase: bundles load-tests/ including results/report.html + last-summary.json from
+    this host so the target can open the performance report for reference.
 .PARAMETER SkipBuild
     Skip the npm build step (use existing dist/). Not recommended when shipping code changes.
 .PARAMETER IncludeDatabase
@@ -60,6 +67,10 @@ $SqliteDllZipUrl = "https://www.sqlite.org/2026/sqlite-dll-win-x64-3530400.zip"
 $SqliteToolsZipUrl = "https://www.sqlite.org/2026/sqlite-tools-win-x64-3530400.zip"
 $SqliteVersionShipped = $null
 $SqliteRuntimeBundled = $false
+$SourceSpecsSnapshot = $null
+$SourceSpecsReady = $false
+$LoadTestReportBundled = $false
+$LoadTestReportRel = $null
 
 # Normalize base path: /linknest (no trailing slash)
 $BasePath = "/" + ($BasePath.Trim().Trim("/").Replace("\", "/"))
@@ -180,6 +191,7 @@ Write-Host "  Build ID     : $BuildId" -ForegroundColor Gray
 Write-Host "  Database     : $(if ($IncludeDatabase) { 'INCLUDE live DB from this PC' } else { 'FRESH (no live DB - recommended)' })" -ForegroundColor Gray
 Write-Host "  Uploads      : $(if ($ExcludeUploads) { 'excluded' } else { 'included' })" -ForegroundColor Gray
 Write-Host "  SQLite DLL   : $(if ($SkipSqliteRuntime) { 'SKIPPED' } else { "bundle $SqliteTargetVersion for target XAMPP" })" -ForegroundColor Gray
+Write-Host "  Load report  : load-tests/results/report.html (if present)" -ForegroundColor Gray
 Write-Host "  Output ZIP   : $ZipOutput"   -ForegroundColor Gray
 Write-Host ""
 
@@ -204,6 +216,75 @@ if ((-not $SkipBuild) -and (-not $nodeVer)) {
 
 Write-OK "Project root looks correct"
 if ($nodeVer) { Write-OK "Node.js found: $nodeVer" }
+
+$phpVer = $null
+try { $phpVer = (& php -r 'echo PHP_VERSION;' 2>$null) } catch { }
+if ($phpVer) {
+    Write-OK "PHP found: $phpVer"
+} else {
+    Write-Warn "PHP not in PATH - SOURCE_SPECS.json snapshot will be skipped (still packaging system_specs_check.php)"
+}
+
+# ---------------------------------------------------------------------------
+#  0b. Capture source-host system specs (known-good baseline for target)
+# ---------------------------------------------------------------------------
+Write-Header "0b / Source System Specs Snapshot"
+
+$specsScript = Join-Path $ProjectRoot "api\system_specs_check.php"
+if (-not (Test-Path $specsScript)) {
+    Write-Err "api/system_specs_check.php missing - cannot package a specs-aware deploy."
+    Read-Host "Press Enter to exit"
+    exit 1
+}
+Write-OK "system_specs_check.php present"
+
+if ($phpVer) {
+    Write-Step "Running: php api/system_specs_check.php --json ..."
+    $specsOutFile = Join-Path $env:TEMP ("linknest-source-specs-" + [guid]::NewGuid().ToString("N") + ".json")
+    try {
+        $specsProc = Start-Process -FilePath 'php' -ArgumentList @($specsScript, '--json') -NoNewWindow -Wait -PassThru -RedirectStandardOutput $specsOutFile -RedirectStandardError ($specsOutFile + '.err')
+        $specsExit = $specsProc.ExitCode
+        if (Test-Path $specsOutFile) {
+            $rawSpecs = Get-Content -LiteralPath $specsOutFile -Raw -ErrorAction SilentlyContinue
+            if ($rawSpecs -and $rawSpecs.Trim().StartsWith("{")) {
+                $SourceSpecsSnapshot = $rawSpecs.Trim() | ConvertFrom-Json
+                $passed = 0
+                $total = 0
+                if ($SourceSpecsSnapshot.verdict) {
+                    $passed = [int]$SourceSpecsSnapshot.verdict.checks_passed
+                    $total = [int]$SourceSpecsSnapshot.verdict.checks_total
+                }
+                $ready = [bool]$SourceSpecsSnapshot.verdict.ready_for_target_parity
+                $SourceSpecsReady = $ready
+                if ($ready) {
+                    Write-OK ("Source host specs OK ($passed/$total) - baseline ready for target parity")
+                }
+                else {
+                    Write-Warn ("Source host has failing specs ($passed/$total, exit=$specsExit). Package still builds; fix before expecting target parity.")
+                    if ($SourceSpecsSnapshot.summary) {
+                        Write-Warn ([string]$SourceSpecsSnapshot.summary)
+                    }
+                }
+            }
+            else {
+                Write-Warn "Specs JSON parse failed - continuing without SOURCE_SPECS.json body"
+            }
+        }
+        else {
+            Write-Warn "Specs check produced no output file"
+        }
+    }
+    catch {
+        Write-Warn ("Specs snapshot failed: {0}" -f $_.Exception.Message)
+    }
+    finally {
+        Remove-Item -LiteralPath $specsOutFile -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath "$specsOutFile.err" -Force -ErrorAction SilentlyContinue
+    }
+}
+else {
+    Write-Warn "Skipped live specs snapshot (php unavailable)"
+}
 
 # ---------------------------------------------------------------------------
 #  1. Build frontend (always clean unless SkipBuild)
@@ -326,7 +407,8 @@ $DirsToInclude = @(
     "monitorv2",
     "docker",
     "land",
-    "vendor"   # OneLogin php-saml (+ xmlseclibs) required for SAML 2.0
+    "vendor",   # OneLogin php-saml (+ xmlseclibs) required for SAML 2.0
+    "load-tests"  # k6 harness + showcase report (results/report.html)
 )
 
 $FilesToInclude = @(
@@ -413,6 +495,35 @@ foreach ($file in $FilesToInclude) {
 }
 Write-OK ("{0} root files copied ({1} skipped)" -f $copiedFiles, $skippedFiles)
 
+# Confirm showcase load-test report was copied (results/ is gitignored locally but must ship)
+Write-Step "Checking load-test showcase report..."
+$ltReportSrc = Join-Path $ProjectRoot "load-tests\results\report.html"
+$ltReportDst = Join-Path $TempDir "load-tests\results\report.html"
+$ltSummarySrc = Join-Path $ProjectRoot "load-tests\results\last-summary.json"
+if (Test-Path $ltReportSrc) {
+    if (-not (Test-Path $ltReportDst)) {
+        Ensure-Dir (Join-Path $TempDir "load-tests\results")
+        Copy-Item -Path $ltReportSrc -Destination $ltReportDst -Force
+        if (Test-Path $ltSummarySrc) {
+            Copy-Item -Path $ltSummarySrc -Destination (Join-Path $TempDir "load-tests\results\last-summary.json") -Force
+        }
+        foreach ($extra in @("meta.json", "smoke-summary.json")) {
+            $es = Join-Path $ProjectRoot "load-tests\results\$extra"
+            if (Test-Path $es) {
+                Copy-Item -Path $es -Destination (Join-Path $TempDir "load-tests\results\$extra") -Force
+            }
+        }
+    }
+    $LoadTestReportBundled = $true
+    $LoadTestReportRel = "load-tests/results/report.html"
+    $reportKB = [math]::Round((Get-Item $ltReportDst).Length / 1KB, 1)
+    Write-OK ("Load-test report bundled ({0} KB) - open on target for showcase" -f $reportKB)
+}
+else {
+    Write-Warn "load-tests/results/report.html not found on this PC - package will ship harness without showcase report"
+    Write-Warn "Generate first: .\\load-tests\\run.ps1 then node load-tests/generate-report.js"
+}
+
 # Strip machine-local / secret configs that must NEVER ship
 Write-Step "Scrubbing machine-local secrets from package..."
 $configDst = Join-Path $TempDir "config"
@@ -476,6 +587,7 @@ else {
 Write-Header "5 / Database (data/)"
 
 Ensure-Dir (Join-Path $TempDir "data")
+Ensure-Dir (Join-Path $TempDir "data\cache")
 Ensure-Dir (Join-Path $TempDir "logs")
 
 $gitkeepSrc = Join-Path $ProjectRoot "data\.gitkeep"
@@ -486,6 +598,8 @@ if (Test-Path $gitkeepSrc) {
 else {
     Set-Content -Path $gitkeepDst -Value "" -Encoding ASCII
 }
+Set-Content -Path (Join-Path $TempDir "data\cache\.gitkeep") -Value "" -Encoding ASCII
+Write-OK "data/cache/ placeholder ready (guest response cache)"
 
 if ($IncludeDatabase) {
     $dbCopied = $false
@@ -618,16 +732,17 @@ else {
 
     if ($dllStaged) {
         $SqliteRuntimeBundled = $true
-        $versionTxt = @"
-SQLite $SqliteVersionShipped for LinkNest XAMPP deployments
-Source: https://sqlite.org/ (Windows x64 precompiled binary)
-Packaged: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
-Build ID: $BuildId
-
-Install on target with install-sqlite-xampp.bat (also run by deploy/update scripts).
-Replaces %XAMPP%\php\libsqlite3.dll so PHP PDO/SQLite3 use this version.
-LinkNest api/config.php then applies WAL, mmap 256MB, 32MB cache, 4 worker threads.
-"@
+        $packagedAtTxt = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+        $versionTxt = @(
+            "SQLite $SqliteVersionShipped for LinkNest XAMPP deployments"
+            'Source: https://sqlite.org/ (Windows x64 precompiled binary)'
+            "Packaged: $packagedAtTxt"
+            "Build ID: $BuildId"
+            ''
+            'Install on target with install-sqlite-xampp.bat (also run by deploy/update scripts).'
+            'Replaces %XAMPP%\php\libsqlite3.dll so PHP PDO/SQLite3 use this version.'
+            'LinkNest api/config.php then applies WAL, mmap 256MB, 32MB cache, 4 worker threads.'
+        ) -join [Environment]::NewLine
         Set-Content -Path (Join-Path $runtimeSqliteDir "SQLITE_VERSION.txt") -Value $versionTxt -Encoding ASCII
         Write-OK ("SQLite runtime bundled: version {0}" -f $SqliteVersionShipped)
     }
@@ -679,43 +794,96 @@ else {
 # ---------------------------------------------------------------------------
 Write-Header "7b / Stamp BUILD_INFO.json"
 
-$indexAssetMatch = [regex]::Match($distHtml, 'assets/js/index-[^"''\s]+\.js')
-$indexAsset = if ($indexAssetMatch.Success) { $indexAssetMatch.Value } else { "" }
+$indexAssetMatch = [regex]::Match($distHtml, 'assets/js/index-\S+\.js')
+$indexAsset = if ($indexAssetMatch.Success) { $indexAssetMatch.Value } else { '' }
 $indexHash = Get-FileSha256 $distIndex
+
+$loadTestReportInfo = @{
+    bundled = [bool]$LoadTestReportBundled
+    path    = $LoadTestReportRel
+    summary = 'load-tests/results/last-summary.json'
+    note    = $(if ($LoadTestReportBundled) {
+        'Open report.html in a browser for packager-host performance showcase'
+    } else {
+        'Report was missing on packager host; re-run load tests then re-package'
+    })
+}
 
 $buildInfo = [ordered]@{
     buildId     = $BuildId
-    builtAt     = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+    builtAt     = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
     packageName = $PackageName
     appVersion  = $pkgVersion
-    basePath    = $(if ($BasePath) { $BasePath } else { "/" })
+    basePath    = $(if ($BasePath) { $BasePath } else { '/' })
     includeDatabase = [bool]$IncludeDatabase
     sqliteRuntime = $(if ($SqliteRuntimeBundled) { $SqliteVersionShipped } else { $null })
     sqlitePerformance = @(
-        "journal_mode=WAL",
-        "synchronous=NORMAL",
-        "mmap_size=256MB",
-        "cache_size=32MB",
-        "threads=4",
-        "temp_store=MEMORY"
+        'journal_mode=WAL',
+        'synchronous=NORMAL',
+        'mmap_size=256MB',
+        'cache_size=32MB',
+        'threads=4',
+        'temp_store=MEMORY'
     )
+    systemSpecsCheck = @{
+        adminUi     = 'Admin -> Maintenance Scripts -> System Specs Check'
+        apiEndpoint = '/api/system-specs-check'
+        cli         = 'php api/system_specs_check.php'
+        cliJson     = 'php api/system_specs_check.php --json'
+        packagedScript = 'api/system_specs_check.php'
+        sourceSnapshot = 'SOURCE_SPECS.json'
+        purpose     = 'Validate target host matches packager-known-good PHP/SQLite/dirs/cache'
+    }
+    loadTestReport = $loadTestReportInfo
+    sourceSpecsReady = [bool]$SourceSpecsReady
     indexAsset  = $indexAsset
     indexSha12  = $indexHash
     jsAssetCount = $assetJs.Count
 }
-$buildInfoJson = $buildInfo | ConvertTo-Json -Depth 4
+$buildInfoJson = $buildInfo | ConvertTo-Json -Depth 6
 Set-Content -Path (Join-Path $TempDir "BUILD_INFO.json") -Value $buildInfoJson -Encoding UTF8
 # Also keep a copy inside dist for easy discovery
 Set-Content -Path (Join-Path $TempDir "dist\BUILD_INFO.json") -Value $buildInfoJson -Encoding UTF8
 Write-OK ("BUILD_INFO.json written (buildId={0}, {1})" -f $BuildId, $indexAsset)
 
+# Ship known-good specs from this packager host for operators on the target
+if ($null -ne $SourceSpecsSnapshot) {
+    $sourceSpecsPayload = [ordered]@{
+        packagedAt = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+        buildId    = $BuildId
+        packageName = $PackageName
+        note       = 'Snapshot of the packager host when this ZIP was built. On the target: Admin -> System Specs Check (or php api/system_specs_check.php --json) and reconcile against target_specs below.'
+        result     = $SourceSpecsSnapshot
+    }
+    $sourceSpecsJson = $sourceSpecsPayload | ConvertTo-Json -Depth 12
+    Set-Content -Path (Join-Path $TempDir "SOURCE_SPECS.json") -Value $sourceSpecsJson -Encoding UTF8
+    if ($SourceSpecsSnapshot.target_specs) {
+        $targetOnly = [ordered]@{
+            packagedAt = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+            buildId    = $BuildId
+            note       = 'Minimum requirements the target must meet for known-good LinkNest parity.'
+            target_specs = $SourceSpecsSnapshot.target_specs
+        }
+        Set-Content -Path (Join-Path $TempDir "TARGET_REQUIREMENTS.json") -Value ($targetOnly | ConvertTo-Json -Depth 8) -Encoding UTF8
+        Write-OK "SOURCE_SPECS.json + TARGET_REQUIREMENTS.json written"
+    }
+    else {
+        Write-OK "SOURCE_SPECS.json written"
+    }
+}
+else {
+    Write-Warn "SOURCE_SPECS.json not written (no live snapshot)"
+}
+
 # Write a small .env template so manual deploys get the correct base path
 # Do NOT copy .env.local (may contain GEMINI_API_KEY / secrets)
-$envTemplate = @"
-VITE_BASE_PATH=$(if ($BasePath) { $BasePath } else { "" })
-VITE_API_BASE=$(if ($BasePath) { "$BasePath/api" } else { "/api" })
-# Optional: GEMINI_API_KEY=your_key_here
-"@
+$envBasePath = if ($BasePath) { $BasePath } else { '' }
+$envApiBase = if ($BasePath) { ($BasePath + '/api') } else { '/api' }
+$envTemplate = @(
+    "VITE_BASE_PATH=$envBasePath"
+    "VITE_API_BASE=$envApiBase"
+    '# Optional: GEMINI_API_KEY=your_key_here'
+) -join [Environment]::NewLine
 Set-Content -Path (Join-Path $TempDir ".env") -Value $envTemplate -Encoding ASCII
 Write-OK ".env written for target base path (no secrets copied from this PC)"
 
@@ -729,18 +897,18 @@ $dbModeNote = if ($IncludeDatabase) { "includes live DB from packager PC" } else
 $sqliteShipNote = if ($SqliteRuntimeBundled) { "SQLite $SqliteVersionShipped bundled for XAMPP PHP" } else { "SQLite runtime not bundled" }
 
 # -- install-sqlite-xampp.bat (upgrade target XAMPP PHP SQLite DLL) ---------
-$installSqliteBat = @"
+$installSqliteBat = @'
 @echo off
 setlocal enabledelayedexpansion
 REM ==========================================================
-REM  LinkNest - Install SQLite $SqliteTargetVersion into XAMPP PHP
+REM  LinkNest - Install SQLite __SQLITE_TARGET__ into XAMPP PHP
 REM  Replaces php\libsqlite3.dll (backed up first). Needs Admin.
 REM ==========================================================
 echo.
 echo  =============================================
 echo     LinkNest - SQLite XAMPP Upgrade
-echo     Target version: $SqliteTargetVersion
-echo     Package build : $BuildId
+echo     Target version: __SQLITE_TARGET__
+echo     Package build : __BUILD_ID__
 echo  =============================================
 echo.
 
@@ -828,16 +996,17 @@ net start Apache2.4 >nul 2>&1
 
 echo.
 echo  SQLite after upgrade:
-"%PHP_DIR%\php.exe" -r "echo '  PHP SQLite: '.SQLite3::version()['versionString'].PHP_EOL; `$p=new PDO('sqlite::memory:'); echo '  PDO SQLite: '.`$p->query('select sqlite_version()')->fetchColumn().PHP_EOL;" 2>nul
+"%PHP_DIR%\php.exe" -r "echo '  PHP SQLite: '.SQLite3::version()['versionString'].PHP_EOL; $p=new PDO('sqlite::memory:'); echo '  PDO SQLite: '.$p->query('select sqlite_version()')->fetchColumn().PHP_EOL;" 2>nul
 echo.
 echo  LinkNest performance pragmas (WAL / mmap / cache / threads) apply on next API request.
 echo.
 if "%LINKNEST_SQLITE_QUIET%"=="1" exit /b 0
 pause
-"@
+'@
+$installSqliteBat = $installSqliteBat.Replace('__SQLITE_TARGET__', $SqliteTargetVersion).Replace('__BUILD_ID__', $BuildId)
 
 # -- deploy-xampp.bat (fresh install - wipes target folder) -----------------
-$deployBat = @"
+$deployBat = @'
 @echo off
 setlocal enabledelayedexpansion
 REM ==========================================================
@@ -848,10 +1017,10 @@ REM ==========================================================
 echo.
 echo  =============================================
 echo     LinkNest - XAMPP Fresh Deploy (Windows)
-echo     Package build: $BuildId
-echo     App version  : $pkgVersion
-echo     DB mode      : $dbModeNote
-echo     SQLite       : $sqliteShipNote
+echo     Package build: __BUILD_ID__
+echo     App version  : __PKG_VERSION__
+echo     DB mode      : __DB_MODE_NOTE__
+echo     SQLite       : __SQLITE_SHIP_NOTE__
 echo  =============================================
 echo.
 
@@ -863,16 +1032,16 @@ set /p "XAMPP_ROOT=XAMPP install path (press Enter for C:\xampp): "
 if "%XAMPP_ROOT%"=="" set "XAMPP_ROOT=C:\xampp"
 set "HTDOCS=%XAMPP_ROOT%\htdocs"
 
-set "SUBFOLDER=$basePathForBat"
-set /p "SUBFOLDER=Install subfolder inside htdocs (press Enter for '$basePathForBat'): "
-if "%SUBFOLDER%"=="" set "SUBFOLDER=$basePathForBat"
+set "SUBFOLDER=__BASE_PATH_FOR_BAT__"
+set /p "SUBFOLDER=Install subfolder inside htdocs (press Enter for '__BASE_PATH_FOR_BAT__'): "
+if "%SUBFOLDER%"=="" set "SUBFOLDER=__BASE_PATH_FOR_BAT__"
 
 set "INSTALL_DIR=%HTDOCS%\%SUBFOLDER%"
 echo.
 echo  XAMPP root  : %XAMPP_ROOT%
 echo  Install dir : %INSTALL_DIR%
 echo  URL will be : http://localhost/%SUBFOLDER%
-echo  Build ID    : $BuildId
+echo  Build ID    : __BUILD_ID__
 echo.
 
 if not exist "%HTDOCS%" (
@@ -947,9 +1116,9 @@ if not exist "%INSTALL_DIR%\data"    mkdir "%INSTALL_DIR%\data"
 if not exist "%INSTALL_DIR%\uploads" mkdir "%INSTALL_DIR%\uploads"
 if not exist "%INSTALL_DIR%\logs"    mkdir "%INSTALL_DIR%\logs"
 
-if /i NOT "%SUBFOLDER%"=="$basePathForBat" (
+if /i NOT "%SUBFOLDER%"=="__BASE_PATH_FOR_BAT__" (
     echo.
-    echo  NOTE: Subfolder differs from packaged base '$basePathForBat'.
+    echo  NOTE: Subfolder differs from packaged base '__BASE_PATH_FOR_BAT__'.
     echo  Checking for Node.js to rebuild frontend...
     node --version >nul 2>&1
     if !ERRORLEVEL! EQU 0 (
@@ -964,12 +1133,12 @@ if /i NOT "%SUBFOLDER%"=="$basePathForBat" (
             echo  [!!] Build failed. Run npm install ^&^& npm run build:prod manually.
         )
     ) else (
-        echo  [!!] Node.js not found. Use subfolder '$basePathForBat' or rebuild on a machine with Node.
+        echo  [!!] Node.js not found. Use subfolder '__BASE_PATH_FOR_BAT__' or rebuild on a machine with Node.
     )
 )
 
 echo.
-echo  Upgrading XAMPP PHP SQLite to $SqliteTargetVersion (recommended)...
+echo  Upgrading XAMPP PHP SQLite to __SQLITE_TARGET__ (recommended)...
 if exist "%PKG_DIR%\install-sqlite-xampp.bat" (
     call "%PKG_DIR%\install-sqlite-xampp.bat" "%XAMPP_ROOT%" quiet
 ) else (
@@ -978,7 +1147,7 @@ if exist "%PKG_DIR%\install-sqlite-xampp.bat" (
 
 echo.
 echo  =============================================
-echo  Deployment Complete!  Build: $BuildId
+echo  Deployment Complete!  Build: __BUILD_ID__
 echo  =============================================
 echo.
 echo  BEFORE OPENING THE APP:
@@ -989,14 +1158,17 @@ echo  4. Hard refresh once ^(Ctrl+F5^) if you still see an old UI
 echo  5. Confirm build: http://localhost/%SUBFOLDER%/BUILD_INFO.json
 echo  6. Default login: admin / admin123 - change it immediately
 echo  7. Confirm SQLite: "%XAMPP_ROOT%\php\php.exe" -r "echo SQLite3::version()['versionString'];"
+echo  8. Admin -^> Maintenance Scripts -^> System Specs Check ^(must match SOURCE_SPECS.json / TARGET_REQUIREMENTS.json^)
+echo  9. Showcase: open load-tests\results\report.html in a browser ^(packager host load-test report^)
 echo.
 echo  Tip: run verify-install.bat from the extracted ZIP if anything looks wrong.
 echo.
 pause
-"@
+'@
+$deployBat = $deployBat.Replace('__BUILD_ID__', $BuildId).Replace('__PKG_VERSION__', $pkgVersion).Replace('__DB_MODE_NOTE__', $dbModeNote).Replace('__SQLITE_SHIP_NOTE__', $sqliteShipNote).Replace('__BASE_PATH_FOR_BAT__', $basePathForBat).Replace('__SQLITE_TARGET__', $SqliteTargetVersion)
 
 # -- update-xampp.bat (KEEP data/uploads - recommended for upgrades) -------
-$updateBat = @"
+$updateBat = @'
 @echo off
 setlocal enabledelayedexpansion
 REM ==========================================================
@@ -1008,9 +1180,9 @@ REM ==========================================================
 echo.
 echo  =============================================
 echo     LinkNest - XAMPP Update (preserve data)
-echo     Package build: $BuildId
-echo     App version  : $pkgVersion
-echo     SQLite       : $sqliteShipNote
+echo     Package build: __BUILD_ID__
+echo     App version  : __PKG_VERSION__
+echo     SQLite       : __SQLITE_SHIP_NOTE__
 echo  =============================================
 echo.
 
@@ -1019,14 +1191,14 @@ set /p "XAMPP_ROOT=XAMPP install path (press Enter for C:\xampp): "
 if "%XAMPP_ROOT%"=="" set "XAMPP_ROOT=C:\xampp"
 set "HTDOCS=%XAMPP_ROOT%\htdocs"
 
-set "SUBFOLDER=$basePathForBat"
-set /p "SUBFOLDER=Existing install subfolder (press Enter for '$basePathForBat'): "
-if "%SUBFOLDER%"=="" set "SUBFOLDER=$basePathForBat"
+set "SUBFOLDER=__BASE_PATH_FOR_BAT__"
+set /p "SUBFOLDER=Existing install subfolder (press Enter for '__BASE_PATH_FOR_BAT__'): "
+if "%SUBFOLDER%"=="" set "SUBFOLDER=__BASE_PATH_FOR_BAT__"
 
 set "INSTALL_DIR=%HTDOCS%\%SUBFOLDER%"
 echo.
 echo  Updating : %INSTALL_DIR%
-echo  Build ID : $BuildId
+echo  Build ID : __BUILD_ID__
 echo.
 
 if not exist "%INSTALL_DIR%" (
@@ -1097,7 +1269,7 @@ echo VITE_API_BASE=/%SUBFOLDER%/api
 if not exist "%INSTALL_DIR%\logs" mkdir "%INSTALL_DIR%\logs"
 
 echo.
-echo  Upgrading XAMPP PHP SQLite to $SqliteTargetVersion ...
+echo  Upgrading XAMPP PHP SQLite to __SQLITE_TARGET__ ...
 if exist "%PKG_DIR%\install-sqlite-xampp.bat" (
     call "%PKG_DIR%\install-sqlite-xampp.bat" "%XAMPP_ROOT%" quiet
 ) else (
@@ -1106,37 +1278,38 @@ if exist "%PKG_DIR%\install-sqlite-xampp.bat" (
 
 echo.
 echo  =============================================
-echo  Update Complete!  Build: $BuildId
+echo  Update Complete!  Build: __BUILD_ID__
 echo  =============================================
 echo.
 echo  VERIFY the new build is live:
 echo    http://localhost/%SUBFOLDER%/BUILD_INFO.json
-echo    Expect buildId = $BuildId
+echo    Expect buildId = __BUILD_ID__
 echo.
 echo  If Semi-PWA is enabled, do ONE hard refresh (Ctrl+F5)
 echo  so the service worker picks up the new cache version.
 echo.
 echo  Tip: restart Apache if PHP still serves oddly stale code.
 echo  Confirm SQLite: "%XAMPP_ROOT%\php\php.exe" -r "echo SQLite3::version()['versionString'];"
+echo  Then: Admin -^> Maintenance Scripts -^> System Specs Check
 echo.
 pause
-"@
+'@
+$updateBat = $updateBat.Replace('__BUILD_ID__', $BuildId).Replace('__PKG_VERSION__', $pkgVersion).Replace('__SQLITE_SHIP_NOTE__', $sqliteShipNote).Replace('__BASE_PATH_FOR_BAT__', $basePathForBat).Replace('__SQLITE_TARGET__', $SqliteTargetVersion)
 
 # -- verify-install.bat (quick health check against an install OR this ZIP) -
 $verifySqliteChecks = if ($SqliteRuntimeBundled) {
-@"
-    "runtime\sqlite\libsqlite3.dll"
-    "install-sqlite-xampp.bat"
-"@
-} else { "" }
+    "    `"runtime\sqlite\libsqlite3.dll`"`r`n    `"install-sqlite-xampp.bat`""
+} else {
+    ''
+}
 
-$verifyBat = @"
+$verifyBat = @'
 @echo off
 setlocal enabledelayedexpansion
 echo.
 echo  =============================================
 echo     LinkNest - Package / Install Verifier
-echo     Expected buildId: $BuildId
+echo     Expected buildId: __BUILD_ID__
 echo  =============================================
 echo.
 
@@ -1153,6 +1326,7 @@ for %%F in (
     "dist\index.html"
     "api\index.php"
     "api\config.php"
+    "api\system_specs_check.php"
     ".htaccess"
     "vendor\autoload.php"
     "BUILD_INFO.json"
@@ -1160,7 +1334,7 @@ for %%F in (
     "public\sw-cache-first.js"
     "package.json"
     "App.tsx"
-$verifySqliteChecks
+__VERIFY_SQLITE_CHECKS__
 ) do (
     if exist "!TARGET!\%%~F" (
         echo  [OK] %%~F
@@ -1168,6 +1342,22 @@ $verifySqliteChecks
         echo  [XX] MISSING %%~F
         set "FAIL=1"
     )
+)
+
+if exist "!TARGET!\SOURCE_SPECS.json" (
+    echo  [OK] SOURCE_SPECS.json ^(packager host baseline^)
+) else (
+    echo  [!!] SOURCE_SPECS.json missing ^(optional but recommended^)
+)
+
+if exist "!TARGET!\TARGET_REQUIREMENTS.json" (
+    echo  [OK] TARGET_REQUIREMENTS.json
+)
+
+if exist "!TARGET!\load-tests\results\report.html" (
+    echo  [OK] load-tests\results\report.html ^(showcase report^)
+) else (
+    echo  [!!] load-tests\results\report.html missing ^(showcase report not packaged^)
 )
 
 if exist "!TARGET!\runtime\sqlite\SQLITE_VERSION.txt" (
@@ -1193,102 +1383,104 @@ if "!FAIL!"=="1" (
     pause
     exit /b 0
 )
-"@
+'@
+$verifyBat = $verifyBat.Replace('__BUILD_ID__', $BuildId).Replace('__VERIFY_SQLITE_CHECKS__', $verifySqliteChecks)
 
 # -- deploy-xampp.sh (Linux/macOS) ------------------------------------------
-$deploySh = @"
+$deploySh = @'
 #!/usr/bin/env bash
 set -euo pipefail
-PKG_DIR="`$(cd "`$(dirname "`${BASH_SOURCE[0]}")" && pwd)"
-BUILD_ID="$BuildId"
-DEFAULT_SUB="$basePathForBat"
+PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BUILD_ID="__BUILD_ID__"
+DEFAULT_SUB="__BASE_PATH_FOR_BAT__"
 
 echo ""
 echo "  ============================================="
 echo "     LinkNest - XAMPP Deploy (Linux/macOS)"
-echo "     Package build: `$BUILD_ID"
+echo "     Package build: $BUILD_ID"
 echo "  ============================================="
 echo ""
 
 for f in dist/index.html api/index.php .htaccess vendor/autoload.php; do
-    if [ ! -e "`$PKG_DIR/`$f" ]; then
-        echo "  ERROR: missing `$f - incomplete package"
+    if [ ! -e "$PKG_DIR/$f" ]; then
+        echo "  ERROR: missing $f - incomplete package"
         exit 1
     fi
 done
 
 read -rp "  XAMPP install path [/opt/lampp]: " XAMPP_ROOT
-XAMPP_ROOT="`${XAMPP_ROOT:-/opt/lampp}"
-HTDOCS="`$XAMPP_ROOT/htdocs"
+XAMPP_ROOT="${XAMPP_ROOT:-/opt/lampp}"
+HTDOCS="$XAMPP_ROOT/htdocs"
 
-read -rp "  Install subfolder inside htdocs [`$DEFAULT_SUB]: " SUBFOLDER
-SUBFOLDER="`${SUBFOLDER:-`$DEFAULT_SUB}"
-INSTALL_DIR="`$HTDOCS/`$SUBFOLDER"
+read -rp "  Install subfolder inside htdocs [$DEFAULT_SUB]: " SUBFOLDER
+SUBFOLDER="${SUBFOLDER:-$DEFAULT_SUB}"
+INSTALL_DIR="$HTDOCS/$SUBFOLDER"
 
-if [ ! -d "`$HTDOCS" ]; then
-    echo "  ERROR: Cannot find `$HTDOCS"
+if [ ! -d "$HTDOCS" ]; then
+    echo "  ERROR: Cannot find $HTDOCS"
     exit 1
 fi
 
-if [ -d "`$INSTALL_DIR" ]; then
+if [ -d "$INSTALL_DIR" ]; then
     echo "  Backing up data/uploads then replacing install..."
-    BACKUP_DIR="`$(mktemp -d)"
-    [ -d "`$INSTALL_DIR/data" ] && cp -a "`$INSTALL_DIR/data" "`$BACKUP_DIR/" || true
-    [ -d "`$INSTALL_DIR/uploads" ] && cp -a "`$INSTALL_DIR/uploads" "`$BACKUP_DIR/" || true
-    rm -rf "`$INSTALL_DIR"
-    mkdir -p "`$INSTALL_DIR"
+    BACKUP_DIR="$(mktemp -d)"
+    [ -d "$INSTALL_DIR/data" ] && cp -a "$INSTALL_DIR/data" "$BACKUP_DIR/" || true
+    [ -d "$INSTALL_DIR/uploads" ] && cp -a "$INSTALL_DIR/uploads" "$BACKUP_DIR/" || true
+    rm -rf "$INSTALL_DIR"
+    mkdir -p "$INSTALL_DIR"
 else
-    mkdir -p "`$INSTALL_DIR"
+    mkdir -p "$INSTALL_DIR"
     BACKUP_DIR=""
 fi
 
-cp -a "`$PKG_DIR"/. "`$INSTALL_DIR/"
-rm -f "`$INSTALL_DIR/deploy-xampp.sh" "`$INSTALL_DIR/deploy-xampp.bat" "`$INSTALL_DIR/update-xampp.bat" "`$INSTALL_DIR/verify-install.bat" "`$INSTALL_DIR/install-sqlite-xampp.bat"
+cp -a "$PKG_DIR"/. "$INSTALL_DIR/"
+rm -f "$INSTALL_DIR/deploy-xampp.sh" "$INSTALL_DIR/deploy-xampp.bat" "$INSTALL_DIR/update-xampp.bat" "$INSTALL_DIR/verify-install.bat" "$INSTALL_DIR/install-sqlite-xampp.bat"
 
-if [ -n "`$BACKUP_DIR" ]; then
-    [ -d "`$BACKUP_DIR/data" ] && rm -rf "`$INSTALL_DIR/data" && cp -a "`$BACKUP_DIR/data" "`$INSTALL_DIR/"
-    [ -d "`$BACKUP_DIR/uploads" ] && rm -rf "`$INSTALL_DIR/uploads" && cp -a "`$BACKUP_DIR/uploads" "`$INSTALL_DIR/"
-    rm -rf "`$BACKUP_DIR"
+if [ -n "$BACKUP_DIR" ]; then
+    [ -d "$BACKUP_DIR/data" ] && rm -rf "$INSTALL_DIR/data" && cp -a "$BACKUP_DIR/data" "$INSTALL_DIR/"
+    [ -d "$BACKUP_DIR/uploads" ] && rm -rf "$INSTALL_DIR/uploads" && cp -a "$BACKUP_DIR/uploads" "$INSTALL_DIR/"
+    rm -rf "$BACKUP_DIR"
 fi
 
-cat > "`$INSTALL_DIR/.env" <<ENVEOF
-VITE_BASE_PATH=/`$SUBFOLDER
-VITE_API_BASE=/`$SUBFOLDER/api
+cat > "$INSTALL_DIR/.env" <<ENVEOF
+VITE_BASE_PATH=/$SUBFOLDER
+VITE_API_BASE=/$SUBFOLDER/api
 ENVEOF
 
-mkdir -p "`$INSTALL_DIR/data" "`$INSTALL_DIR/uploads" "`$INSTALL_DIR/logs"
-chmod -R 755 "`$INSTALL_DIR"
-chmod -R 777 "`$INSTALL_DIR/data" "`$INSTALL_DIR/uploads" "`$INSTALL_DIR/logs" 2>/dev/null || true
+mkdir -p "$INSTALL_DIR/data" "$INSTALL_DIR/uploads" "$INSTALL_DIR/logs"
+chmod -R 755 "$INSTALL_DIR"
+chmod -R 777 "$INSTALL_DIR/data" "$INSTALL_DIR/uploads" "$INSTALL_DIR/logs" 2>/dev/null || true
 
-if [ "`$SUBFOLDER" != "`$DEFAULT_SUB" ]; then
+if [ "$SUBFOLDER" != "$DEFAULT_SUB" ]; then
     if command -v node &>/dev/null; then
-        cd "`$INSTALL_DIR"
-        export VITE_BASE_PATH="/`$SUBFOLDER"
-        export VITE_API_BASE="/`$SUBFOLDER/api"
+        cd "$INSTALL_DIR"
+        export VITE_BASE_PATH="/$SUBFOLDER"
+        export VITE_API_BASE="/$SUBFOLDER/api"
         npm install
         npm run build:prod
     else
-        echo "  [!!] Node.js not found; use subfolder `$DEFAULT_SUB or rebuild manually."
+        echo "  [!!] Node.js not found; use subfolder $DEFAULT_SUB or rebuild manually."
     fi
 fi
 
 echo ""
-echo "  Done. Verify: http://localhost/`$SUBFOLDER/BUILD_INFO.json (buildId=`$BUILD_ID)"
+echo "  Done. Verify: http://localhost/$SUBFOLDER/BUILD_INFO.json (buildId=$BUILD_ID)"
 echo "  Hard refresh (Ctrl+F5) once if the old UI still appears."
 echo ""
-"@
+'@
+$deploySh = $deploySh.Replace('__BUILD_ID__', $BuildId).Replace('__BASE_PATH_FOR_BAT__', $basePathForBat)
 
-$createdAt = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-$readmeMd = @"
+$createdAt = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+$readmeMd = @'
 # LinkNest - Deployment Package
 
-Created : $createdAt
-Package : $PackageName
-Build ID: $BuildId
-Version : $pkgVersion
-Base    : $(if ($BasePath) { $BasePath } else { "/" })
-Database: $dbModeNote
-SQLite  : $sqliteShipNote
+Created : __CREATED_AT__
+Package : __PACKAGE_NAME__
+Build ID: __BUILD_ID__
+Version : __PKG_VERSION__
+Base    : __BASE_PATH_DISPLAY__
+Database: __DB_MODE_NOTE__
+SQLite  : __SQLITE_SHIP_NOTE__
 
 ---
 
@@ -1298,14 +1490,43 @@ SQLite  : $sqliteShipNote
 2. Extract this ZIP anywhere (Desktop is fine).
 3. **Fresh install:** double-click ``deploy-xampp.bat``
 4. **Upgrade existing:** double-click ``update-xampp.bat`` (keeps ``data/`` + ``uploads/``)
-5. Approve the UAC prompt so ``install-sqlite-xampp.bat`` can upgrade XAMPP PHP to SQLite **$SqliteTargetVersion**
-6. Open ``http://localhost/$basePathForBat``
-7. Confirm ``http://localhost/$basePathForBat/BUILD_INFO.json`` shows buildId ``$BuildId``
+5. Approve the UAC prompt so ``install-sqlite-xampp.bat`` can upgrade XAMPP PHP to SQLite **__SQLITE_TARGET__**
+6. Open ``http://localhost/__BASE_PATH_FOR_BAT__``
+7. Confirm ``http://localhost/__BASE_PATH_FOR_BAT__/BUILD_INFO.json`` shows buildId `__BUILD_ID__``
 8. Hard refresh once (Ctrl+F5) if Semi-PWA still shows an old UI
 9. Login: ``admin`` / ``admin123`` - change immediately
+10. **System Specs Check:** Admin → Maintenance Scripts → System Specs Check
+    (or ``php api/system_specs_check.php``). Compare against ``SOURCE_SPECS.json`` /
+    ``TARGET_REQUIREMENTS.json`` shipped in this ZIP.
 
-Optional: run ``verify-install.bat`` to confirm required files (including ``runtime/sqlite/``) are present.
+Optional: run ``verify-install.bat`` to confirm required files (including ``runtime/sqlite/`` and ``api/system_specs_check.php``) are present.
 Optional: run ``install-sqlite-xampp.bat`` alone if you skipped it during deploy.
+
+---
+
+## System Specs Check (match this package's host)
+
+| File / action | Purpose |
+|---------------|---------|
+| ``api/system_specs_check.php`` | Validator for PHP, SQLite 3.53+, WAL/mmap/cache, writable dirs, response cache |
+| ``SOURCE_SPECS.json`` | Snapshot of the packager PC when this ZIP was built |
+| ``TARGET_REQUIREMENTS.json`` | Compact checklist the target must meet |
+| Admin → System Specs Check | Live re-check on the installed target |
+
+Expect a **Specs match** verdict after SQLite DLL install + first app request (schema migrate).
+
+---
+
+## Load-test showcase report
+
+This package includes the k6 load-test harness under ``load-tests/`` plus the
+HTML report from the packager host (when available):
+
+| Path | Purpose |
+|------|---------|
+| ``load-tests/results/report.html`` | Open in a browser — performance showcase |
+| ``load-tests/results/last-summary.json`` | Raw k6 summary used to build the report |
+| ``load-tests/README.md`` | How to re-run tests on another machine |
 
 ---
 
@@ -1313,7 +1534,7 @@ Optional: run ``install-sqlite-xampp.bat`` alone if you skipped it during deploy
 
 | Piece | What it does |
 |-------|----------------|
-| ``runtime/sqlite/libsqlite3.dll`` | Official Windows x64 SQLite **$SqliteTargetVersion** for XAMPP PHP |
+| ``runtime/sqlite/libsqlite3.dll`` | Official Windows x64 SQLite **__SQLITE_TARGET__** for XAMPP PHP |
 | ``install-sqlite-xampp.bat`` | Replaces ``%XAMPP%\php\libsqlite3.dll`` (backs up the old one) |
 | ``api/config.php`` | Applies WAL, mmap 256MB, 32MB cache, 4 worker threads, temp in memory |
 
@@ -1323,7 +1544,7 @@ After install, confirm on the target PC:
 C:\xampp\php\php.exe -r "echo SQLite3::version()['versionString'];"
 ``````
 
-Expect ``$SqliteTargetVersion``.
+Expect `__SQLITE_TARGET__``.
 
 > Linux/macOS XAMPP: the DLL installer is Windows-only. Use your distro/PHP package for a recent SQLite; app pragmas in ``api/config.php`` still apply.
 
@@ -1350,13 +1571,15 @@ Password : admin123
 | Problem | Fix |
 |---------|-----|
 | Old UI after update | Run update-xampp.bat, then Ctrl+F5; check BUILD_INFO.json |
-| Blank / wrong assets | Confirm folder name is ``$basePathForBat`` (or rebuild with Node) |
+| Blank / wrong assets | Confirm folder name is `__BASE_PATH_FOR_BAT__`` (or rebuild with Node) |
 | API 404 | Enable AllowOverride All + mod_rewrite in Apache |
 | SAML library missing | Package must include ``vendor/`` - re-run packager on source PC |
 | Permission errors | Ensure ``data/``, ``uploads/``, ``logs/`` are writable by Apache |
 | Old SQLite (3.39.x) | Run ``install-sqlite-xampp.bat`` as Administrator; restart Apache |
 | DLL locked / copy failed | Stop Apache in XAMPP Control Panel, re-run install-sqlite-xampp.bat |
-"@
+| Specs Check failing | Open Admin → System Specs Check; follow each advice line; compare ``TARGET_REQUIREMENTS.json`` |
+'@
+$readmeMd = $readmeMd.Replace('__CREATED_AT__', $createdAt).Replace('__PACKAGE_NAME__', $PackageName).Replace('__BUILD_ID__', $BuildId).Replace('__PKG_VERSION__', $pkgVersion).Replace('__DB_MODE_NOTE__', $dbModeNote).Replace('__SQLITE_SHIP_NOTE__', $sqliteShipNote).Replace('__SQLITE_TARGET__', $SqliteTargetVersion).Replace('__BASE_PATH_FOR_BAT__', $basePathForBat).Replace('__BASE_PATH_DISPLAY__', $(if ($BasePath) { $BasePath } else { "/" }))
 
 Set-Content -Path (Join-Path $TempDir "deploy-xampp.bat") -Value $deployBat -Encoding ASCII
 Set-Content -Path (Join-Path $TempDir "update-xampp.bat") -Value $updateBat -Encoding ASCII
@@ -1388,6 +1611,7 @@ $requiredInPackage = @(
     "dist\index.html",
     "api\index.php",
     "api\config.php",
+    "api\system_specs_check.php",
     ".htaccess",
     "vendor\autoload.php",
     "App.tsx",
@@ -1405,6 +1629,13 @@ if ($SqliteRuntimeBundled) {
         "runtime\sqlite\libsqlite3.dll",
         "runtime\sqlite\SQLITE_VERSION.txt",
         "install-sqlite-xampp.bat"
+    )
+}
+
+if ($LoadTestReportBundled) {
+    $requiredInPackage += @(
+        "load-tests\results\report.html",
+        "load-tests\results\last-summary.json"
     )
 }
 
@@ -1471,6 +1702,7 @@ try {
     $mustHaveInZip = @(
         "dist/index.html",
         "api/index.php",
+        "api/system_specs_check.php",
         "vendor/autoload.php",
         "BUILD_INFO.json",
         "deploy-xampp.bat",
@@ -1482,6 +1714,11 @@ try {
         $mustHaveInZip += @(
             "runtime/sqlite/libsqlite3.dll",
             "install-sqlite-xampp.bat"
+        )
+    }
+    if ($LoadTestReportBundled) {
+        $mustHaveInZip += @(
+            "load-tests/results/report.html"
         )
     }
     $zipBad = $false
@@ -1530,6 +1767,8 @@ Write-Host "  BuildId : $BuildId" -ForegroundColor Green
 Write-Host "  Version : $pkgVersion" -ForegroundColor Green
 Write-Host "  DB mode : $(if ($IncludeDatabase) { 'includes live DB' } else { 'FRESH (no live DB)' })" -ForegroundColor Green
 Write-Host "  SQLite  : $(if ($SqliteRuntimeBundled) { "bundled $SqliteVersionShipped + install-sqlite-xampp.bat" } else { 'not bundled' })" -ForegroundColor Green
+Write-Host "  Specs   : $(if ($SourceSpecsReady) { 'SOURCE_SPECS.json (ready_for_target_parity=true)' } elseif ($null -ne $SourceSpecsSnapshot) { 'SOURCE_SPECS.json (warnings on source host)' } else { 'no live snapshot' })" -ForegroundColor Green
+Write-Host "  Report  : $(if ($LoadTestReportBundled) { 'load-tests/results/report.html (showcase)' } else { 'not bundled' })" -ForegroundColor Green
 Write-Host "  =============================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "  ON THE TARGET MACHINE:" -ForegroundColor Yellow
@@ -1540,6 +1779,10 @@ Write-Host "  4. Approve UAC   : installs SQLite $SqliteTargetVersion into XAMPP
 Write-Host "  5. Optional check: run verify-install.bat" -ForegroundColor Yellow
 Write-Host "  6. Open BUILD_INFO.json and confirm buildId above" -ForegroundColor Yellow
 Write-Host "  7. Ctrl+F5 once if old UI remains (service worker)" -ForegroundColor Yellow
+Write-Host "  8. Admin -> Maintenance Scripts -> System Specs Check (match SOURCE_SPECS.json)" -ForegroundColor Yellow
+if ($LoadTestReportBundled) {
+    Write-Host "  9. Showcase report: open load-tests\results\report.html in a browser" -ForegroundColor Yellow
+}
 Write-Host ""
 
 $outputFolder = Split-Path $ZipOutput -Parent
