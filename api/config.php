@@ -112,7 +112,7 @@ define('SYSTEM_TOKEN', 'linknest_secret_token_123'); // Change this for producti
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 60);
+    define('LINKNEST_SCHEMA_VERSION', 61);
 }
 
 require_once __DIR__ . '/response_cache.php';
@@ -1152,6 +1152,36 @@ function initDatabase() {
             position INTEGER DEFAULT 0,
             FOREIGN KEY (section_id) REFERENCES sections(id) ON DELETE CASCADE
         )');
+
+        // Migrate rich_text_content boxed container columns
+        try {
+            $columns = $db->query("PRAGMA table_info(rich_text_content)")->fetchAll();
+            $hasBoxed = false;
+            $hasBoxTitle = false;
+            $hasBoxFooter = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'boxed') {
+                    $hasBoxed = true;
+                }
+                if ($column['name'] === 'box_title') {
+                    $hasBoxTitle = true;
+                }
+                if ($column['name'] === 'box_footer') {
+                    $hasBoxFooter = true;
+                }
+            }
+            if (!$hasBoxed) {
+                $db->exec('ALTER TABLE rich_text_content ADD COLUMN boxed INTEGER DEFAULT 0');
+            }
+            if (!$hasBoxTitle) {
+                $db->exec('ALTER TABLE rich_text_content ADD COLUMN box_title TEXT');
+            }
+            if (!$hasBoxFooter) {
+                $db->exec('ALTER TABLE rich_text_content ADD COLUMN box_footer TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Rich text boxed columns migration warning: ' . $e->getMessage());
+        }
 
         // Migrate existing links table to add scheduling columns if they don't exist
         try {
@@ -2848,6 +2878,32 @@ function requireAuth() {
         exit;
     }
     return $user;
+}
+
+// Map a rich_text_content DB row to the API shape used by the frontend
+function mapRichTextRow(array $row): array {
+    return [
+        'id' => $row['id'],
+        'content' => $row['content'] ?? '',
+        'position' => (int)($row['position'] ?? 0),
+        'boxed' => !empty($row['boxed']),
+        'boxTitle' => isset($row['box_title']) && $row['box_title'] !== '' ? $row['box_title'] : null,
+        'boxFooter' => isset($row['box_footer']) && $row['box_footer'] !== '' ? $row['box_footer'] : null,
+    ];
+}
+
+// Insert a rich text content row (supports optional boxed container fields)
+function insertRichTextContent(PDO $db, string $id, string $sectionId, array $richText): void {
+    $stmt = $db->prepare('INSERT INTO rich_text_content (id, section_id, content, position, boxed, box_title, box_footer) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    $stmt->execute([
+        $id,
+        $sectionId,
+        $richText['content'] ?? '',
+        isset($richText['position']) ? (int)$richText['position'] : 0,
+        !empty($richText['boxed']) ? 1 : 0,
+        isset($richText['boxTitle']) && $richText['boxTitle'] !== '' ? $richText['boxTitle'] : ($richText['box_title'] ?? null),
+        isset($richText['boxFooter']) && $richText['boxFooter'] !== '' ? $richText['boxFooter'] : ($richText['box_footer'] ?? null),
+    ]);
 }
 
 // Helper function to send JSON response

@@ -1,12 +1,19 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { RichTextContent } from '../types';
 import { RichTextEditor } from './RichTextEditor';
+import { RichTextBoxedView } from './RichTextBoxedView';
+
+export interface RichTextBoxMeta {
+    boxed?: boolean;
+    boxTitle?: string;
+    boxFooter?: string;
+}
 
 interface RichTextContentItemProps {
     content: RichTextContent;
     sectionId: string;
     tabId: string;
-    onUpdate: (id: string, content: string) => void;
+    onUpdate: (id: string, content: string, meta?: RichTextBoxMeta) => void;
     onDelete: (id: string) => void;
     onMoveUp: () => void;
     onMoveDown: () => void;
@@ -46,20 +53,30 @@ export const RichTextContentItem: React.FC<RichTextContentItemProps> = ({
     expiresAt
 }) => {
     const [localContent, setLocalContent] = useState(content.content);
+    const [localBoxed, setLocalBoxed] = useState(!!content.boxed);
+    const [localBoxTitle, setLocalBoxTitle] = useState(content.boxTitle || '');
+    const [localBoxFooter, setLocalBoxFooter] = useState(content.boxFooter || '');
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [uploading, setUploading] = useState(false);
+
+    useEffect(() => {
+        if (isEditing) {
+            setLocalContent(content.content);
+            setLocalBoxed(!!content.boxed);
+            setLocalBoxTitle(content.boxTitle || '');
+            setLocalBoxFooter(content.boxFooter || '');
+        }
+    }, [isEditing, content.id, content.content, content.boxed, content.boxTitle, content.boxFooter]);
 
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        // Validate file type
         if (!file.type.startsWith('image/')) {
             alert('Please select an image file');
             return;
         }
 
-        // Validate file size (max 5MB)
         if (file.size > 5 * 1024 * 1024) {
             alert('Image size must be less than 5MB');
             return;
@@ -85,11 +102,9 @@ export const RichTextContentItem: React.FC<RichTextContentItemProps> = ({
             const data = await response.json();
             const imageUrl = data.url;
 
-            // Insert image into content
             const imageHtml = `<img src="${imageUrl}" alt="Uploaded image" style="max-width: 100%; height: auto; margin: 10px 0;" />`;
             const newContent = localContent + imageHtml;
             setLocalContent(newContent);
-            onUpdate(content.id, newContent);
         } catch (error: any) {
             alert('Failed to upload image: ' + error.message);
         } finally {
@@ -105,14 +120,65 @@ export const RichTextContentItem: React.FC<RichTextContentItemProps> = ({
     };
 
     const handleSave = () => {
-        onUpdate(content.id, localContent);
+        onUpdate(content.id, localContent, {
+            boxed: localBoxed,
+            boxTitle: localBoxed ? localBoxTitle.trim() : undefined,
+            boxFooter: localBoxed ? localBoxFooter.trim() : undefined,
+        });
         onSave();
     };
 
     const handleCancel = () => {
         setLocalContent(content.content);
+        setLocalBoxed(!!content.boxed);
+        setLocalBoxTitle(content.boxTitle || '');
+        setLocalBoxFooter(content.boxFooter || '');
         onCancel();
     };
+
+    const boxOptions = (
+        <div className="space-y-2 pt-1">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                    type="checkbox"
+                    checked={localBoxed}
+                    onChange={(e) => setLocalBoxed(e.target.checked)}
+                    className="rounded border-slate-300 dark:border-slate-600 text-emerald-600 focus:ring-emerald-500"
+                />
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Wrap in styled box
+                </span>
+            </label>
+            {localBoxed && (
+                <div className="grid gap-2 sm:grid-cols-2 pl-6">
+                    <div>
+                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                            Header title
+                        </label>
+                        <input
+                            type="text"
+                            value={localBoxTitle}
+                            onChange={(e) => setLocalBoxTitle(e.target.value)}
+                            placeholder="e.g. Architecture Guidelines"
+                            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/40"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                            Footer <span className="font-normal normal-case">(optional)</span>
+                        </label>
+                        <input
+                            type="text"
+                            value={localBoxFooter}
+                            onChange={(e) => setLocalBoxFooter(e.target.value)}
+                            placeholder="Optional footer text"
+                            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/40"
+                        />
+                    </div>
+                </div>
+            )}
+        </div>
+    );
 
     if (isEditing) {
         return (
@@ -150,6 +216,7 @@ export const RichTextContentItem: React.FC<RichTextContentItemProps> = ({
                     onChange={handleContentChange}
                     placeholder="Enter rich text content..."
                 />
+                {boxOptions}
                 <div className="flex justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
                     <button
                         onClick={handleSave}
@@ -165,7 +232,6 @@ export const RichTextContentItem: React.FC<RichTextContentItemProps> = ({
     return (
         <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-4 shadow-sm hover:shadow-md transition-all group rich-text-content-item">
             <div className="flex items-start gap-3">
-                {/* Move Controls */}
                 <div className="flex flex-col gap-1 shrink-0">
                     <button
                         onClick={onMoveUp}
@@ -189,13 +255,15 @@ export const RichTextContentItem: React.FC<RichTextContentItemProps> = ({
                     </button>
                 </div>
 
-                {/* Content */}
-                <div
-                    className="flex-1 min-w-0 rich-text-content"
-                    dangerouslySetInnerHTML={{ __html: content.content || '<p class="text-slate-400 italic">Empty content</p>' }}
-                />
+                <div className="flex-1 min-w-0">
+                    <RichTextBoxedView
+                        content={content.content || '<p class="text-slate-400 italic">Empty content</p>'}
+                        boxed={!!content.boxed}
+                        boxTitle={content.boxTitle}
+                        boxFooter={content.boxFooter}
+                    />
+                </div>
 
-                {/* Actions */}
                 <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                         onClick={onEdit}
@@ -261,4 +329,3 @@ export const RichTextContentItem: React.FC<RichTextContentItemProps> = ({
         </div>
     );
 };
-

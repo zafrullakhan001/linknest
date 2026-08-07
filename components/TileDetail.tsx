@@ -16,6 +16,7 @@ import { removeSharedTile } from '../services/tileShareService';
 import { useSettings } from '../contexts/SettingsContext';
 import { RichTextEditor } from './RichTextEditor';
 import { RichTextContentItem } from './RichTextContentItem';
+import { RichTextBoxedView } from './RichTextBoxedView';
 import { RichTextContent } from '../types';
 import { isPublicLinkFavorite, togglePublicLinkFavorite } from '../services/publicFavoritesService';
 import { LinkInfoDialog } from './LinkInfoDialog';
@@ -26,6 +27,7 @@ import { VersionDiffViewer } from './VersionDiffViewer';
 import { TileAnimationSelector, getTileAnimationClass, TileAnimation, getAnimationOption, resolveLinkAnimation } from './TileAnimationSelector';
 import { AuthSourceBadge } from './AuthSourceBadge';
 import { getDisplayUrl } from '../utils/urlDisplay';
+import type { RichTextBoxMeta } from './RichTextContentItem';
 
 type ViewLayoutMode = 'stacked' | 'side-by-side' | 'grid' | 'compact';
 
@@ -420,6 +422,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editingRichTextId, setEditingRichTextId] = useState<Record<string, string | null>>({}); // sectionId -> richTextId
     const [showAddRichTextForm, setShowAddRichTextForm] = useState<Record<string, boolean>>({});
     const [newRichTextContent, setNewRichTextContent] = useState<Record<string, string>>({}); // sectionId -> content
+    const [newRichTextBoxed, setNewRichTextBoxed] = useState<Record<string, boolean>>({});
+    const [newRichTextBoxTitle, setNewRichTextBoxTitle] = useState<Record<string, string>>({});
+    const [newRichTextBoxFooter, setNewRichTextBoxFooter] = useState<Record<string, string>>({});
 
     // Link Search State (for edit mode)
     const [linkSearchTerm, setLinkSearchTerm] = useState('');
@@ -2893,10 +2898,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         const content = newRichTextContent[sectionId]?.trim();
         if (!content) return;
 
+        const boxed = !!newRichTextBoxed[sectionId];
         const newRichText: RichTextContent = {
             id: generateId(),
             content: content,
-            position: 0 // Will be set based on current items
+            position: 0, // Will be set based on current items
+            boxed,
+            boxTitle: boxed ? (newRichTextBoxTitle[sectionId]?.trim() || undefined) : undefined,
+            boxFooter: boxed ? (newRichTextBoxFooter[sectionId]?.trim() || undefined) : undefined,
         };
 
         const updateSection = (s: LinkSection) => {
@@ -2924,10 +2933,28 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
 
         setNewRichTextContent(prev => ({ ...prev, [sectionId]: '' }));
+        setNewRichTextBoxed(prev => ({ ...prev, [sectionId]: false }));
+        setNewRichTextBoxTitle(prev => ({ ...prev, [sectionId]: '' }));
+        setNewRichTextBoxFooter(prev => ({ ...prev, [sectionId]: '' }));
         setShowAddRichTextForm(prev => ({ ...prev, [sectionId]: false }));
     };
 
-    const handleUpdateRichText = (tabId: string, sectionId: string, richTextId: string, content: string) => {
+    const handleUpdateRichText = (tabId: string, sectionId: string, richTextId: string, content: string, meta?: RichTextBoxMeta) => {
+        const applyUpdate = (rt: RichTextContent) => {
+            if (rt.id !== richTextId) return rt;
+            return {
+                ...rt,
+                content,
+                ...(meta
+                    ? {
+                          boxed: !!meta.boxed,
+                          boxTitle: meta.boxed ? (meta.boxTitle || undefined) : undefined,
+                          boxFooter: meta.boxed ? (meta.boxFooter || undefined) : undefined,
+                      }
+                    : {}),
+            };
+        };
+
         if (editTabs.length > 0) {
             setEditTabs(editTabs.map(tab => {
                 if (tab.id !== tabId) return tab;
@@ -2937,9 +2964,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         if (s.id !== sectionId) return s;
                         return {
                             ...s,
-                            richTextContent: (s.richTextContent || []).map(rt =>
-                                rt.id === richTextId ? { ...rt, content } : rt
-                            )
+                            richTextContent: (s.richTextContent || []).map(applyUpdate)
                         };
                     })
                 };
@@ -2949,9 +2974,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 if (s.id !== sectionId) return s;
                 return {
                     ...s,
-                    richTextContent: (s.richTextContent || []).map(rt =>
-                        rt.id === richTextId ? { ...rt, content } : rt
-                    )
+                    richTextContent: (s.richTextContent || []).map(applyUpdate)
                 };
             }));
         }
@@ -3230,7 +3253,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         visibility: richTextToClone.visibility,
                         allowedUsers: richTextToClone.allowedUsers ? [...richTextToClone.allowedUsers] : undefined,
                         visibleFrom: richTextToClone.visibleFrom,
-                        expiresAt: richTextToClone.expiresAt
+                        expiresAt: richTextToClone.expiresAt,
+                        boxed: richTextToClone.boxed,
+                        boxTitle: richTextToClone.boxTitle,
+                        boxFooter: richTextToClone.boxFooter,
                     };
 
                     // Insert cloned rich text after the original in the sorted list
@@ -4487,9 +4513,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         sectionLinkLayout === 'grid' ? 'col-span-full' : ''
                                                                     }`}
                                                                 >
-                                                                    <div
-                                                                        className="rich-text-content prose prose-sm max-w-none dark:prose-invert prose-p:text-slate-600 dark:prose-p:text-slate-400 prose-a:text-brand-500 dark:prose-a:text-brand-400 prose-headings:text-slate-800 dark:prose-headings:text-slate-200"
-                                                                        dangerouslySetInnerHTML={{ __html: item.content || '' }}
+                                                                    <RichTextBoxedView
+                                                                        content={item.content || ''}
+                                                                        boxed={!!item.boxed}
+                                                                        boxTitle={item.boxTitle}
+                                                                        boxFooter={item.boxFooter}
+                                                                        bodyClassName="prose-p:text-slate-600 dark:prose-p:text-slate-400 prose-a:text-brand-500 dark:prose-a:text-brand-400"
                                                                     />
                                                                 </div>
                                                             );
@@ -7859,6 +7888,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     onClick={() => {
                                                                                         setShowAddRichTextForm(prev => ({ ...prev, [section.id]: false }));
                                                                                         setNewRichTextContent(prev => ({ ...prev, [section.id]: '' }));
+                                                                                        setNewRichTextBoxed(prev => ({ ...prev, [section.id]: false }));
+                                                                                        setNewRichTextBoxTitle(prev => ({ ...prev, [section.id]: '' }));
+                                                                                        setNewRichTextBoxFooter(prev => ({ ...prev, [section.id]: '' }));
                                                                                     }}
                                                                                     className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded transition-colors"
                                                                                     title="Close form"
@@ -7873,6 +7905,47 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 onChange={(value) => setNewRichTextContent(prev => ({ ...prev, [section.id]: value }))}
                                                                                 placeholder="Enter rich text content with formatting..."
                                                                             />
+                                                                            <div className="space-y-2 pt-1">
+                                                                                <label className="flex items-center gap-2 cursor-pointer select-none">
+                                                                                    <input
+                                                                                        type="checkbox"
+                                                                                        checked={!!newRichTextBoxed[section.id]}
+                                                                                        onChange={(e) => setNewRichTextBoxed(prev => ({ ...prev, [section.id]: e.target.checked }))}
+                                                                                        className="rounded border-slate-300 dark:border-slate-600 text-emerald-600 focus:ring-emerald-500"
+                                                                                    />
+                                                                                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                                                                        Wrap in styled box
+                                                                                    </span>
+                                                                                </label>
+                                                                                {newRichTextBoxed[section.id] && (
+                                                                                    <div className="grid gap-2 sm:grid-cols-2 pl-6">
+                                                                                        <div>
+                                                                                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                                                                                                Header title
+                                                                                            </label>
+                                                                                            <input
+                                                                                                type="text"
+                                                                                                value={newRichTextBoxTitle[section.id] || ''}
+                                                                                                onChange={(e) => setNewRichTextBoxTitle(prev => ({ ...prev, [section.id]: e.target.value }))}
+                                                                                                placeholder="e.g. Architecture Guidelines"
+                                                                                                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                                                                                            />
+                                                                                        </div>
+                                                                                        <div>
+                                                                                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                                                                                                Footer <span className="font-normal normal-case">(optional)</span>
+                                                                                            </label>
+                                                                                            <input
+                                                                                                type="text"
+                                                                                                value={newRichTextBoxFooter[section.id] || ''}
+                                                                                                onChange={(e) => setNewRichTextBoxFooter(prev => ({ ...prev, [section.id]: e.target.value }))}
+                                                                                                placeholder="Optional footer text"
+                                                                                                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                                                                                            />
+                                                                                        </div>
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
                                                                             <div className="flex justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
                                                                                 <button
                                                                                     onClick={() => handleAddRichTextToSection(tab.id, section.id)}

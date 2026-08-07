@@ -808,11 +808,7 @@ function handleGetTiles() {
                             $section['richTextContent'] = [];
                             if (isset($richTextBySection[$sectionRow['id']])) {
                                 foreach ($richTextBySection[$sectionRow['id']] as $richTextRow) {
-                                    $section['richTextContent'][] = [
-                                        'id' => $richTextRow['id'],
-                                        'content' => $richTextRow['content'],
-                                        'position' => (int)($richTextRow['position'] ?? 0)
-                                    ];
+                                    $section['richTextContent'][] = mapRichTextRow($richTextRow);
                                 }
                             }
                             
@@ -918,11 +914,7 @@ function handleGetTiles() {
                     $section['richTextContent'] = [];
                     if (isset($richTextBySection[$sectionRow['id']])) {
                         foreach ($richTextBySection[$sectionRow['id']] as $richTextRow) {
-                            $section['richTextContent'][] = [
-                                'id' => $richTextRow['id'],
-                                'content' => $richTextRow['content'],
-                                'position' => (int)($richTextRow['position'] ?? 0)
-                            ];
+                            $section['richTextContent'][] = mapRichTextRow($richTextRow);
                         }
                     }
                     
@@ -1326,11 +1318,7 @@ function handleGetTile($tileId) {
             $richTextStmt->execute([$sectionRow['id']]);
             $section['richTextContent'] = [];
             while ($richTextRow = $richTextStmt->fetch()) {
-                $section['richTextContent'][] = [
-                    'id' => $richTextRow['id'],
-                    'content' => $richTextRow['content'],
-                    'position' => (int)($richTextRow['position'] ?? 0)
-                ];
+                $section['richTextContent'][] = mapRichTextRow($richTextRow);
             }
             
             $tab['sections'][] = $section;
@@ -1721,13 +1709,7 @@ function handleCreateTile() {
                             foreach ($section['richTextContent'] as $richText) {
                                 $richTextId = $richText['id'] ?? uniqid('richtext_', true);
                                 try {
-                                    $richTextStmt = $db->prepare('INSERT INTO rich_text_content (id, section_id, content, position) VALUES (?, ?, ?, ?)');
-                                    $richTextStmt->execute([
-                                        $richTextId,
-                                        $sectionId,
-                                        $richText['content'] ?? '',
-                                        $richText['position'] ?? 0
-                                    ]);
+                                    insertRichTextContent($db, $richTextId, $sectionId, $richText);
                                 } catch (PDOException $e) {
                                     error_log('Rich text content insert error: ' . $e->getMessage());
                                 }
@@ -2244,12 +2226,12 @@ function handleCloneTile($tileId) {
                 
                 foreach ($richTextItems as $richText) {
                     $newRichTextId = uniqid('richtext_', true);
-                    $richTextInsertStmt = $db->prepare('INSERT INTO rich_text_content (id, section_id, content, position) VALUES (?, ?, ?, ?)');
-                    $richTextInsertStmt->execute([
-                        $newRichTextId,
-                        $newSectionId,
-                        $richText['content'] ?? '',
-                        isset($richText['position']) ? (int)$richText['position'] : 0
+                    insertRichTextContent($db, $newRichTextId, $newSectionId, [
+                        'content' => $richText['content'] ?? '',
+                        'position' => isset($richText['position']) ? (int)$richText['position'] : 0,
+                        'boxed' => !empty($richText['boxed']),
+                        'box_title' => $richText['box_title'] ?? null,
+                        'box_footer' => $richText['box_footer'] ?? null,
                     ]);
                 }
             }
@@ -2326,12 +2308,12 @@ function handleCloneTile($tileId) {
                 
                 foreach ($richTextItems as $richText) {
                     $newRichTextId = uniqid('richtext_', true);
-                    $richTextInsertStmt = $db->prepare('INSERT INTO rich_text_content (id, section_id, content, position) VALUES (?, ?, ?, ?)');
-                    $richTextInsertStmt->execute([
-                        $newRichTextId,
-                        $newSectionId,
-                        $richText['content'] ?? '',
-                        isset($richText['position']) ? (int)$richText['position'] : 0
+                    insertRichTextContent($db, $newRichTextId, $newSectionId, [
+                        'content' => $richText['content'] ?? '',
+                        'position' => isset($richText['position']) ? (int)$richText['position'] : 0,
+                        'boxed' => !empty($richText['boxed']),
+                        'box_title' => $richText['box_title'] ?? null,
+                        'box_footer' => $richText['box_footer'] ?? null,
                     ]);
                 }
             }
@@ -3909,11 +3891,7 @@ function handleGetRecycleBin() {
                 $richTextStmt->execute([$sectionRow['id']]);
                 $section['richTextContent'] = [];
                 while ($richTextRow = $richTextStmt->fetch()) {
-                    $section['richTextContent'][] = [
-                        'id' => $richTextRow['id'],
-                        'content' => $richTextRow['content'],
-                        'position' => (int)($richTextRow['position'] ?? 0)
-                    ];
+                    $section['richTextContent'][] = mapRichTextRow($richTextRow);
                 }
                 
                 $tab['sections'][] = $section;
@@ -4268,11 +4246,7 @@ function handleGetArchive() {
                 $richTextStmt->execute([$sectionRow['id']]);
                 $section['richTextContent'] = [];
                 while ($richTextRow = $richTextStmt->fetch()) {
-                    $section['richTextContent'][] = [
-                        'id' => $richTextRow['id'],
-                        'content' => $richTextRow['content'],
-                        'position' => (int)($richTextRow['position'] ?? 0)
-                    ];
+                    $section['richTextContent'][] = mapRichTextRow($richTextRow);
                 }
                 
                 $tab['sections'][] = $section;
@@ -4762,11 +4736,7 @@ function getTileForVersion($tileId, $db) {
             $rtStmt = $db->prepare('SELECT * FROM rich_text_content WHERE section_id = ? ORDER BY position ASC');
             $rtStmt->execute([$sectionRow['id']]);
             while ($rtRow = $rtStmt->fetch(PDO::FETCH_ASSOC)) {
-                $section['richTextContent'][] = [
-                    'id' => $rtRow['id'],
-                    'content' => $rtRow['content'],
-                    'position' => (int)($rtRow['position'] ?? 0)
-                ];
+                $section['richTextContent'][] = mapRichTextRow($rtRow);
             }
 
             $tab['sections'][] = $section;
@@ -5366,11 +5336,8 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                         if (isset($section['richTextContent']) && is_array($section['richTextContent'])) {
                             foreach ($section['richTextContent'] as $richText) {
                                 $richTextId = $richText['id'] ?? uniqid('richtext_', true);
-                                $content = $richText['content'] ?? '';
-                                $position = isset($richText['position']) ? (int)$richText['position'] : 0;
                                 try {
-                                    $richTextStmt = $db->prepare('INSERT INTO rich_text_content (id, section_id, content, position) VALUES (?, ?, ?, ?)');
-                                    $richTextStmt->execute([$richTextId, $sectionId, $content, $position]);
+                                    insertRichTextContent($db, $richTextId, $sectionId, $richText);
                                 } catch (PDOException $e) {
                                     // ignore specific rich text error
                                 }
@@ -5426,11 +5393,8 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                     if (isset($section['richTextContent']) && is_array($section['richTextContent'])) {
                         foreach ($section['richTextContent'] as $richText) {
                             $richTextId = $richText['id'] ?? uniqid('richtext_', true);
-                            $content = $richText['content'] ?? '';
-                            $position = isset($richText['position']) ? (int)$richText['position'] : 0;
                             try {
-                                $richTextStmt = $db->prepare('INSERT INTO rich_text_content (id, section_id, content, position) VALUES (?, ?, ?, ?)');
-                                $richTextStmt->execute([$richTextId, $sectionId, $content, $position]);
+                                insertRichTextContent($db, $richTextId, $sectionId, $richText);
                             } catch (PDOException $e) {}
                         }
                     }

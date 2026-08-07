@@ -44,6 +44,9 @@ export interface RichTextContent {
   allowedGroups?: number[]; // Array of group IDs for private rich text content
   visibleFrom?: string; // ISO date string - content becomes visible from this date/time
   expiresAt?: string; // ISO date string - content expires at this date/time
+  boxed?: boolean; // Wrap content in a styled box with header/footer
+  boxTitle?: string; // Header title when boxed
+  boxFooter?: string; // Optional footer text when boxed
 }
 
 export interface LinkSection {
