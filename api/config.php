@@ -112,7 +112,7 @@ define('SYSTEM_TOKEN', 'linknest_secret_token_123'); // Change this for producti
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 71);
+    define('LINKNEST_SCHEMA_VERSION', 72);
 }
 
 require_once __DIR__ . '/response_cache.php';
@@ -364,6 +364,9 @@ function ensureTilesHeaderImageColumns(PDO $db): void {
             'header_image_fit' => 'TEXT',
             'show_emoji' => 'INTEGER DEFAULT 1',
             'emoji_image' => 'TEXT',
+            'show_title' => 'INTEGER DEFAULT 1',
+            'show_description' => 'INTEGER DEFAULT 1',
+            'header_image_offset_y' => 'INTEGER',
         ];
         foreach ($needed as $col => $type) {
             if (!in_array($col, $names, true)) {
@@ -892,6 +895,24 @@ function initDatabase() {
             }
         } catch (PDOException $e) {
             error_log('Tiles emoji_image migration warning: ' . $e->getMessage());
+        }
+
+        // Migrate: show_title / show_description / header_image_offset_y
+        try {
+            $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll();
+            $columnNames = array_column($columns, 'name');
+            $cardVisibilityCols = [
+                'show_title' => 'INTEGER DEFAULT 1',
+                'show_description' => 'INTEGER DEFAULT 1',
+                'header_image_offset_y' => 'INTEGER',
+            ];
+            foreach ($cardVisibilityCols as $columnName => $columnType) {
+                if (!in_array($columnName, $columnNames, true)) {
+                    $db->exec("ALTER TABLE tiles ADD COLUMN $columnName $columnType");
+                }
+            }
+        } catch (PDOException $e) {
+            error_log('Tiles show_title/show_description/header_image_offset_y migration warning: ' . $e->getMessage());
         }
         
         // Create tabs table

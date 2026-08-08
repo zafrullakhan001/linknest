@@ -214,9 +214,48 @@ function handleTileHeaderImageUpload() {
 
 /**
  * Emoji-slot image: convert to PNG and fit inside ~80×80 (2× the 40×40 card badge).
+ * Supports remove-background + reprocess of an existing tileemoji_ upload.
  */
 function handleTileEmojiImageUpload() {
     requireAuth();
+
+    $removeBackground = !empty($_POST['remove_background']) && (
+        $_POST['remove_background'] === '1' ||
+        $_POST['remove_background'] === 'true' ||
+        $_POST['remove_background'] === true
+    );
+    $bgColor = isset($_POST['bg_color']) ? trim((string)$_POST['bg_color']) : '';
+    if ($bgColor === '') {
+        $bgColor = null;
+    }
+
+    // Reprocess an existing emoji image (no new file)
+    $sourceUrl = isset($_POST['source_url']) ? trim((string)$_POST['source_url']) : '';
+    if ($sourceUrl !== '' && (!isset($_FILES['image']) || $_FILES['image']['error'] === UPLOAD_ERR_NO_FILE)) {
+        $filename = basename(parse_url($sourceUrl, PHP_URL_PATH) ?: $sourceUrl);
+        if (!preg_match('/^[a-zA-Z0-9._-]+$/', $filename) || strpos($filename, 'tileemoji_') !== 0) {
+            sendJSON(['error' => 'Invalid source image'], 400);
+            return;
+        }
+        $filepath = __DIR__ . '/../uploads/' . $filename;
+        if (!is_file($filepath)) {
+            sendJSON(['error' => 'Source image not found'], 404);
+            return;
+        }
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mimeType = finfo_file($finfo, $filepath);
+        finfo_close($finfo);
+        $result = processUploadedTileHeaderImage($filepath, $filename, $mimeType ?: 'image/png', 80, 80, $removeBackground, $bgColor, 'tileemoji_');
+        $url = uploadsBasePath() . '/uploads/' . $result['filename'];
+        sendJSON([
+            'success' => true,
+            'url' => $url,
+            'converted' => true,
+            'width' => $result['width'] ?? null,
+            'height' => $result['height'] ?? null
+        ]);
+        return;
+    }
 
     if (!isset($_FILES['image']) || $_FILES['image']['error'] !== UPLOAD_ERR_OK) {
         sendJSON(['error' => 'No file uploaded or upload error'], 400);
@@ -241,7 +280,7 @@ function handleTileEmojiImageUpload() {
     }
 
     // Fit inside emoji badge (40px display → 80px @2x), aspect preserved
-    $result = processUploadedTileHeaderImage($file['tmp_name'], $file['name'], $mimeType, 80, 80, false, null, 'tileemoji_');
+    $result = processUploadedTileHeaderImage($file['tmp_name'], $file['name'], $mimeType, 80, 80, $removeBackground, $bgColor, 'tileemoji_');
     $url = uploadsBasePath() . '/uploads/' . $result['filename'];
 
     sendJSON([

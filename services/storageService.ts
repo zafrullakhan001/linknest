@@ -31,6 +31,8 @@ const transformTile = (apiTile: any): Tile => {
     htmlContent: apiTile.htmlContent || '',
     emoji: apiTile.emoji || '📁',
     showEmoji: apiTile.showEmoji === false || apiTile.showEmoji === 0 || apiTile.showEmoji === '0' ? false : true,
+    showTitle: apiTile.showTitle === false || apiTile.showTitle === 0 || apiTile.showTitle === '0' ? false : true,
+    showDescription: apiTile.showDescription === false || apiTile.showDescription === 0 || apiTile.showDescription === '0' ? false : true,
     emojiImage: apiTile.emojiImage || undefined,
     headerImage: apiTile.headerImage || undefined,
     headerImageAlign: apiTile.headerImageAlign === 'left' || apiTile.headerImageAlign === 'center' || apiTile.headerImageAlign === 'right'
@@ -40,7 +42,10 @@ const transformTile = (apiTile: any): Tile => {
       ? Math.max(0, Math.min(100, apiTile.headerImageOpacity))
       : undefined,
     headerImageOffsetX: typeof apiTile.headerImageOffsetX === 'number'
-      ? Math.max(-100, Math.min(100, apiTile.headerImageOffsetX))
+      ? Math.max(-300, Math.min(300, apiTile.headerImageOffsetX))
+      : undefined,
+    headerImageOffsetY: typeof apiTile.headerImageOffsetY === 'number'
+      ? Math.max(-300, Math.min(300, apiTile.headerImageOffsetY))
       : undefined,
     headerImageFit: apiTile.headerImageFit === 'cover' || apiTile.headerImageFit === 'contain'
       ? apiTile.headerImageFit
@@ -209,9 +214,28 @@ export const saveTile = async (tile: Tile, isFinal: boolean = false): Promise<vo
 };
 
 /** Upload an image for the emoji badge; server converts to PNG (~80×80) and returns the URL. */
-export const uploadTileEmojiImage = async (file: File): Promise<string> => {
+export const uploadTileEmojiImage = async (
+  file: File | null,
+  options?: {
+    removeBackground?: boolean;
+    bgColor?: string;
+    /** Reprocess an existing tileemoji URL without uploading a new file. */
+    sourceUrl?: string;
+  }
+): Promise<string> => {
   const formData = new FormData();
-  formData.append('image', file);
+  if (file) {
+    formData.append('image', file);
+  }
+  if (options?.sourceUrl) {
+    formData.append('source_url', options.sourceUrl);
+  }
+  if (options?.removeBackground) {
+    formData.append('remove_background', '1');
+  }
+  if (options?.bgColor) {
+    formData.append('bg_color', options.bgColor);
+  }
 
   const response = await fetch(`${API_BASE}/uploads/tile-emoji-image`, {
     method: 'POST',

@@ -19,6 +19,48 @@ interface StyleProfile {
   updated_at: number;
 }
 
+
+type StyleSectionAccent = 'brand' | 'violet' | 'sky' | 'emerald' | 'amber' | 'rose' | 'indigo' | 'fuchsia' | 'orange';
+
+const STYLE_SECTION_ACCENTS: Record<StyleSectionAccent, string> = {
+  brand: 'border-brand-200/80 dark:border-brand-800/50 bg-gradient-to-br from-brand-50/90 via-white to-violet-50/40 dark:from-brand-950/40 dark:via-slate-900/30 dark:to-violet-950/20',
+  violet: 'border-violet-200/80 dark:border-violet-800/50 bg-gradient-to-br from-violet-50/90 via-white to-fuchsia-50/30 dark:from-violet-950/40 dark:via-slate-900/30 dark:to-fuchsia-950/20',
+  sky: 'border-sky-200/80 dark:border-sky-800/50 bg-gradient-to-br from-sky-50/90 via-white to-cyan-50/30 dark:from-sky-950/40 dark:via-slate-900/30 dark:to-cyan-950/20',
+  emerald: 'border-emerald-200/80 dark:border-emerald-800/50 bg-gradient-to-br from-emerald-50/90 via-white to-teal-50/30 dark:from-emerald-950/40 dark:via-slate-900/30 dark:to-teal-950/20',
+  amber: 'border-amber-200/80 dark:border-amber-800/50 bg-gradient-to-br from-amber-50/90 via-white to-orange-50/30 dark:from-amber-950/40 dark:via-slate-900/30 dark:to-orange-950/20',
+  rose: 'border-rose-200/80 dark:border-rose-800/50 bg-gradient-to-br from-rose-50/90 via-white to-pink-50/30 dark:from-rose-950/40 dark:via-slate-900/30 dark:to-pink-950/20',
+  indigo: 'border-indigo-200/80 dark:border-indigo-800/50 bg-gradient-to-br from-indigo-50/90 via-white to-blue-50/30 dark:from-indigo-950/40 dark:via-slate-900/30 dark:to-blue-950/20',
+  fuchsia: 'border-fuchsia-200/80 dark:border-fuchsia-800/50 bg-gradient-to-br from-fuchsia-50/90 via-white to-pink-50/30 dark:from-fuchsia-950/40 dark:via-slate-900/30 dark:to-pink-950/20',
+  orange: 'border-orange-200/80 dark:border-orange-800/50 bg-gradient-to-br from-orange-50/90 via-white to-amber-50/30 dark:from-orange-950/40 dark:via-slate-900/30 dark:to-amber-950/20',
+};
+
+const StyleSection: React.FC<{
+  emoji: string;
+  title: string;
+  accent?: StyleSectionAccent;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}> = ({ emoji, title, accent = 'brand', defaultOpen = false, children }) => (
+  <details
+    defaultOpen={defaultOpen}
+    className={`rounded-xl border overflow-hidden group ${STYLE_SECTION_ACCENTS[accent]}`}
+  >
+    <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between gap-3 px-4 py-3 select-none hover:bg-white/50 dark:hover:bg-white/5 transition-colors">
+      <span className="flex items-center gap-2.5 text-sm font-semibold text-slate-900 dark:text-white min-w-0">
+        <span className="text-base leading-none shrink-0" aria-hidden="true">{emoji}</span>
+        <span className="truncate">{title}</span>
+      </span>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-500 shrink-0 transition-transform group-open:rotate-180">
+        <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+      </svg>
+    </summary>
+    <div className="px-4 pb-4 pt-3 border-t border-slate-200/80 dark:border-slate-700/70 bg-white/55 dark:bg-slate-900/35">
+      {children}
+    </div>
+  </details>
+);
+
+
 export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onStylesChange }) => {
   const { user } = useAuth();
   const [styles, setStyles] = useState<SpaceStyles>(DEFAULT_STYLES);
@@ -570,7 +612,7 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-3 mb-1">
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Style Manager</h2>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">🎨 Style Manager</h2>
                 {user?.is_admin && (
                   <div className="flex items-center gap-2">
                   <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Profile:</label>
@@ -690,41 +732,31 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-slate-200 dark:border-slate-700 px-4 bg-slate-50 dark:bg-slate-900/50 flex-shrink-0">
+        <div className="flex flex-shrink-0 px-4 pt-3 pb-2 bg-gradient-to-r from-slate-50 via-violet-50/40 to-sky-50/40 dark:from-slate-900/60 dark:via-violet-950/20 dark:to-sky-950/20 border-b border-slate-200 dark:border-slate-700">
+          <div className="bg-white/80 dark:bg-slate-800/80 p-1 rounded-xl flex gap-1 border border-slate-200/80 dark:border-slate-700 shadow-sm">
           <button
             onClick={() => setActiveTab('spaces')}
-            className={`px-6 py-3 text-sm font-semibold transition-all relative ${activeTab === 'spaces'
-              ? 'text-brand-600 dark:text-brand-400'
-              : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+            className={`px-4 py-2 text-sm font-semibold transition-all rounded-lg ${activeTab === 'spaces'
+              ? 'bg-gradient-to-r from-brand-600 to-violet-600 text-white shadow-sm'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/60'
               }`}
           >
             <span className="flex items-center gap-2">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                <path fillRule="evenodd" d="M4 2a2 2 0 00-2 2v11a2 2 0 002 2h12a2 2 0 002-2V4a2 2 0 00-2-2H4zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
-              </svg>
-              Spaces Grid
+              🧩 Spaces Grid
             </span>
-            {activeTab === 'spaces' && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-brand-500 to-violet-500"></div>
-            )}
           </button>
           <button
             onClick={() => setActiveTab('content')}
-            className={`px-6 py-3 text-sm font-semibold transition-all relative ${activeTab === 'content'
-              ? 'text-brand-600 dark:text-brand-400'
-              : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+            className={`px-4 py-2 text-sm font-semibold transition-all rounded-lg ${activeTab === 'content'
+              ? 'bg-gradient-to-r from-brand-600 to-violet-600 text-white shadow-sm'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/60'
               }`}
           >
             <span className="flex items-center gap-2">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                <path fillRule="evenodd" d="M4.5 2A1.5 1.5 0 003 3.5v13A1.5 1.5 0 004.5 18h11a1.5 1.5 0 001.5-1.5V7.621a1.5 1.5 0 00-.44-1.06l-4.12-4.122A1.5 1.5 0 0011.378 2H4.5zm2.25 8.5a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zm0 3a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5z" clipRule="evenodd" />
-              </svg>
-              Content Page UX
+              📄 Content Page UX
             </span>
-            {activeTab === 'content' && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-brand-500 to-violet-500"></div>
-            )}
           </button>
+          </div>
         </div>
 
         {/* Content */}
@@ -734,15 +766,9 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
             </div>
           ) : activeTab === 'spaces' ? (
-            <div className="space-y-6">
+            <div className="space-y-3">
               {/* Global Page Zoom */}
-              <section className="bg-gradient-to-r from-brand-50/50 to-violet-50/50 dark:from-brand-500/5 dark:to-violet-500/5 -mx-6 -mt-6 px-6 py-5 border-b border-slate-200 dark:border-slate-700">
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-500">
-                    <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z" />
-                  </svg>
-                  Global Page Settings
-                </h3>
+              <StyleSection emoji="🔍" title="Global Page Settings" accent="brand" defaultOpen>
                 <div className="flex flex-col gap-4">
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
                     Page Zoom: {styles.pageZoom || 100}%
@@ -842,16 +868,10 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     </div>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">Adjust the overall zoom level of the application</p>
                 </div>
-              </section>
+              </StyleSection>
 
               {/* Page Background */}
-              <section className="bg-gradient-to-r from-brand-50/50 to-violet-50/50 dark:from-brand-500/5 dark:to-violet-500/5 -mx-6 px-6 py-5 border-b border-slate-200 dark:border-slate-700">
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2 flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-500">
-                    <path fillRule="evenodd" d="M1 5.25A2.25 2.25 0 013.25 3h13.5A2.25 2.25 0 0119 5.25v9.5A2.25 2.25 0 0116.75 17H3.25A2.25 2.25 0 011 14.75v-9.5zm1.5 5.81v3.69c0 .414.336.75.75.75h13.5a.75.75 0 00.75-.75v-2.69l-2.22-2.219a.75.75 0 00-1.06 0l-1.91 1.909.47.47a.75.75 0 11-1.06 1.06L2.53 8.091a.75.75 0 00-1.06 0l-2.97 2.97zM2.5 6.5v-.75a.75.75 0 01.75-.75h3a.75.75 0 01.75.75v.75h4.5v-.75a.75.75 0 01.75-.75h3a.75.75 0 01.75.75v.75h.75a.75.75 0 010 1.5h-15a.75.75 0 010-1.5h.75z" clipRule="evenodd" />
-                  </svg>
-                  Page background
-                </h3>
+              <StyleSection emoji="🖼️" title="Page background" accent="sky" defaultOpen>
                 <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">Choose a solid color, gradient, pattern, or custom image for the page background.</p>
                 <button
                   type="button"
@@ -860,16 +880,10 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                 >
                   Choose page background...
                 </button>
-              </section>
+              </StyleSection>
 
               {/* Tile Styling */}
-              <section>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-500">
-                    <path fillRule="evenodd" d="M4 2a2 2 0 00-2 2v11a2 2 0 002 2h12a2 2 0 002-2V4a2 2 0 00-2-2H4zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
-                  </svg>
-                  Tile Styling
-                </h3>
+              <StyleSection emoji="🧩" title="Tile Styling" accent="violet">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Background Color</label>
@@ -952,16 +966,10 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     />
                   </div>
                 </div>
-              </section>
+              </StyleSection>
 
               {/* Spacing */}
-              <section>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-violet-500">
-                    <path d="M10.75 16.5a.75.75 0 000-1.5h-4.5a.75.75 0 000 1.5h4.5zM10.75 13.5a.75.75 0 000-1.5h-4.5a.75.75 0 000 1.5h4.5zM10.75 10.5a.75.75 0 000-1.5h-4.5a.75.75 0 000 1.5h4.5zM6 4.5a.75.75 0 00-.75.75v9.5c0 .414.336.75.75.75h8a.75.75 0 00.75-.75v-9.5A.75.75 0 0014 4.5H6z" />
-                  </svg>
-                  Spacing
-                </h3>
+              <StyleSection emoji="📐" title="Spacing" accent="emerald">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Tile Gap: {styles.tileGap}px</label>
@@ -986,16 +994,10 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     />
                   </div>
                 </div>
-              </section>
+              </StyleSection>
 
               {/* Gradient */}
-              <section>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-amber-500">
-                    <path fillRule="evenodd" d="M1 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H3a2 2 0 01-2-2V5zm11 1H4v8h8V6zM3 4a1 1 0 000 2h1V4H3zm12 0a1 1 0 100 2h1V4h-1z" clipRule="evenodd" />
-                  </svg>
-                  Gradient
-                </h3>
+              <StyleSection emoji="🌈" title="Gradient" accent="fuchsia">
                 <div className="space-y-4">
                   <div className="flex items-center gap-2">
                     <input
@@ -1080,16 +1082,10 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     </div>
                   )}
                 </div>
-              </section>
+              </StyleSection>
 
               {/* Hover Effects */}
-              <section>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-emerald-500">
-                    <path d="M10 1a6 6 0 00-3.815 10.631L7 19l2.184-2.183a6 6 0 003.632-10.631A6 6 0 0010 1zM8 10a2 2 0 114 0 2 2 0 01-4 0z" />
-                  </svg>
-                  Hover Effects
-                </h3>
+              <StyleSection emoji="✨" title="Hover Effects" accent="amber">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Hover Elevation: {styles.hoverElevation}</label>
@@ -1126,16 +1122,10 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     />
                   </div>
                 </div>
-              </section>
+              </StyleSection>
 
               {/* Visual Effects */}
-              <section>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-purple-500">
-                    <path fillRule="evenodd" d="M4 2a2 2 0 00-2 2v11a2 2 0 002 2h12a2 2 0 002-2V4a2 2 0 00-2-2H4zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
-                  </svg>
-                  Visual Effects
-                </h3>
+              <StyleSection emoji="🎭" title="Visual Effects" accent="rose">
                 <div className="space-y-6">
                   {/* Raised Effect */}
                   <div className="space-y-4">
@@ -1234,16 +1224,10 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     )}
                   </div>
                 </div>
-              </section>
+              </StyleSection>
 
               {/* Background Table Effect */}
-              <section>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-amber-600">
-                    <path fillRule="evenodd" d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm3.293 1.293a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 01-1.414-1.414L7.586 10 5.293 7.707a1 1 0 010-1.414zM11 12a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
-                  </svg>
-                  Background Table Effect
-                </h3>
+              <StyleSection emoji="🪟" title="Background Table Effect" accent="indigo">
                 <div className="space-y-4">
                   <div className="flex items-center gap-2">
                     <input
@@ -1483,16 +1467,10 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     </div>
                   )}
                 </div>
-              </section>
+              </StyleSection>
 
               {/* Category Header */}
-              <section>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-rose-500">
-                    <path fillRule="evenodd" d="M2 4.25A2.25 2.25 0 014.25 2h11.5A2.25 2.25 0 0118 4.25v11.5A2.25 2.25 0 0115.75 18h-11.5A2.25 2.25 0 012 15.75V4.25zm3.75 7.5a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5h-1.5zm2.25-3a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5H8zm2.25-3a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5h-1.5zm2.25 6a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5h-1.5zm2.25-3a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5h-1.5z" clipRule="evenodd" />
-                  </svg>
-                  Category Header
-                </h3>
+              <StyleSection emoji="📁" title="Category Header" accent="orange">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Header Color</label>
@@ -1534,16 +1512,10 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     />
                   </div>
                 </div>
-              </section>
+              </StyleSection>
 
               {/* Typography */}
-              <section>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-indigo-500">
-                    <path fillRule="evenodd" d="M2 3.5A1.5 1.5 0 013.5 2h1.148a1.5 1.5 0 011.465 1.175l.716 3.223a1.5 1.5 0 01-1.052 1.767l-.933.267c-.41.117-.643.555-.48.95a11.542 11.542 0 006.254 6.254c.395.163.833-.07.95-.48l.267-.933a1.5 1.5 0 011.767-1.052l3.223.716a1.5 1.5 0 011.465 1.175L16.5 15.5A1.5 1.5 0 0115 17h-1.148a1.5 1.5 0 01-1.465-1.175l-.716-3.223a1.5 1.5 0 00-1.767-1.052l-.933.267a1.5 1.5 0 01-1.767-1.052l-.267-.933a1.5 1.5 0 00-1.052-1.767l-.933-.267a1.5 1.5 0 01-1.052-1.767l.267-.933A1.5 1.5 0 004.148 2H3.5A1.5 1.5 0 002 3.5z" clipRule="evenodd" />
-                  </svg>
-                  Typography
-                </h3>
+              <StyleSection emoji="🔤" title="Typography" accent="sky">
 
                 {/* Spaces (Tiles) Typography */}
                 <div className="mb-6">
@@ -2340,16 +2312,10 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     </div>
                   </div>
                 </div>
-              </section>
+              </StyleSection>
 
               {/* Spaces Grid Tab Styling */}
-              <section>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-amber-500">
-                    <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 012.5 2.5v11a2.5 2.5 0 01-2.5 2.5h-11A2.5 2.5 0 012 15.5v-11zM4.5 4a.5.5 0 00-.5.5V6h2V4H4.5zM8 4v2h2V4H8zm4 0v2h4V4h-4z" />
-                  </svg>
-                  Main Page Tabs
-                </h3>
+              <StyleSection emoji="🗂️" title="Main Page Tabs" accent="brand">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Tab Style</label>
@@ -2482,16 +2448,10 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     </div>
                   </div>
                 </div>
-              </section>
+              </StyleSection>
 
               {/* Grid Settings */}
-              <section>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-cyan-500">
-                    <path fillRule="evenodd" d="M2 4.25A2.25 2.25 0 014.25 2h11.5A2.25 2.25 0 0118 4.25v11.5A2.25 2.25 0 0115.75 18h-11.5A2.25 2.25 0 012 15.75V4.25zm3.75 7.5a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5h-1.5zm2.25-3a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5H8zm2.25-3a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5h-1.5zm2.25 6a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5h-1.5zm2.25-3a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5h-1.5z" clipRule="evenodd" />
-                  </svg>
-                  Grid Columns
-                </h3>
+              <StyleSection emoji="🧱" title="Grid Columns" accent="violet">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Small (sm)</label>
@@ -2538,19 +2498,13 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     />
                   </div>
                 </div>
-              </section>
+              </StyleSection>
             </div>
           ) : (
             /* Content Page UX Tab */
-            <div className="space-y-6">
+            <div className="space-y-3">
               {/* Header Styling */}
-              <section>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-violet-500">
-                    <path fillRule="evenodd" d="M4.5 2A1.5 1.5 0 003 3.5v13A1.5 1.5 0 004.5 18h11a1.5 1.5 0 001.5-1.5v-6.621a1.5 1.5 0 00-.44-1.06l-5.878-5.878A1.5 1.5 0 009.621 2H4.5zm3.75 8.5a.75.75 0 000 1.5h3.5a.75.75 0 000-1.5h-3.5zm0 3a.75.75 0 000 1.5h3.5a.75.75 0 000-1.5h-3.5z" clipRule="evenodd" />
-                  </svg>
-                  Header Style
-                </h3>
+              <StyleSection emoji="🧭" title="Header Style" accent="violet" defaultOpen>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Header Style</label>
@@ -2660,16 +2614,10 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     </>
                   )}
                 </div>
-              </section>
+              </StyleSection>
 
               {/* Section Styling */}
-              <section>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-emerald-500">
-                    <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 4.5zM2.5 9.5A2.5 2.5 0 005 7h10a2.5 2.5 0 010 5H5a2.5 2.5 0 01-2.5-2.5zM3 15a2.5 2.5 0 002.5 2.5h9a2.5 2.5 0 000-5h-9A2.5 2.5 0 003 15z" />
-                  </svg>
-                  Sections
-                </h3>
+              <StyleSection emoji="📦" title="Sections" accent="emerald">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Section Style</label>
@@ -2844,17 +2792,10 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     </>
                   )}
                 </div>
-              </section>
+              </StyleSection>
 
               {/* Link Styling */}
-              <section>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-blue-500">
-                    <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
-                    <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
-                  </svg>
-                  Links
-                </h3>
+              <StyleSection emoji="🔗" title="Links" accent="sky">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Link Style</label>
@@ -2954,16 +2895,10 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     />
                   </div>
                 </div>
-              </section>
+              </StyleSection>
 
               {/* Rich Text Editor Styling */}
-              <section>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-purple-500">
-                    <path fillRule="evenodd" d="M4.25 2A2.25 2.25 0 002 4.25v11.5A2.25 2.25 0 004.25 18h11.5A2.25 2.25 0 0018 15.75V4.25A2.25 2.25 0 0015.75 2H4.25zM6 13.5V6h8v7.5a.75.75 0 01-1.064.681L10 12.576l-2.936 1.605A.75.75 0 016 13.5z" clipRule="evenodd" />
-                  </svg>
-                  Rich Text Editor
-                </h3>
+              <StyleSection emoji="📝" title="Rich Text Editor" accent="amber">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Rich Text Style</label>
@@ -3072,16 +3007,10 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     />
                   </div>
                 </div>
-              </section>
+              </StyleSection>
 
               {/* Tab Styling */}
-              <section>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-amber-500">
-                    <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 012.5 2.5v11a2.5 2.5 0 01-2.5 2.5h-11A2.5 2.5 0 012 15.5v-11zM4.5 4a.5.5 0 00-.5.5V6h2V4H4.5zM8 4v2h2V4H8zm4 0v2h4V4h-4z" />
-                  </svg>
-                  Tabs
-                </h3>
+              <StyleSection emoji="🗂️" title="Tabs" accent="brand">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Tab Style</label>
@@ -3214,16 +3143,10 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     </div>
                   </div>
                 </div>
-              </section>
+              </StyleSection>
 
               {/* Typography */}
-              <section>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-indigo-500">
-                    <path fillRule="evenodd" d="M10 2c-1.716 0-3.408.106-5.07.31C3.806 2.45 3 3.414 3 4.517V17.25a.75.75 0 001.075.676L10 15.082l5.925 2.844A.75.75 0 0017 17.25V4.517c0-1.103-.806-2.068-1.93-2.207A41.403 41.403 0 0010 2z" clipRule="evenodd" />
-                  </svg>
-                  Typography
-                </h3>
+              <StyleSection emoji="🔤" title="Typography" accent="sky">
                 <div className="space-y-6">
                   {/* Title Typography */}
                   <div>
@@ -3401,16 +3324,10 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     </div>
                   </div>
                 </div>
-              </section>
+              </StyleSection>
 
               {/* Visual Enhancements */}
-              <section>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-rose-500">
-                    <path d="M10 2a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 0110 2zM10 15a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 0110 15zM10 7a3 3 0 100 6 3 3 0 000-6zM15.657 5.404a.75.75 0 10-1.06-1.06l-1.061 1.06a.75.75 0 001.06 1.06l1.06-1.06zM6.464 14.596a.75.75 0 10-1.06-1.06l-1.06 1.06a.75.75 0 001.06 1.06l1.06-1.06zM18 10a.75.75 0 01-.75.75h-1.5a.75.75 0 010-1.5h1.5A.75.75 0 0118 10zM5 10a.75.75 0 01-.75.75h-1.5a.75.75 0 010-1.5h1.5A.75.75 0 015 10zM14.596 15.657a.75.75 0 001.06-1.06l-1.06-1.061a.75.75 0 10-1.06 1.06l1.06 1.06zM5.404 6.464a.75.75 0 001.06-1.06l-1.06-1.06a.75.75 0 10-1.06 1.06l1.06 1.06z" />
-                  </svg>
-                  Visual Enhancements
-                </h3>
+              <StyleSection emoji="💫" title="Visual Enhancements" accent="rose">
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="flex items-center gap-2">
@@ -3469,16 +3386,10 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     </div>
                   )}
                 </div>
-              </section>
+              </StyleSection>
 
               {/* Grid Settings */}
-              <section>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-cyan-500">
-                    <path fillRule="evenodd" d="M2 4.25A2.25 2.25 0 014.25 2h11.5A2.25 2.25 0 0118 4.25v11.5A2.25 2.25 0 0115.75 18h-11.5A2.25 2.25 0 012 15.75V4.25zm3.75 7.5a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5h-1.5zm2.25-3a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5H8zm2.25-3a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5h-1.5zm2.25 6a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5h-1.5zm2.25-3a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5h-1.5z" clipRule="evenodd" />
-                  </svg>
-                  Grid Columns
-                </h3>
+              <StyleSection emoji="🧱" title="Grid Columns" accent="violet">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Small (sm)</label>
@@ -3525,7 +3436,7 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     />
                   </div>
                 </div>
-              </section>
+              </StyleSection>
             </div>
           )}
         </div>

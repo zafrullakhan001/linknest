@@ -956,10 +956,21 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                   >
                     {/* Ripple effect background */}
                     <div className="absolute inset-0 opacity-0 group-active:opacity-20 bg-white transition-opacity duration-200 rounded-2xl" />
-                    {/* Tile icon */}
-                    <span className="relative z-10">{tile.emoji || '📄'}</span>
+                    {/* Tile icon — custom image when set, otherwise emoji */}
+                    {tile.showEmoji !== false ? (
+                      tile.emojiImage ? (
+                        <img
+                          src={tile.emojiImage}
+                          alt=""
+                          className="relative z-10 w-full h-full object-contain p-1.5 pointer-events-none select-none rounded-2xl"
+                          draggable={false}
+                        />
+                      ) : (
+                        <span className="relative z-10">{tile.emoji || '📄'}</span>
+                      )
+                    ) : null}
                     {/* Subtle shine effect on hover */}
-                    <div className="absolute inset-0 opacity-0 group-hover:opacity-10 bg-gradient-to-br from-white/30 to-transparent transition-opacity duration-200 rounded-2xl" />
+                    <div className="absolute inset-0 opacity-0 group-hover:opacity-10 bg-gradient-to-br from-white/30 to-transparent transition-opacity duration-200 rounded-2xl pointer-events-none" />
 
                     {/* Favorite Button - Floating above tile in top right corner */}
                     {showFavoriteStars && (onToggleFavorite || !isAuthenticated) && localStorageAvailable && (

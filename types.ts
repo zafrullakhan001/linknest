@@ -99,6 +99,10 @@ export interface Tile {
   emoji: string;
   /** When false, the emoji badge is hidden on the space/tile card. Default true. */
   showEmoji?: boolean | null;
+  /** When false, the title is hidden on the space/tile card. Default true. */
+  showTitle?: boolean | null;
+  /** When false, the description is hidden on the space/tile card. Default true. */
+  showDescription?: boolean | null;
   /** Optional PNG URL shown inside the emoji badge (replaces the emoji character when set). */
   emojiImage?: string | null;
   /** Optional PNG shown in the tile card top-right header region (behind admin controls). */
@@ -107,8 +111,10 @@ export interface Tile {
   headerImageAlign?: 'left' | 'center' | 'right' | null;
   /** Opacity of the header image (0–100). Default 100. */
   headerImageOpacity?: number | null;
-  /** Fine horizontal offset in pixels (−100…100). Default 0. */
+  /** Fine horizontal offset in pixels (−300…300). Default 0. */
   headerImageOffsetX?: number | null;
+  /** Fine vertical offset in pixels (−300…300). Default 0. */
+  headerImageOffsetY?: number | null;
   /** How the image scales in the header region: contain (center fit) or cover (fill). */
   headerImageFit?: 'contain' | 'cover' | null;
   themeColor: ThemeColor;

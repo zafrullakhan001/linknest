@@ -352,10 +352,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   });
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
-  const [settingsSubTab, setSettingsSubTab] = useState<'branding' | 'general' | 'access'>(() => {
+  const [settingsSubTab, setSettingsSubTab] = useState<'branding' | 'hero' | 'access'>(() => {
     if (localStorage.getItem('adminPanelActiveTab') === 'footer') return 'branding';
     const saved = localStorage.getItem('adminSettingsSubTab');
-    return saved === 'general' || saved === 'access' || saved === 'branding' ? saved : 'branding';
+    if (saved === 'general') return 'hero'; // migrate old General tab id
+    return saved === 'hero' || saved === 'access' || saved === 'branding' ? saved : 'branding';
   });
   const [adminPasswordModal, setAdminPasswordModal] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
@@ -9853,7 +9854,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       <div className="bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl flex flex-wrap gap-1">
                         {([
                           { id: 'branding' as const, label: 'Branding' },
-                          { id: 'general' as const, label: 'General' },
+                          { id: 'hero' as const, label: 'Hero' },
                           { id: 'access' as const, label: 'Access' },
                         ]).map((item) => (
                           <button
@@ -9874,19 +9875,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       {settingsSubTab === 'branding' && (
                         <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
                           <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Branding</h3>
-                          <div className="space-y-4">
-                            <div>
-                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                          <div className="space-y-3">
+                            <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3 bg-slate-50/50 dark:bg-slate-900/20">
+                              <label className="block text-sm font-semibold text-slate-900 dark:text-white">
                                 Application Name
                               </label>
                               <input
                                 type="text"
                                 value={settings.app_name}
                                 onChange={(e) => updateBranding({ app_name: e.target.value })}
-                                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
                                 placeholder={settings.app_name || "LinkNest"}
                               />
-                              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <details className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 group">
+                                <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between px-3 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/40 rounded-lg select-none">
+                                  <span>Text style</span>
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-500 transition-transform group-open:rotate-180">
+                                    <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                                  </svg>
+                                </summary>
+                                <div className="px-3 pb-3 pt-1 grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-slate-200 dark:border-slate-700">
                                 <div>
                                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                                     Name Size: {settings.app_name_font_size || '20'}px
@@ -9978,22 +9986,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Line Height: {settings.app_name_line_height || '1.25'}</label>
                                   <input type="range" min={1} max={2} step={0.05} value={parseFloat(settings.app_name_line_height || '1.25') || 1.25} onChange={(e) => updateBranding({ app_name_line_height: e.target.value })} className="w-full accent-brand-600" />
                                 </div>
-                              </div>
+                                </div>
+                              </details>
                             </div>
 
-                            <div>
-                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                            <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3 bg-slate-50/50 dark:bg-slate-900/20">
+                              <label className="block text-sm font-semibold text-slate-900 dark:text-white">
                                 App Subheading
                               </label>
                               <input
                                 type="text"
                                 value={settings.app_subheading || ''}
                                 onChange={(e) => updateBranding({ app_subheading: e.target.value })}
-                                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
                                 placeholder="Your landing page for links"
                               />
-                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Shown under the app name in the navigation bar — changes preview live</p>
-                              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <p className="text-xs text-slate-500 dark:text-slate-400">Shown under the app name in the navigation bar — changes preview live</p>
+                              <details className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 group">
+                                <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between px-3 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/40 rounded-lg select-none">
+                                  <span>Text style</span>
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-500 transition-transform group-open:rotate-180">
+                                    <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                                  </svg>
+                                </summary>
+                                <div className="px-3 pb-3 pt-1 grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-slate-200 dark:border-slate-700">
                                 <div>
                                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                                     Subheading Size: {settings.app_subheading_font_size || '12'}px
@@ -10072,9 +10088,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Line Height: {settings.app_subheading_line_height || '1.3'}</label>
                                   <input type="range" min={1} max={2} step={0.05} value={parseFloat(settings.app_subheading_line_height || '1.3') || 1.3} onChange={(e) => updateBranding({ app_subheading_line_height: e.target.value })} className="w-full accent-brand-600" />
                                 </div>
-                              </div>
+                                </div>
+                              </details>
                             </div>
 
+                            <details className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/20 group overflow-hidden">
+                              <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-900 dark:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 select-none">
+                                <span>Logos</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-500 transition-transform group-open:rotate-180">
+                                  <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                                </svg>
+                              </summary>
+                              <div className="px-4 pb-4 space-y-4 border-t border-slate-200 dark:border-slate-700 pt-4">
                             <div>
                               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                                 Logo Type
@@ -10391,38 +10416,56 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 </p>
                               </div>
                             </div>
+                              </div>
+                            </details>
 
+                            <details className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/20 group overflow-hidden">
+                              <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-900 dark:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 select-none">
+                                <span>Browser title</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-500 transition-transform group-open:rotate-180">
+                                  <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                                </svg>
+                              </summary>
+                              <div className="px-4 pb-4 space-y-4 border-t border-slate-200 dark:border-slate-700 pt-4">
                             <div>
                               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                                Hero Icon / Emoji
+                                Page Title
                               </label>
                               <input
                                 type="text"
-                                value={settings.hero_icon || ''}
-                                onChange={(e) => updateBranding({ hero_icon: e.target.value })}
-                                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-2xl text-center focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                                placeholder="🚀"
-                                maxLength={4}
+                                value={settings.page_title}
+                                onChange={(e) => updateBranding({ page_title: e.target.value })}
+                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                placeholder={settings.page_title || settings.app_name || "LinkNest"}
                               />
-                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Shown to the left of the spaces page title in the hero section</p>
                             </div>
 
                             <div>
                               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                                Spaces Subtitle
+                                Tab Title Pattern
                               </label>
                               <input
                                 type="text"
-                                value={settings.spaces_subtitle || ''}
-                                onChange={(e) => updateBranding({ spaces_subtitle: e.target.value })}
-                                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                                placeholder="Organize and share your important links"
+                                value={settings.page_title_pattern || '{page_title}'}
+                                onChange={(e) => updateBranding({ page_title_pattern: e.target.value })}
+                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                placeholder="{page_title}"
                               />
-                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Shown under the spaces page title in the hero section</p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                Tokens: {'{page_title}'}, {'{app_name}'}. Preview: <span className="font-medium text-slate-700 dark:text-slate-200">{resolvePageTitle(settings) || '(empty)'}</span>
+                              </p>
                             </div>
+                              </div>
+                            </details>
 
-                            <div className="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-4">
-                              <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Nav Bar Colors</h4>
+                            <details className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/20 group overflow-hidden">
+                              <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-900 dark:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 select-none">
+                                <span>Nav Bar Colors</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-500 transition-transform group-open:rotate-180">
+                                  <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                                </svg>
+                              </summary>
+                              <div className="px-4 pb-4 space-y-4 border-t border-slate-200 dark:border-slate-700 pt-4">
                               <p className="text-xs text-slate-500 dark:text-slate-400">Set From + To for a gradient, or only From for a solid fill. Leave empty for default translucent look.</p>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 {([
@@ -10451,49 +10494,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   <input type="range" min={0} max={360} step={1} value={parseInt(settings.nav_gradient_angle || '90', 10) || 90} onChange={(e) => updateBranding({ nav_gradient_angle: e.target.value })} className="w-full accent-brand-600" />
                                 </div>
                               </div>
-                            </div>
-
-                            <div className="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-4">
-                              <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Hero Branding</h4>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                {([
-                                  ['hero_bg_from', 'Background From (Light)', '#eff6ff'],
-                                  ['hero_bg_to', 'Background To (Light)', '#ede9fe'],
-                                  ['hero_bg_from_dark', 'Background From (Dark)', '#1e293b'],
-                                  ['hero_bg_to_dark', 'Background To (Dark)', '#312e81'],
-                                  ['hero_title_color', 'Title Color (Light)', '#0f172a'],
-                                  ['hero_title_color_dark', 'Title Color (Dark)', '#f8fafc'],
-                                  ['hero_subtitle_color', 'Subtitle Color (Light)', '#475569'],
-                                  ['hero_subtitle_color_dark', 'Subtitle Color (Dark)', '#cbd5e1'],
-                                  ['hero_overlay_color', 'Overlay From', '#4f46e5'],
-                                  ['hero_overlay_to', 'Overlay To', '#7c3aed'],
-                                  ['hero_icon_bg_from', 'Icon Gradient From', '#3b82f6'],
-                                  ['hero_icon_bg_to', 'Icon Gradient To', '#7c3aed'],
-                                ] as const).map(([key, label, fallback]) => (
-                                  <div key={key}>
-                                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">{label}</label>
-                                    <div className="flex items-center gap-2">
-                                      <input type="color" value={(settings as any)[key] || fallback} onChange={(e) => updateBranding({ [key]: e.target.value })} className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent" />
-                                      <input type="text" value={(settings as any)[key] || ''} onChange={(e) => updateBranding({ [key]: e.target.value })} className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm" placeholder="Default" />
-                                      {(settings as any)[key] ? (
-                                        <button type="button" onClick={() => updateBranding({ [key]: '' })} className="text-xs text-slate-500 hover:text-red-600 whitespace-nowrap">Reset</button>
-                                      ) : null}
-                                    </div>
-                                  </div>
-                                ))}
-                                <div>
-                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Background Angle: {settings.hero_bg_angle || '135'}°</label>
-                                  <input type="range" min={0} max={360} step={1} value={parseInt(settings.hero_bg_angle || '135', 10) || 135} onChange={(e) => updateBranding({ hero_bg_angle: e.target.value })} className="w-full accent-brand-600" />
-                                </div>
-                                <div>
-                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Overlay Opacity: {settings.hero_overlay_opacity || '0'}%</label>
-                                  <input type="range" min={0} max={40} step={1} value={parseInt(settings.hero_overlay_opacity || '0', 10) || 0} onChange={(e) => updateBranding({ hero_overlay_opacity: e.target.value })} className="w-full accent-brand-600" />
-                                </div>
                               </div>
-                            </div>
+                            </details>
 
-                            <div className="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-4">
-                              <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Auth Modal Wash</h4>
+                            <details className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/20 group overflow-hidden">
+                              <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-900 dark:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 select-none">
+                                <span>Auth Modal Wash</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-500 transition-transform group-open:rotate-180">
+                                  <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                                </svg>
+                              </summary>
+                              <div className="px-4 pb-4 space-y-4 border-t border-slate-200 dark:border-slate-700 pt-4">
                               <p className="text-xs text-slate-500 dark:text-slate-400">Optional gradient on the login panel header. Empty keeps the default brand wash.</p>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 {([
@@ -10512,16 +10523,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   </div>
                                 ))}
                               </div>
-                            </div>
+                              </div>
+                            </details>
 
-                            <div className="mb-6">
-                              <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Favicon</h4>
-                              <p className="text-xs text-slate-600 dark:text-slate-400 mb-4">
+                            <details className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/20 group overflow-hidden">
+                              <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-900 dark:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 select-none">
+                                <span>Favicon</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-500 transition-transform group-open:rotate-180">
+                                  <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                                </svg>
+                              </summary>
+                              <div className="px-4 pb-4 space-y-4 border-t border-slate-200 dark:border-slate-700 pt-4">
+                              <p className="text-xs text-slate-600 dark:text-slate-400">
                                 Upload a favicon for browser tabs and bookmarks. Also used for PWA / home-screen icon.
                               </p>
 
                               {(faviconPreview || settings.favicon) && (
-                                <div className="mb-3">
+                                <div>
                                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
                                     Current Favicon Preview
                                   </label>
@@ -10554,7 +10572,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 </div>
                               )}
 
-                              <div className="mb-3">
+                              <div>
                                 <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
                                   Upload Favicon
                                 </label>
@@ -10619,15 +10637,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     setSettings({ ...settings, favicon: e.target.value });
                                     setFaviconPreview(e.target.value || null);
                                   }}
-                                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                  className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
                                   placeholder="https://example.com/favicon.ico"
                                 />
                               </div>
-                            </div>
+                              </div>
+                            </details>
 
-                            <div className="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-4">
+                            <details className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/20 group overflow-hidden">
+                              <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-900 dark:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 select-none">
+                                <span>Footer Text</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-500 transition-transform group-open:rotate-180">
+                                  <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                                </svg>
+                              </summary>
+                              <div className="px-4 pb-4 space-y-4 border-t border-slate-200 dark:border-slate-700 pt-4">
                               <div>
-                                <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Footer Text Settings</h4>
                                 <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                                   Customize the footer text that appears at the bottom of every page.
                                 </p>
@@ -10637,7 +10662,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 <textarea
                                   value={settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team'}
                                   onChange={(e) => setSettings({ ...settings, footer_text: e.target.value })}
-                                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                  className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
                                   placeholder="© 2025 Adventhealth - Designed and developed by AIT Architecture team"
                                   rows={3}
                                 />
@@ -10648,13 +10673,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                               <div>
                                 <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Preview</h4>
-                                <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                                <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
                                   <footer className="py-6 text-center text-slate-400 dark:text-slate-500 text-sm">
                                     <p dangerouslySetInnerHTML={{ __html: settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team' }}></p>
                                   </footer>
                                 </div>
                               </div>
-                            </div>
+                              </div>
+                            </details>
 
                             <button
                               onClick={async () => {
@@ -10680,51 +10706,167 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         </div>
                       )}
 
-                      {settingsSubTab === 'general' && (
+                      {settingsSubTab === 'hero' && (
                         <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                          <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">General</h3>
-                          <div className="space-y-4">
-                            <div>
-                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                                Page Title
-                              </label>
-                              <input
-                                type="text"
-                                value={settings.page_title}
-                                onChange={(e) => updateBranding({ page_title: e.target.value })}
-                                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                                placeholder={settings.page_title || settings.app_name || "LinkNest"}
-                              />
-                            </div>
-
-                            <div>
-                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                                Tab Title Pattern
-                              </label>
-                              <input
-                                type="text"
-                                value={settings.page_title_pattern || '{page_title}'}
-                                onChange={(e) => updateBranding({ page_title_pattern: e.target.value })}
-                                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                                placeholder="{page_title}"
-                              />
-                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                                Tokens: {'{page_title}'}, {'{app_name}'}. Preview: <span className="font-medium text-slate-700 dark:text-slate-200">{resolvePageTitle(settings) || '(empty)'}</span>
-                              </p>
-                            </div>
-
-                            <div>
-                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                          <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Hero</h3>
+                          <div className="space-y-3">
+                            <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3 bg-slate-50/50 dark:bg-slate-900/20">
+                              <label className="block text-sm font-semibold text-slate-900 dark:text-white">
                                 Spaces Page Title
                               </label>
                               <input
                                 type="text"
                                 value={settings.spaces_title}
                                 onChange={(e) => updateBranding({ spaces_title: e.target.value })}
-                                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
                                 placeholder="My Spaces"
                               />
+                              <details className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 group">
+                                <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between px-3 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/40 rounded-lg select-none">
+                                  <span>Text style</span>
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-500 transition-transform group-open:rotate-180">
+                                    <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                                  </svg>
+                                </summary>
+                                <div className="px-3 pb-3 pt-1 grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-slate-200 dark:border-slate-700">
+                                  {([
+                                    ['hero_title_color', 'Title Color (Light)', '#0f172a'],
+                                    ['hero_title_color_dark', 'Title Color (Dark)', '#f8fafc'],
+                                  ] as const).map(([key, label, fallback]) => (
+                                    <div key={key} className="sm:col-span-2">
+                                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">{label}</label>
+                                      <div className="flex items-center gap-2">
+                                        <input type="color" value={(settings as any)[key] || fallback} onChange={(e) => updateBranding({ [key]: e.target.value })} className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent" />
+                                        <input type="text" value={(settings as any)[key] || ''} onChange={(e) => updateBranding({ [key]: e.target.value })} className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm" placeholder="Default" />
+                                        {(settings as any)[key] ? (
+                                          <button type="button" onClick={() => updateBranding({ [key]: '' })} className="text-xs text-slate-500 hover:text-red-600 whitespace-nowrap">Reset</button>
+                                        ) : null}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </details>
                             </div>
+
+                            <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3 bg-slate-50/50 dark:bg-slate-900/20">
+                              <label className="block text-sm font-semibold text-slate-900 dark:text-white">
+                                Spaces Subtitle
+                              </label>
+                              <input
+                                type="text"
+                                value={settings.spaces_subtitle || ''}
+                                onChange={(e) => updateBranding({ spaces_subtitle: e.target.value })}
+                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                placeholder="Organize and share your important links"
+                              />
+                              <p className="text-xs text-slate-500 dark:text-slate-400">Shown under the spaces page title in the hero section</p>
+                              <details className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 group">
+                                <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between px-3 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/40 rounded-lg select-none">
+                                  <span>Text style</span>
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-500 transition-transform group-open:rotate-180">
+                                    <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                                  </svg>
+                                </summary>
+                                <div className="px-3 pb-3 pt-1 grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-slate-200 dark:border-slate-700">
+                                  {([
+                                    ['hero_subtitle_color', 'Subtitle Color (Light)', '#475569'],
+                                    ['hero_subtitle_color_dark', 'Subtitle Color (Dark)', '#cbd5e1'],
+                                  ] as const).map(([key, label, fallback]) => (
+                                    <div key={key} className="sm:col-span-2">
+                                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">{label}</label>
+                                      <div className="flex items-center gap-2">
+                                        <input type="color" value={(settings as any)[key] || fallback} onChange={(e) => updateBranding({ [key]: e.target.value })} className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent" />
+                                        <input type="text" value={(settings as any)[key] || ''} onChange={(e) => updateBranding({ [key]: e.target.value })} className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm" placeholder="Default" />
+                                        {(settings as any)[key] ? (
+                                          <button type="button" onClick={() => updateBranding({ [key]: '' })} className="text-xs text-slate-500 hover:text-red-600 whitespace-nowrap">Reset</button>
+                                        ) : null}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </details>
+                            </div>
+
+                            <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3 bg-slate-50/50 dark:bg-slate-900/20">
+                              <label className="block text-sm font-semibold text-slate-900 dark:text-white">
+                                Hero Icon / Emoji
+                              </label>
+                              <input
+                                type="text"
+                                value={settings.hero_icon || ''}
+                                onChange={(e) => updateBranding({ hero_icon: e.target.value })}
+                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-2xl text-center focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                placeholder="🚀"
+                                maxLength={4}
+                              />
+                              <p className="text-xs text-slate-500 dark:text-slate-400">Shown to the left of the spaces page title in the hero section</p>
+                              <details className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 group">
+                                <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between px-3 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/40 rounded-lg select-none">
+                                  <span>Icon style</span>
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-500 transition-transform group-open:rotate-180">
+                                    <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                                  </svg>
+                                </summary>
+                                <div className="px-3 pb-3 pt-1 grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-slate-200 dark:border-slate-700">
+                                  {([
+                                    ['hero_icon_bg_from', 'Icon Gradient From', '#3b82f6'],
+                                    ['hero_icon_bg_to', 'Icon Gradient To', '#7c3aed'],
+                                  ] as const).map(([key, label, fallback]) => (
+                                    <div key={key}>
+                                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">{label}</label>
+                                      <div className="flex items-center gap-2">
+                                        <input type="color" value={(settings as any)[key] || fallback} onChange={(e) => updateBranding({ [key]: e.target.value })} className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent" />
+                                        <input type="text" value={(settings as any)[key] || ''} onChange={(e) => updateBranding({ [key]: e.target.value })} className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm" placeholder="Default" />
+                                        {(settings as any)[key] ? (
+                                          <button type="button" onClick={() => updateBranding({ [key]: '' })} className="text-xs text-slate-500 hover:text-red-600 whitespace-nowrap">Reset</button>
+                                        ) : null}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </details>
+                            </div>
+
+                            <details className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/20 group overflow-hidden">
+                              <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-900 dark:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 select-none">
+                                <span>Background &amp; Overlay</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-500 transition-transform group-open:rotate-180">
+                                  <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                                </svg>
+                              </summary>
+                              <div className="px-4 pb-4 space-y-4 border-t border-slate-200 dark:border-slate-700 pt-4">
+                                <p className="text-xs text-slate-500 dark:text-slate-400">Hero section background gradient and optional color wash overlay.</p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  {([
+                                    ['hero_bg_from', 'Background From (Light)', '#eff6ff'],
+                                    ['hero_bg_to', 'Background To (Light)', '#ede9fe'],
+                                    ['hero_bg_from_dark', 'Background From (Dark)', '#1e293b'],
+                                    ['hero_bg_to_dark', 'Background To (Dark)', '#312e81'],
+                                    ['hero_overlay_color', 'Overlay From', '#4f46e5'],
+                                    ['hero_overlay_to', 'Overlay To', '#7c3aed'],
+                                  ] as const).map(([key, label, fallback]) => (
+                                    <div key={key}>
+                                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">{label}</label>
+                                      <div className="flex items-center gap-2">
+                                        <input type="color" value={(settings as any)[key] || fallback} onChange={(e) => updateBranding({ [key]: e.target.value })} className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent" />
+                                        <input type="text" value={(settings as any)[key] || ''} onChange={(e) => updateBranding({ [key]: e.target.value })} className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm" placeholder="Default" />
+                                        {(settings as any)[key] ? (
+                                          <button type="button" onClick={() => updateBranding({ [key]: '' })} className="text-xs text-slate-500 hover:text-red-600 whitespace-nowrap">Reset</button>
+                                        ) : null}
+                                      </div>
+                                    </div>
+                                  ))}
+                                  <div>
+                                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Background Angle: {settings.hero_bg_angle || '135'}°</label>
+                                    <input type="range" min={0} max={360} step={1} value={parseInt(settings.hero_bg_angle || '135', 10) || 135} onChange={(e) => updateBranding({ hero_bg_angle: e.target.value })} className="w-full accent-brand-600" />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Overlay Opacity: {settings.hero_overlay_opacity || '0'}%</label>
+                                    <input type="range" min={0} max={40} step={1} value={parseInt(settings.hero_overlay_opacity || '0', 10) || 0} onChange={(e) => updateBranding({ hero_overlay_opacity: e.target.value })} className="w-full accent-brand-600" />
+                                  </div>
+                                </div>
+                              </div>
+                            </details>
 
                             <button
                               onClick={async () => {

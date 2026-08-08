@@ -88,6 +88,111 @@ function stripHtml(html: string): string {
   return div.textContent || div.innerText || html.replace(/<[^>]*>/g, '') || '';
 }
 
+/** Tile-sized preview for aligning the free-position header logo (matches SortableTile placement). */
+const HeaderImageTilePreview: React.FC<{
+  headerImage: string;
+  align: 'left' | 'center' | 'right';
+  fit: 'contain' | 'cover';
+  opacity: number;
+  offsetX: number;
+  offsetY: number;
+  emoji?: string;
+  emojiImage?: string;
+  showEmoji?: boolean;
+  title?: string;
+  description?: string;
+  showTitle?: boolean;
+  showDescription?: boolean;
+  themeColor?: ThemeColor;
+}> = ({
+  headerImage,
+  align,
+  fit,
+  opacity,
+  offsetX,
+  offsetY,
+  emoji = '📁',
+  emojiImage,
+  showEmoji = true,
+  title = 'Tile Preview',
+  description = 'No description',
+  showTitle = true,
+  showDescription = true,
+  themeColor = 'blue',
+}) => {
+  const styles = COLOR_STYLES[themeColor] || COLOR_STYLES.blue;
+  const ox = Math.max(-300, Math.min(300, offsetX));
+  const oy = Math.max(-300, Math.min(300, offsetY));
+  const op = Math.max(0, Math.min(100, opacity)) / 100;
+
+  return (
+    <div className="w-full flex flex-col items-center gap-2">
+      <div className="flex items-center gap-1.5 self-start">
+        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+        <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+          Tile preview — use sliders to align
+        </span>
+      </div>
+      <div
+        className={`
+          w-full max-w-[280px] min-h-[140px] rounded-xl border border-slate-200 dark:border-slate-700/50
+          p-5 flex flex-col shadow-lg relative overflow-hidden bg-white dark:bg-slate-800
+        `}
+      >
+        <img
+          src={headerImage}
+          alt=""
+          className={`absolute top-3 right-3 z-0 max-w-[10rem] h-10 pointer-events-none select-none ${
+            fit === 'cover' ? 'object-cover' : 'object-contain'
+          } ${
+            align === 'left' ? 'object-left' : align === 'center' ? 'object-center' : 'object-right'
+          }`}
+          style={{
+            opacity: op,
+            transform: `translate(${ox}px, ${oy}px)`,
+          }}
+          draggable={false}
+        />
+        <div className="relative z-[1] flex items-start gap-2 mb-3 min-w-0">
+          {showEmoji ? (
+            <div
+              className={`w-10 h-10 rounded-lg ${styles.soft} flex items-center justify-center text-lg border ${styles.border} overflow-hidden shrink-0`}
+            >
+              {emojiImage ? (
+                <img src={emojiImage} alt="" className="w-full h-full object-contain p-0.5" draggable={false} />
+              ) : (
+                emoji
+              )}
+            </div>
+          ) : null}
+          <div className="flex-1 min-h-[40px]" />
+        </div>
+        <div className="relative z-[1] flex-1">
+          {showTitle ? (
+            <h3 className={`font-bold text-sm leading-tight line-clamp-2 mb-1.5 ${styles.text}`}>
+              {title.trim() || 'Tile Preview'}
+            </h3>
+          ) : null}
+          {showDescription ? (
+            <p className="text-slate-600 dark:text-slate-400 text-xs line-clamp-2 leading-snug">
+              {description.trim() || 'No description'}
+            </p>
+          ) : null}
+        </div>
+        <div className="relative z-[1] pt-2.5 mt-auto border-t border-slate-100 dark:border-slate-700/50 flex items-center">
+          <div className={`flex items-center gap-1.5 text-xs font-medium ${styles.text}`}>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+              <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
+              <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01-.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
+            </svg>
+            <span>—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Resolve API base dynamically
 function resolveApiBase(): string {
   const envBase = (import.meta as any)?.env?.VITE_API_BASE;
@@ -1429,7 +1534,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
         }
       }}
       className={`
-        linknest-tile ${hasLocalDecoration ? 'has-local-decoration' : ''} ${tileAnimatedClass} ${finalAnimationClass} group relative ${tile.tileBorderRadius === undefined ? 'rounded-xl' : ''} ${borderClass}
+        linknest-tile ${hasLocalDecoration ? 'has-local-decoration' : ''} ${tileAnimatedClass} ${finalAnimationClass} group relative overflow-hidden ${tile.tileBorderRadius === undefined ? 'rounded-xl' : ''} ${borderClass}
         transition-[transform,box-shadow,border-color] duration-200 ease-out
         flex flex-col h-full min-h-[140px] min-w-0 cursor-pointer
       `}
@@ -1462,6 +1567,28 @@ const SortableTile: React.FC<SortableTileProps> = ({
         );
       })()}
 
+      {/* Free-position header logo (full card) */}
+      {tile.headerImage ? (
+        <img
+          src={tile.headerImage}
+          alt=""
+          className={`absolute top-3 right-3 z-0 max-w-[10rem] h-10 pointer-events-none select-none ${
+            tile.headerImageFit === 'cover' ? 'object-cover' : 'object-contain'
+          } ${
+            tile.headerImageAlign === 'left'
+              ? 'object-left'
+              : tile.headerImageAlign === 'center'
+                ? 'object-center'
+                : 'object-right'
+          }`}
+          style={{
+            opacity: Math.max(0, Math.min(100, tile.headerImageOpacity ?? 100)) / 100,
+            transform: `translate(${Math.max(-300, Math.min(300, tile.headerImageOffsetX ?? 0))}px, ${Math.max(-300, Math.min(300, tile.headerImageOffsetY ?? 0))}px)`
+          }}
+          draggable={false}
+        />
+      ) : null}
+
       {/* Compact Header — min-w-0 + flex-wrap on actions so controls stay visible in narrow tiles */}
       <div className="flex items-start gap-2 mb-3 min-w-0">
         {tile.showEmoji !== false ? (
@@ -1483,27 +1610,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
             </div>
           </div>
         ) : null}
-        <div className="relative flex-1 min-w-0 min-h-[40px] overflow-hidden">
-          {tile.headerImage ? (
-            <img
-              src={tile.headerImage}
-              alt=""
-              className={`absolute inset-0 z-0 w-full h-full pointer-events-none select-none ${
-                tile.headerImageFit === 'cover' ? 'object-cover' : 'object-contain'
-              } ${
-                tile.headerImageAlign === 'left'
-                  ? 'object-left'
-                  : tile.headerImageAlign === 'center'
-                    ? 'object-center'
-                    : 'object-right'
-              }`}
-              style={{
-                opacity: Math.max(0, Math.min(100, tile.headerImageOpacity ?? 100)) / 100,
-                transform: `translateX(${Math.max(-100, Math.min(100, tile.headerImageOffsetX ?? 0))}px)`
-              }}
-              draggable={false}
-            />
-          ) : null}
+        <div className="relative flex-1 min-w-0 min-h-[40px]">
           <div className={`relative z-10 ${isAuthenticated ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'} transition-opacity flex flex-wrap items-center gap-1 justify-end w-full min-w-0`}>
           {isAuthenticated && (
             <>
@@ -1841,18 +1948,28 @@ const SortableTile: React.FC<SortableTileProps> = ({
       </div>
 
       {/* Compact Title and Description */}
-      <div className="flex-1 mb-3">
-        <h3 className={`font-bold text-sm leading-tight line-clamp-2 mb-1.5 ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}>
-          {tile.title}
-          {tile.published === false && (
-            <span className="ml-1.5 inline-block align-middle text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 font-semibold tracking-wide uppercase">
+      <div className="relative z-[1] flex-1 mb-3">
+        {tile.showTitle !== false ? (
+          <h3 className={`font-bold text-sm leading-tight line-clamp-2 mb-1.5 ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}>
+            {tile.title}
+            {tile.published === false && (
+              <span className="ml-1.5 inline-block align-middle text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 font-semibold tracking-wide uppercase">
+                Unpublished
+              </span>
+            )}
+          </h3>
+        ) : (
+          tile.published === false ? (
+            <span className="inline-block mb-1.5 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 font-semibold tracking-wide uppercase">
               Unpublished
             </span>
-          )}
-        </h3>
-        <p className="text-slate-600 dark:text-slate-400 text-xs line-clamp-2 leading-snug">
-          {tile.description || 'No description'}
-        </p>
+          ) : null
+        )}
+        {tile.showDescription !== false ? (
+          <p className="text-slate-600 dark:text-slate-400 text-xs line-clamp-2 leading-snug">
+            {tile.description || 'No description'}
+          </p>
+        ) : null}
         {ownerUsername && (
           <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 truncate" title={`Owner: ${ownerUsername}`}>
             by {ownerUsername}
@@ -2391,12 +2508,18 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [newGroup, setNewGroup] = useState('');
   const [newEmoji, setNewEmoji] = useState('📁');
   const [newShowEmoji, setNewShowEmoji] = useState(true);
+  const [newShowTitle, setNewShowTitle] = useState(true);
+  const [newShowDescription, setNewShowDescription] = useState(true);
   const [newEmojiImage, setNewEmojiImage] = useState<string>('');
   const [emojiImageUploading, setEmojiImageUploading] = useState(false);
+  const [emojiRemoveBg, setEmojiRemoveBg] = useState(false);
+  const [emojiBgMode, setEmojiBgMode] = useState<'auto' | 'custom'>('auto');
+  const [emojiBgColor, setEmojiBgColor] = useState('#ffffff');
   const [newHeaderImage, setNewHeaderImage] = useState<string>('');
   const [newHeaderImageAlign, setNewHeaderImageAlign] = useState<'left' | 'center' | 'right'>('right');
   const [newHeaderImageOpacity, setNewHeaderImageOpacity] = useState(100);
   const [newHeaderImageOffsetX, setNewHeaderImageOffsetX] = useState(0);
+  const [newHeaderImageOffsetY, setNewHeaderImageOffsetY] = useState(0);
   const [newHeaderImageFit, setNewHeaderImageFit] = useState<'contain' | 'cover'>('contain');
   const [headerRemoveBg, setHeaderRemoveBg] = useState(false);
   const [headerBgMode, setHeaderBgMode] = useState<'auto' | 'custom'>('auto');
@@ -2850,13 +2973,13 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
   const modalSizeRef = useRef({ width: 0, height: 0 });
   const modalRef = useRef<HTMLDivElement>(null);
 
-  // Initialize modal size when it opens
+  // Initialize modal size when create or edit modal opens
   useEffect(() => {
-    if (isModalOpen) {
+    const modalOpen = isModalOpen || isEditModalOpen;
+    if (modalOpen) {
       // Use a timeout to ensure the modal is rendered before measuring
       const timer = setTimeout(() => {
         if (modalRef.current) {
-          const rect = modalRef.current.getBoundingClientRect();
           if (modalSize.width === 0 && modalSize.height === 0) {
             // Set default size if not set
             const defaultWidth = Math.min(600, window.innerWidth - 40);
@@ -2875,13 +2998,13 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       }, 10);
       return () => clearTimeout(timer);
     } else {
-      // Reset position and size when modal closes
+      // Reset position and size when both modals are closed
       setModalPosition({ x: 0, y: 0 });
       setModalSize({ width: 0, height: 0 });
       modalPositionRef.current = { x: 0, y: 0 };
       modalSizeRef.current = { width: 0, height: 0 };
     }
-  }, [isModalOpen, modalSize.width, modalSize.height]);
+  }, [isModalOpen, isEditModalOpen, modalSize.width, modalSize.height]);
 
   // Sync refs when state changes (when not dragging/resizing)
   useEffect(() => {
@@ -4183,11 +4306,14 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       description: newDesc,
       emoji: newEmoji,
       showEmoji: newShowEmoji,
+      showTitle: newShowTitle,
+      showDescription: newShowDescription,
       emojiImage: newEmojiImage.trim() || null,
       headerImage: newHeaderImage.trim() || null,
       headerImageAlign: newHeaderImage.trim() ? newHeaderImageAlign : null,
       headerImageOpacity: newHeaderImage.trim() ? newHeaderImageOpacity : null,
       headerImageOffsetX: newHeaderImage.trim() ? newHeaderImageOffsetX : null,
+      headerImageOffsetY: newHeaderImage.trim() ? newHeaderImageOffsetY : null,
       headerImageFit: newHeaderImage.trim() ? newHeaderImageFit : null,
       themeColor: newColor,
       group: tileType === 'space' ? (newGroup.trim() || 'General') : (newGroup.trim() || 'General'),
@@ -4248,12 +4374,18 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setNewGroup('');
     setNewEmoji('📁');
     setNewShowEmoji(true);
+    setNewShowTitle(true);
+    setNewShowDescription(true);
     setNewEmojiImage('');
     setEmojiImageUploading(false);
+    setEmojiRemoveBg(false);
+    setEmojiBgMode('auto');
+    setEmojiBgColor('#ffffff');
     setNewHeaderImage('');
     setNewHeaderImageAlign('right');
     setNewHeaderImageOpacity(100);
     setNewHeaderImageOffsetX(0);
+    setNewHeaderImageOffsetY(0);
     setNewHeaderImageFit('contain');
     setHeaderRemoveBg(false);
     setHeaderBgMode('auto');
@@ -4683,7 +4815,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setNewGroup(tile.group || '');
     setNewEmoji(tile.emoji);
     setNewShowEmoji(tile.showEmoji !== false);
+    setNewShowTitle(tile.showTitle !== false);
+    setNewShowDescription(tile.showDescription !== false);
     setNewEmojiImage(tile.emojiImage || '');
+    setEmojiRemoveBg(false);
+    setEmojiBgMode('auto');
+    setEmojiBgColor('#ffffff');
     setNewHeaderImage(tile.headerImage || '');
     setNewHeaderImageAlign(
       tile.headerImageAlign === 'left' || tile.headerImageAlign === 'center' || tile.headerImageAlign === 'right'
@@ -4694,7 +4831,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       typeof tile.headerImageOpacity === 'number' ? Math.max(0, Math.min(100, tile.headerImageOpacity)) : 100
     );
     setNewHeaderImageOffsetX(
-      typeof tile.headerImageOffsetX === 'number' ? Math.max(-100, Math.min(100, tile.headerImageOffsetX)) : 0
+      typeof tile.headerImageOffsetX === 'number' ? Math.max(-300, Math.min(300, tile.headerImageOffsetX)) : 0
+    );
+    setNewHeaderImageOffsetY(
+      typeof tile.headerImageOffsetY === 'number' ? Math.max(-300, Math.min(300, tile.headerImageOffsetY)) : 0
     );
     setNewHeaderImageFit(tile.headerImageFit === 'cover' ? 'cover' : 'contain');
     setHeaderRemoveBg(false);
@@ -4944,11 +5084,14 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       description: newDesc,
       emoji: newEmoji,
       showEmoji: newShowEmoji,
+      showTitle: newShowTitle,
+      showDescription: newShowDescription,
       emojiImage: newEmojiImage.trim() || null,
       headerImage: newHeaderImage.trim() || null,
       headerImageAlign: newHeaderImage.trim() ? newHeaderImageAlign : null,
       headerImageOpacity: newHeaderImage.trim() ? newHeaderImageOpacity : null,
       headerImageOffsetX: newHeaderImage.trim() ? newHeaderImageOffsetX : null,
+      headerImageOffsetY: newHeaderImage.trim() ? newHeaderImageOffsetY : null,
       headerImageFit: newHeaderImage.trim() ? newHeaderImageFit : null,
       themeColor: newColor,
       group: newGroup.trim() || 'General',
@@ -8561,7 +8704,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                 if (!file) return;
                                 setEmojiImageUploading(true);
                                 try {
-                                  const url = await uploadTileEmojiImage(file);
+                                  const url = await uploadTileEmojiImage(file, {
+                                    removeBackground: emojiRemoveBg,
+                                    bgColor: emojiRemoveBg && emojiBgMode === 'custom' ? emojiBgColor : undefined
+                                  });
                                   setNewEmojiImage(url);
                                 } catch (err) {
                                   alert(err instanceof Error ? err.message : 'Failed to upload emoji image');
@@ -8606,15 +8752,91 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                   )}
 
                   {tileType === 'space' && (
-                    <label className="flex items-center gap-2 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={newShowEmoji}
-                        onChange={(e) => setNewShowEmoji(e.target.checked)}
-                        className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
-                      />
-                      <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show emoji on card</span>
-                    </label>
+                    <div className="space-y-2">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={newShowEmoji}
+                          onChange={(e) => setNewShowEmoji(e.target.checked)}
+                          className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                        />
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show emoji on card</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={newShowTitle}
+                          onChange={(e) => setNewShowTitle(e.target.checked)}
+                          className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                        />
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show title on card</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={newShowDescription}
+                          onChange={(e) => setNewShowDescription(e.target.checked)}
+                          className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                        />
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show description on card</span>
+                      </label>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <label className="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={emojiRemoveBg}
+                            onChange={(e) => setEmojiRemoveBg(e.target.checked)}
+                            className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                          />
+                          Remove emoji image background
+                        </label>
+                        {emojiRemoveBg ? (
+                          <>
+                            <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                              <input type="radio" name="emojiBgModeCreate" checked={emojiBgMode === 'auto'} onChange={() => setEmojiBgMode('auto')} />
+                              Auto (corners)
+                            </label>
+                            <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                              <input type="radio" name="emojiBgModeCreate" checked={emojiBgMode === 'custom'} onChange={() => setEmojiBgMode('custom')} />
+                              Pick color
+                            </label>
+                            {emojiBgMode === 'custom' ? (
+                              <input
+                                type="color"
+                                value={emojiBgColor}
+                                onChange={(e) => setEmojiBgColor(e.target.value)}
+                                className="w-7 h-7 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent"
+                                title="Background color to remove"
+                              />
+                            ) : null}
+                          </>
+                        ) : null}
+                        {newEmojiImage && emojiRemoveBg ? (
+                          <button
+                            type="button"
+                            disabled={emojiImageUploading}
+                            onClick={async () => {
+                              setEmojiImageUploading(true);
+                              try {
+                                const url = await uploadTileEmojiImage(null, {
+                                  sourceUrl: newEmojiImage,
+                                  removeBackground: true,
+                                  bgColor: emojiBgMode === 'custom' ? emojiBgColor : undefined
+                                });
+                                setNewEmojiImage(url);
+                              } catch (err) {
+                                alert(err instanceof Error ? err.message : 'Failed to remove background');
+                              } finally {
+                                setEmojiImageUploading(false);
+                              }
+                            }}
+                            className="text-xs font-medium px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                          >
+                            Apply to current image
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
                   )}
 
                   {/* Header image - space cards only */}
@@ -8622,22 +8844,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Header image</label>
                       <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
-                        Shown on the space card beside the icon. Other formats are converted to PNG automatically.
+                        Place freely on the space card. Use the tile-sized preview below to align X/Y. Other formats convert to PNG automatically.
                       </p>
                       <div className="flex flex-wrap items-center gap-3 mb-3">
-                        {newHeaderImage ? (
-                          <div className={`h-12 w-40 rounded-lg border border-slate-200 dark:border-slate-700 bg-[length:12px_12px] bg-[linear-gradient(45deg,#e2e8f0_25%,transparent_25%,transparent_75%,#e2e8f0_75%),linear-gradient(45deg,#e2e8f0_25%,transparent_25%,transparent_75%,#e2e8f0_75%)] bg-[position:0_0,6px_6px] dark:bg-[linear-gradient(45deg,#334155_25%,transparent_25%,transparent_75%,#334155_75%),linear-gradient(45deg,#334155_25%,transparent_25%,transparent_75%,#334155_75%)] overflow-hidden relative`}>
-                            <img
-                              src={newHeaderImage}
-                              alt="Header preview"
-                              className={`absolute inset-0 w-full h-full ${newHeaderImageFit === 'cover' ? 'object-cover' : 'object-contain'} ${newHeaderImageAlign === 'left' ? 'object-left' : newHeaderImageAlign === 'center' ? 'object-center' : 'object-right'}`}
-                              style={{
-                                opacity: newHeaderImageOpacity / 100,
-                                transform: `translateX(${newHeaderImageOffsetX}px)`
-                              }}
-                            />
-                          </div>
-                        ) : null}
                         <label className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border cursor-pointer transition-colors ${headerImageUploading ? 'opacity-60 pointer-events-none' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'} text-slate-700 dark:text-slate-200`}>
                           <input
                             type="file"
@@ -8710,6 +8919,26 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         </div>
                       </div>
                       {newHeaderImage ? (
+                        <div className="mb-4 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-inner">
+                          <HeaderImageTilePreview
+                            headerImage={newHeaderImage}
+                            align={newHeaderImageAlign}
+                            fit={newHeaderImageFit}
+                            opacity={newHeaderImageOpacity}
+                            offsetX={newHeaderImageOffsetX}
+                            offsetY={newHeaderImageOffsetY}
+                            emoji={newEmoji}
+                            emojiImage={newEmojiImage || undefined}
+                            showEmoji={newShowEmoji}
+                            title={newTitle}
+                            description={newDesc}
+                            showTitle={newShowTitle}
+                            showDescription={newShowDescription}
+                            themeColor={newColor}
+                          />
+                        </div>
+                      ) : null}
+                      {newHeaderImage ? (
                         <div className="space-y-2 mb-3">
                           <label className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
                             <span className="w-20 shrink-0">Opacity</span>
@@ -8724,11 +8953,11 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             <span className="w-10 text-right tabular-nums">{newHeaderImageOpacity}%</span>
                           </label>
                           <label className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
-                            <span className="w-20 shrink-0">Position</span>
+                            <span className="w-20 shrink-0">Position X</span>
                             <input
                               type="range"
-                              min={-100}
-                              max={100}
+                              min={-300}
+                              max={300}
                               value={newHeaderImageOffsetX}
                               onChange={(e) => setNewHeaderImageOffsetX(Number(e.target.value))}
                               className="flex-1 accent-brand-500"
@@ -8742,6 +8971,32 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                               Reset
                             </button>
                           </label>
+                          <label className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+                            <span className="w-20 shrink-0">Position Y</span>
+                            <input
+                              type="range"
+                              min={-300}
+                              max={300}
+                              value={newHeaderImageOffsetY}
+                              onChange={(e) => setNewHeaderImageOffsetY(Number(e.target.value))}
+                              className="flex-1 accent-brand-500"
+                            />
+                            <span className="w-12 text-right tabular-nums">{newHeaderImageOffsetY}px</span>
+                            <button
+                              type="button"
+                              onClick={() => setNewHeaderImageOffsetY(0)}
+                              className="text-[11px] text-brand-600 dark:text-brand-400 hover:underline"
+                            >
+                              Reset
+                            </button>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => { setNewHeaderImageOffsetX(0); setNewHeaderImageOffsetY(0); }}
+                            className="text-[11px] text-brand-600 dark:text-brand-400 hover:underline"
+                          >
+                            Reset position
+                          </button>
                         </div>
                       ) : null}
                       <div className="flex flex-wrap items-center gap-3">
@@ -9153,8 +9408,27 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
               setEditingTile(null);
               resetForm();
             }}></div>
-            <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-xl p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto" style={{ zIndex: 99999 }}>
-              <div className="flex items-center justify-between mb-6">
+            <div
+              ref={modalRef}
+              className={`bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200 overflow-hidden flex flex-col ${isDragging ? 'cursor-move' : ''} ${isDragging || isResizing ? 'will-change-transform' : ''}`}
+              style={{
+                zIndex: 99999,
+                width: modalSize.width > 0 ? `${modalSize.width}px` : '600px',
+                maxWidth: '90vw',
+                minWidth: '400px',
+                height: modalSize.height > 0 ? `${modalSize.height}px` : '700px',
+                maxHeight: '90vh',
+                minHeight: '300px',
+                left: modalPosition.x > 0 ? `${modalPosition.x}px` : 'auto',
+                top: modalPosition.y > 0 ? `${modalPosition.y}px` : 'auto',
+                position: modalPosition.x > 0 || modalPosition.y > 0 ? 'absolute' : 'relative',
+                transition: isDragging || isResizing ? 'none' : undefined
+              }}
+            >
+              <div
+                className="flex items-center justify-between mb-6 cursor-move select-none shrink-0"
+                onMouseDown={handleDragStart}
+              >
                 <div className="min-w-0 flex-1">
                   <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1 truncate" title={editingTile.title || undefined}>
                     {tileType === 'hyperlink' ? 'Edit Hyperlink' : 'Edit Space'}
@@ -9168,7 +9442,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 </div>
                 <button
                   onClick={() => setIsEditModalOpen(false)}
-                  className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                  className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer relative"
+                  style={{ zIndex: 100000 }}
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
                     <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
@@ -9176,6 +9451,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 </button>
               </div>
 
+              <div className="flex-1 overflow-y-auto pr-2 -mr-2 min-h-0">
               {/* Shared Live Preview for All Tabs */}
               <div className="mb-6 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-inner overflow-hidden relative">
                 <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm z-10">
@@ -9235,21 +9511,54 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                     <TileStars trigger={previewStarsTrigger} tileRef={previewTileRef} config={messageCelebrationConfig} />
                     <TileRainbow trigger={previewRainbowTrigger} tileRef={previewTileRef} config={messageCelebrationConfig} />
 
-                    <div className="flex-1">
-                      <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center text-lg mb-3 border border-slate-200 dark:border-slate-600">
-                        {newEmoji || '📁'}
-                      </div>
-                      <h3 className="font-bold text-sm leading-tight line-clamp-2 mb-1">
-                        {newTitle || 'Tile Preview'}
-                      </h3>
-                      <p className="opacity-70 text-[10px] line-clamp-2 leading-snug">
-                        {newDesc || 'No description'}
-                      </p>
+                    {newHeaderImage ? (
+                      <img
+                        src={newHeaderImage}
+                        alt=""
+                        className={`absolute top-3 right-3 z-0 max-w-[10rem] h-10 pointer-events-none select-none ${
+                          newHeaderImageFit === 'cover' ? 'object-cover' : 'object-contain'
+                        } ${
+                          newHeaderImageAlign === 'left'
+                            ? 'object-left'
+                            : newHeaderImageAlign === 'center'
+                              ? 'object-center'
+                              : 'object-right'
+                        }`}
+                        style={{
+                          opacity: newHeaderImageOpacity / 100,
+                          transform: `translate(${newHeaderImageOffsetX}px, ${newHeaderImageOffsetY}px)`
+                        }}
+                        draggable={false}
+                      />
+                    ) : null}
+
+                    <div className="relative z-[1] flex-1">
+                      {newShowEmoji ? (
+                        <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center text-lg mb-3 border border-slate-200 dark:border-slate-600 overflow-hidden">
+                          {newEmojiImage ? (
+                            <img src={newEmojiImage} alt="" className="w-full h-full object-contain p-0.5" draggable={false} />
+                          ) : (
+                            newEmoji || '📁'
+                          )}
+                        </div>
+                      ) : (
+                        <div className="mb-3 min-h-[40px]" />
+                      )}
+                      {newShowTitle ? (
+                        <h3 className="font-bold text-sm leading-tight line-clamp-2 mb-1">
+                          {newTitle || 'Tile Preview'}
+                        </h3>
+                      ) : null}
+                      {newShowDescription ? (
+                        <p className="opacity-70 text-[10px] line-clamp-2 leading-snug">
+                          {newDesc || 'No description'}
+                        </p>
+                      ) : null}
                     </div>
 
                     {/* Message Preview */}
                     {(messageContent || (messageType === 'celebration' && messageCelebrationEffect !== 'none')) && (
-                      <div className="mt-3 pt-2 border-t border-slate-200 dark:border-slate-700/50 flex items-center justify-center gap-2">
+                      <div className="relative z-[1] mt-3 pt-2 border-t border-slate-200 dark:border-slate-700/50 flex items-center justify-center gap-2">
                         <div className={`px-2 py-0.5 rounded text-[10px] font-bold ${messageType === 'info' ? 'bg-blue-100/50 text-blue-600' :
                           messageType === 'warning' ? 'bg-amber-100/50 text-amber-600' :
                             messageType === 'celebration' ? 'bg-pink-100/50 text-pink-600' :
@@ -10762,7 +11071,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                   if (!file) return;
                                   setEmojiImageUploading(true);
                                   try {
-                                    const url = await uploadTileEmojiImage(file);
+                                    const url = await uploadTileEmojiImage(file, {
+                                      removeBackground: emojiRemoveBg,
+                                      bgColor: emojiRemoveBg && emojiBgMode === 'custom' ? emojiBgColor : undefined
+                                    });
                                     setNewEmojiImage(url);
                                   } catch (err) {
                                     alert(err instanceof Error ? err.message : 'Failed to upload emoji image');
@@ -10807,15 +11119,91 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                     </div>
 
                     {tileType === 'space' && (
-                      <label className="flex items-center gap-2 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={newShowEmoji}
-                          onChange={(e) => setNewShowEmoji(e.target.checked)}
-                          className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
-                        />
-                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show emoji on card</span>
-                      </label>
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={newShowEmoji}
+                            onChange={(e) => setNewShowEmoji(e.target.checked)}
+                            className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                          />
+                          <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show emoji on card</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={newShowTitle}
+                            onChange={(e) => setNewShowTitle(e.target.checked)}
+                            className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                          />
+                          <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show title on card</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={newShowDescription}
+                            onChange={(e) => setNewShowDescription(e.target.checked)}
+                            className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                          />
+                          <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show description on card</span>
+                        </label>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <label className="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={emojiRemoveBg}
+                              onChange={(e) => setEmojiRemoveBg(e.target.checked)}
+                              className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                            />
+                            Remove emoji image background
+                          </label>
+                          {emojiRemoveBg ? (
+                            <>
+                              <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                                <input type="radio" name="emojiBgModeEdit" checked={emojiBgMode === 'auto'} onChange={() => setEmojiBgMode('auto')} />
+                                Auto (corners)
+                              </label>
+                              <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                                <input type="radio" name="emojiBgModeEdit" checked={emojiBgMode === 'custom'} onChange={() => setEmojiBgMode('custom')} />
+                                Pick color
+                              </label>
+                              {emojiBgMode === 'custom' ? (
+                                <input
+                                  type="color"
+                                  value={emojiBgColor}
+                                  onChange={(e) => setEmojiBgColor(e.target.value)}
+                                  className="w-7 h-7 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent"
+                                  title="Background color to remove"
+                                />
+                              ) : null}
+                            </>
+                          ) : null}
+                          {newEmojiImage && emojiRemoveBg ? (
+                            <button
+                              type="button"
+                              disabled={emojiImageUploading}
+                              onClick={async () => {
+                                setEmojiImageUploading(true);
+                                try {
+                                  const url = await uploadTileEmojiImage(null, {
+                                    sourceUrl: newEmojiImage,
+                                    removeBackground: true,
+                                    bgColor: emojiBgMode === 'custom' ? emojiBgColor : undefined
+                                  });
+                                  setNewEmojiImage(url);
+                                } catch (err) {
+                                  alert(err instanceof Error ? err.message : 'Failed to remove background');
+                                } finally {
+                                  setEmojiImageUploading(false);
+                                }
+                              }}
+                              className="text-xs font-medium px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                            >
+                              Apply to current image
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
                     )}
 
                     {/* Header image - space cards only */}
@@ -10823,22 +11211,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Header image</label>
                         <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
-                          Shown on the space card beside the icon. Other formats are converted to PNG automatically.
+                          Place freely on the space card. Use the tile-sized preview below to align X/Y. Other formats convert to PNG automatically.
                         </p>
                         <div className="flex flex-wrap items-center gap-3 mb-3">
-                          {newHeaderImage ? (
-                            <div className={`h-12 w-40 rounded-lg border border-slate-200 dark:border-slate-700 bg-[length:12px_12px] bg-[linear-gradient(45deg,#e2e8f0_25%,transparent_25%,transparent_75%,#e2e8f0_75%),linear-gradient(45deg,#e2e8f0_25%,transparent_25%,transparent_75%,#e2e8f0_75%)] bg-[position:0_0,6px_6px] dark:bg-[linear-gradient(45deg,#334155_25%,transparent_25%,transparent_75%,#334155_75%),linear-gradient(45deg,#334155_25%,transparent_25%,transparent_75%,#334155_75%)] overflow-hidden relative`}>
-                              <img
-                                src={newHeaderImage}
-                                alt="Header preview"
-                                className={`absolute inset-0 w-full h-full ${newHeaderImageFit === 'cover' ? 'object-cover' : 'object-contain'} ${newHeaderImageAlign === 'left' ? 'object-left' : newHeaderImageAlign === 'center' ? 'object-center' : 'object-right'}`}
-                                style={{
-                                  opacity: newHeaderImageOpacity / 100,
-                                  transform: `translateX(${newHeaderImageOffsetX}px)`
-                                }}
-                              />
-                            </div>
-                          ) : null}
                           <label className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border cursor-pointer transition-colors ${headerImageUploading ? 'opacity-60 pointer-events-none' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'} text-slate-700 dark:text-slate-200`}>
                             <input
                               type="file"
@@ -10911,6 +11286,26 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           </div>
                         </div>
                         {newHeaderImage ? (
+                          <div className="mb-4 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-inner">
+                            <HeaderImageTilePreview
+                              headerImage={newHeaderImage}
+                              align={newHeaderImageAlign}
+                              fit={newHeaderImageFit}
+                              opacity={newHeaderImageOpacity}
+                              offsetX={newHeaderImageOffsetX}
+                              offsetY={newHeaderImageOffsetY}
+                              emoji={newEmoji}
+                              emojiImage={newEmojiImage || undefined}
+                              showEmoji={newShowEmoji}
+                              title={newTitle}
+                              description={newDesc}
+                              showTitle={newShowTitle}
+                              showDescription={newShowDescription}
+                              themeColor={newColor}
+                            />
+                          </div>
+                        ) : null}
+                        {newHeaderImage ? (
                           <div className="space-y-2 mb-3">
                             <label className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
                               <span className="w-20 shrink-0">Opacity</span>
@@ -10925,11 +11320,11 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                               <span className="w-10 text-right tabular-nums">{newHeaderImageOpacity}%</span>
                             </label>
                             <label className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
-                              <span className="w-20 shrink-0">Position</span>
+                              <span className="w-20 shrink-0">Position X</span>
                               <input
                                 type="range"
-                                min={-100}
-                                max={100}
+                                min={-300}
+                                max={300}
                                 value={newHeaderImageOffsetX}
                                 onChange={(e) => setNewHeaderImageOffsetX(Number(e.target.value))}
                                 className="flex-1 accent-brand-500"
@@ -10943,6 +11338,32 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                 Reset
                               </button>
                             </label>
+                            <label className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+                              <span className="w-20 shrink-0">Position Y</span>
+                              <input
+                                type="range"
+                                min={-300}
+                                max={300}
+                                value={newHeaderImageOffsetY}
+                                onChange={(e) => setNewHeaderImageOffsetY(Number(e.target.value))}
+                                className="flex-1 accent-brand-500"
+                              />
+                              <span className="w-12 text-right tabular-nums">{newHeaderImageOffsetY}px</span>
+                              <button
+                                type="button"
+                                onClick={() => setNewHeaderImageOffsetY(0)}
+                                className="text-[11px] text-brand-600 dark:text-brand-400 hover:underline"
+                              >
+                                Reset
+                              </button>
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => { setNewHeaderImageOffsetX(0); setNewHeaderImageOffsetY(0); }}
+                              className="text-[11px] text-brand-600 dark:text-brand-400 hover:underline"
+                            >
+                              Reset position
+                            </button>
                           </div>
                         ) : null}
                         <div className="flex flex-wrap items-center gap-3">
@@ -11472,6 +11893,18 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                   >
                     {tileType === 'hyperlink' ? 'Update Hyperlink' : 'Update Space'}
                   </button>
+                </div>
+              </div>
+              </div>
+              {/* Resize Handle */}
+              <div
+                onMouseDown={handleResizeStart}
+                className={`absolute bottom-0 right-0 w-6 h-6 cursor-nwse-resize flex items-end justify-end ${isResizing ? 'bg-brand-500/20' : 'hover:bg-slate-200/50 dark:hover:bg-slate-700/50'}`}
+                style={{ zIndex: 100000 }}
+              >
+                <div className="w-4 h-4 relative">
+                  <div className="absolute bottom-0 right-0 w-3 h-3 border-r-2 border-b-2 border-slate-400 dark:border-slate-500 rounded-br-lg"></div>
+                  <div className="absolute bottom-1 right-1 w-2 h-2 border-r border-b border-slate-400 dark:border-slate-500 rounded-br"></div>
                 </div>
               </div>
             </div>
