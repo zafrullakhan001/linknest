@@ -28,6 +28,7 @@ import { rolesService } from '../services/rolesService';
 import { FaTimes } from 'react-icons/fa';
 import { LinkInfoDialog } from './LinkInfoDialog';
 import { useMobile } from '../hooks/useMobile';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { getDisplayUrl } from '../utils/urlDisplay';
 import { MobileTileView } from './MobileTileView';
 import { StagingOverview } from './StagingOverview';
@@ -361,6 +362,7 @@ const CategoryVisibilityDialog: React.FC<CategoryVisibilityDialogProps> = ({
   onClose,
   onSave
 }) => {
+  useEscapeToClose(true, onClose);
   const [tileVisibility, setTileVisibility] = useState<Record<string, { visibility: TileVisibility; allowedUsers: number[] }>>(() => {
     const initial: Record<string, { visibility: TileVisibility; allowedUsers: number[] }> = {};
     tiles.forEach(tile => {
@@ -1160,6 +1162,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
     ? (tile.sharedWithMeSharer?.username ?? ownerLookup?.[tile.userId] ?? null)
     : null;
   const [showCategoryDialog, setShowCategoryDialog] = useState(false);
+  useEscapeToClose(showCategoryDialog, () => setShowCategoryDialog(false));
   const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
   const [fireworksTrigger, setFireworksTrigger] = useState(0);
   const [confettiTrigger, setConfettiTrigger] = useState(0);
@@ -4544,6 +4547,13 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     window.addEventListener('keydown', handleFavNotesEsc);
     return () => window.removeEventListener('keydown', handleFavNotesEsc);
   }, [favNotesDialogState]);
+
+  // ESC key closes the category schedule dialog
+  useEscapeToClose(!!editingCategorySchedule, () => {
+    setEditingCategorySchedule(null);
+    setCategoryVisibleFrom('');
+    setCategoryExpiresAt('');
+  });
 
   const handleDeleteTile = async (e: React.MouseEvent, id: string) => {
     e.preventDefault();

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { userPreferencesService } from '../services/userPreferencesService';
+import { isEscapeDialogOpen } from '../hooks/useEscapeToClose';
 
 interface WeatherData {
   time: string;
@@ -282,6 +283,7 @@ export const WeatherWidget: React.FC<WeatherWidgetProps> = ({ onClose }) => {
 
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !e.ctrlKey && !e.shiftKey && !e.metaKey && !e.altKey) {
+        if (isEscapeDialogOpen()) return;
         const target = e.target as HTMLElement;
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
           return;

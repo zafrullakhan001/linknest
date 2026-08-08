@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 interface RichTextEditorProps {
     value: string;
@@ -48,6 +49,17 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     const [linkOpenNewTab, setLinkOpenNewTab] = useState(true);
     const [showPasteWordDialog, setShowPasteWordDialog] = useState(false);
     const [pasteWordContent, setPasteWordContent] = useState('');
+
+    useEscapeToClose(showPasteWordDialog, () => {
+        setShowPasteWordDialog(false);
+        setPasteWordContent('');
+    });
+    useEscapeToClose(showLinkDialog, () => {
+        setShowLinkDialog(false);
+        setLinkUrl('');
+        setLinkText('');
+    });
+    useEscapeToClose(showTableDialog, () => setShowTableDialog(false));
 
     // Function to format/beautify HTML
     const formatHTML = (html: string): string => {

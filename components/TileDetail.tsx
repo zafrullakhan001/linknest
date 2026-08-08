@@ -14,6 +14,7 @@ import {
 import { cloneTile, getTiles, saveTile, toggleLinkFavorite, createTempVersion, updateTilePageAnimation, recordTileVisit } from '../services/storageService';
 import { removeSharedTile } from '../services/tileShareService';
 import { useSettings } from '../contexts/SettingsContext';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { RichTextEditor } from './RichTextEditor';
 import { RichTextContentItem } from './RichTextContentItem';
 import { RichTextBoxedView } from './RichTextBoxedView';
@@ -538,6 +539,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         };
     }, [notesDialogState]);
     const [notesPresetFormState, setNotesPresetFormState] = useState<{ linkId: string } | null>(null);
+    useEscapeToClose(!!notesPresetFormState, () => setNotesPresetFormState(null));
     const [notesPresetForm, setNotesPresetForm] = useState({
         ownerInfo: '',
         supportTeamInfo: '',

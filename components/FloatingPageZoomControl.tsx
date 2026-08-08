@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { isEscapeDialogOpen } from '../hooks/useEscapeToClose';
 
 type Point = { x: number; y: number };
 
@@ -140,6 +141,7 @@ export const FloatingPageZoomControl: React.FC<{
 
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !e.ctrlKey && !e.shiftKey && !e.metaKey && !e.altKey) {
+        if (isEscapeDialogOpen()) return;
         const target = e.target as HTMLElement;
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
           return;

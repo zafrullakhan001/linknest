@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { customTimezoneService } from '../services/customTimezoneService';
 import { alarmService } from '../services/alarmService';
 import { userPreferencesService } from '../services/userPreferencesService';
+import { isEscapeDialogOpen } from '../hooks/useEscapeToClose';
 
 // USA Timezones (for quick access)
 const USA_TIMEZONES = [
@@ -330,6 +331,7 @@ export const TimezoneDisplay: React.FC<TimezoneDisplayProps> = ({ onClose }) => 
 
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !e.ctrlKey && !e.shiftKey && !e.metaKey && !e.altKey) {
+        if (isEscapeDialogOpen()) return;
         const target = e.target as HTMLElement;
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
           return;

@@ -4,6 +4,7 @@ import { parseSpaceExportObject, normalizeImportedTiles } from '../services/spac
 import { settingsService } from '../services/settingsService';
 import { useAuth } from '../contexts/AuthContext';
 import { generateUuid } from '../services/idService';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 interface Bookmark {
   title: string;
@@ -111,6 +112,21 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
     status: string;
     errors: string[];
   } | null>(null);
+
+  useEscapeToClose(showImportDialog, () => {
+    if (loading && !importCancelled) {
+      setImportCancelled(true);
+      setLoading(false);
+      return;
+    }
+    setShowImportDialog(false);
+    setCategoryName('');
+    setSelectedCategory('');
+    setCreateNewCategory(false);
+    setWizardStep(1);
+    setImportProgress(null);
+    setImportCancelled(false);
+  });
 
   // Auto-generate tiles from bookmarks by domain (for manual organization)
   const autoGenerateTilesByDomain = (bookmarkList: Bookmark[]) => {

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { broadcastService, BroadcastThreadHistory, BroadcastRevision } from '../services/broadcastService';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 function formatDateTime(ts: number): string {
   if (!ts) return '—';
@@ -81,6 +82,7 @@ export const BroadcastHistoryDialog: React.FC<BroadcastHistoryDialogProps> = ({
   onClose,
   currentThreadId,
 }) => {
+  useEscapeToClose(open, onClose);
   const [threads, setThreads] = useState<BroadcastThreadHistory[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -3881,28 +3881,96 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   // Handle ESC key to close modals
   useEffect(() => {
     const handleEscKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        if (addUserModal) {
-          setAddUserModal(false);
-          setError('');
-        }
-        if (adminPasswordModal) {
-          setAdminPasswordModal(false);
-          setCurrentPassword('');
-          setAdminNewPassword('');
-          setAdminConfirmPassword('');
-          setError('');
-        }
+      if (event.key !== 'Escape') return;
+
+      if (userActionsDialog.open) {
+        setUserActionsDialog({ open: false, user: null });
+        return;
+      }
+      if (editUserModal.open) {
+        setEditUserModal({ open: false, userId: null, username: '', email: '', auth_source: 'local' });
+        setError('');
+        return;
+      }
+      if (resetPasswordModal.open) {
+        setResetPasswordModal({ open: false, userId: null, username: '' });
+        setNewPassword('');
+        setResetConfirmPassword('');
+        setError('');
+        return;
+      }
+      if (showSnapshotMessageModal) {
+        setShowSnapshotMessageModal(false);
+        setSnapshotMessage('');
+        return;
+      }
+      if (showUploadModal) {
+        setShowUploadModal(false);
+        setUploadFile(null);
+        setUploadMessage('');
+        return;
+      }
+      if (showBulkDeleteModal) {
+        setShowBulkDeleteModal(false);
+        return;
+      }
+      if (editCloneModal.open) {
+        setEditCloneModal({ open: false, clone: null });
+        return;
+      }
+      if (showAddWidgetModal) {
+        setShowAddWidgetModal(false);
+        return;
+      }
+      if (loadTestOpenPrompt) {
+        setLoadTestOpenPrompt(false);
+        return;
+      }
+      if (addUserModal) {
+        setAddUserModal(false);
+        setError('');
+        return;
+      }
+      if (adminPasswordModal) {
+        setAdminPasswordModal(false);
+        setCurrentPassword('');
+        setAdminNewPassword('');
+        setAdminConfirmPassword('');
+        setError('');
       }
     };
 
-    if (addUserModal || adminPasswordModal) {
+    if (
+      addUserModal ||
+      adminPasswordModal ||
+      userActionsDialog.open ||
+      editUserModal.open ||
+      resetPasswordModal.open ||
+      showSnapshotMessageModal ||
+      showUploadModal ||
+      showBulkDeleteModal ||
+      editCloneModal.open ||
+      showAddWidgetModal ||
+      loadTestOpenPrompt
+    ) {
       window.addEventListener('keydown', handleEscKey);
       return () => {
         window.removeEventListener('keydown', handleEscKey);
       };
     }
-  }, [addUserModal, adminPasswordModal]);
+  }, [
+    addUserModal,
+    adminPasswordModal,
+    userActionsDialog.open,
+    editUserModal.open,
+    resetPasswordModal.open,
+    showSnapshotMessageModal,
+    showUploadModal,
+    showBulkDeleteModal,
+    editCloneModal.open,
+    showAddWidgetModal,
+    loadTestOpenPrompt,
+  ]);
 
   // Load LDAP directory details only when the section is expanded
   useEffect(() => {

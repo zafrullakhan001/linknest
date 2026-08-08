@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { TilePermission } from '../services/accessService';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 interface GranularPermissionsModalProps {
   isOpen: boolean;
@@ -54,6 +55,8 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
     canEditTile: true
   });
   const [isSaving, setIsSaving] = useState(false);
+
+  useEscapeToClose(isOpen, onClose);
 
   useEffect(() => {
     if (permission) {

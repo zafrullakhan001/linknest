@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { isEscapeDialogOpen } from '../hooks/useEscapeToClose';
 
 interface CalculatorWidgetProps {
   onClose?: () => void;
@@ -162,6 +163,7 @@ export const CalculatorWidget: React.FC<CalculatorWidgetProps> = ({ onClose }) =
 
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !e.ctrlKey && !e.shiftKey && !e.metaKey && !e.altKey) {
+        if (isEscapeDialogOpen()) return;
         const target = e.target as HTMLElement;
         // Don't close if user is typing in an input field
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
