@@ -407,6 +407,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [sectionLinkLayouts, setSectionLinkLayouts] = useState<Record<string, ViewLayoutMode>>(() =>
         loadSectionLinkLayouts(tile.id)
     );
+    /** When true, top View controls every section (ignores per-section overrides). */
+    const [syncSectionViews, setSyncSectionViews] = useState(() => {
+        try {
+            const saved = localStorage.getItem('linknest_sync_section_views');
+            // Default on so the top View control actually applies everywhere.
+            if (saved === null) return true;
+            return saved === '1' || saved === 'true';
+        } catch {
+            return true;
+        }
+    });
 
     // Visibility Dialog State
     const [visibilityDialogTab, setVisibilityDialogTab] = useState<string | null>(null);
@@ -956,6 +967,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     }, [viewLayout]);
 
+    useEffect(() => {
+        try {
+            localStorage.setItem('linknest_sync_section_views', syncSectionViews ? '1' : '0');
+        } catch (error) {
+            console.error('Failed to save sync section views preference:', error);
+        }
+    }, [syncSectionViews]);
+
     // Reload per-section link layouts when switching tiles
     useEffect(() => {
         setSectionLinkLayouts(loadSectionLinkLayouts(tile.id));
@@ -972,10 +991,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
     const getSectionLinkLayout = (section: { id: string; forceStackedView?: boolean }): ViewLayoutMode => {
         if (section.forceStackedView) return 'stacked';
+        if (syncSectionViews) return viewLayout;
         return sectionLinkLayouts[section.id] || viewLayout;
     };
 
     const setSectionLinkLayout = (sectionId: string, layout: ViewLayoutMode) => {
+        // Choosing a per-section layout turns off global sync so overrides can stick.
+        if (syncSectionViews) {
+            setSyncSectionViews(false);
+        }
         setSectionLinkLayouts(prev => ({ ...prev, [sectionId]: layout }));
     };
 
@@ -4236,7 +4260,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     </div>
 
                                     {/* View Layout Toggle */}
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 flex-wrap justify-end">
                                         <span className="text-xs font-medium text-slate-500 dark:text-slate-400">View:</span>
                                         <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
                                             <button
@@ -4296,7 +4320,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 </svg>
                                             </button>
                                             <button
-                                                onClick={() => setViewLayout('qr')}
+                                                onClick={() => {
+                                                    // QR needs full-width section cards — sync top view so section icons match content
+                                                    setSyncSectionViews(true);
+                                                    setViewLayout('qr');
+                                                }}
                                                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${viewLayout === 'qr'
                                                     ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
                                                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
@@ -4310,6 +4338,29 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 </svg>
                                             </button>
                                         </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setSyncSectionViews((prev) => !prev)}
+                                            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-all ${
+                                                syncSectionViews
+                                                    ? 'bg-brand-50 dark:bg-brand-900/30 border-brand-300 dark:border-brand-700 text-brand-700 dark:text-brand-300'
+                                                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'
+                                            }`}
+                                            title={syncSectionViews
+                                                ? 'Top View controls all sections. Click to allow per-section layouts.'
+                                                : 'Sections use their own layouts. Click so top View controls all sections.'}
+                                            aria-pressed={syncSectionViews}
+                                            aria-label="Apply top view to all sections"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 shrink-0">
+                                                {syncSectionViews ? (
+                                                    <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                                                ) : (
+                                                    <path d="M10 3a.75.75 0 01.75.75v5.5h5.5a.75.75 0 010 1.5h-5.5v5.5a.75.75 0 01-1.5 0v-5.5h-5.5a.75.75 0 010-1.5h5.5v-5.5A.75.75 0 0110 3z" />
+                                                )}
+                                            </svg>
+                                            <span className="hidden sm:inline">{syncSectionViews ? 'Sections follow top' : 'Per-section views'}</span>
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -4519,13 +4570,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     // Per-section link layout: saved preference > forceStackedView > global view
                                     const shouldForceStacked = section.forceStackedView === true;
                                     const sectionLinkLayout = getSectionLinkLayout(section);
+                                    const isQrLayout = sectionLinkLayout === 'qr';
                                     const resolvedLinkContainerClass =
                                         sectionLinkLayout === 'grid'
                                             ? 'linknest-content-link-grid-cards'
                                             : sectionLinkLayout === 'compact'
                                                 ? 'linknest-content-link-list-compact'
-                                                : sectionLinkLayout === 'qr'
-                                                    ? 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4'
+                                                : isQrLayout
+                                                    ? 'linknest-qr-grid'
                                                     : sectionLinkLayout === 'stacked'
                                                         ? 'space-y-4'
                                                         : 'linknest-content-link-grid';
@@ -4533,18 +4585,24 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     return (
                                         <div
                                             key={section.id}
-                                            style={{ animationDelay: `${sectionIndex * 120}ms` }}
+                                            style={{ animationDelay: isQrLayout ? undefined : `${sectionIndex * 120}ms` }}
                                             data-view-layout={sectionLinkLayout}
-                                            className={`linknest-content-section bg-white/80 dark:bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-200/80 dark:border-slate-700/50 shadow-sm ${
-                                                sectionLinkLayout === 'compact' || sectionLinkLayout === 'qr' ? 'p-4' : 'p-6'
+                                            className={`linknest-content-section bg-white/80 dark:bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-200/80 dark:border-slate-700/50 shadow-sm relative ${
+                                                isQrLayout
+                                                    ? 'p-4 overflow-hidden col-span-full'
+                                                    : sectionLinkLayout === 'compact'
+                                                        ? 'p-4'
+                                                        : 'p-6'
                                             } ${
-                                                tile.pageAnimation && tile.pageAnimation !== 'none'
+                                                !isQrLayout && tile.pageAnimation && tile.pageAnimation !== 'none'
                                                     ? getTileAnimationClass(tile.pageAnimation as TileAnimation)
-                                                    : 'animate-in fade-in slide-in-from-bottom-2'
+                                                    : isQrLayout
+                                                        ? ''
+                                                        : 'animate-in fade-in slide-in-from-bottom-2'
                                             }`}
                                         >
                                             {/* Section Title + per-section link view toggle */}
-                                            <div className={`flex items-start justify-between gap-3 ${sectionLinkLayout === 'compact' ? 'mb-3' : 'mb-5'}`}>
+                                            <div className={`flex items-start justify-between gap-3 ${sectionLinkLayout === 'compact' || isQrLayout ? 'mb-3' : 'mb-5'}`}>
                                                 {section.title ? (
                                                     <h3
                                                         className={`linknest-content-section-title font-bold flex items-center gap-3 min-w-0 ${sectionLinkLayout === 'compact' ? 'text-base' : 'text-lg'} ${!section.textColor ? 'text-slate-800 dark:text-white' : ''}`}
@@ -4558,8 +4616,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 )}
                                                 {!shouldForceStacked && (
                                                     <div
-                                                        className="flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 shrink-0"
-                                                        title="Link layout for this section"
+                                                        className={`flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 shrink-0 ${
+                                                            syncSectionViews ? 'opacity-60' : ''
+                                                        }`}
+                                                        title={syncSectionViews
+                                                            ? 'Following top View — click a layout to unlock per-section control'
+                                                            : 'Link layout for this section'}
                                                         onClick={(e) => e.stopPropagation()}
                                                     >
                                                         <button
@@ -4642,7 +4704,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             </div>
 
                                             {/* Links and Rich Text */}
-                                            <div className={resolvedLinkContainerClass}>
+                                            <div
+                                                className={resolvedLinkContainerClass}
+                                                style={
+                                                    isQrLayout
+                                                        ? {
+                                                              display: 'grid',
+                                                              gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))',
+                                                              gap: '1.25rem',
+                                                              width: '100%',
+                                                              alignItems: 'stretch',
+                                                          }
+                                                        : undefined
+                                                }
+                                            >
                                                 {(() => {
                                                     // Merge links and rich text, sort by position
                                                     const sortedItems = [
@@ -4701,22 +4776,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             return (
                                                                 <div
                                                                     key={link.id}
-                                                                    style={{ animationDelay: `${animationDelay}ms` }}
-                                                                    className={`linknest-content-link flex flex-col items-center text-center gap-3 p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 shadow-sm ${
-                                                                        isBroken ? 'border-red-300 dark:border-red-500/50' : ''
-                                                                    } ${getTileAnimationClass(resolveLinkAnimation(link.animation, tile.linksAnimation))}`}
+                                                                    className="linknest-qr-card flex flex-col items-center text-center gap-3 p-4 rounded-2xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 shadow-sm w-full min-w-0 max-w-full overflow-hidden"
+                                                                    style={{ opacity: 1, position: 'relative', zIndex: 0 }}
                                                                     title={link.tooltip || link.label}
                                                                 >
-                                                                    <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-100 shadow-sm">
+                                                                    <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm w-full flex justify-center max-w-[280px]">
                                                                         <BrandedQRCode
-                                                                            value={link.url}
-                                                                            size={isMobile ? 240 : 200}
+                                                                            value={link.url || ''}
+                                                                            size={isMobile ? 220 : 200}
                                                                             title={`QR code for ${link.label}`}
-                                                                            className=""
+                                                                            className="w-full flex justify-center [&_svg]:max-w-full [&_svg]:h-auto"
                                                                         />
                                                                     </div>
-                                                                    <div className="min-w-0 w-full space-y-1">
-                                                                        <div className="flex items-center justify-center gap-1.5 px-1">
+                                                                    <div className="min-w-0 w-full space-y-1 px-1">
+                                                                        <div className="flex items-center justify-center gap-1.5">
                                                                             {link.icon ? (
                                                                                 <span className="text-base leading-none shrink-0" aria-hidden>{link.icon}</span>
                                                                             ) : null}
@@ -4724,32 +4797,40 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 {link.label}
                                                                             </p>
                                                                         </div>
-                                                                        <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-mono truncate px-1" title={link.url}>
+                                                                        <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-mono truncate" title={link.url}>
                                                                             {getDisplayUrl(link.url)}
                                                                         </p>
                                                                     </div>
-                                                                    <div className="flex items-center gap-2">
-                                                                        <a
-                                                                            href={link.url}
-                                                                            target="_blank"
-                                                                            rel="noopener noreferrer"
-                                                                            className="text-xs font-medium text-brand-600 dark:text-brand-400 hover:underline"
-                                                                            onClick={(e) => e.stopPropagation()}
-                                                                        >
-                                                                            Open link
-                                                                        </a>
-                                                                        <span className="text-slate-300 dark:text-slate-600" aria-hidden>·</span>
-                                                                        <button
-                                                                            type="button"
-                                                                            className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400"
-                                                                            onClick={(e) => {
-                                                                                e.preventDefault();
-                                                                                e.stopPropagation();
-                                                                                setQrDialogState({ url: link.url, label: link.label });
-                                                                            }}
-                                                                        >
-                                                                            Enlarge
-                                                                        </button>
+                                                                    <div className="flex items-center justify-center gap-2 flex-wrap">
+                                                                        {link.url ? (
+                                                                            <a
+                                                                                href={link.url}
+                                                                                target="_blank"
+                                                                                rel="noopener noreferrer"
+                                                                                className="text-xs font-medium text-brand-600 dark:text-brand-400 hover:underline"
+                                                                                onClick={(e) => e.stopPropagation()}
+                                                                            >
+                                                                                Open link
+                                                                            </a>
+                                                                        ) : (
+                                                                            <span className="text-xs text-slate-400">No URL</span>
+                                                                        )}
+                                                                        {link.url ? (
+                                                                            <>
+                                                                                <span className="text-slate-300 dark:text-slate-600" aria-hidden>·</span>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400"
+                                                                                    onClick={(e) => {
+                                                                                        e.preventDefault();
+                                                                                        e.stopPropagation();
+                                                                                        setQrDialogState({ url: link.url, label: link.label });
+                                                                                    }}
+                                                                                >
+                                                                                    Enlarge
+                                                                                </button>
+                                                                            </>
+                                                                        ) : null}
                                                                     </div>
                                                                 </div>
                                                             );
