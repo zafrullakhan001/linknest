@@ -38,6 +38,13 @@ import { QRCodeDialog } from './QRCodeDialog';
 import { BrandedQRCode } from './BrandedQRCode';
 import { MobileTileEdit } from './MobileTileEdit';
 import { useMobile } from '../hooks/useMobile';
+import {
+    HierarchyViewSwitcher,
+    TileHierarchyViews,
+    readHierarchyViewPreference,
+    writeHierarchyViewPreference,
+    type HierarchyViewMode,
+} from './TileHierarchyViews';
 import { VersionDiffViewer } from './VersionDiffViewer';
 import { TileAnimationSelector, getTileAnimationClass, TileAnimation, getAnimationOption, resolveLinkAnimation } from './TileAnimationSelector';
 import { AuthSourceBadge } from './AuthSourceBadge';
@@ -503,9 +510,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [isEditing, setIsEditing] = useState(false);
     const autoSavingRef = useRef(false);
     const tempVersionCreatedRef = useRef<{ tileId: string | null; active: boolean }>({ tileId: null, active: false });
-    const sectionLinksJsonInputRef = useRef<HTMLInputElement>(null);
+    const sectionLinksImportInputRef = useRef<HTMLInputElement>(null);
     const tabJsonInputRef = useRef<HTMLInputElement>(null);
-    const pendingSectionJsonImportRef = useRef<{ tabId: string; sectionId: string } | null>(null);
+    const pendingSectionImportRef = useRef<{ tabId: string; sectionId: string } | null>(null);
     const pendingTabJsonImportAfterRef = useRef<string | null>(null);
 
     // Edit State
@@ -515,6 +522,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editingIntro, setEditingIntro] = useState(false);
     const [expandedTabs, setExpandedTabs] = useState<Set<string>>(new Set());
     const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+    const [hierarchyView, setHierarchyView] = useState<HierarchyViewMode>(() => readHierarchyViewPreference());
+
+    const changeHierarchyView = (mode: HierarchyViewMode) => {
+        setHierarchyView(mode);
+        writeHierarchyViewPreference(mode);
+        if (mode !== 'cards' && editTabs.length > 0) {
+            setExpandedTabs(new Set(editTabs.map(t => t.id)));
+        }
+    };
     const [editEmoji, setEditEmoji] = useState(tile.emoji);
     const [editColor, setEditColor] = useState<ThemeColor>(tile.themeColor);
     const [editVisibility, setEditVisibility] = useState<TileVisibility>(tile.visibility || 'public');
@@ -674,8 +690,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const headerActionsMenuRef = useRef<HTMLDivElement>(null);
 
     // CSV Import State
-    const [csvImportFile, setCsvImportFile] = useState<Record<string, File | null>>({});
-    const [importingCsv, setImportingCsv] = useState<Record<string, boolean>>({});
+    const [importingSectionLinks, setImportingSectionLinks] = useState<Record<string, boolean>>({});
 
     // Add Link Form Visibility State
     const [showAddLinkForm, setShowAddLinkForm] = useState<Record<string, boolean>>({});
@@ -1081,6 +1096,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             setIsEditing(true);
         }
     }, [isEditing]);
+
+    // Tree/Compact: expand all tabs once when entering those views with none expanded
+    useEffect(() => {
+        if (!isEditing || hierarchyView === 'cards' || editTabs.length === 0) return;
+        setExpandedTabs(prev => {
+            if (prev.size > 0) return prev;
+            return new Set(editTabs.map(t => t.id));
+        });
+    }, [isEditing, hierarchyView, editTabs.length]);
 
     // Refresh editTabs when entering edit mode to ensure we have the latest data
     // AND create a temp version snapshot once per edit session
@@ -2211,6 +2235,46 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setEditTabs(editTabs.map(t => t.id === tabId ? { ...t, textColor: normalizedColor } : t));
     };
 
+    const handleUpdateSectionColor = (tabId: string, sectionId: string, textColor: string) => {
+        const normalizedColor = textColor && textColor.trim() ? textColor : undefined;
+        setEditTabs(editTabs.map(t => {
+            if (t.id !== tabId) return t;
+            return {
+                ...t,
+                sections: t.sections.map(s =>
+                    s.id === sectionId ? { ...s, textColor: normalizedColor } : s
+                )
+            };
+        }));
+    };
+
+    const handleToggleForceStacked = (tabId: string, sectionId: string, value: boolean) => {
+        setEditTabs(editTabs.map(t => {
+            if (t.id !== tabId) return t;
+            return {
+                ...t,
+                sections: t.sections.map(s =>
+                    s.id === sectionId ? { ...s, forceStackedView: value } : s
+                )
+            };
+        }));
+    };
+
+    const expandTabAndSection = (tabId: string, sectionId: string) => {
+        setExpandedTabs(prev => new Set(prev).add(tabId));
+        setExpandedSections(prev => new Set(prev).add(sectionId));
+    };
+
+    /** Open Cards editor for a deep form without overwriting the saved view preference. */
+    const openCardsForEditing = (anchorId?: string) => {
+        setHierarchyView('cards');
+        if (anchorId) {
+            window.setTimeout(() => {
+                document.getElementById(anchorId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 80);
+        }
+    };
+
     const handleMoveTab = (tabId: string, direction: 'up' | 'down') => {
         const index = editTabs.findIndex(t => t.id === tabId);
         if (index === -1) return;
@@ -2802,174 +2866,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     };
 
-    // CSV Import Function
-    const handleImportLinksFromCSV = async (tabId: string, sectionId: string) => {
-        const file = csvImportFile[sectionId];
-        if (!file) {
-            alert('Please select a CSV file first');
-            return;
-        }
-
-        setImportingCsv(prev => ({ ...prev, [sectionId]: true }));
-
-        try {
-            const text = await file.text();
-            const lines = text.split('\n').filter(line => line.trim());
-
-            if (lines.length < 2) {
-                alert('CSV file must have at least a header row and one data row');
-                setImportingCsv(prev => ({ ...prev, [sectionId]: false }));
-                return;
-            }
-
-            // Parse header row
-            const headerLine = lines[0];
-            const headers = headerLine.split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
-
-            // Find column indices
-            const labelIndex = headers.findIndex(h =>
-                h === 'link name' || h === 'linkname' || h === 'name' || h === 'label' || h === 'title'
-            );
-            const urlIndex = headers.findIndex(h =>
-                h === 'link' || h === 'url' || h === 'link url' || h === 'linkurl' || h === 'href'
-            );
-
-            if (labelIndex === -1 || urlIndex === -1) {
-                alert('CSV file must contain "Link Name" and "Link" columns');
-                setImportingCsv(prev => ({ ...prev, [sectionId]: false }));
-                return;
-            }
-
-            // Parse data rows
-            const newLinks: Link[] = [];
-            let importedCount = 0;
-            let skippedCount = 0;
-
-            for (let i = 1; i < lines.length; i++) {
-                const line = lines[i].trim();
-                if (!line) continue;
-
-                // Handle CSV parsing with quoted fields
-                const values: string[] = [];
-                let current = '';
-                let inQuotes = false;
-
-                for (let j = 0; j < line.length; j++) {
-                    const char = line[j];
-                    if (char === '"') {
-                        // Handle escaped quotes
-                        if (j + 1 < line.length && line[j + 1] === '"' && inQuotes) {
-                            current += '"';
-                            j++; // Skip next quote
-                        } else {
-                            inQuotes = !inQuotes;
-                        }
-                    } else if (char === ',' && !inQuotes) {
-                        values.push(current.trim());
-                        current = '';
-                    } else {
-                        current += char;
-                    }
-                }
-                // Add the last field
-                values.push(current.trim());
-
-                // Ensure we have enough columns
-                if (values.length <= Math.max(labelIndex, urlIndex)) {
-                    skippedCount++;
-                    continue;
-                }
-
-                const label = values[labelIndex]?.trim().replace(/^["']|["']$/g, '') || '';
-                const url = values[urlIndex]?.trim().replace(/^["']|["']$/g, '') || '';
-
-                if (label && url) {
-                    const newLink: Link = {
-                        id: generateId(),
-                        label: label,
-                        url: url.startsWith('http://') || url.startsWith('https://') ? url : `https://${url}`,
-                        visibility: 'public',
-                        notes: undefined,
-                        tooltip: undefined
-                    };
-                    newLinks.push(newLink);
-                    importedCount++;
-                } else {
-                    skippedCount++;
-                }
-            }
-
-            if (newLinks.length === 0) {
-                alert('No valid links found in CSV file');
-                setImportingCsv(prev => ({ ...prev, [sectionId]: false }));
-                return;
-            }
-
-            // Add links to section
-            if (editTabs.length > 0) {
-                // New structure with tabs
-                setEditTabs(editTabs.map(tab => {
-                    if (tab.id === tabId) {
-                        return {
-                            ...tab,
-                            sections: tab.sections.map(s => {
-                                if (s.id === sectionId) {
-                                    return { ...s, links: [...s.links, ...newLinks], richTextContent: s.richTextContent || [] };
-                                }
-                                return s;
-                            })
-                        };
-                    }
-                    return tab;
-                }));
-            } else {
-                // Backward compatibility: sections without tabs
-                setEditSections(editSections.map(s => {
-                    if (s.id === sectionId) {
-                        return { ...s, links: [...s.links, ...newLinks], richTextContent: s.richTextContent || [] };
-                    }
-                    return s;
-                }));
-            }
-
-            // Clear file input
-            setCsvImportFile(prev => ({ ...prev, [sectionId]: null }));
-
-            alert(`Successfully imported ${importedCount} link(s)${skippedCount > 0 ? ` (${skippedCount} row(s) skipped)` : ''}`);
-        } catch (error) {
-            console.error('CSV import error:', error);
-            alert('Failed to import CSV file: ' + (error instanceof Error ? error.message : 'Unknown error'));
-        } finally {
-            setImportingCsv(prev => ({ ...prev, [sectionId]: false }));
-        }
-    };
-
-    const openSectionLinksJsonImport = (tabId: string, sectionId: string) => {
-        pendingSectionJsonImportRef.current = { tabId, sectionId };
-        sectionLinksJsonInputRef.current?.click();
-    };
-
-    const handleSectionLinksJsonFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        e.target.value = '';
-        const pending = pendingSectionJsonImportRef.current;
-        pendingSectionJsonImportRef.current = null;
-        if (!file || !pending) return;
-        try {
-            const text = await file.text();
-            const data = JSON.parse(text);
-            const newLinks = parseSectionLinksExport(data);
-            if (newLinks.length === 0) {
-                alert('No links found in this file.');
-                return;
-            }
+    const appendLinksToSection = (tabId: string, sectionId: string, newLinks: Link[]) => {
+        if (editTabs.length > 0) {
             setEditTabs(prev =>
                 prev.map(tab => {
-                    if (tab.id !== pending.tabId) return tab;
+                    if (tab.id !== tabId) return tab;
                     return {
                         ...tab,
                         sections: tab.sections.map(s => {
-                            if (s.id !== pending.sectionId) return s;
+                            if (s.id !== sectionId) return s;
                             const linkPos = (s.links || []).map(l => l.position ?? 0);
                             const rtPos = (s.richTextContent || []).map(r => r.position ?? 0);
                             const maxPosition = Math.max(...linkPos, ...rtPos, -1);
@@ -2986,10 +2891,134 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     };
                 })
             );
-            alert(`Imported ${newLinks.length} link(s) from JSON.`);
+        } else {
+            setEditSections(prev =>
+                prev.map(s => {
+                    if (s.id !== sectionId) return s;
+                    return { ...s, links: [...s.links, ...newLinks], richTextContent: s.richTextContent || [] };
+                })
+            );
+        }
+    };
+
+    const importLinksFromCsvFile = async (file: File): Promise<Link[]> => {
+        const text = await file.text();
+        const lines = text.split('\n').filter(line => line.trim());
+
+        if (lines.length < 2) {
+            throw new Error('CSV file must have at least a header row and one data row');
+        }
+
+        const headerLine = lines[0];
+        const headers = headerLine.split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
+
+        const labelIndex = headers.findIndex(h =>
+            h === 'link name' || h === 'linkname' || h === 'name' || h === 'label' || h === 'title'
+        );
+        const urlIndex = headers.findIndex(h =>
+            h === 'link' || h === 'url' || h === 'link url' || h === 'linkurl' || h === 'href'
+        );
+
+        if (labelIndex === -1 || urlIndex === -1) {
+            throw new Error('CSV file must contain "Link Name" and "Link" (or URL) columns');
+        }
+
+        const newLinks: Link[] = [];
+        let skippedCount = 0;
+
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue;
+
+            const values: string[] = [];
+            let current = '';
+            let inQuotes = false;
+
+            for (let j = 0; j < line.length; j++) {
+                const char = line[j];
+                if (char === '"') {
+                    if (j + 1 < line.length && line[j + 1] === '"' && inQuotes) {
+                        current += '"';
+                        j++;
+                    } else {
+                        inQuotes = !inQuotes;
+                    }
+                } else if (char === ',' && !inQuotes) {
+                    values.push(current.trim());
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            values.push(current.trim());
+
+            if (values.length <= Math.max(labelIndex, urlIndex)) {
+                skippedCount++;
+                continue;
+            }
+
+            const label = values[labelIndex]?.trim().replace(/^["']|["']$/g, '') || '';
+            const url = values[urlIndex]?.trim().replace(/^["']|["']$/g, '') || '';
+
+            if (label && url) {
+                newLinks.push({
+                    id: generateId(),
+                    label,
+                    url: url.startsWith('http://') || url.startsWith('https://') ? url : `https://${url}`,
+                    visibility: 'public',
+                    notes: undefined,
+                    tooltip: undefined
+                });
+            } else {
+                skippedCount++;
+            }
+        }
+
+        if (newLinks.length === 0) {
+            throw new Error('No valid links found in CSV file');
+        }
+
+        return newLinks;
+    };
+
+    const openSectionLinksImport = (tabId: string, sectionId: string) => {
+        pendingSectionImportRef.current = { tabId, sectionId };
+        sectionLinksImportInputRef.current?.click();
+    };
+
+    const handleSectionLinksImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        const pending = pendingSectionImportRef.current;
+        pendingSectionImportRef.current = null;
+        if (!file || !pending) return;
+
+        const ext = file.name.split('.').pop()?.toLowerCase() || '';
+        setImportingSectionLinks(prev => ({ ...prev, [pending.sectionId]: true }));
+
+        try {
+            if (ext === 'json') {
+                const text = await file.text();
+                const data = JSON.parse(text);
+                const newLinks = parseSectionLinksExport(data);
+                if (newLinks.length === 0) {
+                    alert('No links found in this file.');
+                    return;
+                }
+                appendLinksToSection(pending.tabId, pending.sectionId, newLinks);
+                alert(`Imported ${newLinks.length} link(s) from JSON.`);
+            } else if (ext === 'csv') {
+                const newLinks = await importLinksFromCsvFile(file);
+                appendLinksToSection(pending.tabId, pending.sectionId, newLinks);
+                alert(`Successfully imported ${newLinks.length} link(s) from CSV.`);
+            } else {
+                alert('Unsupported file type. Please choose a .json or .csv file.');
+            }
         } catch (err) {
             console.error(err);
-            alert(err instanceof Error ? err.message : 'Failed to import links JSON.');
+            alert(err instanceof Error ? err.message : 'Failed to import links.');
+        } finally {
+            setImportingSectionLinks(prev => ({ ...prev, [pending.sectionId]: false }));
         }
     };
 
@@ -6925,24 +6954,27 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                         {/* RIGHT COLUMN: Tab and Section Manager */}
                         <div className="lg:col-span-2 space-y-6">
-                            <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-700">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-lg bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center">
+                            <div className="flex items-center justify-between gap-3 pb-4 border-b border-slate-200 dark:border-slate-700 flex-wrap">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <div className="w-10 h-10 rounded-lg bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center shrink-0">
                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
                                         </svg>
                                     </div>
-                                    <h3 className="text-lg font-bold text-slate-800 dark:text-white">Manage Tabs & Sections</h3>
+                                    <h3 className="text-lg font-bold text-slate-800 dark:text-white truncate">Manage Tabs & Sections</h3>
                                 </div>
-                                <button
-                                    onClick={handleAddTab}
-                                    className="bg-brand-600 hover:bg-brand-500 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 flex items-center gap-2"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                                    </svg>
-                                    Add Tab
-                                </button>
+                                <div className="flex items-center gap-2 flex-wrap justify-end">
+                                    <HierarchyViewSwitcher value={hierarchyView} onChange={changeHierarchyView} />
+                                    <button
+                                        onClick={handleAddTab}
+                                        className="bg-brand-600 hover:bg-brand-500 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 flex items-center gap-2"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                        </svg>
+                                        Add Tab
+                                    </button>
+                                </div>
                             </div>
 
                             {/* Link Search Box */}
@@ -7037,12 +7069,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                             <div className="space-y-6">
                                 <input
-                                    ref={sectionLinksJsonInputRef}
+                                    ref={sectionLinksImportInputRef}
                                     type="file"
-                                    accept=".json,application/json"
+                                    accept=".json,.csv,application/json,text/csv"
                                     className="hidden"
                                     aria-hidden={true}
-                                    onChange={handleSectionLinksJsonFile}
+                                    onChange={handleSectionLinksImportFile}
                                 />
                                 <input
                                     ref={tabJsonInputRef}
@@ -7054,6 +7086,68 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 />
                                 {/* Render tabs if available, otherwise fall back to sections (backward compatibility) */}
                                 {editTabs.length > 0 ? (
+                                    hierarchyView !== 'cards' ? (
+                                        <div className="space-y-3">
+                                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                                                {hierarchyView === 'tree' ? 'Tree' : 'Compact'} view — use the ⋯ menu for actions. Opening Edit / Add switches to Cards for the full form (your preferred view stays saved).
+                                            </p>
+                                            <TileHierarchyViews
+                                                mode={hierarchyView}
+                                                tabs={editTabs}
+                                                expandedTabs={expandedTabs}
+                                                expandedSections={expandedSections}
+                                                selectedLinkIds={selectedLinkIds}
+                                                linkSearchTerm={linkSearchTerm}
+                                                canDeleteTabs={tile.canDeleteTabs !== false && (tile.canDeleteTabs !== undefined || !!tile.canEdit)}
+                                                onToggleTab={toggleTab}
+                                                onToggleSection={toggleSection}
+                                                onAddSection={handleAddSection}
+                                                onRemoveTab={handleRemoveTab}
+                                                onRemoveSection={handleRemoveSection}
+                                                onCloneTab={handleCloneTab}
+                                                onCloneSection={handleCloneSection}
+                                                onCloneLink={handleCloneLink}
+                                                onRemoveLink={handleRemoveLinkFromSection}
+                                                onMoveTab={handleMoveTab}
+                                                onMoveSection={handleMoveSection}
+                                                onMoveItem={handleMoveItem}
+                                                onUpdateTabColor={handleUpdateTabColor}
+                                                onUpdateSectionColor={handleUpdateSectionColor}
+                                                onToggleForceStacked={handleToggleForceStacked}
+                                                onImportTab={openTabJsonImport}
+                                                onImportSection={openSectionLinksImport}
+                                                onScheduleTab={(tabId) => setSchedulingDialogTab(tabId)}
+                                                onScheduleSection={(tabId, sectionId) => setSchedulingDialogSection({ tabId, sectionId })}
+                                                onScheduleLink={(tabId, sectionId, linkId) => setSchedulingDialogLink({ tabId, sectionId, linkId })}
+                                                onVisibilityTab={(tabId) => setVisibilityDialogTab(tabId)}
+                                                onVisibilitySection={(tabId, sectionId) => setVisibilityDialogSection({ tabId, sectionId })}
+                                                onEditLink={(tabId, sectionId, link) => {
+                                                    expandTabAndSection(tabId, sectionId);
+                                                    handleStartEditLink(link);
+                                                    openCardsForEditing(`link-${link.id}`);
+                                                }}
+                                                onEditRichText={(tabId, sectionId, richTextId) => {
+                                                    expandTabAndSection(tabId, sectionId);
+                                                    setEditingRichTextId(prev => ({ ...prev, [sectionId]: richTextId }));
+                                                    openCardsForEditing(`link-${richTextId}`);
+                                                }}
+                                                onDeleteRichText={handleDeleteRichText}
+                                                onCloneRichText={handleCloneRichText}
+                                                onAddLink={(tabId, sectionId) => {
+                                                    expandTabAndSection(tabId, sectionId);
+                                                    setShowAddLinkForm(prev => ({ ...prev, [sectionId]: true }));
+                                                    openCardsForEditing(`tab-${tabId}`);
+                                                }}
+                                                onAddRichText={(tabId, sectionId) => {
+                                                    expandTabAndSection(tabId, sectionId);
+                                                    setShowAddRichTextForm(prev => ({ ...prev, [sectionId]: true }));
+                                                    openCardsForEditing(`tab-${tabId}`);
+                                                }}
+                                                onToggleLinkSelection={toggleLinkSelection}
+                                                onToggleFavorite={handleToggleLinkFavorite}
+                                            />
+                                        </div>
+                                    ) : (
                                     editTabs.map((tab, tabIndex) => {
                                         // Generate a color for visual identification based on tab index
                                         const tabColorIndex = tabIndex % 6;
@@ -7161,9 +7255,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     </button>
                                                     <button
                                                         type="button"
-                                                        onClick={() => exportTabToFile(tab)}
+                                                        onClick={() => openTabJsonImport(tab.id)}
                                                         className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2"
-                                                        title="Export tab as JSON (all sections, links, and rich text)"
+                                                        title="Import tab from JSON (inserts after this tab)"
                                                     >
                                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
                                                             <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
@@ -7171,9 +7265,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     </button>
                                                     <button
                                                         type="button"
-                                                        onClick={() => openTabJsonImport(tab.id)}
+                                                        onClick={() => exportTabToFile(tab)}
                                                         className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2"
-                                                        title="Import tab from JSON (inserts after this tab)"
+                                                        title="Export tab as JSON (all sections, links, and rich text)"
                                                     >
                                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
                                                             <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
@@ -7442,82 +7536,32 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     </div>
                                                                     <button
                                                                         type="button"
+                                                                        onClick={() => openSectionLinksImport(tab.id, section.id)}
+                                                                        disabled={!!importingSectionLinks[section.id]}
+                                                                        className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2 shrink-0 disabled:opacity-50"
+                                                                        title="Import links from JSON or CSV (detected by file extension)"
+                                                                    >
+                                                                        {importingSectionLinks[section.id] ? (
+                                                                            <svg className="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                                            </svg>
+                                                                        ) : (
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                                                                            </svg>
+                                                                        )}
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
                                                                         onClick={() => exportSectionLinksToFile(section)}
                                                                         className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2 shrink-0"
                                                                         title="Export links in this section as JSON"
                                                                     >
                                                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                                                                        </svg>
-                                                                    </button>
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => openSectionLinksJsonImport(tab.id, section.id)}
-                                                                        className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2 shrink-0"
-                                                                        title="Import links from JSON (LinkNest section links export)"
-                                                                    >
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
                                                                             <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
                                                                         </svg>
                                                                     </button>
-                                                                    {/* CSV Import */}
-                                                                    <div className="flex items-center gap-1">
-                                                                        <label className="cursor-pointer">
-                                                                            <input
-                                                                                type="file"
-                                                                                accept=".csv,text/csv"
-                                                                                className="hidden"
-                                                                                onChange={(e) => {
-                                                                                    const file = e.target.files?.[0] || null;
-                                                                                    setCsvImportFile(prev => ({ ...prev, [section.id]: file }));
-                                                                                }}
-                                                                            />
-                                                                            <span className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2" title="Import links from CSV (requires 'Link Name' and 'Link' columns)">
-                                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-                                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                                                                                </svg>
-                                                                            </span>
-                                                                        </label>
-                                                                        {csvImportFile[section.id] && (
-                                                                            <div className="flex items-center gap-1">
-                                                                                <span className="text-xs text-slate-500 dark:text-slate-400 max-w-[100px] truncate" title={csvImportFile[section.id]?.name}>
-                                                                                    {csvImportFile[section.id]?.name}
-                                                                                </span>
-                                                                                <button
-                                                                                    onClick={() => handleImportLinksFromCSV(tab.id, section.id)}
-                                                                                    disabled={importingCsv[section.id]}
-                                                                                    className="bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-2 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1"
-                                                                                    title="Import CSV"
-                                                                                >
-                                                                                    {importingCsv[section.id] ? (
-                                                                                        <>
-                                                                                            <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                                                                            </svg>
-                                                                                            Importing...
-                                                                                        </>
-                                                                                    ) : (
-                                                                                        <>
-                                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3">
-                                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                                                                                            </svg>
-                                                                                            Import
-                                                                                        </>
-                                                                                    )}
-                                                                                </button>
-                                                                                <button
-                                                                                    onClick={() => setCsvImportFile(prev => ({ ...prev, [section.id]: null }))}
-                                                                                    className="text-slate-400 hover:text-red-500 p-1"
-                                                                                    title="Clear file"
-                                                                                >
-                                                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                                                                        <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                                                                                    </svg>
-                                                                                </button>
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
                                                                     <button
                                                                         onClick={() => handleCloneSection(tab.id, section.id)}
                                                                         className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2"
@@ -8907,6 +8951,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             </div>
                                         );
                                     })
+                                    )
                                 ) : (
                                     // Backward compatibility: Render sections without tabs
                                     editSections.map((section, index) => {
