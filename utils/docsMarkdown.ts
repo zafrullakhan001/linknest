@@ -70,7 +70,14 @@ export function renderDocsHtml(markdown: string): string {
     const source = codeBuf.join('\n');
     if (codeLang === 'mermaid') {
       out.push(
-        `<div class="mermaid-diagram my-4 overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/60 p-4"><div class="mermaid">${escapeHtml(source)}</div></div>`
+        `<div class="mermaid-diagram my-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/60 overflow-hidden" data-mermaid-diagram="1">` +
+          `<div class="mermaid-toolbar flex flex-wrap items-center justify-end gap-1.5 px-2.5 py-1.5 border-b border-slate-200 dark:border-slate-700 bg-slate-50/90 dark:bg-slate-800/80">` +
+          `<button type="button" data-mermaid-action="copy" class="mermaid-tool-btn" title="Copy Mermaid source">Copy</button>` +
+          `<button type="button" data-mermaid-action="live" class="mermaid-tool-btn" title="Open in Mermaid Live">Mermaid Live</button>` +
+          `<button type="button" data-mermaid-action="refresh" class="mermaid-tool-btn" title="Re-render this diagram">Refresh</button>` +
+          `</div>` +
+          `<div class="mermaid-canvas overflow-x-auto p-4"><div class="mermaid">${escapeHtml(source)}</div></div>` +
+          `</div>`
       );
     } else {
       out.push(

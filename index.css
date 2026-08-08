@@ -7813,3 +7813,31 @@ body {
 .docs-reader .mermaid .edgeLabel {
   background-color: transparent;
 }
+
+/* Mermaid diagram toolbar (Help Guides) */
+.docs-reader .mermaid-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.55rem;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.25;
+  border-radius: 0.375rem;
+  border: 1px solid rgb(203 213 225);
+  background: white;
+  color: rgb(51 65 85);
+  cursor: pointer;
+}
+.docs-reader .mermaid-tool-btn:hover {
+  background: rgb(241 245 249);
+  border-color: rgb(148 163 184);
+}
+.dark .docs-reader .mermaid-tool-btn {
+  border-color: rgb(71 85 105);
+  background: rgb(30 41 59);
+  color: rgb(226 232 240);
+}
+.dark .docs-reader .mermaid-tool-btn:hover {
+  background: rgb(51 65 85);
+}
