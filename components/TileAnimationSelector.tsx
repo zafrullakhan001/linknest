@@ -492,6 +492,12 @@ interface TileAnimationSelectorProps {
     scopeLabel?: string;
     scopeHint?: string;
     buttonTitle?: string;
+    /** Controlled open state for the picker dialog. */
+    open?: boolean;
+    /** Called when the picker opens or closes. */
+    onOpenChange?: (open: boolean) => void;
+    /** Hide the trigger button (use with controlled `open` from an external control). */
+    hideTrigger?: boolean;
 }
 
 export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
@@ -505,13 +511,23 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
     scopeLabel,
     scopeHint,
     buttonTitle,
+    open,
+    onOpenChange,
+    hideTrigger = false,
 }) => {
     const [selectedAnimation, setSelectedAnimation] = useState<TileAnimation>(
         value || (includeInherit ? 'inherit' : 'fade-in')
     );
     const [selectedDecoration, setSelectedDecoration] = useState<TileDecoration>('none');
     const [activeTab, setActiveTab] = useState<'animations' | 'decorations'>('animations');
-    const [isOpen, setIsOpen] = useState(false);
+    const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+    const isControlled = open !== undefined;
+    const isOpen = isControlled ? open : uncontrolledOpen;
+    const setIsOpen = (next: boolean | ((prev: boolean) => boolean)) => {
+        const resolved = typeof next === 'function' ? next(isOpen) : next;
+        if (!isControlled) setUncontrolledOpen(resolved);
+        onOpenChange?.(resolved);
+    };
     const [searchQuery, setSearchQuery] = useState('');
     const buttonRef = useRef<HTMLButtonElement>(null);
     const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
@@ -609,31 +625,38 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
 
     // Update dropdown position when opened
     useEffect(() => {
-        if (isOpen && buttonRef.current) {
-            const rect = buttonRef.current.getBoundingClientRect();
+        if (isOpen) {
             const dropdownWidth = 360;
+            const dropdownHeight = 480;
             const viewportWidth = window.innerWidth;
+            const viewportHeight = window.innerHeight;
+            const rect = buttonRef.current?.getBoundingClientRect();
+            const hasUsableTrigger = !!rect && rect.width > 0 && rect.height > 0 && !hideTrigger;
 
-            // Center the dropdown on mobile, or align to button on desktop
-            let leftPosition;
-            if (viewportWidth < 640) {
-                // Mobile: center the dropdown
-                leftPosition = (viewportWidth - dropdownWidth) / 2;
+            let leftPosition: number;
+            let topPosition: number;
+
+            if (viewportWidth < 640 || !hasUsableTrigger) {
+                leftPosition = Math.max(16, (viewportWidth - Math.min(dropdownWidth, viewportWidth - 32)) / 2);
+                topPosition = Math.max(16, Math.min(
+                    hasUsableTrigger ? rect!.bottom + 8 : (viewportHeight - Math.min(dropdownHeight, viewportHeight - 32)) / 2,
+                    viewportHeight - 32
+                ));
             } else {
-                // Desktop: align to right edge of button, but ensure it doesn't go off-screen
                 leftPosition = Math.min(
-                    rect.right + window.scrollX - dropdownWidth,
-                    viewportWidth - dropdownWidth - 16 // 16px margin from edge
+                    rect!.right - dropdownWidth,
+                    viewportWidth - dropdownWidth - 16
                 );
-                leftPosition = Math.max(16, leftPosition); // Ensure 16px margin from left edge
+                leftPosition = Math.max(16, leftPosition);
+                topPosition = rect!.bottom + 8;
             }
 
             setDropdownPosition({
-                top: rect.bottom + window.scrollY + 8,
+                top: topPosition,
                 left: leftPosition,
             });
         }
-    }, [isOpen]);
+    }, [isOpen, hideTrigger]);
 
     // Esc closes the animation/decoration picker on all screen sizes
     useEffect(() => {
@@ -709,6 +732,7 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
     return (
         <>
             {/* Trigger Button */}
+            {!hideTrigger && (
             <div className="flex items-center">
                 <button
                     ref={buttonRef}
@@ -742,19 +766,20 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
                     </svg>
                 </button>
             </div>
+            )}
 
             {/* Dropdown Menu - Rendered via Portal */}
             {isOpen && createPortal(
                 <>
                     {/* Backdrop */}
                     <div
-                        className="fixed inset-0 z-[9999]"
+                        className="fixed inset-0 z-[10060]"
                         onClick={() => setIsOpen(false)}
                     />
 
                     {/* Options Panel */}
                     <div
-                        className="fixed w-[360px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[10000] overflow-hidden"
+                        className="fixed w-[min(360px,calc(100vw-32px))] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[10070] overflow-hidden"
                         style={{
                             top: `${dropdownPosition.top}px`,
                             left: `${dropdownPosition.left}px`,

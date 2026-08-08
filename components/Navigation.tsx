@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { useMobile } from '../hooks/useMobile';
 import { getDisabledTabsFromSettings } from '../services/tabVisibilityService';
 import { ProfileMenu } from './ProfileMenu';
+import { QRCodeDialog } from './QRCodeDialog';
 
 interface NavigationProps {
   darkMode: boolean;
@@ -43,6 +44,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
   const disabledTabs = getDisabledTabsFromSettings(settings);
   // Tablets / narrow desktops: hide company logo so centered brand + widgets don't collide
   const isCompactNav = useMobile(1280);
+  const [showAppQrDialog, setShowAppQrDialog] = useState(false);
 
   const handleLogout = async () => {
     try {
@@ -62,6 +64,10 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
     (settings.logo_type === 'image' && settings.logo_image ? logoSize : 32) + 16,
     settings.app_subheading ? 72 : 64
   );
+  const appShareUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}${window.location.pathname}${window.location.search}#/`
+    : '#/';
+  const appShareLabel = settings.app_name || 'LinkNest';
 
   return (
     <nav className="linknest-nav fixed top-0 left-0 right-0 border-b border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md z-[100] transition-colors duration-300">
@@ -333,6 +339,22 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
           {/* System Section */}
           <div className="flex items-center gap-1">
             <button
+              onClick={() => setShowAppQrDialog(true)}
+              className="linknest-nav-icon p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
+              title="Share app URL via QR code"
+              aria-label="Share app URL via QR code"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+                <rect x="14" y="3" width="7" height="7" rx="1"></rect>
+                <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+                <path d="M14 14h3v3h-3z"></path>
+                <path d="M17 17h3v3h-3z"></path>
+                <path d="M14 20h3"></path>
+                <path d="M20 14v3"></path>
+              </svg>
+            </button>
+            <button
               onClick={toggleDarkMode}
               className="linknest-nav-icon p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
               title={darkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
@@ -364,6 +386,13 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
           {user && <ProfileMenu onLogout={handleLogout} />}
         </div>
       </div>
+
+      <QRCodeDialog
+        isOpen={showAppQrDialog}
+        onClose={() => setShowAppQrDialog(false)}
+        url={appShareUrl}
+        label={appShareLabel}
+      />
     </nav>
   );
 };

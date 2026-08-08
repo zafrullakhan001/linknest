@@ -7,6 +7,7 @@ import { TileAnimationSelector, useTileAnimation, getTileAnimationClass, getTile
 import { getPublicFavorites, checkLocalStorageAvailability, togglePublicFavorite, isPublicFavorite, getPublicLinkFavorites } from '../services/publicFavoritesService';
 import { getFavoriteLinks, FavoriteLink } from '../services/storageService';
 import { getDisplayUrl } from '../utils/urlDisplay';
+import { QRCodeDialog } from './QRCodeDialog';
 
 function stripHtml(html: string): string {
   if (!html || typeof html !== 'string') return '';
@@ -100,6 +101,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
   onUpdateTiles
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [showAppQrDialog, setShowAppQrDialog] = useState(false);
   const { user: authUser, logout } = useAuth();
   const { loading: settingsLoading } = useSettings();
   const user = userProp || authUser;
@@ -505,6 +507,10 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
   const logoSize = Math.min(28, Math.max(16, (parseInt(settings.logo_size || '32', 10) || 32) * 0.75));
   const drawerLogoSize = Math.min(48, Math.max(28, parseInt(settings.header_logo_size || '40', 10) || 40));
   const navMinHeight = Math.max(52, logoSize + 16, settings.app_subheading ? 56 : 52);
+  const appShareUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}${window.location.pathname}${window.location.search}#/`
+    : '#/';
+  const appShareLabel = settings.app_name || 'LinkNest';
 
   return (
     <div className="w-full min-h-screen bg-slate-50 dark:bg-slate-900 pb-6">
@@ -778,6 +784,27 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                       <span>Your Apps</span>
                     </button>
                   )}
+
+                  {/* Share app URL via QR — available to everyone including public/guests */}
+                  <div className="my-2 border-t border-slate-200 dark:border-slate-700"></div>
+                  <button
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      setShowAppQrDialog(true);
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 touch-manipulation"
+                    style={{ minHeight: '44px' }}
+                    title="Show QR code to share this app"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                      <path fillRule="evenodd" d="M3 4a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm2 1v1h1V5H5zM3 12a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3zm2 1v1h1v-1H5zM12 3a1 1 0 00-1 1v3a1 1 0 001 1h3a1 1 0 001-1V4a1 1 0 00-1-1h-3zm1 2v1h1V5h-1z" clipRule="evenodd" />
+                      <path d="M11 12h1v1h-1v-1zM13 12h1v1h-1v-1zM15 12h1v1h-1v-1zM11 14h1v1h-1v-1zM13 14h1v1h-1v-1zM15 14h1v1h-1v-1zM11 16h1v1h-1v-1zM13 16h1v1h-1v-1zM15 16h1v1h-1v-1z" />
+                    </svg>
+                    <div className="flex flex-col items-start min-w-0">
+                      <span className="font-medium">QR Code</span>
+                      <span className="text-[11px] text-slate-400 dark:text-slate-500">Share app URL</span>
+                    </div>
+                  </button>
 
                   {/* Admin Panel - Only for admin users */}
                   {user?.is_admin && !disabledTabs.has('admin') && (
@@ -1104,6 +1131,13 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
           </div>
         ) : null}
       </div>
+
+      <QRCodeDialog
+        isOpen={showAppQrDialog}
+        onClose={() => setShowAppQrDialog(false)}
+        url={appShareUrl}
+        label={appShareLabel}
+      />
     </div>
   );
 };
