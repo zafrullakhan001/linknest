@@ -215,9 +215,9 @@ function handleRegister() {
     
     // Create user (unapproved by default)
     $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-    $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, created_at) VALUES (?, ?, ?, 0, 0, ?, ?)');
+    $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, uuid, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?)');
     
-    if ($stmt->execute([$username, $email, $passwordHash, 'local', time()])) {
+    if ($stmt->execute([$username, $email, $passwordHash, 'local', generateUuid(), time()])) {
         $userId = $db->lastInsertId();
         
         // Don't auto-login, user needs approval
@@ -785,8 +785,8 @@ function handleLogin() {
                 $ldapUser['email'] = 'duplicate_' . time() . '_' . $ldapUser['email'];
             }
             
-            $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, created_at) VALUES (?, ?, ?, 0, 0, ?, ?)');
-            if ($stmt->execute([$username, $ldapUser['email'], $passwordHash, 'ldap', time()])) {
+            $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, uuid, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?)');
+            if ($stmt->execute([$username, $ldapUser['email'], $passwordHash, 'ldap', generateUuid(), time()])) {
                 $user = [
                     'id' => $db->lastInsertId(),
                     'username' => $username,
@@ -2816,9 +2816,9 @@ function handleAddLocalUser() {
     
     // Create user (unapproved by default, as per requirement)
     $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-    $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, created_at) VALUES (?, ?, ?, 0, 0, ?, ?)');
+    $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, uuid, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?)');
     
-    if ($stmt->execute([$username, $email, $passwordHash, 'local', time()])) {
+    if ($stmt->execute([$username, $email, $passwordHash, 'local', generateUuid(), time()])) {
         $userId = $db->lastInsertId();
         sendJSON([
             'success' => true,
@@ -2954,9 +2954,9 @@ function handleAddLdapUser() {
         $randomPass = bin2hex(random_bytes(16));
         $passwordHash = password_hash($randomPass, PASSWORD_DEFAULT);
         
-        $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, created_at) VALUES (?, ?, ?, 0, 0, ?, ?)');
+        $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, uuid, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?)');
         
-        if ($stmt->execute([$username, $email, $passwordHash, 'ldap', time()])) {
+        if ($stmt->execute([$username, $email, $passwordHash, 'ldap', generateUuid(), time()])) {
             $userId = $db->lastInsertId();
             sendJSON([
                 'success' => true,
@@ -3104,9 +3104,9 @@ function handleBulkImportLocalUsers() {
             
             // Create user
             $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-            $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, created_at) VALUES (?, ?, ?, 0, 0, ?, ?)');
+            $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, uuid, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?)');
             
-            if ($stmt->execute([$username, $email, $passwordHash, 'local', time()])) {
+            if ($stmt->execute([$username, $email, $passwordHash, 'local', generateUuid(), time()])) {
                 $results['success'][] = [
                     'line' => $line,
                     'username' => $username,
@@ -3618,9 +3618,9 @@ function handleBulkImportLdapUsers() {
             $randomPass = bin2hex(random_bytes(16));
             $passwordHash = password_hash($randomPass, PASSWORD_DEFAULT);
             
-            $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, created_at) VALUES (?, ?, ?, 0, 0, ?, ?)');
+            $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, uuid, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?)');
             
-            if ($stmt->execute([$username, $email, $passwordHash, 'ldap', time()])) {
+            if ($stmt->execute([$username, $email, $passwordHash, 'ldap', generateUuid(), time()])) {
                 $results['success'][] = [
                     'index' => $index + 1,
                     'username' => $username,
@@ -3804,12 +3804,12 @@ function handleBulkImportSamlUsers() {
             $passwordHash = password_hash(bin2hex(random_bytes(16)), PASSWORD_DEFAULT);
             
             try {
-                $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, saml_nameid, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?)');
-                $stmt->execute([$username, $email, $passwordHash, 'saml', $samlNameId, time()]);
+                $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, saml_nameid, uuid, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?, ?)');
+                $stmt->execute([$username, $email, $passwordHash, 'saml', $samlNameId, generateUuid(), time()]);
             } catch (PDOException $e) {
                 // If saml_nameid column doesn't exist, insert without it
-                $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, created_at) VALUES (?, ?, ?, 0, 0, ?, ?)');
-                $stmt->execute([$username, $email, $passwordHash, 'saml', time()]);
+                $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, uuid, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?)');
+                $stmt->execute([$username, $email, $passwordHash, 'saml', generateUuid(), time()]);
             }
             
             if ($stmt->rowCount() > 0) {
@@ -4320,16 +4320,17 @@ function handleGetUserInfo($userId) {
         sendJSON(['error' => 'Authentication required'], 401);
     }
     
-    $stmt = $db->prepare('SELECT id, username, email, is_admin FROM users WHERE id = ?');
+    $stmt = $db->prepare('SELECT id, username, email, is_admin, uuid FROM users WHERE id = ?');
     $stmt->execute([$userId]);
     $userInfo = $stmt->fetch(PDO::FETCH_ASSOC);
-    
+
     if (!$userInfo) {
         sendJSON(['error' => 'User not found'], 404);
     }
-    
+
     sendJSON([
         'userId' => (int)$userInfo['id'],
+        'userUuid' => !empty($userInfo['uuid']) ? $userInfo['uuid'] : null,
         'username' => $userInfo['username'],
         'email' => $userInfo['email'],
         'isAdmin' => (bool)$userInfo['is_admin']

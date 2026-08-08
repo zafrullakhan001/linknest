@@ -3,6 +3,7 @@ import { createTile, getTiles } from '../services/storageService';
 import { parseSpaceExportObject, normalizeImportedTiles } from '../services/spaceTransferService';
 import { settingsService } from '../services/settingsService';
 import { useAuth } from '../contexts/AuthContext';
+import { generateUuid } from '../services/idService';
 
 interface Bookmark {
   title: string;
@@ -992,7 +993,7 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
         } else {
           // New tile
           const newTile = { ...tile };
-          newTile.id = generateId('tile', mergedTiles.length);
+          newTile.id = generateUuid();
           tileMap.set(key, newTile);
           mergedTiles.push(newTile);
         }
@@ -1191,7 +1192,7 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
 
       // Ensure tile has valid ID
       if (!newTile.id || newTile.id.startsWith('tile_')) {
-        newTile.id = generateId('tile', tileIndex);
+        newTile.id = generateUuid();
       }
 
       // Process tabs

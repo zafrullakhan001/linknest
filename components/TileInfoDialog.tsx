@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Tile } from '../types';
-import { FaTimes } from 'react-icons/fa';
+import { FaTimes, FaCheck, FaCopy } from 'react-icons/fa';
 
 interface TileAdmin {
   userId: number;
@@ -30,6 +30,7 @@ interface TileInfo {
   title: string;
   owner: {
     userId: number | null;
+    userUuid?: string | null;
     username: string | null;
     email: string | null;
   };
@@ -76,6 +77,7 @@ interface CategoryInfo {
   }>;
   owner?: {
     userId: number | null;
+    userUuid?: string | null;
     username: string | null;
     email: string | null;
     isAdmin: boolean;
@@ -89,7 +91,191 @@ interface TileInfoDialogProps {
   categoryInfo?: CategoryInfo;
 }
 
+type AccentTone = 'sky' | 'amber' | 'teal' | 'emerald' | 'violet' | 'rose' | 'indigo';
+
+const ACCENT_STYLES: Record<AccentTone, { bar: string; iconBg: string; card: string; ring: string }> = {
+  sky: {
+    bar: 'bg-sky-500',
+    iconBg: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
+    card: 'bg-gradient-to-br from-sky-50 to-slate-50 dark:from-sky-950/40 dark:to-slate-900/60 border-sky-100 dark:border-sky-900/40',
+    ring: 'ring-sky-200/60 dark:ring-sky-800/40',
+  },
+  amber: {
+    bar: 'bg-amber-500',
+    iconBg: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+    card: 'bg-gradient-to-br from-amber-50 to-slate-50 dark:from-amber-950/40 dark:to-slate-900/60 border-amber-100 dark:border-amber-900/40',
+    ring: 'ring-amber-200/60 dark:ring-amber-800/40',
+  },
+  teal: {
+    bar: 'bg-teal-500',
+    iconBg: 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300',
+    card: 'bg-gradient-to-br from-teal-50 to-slate-50 dark:from-teal-950/40 dark:to-slate-900/60 border-teal-100 dark:border-teal-900/40',
+    ring: 'ring-teal-200/60 dark:ring-teal-800/40',
+  },
+  emerald: {
+    bar: 'bg-emerald-500',
+    iconBg: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+    card: 'bg-gradient-to-br from-emerald-50 to-slate-50 dark:from-emerald-950/40 dark:to-slate-900/60 border-emerald-100 dark:border-emerald-900/40',
+    ring: 'ring-emerald-200/60 dark:ring-emerald-800/40',
+  },
+  violet: {
+    bar: 'bg-violet-500',
+    iconBg: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300',
+    card: 'bg-gradient-to-br from-violet-50 to-slate-50 dark:from-violet-950/40 dark:to-slate-900/60 border-violet-100 dark:border-violet-900/40',
+    ring: 'ring-violet-200/60 dark:ring-violet-800/40',
+  },
+  rose: {
+    bar: 'bg-rose-500',
+    iconBg: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
+    card: 'bg-gradient-to-br from-rose-50 to-slate-50 dark:from-rose-950/40 dark:to-slate-900/60 border-rose-100 dark:border-rose-900/40',
+    ring: 'ring-rose-200/60 dark:ring-rose-800/40',
+  },
+  indigo: {
+    bar: 'bg-indigo-500',
+    iconBg: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300',
+    card: 'bg-gradient-to-br from-indigo-50 to-slate-50 dark:from-indigo-950/40 dark:to-slate-900/60 border-indigo-100 dark:border-indigo-900/40',
+    ring: 'ring-indigo-200/60 dark:ring-indigo-800/40',
+  },
+};
+
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+
+const InfoRow: React.FC<{
+  label: string;
+  labelEmoji?: string;
+  children: React.ReactNode;
+  stack?: boolean;
+}> = ({ label, labelEmoji, children, stack }) => (
+  <div className={`flex gap-3 ${stack ? 'flex-col items-stretch' : 'justify-between items-start gap-4'}`}>
+    <span className="text-slate-600 dark:text-slate-400 font-medium text-sm shrink-0 flex items-center gap-1.5">
+      {labelEmoji && <span className="text-base leading-none" aria-hidden="true">{labelEmoji}</span>}
+      {label}
+    </span>
+    <div className={`${stack ? 'w-full' : 'text-right min-w-0 flex-1'} text-slate-900 dark:text-white`}>
+      {children}
+    </div>
+  </div>
+);
+
+const SectionCard: React.FC<{
+  emoji: string;
+  title: string;
+  accent: AccentTone;
+  children: React.ReactNode;
+}> = ({ emoji, title, accent, children }) => {
+  const styles = ACCENT_STYLES[accent];
+  return (
+    <section>
+      <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2.5">
+        <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-base ${styles.iconBg}`} aria-hidden="true">
+          {emoji}
+        </span>
+        <span className={`w-1 h-5 rounded-full ${styles.bar}`} />
+        {title}
+      </h3>
+      <div className={`rounded-xl border p-4 space-y-3.5 ring-1 ${styles.card} ${styles.ring}`}>
+        {children}
+      </div>
+    </section>
+  );
+};
+
+const StatusBadge: React.FC<{
+  allowed: boolean;
+  allowLabel?: string;
+  denyLabel?: string;
+}> = ({ allowed, allowLabel = 'Allowed', denyLabel = 'Denied' }) => (
+  <span
+    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${
+      allowed
+        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
+        : 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300'
+    }`}
+  >
+    <span aria-hidden="true">{allowed ? '✅' : '🚫'}</span>
+    {allowed ? allowLabel : denyLabel}
+  </span>
+);
+
+const VisibilityBadge: React.FC<{ visibility: string }> = ({ visibility }) => {
+  const map: Record<string, { emoji: string; className: string }> = {
+    public: {
+      emoji: '🌎',
+      className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
+    },
+    authenticated: {
+      emoji: '🔐',
+      className: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300',
+    },
+    private: {
+      emoji: '🔒',
+      className: 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300',
+    },
+  };
+  const style = map[visibility] || map.private;
+  return (
+    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${style.className}`}>
+      <span aria-hidden="true">{style.emoji}</span>
+      {visibility.charAt(0).toUpperCase() + visibility.slice(1)}
+    </span>
+  );
+};
+
+const SourceTabBadge: React.FC<{ sourceTab: string }> = ({ sourceTab }) => {
+  const className =
+    sourceTab === 'Staging tab'
+      ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+      : sourceTab === 'Private tab'
+        ? 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300'
+        : 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200';
+  const emoji = sourceTab === 'Staging tab' ? '🚧' : sourceTab === 'Private tab' ? '🔑' : '📢';
+  return (
+    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${className}`}>
+      <span aria-hidden="true">{emoji}</span>
+      {sourceTab}
+    </span>
+  );
+};
+
+const CopyableId: React.FC<{ value: string }> = ({ value }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Ignore clipboard errors
+    }
+  };
+
+  return (
+    <div className="inline-flex items-center gap-2 max-w-full">
+      <code className="font-mono text-xs sm:text-sm text-slate-800 dark:text-slate-100 bg-white/80 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700 rounded-md px-2 py-1 break-all text-left">
+        {value}
+      </code>
+      <button
+        type="button"
+        onClick={handleCopy}
+        className="shrink-0 p-1.5 rounded-md text-slate-500 hover:text-brand-600 hover:bg-white dark:hover:bg-slate-700 dark:hover:text-brand-300 transition-colors"
+        title={copied ? 'Copied' : 'Copy ID'}
+        aria-label={copied ? 'Copied' : 'Copy ID'}
+      >
+        {copied ? <FaCheck className="w-3.5 h-3.5 text-emerald-500" /> : <FaCopy className="w-3.5 h-3.5" />}
+      </button>
+    </div>
+  );
+};
+
+const PermCheck: React.FC<{ ok: boolean; label: string }> = ({ ok, label }) => (
+  <div className="flex justify-between items-center gap-2 rounded-lg bg-white/60 dark:bg-slate-950/30 px-2.5 py-1.5">
+    <span className="text-slate-600 dark:text-slate-400 text-xs">{label}</span>
+    <span className={`text-xs font-semibold ${ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+      {ok ? '✓' : '✗'}
+    </span>
+  </div>
+);
 
 export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
   isOpen,
@@ -110,7 +296,6 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
     }
   }, [isOpen, tile?.id, categoryInfo]);
 
-  // Handle ESC key to close dialog
   useEffect(() => {
     const handleEscKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
@@ -129,18 +314,18 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
 
   const fetchTileInfo = async () => {
     if (!tile) return;
-    
+
     setLoading(true);
     setError(null);
     try {
       const response = await fetch(`${API_BASE}/tiles/${tile.id}/info`, {
         credentials: 'include'
       });
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch tile information');
       }
-      
+
       const data = await response.json();
       setTileInfo(data);
     } catch (err) {
@@ -165,7 +350,7 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
   const formatRelativeTime = (timestamp: number): string => {
     const now = Math.floor(Date.now() / 1000);
     const diff = now - timestamp;
-    
+
     if (diff < 60) return 'just now';
     if (diff < 3600) return `${Math.floor(diff / 60)} minutes ago`;
     if (diff < 86400) return `${Math.floor(diff / 3600)} hours ago`;
@@ -176,35 +361,52 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
 
   if (!isOpen) return null;
 
+  const headerTitle = categoryInfo ? categoryInfo.categoryName : (tileInfo?.title || tile?.title || 'Tile');
+  const headerEmoji = categoryInfo ? '📂' : '🧩';
+  const headerSubtitle = categoryInfo ? 'Category details & permissions' : 'Space metadata, ownership & access';
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 dark:bg-opacity-70" onClick={onClose}>
-      <div 
-        className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto"
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 dark:bg-black/70 backdrop-blur-[2px]" onClick={onClose}>
+      <div
+        className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-hidden border border-slate-200/80 dark:border-slate-700"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-4 flex items-center justify-between rounded-t-xl">
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
-            {categoryInfo ? `Category: ${categoryInfo.categoryName}` : 'Tile Information'}
-          </h2>
+        <div className="sticky top-0 z-10 border-b border-sky-100 dark:border-slate-700 bg-gradient-to-r from-sky-50 via-white to-indigo-50 dark:from-slate-800 dark:via-slate-800 dark:to-indigo-950/40 px-5 sm:px-6 py-4 flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 text-white shadow-md shadow-sky-500/20 flex items-center justify-center text-xl shrink-0" aria-hidden="true">
+              {headerEmoji}
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] uppercase tracking-[0.14em] font-semibold text-sky-700/80 dark:text-sky-300/80">
+                {categoryInfo ? 'Category Information' : 'Tile Information'}
+              </p>
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white truncate">
+                {headerTitle}
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{headerSubtitle}</p>
+            </div>
+          </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+            className="p-2 hover:bg-white/80 dark:hover:bg-slate-700 rounded-lg transition-colors shrink-0"
             aria-label="Close"
           >
             <FaTimes className="w-5 h-5 text-slate-500 dark:text-slate-400" />
           </button>
         </div>
 
-        <div className="p-6">
+        <div className="p-5 sm:p-6 overflow-y-auto max-h-[calc(90vh-5.5rem)]">
           {categoryInfo ? (
             <CategoryInfoView categoryInfo={categoryInfo} formatDate={formatDate} formatRelativeTime={formatRelativeTime} />
           ) : loading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600"></div>
+            <div className="flex flex-col items-center justify-center py-14 gap-3">
+              <div className="animate-spin rounded-full h-9 w-9 border-2 border-sky-200 border-t-sky-600 dark:border-sky-900 dark:border-t-sky-400"></div>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Loading tile details…</p>
             </div>
           ) : error ? (
-            <div className="text-center py-12">
-              <p className="text-red-600 dark:text-red-400">{error}</p>
+            <div className="text-center py-12 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-4">
+              <div className="text-3xl mb-2" aria-hidden="true">⚠️</div>
+              <p className="text-rose-700 dark:text-rose-300 font-medium">{error}</p>
             </div>
           ) : tileInfo ? (
             <TileInfoView tileInfo={tileInfo} formatDate={formatDate} formatRelativeTime={formatRelativeTime} />
@@ -221,377 +423,169 @@ const TileInfoView: React.FC<{
   formatRelativeTime: (ts: number) => string;
 }> = ({ tileInfo, formatDate, formatRelativeTime }) => {
   return (
-    <div className="space-y-6">
-      {/* Basic Information */}
-      <section>
-        <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
-          <span className="w-1 h-6 bg-brand-600 rounded"></span>
-          Basic Information
-        </h3>
-        <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-3">
-          <div className="flex justify-between">
-            <span className="text-slate-600 dark:text-slate-400 font-medium">Title:</span>
-            <span className="text-slate-900 dark:text-white">{tileInfo.title}</span>
+    <div className="space-y-5">
+      <SectionCard emoji="📋" title="Basic Information" accent="sky">
+        <InfoRow label="Title" labelEmoji="🏷️">
+          <span className="font-semibold">{tileInfo.title}</span>
+        </InfoRow>
+        <InfoRow label="ID" labelEmoji="🆔" stack>
+          <div className="flex justify-end">
+            <CopyableId value={tileInfo.tileId} />
           </div>
-          <div className="flex justify-between">
-            <span className="text-slate-600 dark:text-slate-400 font-medium">ID:</span>
-            <span className="text-slate-900 dark:text-white font-mono text-sm">{tileInfo.tileId}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-600 dark:text-slate-400 font-medium">Visibility:</span>
-            <span className={`px-2 py-1 rounded text-xs font-medium ${
-              tileInfo.visibility === 'public' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
-              tileInfo.visibility === 'authenticated' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' :
-              'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400'
-            }`}>
-              {tileInfo.visibility.charAt(0).toUpperCase() + tileInfo.visibility.slice(1)}
-            </span>
-          </div>
-          {tileInfo.sourceTab && (
-            <div className="flex justify-between">
-              <span className="text-slate-600 dark:text-slate-400 font-medium">Source tab:</span>
-              <span className={`px-2 py-1 rounded text-xs font-medium ${
-                tileInfo.sourceTab === 'Staging tab' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400' :
-                tileInfo.sourceTab === 'Private tab' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400' :
-                'bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-300'
-              }`}>
-                {tileInfo.sourceTab}
-              </span>
-            </div>
-          )}
-        </div>
-      </section>
+        </InfoRow>
+        <InfoRow label="Visibility" labelEmoji="👁️">
+          <VisibilityBadge visibility={tileInfo.visibility} />
+        </InfoRow>
+        {tileInfo.sourceTab && (
+          <InfoRow label="Source tab" labelEmoji="📑">
+            <SourceTabBadge sourceTab={tileInfo.sourceTab} />
+          </InfoRow>
+        )}
+      </SectionCard>
 
-      {/* Ownership */}
-      <section>
-        <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
-          <span className="w-1 h-6 bg-brand-600 rounded"></span>
-          Ownership
-        </h3>
-        <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-3">
-          {tileInfo.owner.userId ? (
-            <>
-              <div className="flex justify-between">
-                <span className="text-slate-600 dark:text-slate-400 font-medium">Owner:</span>
-                <span className="text-slate-900 dark:text-white">{tileInfo.owner.username || 'Unknown'}</span>
+      <SectionCard emoji="👤" title="Ownership" accent="amber">
+        {tileInfo.owner.userId ? (
+          <>
+            <InfoRow label="Owner" labelEmoji="✨">
+              <span className="font-semibold">{tileInfo.owner.username || 'Unknown'}</span>
+            </InfoRow>
+            {tileInfo.owner.email && (
+              <InfoRow label="Email" labelEmoji="📧">
+                <span className="break-all">{tileInfo.owner.email}</span>
+              </InfoRow>
+            )}
+            <InfoRow label="User ID" labelEmoji="🔑" stack>
+              <div className="flex justify-end">
+                <CopyableId value={String(tileInfo.owner.userUuid || tileInfo.owner.userId)} />
               </div>
-              {tileInfo.owner.email && (
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-400 font-medium">Email:</span>
-                  <span className="text-slate-900 dark:text-white">{tileInfo.owner.email}</span>
-                </div>
-              )}
-              <div className="flex justify-between">
-                <span className="text-slate-600 dark:text-slate-400 font-medium">User ID:</span>
-                <span className="text-slate-900 dark:text-white font-mono text-sm">{tileInfo.owner.userId}</span>
-              </div>
-            </>
-          ) : (
-            <div className="text-slate-600 dark:text-slate-400">No owner assigned</div>
-          )}
-        </div>
-      </section>
+            </InfoRow>
+          </>
+        ) : (
+          <div className="text-slate-600 dark:text-slate-400 text-sm flex items-center gap-2">
+            <span aria-hidden="true">📭</span> No owner assigned
+          </div>
+        )}
+      </SectionCard>
 
-      {/* Timestamps */}
-      <section>
-        <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
-          <span className="w-1 h-6 bg-brand-600 rounded"></span>
-          Timestamps
-        </h3>
-        <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-3">
-          <div className="flex justify-between items-start">
-            <span className="text-slate-600 dark:text-slate-400 font-medium">Created:</span>
-            <div className="text-right">
-              <div className="text-slate-900 dark:text-white">{formatDate(tileInfo.createdAt)}</div>
-              <div className="text-xs text-slate-500 dark:text-slate-500">{formatRelativeTime(tileInfo.createdAt)}</div>
-            </div>
+      <SectionCard emoji="⏱️" title="Timestamps" accent="teal">
+        <InfoRow label="Created" labelEmoji="🌱">
+          <div>
+            <div className="font-medium text-sm">{formatDate(tileInfo.createdAt)}</div>
+            <div className="text-xs text-teal-700/80 dark:text-teal-300/80">{formatRelativeTime(tileInfo.createdAt)}</div>
           </div>
-          <div className="flex justify-between items-start">
-            <span className="text-slate-600 dark:text-slate-400 font-medium">Last Modified:</span>
-            <div className="text-right">
-              <div className="text-slate-900 dark:text-white">{formatDate(tileInfo.lastModified)}</div>
-              <div className="text-xs text-slate-500 dark:text-slate-500">{formatRelativeTime(tileInfo.lastModified)}</div>
-            </div>
+        </InfoRow>
+        <InfoRow label="Last Modified" labelEmoji="✏️">
+          <div>
+            <div className="font-medium text-sm">{formatDate(tileInfo.lastModified)}</div>
+            <div className="text-xs text-teal-700/80 dark:text-teal-300/80">{formatRelativeTime(tileInfo.lastModified)}</div>
           </div>
-          {tileInfo.archivedAt && (
-            <div className="flex justify-between items-start">
-              <span className="text-slate-600 dark:text-slate-400 font-medium">Archived:</span>
-              <div className="text-right">
-                <div className="text-slate-900 dark:text-white">{formatDate(tileInfo.archivedAt)}</div>
-                <div className="text-xs text-slate-500 dark:text-slate-500">{formatRelativeTime(tileInfo.archivedAt)}</div>
-              </div>
+        </InfoRow>
+        {tileInfo.archivedAt && (
+          <InfoRow label="Archived" labelEmoji="📦">
+            <div>
+              <div className="font-medium text-sm">{formatDate(tileInfo.archivedAt)}</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">{formatRelativeTime(tileInfo.archivedAt)}</div>
             </div>
-          )}
-          {tileInfo.deletedAt && (
-            <div className="flex justify-between items-start">
-              <span className="text-slate-600 dark:text-slate-400 font-medium">Deleted:</span>
-              <div className="text-right">
-                <div className="text-slate-900 dark:text-white">{formatDate(tileInfo.deletedAt)}</div>
-                <div className="text-xs text-slate-500 dark:text-slate-500">{formatRelativeTime(tileInfo.deletedAt)}</div>
-              </div>
+          </InfoRow>
+        )}
+        {tileInfo.deletedAt && (
+          <InfoRow label="Deleted" labelEmoji="🗑️">
+            <div>
+              <div className="font-medium text-sm text-rose-700 dark:text-rose-300">{formatDate(tileInfo.deletedAt)}</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">{formatRelativeTime(tileInfo.deletedAt)}</div>
             </div>
-          )}
-        </div>
-      </section>
+          </InfoRow>
+        )}
+      </SectionCard>
 
-      {/* Permissions */}
-      <section>
-        <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
-          <span className="w-1 h-6 bg-brand-600 rounded"></span>
-          Your Permissions
-        </h3>
-        <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-3">
-          <div className="flex justify-between">
-            <span className="text-slate-600 dark:text-slate-400 font-medium">View:</span>
-            <span className={`px-2 py-1 rounded text-xs font-medium ${
-              tileInfo.permissions.canView 
-                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' 
-                : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
-            }`}>
-              {tileInfo.permissions.canView ? 'Allowed' : 'Denied'}
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-600 dark:text-slate-400 font-medium">Edit:</span>
-            <span className={`px-2 py-1 rounded text-xs font-medium ${
-              tileInfo.permissions.canEdit 
-                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' 
-                : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
-            }`}>
-              {tileInfo.permissions.canEdit ? 'Allowed' : 'Denied'}
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-600 dark:text-slate-400 font-medium">Delete:</span>
-            <span className={`px-2 py-1 rounded text-xs font-medium ${
-              tileInfo.permissions.canDelete 
-                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' 
-                : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
-            }`}>
-              {tileInfo.permissions.canDelete ? 'Allowed' : 'Denied'}
-            </span>
-          </div>
-          
-          {/* Show granular permissions if user is a tile admin */}
-          {tileInfo.granularPermissions && (
-            <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
-              <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wider">
-                Your Granular Permissions
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-400">Add Links:</span>
-                  <span className={tileInfo.granularPermissions.canAddLinks ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                    {tileInfo.granularPermissions.canAddLinks ? '✓' : '✗'}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-400">Add Sections:</span>
-                  <span className={tileInfo.granularPermissions.canAddSections ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                    {tileInfo.granularPermissions.canAddSections ? '✓' : '✗'}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-400">Add Tabs:</span>
-                  <span className={tileInfo.granularPermissions.canAddTabs ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                    {tileInfo.granularPermissions.canAddTabs ? '✓' : '✗'}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-400">Edit Links:</span>
-                  <span className={tileInfo.granularPermissions.canEditLinks ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                    {tileInfo.granularPermissions.canEditLinks ? '✓' : '✗'}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-400">Delete Links:</span>
-                  <span className={tileInfo.granularPermissions.canDeleteLinks ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                    {tileInfo.granularPermissions.canDeleteLinks ? '✓' : '✗'}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-400">Delete Sections:</span>
-                  <span className={tileInfo.granularPermissions.canDeleteSections ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                    {tileInfo.granularPermissions.canDeleteSections ? '✓' : '✗'}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-400">Delete Tabs:</span>
-                  <span className={tileInfo.granularPermissions.canDeleteTabs ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                    {tileInfo.granularPermissions.canDeleteTabs ? '✓' : '✗'}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-400">Change Visibility:</span>
-                  <span className={tileInfo.granularPermissions.canChangeVisibility ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                    {tileInfo.granularPermissions.canChangeVisibility ? '✓' : '✗'}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-400">Change Browser:</span>
-                  <span className={tileInfo.granularPermissions.canChangeBrowser ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                    {tileInfo.granularPermissions.canChangeBrowser ? '✓' : '✗'}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-400">Clone Tile:</span>
-                  <span className={tileInfo.granularPermissions.canCloneTile ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                    {tileInfo.granularPermissions.canCloneTile ? '✓' : '✗'}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-400">Tile Card Info:</span>
-                  <span className={tileInfo.granularPermissions.canViewTileInfo ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                    {tileInfo.granularPermissions.canViewTileInfo ? '✓' : '✗'}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-400">Edit Tile Settings:</span>
-                  <span className={tileInfo.granularPermissions.canEditTile ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                    {tileInfo.granularPermissions.canEditTile ? '✓' : '✗'}
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </section>
+      <SectionCard emoji="🛡️" title="Your Permissions" accent="emerald">
+        <InfoRow label="View" labelEmoji="👀">
+          <StatusBadge allowed={tileInfo.permissions.canView} />
+        </InfoRow>
+        <InfoRow label="Edit" labelEmoji="🖊️">
+          <StatusBadge allowed={tileInfo.permissions.canEdit} />
+        </InfoRow>
+        <InfoRow label="Delete" labelEmoji="🗑️">
+          <StatusBadge allowed={tileInfo.permissions.canDelete} />
+        </InfoRow>
 
-      {/* Tile Admins */}
+        {tileInfo.granularPermissions && (
+          <div className="mt-2 pt-3 border-t border-emerald-200/70 dark:border-emerald-900/50">
+            <div className="text-[11px] font-semibold text-emerald-800 dark:text-emerald-300 mb-2.5 uppercase tracking-wider flex items-center gap-1.5">
+              <span aria-hidden="true">🎛️</span> Granular permissions
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <PermCheck ok={tileInfo.granularPermissions.canAddLinks} label="Add Links" />
+              <PermCheck ok={tileInfo.granularPermissions.canAddSections} label="Add Sections" />
+              <PermCheck ok={tileInfo.granularPermissions.canAddTabs} label="Add Tabs" />
+              <PermCheck ok={tileInfo.granularPermissions.canEditLinks} label="Edit Links" />
+              <PermCheck ok={tileInfo.granularPermissions.canDeleteLinks} label="Delete Links" />
+              <PermCheck ok={tileInfo.granularPermissions.canDeleteSections} label="Delete Sections" />
+              <PermCheck ok={tileInfo.granularPermissions.canDeleteTabs} label="Delete Tabs" />
+              <PermCheck ok={tileInfo.granularPermissions.canChangeVisibility} label="Change Visibility" />
+              <PermCheck ok={tileInfo.granularPermissions.canChangeBrowser} label="Change Browser" />
+              <PermCheck ok={tileInfo.granularPermissions.canCloneTile} label="Clone Tile" />
+              <PermCheck ok={tileInfo.granularPermissions.canViewTileInfo} label="Tile Card Info" />
+              <PermCheck ok={tileInfo.granularPermissions.canEditTile} label="Edit Tile Settings" />
+            </div>
+          </div>
+        )}
+      </SectionCard>
+
       {tileInfo.tileAdmins && tileInfo.tileAdmins.length > 0 && (
-        <section>
-          <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
-            <span className="w-1 h-6 bg-brand-600 rounded"></span>
-            Tile Administrators ({tileInfo.tileAdmins.length})
-          </h3>
+        <SectionCard emoji="👥" title={`Tile Administrators (${tileInfo.tileAdmins.length})`} accent="violet">
           <div className="space-y-3">
             {tileInfo.tileAdmins.map((admin) => (
-              <div key={admin.userId} className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <div className="text-sm font-medium text-slate-900 dark:text-white">
+              <div key={admin.userId} className="rounded-xl bg-white/70 dark:bg-slate-950/35 border border-violet-100 dark:border-violet-900/40 p-3.5">
+                <div className="flex items-center justify-between mb-3 gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-slate-900 dark:text-white truncate flex items-center gap-1.5">
+                      <span aria-hidden="true">⭐</span>
                       {admin.username}
                     </div>
                     {admin.email && (
-                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                      <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
                         {admin.email}
                       </div>
                     )}
                   </div>
-                  <div className="text-xs px-2 py-1 bg-brand-100 dark:bg-brand-500/20 text-brand-700 dark:text-brand-300 rounded">
+                  <div className="text-[11px] px-2 py-1 bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300 rounded-full font-semibold shrink-0">
                     Tile Admin
                   </div>
                 </div>
-                
-                {/* Basic Permissions */}
-                <div className="mb-3 pb-3 border-b border-slate-200 dark:border-slate-700">
-                  <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">Basic Permissions</div>
-                  <div className="grid grid-cols-3 gap-2 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-slate-600 dark:text-slate-400">View:</span>
-                      <span className={admin.permissions.canView ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                        {admin.permissions.canView ? '✓' : '✗'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-600 dark:text-slate-400">Edit:</span>
-                      <span className={admin.permissions.canEdit ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                        {admin.permissions.canEdit ? '✓' : '✗'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-600 dark:text-slate-400">Delete:</span>
-                      <span className={admin.permissions.canDelete ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                        {admin.permissions.canDelete ? '✓' : '✗'}
-                      </span>
-                    </div>
+
+                <div className="mb-3 pb-3 border-b border-violet-100 dark:border-violet-900/40">
+                  <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wider">Basic</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <PermCheck ok={admin.permissions.canView} label="View" />
+                    <PermCheck ok={admin.permissions.canEdit} label="Edit" />
+                    <PermCheck ok={admin.permissions.canDelete} label="Delete" />
                   </div>
                 </div>
-                
-                {/* Granular Permissions */}
+
                 {admin.permissions.canAddLinks !== undefined && (
                   <div>
-                    <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">Granular Permissions</div>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="flex justify-between">
-                        <span className="text-slate-600 dark:text-slate-400">Add Links:</span>
-                        <span className={admin.permissions.canAddLinks ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                          {admin.permissions.canAddLinks ? '✓' : '✗'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-600 dark:text-slate-400">Add Sections:</span>
-                        <span className={admin.permissions.canAddSections ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                          {admin.permissions.canAddSections ? '✓' : '✗'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-600 dark:text-slate-400">Add Tabs:</span>
-                        <span className={admin.permissions.canAddTabs ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                          {admin.permissions.canAddTabs ? '✓' : '✗'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-600 dark:text-slate-400">Edit Links:</span>
-                        <span className={admin.permissions.canEditLinks ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                          {admin.permissions.canEditLinks ? '✓' : '✗'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-600 dark:text-slate-400">Delete Links:</span>
-                        <span className={admin.permissions.canDeleteLinks ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                          {admin.permissions.canDeleteLinks ? '✓' : '✗'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-600 dark:text-slate-400">Delete Sections:</span>
-                        <span className={admin.permissions.canDeleteSections ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                          {admin.permissions.canDeleteSections ? '✓' : '✗'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-600 dark:text-slate-400">Delete Tabs:</span>
-                        <span className={admin.permissions.canDeleteTabs ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                          {admin.permissions.canDeleteTabs ? '✓' : '✗'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-600 dark:text-slate-400">Change Visibility:</span>
-                        <span className={admin.permissions.canChangeVisibility ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                          {admin.permissions.canChangeVisibility ? '✓' : '✗'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-600 dark:text-slate-400">Change Browser:</span>
-                        <span className={admin.permissions.canChangeBrowser ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                          {admin.permissions.canChangeBrowser ? '✓' : '✗'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-600 dark:text-slate-400">Clone Tile:</span>
-                        <span className={admin.permissions.canCloneTile ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                          {admin.permissions.canCloneTile ? '✓' : '✗'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-600 dark:text-slate-400">Tile Card Info:</span>
-                        <span className={admin.permissions.canViewTileInfo ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                          {admin.permissions.canViewTileInfo ? '✓' : '✗'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-600 dark:text-slate-400">Edit Tile Settings:</span>
-                        <span className={admin.permissions.canEditTile ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                          {admin.permissions.canEditTile ? '✓' : '✗'}
-                        </span>
-                      </div>
+                    <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wider">Granular</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <PermCheck ok={!!admin.permissions.canAddLinks} label="Add Links" />
+                      <PermCheck ok={!!admin.permissions.canAddSections} label="Add Sections" />
+                      <PermCheck ok={!!admin.permissions.canAddTabs} label="Add Tabs" />
+                      <PermCheck ok={!!admin.permissions.canEditLinks} label="Edit Links" />
+                      <PermCheck ok={!!admin.permissions.canDeleteLinks} label="Delete Links" />
+                      <PermCheck ok={!!admin.permissions.canDeleteSections} label="Delete Sections" />
+                      <PermCheck ok={!!admin.permissions.canDeleteTabs} label="Delete Tabs" />
+                      <PermCheck ok={!!admin.permissions.canChangeVisibility} label="Change Visibility" />
+                      <PermCheck ok={!!admin.permissions.canChangeBrowser} label="Change Browser" />
+                      <PermCheck ok={!!admin.permissions.canCloneTile} label="Clone Tile" />
+                      <PermCheck ok={!!admin.permissions.canViewTileInfo} label="Tile Card Info" />
+                      <PermCheck ok={!!admin.permissions.canEditTile} label="Edit Tile Settings" />
                     </div>
                   </div>
                 )}
               </div>
             ))}
           </div>
-        </section>
+        </SectionCard>
       )}
     </div>
   );
@@ -616,155 +610,113 @@ const CategoryInfoView: React.FC<{
       }
       ownerCounts[tile.userId].count++;
     }
-    
+
     if (!oldestTile || tile.createdAt < oldestTile.createdAt) {
       oldestTile = tile;
     }
     if (!newestTile || tile.createdAt > newestTile.createdAt) {
       newestTile = tile;
     }
-    
+
     if (tile.canView) totalCanView++;
     if (tile.canEdit) totalCanEdit++;
     if (tile.canDelete) totalCanDelete++;
   });
 
   return (
-    <div className="space-y-6">
-      {/* Basic Information */}
-      <section>
-        <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
-          <span className="w-1 h-6 bg-brand-600 rounded"></span>
-          Category Information
-        </h3>
-        <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-3">
-          <div className="flex justify-between">
-            <span className="text-slate-600 dark:text-slate-400 font-medium">Category Name:</span>
-            <span className="text-slate-900 dark:text-white">{categoryInfo.categoryName}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-600 dark:text-slate-400 font-medium">Total Tiles:</span>
-            <span className="text-slate-900 dark:text-white">{categoryInfo.tileCount}</span>
-          </div>
-        </div>
-      </section>
+    <div className="space-y-5">
+      <SectionCard emoji="📂" title="Category Information" accent="indigo">
+        <InfoRow label="Category Name" labelEmoji="🏷️">
+          <span className="font-semibold">{categoryInfo.categoryName}</span>
+        </InfoRow>
+        <InfoRow label="Total Tiles" labelEmoji="🧱">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300">
+            {categoryInfo.tileCount} tile{categoryInfo.tileCount !== 1 ? 's' : ''}
+          </span>
+        </InfoRow>
+      </SectionCard>
 
-      {/* Category Ownership */}
       {categoryInfo.owner && (
-        <section>
-          <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
-            <span className="w-1 h-6 bg-brand-600 rounded"></span>
-            Category Ownership
-          </h3>
-          <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-3">
-            {categoryInfo.owner.userId ? (
-              <>
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-400 font-medium">Owner:</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-slate-900 dark:text-white">{categoryInfo.owner.username || `User ${categoryInfo.owner.userId}`}</span>
-                    {categoryInfo.owner.isAdmin && (
-                      <span className="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400">
-                        Admin
-                      </span>
-                    )}
+        <SectionCard emoji="👤" title="Category Ownership" accent="amber">
+          {categoryInfo.owner.userId ? (
+            <>
+              <InfoRow label="Owner" labelEmoji="✨">
+                <div className="flex items-center justify-end gap-2 flex-wrap">
+                  <span className="font-semibold">{categoryInfo.owner.username || `User ${categoryInfo.owner.userId}`}</span>
+                  {categoryInfo.owner.isAdmin && (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300">
+                      👑 Admin
+                    </span>
+                  )}
+                </div>
+              </InfoRow>
+              {categoryInfo.owner.email && (
+                <InfoRow label="Email" labelEmoji="📧">
+                  <span className="break-all">{categoryInfo.owner.email}</span>
+                </InfoRow>
+              )}
+              <InfoRow label="User ID" labelEmoji="🔑" stack>
+                <div className="flex justify-end">
+                  <CopyableId value={String(categoryInfo.owner.userUuid || categoryInfo.owner.userId)} />
+                </div>
+              </InfoRow>
+              {categoryInfo.owner.isAdmin && (
+                <div className="mt-1 pt-3 border-t border-amber-200/70 dark:border-amber-900/40">
+                  <div className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-400">
+                    <span className="text-base" aria-hidden="true">ℹ️</span>
+                    <span>This category was created by an administrator.</span>
                   </div>
                 </div>
-                {categoryInfo.owner.email && (
-                  <div className="flex justify-between">
-                    <span className="text-slate-600 dark:text-slate-400 font-medium">Email:</span>
-                    <span className="text-slate-900 dark:text-white">{categoryInfo.owner.email}</span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-400 font-medium">User ID:</span>
-                  <span className="text-slate-900 dark:text-white font-mono text-sm">{categoryInfo.owner.userId}</span>
-                </div>
-                {categoryInfo.owner.isAdmin && (
-                  <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-700">
-                    <div className="flex items-start gap-2">
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-purple-500 mt-0.5 flex-shrink-0">
-                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
-                      </svg>
-                      <span className="text-sm text-slate-600 dark:text-slate-400">
-                        This category was created by an administrator.
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="text-slate-600 dark:text-slate-400">No owner assigned</div>
-            )}
-          </div>
-        </section>
+              )}
+            </>
+          ) : (
+            <div className="text-slate-600 dark:text-slate-400 text-sm flex items-center gap-2">
+              <span aria-hidden="true">📭</span> No owner assigned
+            </div>
+          )}
+        </SectionCard>
       )}
 
-      {/* Ownership Summary */}
       {Object.keys(ownerCounts).length > 0 && (
-        <section>
-          <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
-            <span className="w-1 h-6 bg-brand-600 rounded"></span>
-            Ownership Summary
-          </h3>
-          <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2">
-            {Object.entries(ownerCounts).map(([userId, info]) => (
-              <div key={userId} className="flex justify-between">
-                <span className="text-slate-600 dark:text-slate-400">User {userId}:</span>
-                <span className="text-slate-900 dark:text-white">{info.count} tile{info.count !== 1 ? 's' : ''}</span>
-              </div>
-            ))}
-          </div>
-        </section>
+        <SectionCard emoji="📊" title="Ownership Summary" accent="sky">
+          {Object.entries(ownerCounts).map(([userId, info]) => (
+            <InfoRow key={userId} label={`User ${userId}`} labelEmoji="👤">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300">
+                {info.count} tile{info.count !== 1 ? 's' : ''}
+              </span>
+            </InfoRow>
+          ))}
+        </SectionCard>
       )}
 
-      {/* Timestamps */}
       {oldestTile && newestTile && (
-        <section>
-          <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
-            <span className="w-1 h-6 bg-brand-600 rounded"></span>
-            Timestamps
-          </h3>
-          <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-3">
-            <div className="flex justify-between items-start">
-              <span className="text-slate-600 dark:text-slate-400 font-medium">Oldest Tile:</span>
-              <div className="text-right">
-                <div className="text-slate-900 dark:text-white">{formatDate(oldestTile.createdAt)}</div>
-                <div className="text-xs text-slate-500 dark:text-slate-500">{formatRelativeTime(oldestTile.createdAt)}</div>
-              </div>
+        <SectionCard emoji="⏱️" title="Timestamps" accent="teal">
+          <InfoRow label="Oldest Tile" labelEmoji="🕰️">
+            <div>
+              <div className="font-medium text-sm">{formatDate(oldestTile.createdAt)}</div>
+              <div className="text-xs text-teal-700/80 dark:text-teal-300/80">{formatRelativeTime(oldestTile.createdAt)}</div>
             </div>
-            <div className="flex justify-between items-start">
-              <span className="text-slate-600 dark:text-slate-400 font-medium">Newest Tile:</span>
-              <div className="text-right">
-                <div className="text-slate-900 dark:text-white">{formatDate(newestTile.createdAt)}</div>
-                <div className="text-xs text-slate-500 dark:text-slate-500">{formatRelativeTime(newestTile.createdAt)}</div>
-              </div>
+          </InfoRow>
+          <InfoRow label="Newest Tile" labelEmoji="🆕">
+            <div>
+              <div className="font-medium text-sm">{formatDate(newestTile.createdAt)}</div>
+              <div className="text-xs text-teal-700/80 dark:text-teal-300/80">{formatRelativeTime(newestTile.createdAt)}</div>
             </div>
-          </div>
-        </section>
+          </InfoRow>
+        </SectionCard>
       )}
 
-      {/* Permissions Summary */}
-      <section>
-        <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
-          <span className="w-1 h-6 bg-brand-600 rounded"></span>
-          Your Permissions Summary
-        </h3>
-        <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-3">
-          <div className="flex justify-between">
-            <span className="text-slate-600 dark:text-slate-400 font-medium">Can View:</span>
-            <span className="text-slate-900 dark:text-white">{totalCanView} / {categoryInfo.tileCount}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-600 dark:text-slate-400 font-medium">Can Edit:</span>
-            <span className="text-slate-900 dark:text-white">{totalCanEdit} / {categoryInfo.tileCount}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-600 dark:text-slate-400 font-medium">Can Delete:</span>
-            <span className="text-slate-900 dark:text-white">{totalCanDelete} / {categoryInfo.tileCount}</span>
-          </div>
-        </div>
-      </section>
+      <SectionCard emoji="🛡️" title="Your Permissions Summary" accent="emerald">
+        <InfoRow label="Can View" labelEmoji="👀">
+          <span className="font-semibold text-emerald-700 dark:text-emerald-300">{totalCanView} / {categoryInfo.tileCount}</span>
+        </InfoRow>
+        <InfoRow label="Can Edit" labelEmoji="🖊️">
+          <span className="font-semibold text-sky-700 dark:text-sky-300">{totalCanEdit} / {categoryInfo.tileCount}</span>
+        </InfoRow>
+        <InfoRow label="Can Delete" labelEmoji="🗑️">
+          <span className="font-semibold text-rose-700 dark:text-rose-300">{totalCanDelete} / {categoryInfo.tileCount}</span>
+        </InfoRow>
+      </SectionCard>
     </div>
   );
 };

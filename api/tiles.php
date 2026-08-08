@@ -1483,7 +1483,7 @@ function handleCreateTile() {
         }
         
         $db = getDB();
-    $tileId = $data['id'] ?? uniqid('tile_', true);
+    $tileId = (isset($data['id']) && isValidUuid($data['id'])) ? $data['id'] : generateUuid();
     
     // Handle visibility and allowed_users/allowed_groups
     $visibility = $data['visibility'] ?? 'public';
@@ -2166,7 +2166,7 @@ function handleCloneTile($tileId) {
         }
     
         // Generate new tile ID
-        $newTileId = uniqid('tile_', true);
+        $newTileId = generateUuid();
         
         // Get current max position to append new tile
         $maxPositionStmt = $db->prepare('SELECT MAX(position) as max_pos FROM tiles');
@@ -2641,7 +2641,7 @@ function handleCloneCategory($categoryName) {
             }
             
             // Generate new tile ID
-            $newTileId = uniqid('tile_', true);
+            $newTileId = generateUuid();
             
             // Create new tile with "Copy of" prefix in title
             $newTitle = 'Copy of ' . $originalTile['title'];
@@ -3096,7 +3096,7 @@ function handleBulkImport() {
         foreach ($tilesMap as $tileKey => $tileData) {
             try {
                 // Generate unique tile ID
-                $tileId = uniqid('tile_', true);
+                $tileId = generateUuid();
                 
                 // Insert tile
                 $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
@@ -6493,6 +6493,7 @@ function handleGetTileInfo($tileId) {
             t.allowed_users,
             u.username as owner_username,
             u.email as owner_email,
+            u.uuid as owner_uuid,
             (SELECT MAX(created_at) FROM tile_versions WHERE tile_id = t.id AND is_temp = 0) as last_version_updated
         FROM tiles t
         LEFT JOIN users u ON t.user_id = u.id
@@ -6673,6 +6674,7 @@ function handleGetTileInfo($tileId) {
         'title' => $row['title'],
         'owner' => [
             'userId' => $row['user_id'] ? (int)$row['user_id'] : null,
+            'userUuid' => !empty($row['owner_uuid']) ? $row['owner_uuid'] : null,
             'username' => $row['owner_username'],
             'email' => $row['owner_email']
         ],

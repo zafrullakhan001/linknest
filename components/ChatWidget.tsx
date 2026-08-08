@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { authService, UserListItem } from '../services/authService';
 import { createTile, saveTile } from '../services/storageService';
 import { parseSpaceExportObject, normalizeImportedTiles } from '../services/spaceTransferService';
+import { generateUuid } from '../services/idService';
 
 interface ChatWidgetProps {
   tiles: Tile[];
@@ -505,7 +506,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
 
       // Default: create new tile (or duplicate if action === 'duplicate')
       // Generate new ID and timestamp
-      tileToImport.id = Math.random().toString(36).substring(2, 9);
+      tileToImport.id = generateUuid();
       tileToImport.createdAt = Date.now();
       
       // If duplicate action, add "- Copy-N" suffix to the title

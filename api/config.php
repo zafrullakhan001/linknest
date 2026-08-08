@@ -112,7 +112,27 @@ define('SYSTEM_TOKEN', 'linknest_secret_token_123'); // Change this for producti
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 72);
+    define('LINKNEST_SCHEMA_VERSION', 73);
+}
+
+/**
+ * Generate a RFC 4122 UUID v4 string.
+ */
+function generateUuid(): string {
+    $bytes = random_bytes(16);
+    $bytes[6] = chr((ord($bytes[6]) & 0x0f) | 0x40);
+    $bytes[8] = chr((ord($bytes[8]) & 0x3f) | 0x80);
+    return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($bytes), 4));
+}
+
+/**
+ * Return true if value is a valid UUID v4 string.
+ */
+function isValidUuid($value): bool {
+    return is_string($value) && (bool)preg_match(
+        '/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i',
+        $value
+    );
 }
 
 require_once __DIR__ . '/response_cache.php';
@@ -476,6 +496,25 @@ function initDatabase() {
         } catch (PDOException $e) {
             // Column already exists, ignore
         }
+        try {
+            $db->exec('ALTER TABLE users ADD COLUMN uuid TEXT');
+        } catch (PDOException $e) {
+            // Column already exists, ignore
+        }
+
+        // Backfill public UUIDs for existing users (numeric id stays primary key)
+        try {
+            $missingUuidStmt = $db->query("SELECT id FROM users WHERE uuid IS NULL OR uuid = ''");
+            if ($missingUuidStmt) {
+                $updateUuidStmt = $db->prepare('UPDATE users SET uuid = ? WHERE id = ?');
+                while ($missingUser = $missingUuidStmt->fetch(PDO::FETCH_ASSOC)) {
+                    $updateUuidStmt->execute([generateUuid(), $missingUser['id']]);
+                }
+            }
+            $db->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_uuid ON users(uuid)');
+        } catch (PDOException $e) {
+            // Ignore if users table is not ready yet
+        }
         
         // Note: New users require admin approval. Existing users in old databases
         // will need to be manually approved by admin through the admin panel.
@@ -486,8 +525,9 @@ function initDatabase() {
         if (!$stmt->fetch()) {
             // Default admin credentials: admin / admin123
             $adminPassword = password_hash('admin123', PASSWORD_DEFAULT);
-            $db->exec("INSERT INTO users (username, email, password_hash, is_admin, is_approved, created_at) 
-                       VALUES ('admin', 'admin@linknest.local', '$adminPassword', 1, 1, " . time() . ")");
+            $adminUuid = generateUuid();
+            $stmtInsertAdmin = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, uuid, created_at) VALUES (?, ?, ?, 1, 1, ?, ?)');
+            $stmtInsertAdmin->execute(['admin', 'admin@linknest.local', $adminPassword, $adminUuid, time()]);
         }
         
         // Create tiles table
@@ -2457,6 +2497,7 @@ function createDatabaseIndexes($db) {
         $db->exec('CREATE INDEX IF NOT EXISTS idx_users_is_admin ON users(is_admin)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_users_approved_admin ON users(is_approved, is_admin)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at DESC)');
+        $db->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_uuid ON users(uuid)');
         
         // Tiles table indexes
         $db->exec('CREATE INDEX IF NOT EXISTS idx_tiles_user_id ON tiles(user_id)');

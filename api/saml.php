@@ -602,8 +602,8 @@ class SamlAPI {
         // Create user with pending approval status - requires admin approval before access
         try {
             $this->conn->beginTransaction();
-            $ins = $this->conn->prepare("INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, saml_nameid, created_at) VALUES (?, ?, '', 0, 0, 'saml', ?, ?)");
-            $ins->execute([$username, $email, $nameId, time()]);
+            $ins = $this->conn->prepare("INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, saml_nameid, uuid, created_at) VALUES (?, ?, '', 0, 0, 'saml', ?, ?, ?)");
+            $ins->execute([$username, $email, $nameId, generateUuid(), time()]);
             $userId = (int)$this->conn->lastInsertId();
             $this->conn->commit();
             

@@ -15,6 +15,7 @@ import { userPreferencesService } from '../services/userPreferencesService';
 import { getPublicFavorites, togglePublicFavorite, isPublicFavorite, getPublicActiveTab, setPublicActiveTab, exportPublicFavorites, importPublicFavorites, clearPublicFavorites, getPublicLinkFavorites, togglePublicLinkFavorite, clearPublicLinkFavorites } from '../services/publicFavoritesService';
 import { linkHealthService } from '../services/linkHealthService';
 import { favoriteLinkHealthService, LinkHealthCheckResult } from '../services/favoriteLinkHealthService';
+import { generateUuid } from '../services/idService';
 import { TileAnimationSelector, useTileAnimation, getTileAnimationClass, getTileDecorationClass, TileAnimation, TileDecoration } from './TileAnimationSelector';
 const MonitoringDashboard = lazy(() =>
   import('./MonitoringDashboard').then((m) => ({ default: m.MonitoringDashboard }))
@@ -4302,7 +4303,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     }
 
     const newTile: Tile = {
-      id: generateId(),
+      id: generateUuid(),
       title: newTitle,
       description: newDesc,
       emoji: newEmoji,
@@ -6266,7 +6267,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
   const handleShowCategoryInfo = useCallback(async (categoryName: string, categoryTiles: Tile[]) => {
     // Determine category owner from oldest tile (first created in category)
-    let categoryOwner: { userId: number | null; username: string | null; email: string | null; isAdmin: boolean } | undefined;
+    let categoryOwner: { userId: number | null; userUuid?: string | null; username: string | null; email: string | null; isAdmin: boolean } | undefined;
 
     if (categoryTiles.length > 0) {
       // Find oldest tile (first created)
@@ -6286,6 +6287,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             const userInfo = await response.json();
             categoryOwner = {
               userId: userInfo.userId,
+              userUuid: userInfo.userUuid || null,
               username: userInfo.username,
               email: userInfo.email,
               isAdmin: userInfo.isAdmin || false
@@ -6296,6 +6298,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           // Fallback: just use userId
           categoryOwner = {
             userId: oldestTile.userId,
+            userUuid: null,
             username: null,
             email: null,
             isAdmin: false

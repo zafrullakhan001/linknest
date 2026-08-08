@@ -1,4 +1,5 @@
 import { Tile, LinkSection, Link } from '../types';
+import { generateUuid } from './idService';
 
 export type SpaceExportType = 'tile' | 'category' | 'all_categories';
 
@@ -308,7 +309,7 @@ export const normalizeImportedTiles = (
       : [];
 
     const tile: Tile = {
-      id: generateId(),
+      id: generateUuid(),
       title: String(src.title || `Imported Space ${index + 1}`),
       description: String(src.description || ''),
       htmlContent: src.htmlContent || '',
