@@ -27,6 +27,7 @@ import { getDisabledTabsFromSettings } from '../services/tabVisibilityService';
 import { rolesService } from '../services/rolesService';
 import { FaTimes } from 'react-icons/fa';
 import { LinkInfoDialog } from './LinkInfoDialog';
+import { LinkNotesDialog } from './LinkNotesDialog';
 import { useMobile } from '../hooks/useMobile';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { getDisplayUrl } from '../utils/urlDisplay';
@@ -2337,7 +2338,6 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [tileInfoDialog, setTileInfoDialog] = useState<{ tile?: Tile; categoryInfo?: { categoryName: string; tiles: Tile[] } } | null>(null);
   const [shareTileDialog, setShareTileDialog] = useState<Tile | null>(null);
   const [favNotesDialogState, setFavNotesDialogState] = useState<{ linkId: string; notes: string; linkLabel: string } | null>(null);
-  const [favNotesCopied, setFavNotesCopied] = useState(false);
   const [stagingTiles, setStagingTiles] = useState<Tile[]>([]);
   const [stagingTilesLoading, setStagingTilesLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>(() => {
@@ -4534,19 +4534,6 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       return () => window.removeEventListener('keydown', handleEsc);
     }
   }, [isEditModalOpen]);
-
-  // ESC key closes the favorite link notes dialog
-  useEffect(() => {
-    if (!favNotesDialogState) return;
-    const handleFavNotesEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setFavNotesDialogState(null);
-        setFavNotesCopied(false);
-      }
-    };
-    window.addEventListener('keydown', handleFavNotesEsc);
-    return () => window.removeEventListener('keydown', handleFavNotesEsc);
-  }, [favNotesDialogState]);
 
   // ESC key closes the category schedule dialog
   useEscapeToClose(!!editingCategorySchedule, () => {
@@ -7454,7 +7441,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              setFavNotesDialogState({ linkId: link.id, notes: link.notes || '', linkLabel: stripHtml(link.label || '') });
+                              setFavNotesDialogState({ linkId: link.id, notes: link.notes || '', linkLabel: link.label || '' });
                             }}
                             className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-all"
                             title="View notes"
@@ -8178,10 +8165,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                const tempDiv = document.createElement('div');
-                                tempDiv.innerHTML = link.label || '';
-                                const plainLabel = tempDiv.textContent || tempDiv.innerText || link.label || '';
-                                setFavNotesDialogState({ linkId: link.id, notes: link.notes || '', linkLabel: plainLabel });
+                                setFavNotesDialogState({ linkId: link.id, notes: link.notes || '', linkLabel: link.label || '' });
                               }}
                               className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-all"
                               title="View notes"
@@ -12285,78 +12269,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       )}
 
       {/* Favorite Link Notes Dialog */}
-      {favNotesDialogState && typeof document !== 'undefined' && createPortal(
-        <div
-          className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-          onClick={() => { setFavNotesDialogState(null); setFavNotesCopied(false); }}
-        >
-          <div
-            className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 max-w-2xl w-full max-h-[80vh] flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Link Notes</h3>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{favNotesDialogState.linkLabel}</p>
-              </div>
-              <button
-                onClick={() => { setFavNotesDialogState(null); setFavNotesCopied(false); }}
-                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="px-6 py-4 flex-1 overflow-y-auto">
-              <div className="text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words">
-                {favNotesDialogState.notes}
-              </div>
-            </div>
-            <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-3">
-              <button
-                onClick={async (e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  try {
-                    await navigator.clipboard.writeText(favNotesDialogState.notes);
-                    setFavNotesCopied(true);
-                    setTimeout(() => setFavNotesCopied(false), 2000);
-                  } catch (err) {
-                    console.error('Failed to copy:', err);
-                    alert('Failed to copy to clipboard');
-                  }
-                }}
-                className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
-              >
-                {favNotesCopied ? (
-                  <>
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                      <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-                    </svg>
-                    Copied!
-                  </>
-                ) : (
-                  <>
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                      <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
-                      <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
-                    </svg>
-                    Copy Notes
-                  </>
-                )}
-              </button>
-              <button
-                onClick={() => { setFavNotesDialogState(null); setFavNotesCopied(false); }}
-                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg font-medium transition-colors"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+      <LinkNotesDialog
+        isOpen={!!favNotesDialogState}
+        onClose={() => setFavNotesDialogState(null)}
+        linkLabel={favNotesDialogState?.linkLabel || ''}
+        notes={favNotesDialogState?.notes || ''}
+      />
 
       {/* Tile/Category Info Dialog */}
       {shareTileDialog && (

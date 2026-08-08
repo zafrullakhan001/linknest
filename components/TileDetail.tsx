@@ -33,6 +33,7 @@ import type { BoxAlign } from './RichTextBoxedView';
 import { RichTextContent } from '../types';
 import { isPublicLinkFavorite, togglePublicLinkFavorite } from '../services/publicFavoritesService';
 import { LinkInfoDialog } from './LinkInfoDialog';
+import { LinkNotesDialog } from './LinkNotesDialog';
 import { QRCodeDialog } from './QRCodeDialog';
 import { BrandedQRCode } from './BrandedQRCode';
 import { MobileTileEdit } from './MobileTileEdit';
@@ -473,7 +474,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [linkSearchTerm, setLinkSearchTerm] = useState('');
     const [hoveredLinkId, setHoveredLinkId] = useState<string | null>(null);
     const [notesDialogState, setNotesDialogState] = useState<{ linkId: string; notes: string; linkLabel: string } | null>(null);
-    const [notesCopied, setNotesCopied] = useState(false);
     const [linkInfoDialog, setLinkInfoDialog] = useState<{ link: Link } | null>(null);
     const [qrDialogState, setQrDialogState] = useState<{ url: string; label: string } | null>(null);
 
@@ -522,22 +522,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     } | null>(null);
 
 
-    // Handle ESC key to close notes dialog
-    useEffect(() => {
-        if (!notesDialogState) return;
-
-        const handleEscKey = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
-                setNotesDialogState(null);
-                setNotesCopied(false);
-            }
-        };
-
-        document.addEventListener('keydown', handleEscKey);
-        return () => {
-            document.removeEventListener('keydown', handleEscKey);
-        };
-    }, [notesDialogState]);
     const [notesPresetFormState, setNotesPresetFormState] = useState<{ linkId: string } | null>(null);
     useEscapeToClose(!!notesPresetFormState, () => setNotesPresetFormState(null));
     const [notesPresetForm, setNotesPresetForm] = useState({
@@ -5481,14 +5465,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             onClick={(e) => {
                                                                                 e.preventDefault();
                                                                                 e.stopPropagation();
-                                                                                // Strip HTML from label for dialog display
-                                                                                const tempDiv = document.createElement('div');
-                                                                                tempDiv.innerHTML = link.label || '';
-                                                                                const plainLabel = tempDiv.textContent || tempDiv.innerText || link.label;
                                                                                 setNotesDialogState({
                                                                                     linkId: link.id,
                                                                                     notes: link.notes || '',
-                                                                                    linkLabel: plainLabel
+                                                                                    linkLabel: link.label || ''
                                                                                 });
                                                                             }}
                                                                             className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-all"
@@ -5657,93 +5637,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 </div>
 
                 {/* Notes Dialog */}
-                {notesDialogState && (
-                    <>
-                        {typeof document !== 'undefined' && createPortal(
-                            <div
-                                className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-                                onClick={() => setNotesDialogState(null)}
-                            >
-                                <div
-                                    className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 max-w-2xl w-full max-h-[80vh] flex flex-col"
-                                    onClick={(e) => e.stopPropagation()}
-                                >
-                                    {/* Dialog Header */}
-                                    <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
-                                        <div>
-                                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Link Notes</h3>
-                                            <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{notesDialogState.linkLabel}</p>
-                                        </div>
-                                        <button
-                                            onClick={() => setNotesDialogState(null)}
-                                            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                            </svg>
-                                        </button>
-                                    </div>
-
-                                    {/* Dialog Content */}
-                                    <div className="px-6 py-4 flex-1 overflow-y-auto">
-                                        <div className="text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words">
-                                            {notesDialogState.notes}
-                                        </div>
-                                    </div>
-
-                                    {/* Dialog Footer */}
-                                    <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-3">
-                                        <button
-                                            onClick={async (e) => {
-                                                e.preventDefault();
-                                                e.stopPropagation();
-                                                try {
-                                                    await navigator.clipboard.writeText(notesDialogState.notes);
-                                                    // Show feedback
-                                                    setNotesCopied(true);
-                                                    setTimeout(() => {
-                                                        setNotesCopied(false);
-                                                    }, 2000);
-                                                } catch (err) {
-                                                    console.error('Failed to copy:', err);
-                                                    alert('Failed to copy to clipboard');
-                                                }
-                                            }}
-                                            className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
-                                        >
-                                            {notesCopied ? (
-                                                <>
-                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                        <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-                                                    </svg>
-                                                    Copied!
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                        <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
-                                                        <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
-                                                    </svg>
-                                                    Copy Notes
-                                                </>
-                                            )}
-                                        </button>
-                                        <button
-                                            onClick={() => {
-                                                setNotesDialogState(null);
-                                                setNotesCopied(false);
-                                            }}
-                                            className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg font-medium transition-colors"
-                                        >
-                                            Close
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>,
-                            document.body
-                        )}
-                    </>
-                )}
+                <LinkNotesDialog
+                    isOpen={!!notesDialogState}
+                    onClose={() => setNotesDialogState(null)}
+                    linkLabel={notesDialogState?.linkLabel || ''}
+                    notes={notesDialogState?.notes || ''}
+                />
 
                 {/* Link Info Dialog */}
                 {linkInfoDialog && (
