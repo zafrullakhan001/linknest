@@ -1180,6 +1180,20 @@ const SortableTile: React.FC<SortableTileProps> = ({
   const [starsTrigger, setStarsTrigger] = useState(0);
   const [rainbowTrigger, setRainbowTrigger] = useState(0);
   const tileRef = useRef<HTMLDivElement>(null);
+  // Below lg: header image is hidden → force title/description. At lg+: restore checkbox behavior (image only when those are unchecked).
+  const [isCompactLayout, setIsCompactLayout] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 1024 : true
+  );
+
+  useEffect(() => {
+    const update = () => {
+      setIsCompactLayout(window.innerWidth < 1024); // Tailwind lg
+    };
+
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
 
 
   // Helper function to strip formatting characters for plain text display (tooltips, etc.)
@@ -1569,12 +1583,12 @@ const SortableTile: React.FC<SortableTileProps> = ({
         );
       })()}
 
-      {/* Free-position header logo (full card) */}
+      {/* Header logo: desktop (lg+) only — hidden on small screens so title/description can take over */}
       {tile.headerImage ? (
         <img
           src={tile.headerImage}
           alt=""
-          className={`absolute top-3 right-3 z-0 max-w-[10rem] h-10 pointer-events-none select-none ${
+          className={`absolute top-3 right-3 z-0 max-w-[10rem] h-10 pointer-events-none select-none hidden lg:block ${
             tile.headerImageFit === 'cover' ? 'object-cover' : 'object-contain'
           } ${
             tile.headerImageAlign === 'left'
@@ -1949,29 +1963,43 @@ const SortableTile: React.FC<SortableTileProps> = ({
         </div>
       </div>
 
-      {/* Compact Title and Description */}
+      {/* Compact Title and Description — on small screens, force text when header image is hidden; on large screens respect checkboxes */}
       <div className="relative z-[1] flex-1 mb-3">
-        {tile.showTitle !== false ? (
-          <h3 className={`font-bold text-sm leading-tight line-clamp-2 mb-1.5 ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}>
-            {tile.title}
-            {tile.published === false && (
-              <span className="ml-1.5 inline-block align-middle text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 font-semibold tracking-wide uppercase">
-                Unpublished
-              </span>
-            )}
-          </h3>
-        ) : (
-          tile.published === false ? (
-            <span className="inline-block mb-1.5 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 font-semibold tracking-wide uppercase">
-              Unpublished
-            </span>
-          ) : null
-        )}
-        {tile.showDescription !== false ? (
-          <p className="text-slate-600 dark:text-slate-400 text-xs line-clamp-2 leading-snug">
-            {tile.description || 'No description'}
-          </p>
-        ) : null}
+        {(() => {
+          const hasHeaderImage = Boolean(tile.headerImage?.trim());
+          // Small: override hide checkboxes so text fills in for the missing image.
+          // Large: respect showTitle / showDescription again (image-only when unchecked).
+          const showTitle =
+            tile.showTitle !== false || (hasHeaderImage && isCompactLayout);
+          const showDescription =
+            tile.showDescription !== false || (hasHeaderImage && isCompactLayout);
+
+          return (
+            <>
+              {showTitle ? (
+                <h3 className={`font-bold text-sm leading-tight line-clamp-2 mb-1.5 ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}>
+                  {tile.title}
+                  {tile.published === false && (
+                    <span className="ml-1.5 inline-block align-middle text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 font-semibold tracking-wide uppercase">
+                      Unpublished
+                    </span>
+                  )}
+                </h3>
+              ) : (
+                tile.published === false ? (
+                  <span className="inline-block mb-1.5 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 font-semibold tracking-wide uppercase">
+                    Unpublished
+                  </span>
+                ) : null
+              )}
+              {showDescription ? (
+                <p className="text-slate-600 dark:text-slate-400 text-xs line-clamp-2 leading-snug">
+                  {tile.description || 'No description'}
+                </p>
+              ) : null}
+            </>
+          );
+        })()}
         {ownerUsername && (
           <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 truncate" title={`Owner: ${ownerUsername}`}>
             by {ownerUsername}
@@ -6492,31 +6520,29 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         </div>
         <div className="linknest-hero-brand-overlay" aria-hidden="true" />
 
-        {/* Content */}
-        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
-          <div className="flex-1">
-            <div className="flex items-center gap-4">
-              {settings.hero_icon ? (
-                <div className="linknest-hero-icon w-12 h-12 rounded-xl bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center shadow-lg text-2xl flex-shrink-0">
-                  {settings.hero_icon}
-                </div>
-              ) : null}
-              <div className="min-w-0">
-                <h1 className="linknest-spaces-title text-4xl sm:text-5xl font-bold text-slate-900 dark:text-white">
-                  {settings.spaces_title || 'My Spaces'}
-                </h1>
-                {settings.spaces_subtitle ? (
-                  <p className="linknest-spaces-subtitle mt-2 text-sm sm:text-base text-slate-600 dark:text-slate-300">
-                    {settings.spaces_subtitle}
-                  </p>
-                ) : null}
+        {/* Content: stacked on small screens; title | controls side-by-side on large screens */}
+        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 lg:gap-6">
+          <div className="flex items-center gap-4 min-w-0 lg:flex-1">
+            {settings.hero_icon ? (
+              <div className="linknest-hero-icon w-12 h-12 rounded-xl bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center shadow-lg text-2xl flex-shrink-0">
+                {settings.hero_icon}
               </div>
+            ) : null}
+            <div className="min-w-0">
+              <h1 className="linknest-spaces-title text-4xl sm:text-5xl font-bold text-slate-900 dark:text-white">
+                {settings.spaces_title || 'My Spaces'}
+              </h1>
+              {settings.spaces_subtitle ? (
+                <p className="linknest-spaces-subtitle mt-2 text-sm sm:text-base text-slate-600 dark:text-slate-300">
+                  {settings.spaces_subtitle}
+                </p>
+              ) : null}
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+          <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto lg:flex-shrink-0">
             {/* Enhanced Search Bar */}
-            <div className="relative flex-1 sm:w-72">
+            <div className="relative flex-1 sm:max-w-md lg:w-72 lg:flex-none min-w-0">
               <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-slate-400">
                   <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd" />
@@ -6541,9 +6567,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
               )}
             </div>
 
-            <div className="flex gap-2 justify-end">
+            <div className="flex gap-2 justify-end flex-nowrap">
               {/* View Mode Toggle */}
-              <div className="flex bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm border border-white/50 dark:border-slate-700/50 rounded-xl p-1 shadow-sm gap-1">
+              <div className="flex bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm border border-white/50 dark:border-slate-700/50 rounded-xl p-1 shadow-sm gap-1 flex-shrink-0">
                 <button
                   onClick={() => setViewMode('grid')}
                   className={`p-2 rounded-lg transition-all ${viewMode === 'grid'
@@ -6617,14 +6643,18 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         </div>
       </div>
 
-      {/* Tabs - Staging first (admin only), then Public, Your Apps, etc. */}
-      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-700">
+      {/* Tabs — horizontal swipe/scroll, text labels stay (no wrap, no icon-only) */}
+      <div
+        className="flex items-center gap-1 sm:gap-2 border-b border-slate-200 dark:border-slate-700 overflow-x-auto overflow-y-hidden flex-nowrap overscroll-x-contain touch-pan-x [-ms-overflow-style:none] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5"
+        role="tablist"
+        aria-label="Space views"
+      >
         {isAuthenticated && user?.is_admin && (
           <button
             onClick={() => requestTab('staging')}
             data-active={activeTab === 'staging'}
             title={APP_TAB_TOOLTIPS.staging}
-            className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'staging' ? 'active' : ''}`}
+            className={`linknest-spaces-tab px-4 py-2 whitespace-nowrap flex-shrink-0 ${activeTab === 'staging' ? 'active' : ''}`}
           >
             Staging
             {stagingTiles.length > 0 && (
@@ -6639,7 +6669,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             onClick={() => requestTab('public')}
             data-active={activeTab === 'public'}
             title={APP_TAB_TOOLTIPS.public}
-            className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'public' ? 'active' : ''}`}
+            className={`linknest-spaces-tab px-4 py-2 whitespace-nowrap flex-shrink-0 ${activeTab === 'public' ? 'active' : ''}`}
           >
             Public
           </button>
@@ -6649,7 +6679,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             onClick={() => requestTab('your-apps')}
             data-active={activeTab === 'your-apps'}
             title={APP_TAB_TOOLTIPS['your-apps']}
-            className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'your-apps' ? 'active' : ''}`}
+            className={`linknest-spaces-tab px-4 py-2 whitespace-nowrap flex-shrink-0 ${activeTab === 'your-apps' ? 'active' : ''}`}
           >
             Your Apps
             {(() => {
@@ -6672,7 +6702,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             onClick={() => requestTab('public-favorites')}
             data-active={activeTab === 'public-favorites'}
             title={APP_TAB_TOOLTIPS['public-favorites']}
-            className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'public-favorites' ? 'active' : ''}`}
+            className={`linknest-spaces-tab px-4 py-2 whitespace-nowrap flex-shrink-0 ${activeTab === 'public-favorites' ? 'active' : ''}`}
           >
             Favorites
             {(publicFavoritesCount + favoriteLinks.length) > 0 && (
@@ -6693,7 +6723,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         )}
         {/* Export/Import buttons for public favorites - only show when favorites tab is active */}
         {!isAuthenticated && !disabledAppTabs.has('favorites') && activeTab === 'public-favorites' && (
-          <div className="flex items-center gap-1 ml-2 pl-2 border-l border-slate-300 dark:border-slate-600">
+          <div className="flex items-center gap-1 ml-2 pl-2 border-l border-slate-300 dark:border-slate-600 flex-shrink-0">
             <button
               onClick={handleExportPublicFavorites}
               className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded transition-all"
@@ -6739,7 +6769,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 onClick={() => requestTab('favorites')}
                 data-active={activeTab === 'favorites'}
                 title={APP_TAB_TOOLTIPS.favorites}
-                className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'favorites' ? 'active' : ''}`}
+                className={`linknest-spaces-tab px-4 py-2 whitespace-nowrap flex-shrink-0 ${activeTab === 'favorites' ? 'active' : ''}`}
               >
                 Favorites
                 {(favoriteTilesCount + favoriteLinks.length) > 0 && (
@@ -6763,7 +6793,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 onClick={() => requestTab('private')}
                 data-active={activeTab === 'private'}
                 title={APP_TAB_TOOLTIPS.private}
-                className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'private' ? 'active' : ''}`}
+                className={`linknest-spaces-tab px-4 py-2 whitespace-nowrap flex-shrink-0 ${activeTab === 'private' ? 'active' : ''}`}
               >
                 Private
                 {privateTilesCount > 0 && (
@@ -6778,7 +6808,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 onClick={() => requestTab('scheduled')}
                 data-active={activeTab === 'scheduled'}
                 title={APP_TAB_TOOLTIPS.scheduled}
-                className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'scheduled' ? 'active' : ''}`}
+                className={`linknest-spaces-tab px-4 py-2 whitespace-nowrap flex-shrink-0 ${activeTab === 'scheduled' ? 'active' : ''}`}
               >
                 Scheduled
                 {scheduledTilesCount > 0 && (
@@ -6793,7 +6823,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 onClick={() => requestTab('expired')}
                 data-active={activeTab === 'expired'}
                 title={APP_TAB_TOOLTIPS.expired}
-                className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'expired' ? 'active' : ''}`}
+                className={`linknest-spaces-tab px-4 py-2 whitespace-nowrap flex-shrink-0 ${activeTab === 'expired' ? 'active' : ''}`}
               >
                 Expired
                 {expiredTilesCount > 0 && (
@@ -6808,7 +6838,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 onClick={() => requestTab('archive')}
                 data-active={activeTab === 'archive'}
                 title={APP_TAB_TOOLTIPS.archive}
-                className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'archive' ? 'active' : ''}`}
+                className={`linknest-spaces-tab px-4 py-2 whitespace-nowrap flex-shrink-0 ${activeTab === 'archive' ? 'active' : ''}`}
               >
                 Archive
                 {isAuthenticated && (
@@ -6822,7 +6852,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
               <button
                 onClick={() => requestTab('monitoring')}
                 title={APP_TAB_TOOLTIPS.monitoring}
-                className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'monitoring' ? 'active' : ''}`}
+                className={`linknest-spaces-tab px-4 py-2 whitespace-nowrap flex-shrink-0 ${activeTab === 'monitoring' ? 'active' : ''}`}
               >
                 Monitoring
               </button>
@@ -6830,7 +6860,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             {isAuthenticated && !isTabDisabledBySettings('monitorv2') && (
               <button
                 onClick={() => requestTab('monitorv2')}
-                className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'monitorv2' ? 'active' : ''}`}
+                className={`linknest-spaces-tab px-4 py-2 whitespace-nowrap flex-shrink-0 ${activeTab === 'monitorv2' ? 'active' : ''}`}
                 title={APP_TAB_TOOLTIPS.monitorv2}
               >
                 Monitorv2
@@ -6841,7 +6871,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 onClick={() => requestTab('recycle-bin')}
                 data-active={activeTab === 'recycle-bin'}
                 title={APP_TAB_TOOLTIPS['recycle-bin']}
-                className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'recycle-bin' ? 'active' : ''}`}
+                className={`linknest-spaces-tab px-4 py-2 whitespace-nowrap flex-shrink-0 ${activeTab === 'recycle-bin' ? 'active' : ''}`}
               >
                 Recycle Bin
                 {isAuthenticated && (
