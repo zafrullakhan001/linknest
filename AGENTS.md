@@ -375,3 +375,7 @@ Default credentials:
 ---
 
 *This file should be updated when significant architectural changes are made to the project.*
+
+## In-app updates
+
+See [`docs/APP_UPDATES.md`](docs/APP_UPDATES.md) for publishing GitHub Releases (`scripts/publish-update-release.ps1`) and applying them from Admin → App Updates.

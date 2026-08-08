@@ -155,6 +155,9 @@ function handleGetSettings() {
         if (isset($settings['ldap_bind_password'])) {
             $settings['ldap_bind_password'] = '';
         }
+        if (isset($settings['updater_github_token'])) {
+            $settings['updater_github_token'] = '';
+        }
         if (isset($settings['ldap_servers']) && is_string($settings['ldap_servers']) && trim($settings['ldap_servers']) !== '') {
             $servers = json_decode($settings['ldap_servers'], true);
             if (is_array($servers)) {
@@ -233,8 +236,21 @@ function handleGetSettings() {
             $settings['ldap_servers'] = json_encode($servers);
         }
     }
+
+    // Decrypt updater GitHub token for admin UI (never returned to non-admins)
+    if (isset($settings['updater_github_token']) && $settings['updater_github_token'] !== '') {
+        $token = $settings['updater_github_token'];
+        if (isLikelyEncryptedPassword($token)) {
+            try {
+                $settings['updater_github_token'] = decryptPassword($token);
+            } catch (Exception $e) {
+                error_log('Failed to decrypt updater_github_token: ' . $e->getMessage());
+                $settings['updater_github_token'] = '';
+            }
+        }
+    }
     } // end admin-only LDAP decrypt
-    
+   
     // Normalize logo_image URL for current environment
     if (isset($settings['logo_image']) && !empty($settings['logo_image'])) {
         $settings['logo_image'] = normalizeLogoUrl($settings['logo_image']);
@@ -480,7 +496,8 @@ function handleUpdateSettings() {
                 'saml_enabled', 'local_auth_enabled', 'sp_entity_id', 'sp_assertion_consumer_service',
                 'sp_single_logout_service', 'sp_site_url', 'idp_entity_id', 'idp_sso_url', 'idp_slo_url',
                 'idp_x509cert', 'nameid_format', 'strict', 'debug', 'map_name_to', 'map_email_to',
-                'map_display_name_to', 'auto_provision'
+                'map_display_name_to', 'auto_provision',
+                'updater_repo', 'updater_github_token', 'updater_check_interval_minutes', 'updater_track_branch'
             ];
 
             // After a full LDAP purge in this request, ignore residual flat ldap_* fields from the client
@@ -689,6 +706,52 @@ function handleUpdateSettings() {
                 } else {
                     $value = $trimmedValue;
                 }
+            }
+
+            // GitHub token for in-app updater (private repos / rate limits)
+            if ($key === 'updater_github_token') {
+                $trimmedValue = is_string($value) ? trim($value) : '';
+                if ($value === null || $trimmedValue === '') {
+                    $value = '';
+                } elseif (isMaskedPasswordPlaceholder($trimmedValue)) {
+                    sendJSON(['error' => 'GitHub token looks masked (asterisks). Re-enter the real token and save again.'], 400);
+                } elseif (!isLikelyEncryptedPassword($trimmedValue)) {
+                    try {
+                        $value = encryptPassword($trimmedValue);
+                    } catch (Exception $e) {
+                        error_log('Failed to encrypt updater GitHub token: ' . $e->getMessage());
+                    }
+                } else {
+                    $value = $trimmedValue;
+                }
+            }
+
+            if ($key === 'updater_repo') {
+                $repo = is_string($value) ? trim($value) : '';
+                // Empty = auto-detect from git remote
+                if ($repo !== '' && !preg_match('#^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$#', $repo)) {
+                    sendJSON(['error' => 'updater_repo must be owner/repo (e.g. zafrullakhan001/linknest) or empty to auto-detect'], 400);
+                }
+                $value = $repo;
+            }
+
+            if ($key === 'updater_check_interval_minutes') {
+                $n = (int)$value;
+                if ($n < 5) {
+                    $n = 5;
+                }
+                if ($n > 10080) {
+                    $n = 10080;
+                }
+                $value = (string)$n;
+            }
+
+            if ($key === 'updater_track_branch') {
+                $branch = is_string($value) ? trim($value) : '';
+                if ($branch === '' || !preg_match('/^[A-Za-z0-9._\/-]+$/', $branch)) {
+                    sendJSON(['error' => 'updater_track_branch must be a branch name (e.g. main)'], 400);
+                }
+                $value = $branch;
             }
 
             // Normalize disabled_tabs - store as a JSON array string of allowed tab ids

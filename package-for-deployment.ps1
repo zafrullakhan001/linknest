@@ -4,10 +4,14 @@
     LinkNest Deployment Packager
 .DESCRIPTION
     Clean-builds the React frontend with the correct base path, gathers all
-    runtime files (API, addons, vendor/SAML, dist), stamps BUILD_INFO.json
-    (for PWA cache busting), bundles SQLite 3.53.4 for XAMPP PHP, captures a
-    SOURCE_SPECS.json snapshot from this known-good host, and produces a
-    self-contained ZIP ready to deploy/update on another XAMPP machine.
+    runtime files (API, vendor/SAML, dist, utils, docs), stamps BUILD_INFO.json
+    (for PWA cache busting + in-app updater), bundles SQLite 3.53.4 for XAMPP PHP,
+    captures a SOURCE_SPECS.json snapshot from this known-good host, and produces
+    a self-contained ZIP ready to deploy/update on another XAMPP machine.
+
+    Also emits linknest-update-vX.Y.Z.zip for the Admin → App Updates (GitHub)
+    in-app updater. Ships api/updater*.php, utils/, docs/APP_UPDATES.md, and
+    scripts/publish-update-release.ps1.
 
     Default: FRESH install package (no live SQLite DB). The target PC creates
     a new database on first launch. Use -IncludeDatabase to mirror this PC's DB.
@@ -399,6 +403,8 @@ $DirsToInclude = @(
     "contexts",
     "services",
     "hooks",
+    "utils",      # Vite imports (urlDisplay, releaseNotesMarkdown, richTextDisplay)
+    "docs",       # Operator docs including APP_UPDATES.md
     "config",
     "migrations",
     "public",
@@ -439,6 +445,7 @@ $FilesToInclude = @(
     "sw-cache-first.php",
     "metadata.json",
     "README.md",
+    "AGENTS.md",
     # Staging AI Offline Kit + related import templates (served by PHP from app root)
     "staging-ai-import-template.csv",
     "staging-ai-prompt-guide.md",
@@ -452,8 +459,9 @@ $FilesToInclude = @(
 # Exclude junk that commonly sneaks into recursive copies
 $ExcludeDirNames = @(
     "node_modules", ".git", "__pycache__", ".vite", "dist",
-    "linknest-deploy-*", "linknest-deployment-*", "test-bundle",
-    "docker-deploy-package", "api copy", "data - Copy"
+    "linknest-deploy-*", "linknest-deployment-*", "linknest-update-*",
+    "test-bundle", "docker-deploy-package", "api copy", "data - Copy",
+    ".agent", ".docs", ".gemini", ".vscode", "logs"
 )
 
 # Large / machine-local noise inside analytics (keep workers, schema, dashboard)
@@ -471,7 +479,9 @@ foreach ($dir in $DirsToInclude) {
         Write-Step "Copying $dir/ ..."
         $xf = @()
         if ($dir -eq "analytics") { $xf = $AnalyticsExcludeFiles }
-        $copied = Copy-TreeReliable -Source $src -Destination $dst -ExcludeFiles $xf
+        $copied = Copy-TreeReliable -Source $src -Destination $dst `
+            -ExcludeDirs $ExcludeDirNames `
+            -ExcludeFiles $xf
         Write-OK ("{0}/ copied ({1} files)" -f $dir, $copied)
     }
     else {
@@ -782,8 +792,18 @@ Write-Header "7 / Copy Deployment Scripts"
 $scriptsSrc = Join-Path $ProjectRoot "scripts"
 $scriptsDst = Join-Path $TempDir "scripts"
 if (Test-Path $scriptsSrc) {
-    $copied = Copy-TreeReliable -Source $scriptsSrc -Destination $scriptsDst -ExcludeDirs @("__pycache__", "node_modules")
+    $copied = Copy-TreeReliable -Source $scriptsSrc -Destination $scriptsDst `
+        -ExcludeDirs @("__pycache__", "node_modules") `
+        -ExcludeFiles @(".env", "*.local", "*.pem", "*.key")
     Write-OK ("scripts/ copied ({0} files)" -f $copied)
+    # Ensure in-app updater publisher is present
+    $publishPs1 = Join-Path $scriptsDst "publish-update-release.ps1"
+    if (Test-Path $publishPs1) {
+        Write-OK "scripts/publish-update-release.ps1 present"
+    }
+    else {
+        Write-Warn "scripts/publish-update-release.ps1 missing (re-check scripts/ on packager host)"
+    }
 }
 else {
     Write-Warn "scripts/ not found, skipping"
@@ -809,11 +829,24 @@ $loadTestReportInfo = @{
     })
 }
 
+# Capture packager git SHA for in-app updater baseline (commit tracking / rollback)
+$gitCommitSha = $null
+try {
+    $gitOut = & git -C $ProjectRoot rev-parse HEAD 2>$null
+    if ($LASTEXITCODE -eq 0 -and $gitOut) {
+        $gitCommitSha = ([string]$gitOut).Trim()
+    }
+} catch { }
+
 $buildInfo = [ordered]@{
     buildId     = $BuildId
     builtAt     = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
     packageName = $PackageName
     appVersion  = $pkgVersion
+    gitCommit   = $gitCommitSha
+    releaseTag  = $(if ($pkgVersion -and $pkgVersion -ne 'unknown') { "v$pkgVersion" } else { $null })
+    trackBranch = "main"
+    updatedVia  = "package-for-deployment.ps1"
     basePath    = $(if ($BasePath) { $BasePath } else { '/' })
     includeDatabase = [bool]$IncludeDatabase
     sqliteRuntime = $(if ($SqliteRuntimeBundled) { $SqliteVersionShipped } else { $null })
@@ -825,6 +858,16 @@ $buildInfo = [ordered]@{
         'threads=4',
         'temp_store=MEMORY'
     )
+    updater = @{
+        enabled = $true
+        endpoints = @('/api/updater/status', '/api/updater/apply', '/api/updater/rollback')
+        adminUi = 'Admin -> Tools -> App Updates (or nav bell)'
+        docs = 'docs/APP_UPDATES.md'
+        publishScript = 'scripts/publish-update-release.ps1'
+        updateAsset = "linknest-update-v$pkgVersion.zip"
+        requiresPhp = @('curl', 'zip', 'openssl')
+        modes = @('git (checkout+rebuild)', 'zip (release asset or GitHub zipball)')
+    }
     systemSpecsCheck = @{
         adminUi     = 'Admin -> Maintenance Scripts -> System Specs Check'
         apiEndpoint = '/api/system-specs-check'
@@ -863,6 +906,16 @@ if ($null -ne $SourceSpecsSnapshot) {
             buildId    = $BuildId
             note       = 'Minimum requirements the target must meet for known-good LinkNest parity.'
             target_specs = $SourceSpecsSnapshot.target_specs
+            inAppUpdater = @{
+                adminUi = 'Admin -> Tools -> App Updates'
+                docs = 'docs/APP_UPDATES.md'
+                phpExtensions = @('curl', 'zip', 'openssl')
+                apiFiles = @(
+                    'api/updater.php',
+                    'api/updater_lib.php',
+                    'api/updater_apply_cli.php'
+                )
+            }
         }
         Set-Content -Path (Join-Path $TempDir "TARGET_REQUIREMENTS.json") -Value ($targetOnly | ConvertTo-Json -Depth 8) -Encoding UTF8
         Write-OK "SOURCE_SPECS.json + TARGET_REQUIREMENTS.json written"
@@ -1327,6 +1380,9 @@ for %%F in (
     "api\index.php"
     "api\config.php"
     "api\system_specs_check.php"
+    "api\updater.php"
+    "api\updater_lib.php"
+    "api\updater_apply_cli.php"
     ".htaccess"
     "vendor\autoload.php"
     "BUILD_INFO.json"
@@ -1334,6 +1390,11 @@ for %%F in (
     "public\sw-cache-first.js"
     "package.json"
     "App.tsx"
+    "utils\releaseNotesMarkdown.ts"
+    "docs\APP_UPDATES.md"
+    "scripts\publish-update-release.ps1"
+    "components\UpdatesDialog.tsx"
+    "services\updaterService.ts"
 __VERIFY_SQLITE_CHECKS__
 ) do (
     if exist "!TARGET!\%%~F" (
@@ -1498,9 +1559,27 @@ SQLite  : __SQLITE_SHIP_NOTE__
 10. **System Specs Check:** Admin → Maintenance Scripts → System Specs Check
     (or ``php api/system_specs_check.php``). Compare against ``SOURCE_SPECS.json`` /
     ``TARGET_REQUIREMENTS.json`` shipped in this ZIP.
+11. **In-app updates (optional):** Admin → Tools → App Updates (or the nav bell).
+    Save a GitHub PAT (``repo`` scope) for private repos. Track branch defaults to ``main``.
+    See ``docs/APP_UPDATES.md``. PHP needs **curl** + **zip** extensions enabled.
 
-Optional: run ``verify-install.bat`` to confirm required files (including ``runtime/sqlite/`` and ``api/system_specs_check.php``) are present.
+Optional: run ``verify-install.bat`` to confirm required files (including ``runtime/sqlite/``,
+``api/system_specs_check.php``, and ``api/updater*.php``) are present.
 Optional: run ``install-sqlite-xampp.bat`` alone if you skipped it during deploy.
+
+---
+
+## In-app App Updates (GitHub)
+
+| Piece | Purpose |
+|-------|---------|
+| ``api/updater.php`` / ``updater_lib.php`` / ``updater_apply_cli.php`` | Check commits + Releases, apply, rollback |
+| ``docs/APP_UPDATES.md`` | Full operator guide |
+| ``scripts/publish-update-release.ps1`` | Package + publish ``linknest-update-vX.Y.Z.zip`` to GitHub |
+| ``utils/releaseNotesMarkdown.ts`` | Release-notes rendering (bundled into ``dist/``; kept for rebuilds) |
+| Nav bell / Admin → App Updates | Admin UI |
+
+Requires PHP extensions: ``curl``, ``zip`` (and ``openssl`` for encrypted token storage).
 
 ---
 
@@ -1571,6 +1650,8 @@ Password : admin123
 | Problem | Fix |
 |---------|-----|
 | Old UI after update | Run update-xampp.bat, then Ctrl+F5; check BUILD_INFO.json |
+| In-app updater 404 | Private repo needs GitHub PAT in App Updates settings (repo scope) |
+| Updater apply fails | Enable PHP curl + zip; git mode needs clean tree + Node/npm |
 | Blank / wrong assets | Confirm folder name is `__BASE_PATH_FOR_BAT__`` (or rebuild with Node) |
 | API 404 | Enable AllowOverride All + mod_rewrite in Apache |
 | SAML library missing | Package must include ``vendor/`` - re-run packager on source PC |
@@ -1612,6 +1693,9 @@ $requiredInPackage = @(
     "api\index.php",
     "api\config.php",
     "api\system_specs_check.php",
+    "api\updater.php",
+    "api\updater_lib.php",
+    "api\updater_apply_cli.php",
     ".htaccess",
     "vendor\autoload.php",
     "App.tsx",
@@ -1621,7 +1705,13 @@ $requiredInPackage = @(
     "BUILD_INFO.json",
     "deploy-xampp.bat",
     "update-xampp.bat",
-    "verify-install.bat"
+    "verify-install.bat",
+    "utils\releaseNotesMarkdown.ts",
+    "utils\urlDisplay.ts",
+    "docs\APP_UPDATES.md",
+    "scripts\publish-update-release.ps1",
+    "components\UpdatesDialog.tsx",
+    "services\updaterService.ts"
 )
 
 if ($SqliteRuntimeBundled) {
@@ -1694,6 +1784,12 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zipMB = [math]::Round((Get-Item $ZipOutput).Length / 1MB, 2)
 Write-OK ("ZIP created: {0}  ({1} MB)" -f $ZipOutput, $zipMB)
 
+# Also emit updater-compatible asset name: linknest-update-vX.Y.Z.zip
+$UpdateAssetName = "linknest-update-v$pkgVersion.zip"
+$UpdateAssetPath = Join-Path (Split-Path -Parent $ZipOutput) $UpdateAssetName
+Copy-Item -Path $ZipOutput -Destination $UpdateAssetPath -Force
+Write-OK ("Updater asset: {0}" -f $UpdateAssetPath)
+
 # Spot-check the ZIP itself (previous packages silently omitted vendor/)
 Write-Step "Verifying ZIP contents..."
 $zipCheck = [System.IO.Compression.ZipFile]::OpenRead($ZipOutput)
@@ -1703,11 +1799,17 @@ try {
         "dist/index.html",
         "api/index.php",
         "api/system_specs_check.php",
+        "api/updater.php",
+        "api/updater_lib.php",
+        "api/updater_apply_cli.php",
         "vendor/autoload.php",
         "BUILD_INFO.json",
         "deploy-xampp.bat",
         "update-xampp.bat",
         "verify-install.bat",
+        "utils/releaseNotesMarkdown.ts",
+        "docs/APP_UPDATES.md",
+        "scripts/publish-update-release.ps1",
         ".htaccess"
     )
     if ($SqliteRuntimeBundled) {
@@ -1762,6 +1864,7 @@ Write-Host "  =============================================" -ForegroundColor Gr
 Write-Host "  Packaging Complete!" -ForegroundColor Green
 Write-Host "  =============================================" -ForegroundColor Green
 Write-Host "  ZIP     : $ZipOutput" -ForegroundColor Green
+Write-Host "  Update  : $UpdateAssetPath" -ForegroundColor Green
 Write-Host "  Size    : $zipMB MB"  -ForegroundColor Green
 Write-Host "  BuildId : $BuildId" -ForegroundColor Green
 Write-Host "  Version : $pkgVersion" -ForegroundColor Green
@@ -1769,6 +1872,10 @@ Write-Host "  DB mode : $(if ($IncludeDatabase) { 'includes live DB' } else { 'F
 Write-Host "  SQLite  : $(if ($SqliteRuntimeBundled) { "bundled $SqliteVersionShipped + install-sqlite-xampp.bat" } else { 'not bundled' })" -ForegroundColor Green
 Write-Host "  Specs   : $(if ($SourceSpecsReady) { 'SOURCE_SPECS.json (ready_for_target_parity=true)' } elseif ($null -ne $SourceSpecsSnapshot) { 'SOURCE_SPECS.json (warnings on source host)' } else { 'no live snapshot' })" -ForegroundColor Green
 Write-Host "  Report  : $(if ($LoadTestReportBundled) { 'load-tests/results/report.html (showcase)' } else { 'not bundled' })" -ForegroundColor Green
+Write-Host "  Updater : api/updater*.php + docs/APP_UPDATES.md + publish-update-release.ps1" -ForegroundColor Green
+if ($gitCommitSha) {
+    Write-Host ("  Commit  : {0}" -f $gitCommitSha) -ForegroundColor Green
+}
 Write-Host "  =============================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "  ON THE TARGET MACHINE:" -ForegroundColor Yellow
@@ -1780,8 +1887,10 @@ Write-Host "  5. Optional check: run verify-install.bat" -ForegroundColor Yellow
 Write-Host "  6. Open BUILD_INFO.json and confirm buildId above" -ForegroundColor Yellow
 Write-Host "  7. Ctrl+F5 once if old UI remains (service worker)" -ForegroundColor Yellow
 Write-Host "  8. Admin -> Maintenance Scripts -> System Specs Check (match SOURCE_SPECS.json)" -ForegroundColor Yellow
+Write-Host "  9. Admin -> App Updates: set GitHub PAT, track branch, Check for updates" -ForegroundColor Yellow
+Write-Host "  10. Docs: docs/APP_UPDATES.md" -ForegroundColor Yellow
 if ($LoadTestReportBundled) {
-    Write-Host "  9. Showcase report: open load-tests\results\report.html in a browser" -ForegroundColor Yellow
+    Write-Host "  11. Showcase report: open load-tests\results\report.html in a browser" -ForegroundColor Yellow
 }
 Write-Host ""
 

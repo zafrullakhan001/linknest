@@ -13,6 +13,53 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
   const { settings } = useSettings();
   const appName = settings?.app_name || 'LinkNest';
   const [activeTab, setActiveTab] = useState<TabType>('help');
+  const [appVersion, setAppVersion] = useState<string>('2.1.0');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const base =
+          (typeof window !== 'undefined'
+            ? (window.location.pathname || '/').replace(/\/[^/]*$/, '').replace(/\/$/, '')
+            : '') || '';
+        const candidates = [
+          `${base}/BUILD_INFO.json`,
+          `${base}/dist/BUILD_INFO.json`,
+          '/BUILD_INFO.json',
+        ];
+        for (const url of candidates) {
+          try {
+            const res = await fetch(url, { cache: 'no-store' });
+            if (!res.ok) continue;
+            const info = await res.json();
+            if (!cancelled && info?.appVersion) {
+              setAppVersion(String(info.appVersion));
+              return;
+            }
+          } catch {
+            /* try next */
+          }
+        }
+        // Admin fallback via updater API
+        try {
+          const { getUpdaterStatus } = await import('../services/updaterService');
+          const s = await getUpdaterStatus();
+          if (!cancelled && s?.currentVersion) {
+            setAppVersion(s.currentVersion);
+          }
+        } catch {
+          /* keep default */
+        }
+      } catch {
+        /* keep fallback */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -740,7 +787,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                   A smart, aesthetic landing page manager
                 </p>
                 <p className="text-sm text-slate-500 dark:text-slate-500">
-                  Version 2.1.0
+                  Version {appVersion}
                 </p>
               </section>
 

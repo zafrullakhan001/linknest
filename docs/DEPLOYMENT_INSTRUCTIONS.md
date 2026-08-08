@@ -164,4 +164,8 @@ If you encounter issues:
 3. **Regularly backup your data folder**
 4. **Keep Docker images updated**
 
+## XAMPP in-app updates (no Docker)
+
+For XAMPP installs, publish GitHub Releases with `scripts/publish-update-release.ps1` and apply them from **Admin → App Updates**. See [`docs/APP_UPDATES.md`](APP_UPDATES.md).
+
 

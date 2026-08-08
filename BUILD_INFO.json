@@ -1,0 +1,10 @@
+﻿{
+    "buildId":  "local-dev",
+    "builtAt":  "2026-08-08 00:00:00",
+    "appVersion":  "2.1.0",
+    "packageName":  "local",
+    "basePath":  "/linknest",
+    "note":  "Stamped for in-app updater / About dialog; rebuild via npm run build or packager.",
+    "gitCommit":  "05f16a9b8b35771032c16c256688262703595308",
+    "trackBranch":  "main"
+}

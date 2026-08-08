@@ -223,6 +223,15 @@ if ($path === '/') {
     }
     require __DIR__ . '/addons.php';
     exit;
+} elseif (strpos($path, '/updater') === 0) {
+    $remainingPath = substr($path, 8); // Remove '/updater'
+    if (empty($remainingPath) || $remainingPath === '/') {
+        $_SERVER['PATH_INFO'] = '/';
+    } else {
+        $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
+    }
+    require __DIR__ . '/updater.php';
+    exit;
 } elseif (strpos($path, '/optimize-database') === 0) {
     if (session_status() === PHP_SESSION_NONE) {
         session_start();

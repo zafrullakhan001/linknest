@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { useMobile } from '../hooks/useMobile';
 import { getDisabledTabsFromSettings } from '../services/tabVisibilityService';
+import { getUpdaterStatus } from '../services/updaterService';
 import { ProfileMenu } from './ProfileMenu';
 import { QRCodeDialog } from './QRCodeDialog';
+import { UpdatesDialog } from './UpdatesDialog';
 
 interface NavigationProps {
   darkMode: boolean;
@@ -45,6 +47,9 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
   // Tablets / narrow desktops: hide company logo so centered brand + widgets don't collide
   const isCompactNav = useMobile(1280);
   const [showAppQrDialog, setShowAppQrDialog] = useState(false);
+  const [showUpdatesDialog, setShowUpdatesDialog] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [updateCount, setUpdateCount] = useState(0);
 
   const handleLogout = async () => {
     try {
@@ -54,6 +59,38 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
       console.error('Logout failed:', error);
     }
   };
+
+  useEffect(() => {
+    const openUpdates = () => setShowUpdatesDialog(true);
+    window.addEventListener('openAppUpdates', openUpdates);
+    return () => window.removeEventListener('openAppUpdates', openUpdates);
+  }, []);
+
+  useEffect(() => {
+    if (!user?.is_admin) {
+      setUpdateAvailable(false);
+      setUpdateCount(0);
+      return;
+    }
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const s = await getUpdaterStatus();
+        if (cancelled) return;
+        setUpdateAvailable(Boolean(s.updateAvailable));
+        setUpdateCount(s.updateCount || 0);
+      } catch {
+        /* ignore — e.g. offline or non-admin race */
+      }
+    };
+    poll();
+    const intervalMs = 15 * 60 * 1000;
+    const id = window.setInterval(poll, intervalMs);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [user?.is_admin]);
 
   const logoSize = Math.min(80, Math.max(16, parseInt(settings.logo_size || '32', 10) || 32));
   const headerLogoSize = Math.min(120, Math.max(20, parseInt(settings.header_logo_size || '40', 10) || 40));
@@ -154,6 +191,23 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
                         <span className="hidden lg:inline text-sm font-medium">Admin</span>
                       </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => setShowUpdatesDialog(true)}
+                      className={`linknest-nav-icon p-2 rounded-lg transition-colors relative flex items-center gap-2 ${
+                        updateAvailable
+                          ? 'text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/30'
+                      }`}
+                      title={updateAvailable ? `${updateCount} app update${updateCount === 1 ? '' : 's'} available` : 'App updates'}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                        <path fillRule="evenodd" d="M10 2a6 6 0 00-6 6c0 1.887-.454 3.665-1.257 5.234a.75.75 0 00.515 1.076 32.91 32.91 0 003.256.508 3.994 3.994 0 006.972 0 32.903 32.903 0 003.256-.508.75.75 0 00.515-1.076A11.448 11.448 0 0116 8a6 6 0 00-6-6zM8.05 14.943a33.54 33.54 0 003.9.001 2.5 2.5 0 01-3.9 0z" clipRule="evenodd" />
+                      </svg>
+                      {updateAvailable && (
+                        <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-900" />
+                      )}
+                    </button>
                     {!disabledTabs.has('style') && (
                       <button
                         onClick={() => {
@@ -392,6 +446,14 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
         onClose={() => setShowAppQrDialog(false)}
         url={appShareUrl}
         label={appShareLabel}
+      />
+      <UpdatesDialog
+        isOpen={showUpdatesDialog}
+        onClose={() => setShowUpdatesDialog(false)}
+        onUpdateAvailabilityChange={(available, count) => {
+          setUpdateAvailable(available);
+          setUpdateCount(count);
+        }}
       />
     </nav>
   );

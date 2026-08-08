@@ -29,6 +29,7 @@ import { useMobile } from '../hooks/useMobile';
 import { getCustomWidgets, createWidget, updateWidget, deleteWidget, CustomWidget, CreateWidgetRequest, UpdateWidgetRequest } from '../services/widgetService';
 import { GranularPermissionsModal } from './GranularPermissionsModal';
 import { AddonsManagement } from './AddonsManagement';
+import { UpdatesPanel } from './UpdatesDialog';
 import {
   AccessManagerPanel,
   AccessSubTab,
@@ -95,6 +96,7 @@ type AdminNavTabId =
   | 'maintenance'
   | 'widgets'
   | 'addons'
+  | 'appUpdates'
   | 'loadTest';
 
 const ADMIN_NAV_SECTIONS: Array<{
@@ -140,6 +142,7 @@ const ADMIN_NAV_SECTIONS: Array<{
       { id: 'maintenance', label: 'Maintenance', emoji: '🚧' },
       { id: 'widgets', label: 'Custom Widgets', emoji: '🧩' },
       { id: 'addons', label: 'Add-ons', emoji: '🔌' },
+      { id: 'appUpdates', label: 'App Updates', emoji: '🔔' },
       { id: 'loadTest', label: 'Load Test', emoji: '📈' },
     ],
   },
@@ -242,10 +245,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const isMobile = useMobile();
   // Initialize activeTab from localStorage or default to 'pending'
   // Migrate legacy 'footer' tab → Settings › Branding
-  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenanceScripts' | 'maintenance' | 'widgets' | 'addons' | 'loadTest'>(() => {
+  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenanceScripts' | 'maintenance' | 'widgets' | 'addons' | 'appUpdates' | 'loadTest'>(() => {
     const savedTab = localStorage.getItem('adminPanelActiveTab');
     if (savedTab === 'footer') return 'settings';
-    const validTabs: Array<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenanceScripts' | 'maintenance' | 'widgets' | 'addons' | 'loadTest'> = ['pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'saml', 'footer', 'tabVisibility', 'access', 'clone', 'browser', 'broadcast', 'maintenanceScripts', 'maintenance', 'widgets', 'addons', 'loadTest'];
+    const validTabs: Array<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenanceScripts' | 'maintenance' | 'widgets' | 'addons' | 'appUpdates' | 'loadTest'> = ['pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'saml', 'footer', 'tabVisibility', 'access', 'clone', 'browser', 'broadcast', 'maintenanceScripts', 'maintenance', 'widgets', 'addons', 'appUpdates', 'loadTest'];
     return (savedTab && validTabs.includes(savedTab as any)) ? savedTab as any : 'pending';
   });
   // Initialize tab layout from localStorage or default to 'horizontal'
@@ -14319,6 +14322,18 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
               {activeTab === 'addons' && (
                 <div className="mt-6">
                   <AddonsManagement />
+                </div>
+              )}
+
+              {activeTab === 'appUpdates' && (
+                <div className="mt-6 space-y-4">
+                  <div>
+                    <h2 className="text-xl font-semibold text-slate-900 dark:text-white">App Updates</h2>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                      Check GitHub Releases and apply updates in place (git checkout + rebuild, or download update ZIP).
+                    </p>
+                  </div>
+                  <UpdatesPanel />
                 </div>
               )}
 
