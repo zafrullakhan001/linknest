@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Tile } from '../types';
 import { FaTimes, FaCheck, FaCopy } from 'react-icons/fa';
 
@@ -146,12 +146,12 @@ const InfoRow: React.FC<{
   children: React.ReactNode;
   stack?: boolean;
 }> = ({ label, labelEmoji, children, stack }) => (
-  <div className={`flex gap-3 ${stack ? 'flex-col items-stretch' : 'justify-between items-start gap-4'}`}>
+  <div className={`flex gap-3 ${stack ? 'flex-col items-stretch' : 'justify-between items-center gap-4'}`}>
     <span className="text-slate-600 dark:text-slate-400 font-medium text-sm shrink-0 flex items-center gap-1.5">
       {labelEmoji && <span className="text-base leading-none" aria-hidden="true">{labelEmoji}</span>}
       {label}
     </span>
-    <div className={`${stack ? 'w-full' : 'text-right min-w-0 flex-1'} text-slate-900 dark:text-white`}>
+    <div className={`${stack ? 'w-full' : 'text-right min-w-0 flex-1 flex justify-end items-center'} text-slate-900 dark:text-white`}>
       {children}
     </div>
   </div>
@@ -251,8 +251,8 @@ const CopyableId: React.FC<{ value: string }> = ({ value }) => {
   };
 
   return (
-    <div className="inline-flex items-center gap-2 max-w-full">
-      <code className="font-mono text-xs sm:text-sm text-slate-800 dark:text-slate-100 bg-white/80 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700 rounded-md px-2 py-1 break-all text-left">
+    <div className="inline-flex items-center gap-1.5 max-w-full min-w-0">
+      <code className="font-mono text-xs sm:text-sm text-slate-800 dark:text-slate-100 bg-white/80 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-700 rounded-md px-2 py-1 break-all text-left leading-snug">
         {value}
       </code>
       <button
@@ -287,6 +287,16 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [modalPosition, setModalPosition] = useState({ x: 0, y: 0 });
+  const [modalSize, setModalSize] = useState({ width: 0, height: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
+  const modalPositionRef = useRef({ x: 0, y: 0 });
+  const modalSizeRef = useRef({ width: 0, height: 0 });
+  const modalRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (isOpen && tile && !categoryInfo) {
       fetchTileInfo();
@@ -311,6 +321,118 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
       document.removeEventListener('keydown', handleEscKey);
     };
   }, [isOpen, onClose]);
+
+  // Initialize centered size/position when dialog opens; reset when closed
+  useEffect(() => {
+    if (isOpen) {
+      const timer = setTimeout(() => {
+        if (modalSize.width === 0 && modalSize.height === 0) {
+          const defaultWidth = Math.min(672, window.innerWidth - 40);
+          const defaultHeight = Math.min(720, window.innerHeight - 40);
+          const newSize = { width: defaultWidth, height: defaultHeight };
+          setModalSize(newSize);
+          modalSizeRef.current = newSize;
+          const newPos = {
+            x: (window.innerWidth - defaultWidth) / 2,
+            y: (window.innerHeight - defaultHeight) / 2,
+          };
+          setModalPosition(newPos);
+          modalPositionRef.current = newPos;
+        }
+      }, 10);
+      return () => clearTimeout(timer);
+    }
+
+    setModalPosition({ x: 0, y: 0 });
+    setModalSize({ width: 0, height: 0 });
+    modalPositionRef.current = { x: 0, y: 0 };
+    modalSizeRef.current = { width: 0, height: 0 };
+  }, [isOpen, modalSize.width, modalSize.height]);
+
+  useEffect(() => {
+    if (!isDragging && !isResizing) {
+      modalPositionRef.current = modalPosition;
+      modalSizeRef.current = modalSize;
+    }
+  }, [modalPosition, modalSize, isDragging, isResizing]);
+
+  const handleDragStart = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'BUTTON' || target.closest('button')) {
+      return;
+    }
+    e.stopPropagation();
+    if (!modalRef.current) return;
+    setIsDragging(true);
+    dragStartRef.current = {
+      x: e.clientX - (modalPositionRef.current.x || 0),
+      y: e.clientY - (modalPositionRef.current.y || 0),
+    };
+  };
+
+  const handleDrag = useCallback((e: MouseEvent) => {
+    if (!isDragging || !modalRef.current) return;
+    const newX = e.clientX - dragStartRef.current.x;
+    const newY = e.clientY - dragStartRef.current.y;
+    modalPositionRef.current = { x: newX, y: newY };
+    modalRef.current.style.left = `${newX}px`;
+    modalRef.current.style.top = `${newY}px`;
+    modalRef.current.style.position = 'absolute';
+  }, [isDragging]);
+
+  const handleDragEnd = useCallback(() => {
+    setModalPosition(modalPositionRef.current);
+    setIsDragging(false);
+  }, []);
+
+  const handleResizeStart = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!modalRef.current) return;
+    setIsResizing(true);
+    const rect = modalRef.current.getBoundingClientRect();
+    resizeStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      width: rect.width,
+      height: rect.height,
+    };
+    modalPositionRef.current = { x: modalPosition.x, y: modalPosition.y };
+  };
+
+  const handleResize = useCallback((e: MouseEvent) => {
+    if (!isResizing || !modalRef.current) return;
+    const deltaX = e.clientX - resizeStartRef.current.x;
+    const deltaY = e.clientY - resizeStartRef.current.y;
+    const minWidth = 360;
+    const minHeight = 280;
+    const maxWidth = window.innerWidth - modalPositionRef.current.x;
+    const maxHeight = window.innerHeight - modalPositionRef.current.y;
+    const newWidth = Math.max(minWidth, Math.min(resizeStartRef.current.width + deltaX, maxWidth));
+    const newHeight = Math.max(minHeight, Math.min(resizeStartRef.current.height + deltaY, maxHeight));
+    modalSizeRef.current = { width: newWidth, height: newHeight };
+    modalRef.current.style.width = `${newWidth}px`;
+    modalRef.current.style.height = `${newHeight}px`;
+  }, [isResizing]);
+
+  const handleResizeEnd = useCallback(() => {
+    setModalSize(modalSizeRef.current);
+    setIsResizing(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isDragging && !isResizing) return;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = isDragging ? 'move' : 'nwse-resize';
+    document.addEventListener('mousemove', isDragging ? handleDrag : handleResize);
+    document.addEventListener('mouseup', isDragging ? handleDragEnd : handleResizeEnd);
+    return () => {
+      document.removeEventListener('mousemove', isDragging ? handleDrag : handleResize);
+      document.removeEventListener('mouseup', isDragging ? handleDragEnd : handleResizeEnd);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+  }, [isDragging, isResizing, handleDrag, handleResize, handleDragEnd, handleResizeEnd]);
 
   const fetchTileInfo = async () => {
     if (!tile) return;
@@ -364,14 +486,32 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
   const headerTitle = categoryInfo ? categoryInfo.categoryName : (tileInfo?.title || tile?.title || 'Tile');
   const headerEmoji = categoryInfo ? '📂' : '🧩';
   const headerSubtitle = categoryInfo ? 'Category details & permissions' : 'Space metadata, ownership & access';
+  const positioned = modalSize.width > 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 dark:bg-black/70 backdrop-blur-[2px]" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-slate-900/50 dark:bg-black/70 backdrop-blur-[2px]">
       <div
-        className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-hidden border border-slate-200/80 dark:border-slate-700"
-        onClick={(e) => e.stopPropagation()}
+        ref={modalRef}
+        className={`bg-white dark:bg-slate-800 rounded-2xl shadow-2xl overflow-hidden border border-slate-200/80 dark:border-slate-700 flex flex-col ${isDragging ? 'cursor-move' : ''} ${isDragging || isResizing ? 'will-change-transform' : ''}`}
+        style={{
+          width: positioned ? `${modalSize.width}px` : 'min(672px, calc(100vw - 2rem))',
+          height: positioned ? `${modalSize.height}px` : 'min(720px, calc(100vh - 2rem))',
+          minWidth: '360px',
+          minHeight: '280px',
+          maxWidth: '95vw',
+          maxHeight: '95vh',
+          left: positioned ? `${modalPosition.x}px` : '50%',
+          top: positioned ? `${modalPosition.y}px` : '50%',
+          position: 'absolute',
+          transform: positioned ? undefined : 'translate(-50%, -50%)',
+          transition: isDragging || isResizing ? 'none' : undefined,
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 z-10 border-b border-sky-100 dark:border-slate-700 bg-gradient-to-r from-sky-50 via-white to-indigo-50 dark:from-slate-800 dark:via-slate-800 dark:to-indigo-950/40 px-5 sm:px-6 py-4 flex items-start justify-between gap-3">
+        <div
+          onMouseDown={handleDragStart}
+          className="shrink-0 z-10 border-b border-sky-100 dark:border-slate-700 bg-gradient-to-r from-sky-50 via-white to-indigo-50 dark:from-slate-800 dark:via-slate-800 dark:to-indigo-950/40 px-5 sm:px-6 py-4 flex items-start justify-between gap-3 select-none cursor-move"
+        >
           <div className="flex items-start gap-3 min-w-0">
             <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 text-white shadow-md shadow-sky-500/20 flex items-center justify-center text-xl shrink-0" aria-hidden="true">
               {headerEmoji}
@@ -388,14 +528,14 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-white/80 dark:hover:bg-slate-700 rounded-lg transition-colors shrink-0"
+            className="p-2 hover:bg-white/80 dark:hover:bg-slate-700 rounded-lg transition-colors shrink-0 cursor-pointer"
             aria-label="Close"
           >
             <FaTimes className="w-5 h-5 text-slate-500 dark:text-slate-400" />
           </button>
         </div>
 
-        <div className="p-5 sm:p-6 overflow-y-auto max-h-[calc(90vh-5.5rem)]">
+        <div className="flex-1 min-h-0 p-5 sm:p-6 overflow-y-auto">
           {categoryInfo ? (
             <CategoryInfoView categoryInfo={categoryInfo} formatDate={formatDate} formatRelativeTime={formatRelativeTime} />
           ) : loading ? (
@@ -411,6 +551,18 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
           ) : tileInfo ? (
             <TileInfoView tileInfo={tileInfo} formatDate={formatDate} formatRelativeTime={formatRelativeTime} />
           ) : null}
+        </div>
+
+        <div
+          onMouseDown={handleResizeStart}
+          className={`absolute bottom-0 right-0 w-6 h-6 cursor-nwse-resize flex items-end justify-end rounded-br-2xl ${isResizing ? 'bg-sky-500/20' : 'hover:bg-slate-200/50 dark:hover:bg-slate-700/50'}`}
+          title="Resize"
+          aria-hidden="true"
+        >
+          <div className="w-4 h-4 relative mr-0.5 mb-0.5">
+            <div className="absolute bottom-0 right-0 w-3 h-3 border-r-2 border-b-2 border-slate-400 dark:border-slate-500 rounded-br-lg"></div>
+            <div className="absolute bottom-1 right-1 w-2 h-2 border-r border-b border-slate-400 dark:border-slate-500 rounded-br"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -428,10 +580,8 @@ const TileInfoView: React.FC<{
         <InfoRow label="Title" labelEmoji="🏷️">
           <span className="font-semibold">{tileInfo.title}</span>
         </InfoRow>
-        <InfoRow label="ID" labelEmoji="🆔" stack>
-          <div className="flex justify-end">
-            <CopyableId value={tileInfo.tileId} />
-          </div>
+        <InfoRow label="ID" labelEmoji="🆔">
+          <CopyableId value={tileInfo.tileId} />
         </InfoRow>
         <InfoRow label="Visibility" labelEmoji="👁️">
           <VisibilityBadge visibility={tileInfo.visibility} />
@@ -454,10 +604,8 @@ const TileInfoView: React.FC<{
                 <span className="break-all">{tileInfo.owner.email}</span>
               </InfoRow>
             )}
-            <InfoRow label="User ID" labelEmoji="🔑" stack>
-              <div className="flex justify-end">
-                <CopyableId value={String(tileInfo.owner.userUuid || tileInfo.owner.userId)} />
-              </div>
+            <InfoRow label="User ID" labelEmoji="🔑">
+              <CopyableId value={String(tileInfo.owner.userUuid || tileInfo.owner.userId)} />
             </InfoRow>
           </>
         ) : (
@@ -655,10 +803,8 @@ const CategoryInfoView: React.FC<{
                   <span className="break-all">{categoryInfo.owner.email}</span>
                 </InfoRow>
               )}
-              <InfoRow label="User ID" labelEmoji="🔑" stack>
-                <div className="flex justify-end">
-                  <CopyableId value={String(categoryInfo.owner.userUuid || categoryInfo.owner.userId)} />
-                </div>
+              <InfoRow label="User ID" labelEmoji="🔑">
+                <CopyableId value={String(categoryInfo.owner.userUuid || categoryInfo.owner.userId)} />
               </InfoRow>
               {categoryInfo.owner.isAdmin && (
                 <div className="mt-1 pt-3 border-t border-amber-200/70 dark:border-amber-900/40">
