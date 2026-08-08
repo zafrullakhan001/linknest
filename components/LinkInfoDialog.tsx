@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useSettings } from '../contexts/SettingsContext';
 import { getDisplayUrl } from '../utils/urlDisplay';
@@ -11,6 +11,14 @@ interface LinkInfoDialogProps {
   richTextContent: string;
   linkUrl?: string;
   browser?: string; // Browser to open link in (e.g., 'chrome-stable', 'edge-stable', 'default')
+}
+
+function stripHtmlTags(content: string): string {
+  if (!content) return '';
+  if (typeof document === 'undefined') return content.replace(/<[^>]*>/g, '');
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = content;
+  return tempDiv.textContent || tempDiv.innerText || '';
 }
 
 // Function to format/beautify HTML (same as RichTextEditor)
@@ -126,6 +134,7 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
   const [showCodeView, setShowCodeView] = useState(false);
   const [codeViewValue, setCodeViewValue] = useState('');
   const [copied, setCopied] = useState(false);
+  const plainLabel = useMemo(() => stripHtmlTags(linkLabel || ''), [linkLabel]);
 
   // Helper function to format browser name for display
   const formatBrowserName = (browserId: string | null | undefined): string => {
@@ -233,7 +242,11 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
               </div>
             )}
             <div className="min-w-0 overflow-hidden">
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-white truncate">{linkLabel}</h2>
+              <h2
+                className="text-2xl font-bold text-slate-900 dark:text-white truncate"
+                title={plainLabel}
+                dangerouslySetInnerHTML={{ __html: linkLabel || '' }}
+              />
               {linkUrl && (
                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5 truncate" title={linkUrl}>
                   {getDisplayUrl(linkUrl)}

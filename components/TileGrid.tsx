@@ -12276,7 +12276,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         <LinkInfoDialog
           isOpen={!!linkInfoDialog}
           onClose={() => setLinkInfoDialog(null)}
-          linkLabel={stripHtml(linkInfoDialog.link.label)}
+          linkLabel={linkInfoDialog.link.label}
           linkIcon={linkInfoDialog.link.icon}
           richTextContent={linkInfoDialog.link.richTextContent || ''}
           linkUrl={linkInfoDialog.link.url}
