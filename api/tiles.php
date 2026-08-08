@@ -736,7 +736,7 @@ function handleGetTiles() {
                             $section = [
                                 'id' => $sectionRow['id'],
                                 'title' => $sectionRow['title'],
-                                'textColor' => isset($sectionRow['text_color']) ? $sectionRow['text_color'] : null,
+                                'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
                                 'visibleFrom' => $sectionRow['visible_from'] ?? null,
                                 'expiresAt' => $sectionRow['expires_at'] ?? null,
                                 'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
@@ -848,6 +848,7 @@ function handleGetTiles() {
                     $section = [
                         'id' => $sectionRow['id'],
                         'title' => $sectionRow['title'],
+                        'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
                         'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
                         'visibility' => $sectionRow['visibility'] ?? 'public',
                         'published' => isContentPublished($sectionRow),
@@ -1249,6 +1250,7 @@ function handleGetTile($tileId) {
             $section = [
                 'id' => $sectionRow['id'],
                 'title' => $sectionRow['title'],
+                'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
                 'visibleFrom' => $sectionRow['visible_from'] ?? null,
                 'expiresAt' => $sectionRow['expires_at'] ?? null,
                 'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
@@ -1373,6 +1375,8 @@ function handleGetTile($tileId) {
                 $section = [
                     'id' => $sectionRow['id'],
                     'title' => $sectionRow['title'],
+                    'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
+                    'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
                     'visibility' => $sectionRow['visibility'] ?? 'public',
                     'allowedUsers' => (isset($sectionRow['allowed_users']) && $sectionRow['allowed_users'] ? json_decode($sectionRow['allowed_users'], true) : null) ?? [],
                     'allowedGroups' => (isset($sectionRow['allowed_groups']) && $sectionRow['allowed_groups'] ? json_decode($sectionRow['allowed_groups'], true) : null) ?? [],
@@ -4025,7 +4029,7 @@ function handleGetRecycleBin() {
                 $section = [
                     'id' => $sectionRow['id'],
                     'title' => $sectionRow['title'],
-                    'textColor' => isset($sectionRow['text_color']) ? $sectionRow['text_color'] : null,
+                    'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
                     'visibleFrom' => $sectionRow['visible_from'] ?? null,
                     'expiresAt' => $sectionRow['expires_at'] ?? null,
                     'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
@@ -4395,6 +4399,7 @@ function handleGetArchive() {
                     $section = [
                         'id' => $sectionRow['id'],
                         'title' => $sectionRow['title'],
+                        'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
                         'visibleFrom' => $sectionRow['visible_from'] ?? null,
                         'expiresAt' => $sectionRow['expires_at'] ?? null,
                         'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
@@ -4898,7 +4903,7 @@ function getTileForVersion($tileId, $db) {
             $section = [
                 'id' => $sectionRow['id'],
                 'title' => $sectionRow['title'],
-                'textColor' => isset($sectionRow['text_color']) ? $sectionRow['text_color'] : null,
+                    'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
                 'visibleFrom' => $sectionRow['visible_from'] ?? null,
                 'expiresAt' => $sectionRow['expires_at'] ?? null,
                 'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,

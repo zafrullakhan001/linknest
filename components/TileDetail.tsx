@@ -5116,18 +5116,19 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         const isQrView = sectionLinkLayout === 'qr';
 
                                                         if (isQrView) {
+                                                            const plainQrLabel = stripHtmlTags(link.label || '');
                                                             return (
                                                                 <div
                                                                     key={link.id}
                                                                     className="linknest-qr-card flex flex-col items-center text-center gap-3 p-4 rounded-2xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 shadow-sm w-full min-w-0 max-w-full overflow-hidden"
                                                                     style={{ opacity: 1, position: 'relative', zIndex: 0 }}
-                                                                    title={link.tooltip || link.label}
+                                                                    title={link.tooltip || plainQrLabel}
                                                                 >
                                                                     <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm w-full flex justify-center max-w-[280px]">
                                                                         <BrandedQRCode
                                                                             value={link.url || ''}
                                                                             size={isMobile ? 220 : 200}
-                                                                            title={`QR code for ${link.label}`}
+                                                                            title={`QR code for ${plainQrLabel}`}
                                                                             className="w-full flex justify-center [&_svg]:max-w-full [&_svg]:h-auto"
                                                                         />
                                                                     </div>
@@ -5136,9 +5137,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             {link.icon ? (
                                                                                 <span className="text-base leading-none shrink-0" aria-hidden>{link.icon}</span>
                                                                             ) : null}
-                                                                            <p className="font-semibold text-sm sm:text-base text-slate-900 dark:text-white truncate" title={link.label}>
-                                                                                {link.label}
-                                                                            </p>
+                                                                            <p
+                                                                                className="font-semibold text-sm sm:text-base text-slate-900 dark:text-white truncate"
+                                                                                title={plainQrLabel}
+                                                                                dangerouslySetInnerHTML={{ __html: link.label || '' }}
+                                                                            />
                                                                         </div>
                                                                         <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-mono truncate" title={link.url}>
                                                                             {getDisplayUrl(link.url)}

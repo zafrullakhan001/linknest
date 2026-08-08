@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { getDisplayUrl } from '../utils/urlDisplay';
 import { BrandedQRCode } from './BrandedQRCode';
@@ -10,6 +10,14 @@ interface QRCodeDialogProps {
   label: string;
 }
 
+function stripHtmlTags(content: string): string {
+  if (!content) return '';
+  if (typeof document === 'undefined') return content.replace(/<[^>]*>/g, '');
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = content;
+  return tempDiv.textContent || tempDiv.innerText || '';
+}
+
 export const QRCodeDialog: React.FC<QRCodeDialogProps> = ({
   isOpen,
   onClose,
@@ -17,6 +25,7 @@ export const QRCodeDialog: React.FC<QRCodeDialogProps> = ({
   label,
 }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const plainLabel = useMemo(() => stripHtmlTags(label || ''), [label]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -69,9 +78,11 @@ export const QRCodeDialog: React.FC<QRCodeDialogProps> = ({
             <h3 id="qr-code-dialog-title" className="text-lg font-bold text-slate-900 dark:text-white">
               QR Code
             </h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5 truncate" title={label}>
-              {label}
-            </p>
+            <p
+              className="text-sm text-slate-500 dark:text-slate-400 mt-0.5 truncate"
+              title={plainLabel}
+              dangerouslySetInnerHTML={{ __html: label || '' }}
+            />
           </div>
           <button
             type="button"
@@ -88,7 +99,7 @@ export const QRCodeDialog: React.FC<QRCodeDialogProps> = ({
 
         <div className="px-6 py-6 flex flex-col items-center gap-4">
           <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-            <BrandedQRCode value={url} size={256} title={`QR code for ${label}`} className="" />
+            <BrandedQRCode value={url} size={256} title={`QR code for ${plainLabel}`} className="" />
           </div>
           <p
             className="text-xs text-slate-500 dark:text-slate-400 font-mono text-center break-all max-w-full"
