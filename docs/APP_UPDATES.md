@@ -59,9 +59,11 @@ Snapshots are linked on the history entry (`dbSnapshotId`) so you can restore **
 2. Open **App Updates** (nav bell, or **Admin → Tools → App Updates**).
 3. If the repo is **private**, paste a GitHub [classic PAT](https://github.com/settings/tokens/new?scopes=repo&description=LinkNest%20Updater) with **`repo`** scope → **Save settings**.
 4. Set **Track branch** (e.g. `main` or `updater`) → Save → **Check for updates**.
-5. Select a **commit** or **release** — review the **change preview**.
+5. Select a **commit** or **release** (nothing is applied until you confirm **Update**).
 6. Leave **Back up database** checked (recommended), then **Update**.
 7. When finished, **Reload app**.
+
+**Local-only commits:** If you committed on this XAMPP machine but have not pushed to `origin/<track-branch>`, App Updates still lists them with a **local only** badge and a warning to push (`git push origin HEAD:updater`). Remote compares alone will show “up to date” until you push.
 
 ---
 

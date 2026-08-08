@@ -40,6 +40,7 @@ export interface UpdaterCommit {
   date: string;
   htmlUrl: string;
   kind: 'commit';
+  localOnly?: boolean;
 }
 
 export interface UpdaterJob {
@@ -157,6 +158,8 @@ export interface UpdaterStatus {
   checkIntervalMinutes: number;
   job: UpdaterJob | null;
   error?: string | null;
+  hint?: string | null;
+  localOnlyCount?: number;
 }
 
 export interface UpdaterReleasesPayload {

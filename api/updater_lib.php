@@ -746,6 +746,68 @@ function updaterFindReleaseByTag(array $releases, string $tag): ?array {
  * Commits on track branch that are ahead of the installed SHA.
  * @return array{fetchedAt:int,branch:string,base:string|null,aheadBy:int,commits:list<array>}
  */
+/**
+ * Parse `git log` lines into commit update rows.
+ * @return list<array{sha:string,shortSha:string,message:string,body:string,author:string,date:string,htmlUrl:string,kind:string,localOnly?:bool}>
+ */
+function updaterParseGitLogCommits(string $range, int $max = 30): array {
+    $cmd = 'git log --format=%H%x1f%s%x1f%an%x1f%aI --max-count=' . (int)$max . ' ' . escapeshellarg($range);
+    $r = updaterRunCommand($cmd, null, 60);
+    if (!$r['ok'] || $r['stdout'] === '') {
+        return [];
+    }
+    $out = [];
+    foreach (preg_split('/\r\n|\n|\r/', $r['stdout']) as $line) {
+        $line = trim($line);
+        if ($line === '') {
+            continue;
+        }
+        $parts = explode("\x1f", $line);
+        if (count($parts) < 2) {
+            continue;
+        }
+        $sha = trim($parts[0]);
+        if (!preg_match('/^[a-f0-9]{7,40}$/i', $sha)) {
+            continue;
+        }
+        $out[] = [
+            'sha' => $sha,
+            'shortSha' => substr($sha, 0, 7),
+            'message' => trim($parts[1] ?? ''),
+            'body' => trim($parts[1] ?? ''),
+            'author' => trim($parts[2] ?? ''),
+            'date' => trim($parts[3] ?? ''),
+            'htmlUrl' => '',
+            'kind' => 'commit',
+            'localOnly' => false,
+        ];
+    }
+    return $out;
+}
+
+function updaterMergeCommitLists(array ...$lists): array {
+    $bySha = [];
+    foreach ($lists as $list) {
+        foreach ($list as $c) {
+            if (!is_array($c) || empty($c['sha'])) {
+                continue;
+            }
+            $key = strtolower((string)$c['sha']);
+            if (!isset($bySha[$key])) {
+                $bySha[$key] = $c;
+            } else {
+                // Prefer remote (localOnly false) over local-only
+                if (!empty($bySha[$key]['localOnly']) && empty($c['localOnly'])) {
+                    $bySha[$key] = $c;
+                } elseif (empty($bySha[$key]['localOnly']) && !empty($c['localOnly'])) {
+                    $bySha[$key]['localOnly'] = false;
+                }
+            }
+        }
+    }
+    return array_values($bySha);
+}
+
 function updaterFetchCommitsAhead(bool $force = false): array {
     $ttl = updaterCheckIntervalMinutes() * 60;
     $branch = updaterTrackBranch();
@@ -766,22 +828,26 @@ function updaterFetchCommitsAhead(bool $force = false): array {
     }
 
     $repo = updaterRepoSlug();
-    $commits = [];
+    $remoteCommits = [];
+    $localCommits = [];
     $aheadBy = 0;
     $headSha = null;
+    $hint = null;
+    $caps = updaterCapabilities();
+
+    // Always refresh origin tip when local git is available (helps after recent pushes).
+    if ($caps['gitAvailable']) {
+        updaterEnsureGitSafeDirectory();
+        updaterRunCommand('git fetch origin ' . escapeshellarg($branch) . ' --prune', null, 120);
+    }
 
     if ($base) {
-        // compare base...branch
         $url = 'https://api.github.com/repos/' . $repo . '/compare/'
             . rawurlencode($base) . '...' . rawurlencode($branch);
         try {
             $payload = updaterHttpJson($url);
             $aheadBy = (int)($payload['ahead_by'] ?? 0);
-            $headSha = $payload['commits'][count($payload['commits'] ?? []) - 1]['sha']
-                ?? ($payload['merge_base_commit']['sha'] ?? null);
-            // Prefer status head
             if (!empty($payload['commits']) && is_array($payload['commits'])) {
-                // API returns oldest→newest; reverse for UI (newest first)
                 $list = array_reverse($payload['commits']);
                 foreach ($list as $c) {
                     if (!is_array($c)) {
@@ -793,7 +859,7 @@ function updaterFetchCommitsAhead(bool $force = false): array {
                     }
                     $msg = (string)($c['commit']['message'] ?? '');
                     $subject = trim(explode("\n", $msg)[0]);
-                    $commits[] = [
+                    $remoteCommits[] = [
                         'sha' => $sha,
                         'shortSha' => substr($sha, 0, 7),
                         'message' => $subject,
@@ -802,56 +868,111 @@ function updaterFetchCommitsAhead(bool $force = false): array {
                         'date' => (string)($c['commit']['author']['date'] ?? ''),
                         'htmlUrl' => (string)($c['html_url'] ?? ''),
                         'kind' => 'commit',
+                        'localOnly' => false,
                     ];
                 }
-                if (!empty($commits)) {
-                    $headSha = $commits[0]['sha'];
+                if (!empty($remoteCommits)) {
+                    $headSha = $remoteCommits[0]['sha'];
                 }
             }
-            // If identical / behind, ahead_by may be 0
         } catch (Throwable $e) {
-            // Base SHA may be unknown to GitHub (local-only). Fall through to branch tip list.
             error_log('updater compare failed: ' . $e->getMessage());
         }
     }
 
-    if ($base === null || ($aheadBy === 0 && empty($commits))) {
-        // No known base, or compare empty: list recent branch commits and mark tip as available if different
-        $url = 'https://api.github.com/repos/' . $repo . '/commits?sha='
-            . rawurlencode($branch) . '&per_page=30';
-        $payload = updaterHttpJson($url);
-        foreach ($payload as $c) {
-            if (!is_array($c)) {
-                continue;
+    if ($base === null || ($aheadBy === 0 && empty($remoteCommits))) {
+        try {
+            $url = 'https://api.github.com/repos/' . $repo . '/commits?sha='
+                . rawurlencode($branch) . '&per_page=30';
+            $payload = updaterHttpJson($url);
+            foreach ($payload as $c) {
+                if (!is_array($c)) {
+                    continue;
+                }
+                $sha = (string)($c['sha'] ?? '');
+                if ($sha === '') {
+                    continue;
+                }
+                if ($base && str_starts_with(strtolower($sha), substr(strtolower($base), 0, 7))) {
+                    break;
+                }
+                $msg = (string)($c['commit']['message'] ?? '');
+                $subject = trim(explode("\n", $msg)[0]);
+                $remoteCommits[] = [
+                    'sha' => $sha,
+                    'shortSha' => substr($sha, 0, 7),
+                    'message' => $subject,
+                    'body' => $msg,
+                    'author' => (string)($c['commit']['author']['name'] ?? $c['author']['login'] ?? ''),
+                    'date' => (string)($c['commit']['author']['date'] ?? ''),
+                    'htmlUrl' => (string)($c['html_url'] ?? ''),
+                    'kind' => 'commit',
+                    'localOnly' => false,
+                ];
             }
-            $sha = (string)($c['sha'] ?? '');
-            if ($sha === '') {
-                continue;
+            if ($base && !empty($remoteCommits)
+                && str_starts_with(strtolower($remoteCommits[0]['sha']), substr(strtolower($base), 0, 7))) {
+                $remoteCommits = [];
             }
-            if ($base && str_starts_with(strtolower($sha), substr(strtolower($base), 0, 7))) {
-                break; // reached installed commit
-            }
-            $msg = (string)($c['commit']['message'] ?? '');
-            $subject = trim(explode("\n", $msg)[0]);
-            $commits[] = [
-                'sha' => $sha,
-                'shortSha' => substr($sha, 0, 7),
-                'message' => $subject,
-                'body' => $msg,
-                'author' => (string)($c['commit']['author']['name'] ?? $c['author']['login'] ?? ''),
-                'date' => (string)($c['commit']['author']['date'] ?? ''),
-                'htmlUrl' => (string)($c['html_url'] ?? ''),
-                'kind' => 'commit',
-            ];
+            $aheadBy = count($remoteCommits);
+            $headSha = $remoteCommits[0]['sha'] ?? null;
+        } catch (Throwable $e) {
+            error_log('updater commits list failed: ' . $e->getMessage());
         }
-        $aheadBy = count($commits);
-        $headSha = $commits[0]['sha'] ?? null;
-        if ($base && !empty($commits)) {
-            // If first commit equals base, no updates
-            if (str_starts_with(strtolower($commits[0]['sha']), substr(strtolower($base), 0, 7))) {
-                $commits = [];
-                $aheadBy = 0;
+    }
+
+    // Local/git mode: also surface commits present on this machine but not yet on origin/<branch>.
+    if ($caps['gitAvailable'] && $base) {
+        $originTip = 'origin/' . $branch;
+        $fromOrigin = updaterParseGitLogCommits($base . '..' . $originTip, 30);
+        foreach ($fromOrigin as &$c) {
+            $c['localOnly'] = false;
+        }
+        unset($c);
+
+        $fromHead = updaterParseGitLogCommits($base . '..HEAD', 30);
+        $remoteShaSet = [];
+        foreach (array_merge($remoteCommits, $fromOrigin) as $c) {
+            $remoteShaSet[strtolower((string)($c['sha'] ?? ''))] = true;
+        }
+        foreach ($fromHead as &$c) {
+            $key = strtolower((string)$c['sha']);
+            $c['localOnly'] = empty($remoteShaSet[$key]);
+        }
+        unset($c);
+
+        $localOnlyCount = 0;
+        foreach ($fromHead as $c) {
+            if (!empty($c['localOnly'])) {
+                $localOnlyCount++;
+                $localCommits[] = $c;
             }
+        }
+        $remoteCommits = updaterMergeCommitLists($remoteCommits, $fromOrigin);
+        if ($localOnlyCount > 0) {
+            $hint = $localOnlyCount . ' local commit(s) are not on origin/' . $branch
+                . '. Push first (git push origin HEAD:' . $branch . ') or select a local commit to apply.';
+        }
+    }
+
+    $commits = updaterMergeCommitLists($remoteCommits, $localCommits);
+    // Newest first — git log is already newest-first; GitHub compare may differ
+    usort($commits, static function ($a, $b) {
+        $da = strtotime((string)($a['date'] ?? '')) ?: 0;
+        $db = strtotime((string)($b['date'] ?? '')) ?: 0;
+        if ($da !== $db) {
+            return $db <=> $da;
+        }
+        return strcmp((string)($b['sha'] ?? ''), (string)($a['sha'] ?? ''));
+    });
+
+    $aheadBy = count($commits);
+    $headSha = $commits[0]['sha'] ?? $headSha;
+
+    $localOnlyInMerge = 0;
+    foreach ($commits as $c) {
+        if (!empty($c['localOnly'])) {
+            $localOnlyInMerge++;
         }
     }
 
@@ -863,6 +984,8 @@ function updaterFetchCommitsAhead(bool $force = false): array {
         'aheadBy' => $aheadBy,
         'headSha' => $headSha,
         'commits' => $commits,
+        'hint' => $hint,
+        'localOnlyCount' => $localOnlyInMerge,
     ];
     if (!is_dir(dirname(UPDATER_COMMITS_CACHE_FILE))) {
         @mkdir(dirname(UPDATER_COMMITS_CACHE_FILE), 0755, true);
@@ -897,12 +1020,32 @@ function updaterResolveApplyTarget(?string $tag, ?string $sha): array {
         }
         $cache = updaterFetchCommitsAhead(true);
         $commit = updaterFindCommitBySha($cache['commits'] ?? [], $clean);
-        $message = $commit['message'] ?? ('Commit ' . substr($clean, 0, 7));
+        $message = $commit['message'] ?? null;
+        $fullSha = $commit['sha'] ?? $clean;
+
+        // Allow applying a local-only SHA even if GitHub has not seen it yet
+        if ($commit === null && updaterCapabilities()['gitAvailable']) {
+            $probe = updaterRunCommand('git cat-file -t ' . escapeshellarg($clean), null, 15);
+            if ($probe['ok'] && trim($probe['stdout']) === 'commit') {
+                $rev = updaterRunCommand('git rev-parse ' . escapeshellarg($clean), null, 15);
+                $fullSha = ($rev['ok'] && preg_match('/^[a-f0-9]{7,40}$/i', $rev['stdout']))
+                    ? $rev['stdout']
+                    : $clean;
+                $meta = updaterRunCommand('git log -1 --format=%s ' . escapeshellarg($fullSha), null, 15);
+                $message = $meta['ok'] ? $meta['stdout'] : ('Commit ' . substr($fullSha, 0, 7));
+            } else {
+                throw new RuntimeException(
+                    'Commit not found locally or on GitHub: ' . substr($clean, 0, 7)
+                    . '. Push to origin/' . updaterTrackBranch() . ' first, or ensure the SHA exists in this git clone.'
+                );
+            }
+        }
+
         return [
             'type' => 'sha',
-            'ref' => $commit['sha'] ?? $clean,
-            'version' => updaterInstalledVersion(), // keep version unless package.json changes after apply
-            'message' => $message,
+            'ref' => $fullSha,
+            'version' => updaterInstalledVersion(),
+            'message' => $message ?? ('Commit ' . substr($fullSha, 0, 7)),
             'tag' => null,
             'assetName' => null,
             'assetUrl' => null,
@@ -1926,7 +2069,46 @@ function updaterRecoverStaleApplyState(bool $forceLockClear = false): void {
     }
 }
 
+function updaterSettleCompletedJob(): void {
+    $job = updaterReadJob();
+    if (!is_array($job)) {
+        return;
+    }
+    $status = (string)($job['status'] ?? '');
+    if ($status !== 'success' && $status !== 'error') {
+        return;
+    }
+    // Keep recent errors visible; archive success so the progress bar does not stick at 100%.
+    if ($status === 'success') {
+        $finished = (int)($job['finishedAt'] ?? $job['updatedAt'] ?? time());
+        updaterWriteJob([
+            'status' => 'idle',
+            'percent' => 0,
+            'message' => 'Ready',
+            'log' => [],
+            'lastSuccessAt' => $finished,
+            'lastSuccessSha' => $job['sha'] ?? null,
+            'error' => null,
+        ]);
+        return;
+    }
+    // Errors older than 30 minutes → idle
+    $updated = (int)($job['updatedAt'] ?? 0);
+    if ($updated > 0 && (time() - $updated) > 1800) {
+        updaterWriteJob([
+            'status' => 'idle',
+            'percent' => 0,
+            'message' => 'Ready',
+            'log' => [],
+            'error' => null,
+        ]);
+    }
+}
+
 function updaterBuildStatusPayload(bool $forceCheck = false): array {
+    updaterSettleCompletedJob();
+    updaterRecoverStaleApplyState();
+
     $current = updaterInstalledVersion();
     $caps = updaterCapabilities();
     $error = null;
@@ -1936,6 +2118,8 @@ function updaterBuildStatusPayload(bool $forceCheck = false): array {
     $fetchedAt = null;
     $branch = updaterTrackBranch();
     $installedCommit = updaterInstalledCommit();
+    $hint = null;
+    $localOnlyCount = 0;
 
     try {
         $cache = updaterFetchReleases($forceCheck);
@@ -1950,6 +2134,8 @@ function updaterBuildStatusPayload(bool $forceCheck = false): array {
         $commits = $cc['commits'] ?? [];
         $aheadBy = (int)($cc['aheadBy'] ?? count($commits));
         $fetchedAt = max((int)$fetchedAt, (int)($cc['fetchedAt'] ?? 0)) ?: $fetchedAt;
+        $hint = $cc['hint'] ?? null;
+        $localOnlyCount = (int)($cc['localOnlyCount'] ?? 0);
     } catch (Throwable $e) {
         $error = $error ? ($error . ' | ' . $e->getMessage()) : $e->getMessage();
     }
@@ -1994,5 +2180,7 @@ function updaterBuildStatusPayload(bool $forceCheck = false): array {
         'checkIntervalMinutes' => updaterCheckIntervalMinutes(),
         'job' => $job,
         'error' => $error,
+        'hint' => $hint,
+        'localOnlyCount' => $localOnlyCount,
     ];
 }
