@@ -500,15 +500,30 @@ if ($gh) {
 } else {
     Write-Host "  GitHub CLI (gh) not found - using REST API" -ForegroundColor Yellow
     if ([string]::IsNullOrWhiteSpace($AuthToken)) {
-        throw @"
-No GitHub token available.
+        Write-Host ""
+        Write-Host "  No GITHUB_TOKEN / GH_TOKEN / -Token found." -ForegroundColor Yellow
+        Write-Host "  Create a classic PAT with 'repo' scope:" -ForegroundColor Yellow
+        Write-Host "  https://github.com/settings/tokens/new?scopes=repo&description=LinkNest%20Publish" -ForegroundColor Cyan
+        Write-Host ""
+        $secure = Read-Host "  Paste GitHub PAT (input hidden)" -AsSecureString
+        $BSTR = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+        try {
+            $AuthToken = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($BSTR)
+        } finally {
+            [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($BSTR)
+        }
+        if ([string]::IsNullOrWhiteSpace($AuthToken)) {
+            throw @"
+No GitHub token provided.
 
 Install GitHub CLI: https://cli.github.com/  then: gh auth login
 
-Or set a PAT (repo scope):
+Or set a PAT (repo scope) and re-run:
   `$env:GITHUB_TOKEN = 'ghp_...'
   .\scripts\publish-update-release.ps1 -SkipPackage -Version $Version
 "@
+        }
+        Write-Host "  Token received - publishing via API..." -ForegroundColor Green
     }
     if ($UpdateNotesOnly) {
         Update-ReleaseNotesViaApi -RepoSlug $RepoSlug -TagName $Tag -Title "LinkNest $Tag" `
