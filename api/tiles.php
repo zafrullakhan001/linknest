@@ -91,6 +91,8 @@ switch ($method) {
             handleUpdateLinksBrowser($matches[1]);
         } elseif (preg_match('#^/([^/]+)/page-animation$#', $path, $matches)) {
             handleUpdatePageAnimation($matches[1]);
+        } elseif (preg_match('#^/([^/]+)/visit$#', $path, $matches)) {
+            handleRecordTileVisit($matches[1]);
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -6689,7 +6691,8 @@ function handleGetTileInfo($tileId) {
             'canEdit' => $canEdit,
             'canDelete' => $canDelete
         ],
-        'tileAdmins' => $tileAdmins
+        'tileAdmins' => $tileAdmins,
+        'stats' => getTileVisitStats($tileId, $db)
     ];
     
     // Add granular permissions for current user if they are a tile admin
@@ -6701,4 +6704,155 @@ function handleGetTileInfo($tileId) {
     }
     
     sendJSON($response);
+}
+
+/**
+ * Get visit stats for a tile: total hits and unique visitors.
+ */
+function getTileVisitStats($tileId, $db = null) {
+    if ($db === null) {
+        $db = getDB();
+    }
+
+    try {
+        $stmt = $db->prepare('
+            SELECT
+                COUNT(*) as hit_count,
+                COUNT(DISTINCT visitor_key) as unique_visitors
+            FROM tile_visits
+            WHERE tile_id = ?
+        ');
+        $stmt->execute([$tileId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return [
+            'hitCount' => (int)($row['hit_count'] ?? 0),
+            'uniqueVisitors' => (int)($row['unique_visitors'] ?? 0)
+        ];
+    } catch (PDOException $e) {
+        // Table may not exist yet on older DBs mid-migration
+        return [
+            'hitCount' => 0,
+            'uniqueVisitors' => 0
+        ];
+    }
+}
+
+/**
+ * Record a tile visit (hit). Unique visitors are derived from visitor_key.
+ * Accepts optional visitorKey in JSON body for guests; authenticated users use u:{id}.
+ */
+function handleRecordTileVisit($tileId) {
+    $user = getAuthenticatedUser();
+    $db = getDB();
+
+    $stmt = $db->prepare('SELECT id, visibility, allowed_users, allowed_groups, source_tab, deleted_at FROM tiles WHERE id = ?');
+    $stmt->execute([$tileId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$row || !empty($row['deleted_at'])) {
+        sendJSON(['error' => 'Tile not found'], 404);
+    }
+
+    $rowSourceTab = isset($row['source_tab']) ? trim((string)$row['source_tab']) : 'public';
+    if ($rowSourceTab === 'staging' && (!$user || empty($user['is_admin']))) {
+        sendJSON(['error' => 'Tile not found'], 404);
+    }
+
+    $tileVisibility = $row['visibility'] ?? 'public';
+    $tileAllowedUsers = $row['allowed_users'] ? json_decode($row['allowed_users'], true) : [];
+    $tileAllowedGroups = $row['allowed_groups'] ? json_decode($row['allowed_groups'], true) : [];
+    if (!is_array($tileAllowedUsers)) {
+        $tileAllowedUsers = [];
+    }
+    if (!is_array($tileAllowedGroups)) {
+        $tileAllowedGroups = [];
+    }
+
+    $userGroupIds = [];
+    if ($user) {
+        $groupStmt = $db->prepare('SELECT group_id FROM user_group_members WHERE user_id = ?');
+        $groupStmt->execute([$user['id']]);
+        while ($group = $groupStmt->fetch()) {
+            $userGroupIds[] = (int)$group['group_id'];
+        }
+    }
+
+    $isTileVisible = false;
+    if ($user && !empty($user['is_admin'])) {
+        $isTileVisible = true;
+    } elseif ($tileVisibility === 'public') {
+        $isTileVisible = true;
+    } elseif ($tileVisibility === 'authenticated' && $user) {
+        $isTileVisible = true;
+    } elseif ($tileVisibility === 'private' && $user) {
+        $isTileVisible = in_array($user['id'], $tileAllowedUsers, true);
+        if (!$isTileVisible && !empty($tileAllowedGroups) && !empty($userGroupIds)) {
+            $isTileVisible = !empty(array_intersect($userGroupIds, $tileAllowedGroups));
+        }
+        if (!$isTileVisible) {
+            $sharedCheck = $db->prepare('SELECT id FROM tile_share_invitations WHERE tile_id = ? AND receiver_user_id = ? AND status = ?');
+            $sharedCheck->execute([$tileId, $user['id'], 'accepted']);
+            if ($sharedCheck->fetch()) {
+                $isTileVisible = true;
+            }
+        }
+    }
+
+    if (!$isTileVisible) {
+        sendJSON(['error' => 'Tile not found'], 404);
+    }
+
+    $input = json_decode(file_get_contents('php://input'), true);
+    if (!is_array($input)) {
+        $input = [];
+    }
+
+    $userId = $user ? (int)$user['id'] : null;
+    if ($userId) {
+        $visitorKey = 'u:' . $userId;
+    } else {
+        $clientKey = isset($input['visitorKey']) ? trim((string)$input['visitorKey']) : '';
+        if ($clientKey === '' || !preg_match('/^[a-zA-Z0-9_-]{8,64}$/', $clientKey)) {
+            if (session_status() === PHP_SESSION_NONE) {
+                @session_start();
+            }
+            if (empty($_SESSION['guest_visitor_key'])) {
+                $_SESSION['guest_visitor_key'] = bin2hex(random_bytes(16));
+            }
+            $visitorKey = 'g:' . $_SESSION['guest_visitor_key'];
+        } else {
+            $visitorKey = 'g:' . $clientKey;
+        }
+    }
+
+    $now = time();
+
+    // Coalesce rapid duplicate hits (e.g. React Strict Mode double-mount) within 10 seconds
+    try {
+        $recentStmt = $db->prepare('
+            SELECT id FROM tile_visits
+            WHERE tile_id = ? AND visitor_key = ? AND visited_at >= ?
+            LIMIT 1
+        ');
+        $recentStmt->execute([$tileId, $visitorKey, $now - 10]);
+        $recent = $recentStmt->fetch();
+
+        if (!$recent) {
+            $insert = $db->prepare('
+                INSERT INTO tile_visits (tile_id, user_id, visitor_key, visited_at)
+                VALUES (?, ?, ?, ?)
+            ');
+            $insert->execute([$tileId, $userId, $visitorKey, $now]);
+        }
+
+        $stats = getTileVisitStats($tileId, $db);
+        sendJSON([
+            'success' => true,
+            'recorded' => !$recent,
+            'stats' => $stats
+        ]);
+    } catch (PDOException $e) {
+        error_log('Failed to record tile visit: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to record visit'], 500);
+    }
 }

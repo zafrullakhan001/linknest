@@ -14,12 +14,42 @@ LinkNest can check your GitHub repository for **new commits** on a tracked branc
 | **Commits** on track branch (default `main`) | Every new push ahead of the installed SHA | Checkout / zipball that commit + rebuild |
 | **GitHub Releases** (`vX.Y.Z`) | Tag newer than installed `appVersion` | Tag checkout or `linknest-update-*.zip` |
 
-Both **preserve** `data/` and `uploads/`. Before each update, the current install is pushed onto a **rollback history** stack (last 20 snapshots).
+Both **preserve** `data/` and `uploads/` (except when you explicitly restore a DB snapshot). Before each update, the current install is recorded in **rollback history** (last **10** entries).
 
 | Install type | Mode |
 |--------------|------|
 | Git checkout with Node.js | **git** — `git fetch` + checkout commit/tag, then `npm ci` / `npm run build` |
 | Packaged XAMPP (no `.git`) | **zip** — release asset if present, otherwise GitHub **zipball** of the commit/tag (rebuilds if Node is available) |
+
+On Windows/XAMPP, apply/rollback usually runs **inline** under Apache (more reliable than detached SYSTEM workers).
+
+---
+
+## Change preview
+
+When you select a commit or release, App Updates loads a **change preview**:
+
+| Field | Meaning |
+|-------|---------|
+| Files | Paths + status (`A` add, `M` modify, `D` delete, `R` rename) |
+| Size | Approximate payload from line deltas (estimate) |
+| ETA | Heuristic duration (fetch + checkout + optional frontend rebuild) |
+| Rebuild | Whether frontend rebuild is expected |
+
+API: `GET /api/updater/preview?sha=…` or `?tag=…`  
+ETA and size are **estimates**, not guarantees.
+
+---
+
+## Database snapshots
+
+Before apply, a checkbox **Back up database before updating** is **on by default**.
+
+- Copies `data/linknest.db` (after WAL checkpoint) into `data/updater-snapshots/<id>/`
+- Meta: `meta.json` (created time, commit, version, size)
+- Retention: last **10** snapshots (older ones pruned)
+
+Snapshots are linked on the history entry (`dbSnapshotId`) so you can restore **code + data** together.
 
 ---
 
@@ -29,20 +59,32 @@ Both **preserve** `data/` and `uploads/`. Before each update, the current instal
 2. Open **App Updates** (nav bell, or **Admin → Tools → App Updates**).
 3. If the repo is **private**, paste a GitHub [classic PAT](https://github.com/settings/tokens/new?scopes=repo&description=LinkNest%20Updater) with **`repo`** scope → **Save settings**.
 4. Set **Track branch** (e.g. `main` or `updater`) → Save → **Check for updates**.
-5. Select a **commit** (mini update) or a **release**, then **Update**.
-6. When finished, **Reload app**.
+5. Select a **commit** or **release** — review the **change preview**.
+6. Leave **Back up database** checked (recommended), then **Update**.
+7. When finished, **Reload app**.
 
-### Rollback
+---
 
-1. Open App Updates.
-2. Click **Rollback** (enabled when a previous snapshot exists).
-3. Confirms restoring the previous SHA / version from local history (re-fetches that commit from GitHub).
-4. Current state is saved so you can roll forward again if needed.
+## Rollback (selectable snapshots)
 
-### Git mode requirements
+1. Open App Updates → **Rollback snapshots**.
+2. Each row shows **date/time**, version, short SHA, and whether a **DB backup** exists.
+3. Select the snapshot to restore.
+4. Optionally check **Also restore database** (only if that entry has a DB backup).
+5. Confirm **Restore this snapshot**.
 
-- Clean working tree (uncommitted changes are refused)
+- Current state is pushed onto history before the restore (so you can reverse the rollback).
+- History entries are kept for audit (not popped); pruned to **10**.
+
+API: `POST /api/updater/rollback` with `{ "historyId": "…", "restoreDatabase": true }`.
+
+---
+
+### Git mode notes
+
+- Local uncommitted changes are overwritten via `git checkout --force` (prefer a clean tree when possible)
 - `git`, `node`, and `npm` on PATH
+- Private remotes use the saved PAT (HTTP Basic) so SYSTEM/Apache does not hang on credential prompts
 
 ### ZIP mode requirements
 
@@ -88,8 +130,9 @@ Env (optional): `GITHUB_TOKEN` / `GH_TOKEN`.
 |---------|-----|
 | `GitHub returned 404` | Save a `repo`-scoped PAT |
 | No commits listed | Confirm track branch name; ensure installed `gitCommit` in `BUILD_INFO.json` is an ancestor of that branch |
-| Dirty tree | Commit or stash before update/rollback |
-| Rollback disabled | Apply at least one update first (creates a history snapshot) |
+| Stuck at 0% / “already in progress” | Wait ~45s for stale-job clear, or restart Apache; retry |
+| Dubious ownership / hung fetch | Updater injects `safe.directory` + PAT; ensure token is saved |
+| Rollback has no DB option | That snapshot was created with backup unchecked |
 | UI still old | Ctrl+F5; check `BUILD_INFO.json` |
 
 ---

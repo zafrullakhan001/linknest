@@ -11,7 +11,7 @@ import {
     parseSectionLinksExport,
     parseTabExport
 } from '../services/sectionTabTransferService';
-import { cloneTile, getTiles, saveTile, toggleLinkFavorite, createTempVersion, updateTilePageAnimation } from '../services/storageService';
+import { cloneTile, getTiles, saveTile, toggleLinkFavorite, createTempVersion, updateTilePageAnimation, recordTileVisit } from '../services/storageService';
 import { removeSharedTile } from '../services/tileShareService';
 import { useSettings } from '../contexts/SettingsContext';
 import { RichTextEditor } from './RichTextEditor';
@@ -582,6 +582,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             }
         }
     }, [linkSearchTerm, editTabs]);
+
+    // Record visitor hit when tile detail is opened
+    useEffect(() => {
+        if (tile?.id) {
+            void recordTileVisit(tile.id);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tile?.id]);
 
     // Auto-check links when tile is opened
     useEffect(() => {

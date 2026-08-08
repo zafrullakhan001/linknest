@@ -43,7 +43,7 @@ export interface UpdaterCommit {
 }
 
 export interface UpdaterJob {
-  status: 'running' | 'success' | 'error' | string;
+  status: 'running' | 'success' | 'error' | 'idle' | string;
   percent?: number;
   message?: string;
   log?: string[];
@@ -52,6 +52,9 @@ export interface UpdaterJob {
   version?: string;
   mode?: string;
   rollback?: boolean;
+  backupDatabase?: boolean;
+  restoreDatabase?: boolean;
+  historyId?: string;
   error?: string | null;
   newVersion?: string;
   startedAt?: number;
@@ -60,12 +63,65 @@ export interface UpdaterJob {
 }
 
 export interface UpdaterHistoryEntry {
+  id?: string;
   capturedAt: number;
+  capturedAtIso?: string | null;
   label: string;
   gitCommit: string | null;
   appVersion: string;
   releaseTag?: string | null;
   message?: string | null;
+  dbSnapshotId?: string | null;
+  dbBytes?: number | null;
+  filesChanged?: number | null;
+  approxBytes?: number | null;
+  hasDbBackup?: boolean;
+}
+
+export interface UpdaterDbSnapshot {
+  id: string;
+  createdAt: number;
+  createdAtIso?: string;
+  gitCommit?: string | null;
+  appVersion?: string | null;
+  label?: string;
+  reason?: string | null;
+  dbBytes?: number;
+  dbSizeLabel?: string;
+}
+
+export interface UpdaterPreviewFile {
+  path: string;
+  status: string;
+  fromPath?: string | null;
+  additions: number;
+  deletions: number;
+  approxBytes: number;
+  binary?: boolean;
+}
+
+export interface UpdaterPreview {
+  base: string | null;
+  target: {
+    type: string;
+    ref: string;
+    tag?: string | null;
+    version?: string | null;
+    message?: string | null;
+  };
+  source: string;
+  files: UpdaterPreviewFile[];
+  filesChanged: number;
+  additions: number;
+  deletions: number;
+  approxBytes: number;
+  approxSizeLabel: string;
+  needsRebuild: boolean;
+  estimateSeconds: number;
+  estimateLabel: string;
+  commits: { sha?: string; shortSha: string; message: string }[];
+  commitCount: number;
+  note?: string;
 }
 
 export interface UpdaterStatus {
@@ -92,7 +148,9 @@ export interface UpdaterStatus {
   canApply: boolean;
   canRollback?: boolean;
   rollbackTarget?: UpdaterHistoryEntry | null;
+  history?: UpdaterHistoryEntry[];
   historyCount?: number;
+  dbSnapshots?: UpdaterDbSnapshot[];
   repo: string;
   tokenConfigured?: boolean;
   checkedAt: number | null;
@@ -151,6 +209,20 @@ export async function getUpdaterCommits(): Promise<UpdaterCommitsPayload> {
   return data.data as UpdaterCommitsPayload;
 }
 
+export async function getUpdaterPreview(opts: {
+  sha?: string;
+  tag?: string;
+}): Promise<UpdaterPreview> {
+  const params = new URLSearchParams();
+  if (opts.sha) params.set('sha', opts.sha);
+  if (opts.tag) params.set('tag', opts.tag);
+  const res = await fetch(`${API_BASE}/updater/preview?${params.toString()}`, {
+    credentials: 'include',
+  });
+  const data = await parseJson(res);
+  return data.data as UpdaterPreview;
+}
+
 export async function checkUpdaterReleases(): Promise<UpdaterStatus> {
   const res = await fetch(`${API_BASE}/updater/check`, {
     method: 'POST',
@@ -165,12 +237,16 @@ export async function checkUpdaterReleases(): Promise<UpdaterStatus> {
 export async function applyUpdaterRelease(opts?: {
   tag?: string;
   sha?: string;
+  backupDatabase?: boolean;
+  previewFilesChanged?: number;
+  previewApproxBytes?: number;
 }): Promise<{
   started: boolean;
   async: boolean;
   tag?: string | null;
   sha?: string;
   mode?: string;
+  backupDatabase?: boolean;
   job: UpdaterJob | null;
 }> {
   const res = await fetch(`${API_BASE}/updater/apply`, {
@@ -183,16 +259,20 @@ export async function applyUpdaterRelease(opts?: {
   return data.data;
 }
 
-export async function rollbackUpdater(): Promise<{
+export async function rollbackUpdater(opts?: {
+  historyId?: string;
+  restoreDatabase?: boolean;
+}): Promise<{
   started: boolean;
   async: boolean;
   job: UpdaterJob | null;
+  restoreDatabase?: boolean;
 }> {
   const res = await fetch(`${API_BASE}/updater/rollback`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: '{}',
+    body: JSON.stringify(opts || {}),
   });
   const data = await parseJson(res);
   return data.data;
@@ -204,8 +284,14 @@ export async function getUpdaterJob(): Promise<UpdaterJob | null> {
   return (data.data as UpdaterJob | null) ?? null;
 }
 
-export async function getUpdaterHistory(): Promise<UpdaterHistoryEntry[]> {
+export async function getUpdaterHistory(): Promise<{
+  entries: UpdaterHistoryEntry[];
+  dbSnapshots: UpdaterDbSnapshot[];
+}> {
   const res = await fetch(`${API_BASE}/updater/history`, { credentials: 'include' });
   const data = await parseJson(res);
-  return (data.data?.entries as UpdaterHistoryEntry[]) || [];
+  return {
+    entries: (data.data?.entries as UpdaterHistoryEntry[]) || [],
+    dbSnapshots: (data.data?.dbSnapshots as UpdaterDbSnapshot[]) || [],
+  };
 }

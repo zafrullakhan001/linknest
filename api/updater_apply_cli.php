@@ -5,7 +5,7 @@
  *   php api/updater_apply_cli.php tag:v2.2.0
  *   php api/updater_apply_cli.php sha:abc1234
  *   php api/updater_apply_cli.php rollback
- *   php api/updater_apply_cli.php v2.2.0   (legacy tag)
+ * Options (backupDatabase / historyId / restoreDatabase) are read from data/updater-job.json.
  */
 
 @ini_set('max_execution_time', '0');
@@ -30,9 +30,12 @@ if ($argc < 2) {
 }
 
 $spec = trim((string)$argv[1]);
+fwrite(STDERR, "updater_apply_cli: starting {$spec}\n");
 error_log("updater_apply_cli: starting {$spec}");
 
 try {
+    updaterEnsureGitSafeDirectory();
+
     if (strcasecmp($spec, 'rollback') === 0) {
         $job = updaterReadJob() ?: [];
         $job['status'] = 'running';
@@ -40,22 +43,7 @@ try {
         $job['startedAt'] = $job['startedAt'] ?? time();
         updaterWriteJob($job);
 
-        $snapshot = updaterHistoryPop();
-        if (!$snapshot || empty($snapshot['gitCommit'])) {
-            throw new RuntimeException('No rollback snapshot available');
-        }
-        updaterPushHistorySnapshot('Before rollback @ ' . date('Y-m-d H:i:s'));
-        $target = [
-            'type' => 'sha',
-            'ref' => $snapshot['gitCommit'],
-            'version' => $snapshot['appVersion'] ?? updaterInstalledVersion(),
-            'message' => $snapshot['message'] ?? ('Rollback to ' . substr($snapshot['gitCommit'], 0, 7)),
-            'tag' => $snapshot['releaseTag'] ?? null,
-            'assetName' => null,
-            'assetUrl' => null,
-            'assetId' => null,
-        ];
-        updaterApplyTarget($target, false);
+        updaterExecuteRollback();
         updaterReleaseLock();
         error_log('updater_apply_cli: rollback success');
         exit(0);

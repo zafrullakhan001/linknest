@@ -12,7 +12,9 @@ define('UPDATER_JOB_FILE', UPDATER_ROOT . '/data/updater-job.json');
 define('UPDATER_CACHE_FILE', UPDATER_ROOT . '/data/updater-cache.json');
 define('UPDATER_COMMITS_CACHE_FILE', UPDATER_ROOT . '/data/updater-commits-cache.json');
 define('UPDATER_HISTORY_FILE', UPDATER_ROOT . '/data/updater-history.json');
+define('UPDATER_SNAPSHOTS_DIR', UPDATER_ROOT . '/data/updater-snapshots');
 define('UPDATER_TMP_DIR', UPDATER_ROOT . '/data/tmp');
+define('UPDATER_HISTORY_MAX', 10);
 
 /** Top-level paths allowed when extracting an update ZIP (never data/, uploads/, .env*). */
 const UPDATER_ZIP_ALLOW_PREFIXES = [
@@ -259,9 +261,8 @@ function updaterWriteHistory(array $entries): void {
     if (!is_dir(dirname(UPDATER_HISTORY_FILE))) {
         @mkdir(dirname(UPDATER_HISTORY_FILE), 0755, true);
     }
-    // Keep last 20 snapshots
-    if (count($entries) > 20) {
-        $entries = array_slice($entries, -20);
+    if (count($entries) > UPDATER_HISTORY_MAX) {
+        $entries = array_slice($entries, -UPDATER_HISTORY_MAX);
     }
     @file_put_contents(UPDATER_HISTORY_FILE, json_encode([
         'updatedAt' => time(),
@@ -269,28 +270,57 @@ function updaterWriteHistory(array $entries): void {
     ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), LOCK_EX);
 }
 
+function updaterNewHistoryId(): string {
+    try {
+        return 'upd_' . bin2hex(random_bytes(8));
+    } catch (Throwable $e) {
+        return 'upd_' . dechex(time()) . substr(md5(uniqid('', true)), 0, 8);
+    }
+}
+
 /**
  * Snapshot current install before applying a change (for rollback).
+ * @param array|null $extra optional fields: dbSnapshotId, dbBytes, filesChanged, approxBytes
+ * @return array the entry that was stored (or the existing consecutive duplicate)
  */
-function updaterPushHistorySnapshot(string $label = ''): void {
+function updaterPushHistorySnapshot(string $label = '', ?array $extra = null): array {
     $info = updaterReadBuildInfo();
     $commit = updaterInstalledCommit();
     $entry = [
+        'id' => updaterNewHistoryId(),
         'capturedAt' => time(),
         'label' => $label !== '' ? $label : ('Before update @ ' . date('Y-m-d H:i:s')),
         'gitCommit' => $commit,
         'appVersion' => updaterInstalledVersion(),
         'releaseTag' => $info['releaseTag'] ?? null,
         'message' => $info['commitMessage'] ?? null,
+        'dbSnapshotId' => null,
+        'dbBytes' => null,
+        'filesChanged' => null,
+        'approxBytes' => null,
     ];
+    if (is_array($extra)) {
+        foreach (['dbSnapshotId', 'dbBytes', 'filesChanged', 'approxBytes'] as $k) {
+            if (array_key_exists($k, $extra)) {
+                $entry[$k] = $extra[$k];
+            }
+        }
+    }
     $entries = updaterReadHistory();
-    // Avoid duplicate consecutive identical SHAs
     $last = $entries[count($entries) - 1] ?? null;
-    if (is_array($last) && !empty($last['gitCommit']) && $last['gitCommit'] === $commit) {
-        return;
+    // Same SHA, no new DB snapshot → skip duplicate
+    if (
+        is_array($last)
+        && !empty($last['gitCommit'])
+        && $last['gitCommit'] === $commit
+        && empty($entry['dbSnapshotId'])
+    ) {
+        return $last;
     }
     $entries[] = $entry;
     updaterWriteHistory($entries);
+    updaterPruneSnapshots(UPDATER_HISTORY_MAX);
+    return $entry;
 }
 
 function updaterHistoryPeek(): ?array {
@@ -301,6 +331,27 @@ function updaterHistoryPeek(): ?array {
     return $entries[count($entries) - 1];
 }
 
+function updaterHistoryFindById(string $id): ?array {
+    $id = trim($id);
+    if ($id === '') {
+        return null;
+    }
+    foreach (updaterReadHistory() as $entry) {
+        if (!is_array($entry)) {
+            continue;
+        }
+        if (($entry['id'] ?? '') === $id) {
+            return $entry;
+        }
+        // Legacy entries without id: allow matching capturedAt-based synthetic key
+        if (empty($entry['id']) && isset($entry['capturedAt']) && ('legacy_' . $entry['capturedAt']) === $id) {
+            return $entry;
+        }
+    }
+    return null;
+}
+
+/** @deprecated Prefer updaterHistoryFindById — kept for older CLI */
 function updaterHistoryPop(): ?array {
     $entries = updaterReadHistory();
     if (empty($entries)) {
@@ -309,6 +360,26 @@ function updaterHistoryPop(): ?array {
     $last = array_pop($entries);
     updaterWriteHistory($entries);
     return is_array($last) ? $last : null;
+}
+
+/** Enrich history for UI (newest first). */
+function updaterHistoryForApi(): array {
+    $out = [];
+    foreach (array_reverse(updaterReadHistory()) as $entry) {
+        if (!is_array($entry)) {
+            continue;
+        }
+        if (empty($entry['id'])) {
+            $entry['id'] = 'legacy_' . (string)($entry['capturedAt'] ?? 0);
+        }
+        $snapId = $entry['dbSnapshotId'] ?? null;
+        $entry['hasDbBackup'] = is_string($snapId) && $snapId !== '' && updaterDbSnapshotExists($snapId);
+        $entry['capturedAtIso'] = !empty($entry['capturedAt'])
+            ? date('c', (int)$entry['capturedAt'])
+            : null;
+        $out[] = $entry;
+    }
+    return $out;
 }
 
 /**
@@ -372,29 +443,130 @@ function updaterCapabilities(): array {
     ];
 }
 
-function updaterRunCommand(string $command, ?string $cwd = null): array {
+function updaterIsWindows(): bool {
+    return strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
+}
+
+function updaterAugmentGitCommand(string $command): string {
+    if (!preg_match('/^\s*git(\s|$)/i', $command)) {
+        return $command;
+    }
+    $safe = escapeshellarg(str_replace('\\', '/', UPDATER_ROOT));
+    $inject = ' -c safe.directory=' . $safe . ' -c safe.directory=*';
+    $token = updaterGithubToken();
+    if ($token !== '') {
+        $basic = base64_encode('x-access-token:' . $token);
+        $inject .= ' -c credential.helper=';
+        $inject .= ' -c http.extraHeader=' . escapeshellarg('Authorization: Basic ' . $basic);
+    }
+    return preg_replace('/^\s*git\b/i', 'git' . $inject, $command, 1);
+}
+
+/**
+ * @param int $timeoutSec 0 = no timeout
+ */
+function updaterRunCommand(string $command, ?string $cwd = null, int $timeoutSec = 180): array {
     $cwd = $cwd ?: UPDATER_ROOT;
+    $command = updaterAugmentGitCommand($command);
+
     $descriptor = [
         0 => ['pipe', 'r'],
         1 => ['pipe', 'w'],
         2 => ['pipe', 'w'],
     ];
-    $proc = @proc_open($command, $descriptor, $pipes, $cwd);
+
+    $env = null;
+    if (updaterIsWindows()) {
+        $env = [];
+        foreach ($_SERVER as $k => $v) {
+            if (is_string($k) && is_string($v) && preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $k)) {
+                $env[$k] = $v;
+            }
+        }
+        foreach (['Path', 'PATHEXT', 'SystemRoot', 'TEMP', 'TMP', 'USERPROFILE', 'HOME'] as $keep) {
+            $val = getenv($keep);
+            if (is_string($val) && $val !== '') {
+                $env[$keep] = $val;
+            }
+        }
+        $env['GIT_TERMINAL_PROMPT'] = '0';
+        $env['GCM_INTERACTIVE'] = 'never';
+        $env['GIT_ASKPASS'] = '';
+    } else {
+        $env = is_array($_ENV) ? $_ENV : [];
+        $env['GIT_TERMINAL_PROMPT'] = '0';
+        $env['GIT_ASKPASS'] = '';
+    }
+
+    $proc = @proc_open($command, $descriptor, $pipes, $cwd, $env);
     if (!is_resource($proc)) {
         return ['ok' => false, 'code' => 1, 'stdout' => '', 'stderr' => 'Failed to start process'];
     }
     fclose($pipes[0]);
-    $stdout = stream_get_contents($pipes[1]);
-    $stderr = stream_get_contents($pipes[2]);
+    stream_set_blocking($pipes[1], false);
+    stream_set_blocking($pipes[2], false);
+
+    $stdout = '';
+    $stderr = '';
+    $start = time();
+    $timedOut = false;
+    while (true) {
+        $status = proc_get_status($proc);
+        $chunkOut = stream_get_contents($pipes[1]);
+        $chunkErr = stream_get_contents($pipes[2]);
+        if (is_string($chunkOut) && $chunkOut !== '') {
+            $stdout .= $chunkOut;
+        }
+        if (is_string($chunkErr) && $chunkErr !== '') {
+            $stderr .= $chunkErr;
+        }
+        if (!$status['running']) {
+            break;
+        }
+        if ($timeoutSec > 0 && (time() - $start) >= $timeoutSec) {
+            $timedOut = true;
+            @proc_terminate($proc, 9);
+            usleep(200000);
+            break;
+        }
+        usleep(100000);
+    }
+    $chunkOut = stream_get_contents($pipes[1]);
+    $chunkErr = stream_get_contents($pipes[2]);
+    if (is_string($chunkOut) && $chunkOut !== '') {
+        $stdout .= $chunkOut;
+    }
+    if (is_string($chunkErr) && $chunkErr !== '') {
+        $stderr .= $chunkErr;
+    }
     fclose($pipes[1]);
     fclose($pipes[2]);
     $code = proc_close($proc);
+
+    if ($timedOut) {
+        return [
+            'ok' => false,
+            'code' => 124,
+            'stdout' => trim($stdout),
+            'stderr' => trim($stderr . "\nCommand timed out after {$timeoutSec}s"),
+        ];
+    }
     return [
         'ok' => $code === 0,
         'code' => $code,
-        'stdout' => is_string($stdout) ? trim($stdout) : '',
-        'stderr' => is_string($stderr) ? trim($stderr) : '',
+        'stdout' => trim($stdout),
+        'stderr' => trim($stderr),
     ];
+}
+
+function updaterEnsureGitSafeDirectory(): void {
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    $safe = str_replace('\\', '/', UPDATER_ROOT);
+    updaterRunCommand('git config --global --add safe.directory ' . escapeshellarg($safe), null, 15);
 }
 
 function updaterHttpJson(string $url, bool $forceDownload = false): array {
@@ -979,22 +1151,51 @@ function updaterApplyTarget(array $target, bool $pushHistory = true): void {
         ? ('commit ' . substr($ref, 0, 7))
         : ((string)($target['tag'] ?? $ref));
 
+    updaterEnsureGitSafeDirectory();
     updaterSetProgress(5, 'Applying ' . $label . ' via ' . $mode . ' mode...', 'running');
 
+    $job = updaterReadJob() ?: [];
+    $backupDatabase = !array_key_exists('backupDatabase', $job) || !empty($job['backupDatabase']);
+
     if ($pushHistory) {
-        updaterPushHistorySnapshot('Before applying ' . $label);
+        $extra = [];
+        if (!empty($job['previewFilesChanged'])) {
+            $extra['filesChanged'] = (int)$job['previewFilesChanged'];
+        }
+        if (!empty($job['previewApproxBytes'])) {
+            $extra['approxBytes'] = (int)$job['previewApproxBytes'];
+        }
+        if ($backupDatabase) {
+            updaterSetProgress(8, 'Creating database snapshot...');
+            try {
+                $snap = updaterCreateDbSnapshot([
+                    'reason' => 'pre-update',
+                    'label' => 'Before applying ' . $label,
+                    'gitCommit' => updaterInstalledCommit(),
+                    'appVersion' => updaterInstalledVersion(),
+                ]);
+                $extra['dbSnapshotId'] = $snap['id'];
+                $extra['dbBytes'] = $snap['dbBytes'] ?? null;
+                updaterAppendLog('Database snapshot saved: ' . $snap['id']
+                    . (!empty($snap['dbBytes']) ? (' (' . updaterFormatBytes((int)$snap['dbBytes']) . ')') : ''));
+            } catch (Throwable $e) {
+                throw new RuntimeException('Database snapshot failed: ' . $e->getMessage());
+            }
+        } else {
+            updaterAppendLog('Database snapshot skipped (user opted out).');
+        }
+        updaterPushHistorySnapshot('Before applying ' . $label, $extra);
     }
 
     if ($mode === 'git') {
         if (updaterGitWorkingTreeDirty()) {
-            throw new RuntimeException('Working tree has uncommitted changes. Commit or stash before updating.');
+            updaterAppendLog('Working tree has local changes; continuing with force checkout.');
         }
         updaterSetProgress(20, 'Fetching from origin...');
         $fetch = updaterRunCommand('git fetch --tags --force origin');
         if (!$fetch['ok']) {
             throw new RuntimeException('git fetch failed: ' . ($fetch['stderr'] ?: $fetch['stdout']));
         }
-        // Also fetch branch tips for commit SHAs
         updaterRunCommand('git fetch origin ' . escapeshellarg(updaterTrackBranch()));
 
         updaterSetProgress(40, 'Checking out ' . $label . '...');
@@ -1005,7 +1206,6 @@ function updaterApplyTarget(array $target, bool $pushHistory = true): void {
         updaterRebuildFrontend();
         $commit = updaterRunCommand('git rev-parse HEAD');
         $pkgVer = updaterInstalledVersion();
-        // After checkout, re-read package.json version if present
         $pkgPath = UPDATER_ROOT . '/package.json';
         if (is_file($pkgPath)) {
             $pkg = json_decode((string)@file_get_contents($pkgPath), true);
@@ -1043,10 +1243,8 @@ function updaterApplyTarget(array $target, bool $pushHistory = true): void {
                 updaterDownloadFile((string)$target['assetUrl'], $zipPath);
             }
         } else {
-            // Commit / tag without asset: GitHub zipball (source). Reminder: needs npm on this host after extract OR prebuilt dist in tree.
             updaterSetProgress(15, 'Downloading source zipball for ' . $label . '...');
             $url = 'https://api.github.com/repos/' . $repo . '/zipball/' . rawurlencode($ref);
-            // zipball prefers Accept application/vnd.github+json then follows to archive
             updaterDownloadZipball($url, $zipPath);
         }
 
@@ -1058,7 +1256,6 @@ function updaterApplyTarget(array $target, bool $pushHistory = true): void {
         updaterExtractUpdateZip($zipPath);
         @unlink($zipPath);
 
-        // Rebuild if node available (zipball is source)
         if ($caps['nodeAvailable'] && is_file(UPDATER_ROOT . '/package.json')) {
             try {
                 updaterRebuildFrontend();
@@ -1088,7 +1285,6 @@ function updaterApplyTarget(array $target, bool $pushHistory = true): void {
     }
 
     updaterClearOpcache();
-    // Invalidate commit cache after apply
     if (is_file(UPDATER_COMMITS_CACHE_FILE)) {
         @unlink(UPDATER_COMMITS_CACHE_FILE);
     }
@@ -1164,17 +1360,70 @@ function updaterClearOpcache(): void {
 
 /**
  * @param string $spec tag:v2.2.0 | sha:abc1234 | rollback
+ * @return bool true if background process launched
  */
-function updaterSpawnApplyWorker(string $spec): void {
-    $scriptPath = __DIR__ . '/updater_apply_cli.php';
-    $php = PHP_BINARY;
-    if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
-        $command = 'start /B "" ' . escapeshellarg($php) . ' ' . escapeshellarg($scriptPath) . ' ' . escapeshellarg($spec) . ' > NUL 2>&1';
-        pclose(popen($command, 'r'));
-    } else {
-        $command = 'nohup ' . escapeshellarg($php) . ' ' . escapeshellarg($scriptPath) . ' ' . escapeshellarg($spec) . ' > /dev/null 2>&1 &';
-        exec($command);
+function updaterResolvePhpBinary(): string {
+    $candidates = [];
+    if (defined('PHP_BINARY') && is_string(PHP_BINARY) && PHP_BINARY !== '') {
+        $bin = PHP_BINARY;
+        if (is_file($bin) && preg_match('/php(?:-cgi)?(?:\d+(?:\.\d+)*)?(?:\.exe)?$/i', basename($bin))) {
+            $candidates[] = $bin;
+        }
     }
+    if (updaterIsWindows()) {
+        $candidates[] = 'C:\\xampp\\php\\php.exe';
+        $candidates[] = dirname(UPDATER_ROOT) . DIRECTORY_SEPARATOR . 'php' . DIRECTORY_SEPARATOR . 'php.exe';
+    }
+    foreach ($candidates as $c) {
+        if (is_file($c)) {
+            return $c;
+        }
+    }
+    return 'php';
+}
+
+function updaterSpawnApplyWorker(string $spec): bool {
+    $scriptPath = __DIR__ . '/updater_apply_cli.php';
+    $php = updaterResolvePhpBinary();
+    $logFile = UPDATER_ROOT . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'updater-worker.log';
+    if (!is_dir(dirname($logFile))) {
+        @mkdir(dirname($logFile), 0755, true);
+    }
+    @file_put_contents($logFile, "\n==== " . date('c') . " spawn spec={$spec} php={$php} ====\n", FILE_APPEND);
+
+    if (updaterIsWindows()) {
+        $cmdPath = UPDATER_ROOT . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'updater-run.cmd';
+        $lines = [
+            '@echo off',
+            'cd /d ' . UPDATER_ROOT,
+            '"' . $php . '" -f "' . $scriptPath . '" "' . $spec . '" >> "' . $logFile . '" 2>&1',
+        ];
+        @file_put_contents($cmdPath, implode("\r\n", $lines) . "\r\n");
+        $launch = 'cmd.exe /c start /B "" ' . escapeshellarg($cmdPath);
+        $ok = false;
+        if (function_exists('popen') && function_exists('pclose')) {
+            $h = @popen($launch, 'r');
+            if (is_resource($h)) {
+                pclose($h);
+                $ok = true;
+            }
+        }
+        if (!$ok && function_exists('exec')) {
+            @exec($launch);
+            $ok = true;
+        }
+        updaterAppendLog($ok ? 'Background worker launched (Windows).' : 'Failed to launch Windows worker.');
+        return $ok;
+    }
+
+    $command = 'nohup ' . escapeshellarg($php) . ' -f ' . escapeshellarg($scriptPath) . ' '
+        . escapeshellarg($spec) . ' >> ' . escapeshellarg($logFile) . ' 2>&1 &';
+    if (function_exists('exec')) {
+        @exec($command);
+        updaterAppendLog('Background worker launched (Unix).');
+        return true;
+    }
+    return false;
 }
 
 function updaterCanApply(array $caps): bool {
@@ -1182,6 +1431,499 @@ function updaterCanApply(array $caps): bool {
         return $caps['gitAvailable'] && $caps['nodeAvailable'];
     }
     return $caps['zipAvailable'];
+}
+
+function updaterFormatBytes(int $bytes): string {
+    if ($bytes < 1024) {
+        return $bytes . ' B';
+    }
+    if ($bytes < 1024 * 1024) {
+        return round($bytes / 1024, 1) . ' KB';
+    }
+    return round($bytes / (1024 * 1024), 2) . ' MB';
+}
+
+function updaterFormatDuration(int $seconds): string {
+    $seconds = max(0, $seconds);
+    if ($seconds < 60) {
+        return '~' . $seconds . 's';
+    }
+    $m = (int)floor($seconds / 60);
+    $s = $seconds % 60;
+    return $s > 0 ? "~{$m}m {$s}s" : "~{$m}m";
+}
+
+function updaterPathNeedsRebuild(string $path): bool {
+    $path = str_replace('\\', '/', $path);
+    $needles = [
+        'package.json',
+        'package-lock.json',
+        'vite.config',
+        'tsconfig',
+        'tailwind.config',
+        'postcss.config',
+        'components/',
+        'services/',
+        'contexts/',
+        'hooks/',
+        'utils/',
+        'App.tsx',
+        'index.tsx',
+        'index.css',
+        'src/',
+    ];
+    foreach ($needles as $n) {
+        if (str_contains($path, $n)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function updaterEstimateApplySeconds(int $filesChanged, int $approxBytes, bool $needsRebuild): int {
+    $sec = 10 + 8; // base + fetch buffer
+    $sec += (int)ceil($filesChanged * 0.05);
+    $sec += (int)ceil($approxBytes / (2 * 1024 * 1024)); // ~1s per 2MB
+    $sec += $needsRebuild ? 35 : 5;
+    return max(15, min(600, $sec));
+}
+
+/**
+ * Build change preview for a tag or sha.
+ */
+function updaterBuildPreview(?string $tag, ?string $sha): array {
+    $target = updaterResolveApplyTarget($tag, $sha);
+    $base = updaterInstalledCommit() ?: 'HEAD';
+    $head = (string)$target['ref'];
+    $caps = updaterCapabilities();
+
+    $files = [];
+    $commits = [];
+    $source = 'none';
+
+    if ($caps['mode'] === 'git' && $caps['gitAvailable']) {
+        updaterEnsureGitSafeDirectory();
+        updaterRunCommand('git fetch --tags --force origin', null, 120);
+        updaterRunCommand('git fetch origin ' . escapeshellarg(updaterTrackBranch()), null, 120);
+        $source = 'git';
+
+        $ns = updaterRunCommand('git diff --name-status ' . escapeshellarg($base) . '...' . escapeshellarg($head), null, 60);
+        $num = updaterRunCommand('git diff --numstat ' . escapeshellarg($base) . '...' . escapeshellarg($head), null, 60);
+        $log = updaterRunCommand('git log --oneline --no-decorate ' . escapeshellarg($base) . '..' . escapeshellarg($head), null, 30);
+
+        $statusByPath = [];
+        if ($ns['ok'] && $ns['stdout'] !== '') {
+            foreach (preg_split('/\r\n|\n|\r/', $ns['stdout']) as $line) {
+                $line = trim($line);
+                if ($line === '') {
+                    continue;
+                }
+                $parts = preg_split('/\s+/', $line, 3);
+                if (!$parts || count($parts) < 2) {
+                    continue;
+                }
+                $status = $parts[0];
+                if (str_starts_with($status, 'R') && count($parts) >= 3) {
+                    $statusByPath[$parts[2]] = ['status' => 'R', 'from' => $parts[1]];
+                } else {
+                    $statusByPath[$parts[1]] = ['status' => substr($status, 0, 1), 'from' => null];
+                }
+            }
+        }
+
+        if ($num['ok'] && $num['stdout'] !== '') {
+            foreach (preg_split('/\r\n|\n|\r/', $num['stdout']) as $line) {
+                $line = trim($line);
+                if ($line === '') {
+                    continue;
+                }
+                $parts = preg_split('/\s+/', $line, 3);
+                if (!$parts || count($parts) < 3) {
+                    continue;
+                }
+                $add = $parts[0];
+                $del = $parts[1];
+                $path = $parts[2];
+                $binary = ($add === '-' || $del === '-');
+                $additions = $binary ? 0 : (int)$add;
+                $deletions = $binary ? 0 : (int)$del;
+                $meta = $statusByPath[$path] ?? ['status' => 'M', 'from' => null];
+                $approx = $binary ? 0 : (($additions + $deletions) * 40);
+                $files[] = [
+                    'path' => $path,
+                    'status' => $meta['status'],
+                    'fromPath' => $meta['from'],
+                    'additions' => $additions,
+                    'deletions' => $deletions,
+                    'approxBytes' => $approx,
+                    'binary' => $binary,
+                ];
+                unset($statusByPath[$path]);
+            }
+        }
+        foreach ($statusByPath as $path => $meta) {
+            $files[] = [
+                'path' => $path,
+                'status' => $meta['status'],
+                'fromPath' => $meta['from'],
+                'additions' => 0,
+                'deletions' => 0,
+                'approxBytes' => 0,
+                'binary' => false,
+            ];
+        }
+
+        if ($log['ok'] && $log['stdout'] !== '') {
+            foreach (preg_split('/\r\n|\n|\r/', $log['stdout']) as $line) {
+                $line = trim($line);
+                if ($line === '') {
+                    continue;
+                }
+                if (preg_match('/^([0-9a-f]{7,40})\s+(.*)$/i', $line, $m)) {
+                    $commits[] = ['shortSha' => substr($m[1], 0, 7), 'sha' => $m[1], 'message' => $m[2]];
+                }
+            }
+        }
+    } else {
+        // ZIP installs: GitHub compare API
+        $source = 'github';
+        $repo = updaterRepoSlug();
+        $baseRef = $base ?: 'HEAD';
+        $url = 'https://api.github.com/repos/' . $repo . '/compare/' . rawurlencode($baseRef) . '...' . rawurlencode($head);
+        try {
+            $cmp = updaterHttpJson($url);
+            foreach (($cmp['files'] ?? []) as $f) {
+                if (!is_array($f)) {
+                    continue;
+                }
+                $statusMap = ['added' => 'A', 'removed' => 'D', 'modified' => 'M', 'renamed' => 'R', 'copied' => 'C'];
+                $st = $statusMap[(string)($f['status'] ?? 'modified')] ?? 'M';
+                $add = (int)($f['additions'] ?? 0);
+                $del = (int)($f['deletions'] ?? 0);
+                $files[] = [
+                    'path' => (string)($f['filename'] ?? ''),
+                    'status' => $st,
+                    'fromPath' => $f['previous_filename'] ?? null,
+                    'additions' => $add,
+                    'deletions' => $del,
+                    'approxBytes' => ($add + $del) * 40,
+                    'binary' => empty($f['patch']) && ($add + $del) === 0,
+                ];
+            }
+            foreach (($cmp['commits'] ?? []) as $c) {
+                if (!is_array($c)) {
+                    continue;
+                }
+                $full = (string)($c['sha'] ?? '');
+                $msg = (string)($c['commit']['message'] ?? '');
+                $msg = explode("\n", $msg)[0];
+                $commits[] = [
+                    'sha' => $full,
+                    'shortSha' => substr($full, 0, 7),
+                    'message' => $msg,
+                ];
+            }
+        } catch (Throwable $e) {
+            throw new RuntimeException('Preview failed: ' . $e->getMessage());
+        }
+    }
+
+    usort($files, static function ($a, $b) {
+        return strcmp($a['path'] ?? '', $b['path'] ?? '');
+    });
+
+    $additions = 0;
+    $deletions = 0;
+    $approxBytes = 0;
+    $needsRebuild = false;
+    foreach ($files as $f) {
+        $additions += (int)($f['additions'] ?? 0);
+        $deletions += (int)($f['deletions'] ?? 0);
+        $approxBytes += (int)($f['approxBytes'] ?? 0);
+        if (!$needsRebuild && updaterPathNeedsRebuild((string)($f['path'] ?? ''))) {
+            $needsRebuild = true;
+        }
+    }
+    // Always rebuild in git mode after checkout when node is available — ETA should reflect that
+    if ($caps['mode'] === 'git' && $caps['nodeAvailable']) {
+        $needsRebuild = true;
+    }
+
+    $filesChanged = count($files);
+    $estimateSeconds = updaterEstimateApplySeconds($filesChanged, $approxBytes, $needsRebuild);
+
+    return [
+        'base' => $base,
+        'target' => [
+            'type' => $target['type'],
+            'ref' => $head,
+            'tag' => $target['tag'] ?? null,
+            'version' => $target['version'] ?? null,
+            'message' => $target['message'] ?? null,
+        ],
+        'source' => $source,
+        'files' => $files,
+        'filesChanged' => $filesChanged,
+        'additions' => $additions,
+        'deletions' => $deletions,
+        'approxBytes' => $approxBytes,
+        'approxSizeLabel' => updaterFormatBytes($approxBytes),
+        'needsRebuild' => $needsRebuild,
+        'estimateSeconds' => $estimateSeconds,
+        'estimateLabel' => updaterFormatDuration($estimateSeconds),
+        'commits' => array_slice($commits, 0, 30),
+        'commitCount' => count($commits),
+        'note' => 'Size and duration are estimates based on line deltas and typical rebuild time.',
+    ];
+}
+
+/* ---- SQLite DB snapshots ---- */
+
+function updaterSnapshotsDir(): string {
+    if (!is_dir(UPDATER_SNAPSHOTS_DIR)) {
+        @mkdir(UPDATER_SNAPSHOTS_DIR, 0755, true);
+    }
+    return UPDATER_SNAPSHOTS_DIR;
+}
+
+function updaterDbSnapshotExists(string $id): bool {
+    $id = preg_replace('/[^A-Za-z0-9_-]/', '', $id) ?? '';
+    if ($id === '') {
+        return false;
+    }
+    $db = updaterSnapshotsDir() . DIRECTORY_SEPARATOR . $id . DIRECTORY_SEPARATOR . 'linknest.db';
+    return is_file($db);
+}
+
+function updaterCreateDbSnapshot(array $meta = []): array {
+    if (!defined('DB_PATH') || !is_file(DB_PATH)) {
+        throw new RuntimeException('Database file not found');
+    }
+    $id = 'dbs_' . date('Ymd_His') . '_' . substr(md5(uniqid('', true)), 0, 6);
+    $dir = updaterSnapshotsDir() . DIRECTORY_SEPARATOR . $id;
+    if (!@mkdir($dir, 0755, true) && !is_dir($dir)) {
+        throw new RuntimeException('Cannot create snapshot directory');
+    }
+
+    // Flush WAL into the main DB file for a consistent copy
+    try {
+        $pdo = new PDO('sqlite:' . DB_PATH);
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $pdo->exec('PRAGMA wal_checkpoint(TRUNCATE)');
+        $pdo = null;
+    } catch (Throwable $e) {
+        // Continue with best-effort file copy
+        error_log('updater snapshot checkpoint: ' . $e->getMessage());
+    }
+
+    $dest = $dir . DIRECTORY_SEPARATOR . 'linknest.db';
+    if (!@copy(DB_PATH, $dest)) {
+        throw new RuntimeException('Failed to copy database into snapshot');
+    }
+    $dbBytes = (int)@filesize($dest);
+    $record = [
+        'id' => $id,
+        'createdAt' => time(),
+        'createdAtIso' => date('c'),
+        'gitCommit' => $meta['gitCommit'] ?? updaterInstalledCommit(),
+        'appVersion' => $meta['appVersion'] ?? updaterInstalledVersion(),
+        'label' => $meta['label'] ?? ('DB snapshot @ ' . date('Y-m-d H:i:s')),
+        'reason' => $meta['reason'] ?? 'pre-update',
+        'dbBytes' => $dbBytes,
+        'dbSizeLabel' => updaterFormatBytes($dbBytes),
+    ];
+    @file_put_contents(
+        $dir . DIRECTORY_SEPARATOR . 'meta.json',
+        json_encode($record, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
+        LOCK_EX
+    );
+    updaterPruneSnapshots(UPDATER_HISTORY_MAX);
+    return $record;
+}
+
+function updaterListDbSnapshots(): array {
+    $dir = updaterSnapshotsDir();
+    $items = [];
+    foreach (glob($dir . DIRECTORY_SEPARATOR . '*', GLOB_ONLYDIR) ?: [] as $path) {
+        $metaFile = $path . DIRECTORY_SEPARATOR . 'meta.json';
+        $dbFile = $path . DIRECTORY_SEPARATOR . 'linknest.db';
+        if (!is_file($dbFile)) {
+            continue;
+        }
+        $meta = [];
+        if (is_file($metaFile)) {
+            $decoded = json_decode((string)@file_get_contents($metaFile), true);
+            if (is_array($decoded)) {
+                $meta = $decoded;
+            }
+        }
+        $id = $meta['id'] ?? basename($path);
+        $items[] = [
+            'id' => $id,
+            'createdAt' => (int)($meta['createdAt'] ?? @filemtime($dbFile)),
+            'createdAtIso' => $meta['createdAtIso'] ?? date('c', (int)($meta['createdAt'] ?? @filemtime($dbFile))),
+            'gitCommit' => $meta['gitCommit'] ?? null,
+            'appVersion' => $meta['appVersion'] ?? null,
+            'label' => $meta['label'] ?? $id,
+            'reason' => $meta['reason'] ?? null,
+            'dbBytes' => (int)($meta['dbBytes'] ?? @filesize($dbFile)),
+            'dbSizeLabel' => updaterFormatBytes((int)($meta['dbBytes'] ?? @filesize($dbFile))),
+        ];
+    }
+    usort($items, static function ($a, $b) {
+        return ($b['createdAt'] ?? 0) <=> ($a['createdAt'] ?? 0);
+    });
+    return $items;
+}
+
+function updaterRestoreDbSnapshot(string $id): void {
+    $id = preg_replace('/[^A-Za-z0-9_-]/', '', $id) ?? '';
+    if ($id === '' || !updaterDbSnapshotExists($id)) {
+        throw new RuntimeException('Database snapshot not found: ' . $id);
+    }
+    if (!defined('DB_PATH')) {
+        throw new RuntimeException('DB_PATH not defined');
+    }
+    $src = updaterSnapshotsDir() . DIRECTORY_SEPARATOR . $id . DIRECTORY_SEPARATOR . 'linknest.db';
+    $dir = dirname(DB_PATH);
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0755, true);
+    }
+    $tmp = DB_PATH . '.restoring-' . getmypid();
+    if (!@copy($src, $tmp)) {
+        throw new RuntimeException('Failed to stage database restore');
+    }
+    // Replace live DB
+    if (is_file(DB_PATH)) {
+        @unlink(DB_PATH . '.pre-restore');
+        @rename(DB_PATH, DB_PATH . '.pre-restore');
+    }
+    if (!@rename($tmp, DB_PATH)) {
+        @copy($tmp, DB_PATH);
+        @unlink($tmp);
+    }
+    foreach ([DB_PATH . '-wal', DB_PATH . '-shm'] as $side) {
+        if (is_file($side)) {
+            @unlink($side);
+        }
+    }
+    updaterAppendLog('Database restored from snapshot ' . $id);
+}
+
+function updaterPruneSnapshots(int $keep = UPDATER_HISTORY_MAX): void {
+    $keep = max(1, $keep);
+    $items = updaterListDbSnapshots();
+    if (count($items) <= $keep) {
+        return;
+    }
+    $drop = array_slice($items, $keep);
+    foreach ($drop as $item) {
+        $id = preg_replace('/[^A-Za-z0-9_-]/', '', (string)($item['id'] ?? '')) ?? '';
+        if ($id === '') {
+            continue;
+        }
+        $path = updaterSnapshotsDir() . DIRECTORY_SEPARATOR . $id;
+        if (!is_dir($path)) {
+            continue;
+        }
+        foreach (['linknest.db', 'meta.json'] as $f) {
+            $fp = $path . DIRECTORY_SEPARATOR . $f;
+            if (is_file($fp)) {
+                @unlink($fp);
+            }
+        }
+        @rmdir($path);
+    }
+
+    // Also drop orphaned history dbSnapshotId references are fine left as null-effective
+    $referenced = [];
+    foreach (updaterReadHistory() as $e) {
+        if (!empty($e['dbSnapshotId'])) {
+            $referenced[(string)$e['dbSnapshotId']] = true;
+        }
+    }
+}
+
+/**
+ * Rollback to a specific history entry (keeps the entry for audit).
+ */
+function updaterExecuteRollbackToEntry(array $snapshot, bool $restoreDatabase): void {
+    if (empty($snapshot['gitCommit'])) {
+        throw new RuntimeException('History entry has no git commit');
+    }
+    updaterEnsureGitSafeDirectory();
+    updaterPushHistorySnapshot('Before rollback @ ' . date('Y-m-d H:i:s'));
+
+    $target = [
+        'type' => 'sha',
+        'ref' => $snapshot['gitCommit'],
+        'version' => $snapshot['appVersion'] ?? updaterInstalledVersion(),
+        'message' => $snapshot['message'] ?? ('Rollback to ' . substr((string)$snapshot['gitCommit'], 0, 7)),
+        'tag' => $snapshot['releaseTag'] ?? null,
+        'assetName' => null,
+        'assetUrl' => null,
+        'assetId' => null,
+    ];
+    // Do not push another history / DB snap for the apply itself
+    $job = updaterReadJob() ?: [];
+    $job['backupDatabase'] = false;
+    updaterWriteJob($job);
+
+    updaterApplyTarget($target, false);
+
+    if ($restoreDatabase) {
+        $snapId = $snapshot['dbSnapshotId'] ?? null;
+        if (is_string($snapId) && $snapId !== '' && updaterDbSnapshotExists($snapId)) {
+            updaterSetProgress(95, 'Restoring database snapshot...');
+            updaterRestoreDbSnapshot($snapId);
+        } else {
+            updaterAppendLog('No database snapshot available for this rollback entry.');
+        }
+    } else {
+        updaterAppendLog('Database restore skipped.');
+    }
+
+    updaterSetProgress(100, 'Rollback complete. Reload the app.', 'success');
+    $job = updaterReadJob() ?: [];
+    $job['status'] = 'success';
+    $job['percent'] = 100;
+    $job['finishedAt'] = time();
+    updaterWriteJob($job);
+}
+
+function updaterRecoverStaleApplyState(bool $forceLockClear = false): void {
+    $job = null;
+    if (is_file(UPDATER_JOB_FILE)) {
+        $raw = @file_get_contents(UPDATER_JOB_FILE);
+        $job = $raw !== false ? json_decode($raw, true) : null;
+    }
+    $running = is_array($job) && ($job['status'] ?? '') === 'running';
+    $started = is_array($job) ? (int)($job['startedAt'] ?? 0) : 0;
+    $updated = is_array($job) ? (int)($job['updatedAt'] ?? $started) : 0;
+    $percent = is_array($job) ? (int)($job['percent'] ?? 0) : 0;
+    $age = $started > 0 ? (time() - $started) : 0;
+    $sinceUpdate = $updated > 0 ? (time() - $updated) : $age;
+    $staleJob = $running && (($percent <= 5 && $age >= 45) || $sinceUpdate >= 180 || $age >= 3600);
+
+    $lockStale = false;
+    if (is_file(UPDATER_LOCK_FILE)) {
+        $raw = @file_get_contents(UPDATER_LOCK_FILE);
+        $data = $raw !== false ? json_decode($raw, true) : null;
+        $lockStarted = is_array($data) ? (int)($data['startedAt'] ?? 0) : 0;
+        $lockAge = $lockStarted > 0 ? (time() - $lockStarted) : 99999;
+        $lockStale = $lockAge >= 45 && (!$running || $staleJob || $percent <= 5);
+    }
+
+    if ($staleJob || $forceLockClear || $lockStale) {
+        updaterReleaseLock();
+        updaterWriteJob([
+            'status' => 'idle',
+            'percent' => 0,
+            'message' => 'Cleared stuck updater state',
+            'log' => ['[' . date('H:i:s') . '] Cleared stuck updater state'],
+            'error' => null,
+        ]);
+    }
 }
 
 function updaterBuildStatusPayload(bool $forceCheck = false): array {
@@ -1217,9 +1959,9 @@ function updaterBuildStatusPayload(bool $forceCheck = false): array {
     $latestCommit = $commits[0] ?? null;
     $buildInfo = updaterReadBuildInfo();
     $job = updaterReadJob();
-    $history = updaterReadHistory();
-    $canRollback = !empty($history);
-    $rollbackTarget = $canRollback ? $history[count($history) - 1] : null;
+    $historyApi = updaterHistoryForApi();
+    $canRollback = !empty($historyApi);
+    $rollbackTarget = $canRollback ? $historyApi[0] : null;
 
     $updateCount = $aheadBy > 0 ? $aheadBy : count($newerReleases);
     $updateAvailable = $aheadBy > 0 || count($newerReleases) > 0;
@@ -1243,7 +1985,9 @@ function updaterBuildStatusPayload(bool $forceCheck = false): array {
         'canApply' => $canApply,
         'canRollback' => $canRollback,
         'rollbackTarget' => $rollbackTarget,
-        'historyCount' => count($history),
+        'history' => $historyApi,
+        'historyCount' => count($historyApi),
+        'dbSnapshots' => updaterListDbSnapshots(),
         'repo' => updaterRepoSlug(),
         'tokenConfigured' => updaterHasGithubToken(),
         'checkedAt' => $fetchedAt,

@@ -901,6 +901,50 @@ export const createTempVersion = async (tileId: string): Promise<void> => {
   }
 };
 
+const VISITOR_KEY_STORAGE = 'linknest_visitor_key';
+
+function getOrCreateVisitorKey(): string {
+  try {
+    let key = localStorage.getItem(VISITOR_KEY_STORAGE);
+    if (!key || !/^[a-zA-Z0-9_-]{8,64}$/.test(key)) {
+      key = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID().replace(/-/g, '')
+        : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 14)}`;
+      localStorage.setItem(VISITOR_KEY_STORAGE, key);
+    }
+    return key;
+  } catch {
+    return `tmp${Date.now().toString(36)}`;
+  }
+}
+
+/** Record a tile open for hit / unique-visitor stats. Best-effort; never throws. */
+export const recordTileVisit = async (tileId: string): Promise<void> => {
+  if (!tileId) return;
+  try {
+    // Avoid double-count from React Strict Mode remounts in the same tab
+    const debounceKey = `tile_visit_sent_${tileId}`;
+    try {
+      const last = sessionStorage.getItem(debounceKey);
+      if (last && Date.now() - Number(last) < 15000) {
+        return;
+      }
+      sessionStorage.setItem(debounceKey, String(Date.now()));
+    } catch {
+      // sessionStorage unavailable — continue
+    }
+
+    await fetch(`${API_BASE}/tiles/${encodeURIComponent(tileId)}/visit`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visitorKey: getOrCreateVisitorKey() }),
+    });
+  } catch (e) {
+    console.debug('Tile visit recording skipped:', e);
+  }
+};
+
 export const purgeArchive = async (): Promise<{ success: boolean; purgedCount: number }> => {
   try {
     const response = await fetch(`${API_BASE}/tiles/purge-archive`, {

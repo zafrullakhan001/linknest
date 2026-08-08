@@ -61,6 +61,10 @@ interface TileInfo {
     canViewTileInfo: boolean;
     canEditTile: boolean;
   };
+  stats?: {
+    hitCount: number;
+    uniqueVisitors: number;
+  };
 }
 
 interface CategoryInfo {
@@ -644,6 +648,19 @@ const TileInfoView: React.FC<{
             </div>
           </InfoRow>
         )}
+      </SectionCard>
+
+      <SectionCard emoji="📈" title="Visitors" accent="rose">
+        <InfoRow label="Total Hits" labelEmoji="👆">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300">
+            {(tileInfo.stats?.hitCount ?? 0).toLocaleString()}
+          </span>
+        </InfoRow>
+        <InfoRow label="Unique Visitors" labelEmoji="👥">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300">
+            {(tileInfo.stats?.uniqueVisitors ?? 0).toLocaleString()}
+          </span>
+        </InfoRow>
       </SectionCard>
 
       <SectionCard emoji="🛡️" title="Your Permissions" accent="emerald">

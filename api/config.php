@@ -112,7 +112,7 @@ define('SYSTEM_TOKEN', 'linknest_secret_token_123'); // Change this for producti
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 73);
+    define('LINKNEST_SCHEMA_VERSION', 74);
 }
 
 /**
@@ -2466,6 +2466,17 @@ function initDatabase() {
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         )');
+
+        // Tile visit / hit tracking (visitor hits + unique visitors per tile)
+        $db->exec('CREATE TABLE IF NOT EXISTS tile_visits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tile_id TEXT NOT NULL,
+            user_id INTEGER,
+            visitor_key TEXT NOT NULL,
+            visited_at INTEGER NOT NULL,
+            FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+        )');
         
         // Create indexes for optimal performance
         createDatabaseIndexes($db);
@@ -2536,6 +2547,15 @@ function createDatabaseIndexes($db) {
         // Style profiles table indexes
         try {
             $db->exec('CREATE INDEX IF NOT EXISTS idx_style_profiles_active ON style_profiles(is_active)');
+        } catch (PDOException $e) {
+            // Table might not exist yet, ignore
+        }
+
+        // Tile visits indexes
+        try {
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_tile_visits_tile_id ON tile_visits(tile_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_tile_visits_tile_visitor ON tile_visits(tile_id, visitor_key)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_tile_visits_visited_at ON tile_visits(tile_id, visited_at)');
         } catch (PDOException $e) {
             // Table might not exist yet, ignore
         }
