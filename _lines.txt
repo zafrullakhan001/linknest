@@ -1,0 +1,345 @@
+8756|                              className="text-[11px] text-rose-600 dark:text-rose-400 hover:underline"
+8757|                            >
+8758|                              Remove image
+8759|                            </button>
+8760|                          ) : null}
+8761|                        </div>
+8762|                      </div>
+8763|
+8764|                      <div className="flex-1">
+8765|                        <FormLabel emoji="🎨">Theme</FormLabel>
+8766|                        <div className="grid grid-cols-9 gap-1.5">
+8767|                          {THEME_COLORS.map(c => (
+8768|                            <button
+8769|                              key={c}
+8770|                              onClick={() => setNewColor(c)}
+8771|                              className={`
+8772|                          w-8 h-8 rounded-lg border-2 transition-all relative overflow-hidden
+8773|                          ${newColor === c ? 'border-brand-500 scale-110 shadow-md shadow-brand-500/30' : 'border-slate-200 dark:border-slate-700 hover:scale-105'} 
+8774|                        `}
+8775|                              title={c}
+8776|                            >
+8777|                              <div className={`absolute inset-0 ${COLOR_STYLES[c].base} rounded-md`}></div>
+8778|                            </button>
+8779|                          ))}
+8780|                        </div>
+8781|                      </div>
+8782|                    </div>
+8783|
+8784|                    <div className="space-y-2">
+8785|                      <label className="flex items-center gap-2 cursor-pointer select-none">
+8786|                        <input
+8787|                          type="checkbox"
+8788|                          checked={newShowEmoji}
+8789|                          onChange={(e) => setNewShowEmoji(e.target.checked)}
+8790|                          className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+8791|                        />
+8792|                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">✨ Show emoji on card</span>
+8793|                      </label>
+8794|                      <label className="flex items-center gap-2 cursor-pointer select-none">
+8795|                        <input
+8796|                          type="checkbox"
+8797|                          checked={newShowTitle}
+8798|                          onChange={(e) => setNewShowTitle(e.target.checked)}
+8799|                          className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+8800|                        />
+8801|                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">🏷️ Show title on card</span>
+8802|                      </label>
+8803|                      <label className="flex items-center gap-2 cursor-pointer select-none">
+8804|                        <input
+8805|                          type="checkbox"
+8806|                          checked={newShowDescription}
+8807|                          onChange={(e) => setNewShowDescription(e.target.checked)}
+8808|                          className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+8809|                        />
+8810|                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">💬 Show description on card</span>
+8811|                      </label>
+8812|                      <div className="flex flex-wrap items-center gap-3">
+8813|                        <label className="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+8814|                          <input
+8815|                            type="checkbox"
+8816|                            checked={emojiRemoveBg}
+8817|                            onChange={(e) => setEmojiRemoveBg(e.target.checked)}
+8818|                            className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+8819|                          />
+8820|                          Remove emoji image background
+8821|                        </label>
+8822|                        {emojiRemoveBg ? (
+8823|                          <>
+8824|                            <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+8825|                              <input type="radio" name="emojiBgModeCreate" checked={emojiBgMode === 'auto'} onChange={() => setEmojiBgMode('auto')} />
+8826|                              Auto (corners)
+8827|                            </label>
+8828|                            <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+8829|                              <input type="radio" name="emojiBgModeCreate" checked={emojiBgMode === 'custom'} onChange={() => setEmojiBgMode('custom')} />
+8830|                              Pick color
+8831|                            </label>
+8832|                            {emojiBgMode === 'custom' ? (
+8833|                              <input
+8834|                                type="color"
+8835|                                value={emojiBgColor}
+8836|                                onChange={(e) => setEmojiBgColor(e.target.value)}
+8837|                                className="w-7 h-7 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent"
+8838|                                title="Background color to remove"
+8839|                              />
+8840|                            ) : null}
+8841|                          </>
+8842|                        ) : null}
+8843|                        {newEmojiImage && emojiRemoveBg ? (
+8844|                          <button
+8845|                            type="button"
+8846|                            disabled={emojiImageUploading}
+8847|                            onClick={async () => {
+8848|                              setEmojiImageUploading(true);
+8849|                              try {
+8850|                                const url = await uploadTileEmojiImage(null, {
+8851|                                  sourceUrl: newEmojiImage,
+8852|                                  removeBackground: true,
+8853|                                  bgColor: emojiBgMode === 'custom' ? emojiBgColor : undefined
+8854|                                });
+8855|                                setNewEmojiImage(url);
+8856|                              } catch (err) {
+8857|                                alert(err instanceof Error ? err.message : 'Failed to remove background');
+8858|                              } finally {
+8859|                                setEmojiImageUploading(false);
+8860|                              }
+8861|                            }}
+8862|                            className="text-xs font-medium px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+8863|                          >
+8864|                            Apply to current image
+8865|                          </button>
+8866|                        ) : null}
+8867|                      </div>
+8868|
+8869|                  {/* Header image - space cards only */}
+8870|                    <div>
+8871|                      <FormLabel emoji="🖼️">Header image</FormLabel>
+8872|                      <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+8873|                        Place freely on the space card. Use the tile-sized preview below to align X/Y. Other formats convert to PNG automatically.
+8874|                      </p>
+8875|                      <div className="flex flex-wrap items-center gap-3 mb-3">
+8876|                        <label className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border cursor-pointer transition-colors ${headerImageUploading ? 'opacity-60 pointer-events-none' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'} text-slate-700 dark:text-slate-200`}>
+8877|                          <input
+8878|                            type="file"
+8879|                            accept="image/jpeg,image/png,image/gif,image/webp,image/bmp,.jpg,.jpeg,.png,.gif,.webp,.bmp"
+8880|                            className="hidden"
+8881|                            disabled={headerImageUploading}
+8882|                            onChange={async (e) => {
+8883|                              const file = e.target.files?.[0];
+8884|                              e.target.value = '';
+8885|                              if (!file) return;
+8886|                              setHeaderImageUploading(true);
+8887|                              try {
+8888|                                const url = await uploadTileHeaderImage(file, {
+8889|                                  removeBackground: headerRemoveBg,
+8890|                                  bgColor: headerRemoveBg && headerBgMode === 'custom' ? headerBgColor : undefined
+8891|                                });
+8892|                                setNewHeaderImage(url);
+8893|                              } catch (err) {
+8894|                                console.error(err);
+8895|                                alert(err instanceof Error ? err.message : 'Failed to upload header image');
+8896|                              } finally {
+8897|                                setHeaderImageUploading(false);
+8898|                              }
+8899|                            }}
+8900|                          />
+8901|                          {headerImageUploading ? 'Uploading…' : (newHeaderImage ? 'Replace image' : 'Upload image')}
+8902|                        </label>
+8903|                        {newHeaderImage ? (
+8904|                          <button
+8905|                            type="button"
+8906|                            onClick={() => setNewHeaderImage('')}
+8907|                            className="text-sm text-red-600 dark:text-red-400 hover:underline"
+8908|                          >
+8909|                            Clear
+8910|                          </button>
+8911|                        ) : null}
+8912|                      </div>
+8913|                      <div className="flex flex-wrap items-center gap-4 mb-2">
+8914|                        <div className="flex items-center gap-1.5">
+8915|                          <span className="text-xs text-slate-600 dark:text-slate-400 mr-1">Align</span>
+8916|                          {(['left', 'center', 'right'] as const).map((align) => (
+8917|                            <button
+8918|                              key={align}
+8919|                              type="button"
+8920|                              onClick={() => setNewHeaderImageAlign(align)}
+8921|                              className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${newHeaderImageAlign === align ? 'bg-brand-500 text-white border-brand-500' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'}`}
+8922|                            >
+8923|                              {align.charAt(0).toUpperCase() + align.slice(1)}
+8924|                            </button>
+8925|                          ))}
+8926|                        </div>
+8927|                        <div className="flex items-center gap-1.5">
+8928|                          <span className="text-xs text-slate-600 dark:text-slate-400 mr-1">Fit</span>
+8929|                          <button
+8930|                            type="button"
+8931|                            onClick={() => setNewHeaderImageFit('contain')}
+8932|                            className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${newHeaderImageFit === 'contain' ? 'bg-brand-500 text-white border-brand-500' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'}`}
+8933|                            title="Scale image to fit inside the region (no crop)"
+8934|                          >
+8935|                            Center fit
+8936|                          </button>
+8937|                          <button
+8938|                            type="button"
+8939|                            onClick={() => setNewHeaderImageFit('cover')}
+8940|                            className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${newHeaderImageFit === 'cover' ? 'bg-brand-500 text-white border-brand-500' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'}`}
+8941|                            title="Scale image to fill the region completely (may crop)"
+8942|                          >
+8943|                            Fill region
+8944|                          </button>
+8945|                        </div>
+8946|                      </div>
+8947|                      {newHeaderImage ? (
+8948|                        <div className="mb-4 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-inner">
+8949|                          <HeaderImageTilePreview
+8950|                            headerImage={newHeaderImage}
+8951|                            align={newHeaderImageAlign}
+8952|                            fit={newHeaderImageFit}
+8953|                            opacity={newHeaderImageOpacity}
+8954|                            offsetX={newHeaderImageOffsetX}
+8955|                            offsetY={newHeaderImageOffsetY}
+8956|                            emoji={newEmoji}
+8957|                            emojiImage={newEmojiImage || undefined}
+8958|                            showEmoji={newShowEmoji}
+8959|                            title={newTitle}
+8960|                            description={newDesc}
+8961|                            showTitle={newShowTitle}
+8962|                            showDescription={newShowDescription}
+8963|                            themeColor={newColor}
+8964|                          />
+8965|                        </div>
+8966|                      ) : null}
+8967|                      {newHeaderImage ? (
+8968|                        <div className="space-y-2 mb-3">
+8969|                          <label className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+8970|                            <span className="w-20 shrink-0">Opacity</span>
+8971|                            <input
+8972|                              type="range"
+8973|                              min={0}
+8974|                              max={100}
+8975|                              value={newHeaderImageOpacity}
+8976|                              onChange={(e) => setNewHeaderImageOpacity(Number(e.target.value))}
+8977|                              className="flex-1 accent-brand-500"
+8978|                            />
+8979|                            <span className="w-10 text-right tabular-nums">{newHeaderImageOpacity}%</span>
+8980|                          </label>
+8981|                          <label className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+8982|                            <span className="w-20 shrink-0">Position X</span>
+8983|                            <input
+8984|                              type="range"
+8985|                              min={-300}
+8986|                              max={300}
+8987|                              value={newHeaderImageOffsetX}
+8988|                              onChange={(e) => setNewHeaderImageOffsetX(Number(e.target.value))}
+8989|                              className="flex-1 accent-brand-500"
+8990|                            />
+8991|                            <span className="w-12 text-right tabular-nums">{newHeaderImageOffsetX}px</span>
+8992|                            <button
+8993|                              type="button"
+8994|                              onClick={() => setNewHeaderImageOffsetX(0)}
+8995|                              className="text-[11px] text-brand-600 dark:text-brand-400 hover:underline"
+8996|                            >
+8997|                              Reset
+8998|                            </button>
+8999|                          </label>
+9000|                          <label className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+9001|                            <span className="w-20 shrink-0">Position Y</span>
+9002|                            <input
+9003|                              type="range"
+9004|                              min={-300}
+9005|                              max={300}
+9006|                              value={newHeaderImageOffsetY}
+9007|                              onChange={(e) => setNewHeaderImageOffsetY(Number(e.target.value))}
+9008|                              className="flex-1 accent-brand-500"
+9009|                            />
+9010|                            <span className="w-12 text-right tabular-nums">{newHeaderImageOffsetY}px</span>
+9011|                            <button
+9012|                              type="button"
+9013|                              onClick={() => setNewHeaderImageOffsetY(0)}
+9014|                              className="text-[11px] text-brand-600 dark:text-brand-400 hover:underline"
+9015|                            >
+9016|                              Reset
+9017|                            </button>
+9018|                          </label>
+9019|                          <button
+9020|                            type="button"
+9021|                            onClick={() => { setNewHeaderImageOffsetX(0); setNewHeaderImageOffsetY(0); }}
+9022|                            className="text-[11px] text-brand-600 dark:text-brand-400 hover:underline"
+9023|                          >
+9024|                            Reset position
+9025|                          </button>
+9026|                        </div>
+9027|                      ) : null}
+9028|                      <div className="flex flex-wrap items-center gap-3">
+9029|                        <label className="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+9030|                          <input
+9031|                            type="checkbox"
+9032|                            checked={headerRemoveBg}
+9033|                            onChange={(e) => setHeaderRemoveBg(e.target.checked)}
+9034|                            className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+9035|                          />
+9036|                          Remove background
+9037|                        </label>
+9038|                        {headerRemoveBg ? (
+9039|                          <>
+9040|                            <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+9041|                              <input type="radio" name="headerBgModeCreate" checked={headerBgMode === 'auto'} onChange={() => setHeaderBgMode('auto')} />
+9042|                              Auto (corners)
+9043|                            </label>
+9044|                              <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+9045|                              <input type="radio" name="headerBgModeCreate" checked={headerBgMode === 'custom'} onChange={() => setHeaderBgMode('custom')} />
+9046|                              Pick color
+9047|                            </label>
+9048|                            {headerBgMode === 'custom' ? (
+9049|                              <input
+9050|                                type="color"
+9051|                                value={headerBgColor}
+9052|                                onChange={(e) => setHeaderBgColor(e.target.value)}
+9053|                                className="w-7 h-7 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent"
+9054|                                title="Background color to remove"
+9055|                              />
+9056|                            ) : null}
+9057|                          </>
+9058|                        ) : null}
+9059|                        {newHeaderImage && headerRemoveBg ? (
+9060|                          <button
+9061|                            type="button"
+9062|                            disabled={headerImageUploading}
+9063|                            onClick={async () => {
+9064|                              setHeaderImageUploading(true);
+9065|                              try {
+9066|                                const url = await uploadTileHeaderImage(null, {
+9067|                                  sourceUrl: newHeaderImage,
+9068|                                  removeBackground: true,
+9069|                                  bgColor: headerBgMode === 'custom' ? headerBgColor : undefined
+9070|                                });
+9071|                                setNewHeaderImage(url);
+9072|                              } catch (err) {
+9073|                                console.error(err);
+9074|                                alert(err instanceof Error ? err.message : 'Failed to remove background');
+9075|                              } finally {
+9076|                                setHeaderImageUploading(false);
+9077|                              }
+9078|                            }}
+9079|                            className="text-xs font-medium px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+9080|                          >
+9081|                            Apply to current image
+9082|                          </button>
+9083|                        ) : null}
+9084|                      </div>
+9085|                    </div>
+9086|                    </FormSection>
+9087|                  )}
+9088|
+9089|                  {/* Category & Visibility - Only shown when type is space */}
+9090|                  {tileType === 'space' && (
+9091|                    <FormSection emoji="🗂️" title="Organization & Access" accent="amber">
+9092|                    <div>
+9093|                      <FormLabel emoji="📂">Category</FormLabel>
+9094|                      <input
+9095|                        type="text"
+9096|                        value={newGroup}
+9097|                        onChange={(e) => setNewGroup(e.target.value)}
+9098|                        placeholder="Select or create a category (e.g., Work, Personal)"
+9099|                        list="category-suggestions-space"
+9100|                        className="w-full bg-white/80 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 placeholder-slate-400 transition-all"

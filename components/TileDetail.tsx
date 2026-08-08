@@ -33,6 +33,7 @@ import { RichTextContent } from '../types';
 import { isPublicLinkFavorite, togglePublicLinkFavorite } from '../services/publicFavoritesService';
 import { LinkInfoDialog } from './LinkInfoDialog';
 import { QRCodeDialog } from './QRCodeDialog';
+import { BrandedQRCode } from './BrandedQRCode';
 import { MobileTileEdit } from './MobileTileEdit';
 import { useMobile } from '../hooks/useMobile';
 import { VersionDiffViewer } from './VersionDiffViewer';
@@ -40,10 +41,10 @@ import { TileAnimationSelector, getTileAnimationClass, TileAnimation, getAnimati
 import { AuthSourceBadge } from './AuthSourceBadge';
 import { getDisplayUrl } from '../utils/urlDisplay';
 
-type ViewLayoutMode = 'stacked' | 'side-by-side' | 'grid' | 'compact';
+type ViewLayoutMode = 'stacked' | 'side-by-side' | 'grid' | 'compact' | 'qr';
 
 const isViewLayoutMode = (value: string | null | undefined): value is ViewLayoutMode =>
-    value === 'stacked' || value === 'side-by-side' || value === 'grid' || value === 'compact';
+    value === 'stacked' || value === 'side-by-side' || value === 'grid' || value === 'compact' || value === 'qr';
 
 const sectionLinkLayoutsStorageKey = (tileId: string) => `linknest_section_link_layouts_${tileId}`;
 
@@ -4294,6 +4295,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zM2 10a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10zm0 5.25a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
                                                 </svg>
                                             </button>
+                                            <button
+                                                onClick={() => setViewLayout('qr')}
+                                                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${viewLayout === 'qr'
+                                                    ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
+                                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                                                    }`}
+                                                title="QR codes - scannable codes for each link"
+                                                aria-label="QR code view"
+                                                aria-pressed={viewLayout === 'qr'}
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                    <path fillRule="evenodd" d="M3 3.5A1.5 1.5 0 014.5 2h3A1.5 1.5 0 019 3.5v3A1.5 1.5 0 017.5 8h-3A1.5 1.5 0 013 6.5v-3zM4.5 3.5v3h3v-3h-3zM11 3.5A1.5 1.5 0 0112.5 2h3A1.5 1.5 0 0117 3.5v3A1.5 1.5 0 0115.5 8h-3A1.5 1.5 0 0111 6.5v-3zm1.5 0v3h3v-3h-3zM3 12.5A1.5 1.5 0 014.5 11h3A1.5 1.5 0 019 12.5v3A1.5 1.5 0 017.5 17h-3A1.5 1.5 0 013 15.5v-3zm1.5 0v3h3v-3h-3zM12.5 11a.75.75 0 01.75-.75h1a.75.75 0 01.75.75v1a.75.75 0 01-.75.75h-1a.75.75 0 01-.75-.75v-1zM11 14.25a.75.75 0 01.75-.75H13a.75.75 0 010 1.5h-1.25a.75.75 0 01-.75-.75zM14.25 14a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5h-1.5zM11 16.75a.75.75 0 01.75-.75h3.5a.75.75 0 010 1.5h-3.5a.75.75 0 01-.75-.75zM15.5 11.75a.75.75 0 01.75-.75H17a.75.75 0 010 1.5h-.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
+                                                </svg>
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
@@ -4509,9 +4524,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             ? 'linknest-content-link-grid-cards'
                                             : sectionLinkLayout === 'compact'
                                                 ? 'linknest-content-link-list-compact'
-                                                : sectionLinkLayout === 'stacked'
-                                                    ? 'space-y-4'
-                                                    : 'linknest-content-link-grid';
+                                                : sectionLinkLayout === 'qr'
+                                                    ? 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4'
+                                                    : sectionLinkLayout === 'stacked'
+                                                        ? 'space-y-4'
+                                                        : 'linknest-content-link-grid';
 
                                     return (
                                         <div
@@ -4519,7 +4536,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             style={{ animationDelay: `${sectionIndex * 120}ms` }}
                                             data-view-layout={sectionLinkLayout}
                                             className={`linknest-content-section bg-white/80 dark:bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-200/80 dark:border-slate-700/50 shadow-sm ${
-                                                sectionLinkLayout === 'compact' ? 'p-4' : 'p-6'
+                                                sectionLinkLayout === 'compact' || sectionLinkLayout === 'qr' ? 'p-4' : 'p-6'
                                             } ${
                                                 tile.pageAnimation && tile.pageAnimation !== 'none'
                                                     ? getTileAnimationClass(tile.pageAnimation as TileAnimation)
@@ -4605,6 +4622,21 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zM2 10a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10zm0 5.25a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
                                                             </svg>
                                                         </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setSectionLinkLayout(section.id, 'qr')}
+                                                            className={`p-1.5 rounded-md transition-all ${sectionLinkLayout === 'qr'
+                                                                ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
+                                                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                                                                }`}
+                                                            title="QR codes"
+                                                            aria-label="QR codes"
+                                                            aria-pressed={sectionLinkLayout === 'qr'}
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                                                <path fillRule="evenodd" d="M3 3.5A1.5 1.5 0 014.5 2h3A1.5 1.5 0 019 3.5v3A1.5 1.5 0 017.5 8h-3A1.5 1.5 0 013 6.5v-3zM4.5 3.5v3h3v-3h-3zM11 3.5A1.5 1.5 0 0112.5 2h3A1.5 1.5 0 0117 3.5v3A1.5 1.5 0 0115.5 8h-3A1.5 1.5 0 0111 6.5v-3zm1.5 0v3h3v-3h-3zM3 12.5A1.5 1.5 0 014.5 11h3A1.5 1.5 0 019 12.5v3A1.5 1.5 0 017.5 17h-3A1.5 1.5 0 013 15.5v-3zm1.5 0v3h3v-3h-3zM12.5 11a.75.75 0 01.75-.75h1a.75.75 0 01.75.75v1a.75.75 0 01-.75.75h-1a.75.75 0 01-.75-.75v-1zM11 14.25a.75.75 0 01.75-.75H13a.75.75 0 010 1.5h-1.25a.75.75 0 01-.75-.75zM14.25 14a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5h-1.5zM11 16.75a.75.75 0 01.75-.75h3.5a.75.75 0 010 1.5h-3.5a.75.75 0 01-.75-.75zM15.5 11.75a.75.75 0 01.75-.75H17a.75.75 0 010 1.5h-.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
+                                                            </svg>
+                                                        </button>
                                                     </div>
                                                 )}
                                             </div>
@@ -4632,7 +4664,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     key={item.id}
                                                                     style={{ animationDelay: `${animationDelay}ms` }}
                                                                     className={`linknest-content-rich-text rich-text-content-item animate-in fade-in slide-in-from-bottom-2 ${
-                                                                        sectionLinkLayout === 'grid' ? 'col-span-full' : ''
+                                                                        sectionLinkLayout === 'grid' || sectionLinkLayout === 'qr' ? 'col-span-full' : ''
                                                                     }`}
                                                                 >
                                                                     <RichTextBoxedView
@@ -4663,6 +4695,65 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         const isBroken = health?.status === 'broken';
                                                         const isGridCards = sectionLinkLayout === 'grid';
                                                         const isCompact = sectionLinkLayout === 'compact';
+                                                        const isQrView = sectionLinkLayout === 'qr';
+
+                                                        if (isQrView) {
+                                                            return (
+                                                                <div
+                                                                    key={link.id}
+                                                                    style={{ animationDelay: `${animationDelay}ms` }}
+                                                                    className={`linknest-content-link flex flex-col items-center text-center gap-3 p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 shadow-sm ${
+                                                                        isBroken ? 'border-red-300 dark:border-red-500/50' : ''
+                                                                    } ${getTileAnimationClass(resolveLinkAnimation(link.animation, tile.linksAnimation))}`}
+                                                                    title={link.tooltip || link.label}
+                                                                >
+                                                                    <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-100 shadow-sm">
+                                                                        <BrandedQRCode
+                                                                            value={link.url}
+                                                                            size={isMobile ? 240 : 200}
+                                                                            title={`QR code for ${link.label}`}
+                                                                            className=""
+                                                                        />
+                                                                    </div>
+                                                                    <div className="min-w-0 w-full space-y-1">
+                                                                        <div className="flex items-center justify-center gap-1.5 px-1">
+                                                                            {link.icon ? (
+                                                                                <span className="text-base leading-none shrink-0" aria-hidden>{link.icon}</span>
+                                                                            ) : null}
+                                                                            <p className="font-semibold text-sm sm:text-base text-slate-900 dark:text-white truncate" title={link.label}>
+                                                                                {link.label}
+                                                                            </p>
+                                                                        </div>
+                                                                        <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-mono truncate px-1" title={link.url}>
+                                                                            {getDisplayUrl(link.url)}
+                                                                        </p>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <a
+                                                                            href={link.url}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            className="text-xs font-medium text-brand-600 dark:text-brand-400 hover:underline"
+                                                                            onClick={(e) => e.stopPropagation()}
+                                                                        >
+                                                                            Open link
+                                                                        </a>
+                                                                        <span className="text-slate-300 dark:text-slate-600" aria-hidden>·</span>
+                                                                        <button
+                                                                            type="button"
+                                                                            className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400"
+                                                                            onClick={(e) => {
+                                                                                e.preventDefault();
+                                                                                e.stopPropagation();
+                                                                                setQrDialogState({ url: link.url, label: link.label });
+                                                                            }}
+                                                                        >
+                                                                            Enlarge
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        }
 
                                                         return (
                                                             <div

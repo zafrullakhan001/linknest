@@ -40,6 +40,7 @@ import { ArchiveOverview } from './ArchiveOverview';
 import { MonitoringOverview } from './MonitoringOverview';
 import { RecycleBinOverview } from './RecycleBinOverview';
 import { TileInfoDialog } from './TileInfoDialog';
+import { FormSection, FormLabel, SpaceModalHeader, EditModalTabButton } from './SpaceFormChrome';
 import { TileFireworks } from './TileFireworks';
 import { TileConfetti } from './TileConfetti';
 import { TileSnowfall } from './TileSnowfall';
@@ -8195,7 +8196,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             <div className="absolute inset-0 bg-transparent" style={{ zIndex: 99998 }} onClick={() => setIsModalOpen(false)}></div>
             <div
               ref={modalRef}
-              className={`bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200 overflow-hidden flex flex-col ${isDragging ? 'cursor-move' : ''} ${isDragging || isResizing ? 'will-change-transform' : ''}`}
+              className={`bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 rounded-2xl p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200 overflow-hidden flex flex-col ${isDragging ? 'cursor-move' : ''} ${isDragging || isResizing ? 'will-change-transform' : ''}`}
               style={{
                 zIndex: 99999,
                 width: modalSize.width > 0 ? `${modalSize.width}px` : '600px',
@@ -8210,44 +8211,35 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 transition: isDragging || isResizing ? 'none' : undefined
               }}
             >
-              <div
-                className="flex items-center justify-between mb-6 cursor-move select-none"
+              <SpaceModalHeader
+                emoji={tileType === 'hyperlink' ? '🔗' : '✨'}
+                eyebrow={tileType === 'hyperlink' ? 'New Hyperlink' : 'New Space'}
+                title={tileType === 'hyperlink' ? 'Create Hyperlink' : 'Create New Space'}
+                subtitle={tileType === 'hyperlink' ? 'Add a direct link tile to your board' : 'Organize your links into a beautiful space'}
+                onClose={() => setIsModalOpen(false)}
                 onMouseDown={handleDragStart}
-              >
-                <div>
-                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">Create New Space</h2>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Organize your links</p>
-                </div>
-                <button
-                  onClick={() => setIsModalOpen(false)}
-                  className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer relative"
-                  style={{ zIndex: 100000 }}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                    <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                  </svg>
-                </button>
-              </div>
+              />
 
               <div className="flex-1 overflow-y-auto pr-2 -mr-2">
                 <div className="space-y-4 pr-2">
+                  <FormSection emoji="📋" title="Basics" accent="sky">
                   {/* Title */}
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Title</label>
+                    <FormLabel emoji="🏷️">Title</FormLabel>
                     <input
                       type="text"
                       value={newTitle}
                       onChange={(e) => setNewTitle(e.target.value)}
                       placeholder="e.g., Design Resources"
-                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
+                      className="w-full bg-white/80 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500/50 focus:border-sky-500 placeholder-slate-400 transition-all"
                     />
                   </div>
 
                   {/* Type Selection */}
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Type</label>
+                    <FormLabel emoji="🧩">Type</FormLabel>
                     <div className="space-y-2">
-                      <label className="flex items-center gap-2 cursor-pointer">
+                      <label className={`flex items-center gap-2.5 cursor-pointer rounded-lg border px-3 py-2.5 transition-colors ${tileType === 'space' ? 'border-sky-300 bg-sky-50/80 dark:border-sky-700 dark:bg-sky-950/30' : 'border-slate-200 dark:border-slate-700 hover:bg-white/70 dark:hover:bg-slate-800/50'}`}>
                         <input
                           type="radio"
                           name="tileType"
@@ -8261,9 +8253,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           }}
                           className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
                         />
-                        <span className="text-sm text-slate-700 dark:text-slate-300">Space - Create a new space with links and sections</span>
+                        <span className="text-sm text-slate-700 dark:text-slate-300"><span aria-hidden="true">📁</span> Space — create a space with links and sections</span>
                       </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
+                      <label className={`flex items-center gap-2.5 cursor-pointer rounded-lg border px-3 py-2.5 transition-colors ${tileType === 'hyperlink' ? 'border-indigo-300 bg-indigo-50/80 dark:border-indigo-700 dark:bg-indigo-950/30' : 'border-slate-200 dark:border-slate-700 hover:bg-white/70 dark:hover:bg-slate-800/50'}`}>
                         <input
                           type="radio"
                           name="tileType"
@@ -8285,16 +8277,18 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           }}
                           className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
                         />
-                        <span className="text-sm text-slate-700 dark:text-slate-300">Hyperlink - Direct link to a URL</span>
+                        <span className="text-sm text-slate-700 dark:text-slate-300"><span aria-hidden="true">🔗</span> Hyperlink — direct link to a URL</span>
                       </label>
                     </div>
                   </div>
+                  </FormSection>
 
                   {/* Hyperlink URL - Only shown when type is hyperlink */}
                   {tileType === 'hyperlink' && (
+                    <FormSection emoji="🔗" title="Hyperlink Details" accent="indigo">
                     <>
                       <div>
-                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">URL</label>
+                        <FormLabel emoji="🌐">URL</FormLabel>
                         <input
                           type="url"
                           value={hyperlinkUrl}
@@ -8421,9 +8415,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Select an existing category or type a new name to create one</p>
                       </div>
 
-                      {/* Visibility Settings - For hyperlinks */}
+                    {/* Visibility Settings - For hyperlinks */}
                       <div>
-                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Visibility</label>
+                        <FormLabel emoji="👁️">Visibility</FormLabel>
                         <div className="space-y-2">
                           {/* Public - Only for admins */}
                           {user && user.is_admin && (
@@ -8662,27 +8656,31 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         )}
                       </div>
                     </>
+                    </FormSection>
                   )}
 
                   {/* Description - Only shown when type is space */}
                   {tileType === 'space' && (
+                    <FormSection emoji="📝" title="Details" accent="teal">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Description</label>
+                      <FormLabel emoji="💬">Description</FormLabel>
                       <textarea
                         value={newDesc}
                         onChange={(e) => setNewDesc(e.target.value)}
                         placeholder="Short description..."
                         rows={2}
-                        className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 resize-none placeholder-slate-400 transition-all"
+                        className="w-full bg-white/80 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500/50 focus:border-teal-500 resize-none placeholder-slate-400 transition-all"
                       />
                     </div>
+                    </FormSection>
                   )}
 
                   {/* Emoji & Theme - Only shown when type is space */}
                   {tileType === 'space' && (
+                    <FormSection emoji="🎨" title="Look & Feel" accent="violet">
                     <div className="flex gap-3">
                       <div className="w-24 relative">
-                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Icon</label>
+                        <FormLabel emoji="✨">Icon</FormLabel>
                         <button
                           type="button"
                           onClick={() => setShowEmojiPicker(!showEmojiPicker)}
@@ -8764,7 +8762,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       </div>
 
                       <div className="flex-1">
-                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Theme</label>
+                        <FormLabel emoji="🎨">Theme</FormLabel>
                         <div className="grid grid-cols-9 gap-1.5">
                           {THEME_COLORS.map(c => (
                             <button
@@ -8782,9 +8780,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         </div>
                       </div>
                     </div>
-                  )}
 
-                  {tileType === 'space' && (
                     <div className="space-y-2">
                       <label className="flex items-center gap-2 cursor-pointer select-none">
                         <input
@@ -8793,7 +8789,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           onChange={(e) => setNewShowEmoji(e.target.checked)}
                           className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
                         />
-                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show emoji on card</span>
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">✨ Show emoji on card</span>
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer select-none">
                         <input
@@ -8802,7 +8798,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           onChange={(e) => setNewShowTitle(e.target.checked)}
                           className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
                         />
-                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show title on card</span>
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">🏷️ Show title on card</span>
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer select-none">
                         <input
@@ -8811,7 +8807,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           onChange={(e) => setNewShowDescription(e.target.checked)}
                           className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
                         />
-                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show description on card</span>
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">💬 Show description on card</span>
                       </label>
                       <div className="flex flex-wrap items-center gap-3">
                         <label className="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
@@ -8870,12 +8866,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         ) : null}
                       </div>
                     </div>
-                  )}
 
                   {/* Header image - space cards only */}
-                  {tileType === 'space' && (
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Header image</label>
+                      <FormLabel emoji="🖼️">Header image</FormLabel>
                       <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
                         Place freely on the space card. Use the tile-sized preview below to align X/Y. Other formats convert to PNG automatically.
                       </p>
@@ -9090,31 +9084,30 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         ) : null}
                       </div>
                     </div>
+                    </FormSection>
                   )}
 
-                  {/* Category - Only shown when type is space */}
+                  {/* Category & Visibility - Only shown when type is space */}
                   {tileType === 'space' && (
+                    <FormSection emoji="🗂️" title="Organization & Access" accent="amber">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Category</label>
+                      <FormLabel emoji="📂">Category</FormLabel>
                       <input
                         type="text"
                         value={newGroup}
                         onChange={(e) => setNewGroup(e.target.value)}
                         placeholder="Select or create a category (e.g., Work, Personal)"
                         list="category-suggestions-space"
-                        className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
+                        className="w-full bg-white/80 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 placeholder-slate-400 transition-all"
                       />
                       <datalist id="category-suggestions-space">
                         {userOwnedCategories.map(cat => <option key={cat} value={cat} />)}
                       </datalist>
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Select an existing category or type a new name to create one</p>
                     </div>
-                  )}
 
-                  {/* Visibility Settings - Only shown when type is space */}
-                  {tileType === 'space' && (
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Visibility</label>
+                      <FormLabel emoji="👁️">Visibility</FormLabel>
                       <div className="space-y-2">
                         <label className={`flex items-center gap-2 cursor-pointer ${user && !user.is_admin ? 'opacity-50 cursor-not-allowed' : ''}`}>
                           <input
@@ -9129,7 +9122,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             }}
                             className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
                           />
-                          <span className="text-sm text-slate-700 dark:text-slate-300">Public - Available for everyone (guests and logged in users)</span>
+                          <span className="text-sm text-slate-700 dark:text-slate-300">🌎 Public — available for everyone</span>
                         </label>
                         <label className={`flex items-center gap-2 cursor-pointer ${user && !user.is_admin ? 'opacity-50 cursor-not-allowed' : ''}`}>
                           <input
@@ -9144,7 +9137,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             }}
                             className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
                           />
-                          <span className="text-sm text-slate-700 dark:text-slate-300">Authenticated - Available for logged in users only</span>
+                          <span className="text-sm text-slate-700 dark:text-slate-300">🔐 Authenticated — logged-in users only</span>
                         </label>
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
@@ -9158,7 +9151,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             }}
                             className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
                           />
-                          <span className="text-sm text-slate-700 dark:text-slate-300">Private - Available for specific users only</span>
+                          <span className="text-sm text-slate-700 dark:text-slate-300">🔒 Private — specific users only</span>
                         </label>
                         {user?.is_admin && (
                           <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-700">
@@ -9361,36 +9354,38 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         </div>
                       )}
                     </div>
+                    </FormSection>
                   )}
 
                   {/* Scheduling - Only shown when type is space */}
                   {tileType === 'space' && (
+                    <FormSection emoji="🗓️" title="Scheduling" accent="emerald">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Scheduling</label>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Available From (optional)</label>
+                          <FormLabel emoji="🌱">Available From</FormLabel>
                           <input
                             type="datetime-local"
                             value={visibleFrom}
                             onChange={(e) => setVisibleFrom(e.target.value)}
-                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+                            className="w-full bg-white/80 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all"
                           />
                           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave empty for immediate availability</p>
                         </div>
                         <div>
-                          <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Expires At (optional)</label>
+                          <FormLabel emoji="⏰">Expires At</FormLabel>
                           <input
                             type="datetime-local"
                             value={expiresAt}
                             onChange={(e) => setExpiresAt(e.target.value)}
                             min={visibleFrom || undefined}
-                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+                            className="w-full bg-white/80 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all"
                           />
                           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave empty for no expiry</p>
                         </div>
                       </div>
                     </div>
+                    </FormSection>
                   )}
 
                   {/* Actions */}
@@ -9408,9 +9403,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         (newVisibility === 'private' && newAllowedUsers.length === 0) ||
                         (tileType === 'hyperlink' && !hyperlinkUrl.trim())
                       }
-                      className="bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-md shadow-brand-500/20 hover:shadow-lg hover:shadow-brand-500/30 hover:scale-105 active:scale-95"
+                      className="bg-gradient-to-r from-sky-600 to-indigo-500 hover:from-sky-500 hover:to-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-md shadow-sky-500/20 hover:shadow-lg hover:shadow-sky-500/30 hover:scale-105 active:scale-95"
                     >
-                      {tileType === 'hyperlink' ? 'Create Hyperlink' : 'Create Space'}
+                      {tileType === 'hyperlink' ? '🔗 Create Hyperlink' : '✨ Create Space'}
                     </button>
                   </div>
                 </div>
@@ -9443,7 +9438,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             }}></div>
             <div
               ref={modalRef}
-              className={`bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200 overflow-hidden flex flex-col ${isDragging ? 'cursor-move' : ''} ${isDragging || isResizing ? 'will-change-transform' : ''}`}
+              className={`bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 rounded-2xl p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200 overflow-hidden flex flex-col ${isDragging ? 'cursor-move' : ''} ${isDragging || isResizing ? 'will-change-transform' : ''}`}
               style={{
                 zIndex: 99999,
                 width: modalSize.width > 0 ? `${modalSize.width}px` : '600px',
@@ -9458,38 +9453,21 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 transition: isDragging || isResizing ? 'none' : undefined
               }}
             >
-              <div
-                className="flex items-center justify-between mb-6 cursor-move select-none shrink-0"
+              <SpaceModalHeader
+                emoji={tileType === 'hyperlink' ? '🔗' : '✏️'}
+                eyebrow={tileType === 'hyperlink' ? 'Edit Hyperlink' : 'Edit Space'}
+                title={editingTile.title || (tileType === 'hyperlink' ? 'Edit Hyperlink' : 'Edit Space')}
+                subtitle={tileType === 'hyperlink' ? 'Update your hyperlink settings' : 'Update your space settings'}
+                onClose={() => setIsEditModalOpen(false)}
                 onMouseDown={handleDragStart}
-              >
-                <div className="min-w-0 flex-1">
-                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1 truncate" title={editingTile.title || undefined}>
-                    {tileType === 'hyperlink' ? 'Edit Hyperlink' : 'Edit Space'}
-                    {editingTile.title && (
-                      <span className="text-brand-600 dark:text-brand-400 font-semibold"> — {editingTile.title}</span>
-                    )}
-                  </h2>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">
-                    {tileType === 'hyperlink' ? 'Update your hyperlink settings' : 'Update your space settings'}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setIsEditModalOpen(false)}
-                  className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer relative"
-                  style={{ zIndex: 100000 }}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                    <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                  </svg>
-                </button>
-              </div>
+              />
 
               <div className="flex-1 overflow-y-auto pr-2 -mr-2 min-h-0">
               {/* Shared Live Preview for All Tabs */}
-              <div className="mb-6 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-inner overflow-hidden relative">
-                <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm z-10">
+              <div className="mb-6 p-4 bg-gradient-to-br from-sky-50 to-indigo-50 dark:from-sky-950/30 dark:to-indigo-950/20 rounded-2xl border border-sky-100 dark:border-sky-900/40 shadow-inner overflow-hidden relative ring-1 ring-sky-200/40 dark:ring-sky-800/30">
+                <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-white/90 dark:bg-slate-800/80 backdrop-blur-sm px-2.5 py-1 rounded-full border border-emerald-200 dark:border-emerald-800 shadow-sm z-10">
                   <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                  <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tighter">Live Preview</span>
+                  <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-tighter">🔮 Live Preview</span>
                 </div>
 
                 <div className="flex justify-center items-center py-6 relative overflow-hidden">
@@ -9610,35 +9588,26 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
               </div>
 
               {/* Tab Navigation */}
-              <div className="flex gap-2 mb-6 border-b border-slate-200 dark:border-slate-700">
-                <button
+              <div className="flex gap-1.5 mb-5 border-b border-slate-200 dark:border-slate-700 overflow-x-auto">
+                <EditModalTabButton
+                  active={editModalActiveTab === 'general'}
+                  emoji="📋"
+                  label="General"
                   onClick={() => setEditModalActiveTab('general')}
-                  className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${editModalActiveTab === 'general'
-                    ? 'text-brand-600 dark:text-brand-400 border-brand-500'
-                    : 'text-slate-500 dark:text-slate-400 border-transparent hover:text-slate-700 dark:hover:text-slate-300'
-                    }`}
-                >
-                  General
-                </button>
-                <button
+                />
+                <EditModalTabButton
+                  active={editModalActiveTab === 'decoration'}
+                  emoji="🎨"
+                  label="Decorations"
                   onClick={() => setEditModalActiveTab('decoration')}
-                  className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${editModalActiveTab === 'decoration'
-                    ? 'text-brand-600 dark:text-brand-400 border-brand-500'
-                    : 'text-slate-500 dark:text-slate-400 border-transparent hover:text-slate-700 dark:hover:text-slate-300'
-                    }`}
-                >
-                  Tile Decoration
-                </button>
+                />
                 {tileType === 'space' && (
-                  <button
+                  <EditModalTabButton
+                    active={editModalActiveTab === 'messages'}
+                    emoji="💬"
+                    label="Message Board"
                     onClick={() => setEditModalActiveTab('messages')}
-                    className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${editModalActiveTab === 'messages'
-                      ? 'text-brand-600 dark:text-brand-400 border-brand-500'
-                      : 'text-slate-500 dark:text-slate-400 border-transparent hover:text-slate-700 dark:hover:text-slate-300'
-                      }`}
-                  >
-                    Tile Message Board
-                  </button>
+                  />
                 )}
               </div>
 
@@ -9648,9 +9617,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                     {/* Header Section */}
                     <div className="flex justify-between items-center pb-3 border-b border-slate-200 dark:border-slate-700">
                       <div className="flex items-center gap-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
-                          <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
-                        </svg>
+                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300 text-base" aria-hidden="true">💬</span>
                         <h3 className="text-base font-semibold text-slate-700 dark:text-slate-300">Scheduled Messages</h3>
                         {messages.length > 0 && (
                           <span className="px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 rounded-full">
@@ -10495,9 +10462,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                   </div>
                 ) : editModalActiveTab === 'general' ? (
                   <>
+                    <FormSection emoji="📋" title="Basics" accent="sky">
                     {/* Title */}
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Title</label>
+                      <FormLabel emoji="🏷️">Title</FormLabel>
                       <input
                         type="text"
                         value={newTitle}
@@ -10523,7 +10491,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
                     {/* Description */}
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Description</label>
+                      <FormLabel emoji="💬">Description</FormLabel>
                       <textarea
                         value={newDesc}
                         onChange={(e) => setNewDesc(e.target.value)}
@@ -10564,6 +10532,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       </div>
                     )}
 
+                                        </FormSection>
+
+                    <FormSection emoji="👁️" title="Access & Sharing" accent="amber">
                     {/* Visibility Settings - For hyperlinks */}
                     {tileType === 'hyperlink' && (
                       <div>
@@ -11045,6 +11016,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       </div>
                     )}
 
+                    </FormSection>
+
+                    <FormSection emoji="🎨" title="Look & Feel" accent="violet">
                     {/* Emoji & Theme */}
                     <div className="flex gap-3">
                       <div className="w-24 relative">
@@ -11468,9 +11442,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       </div>
                     )}
 
+                    </FormSection>
+
+                    <FormSection emoji="🗂️" title="Organization" accent="indigo">
                     {/* Category */}
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Category</label>
+                      <FormLabel emoji="📂">Category</FormLabel>
                       <input
                         type="text"
                         value={newGroup}
@@ -11485,35 +11462,36 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Select an existing category or type a new name to create one</p>
                     </div>
 
-                    {/* Scheduling - Only shown when type is space */}
+                    </FormSection>
+
                     {tileType === 'space' && (
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Scheduling</label>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Available From (optional)</label>
-                            <input
-                              type="datetime-local"
-                              value={visibleFrom}
-                              onChange={(e) => setVisibleFrom(e.target.value)}
-                              className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
-                            />
-                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave empty for immediate availability</p>
-                          </div>
-                          <div>
-                            <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Expires At (optional)</label>
-                            <input
-                              type="datetime-local"
-                              value={expiresAt}
-                              onChange={(e) => setExpiresAt(e.target.value)}
-                              min={visibleFrom || undefined}
-                              className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
-                            />
-                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave empty for no expiry</p>
-                          </div>
+                    <FormSection emoji="🗓️" title="Scheduling" accent="emerald">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <FormLabel emoji="🌱">Available From</FormLabel>
+                          <input
+                            type="datetime-local"
+                            value={visibleFrom}
+                            onChange={(e) => setVisibleFrom(e.target.value)}
+                            className="w-full bg-white/80 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all"
+                          />
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave empty for immediate availability</p>
+                        </div>
+                        <div>
+                          <FormLabel emoji="⏰">Expires At</FormLabel>
+                          <input
+                            type="datetime-local"
+                            value={expiresAt}
+                            onChange={(e) => setExpiresAt(e.target.value)}
+                            min={visibleFrom || undefined}
+                            className="w-full bg-white/80 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all"
+                          />
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave empty for no expiry</p>
                         </div>
                       </div>
+                    </FormSection>
                     )}
+
                   </>
                 ) : (
                   <>
@@ -11932,13 +11910,13 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                   <button
                     onClick={handleUpdateTile}
                     disabled={isEditFormInvalid || isUpdatingTile}
-                    className="bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-md shadow-brand-500/20 hover:shadow-lg hover:shadow-brand-500/30 hover:scale-105 active:scale-95"
+                    className="bg-gradient-to-r from-sky-600 to-indigo-500 hover:from-sky-500 hover:to-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-md shadow-sky-500/20 hover:shadow-lg hover:shadow-sky-500/30 hover:scale-105 active:scale-95"
                   >
                     {isUpdatingTile
                       ? 'Saving…'
                       : tileType === 'hyperlink'
-                        ? 'Update Hyperlink'
-                        : 'Update Space'}
+                        ? '🔗 Update Hyperlink'
+                        : '✨ Update Space'}
                   </button>
                 </div>
               </div>

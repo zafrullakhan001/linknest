@@ -93,6 +93,9 @@ export interface AppSettings {
   // Tab title
   page_title_pattern?: string;
   favicon: string;
+  /** Center mark on link QR codes: favicon image or a custom emoji */
+  qr_branding_mode?: 'favicon' | 'emoji';
+  qr_branding_emoji?: string;
   footer_text?: string; // Footer text displayed at the bottom of pages
   guest_access_enabled?: string; // '0' or '1' - controls whether guests can view spaces
   show_database_path_in_footer?: string; // '0' or '1' - controls whether database path is shown in footer
@@ -243,6 +246,8 @@ export const settingsService = {
       auth_wash_to: data.settings?.auth_wash_to || '',
       page_title_pattern: data.settings?.page_title_pattern || '{page_title}',
       favicon: data.settings?.favicon || '',
+      qr_branding_mode: data.settings?.qr_branding_mode === 'emoji' ? 'emoji' : 'favicon',
+      qr_branding_emoji: data.settings?.qr_branding_emoji || '❤️',
       footer_text: data.settings?.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team',
       guest_access_enabled: data.settings?.guest_access_enabled || '1', // Default to enabled
       show_database_path_in_footer: data.settings?.show_database_path_in_footer || '1', // Default to enabled

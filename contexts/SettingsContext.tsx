@@ -146,6 +146,8 @@ export const emptyBrandingDefaults: AppSettings = {
   auth_wash_to: '',
   page_title_pattern: '{page_title}',
   favicon: '',
+  qr_branding_mode: 'favicon',
+  qr_branding_emoji: '❤️',
   footer_text: '© 2025 Adventhealth - Designed and developed by AIT Architecture team'
 };
 

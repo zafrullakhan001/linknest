@@ -8,7 +8,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { getTiles, createTile, saveTile } from '../services/storageService';
 import { bulkImportTiles } from '../services/storageService';
 import { exportAllCategoriesToFile, parseSpaceExportObject, normalizeImportedTiles } from '../services/spaceTransferService';
-import { Tile } from '../types';
+import { Tile, POPULAR_EMOJIS } from '../types';
 import { getCategoryArrangement } from '../services/storageService';
 import { SecurePasswordInput } from './SecurePasswordInput';
 import { PasswordCriteriaList } from './PasswordCriteriaList';
@@ -341,6 +341,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     auth_wash_to: '',
     page_title_pattern: '{page_title}',
     favicon: '',
+    qr_branding_mode: 'favicon',
+    qr_branding_emoji: '❤️',
     footer_text: '© 2025 Adventhealth - Designed and developed by AIT Architecture team',
     show_database_path_in_footer: '1',
     disabled_tabs: '[]',
@@ -369,6 +371,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [headerLogoPreview, setHeaderLogoPreview] = useState<string | null>(null);
   const [faviconUploading, setFaviconUploading] = useState(false);
   const [faviconPreview, setFaviconPreview] = useState<string | null>(null);
+  const [faviconRemoveBg, setFaviconRemoveBg] = useState(false);
+  const [faviconBgMode, setFaviconBgMode] = useState<'auto' | 'custom'>('auto');
+  const [faviconBgColor, setFaviconBgColor] = useState('#ffffff');
+  const [showQrEmojiPicker, setShowQrEmojiPicker] = useState(false);
   const [samlConfigModalOpen, setSamlConfigModalOpen] = useState(false);
 
   /** Update local branding form state and live-preview the nav/hero before Save. */
@@ -10535,7 +10541,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               </summary>
                               <div className="px-4 pb-4 space-y-4 border-t border-slate-200 dark:border-slate-700 pt-4">
                               <p className="text-xs text-slate-600 dark:text-slate-400">
-                                Upload a favicon for browser tabs and bookmarks. Also used for PWA / home-screen icon.
+                                Upload a favicon for browser tabs and bookmarks. Also used for PWA / home-screen icon. Raster images are auto-converted to a 32×32 PNG.
                               </p>
 
                               {(faviconPreview || settings.favicon) && (
@@ -10544,20 +10550,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     Current Favicon Preview
                                   </label>
                                   <div className="flex items-center gap-3">
-                                    <img
-                                      src={faviconPreview || settings.favicon}
-                                      alt="Favicon preview"
-                                      className="w-16 h-16 object-contain border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 p-2"
-                                      onError={(e) => {
-                                        (e.target as HTMLImageElement).style.display = 'none';
+                                    <div
+                                      className="w-16 h-16 rounded-lg border border-slate-200 dark:border-slate-700 p-2 flex items-center justify-center overflow-hidden"
+                                      style={{
+                                        backgroundImage:
+                                          'linear-gradient(45deg, #d4d4d8 25%, transparent 25%), linear-gradient(-45deg, #d4d4d8 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #d4d4d8 75%), linear-gradient(-45deg, transparent 75%, #d4d4d8 75%)',
+                                        backgroundSize: '10px 10px',
+                                        backgroundPosition: '0 0, 0 5px, 5px -5px, -5px 0',
+                                        backgroundColor: '#f4f4f5',
                                       }}
-                                    />
+                                      title="Checkerboard shows transparency"
+                                    >
+                                      <img
+                                        src={faviconPreview || settings.favicon}
+                                        alt="Favicon preview"
+                                        className="max-w-full max-h-full object-contain"
+                                        onError={(e) => {
+                                          (e.target as HTMLImageElement).style.display = 'none';
+                                        }}
+                                      />
+                                    </div>
                                     <div className="flex-1">
-                                      <p className="text-xs text-slate-600 dark:text-slate-400">
+                                      <p className="text-xs text-slate-600 dark:text-slate-400 break-all">
                                         {settings.favicon || 'Preview'}
                                       </p>
                                       {settings.favicon && (
                                         <button
+                                          type="button"
                                           onClick={() => {
                                             setSettings({ ...settings, favicon: '' });
                                             setFaviconPreview(null);
@@ -10579,7 +10598,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 <div className="relative">
                                   <input
                                     type="file"
-                                    accept="image/x-icon,image/vnd.microsoft.icon,image/png,image/svg+xml,image/jpeg,image/jpg,image/gif,image/webp,.ico"
+                                    accept="image/x-icon,image/vnd.microsoft.icon,image/png,image/svg+xml,image/jpeg,image/jpg,image/gif,image/webp,image/bmp,.ico,.bmp"
                                     onChange={async (e) => {
                                       const file = e.target.files?.[0];
                                       if (!file) return;
@@ -10595,7 +10614,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       try {
                                         setFaviconUploading(true);
                                         setError('');
-                                        const url = await settingsService.uploadFavicon(file);
+                                        const url = await settingsService.uploadFavicon(file, {
+                                          removeBackground: faviconRemoveBg,
+                                          bgColor: faviconRemoveBg && faviconBgMode === 'custom' ? faviconBgColor : undefined,
+                                        });
                                         setSettings({ ...settings, favicon: url });
                                         setFaviconPreview(null);
                                         URL.revokeObjectURL(objectUrl);
@@ -10618,13 +10640,87 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                     </svg>
-                                    Uploading...
+                                    Converting & uploading...
                                   </div>
                                 )}
                                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                                  JPEG, PNG, GIF, SVG, WebP, ICO — auto-converted to 32×32 PNG. SVG kept as-is. Max 10MB.
+                                  JPEG, PNG, GIF, SVG, WebP, ICO, BMP — auto-converted to 32×32 PNG. SVG kept as-is. Max 10MB.
                                 </p>
                               </div>
+
+                              <div className="flex flex-wrap items-center gap-3">
+                                <label className="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={faviconRemoveBg}
+                                    onChange={(e) => setFaviconRemoveBg(e.target.checked)}
+                                    className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                                  />
+                                  Remove background
+                                </label>
+                                {faviconRemoveBg ? (
+                                  <>
+                                    <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                                      <input
+                                        type="radio"
+                                        name="faviconBgMode"
+                                        checked={faviconBgMode === 'auto'}
+                                        onChange={() => setFaviconBgMode('auto')}
+                                      />
+                                      Auto (corners)
+                                    </label>
+                                    <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                                      <input
+                                        type="radio"
+                                        name="faviconBgMode"
+                                        checked={faviconBgMode === 'custom'}
+                                        onChange={() => setFaviconBgMode('custom')}
+                                      />
+                                      Pick color
+                                    </label>
+                                    {faviconBgMode === 'custom' ? (
+                                      <input
+                                        type="color"
+                                        value={faviconBgColor}
+                                        onChange={(e) => setFaviconBgColor(e.target.value)}
+                                        className="w-7 h-7 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent"
+                                        title="Background color to remove"
+                                      />
+                                    ) : null}
+                                  </>
+                                ) : null}
+                                {settings.favicon && faviconRemoveBg && /\/uploads\/favicon_/i.test(settings.favicon) ? (
+                                  <button
+                                    type="button"
+                                    disabled={faviconUploading}
+                                    onClick={async () => {
+                                      setFaviconUploading(true);
+                                      setError('');
+                                      try {
+                                        const url = await settingsService.uploadFavicon(null, {
+                                          sourceUrl: settings.favicon,
+                                          removeBackground: true,
+                                          bgColor: faviconBgMode === 'custom' ? faviconBgColor : undefined,
+                                        });
+                                        setSettings({ ...settings, favicon: url });
+                                        setFaviconPreview(null);
+                                      } catch (err: any) {
+                                        setError(err.message || 'Failed to remove favicon background');
+                                      } finally {
+                                        setFaviconUploading(false);
+                                      }
+                                    }}
+                                    className="text-xs font-medium px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
+                                  >
+                                    Apply to current favicon
+                                  </button>
+                                ) : null}
+                              </div>
+                              {faviconRemoveBg ? (
+                                <p className="text-xs text-slate-500 dark:text-slate-400 -mt-2">
+                                  Strips a solid background (white, etc.) to transparent. Works on raster uploads; SVG is not supported.
+                                </p>
+                              ) : null}
 
                               <div>
                                 <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
@@ -10641,6 +10737,118 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   placeholder="https://example.com/favicon.ico"
                                 />
                               </div>
+                              </div>
+                            </details>
+
+                            <details className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/20 group overflow-hidden">
+                              <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-900 dark:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 select-none">
+                                <span>QR Code Branding</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-500 transition-transform group-open:rotate-180">
+                                  <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                                </svg>
+                              </summary>
+                              <div className="px-4 pb-4 space-y-4 border-t border-slate-200 dark:border-slate-700 pt-4">
+                                <p className="text-xs text-slate-600 dark:text-slate-400">
+                                  Choose what appears in the center of link QR codes for branding. Save Settings to apply.
+                                </p>
+
+                                <div>
+                                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                    Center mark
+                                  </label>
+                                  <div className="flex gap-3">
+                                    <button
+                                      type="button"
+                                      onClick={() => setSettings({ ...settings, qr_branding_mode: 'favicon' })}
+                                      className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${(settings.qr_branding_mode || 'favicon') === 'favicon'
+                                        ? 'bg-brand-600 text-white'
+                                        : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                                        }`}
+                                    >
+                                      Favicon image
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setSettings({ ...settings, qr_branding_mode: 'emoji' })}
+                                      className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${settings.qr_branding_mode === 'emoji'
+                                        ? 'bg-brand-600 text-white'
+                                        : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                                        }`}
+                                    >
+                                      Emoji
+                                    </button>
+                                  </div>
+                                  {(settings.qr_branding_mode || 'favicon') === 'favicon' && !settings.favicon && (
+                                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
+                                      No favicon uploaded yet — QR codes will use the selected emoji until a favicon is set.
+                                    </p>
+                                  )}
+                                </div>
+
+                                <div>
+                                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                    {(settings.qr_branding_mode || 'favicon') === 'favicon' ? 'Fallback emoji' : 'QR emoji'}
+                                  </label>
+                                  <div className="flex items-center gap-3">
+                                    <div className="relative">
+                                      <button
+                                        type="button"
+                                        onClick={() => setShowQrEmojiPicker((v) => !v)}
+                                        className="w-14 h-14 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-3xl flex items-center justify-center hover:border-brand-400 transition-colors"
+                                        title="Pick emoji"
+                                      >
+                                        {settings.qr_branding_emoji || '❤️'}
+                                      </button>
+                                      {showQrEmojiPicker && (
+                                        <>
+                                          <div className="fixed inset-0 z-10" onClick={() => setShowQrEmojiPicker(false)} />
+                                          <div className="absolute top-full left-0 mt-2 w-72 h-64 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-20 flex flex-col overflow-hidden">
+                                            <div className="p-2 border-b border-slate-100 dark:border-slate-700">
+                                              <input
+                                                type="text"
+                                                value={settings.qr_branding_emoji || ''}
+                                                onChange={(e) => setSettings({ ...settings, qr_branding_emoji: e.target.value })}
+                                                placeholder="Type or paste emoji..."
+                                                className="w-full text-sm px-2 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+                                                autoFocus
+                                              />
+                                            </div>
+                                            <div className="flex-1 overflow-y-auto p-2 grid grid-cols-8 gap-1">
+                                              {Array.from(new Set(['❤️', '💙', '💚', '💛', '🧡', '💜', '🖤', '🤍', ...POPULAR_EMOJIS])).slice(0, 120).map((emoji) => (
+                                                <button
+                                                  key={emoji}
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setSettings({ ...settings, qr_branding_emoji: emoji });
+                                                    setShowQrEmojiPicker(false);
+                                                  }}
+                                                  className={`w-7 h-7 flex items-center justify-center text-base rounded-md hover:bg-brand-100 dark:hover:bg-brand-900/30 ${settings.qr_branding_emoji === emoji ? 'bg-brand-100 dark:bg-brand-900/40 ring-1 ring-brand-400' : ''}`}
+                                                >
+                                                  {emoji}
+                                                </button>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        </>
+                                      )}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-xs text-slate-600 dark:text-slate-400">
+                                        {(settings.qr_branding_mode || 'favicon') === 'favicon'
+                                          ? 'Used when no favicon is available.'
+                                          : 'Shown in the center of every link QR code.'}
+                                      </p>
+                                      <div className="mt-2 inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+                                        <span className="text-[10px] uppercase tracking-wide text-slate-500">Preview</span>
+                                        {(settings.qr_branding_mode || 'favicon') === 'favicon' && settings.favicon ? (
+                                          <img src={settings.favicon} alt="" className="w-6 h-6 object-contain" />
+                                        ) : (
+                                          <span className="text-xl leading-none">{settings.qr_branding_emoji || '❤️'}</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
                               </div>
                             </details>
 

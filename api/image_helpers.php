@@ -105,12 +105,14 @@ function resizeGdImageExactSquare($src, $size) {
 
 /**
  * Auto-convert an uploaded image for logo or favicon use.
- * - SVG: stored as-is
- * - Raster: converted to PNG, resized to target
+ * - SVG: stored as-is (background removal not applied)
+ * - Raster: converted to PNG, resized to target; optional chroma-key background removal
  *
+ * @param bool $removeBackground When true, chroma-key background to transparency
+ * @param string|null $bgColorHex Optional #rrggbb; when empty uses corner sampling
  * @return array{filename: string, filepath: string, converted: bool, width?: int, height?: int}
  */
-function processUploadedBrandImage($tmpPath, $originalName, $mimeType, $kind) {
+function processUploadedBrandImage($tmpPath, $originalName, $mimeType, $kind, $removeBackground = false, $bgColorHex = null) {
     if (!extension_loaded('gd')) {
         sendJSON(['error' => 'GD image extension is required for automatic image conversion'], 500);
     }
@@ -123,8 +125,11 @@ function processUploadedBrandImage($tmpPath, $originalName, $mimeType, $kind) {
     $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
     $isSvg = ($mimeType === 'image/svg+xml' || $extension === 'svg');
 
-    // Keep SVG as-is (vector logos/favicons)
+    // Keep SVG as-is (vector logos/favicons) — chroma-key needs a raster
     if ($isSvg) {
+        if ($removeBackground) {
+            sendJSON(['error' => 'Background removal is not supported for SVG. Upload a PNG, JPEG, GIF, WebP, or ICO instead.'], 400);
+        }
         $filename = ($kind === 'favicon' ? 'favicon_' : 'logo_') . time() . '_' . uniqid() . '.svg';
         $filepath = $uploadDir . '/' . $filename;
         if (!move_uploaded_file($tmpPath, $filepath) && !rename($tmpPath, $filepath) && !copy($tmpPath, $filepath)) {
@@ -143,6 +148,9 @@ function processUploadedBrandImage($tmpPath, $originalName, $mimeType, $kind) {
     }
     if ($src === false) {
         // Keep original when GD cannot decode (common for some .ico files)
+        if ($removeBackground) {
+            sendJSON(['error' => 'Could not decode image for background removal. Please upload JPEG, PNG, GIF, or WebP.'], 400);
+        }
         $safeExt = preg_replace('/[^a-z0-9]/', '', $extension) ?: 'bin';
         if (!in_array($safeExt, ['ico', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'], true)) {
             sendJSON(['error' => 'Could not read image. Please upload JPEG, PNG, GIF, WebP, SVG, or ICO.'], 400);
@@ -153,6 +161,16 @@ function processUploadedBrandImage($tmpPath, $originalName, $mimeType, $kind) {
             sendJSON(['error' => 'Failed to save uploaded file'], 500);
         }
         return ['filename' => $filename, 'filepath' => $filepath, 'converted' => false];
+    }
+
+    if ($removeBackground) {
+        $rgb = $bgColorHex ? parseHexColorToRgb($bgColorHex) : null;
+        if ($rgb === null) {
+            $rgb = sampleCornerBackgroundColor($src);
+        }
+        if ($rgb !== null) {
+            $src = removeGdImageBackgroundColor($src, $rgb[0], $rgb[1], $rgb[2]);
+        }
     }
 
     if ($kind === 'favicon') {

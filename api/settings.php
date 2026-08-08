@@ -315,6 +315,55 @@ function handleUploadLogo() {
 
 function handleUploadFavicon() {
     requireAdmin(); // Only admins can upload
+
+    $removeBackground = !empty($_POST['remove_background']) && (
+        $_POST['remove_background'] === '1' ||
+        $_POST['remove_background'] === 'true' ||
+        $_POST['remove_background'] === true
+    );
+    $bgColor = isset($_POST['bg_color']) ? trim((string)$_POST['bg_color']) : '';
+    if ($bgColor === '') {
+        $bgColor = null;
+    }
+
+    // Reprocess an existing uploaded favicon (no new file) — e.g. strip background
+    $sourceUrl = isset($_POST['source_url']) ? trim((string)$_POST['source_url']) : '';
+    if ($sourceUrl !== '' && (!isset($_FILES['favicon']) || $_FILES['favicon']['error'] === UPLOAD_ERR_NO_FILE)) {
+        $filename = basename(parse_url($sourceUrl, PHP_URL_PATH) ?: $sourceUrl);
+        if (!preg_match('/^[a-zA-Z0-9._-]+$/', $filename) || strpos($filename, 'favicon_') !== 0) {
+            sendJSON(['error' => 'Invalid source favicon'], 400);
+        }
+        $filepath = __DIR__ . '/../uploads/' . $filename;
+        if (!is_file($filepath)) {
+            sendJSON(['error' => 'Source favicon not found'], 404);
+        }
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mimeType = finfo_file($finfo, $filepath);
+        finfo_close($finfo);
+        $result = processUploadedBrandImage(
+            $filepath,
+            $filename,
+            $mimeType ?: 'image/png',
+            'favicon',
+            $removeBackground,
+            $bgColor
+        );
+        $url = '/uploads/' . $result['filename'];
+        $db = getDB();
+        $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
+        $stmt->execute(['favicon', $url, time()]);
+        $normalizedUrl = normalizeLogoUrl($url);
+        sendJSON([
+            'success' => true,
+            'url' => $normalizedUrl,
+            'converted' => !empty($result['converted']),
+            'width' => $result['width'] ?? null,
+            'height' => $result['height'] ?? null,
+            'message' => $removeBackground
+                ? 'Favicon background removed and converted to 32×32 PNG'
+                : 'Favicon reprocessed to 32×32 PNG'
+        ]);
+    }
     
     // Check if file was uploaded
     if (!isset($_FILES['favicon']) || $_FILES['favicon']['error'] !== UPLOAD_ERR_OK) {
@@ -343,7 +392,14 @@ function handleUploadFavicon() {
         sendJSON(['error' => 'File size too large. Maximum size: 10MB'], 400);
     }
     
-    $result = processUploadedBrandImage($file['tmp_name'], $file['name'], $mimeType, 'favicon');
+    $result = processUploadedBrandImage(
+        $file['tmp_name'],
+        $file['name'],
+        $mimeType,
+        'favicon',
+        $removeBackground,
+        $bgColor
+    );
     $url = '/uploads/' . $result['filename'];
     
     // Update settings with the new favicon URL (stored without prefix)
@@ -353,6 +409,13 @@ function handleUploadFavicon() {
     
     // Return normalized URL for current environment
     $normalizedUrl = normalizeLogoUrl($url);
+
+    $message = 'Favicon uploaded successfully';
+    if (!empty($result['converted'])) {
+        $message = $removeBackground
+            ? 'Favicon uploaded, background removed, and converted to 32×32 PNG'
+            : 'Favicon uploaded and auto-converted to 32×32 PNG';
+    }
     
     sendJSON([
         'success' => true,
@@ -360,9 +423,7 @@ function handleUploadFavicon() {
         'converted' => $result['converted'],
         'width' => $result['width'] ?? null,
         'height' => $result['height'] ?? null,
-        'message' => $result['converted']
-            ? 'Favicon uploaded and auto-converted to 32×32 PNG'
-            : 'Favicon uploaded successfully'
+        'message' => $message
     ]);
 }
 
@@ -397,6 +458,8 @@ function handleUpdateSettings() {
                 'hero_overlay_color', 'hero_overlay_to', 'hero_overlay_opacity', 'hero_icon_bg_from', 'hero_icon_bg_to',
                 'auth_wash_from', 'auth_wash_to',
                 'favicon',
+                'qr_branding_mode',
+                'qr_branding_emoji',
                 'footer_text',
                 'guest_access_enabled',
                 'show_database_path_in_footer',
@@ -594,6 +657,20 @@ function handleUpdateSettings() {
             // Normalize favicon URL before storing (remove any base path prefix)
             if ($key === 'favicon' && !empty($value)) {
                 $value = preg_replace('#^/[^/]+/uploads/#', '/uploads/', $value);
+            }
+
+            // QR branding: mode whitelist + bounded emoji
+            if ($key === 'qr_branding_mode') {
+                $value = ($value === 'emoji') ? 'emoji' : 'favicon';
+            }
+            if ($key === 'qr_branding_emoji') {
+                $trimmedEmoji = is_string($value) ? trim($value) : '';
+                if (function_exists('mb_substr')) {
+                    $trimmedEmoji = mb_substr($trimmedEmoji, 0, 16);
+                } else {
+                    $trimmedEmoji = substr($trimmedEmoji, 0, 16);
+                }
+                $value = $trimmedEmoji !== '' ? $trimmedEmoji : '❤️';
             }
             
             // Handle LDAP bind password - encrypt if provided; leave blank clears only when intentionally empty

@@ -1,7 +1,7 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { QRCodeSVG } from 'qrcode.react';
 import { getDisplayUrl } from '../utils/urlDisplay';
+import { BrandedQRCode } from './BrandedQRCode';
 
 interface QRCodeDialogProps {
   isOpen: boolean;
@@ -16,18 +16,26 @@ export const QRCodeDialog: React.FC<QRCodeDialogProps> = ({
   url,
   label,
 }) => {
+  const dialogRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (!isOpen) return;
 
+    dialogRef.current?.focus();
+
     const handleEscKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' || e.key === 'Esc') {
+        e.preventDefault();
+        e.stopPropagation();
         onClose();
       }
     };
 
-    document.addEventListener('keydown', handleEscKey);
+    // Capture on window so Escape isn't stolen by floating widgets that listen
+    // in the capture phase before document bubble listeners run.
+    window.addEventListener('keydown', handleEscKey, true);
     return () => {
-      document.removeEventListener('keydown', handleEscKey);
+      window.removeEventListener('keydown', handleEscKey, true);
     };
   }, [isOpen, onClose]);
 
@@ -37,11 +45,20 @@ export const QRCodeDialog: React.FC<QRCodeDialogProps> = ({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+      ref={dialogRef}
+      className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm outline-none"
       onClick={onClose}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape' || e.key === 'Esc') {
+          e.preventDefault();
+          e.stopPropagation();
+          onClose();
+        }
+      }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="qr-code-dialog-title"
+      tabIndex={-1}
     >
       <div
         className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 max-w-sm w-full flex flex-col"
@@ -71,15 +88,7 @@ export const QRCodeDialog: React.FC<QRCodeDialogProps> = ({
 
         <div className="px-6 py-6 flex flex-col items-center gap-4">
           <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-            <QRCodeSVG
-              value={url}
-              size={256}
-              level="M"
-              bgColor="#FFFFFF"
-              fgColor="#000000"
-              marginSize={4}
-              title={`QR code for ${label}`}
-            />
+            <BrandedQRCode value={url} size={256} title={`QR code for ${label}`} className="" />
           </div>
           <p
             className="text-xs text-slate-500 dark:text-slate-400 font-mono text-center break-all max-w-full"
