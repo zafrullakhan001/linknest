@@ -281,6 +281,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editTitle, setEditTitle] = useState(tile.title);
     const [editDesc, setEditDesc] = useState(tile.description);
     const [editHtml, setEditHtml] = useState(tile.htmlContent || '');
+    const [editingIntro, setEditingIntro] = useState(false);
+    const [expandedTabs, setExpandedTabs] = useState<Set<string>>(new Set());
+    const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
     const [editEmoji, setEditEmoji] = useState(tile.emoji);
     const [editColor, setEditColor] = useState<ThemeColor>(tile.themeColor);
     const [editVisibility, setEditVisibility] = useState<TileVisibility>(tile.visibility || 'public');
@@ -759,6 +762,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setEditTitle(tile.title);
         setEditDesc(tile.description);
         setEditHtml(tile.htmlContent || '');
+        setEditingIntro(false);
+        setExpandedTabs(new Set());
+        setExpandedSections(new Set());
         setEditEmoji(tile.emoji);
         setEditColor(tile.themeColor);
         setEditVisibility(tile.visibility || 'public');
@@ -1798,6 +1804,30 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     };
 
+    const toggleTab = (tabId: string) => {
+        setExpandedTabs(prev => {
+            const next = new Set(prev);
+            if (next.has(tabId)) {
+                next.delete(tabId);
+            } else {
+                next.add(tabId);
+            }
+            return next;
+        });
+    };
+
+    const toggleSection = (sectionId: string) => {
+        setExpandedSections(prev => {
+            const next = new Set(prev);
+            if (next.has(sectionId)) {
+                next.delete(sectionId);
+            } else {
+                next.add(sectionId);
+            }
+            return next;
+        });
+    };
+
     // Tab Management
     const handleAddTab = () => {
         const newTab: Tab = {
@@ -1814,6 +1844,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             setEditTabs([newTab]);
             setEditSections([]);
         }
+        setExpandedTabs(prev => new Set(prev).add(newTab.id));
     };
 
     const handleRemoveTab = (tabId: string) => {
@@ -2121,6 +2152,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
     // Section Management (within tabs)
     const handleAddSection = (tabId: string) => {
+        const newSectionId = generateId();
         setEditTabs(editTabs.map(tab => {
             if (tab.id === tabId) {
                 // Sort sections first to get accurate max position
@@ -2130,7 +2162,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     return posA - posB;
                 });
                 const maxPosition = Math.max(...sortedSections.map(s => s.position ?? 0), -1);
-                const newSection = { id: generateId(), title: 'New Section', links: [], position: maxPosition + 1 };
+                const newSection = { id: newSectionId, title: 'New Section', links: [], position: maxPosition + 1 };
                 // Add new section and keep sorted
                 const newSections = [...sortedSections, newSection].sort((a, b) => {
                     const posA = a.position ?? 0;
@@ -2144,6 +2176,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             }
             return tab;
         }));
+        setExpandedTabs(prev => new Set(prev).add(tabId));
+        setExpandedSections(prev => new Set(prev).add(newSectionId));
     };
 
     const handleRemoveSection = (tabId: string, sectionId: string) => {
@@ -5637,13 +5671,37 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                                 {/* Intro Content */}
                                 <div>
-                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2.5">Intro Content</label>
-                                    <RichTextEditor
-                                        value={editHtml}
-                                        onChange={setEditHtml}
-                                        placeholder="Enter intro content with formatting..."
-                                        className="min-h-[160px]"
-                                    />
+                                    <div className="flex items-center justify-between gap-2 mb-2.5">
+                                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Intro Content</label>
+                                        {editingIntro ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => setEditingIntro(false)}
+                                                className="text-xs font-semibold text-brand-600 dark:text-brand-400 hover:text-brand-500 dark:hover:text-brand-300 px-2 py-1 rounded-lg hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-colors"
+                                            >
+                                                Done
+                                            </button>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                onClick={() => setEditingIntro(true)}
+                                                className="p-1.5 text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors"
+                                                title="Edit intro content"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                                                </svg>
+                                            </button>
+                                        )}
+                                    </div>
+                                    {editingIntro && (
+                                        <RichTextEditor
+                                            value={editHtml}
+                                            onChange={setEditHtml}
+                                            placeholder="Enter intro content with formatting..."
+                                            className="min-h-[160px]"
+                                        />
+                                    )}
                                 </div>
 
                                 {/* Publish Status (admin only) */}
@@ -6581,7 +6639,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         return (
                                             <div id={`tab-${tab.id}`} key={tab.id} className={`bg-white dark:bg-slate-800 border-2 border-t-2 border-r-2 border-b-2 border-slate-200 dark:border-slate-700 ${tabColorClass} rounded-2xl overflow-hidden shadow-lg shadow-slate-200/50 dark:shadow-black/20 scroll-mt-24 hover:shadow-xl transition-shadow`}>
                                                 {/* Tab Header */}
-                                                <div className={`p-5 border-b-2 border-slate-200 dark:border-slate-700 ${tabBgClass} flex gap-3 items-center`}>
+                                                <div className={`p-5 ${expandedTabs.has(tab.id) ? 'border-b-2 border-slate-200 dark:border-slate-700' : ''} ${tabBgClass} flex gap-3 items-center`}>
+                                                    {/* Collapse Toggle */}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => toggleTab(tab.id)}
+                                                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shrink-0"
+                                                        title={expandedTabs.has(tab.id) ? 'Collapse tab' : 'Expand tab'}
+                                                    >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={`w-5 h-5 transition-transform ${expandedTabs.has(tab.id) ? 'rotate-180' : ''}`}>
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                                                        </svg>
+                                                    </button>
                                                     {/* Tab Reorder Buttons */}
                                                     <div className="flex flex-col gap-0.5">
                                                         <button
@@ -6727,6 +6796,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 </div>
 
                                                 {/* Tab Sections */}
+                                                {expandedTabs.has(tab.id) && (
                                                 <div className="p-4 space-y-4">
                                                     <div className="flex items-center justify-between mb-2">
                                                         <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wide">Sections in this tab</h4>
@@ -6770,7 +6840,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         return (
                                                             <div key={section.id} className={`bg-slate-50 dark:bg-slate-900/50 border-2 border-l-2 border-t-2 border-b-2 border-slate-200 dark:border-slate-700 ${sectionColorClass} rounded-xl overflow-hidden shadow-sm`}>
                                                                 {/* Section Header */}
-                                                                <div className={`p-4 border-b-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 ${sectionBgClass} flex gap-3 items-center`}>
+                                                                <div className={`p-4 ${expandedSections.has(section.id) ? 'border-b-2 border-slate-200 dark:border-slate-700' : ''} bg-white dark:bg-slate-800 ${sectionBgClass} flex gap-3 items-center`}>
+                                                                    {/* Collapse Toggle */}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => toggleSection(section.id)}
+                                                                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shrink-0"
+                                                                        title={expandedSections.has(section.id) ? 'Collapse section' : 'Expand section'}
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={`w-4 h-4 transition-transform ${expandedSections.has(section.id) ? 'rotate-180' : ''}`}>
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                                                                        </svg>
+                                                                    </button>
                                                                     {/* Reorder Buttons */}
                                                                     <div className="flex flex-col gap-0.5">
                                                                         <button
@@ -7064,6 +7145,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 </div>
 
                                                                 {/* Section Links */}
+                                                                {expandedSections.has(section.id) && (
                                                                 <div className="p-4 bg-white dark:bg-slate-800">
                                                                     <div className="space-y-2 mb-4">
                                                                         {/* Merged Content Rendering */}
@@ -8292,6 +8374,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     )}
 
                                                                 </div>
+                                                                )}
                                                             </div>
                                                         );
                                                     })}
@@ -8302,6 +8385,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         </div>
                                                     )}
                                                 </div>
+                                                )}
                                             </div>
                                         );
                                     })
@@ -8332,7 +8416,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         return (
                                             <div key={section.id} className={`bg-white dark:bg-slate-800 border border-l-2 border-t-2 border-b-2 border-slate-200 dark:border-slate-700 ${sectionColorClass} rounded-2xl overflow-hidden shadow-sm dark:shadow-black/20`}>
                                                 {/* Section Header */}
-                                                <div className={`p-4 border-b border-slate-200 dark:border-slate-700 ${sectionBgClass} flex gap-2 items-center`}>
+                                                <div className={`p-4 ${expandedSections.has(section.id) ? 'border-b border-slate-200 dark:border-slate-700' : ''} ${sectionBgClass} flex gap-2 items-center`}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => toggleSection(section.id)}
+                                                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shrink-0"
+                                                        title={expandedSections.has(section.id) ? 'Collapse section' : 'Expand section'}
+                                                    >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={`w-4 h-4 transition-transform ${expandedSections.has(section.id) ? 'rotate-180' : ''}`}>
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                                                        </svg>
+                                                    </button>
                                                     <div className="text-slate-400 dark:text-slate-500 font-mono text-sm">#{index + 1}</div>
                                                     <input
                                                         type="text"
@@ -8410,10 +8504,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         </svg>
                                                     </button>
                                                 </div>
+                                                {expandedSections.has(section.id) && (
                                                 <div className="p-4 bg-white dark:bg-slate-800">
                                                     <p className="text-sm text-slate-500 dark:text-slate-400 italic mb-4">This section uses the old structure. Add a tab to use the new tab-based organization.</p>
                                                     <p className="text-xs text-slate-400 dark:text-slate-600">Links: {section.links?.length || 0}</p>
                                                 </div>
+                                                )}
                                             </div>
                                         );
                                     })
