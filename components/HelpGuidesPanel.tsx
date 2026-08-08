@@ -278,10 +278,46 @@ export const HelpGuidesPanel: React.FC = () => {
         flashTool('Copied Mermaid source');
         btn.textContent = 'Copied';
         window.setTimeout(() => {
-          btn.textContent = 'Copy';
+          if (btn.isConnected) btn.textContent = 'Copy';
         }, 1200);
       } catch {
         flashTool('Copy failed');
+      }
+      return;
+    }
+
+    if (action === 'view') {
+      const canvas = diagram.querySelector<HTMLElement>('.mermaid-canvas');
+      const sourceView = diagram.querySelector<HTMLElement>('[data-mermaid-source-view]');
+      if (!canvas || !sourceView) return;
+
+      const showingCode = diagram.getAttribute('data-view') === 'code';
+      if (showingCode) {
+        diagram.removeAttribute('data-view');
+        sourceView.classList.add('hidden');
+        canvas.classList.remove('hidden');
+        btn.textContent = 'View code';
+        btn.title = 'Toggle Mermaid source';
+        flashTool('Showing diagram');
+        // Re-render if SVG was lost while toggled
+        if (node && (!node.querySelector('svg') || !node.getAttribute('data-processed'))) {
+          setMermaidBusy(true);
+          try {
+            await refreshOneMermaid(node);
+          } catch (err) {
+            console.warn(err);
+          } finally {
+            setMermaidBusy(false);
+          }
+        }
+      } else {
+        diagram.setAttribute('data-view', 'code');
+        sourceView.textContent = source;
+        sourceView.classList.remove('hidden');
+        canvas.classList.add('hidden');
+        btn.textContent = 'View diagram';
+        btn.title = 'Show rendered diagram';
+        flashTool('Showing Mermaid code');
       }
       return;
     }
@@ -305,6 +341,19 @@ export const HelpGuidesPanel: React.FC = () => {
     }
 
     if (action === 'refresh' && node) {
+      // Leave code view if active so refresh result is visible
+      if (diagram.getAttribute('data-view') === 'code') {
+        const canvas = diagram.querySelector<HTMLElement>('.mermaid-canvas');
+        const sourceView = diagram.querySelector<HTMLElement>('[data-mermaid-source-view]');
+        const viewBtn = diagram.querySelector<HTMLElement>('[data-mermaid-action="view"]');
+        diagram.removeAttribute('data-view');
+        sourceView?.classList.add('hidden');
+        canvas?.classList.remove('hidden');
+        if (viewBtn) {
+          viewBtn.textContent = 'View code';
+          viewBtn.title = 'Toggle Mermaid source';
+        }
+      }
       setMermaidBusy(true);
       try {
         await refreshOneMermaid(node);
