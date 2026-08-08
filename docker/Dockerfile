@@ -13,7 +13,11 @@ COPY vite.config.ts vite.docker.config.ts tsconfig.json ./
 COPY tailwind.config.js postcss.config.js ./
 
 # Install dependencies (vite lives in devDependencies and is required to build)
+# Some environments (corporate SSL inspection / local MITM antivirus) break npm's
+# TLS verification inside containers with UNABLE_TO_VERIFY_LEAF_SIGNATURE.
+# Disable strict SSL only in this disposable builder stage.
 RUN set -eux; \
+    npm config set strict-ssl false; \
     if [ -f package-lock.json ]; then \
         npm ci --include=dev --no-audit --no-fund; \
     else \
@@ -29,7 +33,9 @@ COPY components/ ./components/
 COPY contexts/ ./contexts/
 COPY services/ ./services/
 COPY hooks/ ./hooks/
+COPY utils/ ./utils/
 COPY land/ ./land/
+COPY public/ ./public/
 COPY App.tsx ./
 COPY types.ts ./
 

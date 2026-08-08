@@ -24,13 +24,17 @@ EMAIL_LIMIT="${LINKNEST_EMAIL_LIMIT:-50}"
 # If not set, try to detect from mounted /etc/timezone or use UTC as fallback
 if [ -n "${TZ:-}" ]; then
     echo "[ENTRYPOINT] Setting timezone from TZ environment variable: ${TZ}"
-    ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime
-    echo "${TZ}" > /etc/timezone
+    ln -sf "/usr/share/zoneinfo/${TZ}" /etc/localtime 2>/dev/null || true
+    if [ -w /etc/timezone ] || [ ! -e /etc/timezone ]; then
+        echo "${TZ}" > /etc/timezone 2>/dev/null || true
+    fi
     echo "date.timezone=${TZ}" > /usr/local/etc/php/conf.d/timezone.ini
+    export TZ
 elif [ -f /etc/timezone ]; then
     TZ=$(cat /etc/timezone)
     echo "[ENTRYPOINT] Setting timezone from /etc/timezone: ${TZ}"
-    ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime 2>/dev/null || true
+    ln -sf "/usr/share/zoneinfo/${TZ}" /etc/localtime 2>/dev/null || true
+    export TZ
 elif [ -f /etc/localtime ]; then
     echo "[ENTRYPOINT] Using timezone from /etc/localtime"
 else

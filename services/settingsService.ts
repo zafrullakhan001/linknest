@@ -73,10 +73,22 @@ export interface AppSettings {
   // Hero branding
   hero_icon?: string;
   spaces_subtitle?: string;
+  hero_title_font_size?: string;
+  hero_title_font_family?: string;
+  hero_title_font_weight?: string;
+  hero_title_font_style?: string;
   hero_title_color?: string;
   hero_title_color_dark?: string;
+  hero_title_letter_spacing?: string;
+  hero_title_line_height?: string;
+  hero_subtitle_font_size?: string;
+  hero_subtitle_font_family?: string;
+  hero_subtitle_font_weight?: string;
+  hero_subtitle_font_style?: string;
   hero_subtitle_color?: string;
   hero_subtitle_color_dark?: string;
+  hero_subtitle_letter_spacing?: string;
+  hero_subtitle_line_height?: string;
   hero_bg_from?: string;
   hero_bg_to?: string;
   hero_bg_from_dark?: string;
@@ -228,10 +240,22 @@ export const settingsService = {
       nav_icon_color_dark: data.settings?.nav_icon_color_dark || '',
       hero_icon: data.settings?.hero_icon || '',
       spaces_subtitle: data.settings?.spaces_subtitle || '',
+      hero_title_font_size: data.settings?.hero_title_font_size || '36',
+      hero_title_font_family: data.settings?.hero_title_font_family || 'inherit',
+      hero_title_font_weight: data.settings?.hero_title_font_weight || 'bold',
+      hero_title_font_style: data.settings?.hero_title_font_style || 'normal',
       hero_title_color: data.settings?.hero_title_color || '',
       hero_title_color_dark: data.settings?.hero_title_color_dark || '',
+      hero_title_letter_spacing: data.settings?.hero_title_letter_spacing || '0',
+      hero_title_line_height: data.settings?.hero_title_line_height || '1.2',
+      hero_subtitle_font_size: data.settings?.hero_subtitle_font_size || '16',
+      hero_subtitle_font_family: data.settings?.hero_subtitle_font_family || 'inherit',
+      hero_subtitle_font_weight: data.settings?.hero_subtitle_font_weight || 'normal',
+      hero_subtitle_font_style: data.settings?.hero_subtitle_font_style || 'normal',
       hero_subtitle_color: data.settings?.hero_subtitle_color || '',
       hero_subtitle_color_dark: data.settings?.hero_subtitle_color_dark || '',
+      hero_subtitle_letter_spacing: data.settings?.hero_subtitle_letter_spacing || '0',
+      hero_subtitle_line_height: data.settings?.hero_subtitle_line_height || '1.4',
       hero_bg_from: data.settings?.hero_bg_from || '',
       hero_bg_to: data.settings?.hero_bg_to || '',
       hero_bg_from_dark: data.settings?.hero_bg_from_dark || '',

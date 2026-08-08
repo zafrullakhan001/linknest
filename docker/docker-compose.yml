@@ -9,13 +9,8 @@ services:
       - "8090:80" # HTTP
       - "8443:443" # HTTPS
     # No volume mounts - container is fully isolated with its own database and files
-    # Timezone: Automatically use host system timezone
-    # On Windows: Set TZ environment variable (e.g., TZ=America/New_York) or it will use UTC
-    # On Linux/Mac: Will automatically detect from /etc/timezone or /etc/localtime if mounted
-    # Mount timezone files if they exist (Linux/Mac only, ignored on Windows)
-    volumes:
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
+    # Timezone: set TZ in environment (default America/New_York). Do not bind-mount
+    # /etc/localtime or /etc/timezone — those paths break on Windows Docker Desktop.
     environment:
       # Timezone: Set TZ environment variable to match your system timezone
       # Examples: TZ=America/New_York, TZ=Europe/London, TZ=Asia/Tokyo, TZ=UTC

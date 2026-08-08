@@ -326,10 +326,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     nav_icon_color_dark: '',
     hero_icon: '',
     spaces_subtitle: '',
+    hero_title_font_size: '36',
+    hero_title_font_family: 'inherit',
+    hero_title_font_weight: 'bold',
+    hero_title_font_style: 'normal',
     hero_title_color: '',
     hero_title_color_dark: '',
+    hero_title_letter_spacing: '0',
+    hero_title_line_height: '1.2',
+    hero_subtitle_font_size: '16',
+    hero_subtitle_font_family: 'inherit',
+    hero_subtitle_font_weight: 'normal',
+    hero_subtitle_font_style: 'normal',
     hero_subtitle_color: '',
     hero_subtitle_color_dark: '',
+    hero_subtitle_letter_spacing: '0',
+    hero_subtitle_line_height: '1.4',
     hero_bg_from: '',
     hero_bg_to: '',
     hero_bg_from_dark: '',
@@ -10940,21 +10952,97 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   </svg>
                                 </summary>
                                 <div className="px-3 pb-3 pt-1 grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-slate-200 dark:border-slate-700">
-                                  {([
-                                    ['hero_title_color', 'Title Color (Light)', '#0f172a'],
-                                    ['hero_title_color_dark', 'Title Color (Dark)', '#f8fafc'],
-                                  ] as const).map(([key, label, fallback]) => (
-                                    <div key={key} className="sm:col-span-2">
-                                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">{label}</label>
-                                      <div className="flex items-center gap-2">
-                                        <input type="color" value={(settings as any)[key] || fallback} onChange={(e) => updateBranding({ [key]: e.target.value })} className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent" />
-                                        <input type="text" value={(settings as any)[key] || ''} onChange={(e) => updateBranding({ [key]: e.target.value })} className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm" placeholder="Default" />
-                                        {(settings as any)[key] ? (
-                                          <button type="button" onClick={() => updateBranding({ [key]: '' })} className="text-xs text-slate-500 hover:text-red-600 whitespace-nowrap">Reset</button>
-                                        ) : null}
-                                      </div>
-                                    </div>
-                                  ))}
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                                    Title Size: {settings.hero_title_font_size || '36'}px
+                                  </label>
+                                  <input
+                                    type="range"
+                                    min={18}
+                                    max={72}
+                                    step={1}
+                                    value={parseInt(settings.hero_title_font_size || '36', 10) || 36}
+                                    onChange={(e) => updateBranding({ hero_title_font_size: e.target.value })}
+                                    className="w-full accent-brand-600"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Font Family</label>
+                                  <select
+                                    value={settings.hero_title_font_family || 'inherit'}
+                                    onChange={(e) => updateBranding({ hero_title_font_family: e.target.value })}
+                                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"
+                                  >
+                                    <BrandingFontFamilyOptions />
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Font Weight</label>
+                                  <select
+                                    value={settings.hero_title_font_weight || 'bold'}
+                                    onChange={(e) => updateBranding({ hero_title_font_weight: e.target.value })}
+                                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"
+                                  >
+                                    <option value="normal">Normal</option>
+                                    <option value="bold">Bold</option>
+                                    <option value="300">Light (300)</option>
+                                    <option value="500">Medium (500)</option>
+                                    <option value="600">Semi Bold (600)</option>
+                                    <option value="700">Bold (700)</option>
+                                    <option value="800">Extra Bold (800)</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Font Style</label>
+                                  <select
+                                    value={settings.hero_title_font_style || 'normal'}
+                                    onChange={(e) => updateBranding({ hero_title_font_style: e.target.value })}
+                                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"
+                                  >
+                                    <option value="normal">Normal</option>
+                                    <option value="italic">Italic</option>
+                                  </select>
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Text Color (Light)</label>
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="color"
+                                      value={settings.hero_title_color || '#0f172a'}
+                                      onChange={(e) => updateBranding({ hero_title_color: e.target.value })}
+                                      className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent"
+                                      title="Hero title text color"
+                                    />
+                                    <input
+                                      type="text"
+                                      value={settings.hero_title_color || ''}
+                                      onChange={(e) => updateBranding({ hero_title_color: e.target.value })}
+                                      className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"
+                                      placeholder="Default (theme)"
+                                    />
+                                    {settings.hero_title_color ? (
+                                      <button type="button" onClick={() => updateBranding({ hero_title_color: '' })} className="text-xs text-slate-500 hover:text-red-600 dark:hover:text-red-400 whitespace-nowrap">Reset</button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Text Color (Dark mode)</label>
+                                  <div className="flex items-center gap-2">
+                                    <input type="color" value={settings.hero_title_color_dark || '#f8fafc'} onChange={(e) => updateBranding({ hero_title_color_dark: e.target.value })} className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent" />
+                                    <input type="text" value={settings.hero_title_color_dark || ''} onChange={(e) => updateBranding({ hero_title_color_dark: e.target.value })} className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" placeholder="Default (theme)" />
+                                    {settings.hero_title_color_dark ? (
+                                      <button type="button" onClick={() => updateBranding({ hero_title_color_dark: '' })} className="text-xs text-slate-500 hover:text-red-600 dark:hover:text-red-400 whitespace-nowrap">Reset</button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Letter Spacing: {settings.hero_title_letter_spacing || '0'}em</label>
+                                  <input type="range" min={-0.05} max={0.2} step={0.01} value={parseFloat(settings.hero_title_letter_spacing || '0') || 0} onChange={(e) => updateBranding({ hero_title_letter_spacing: e.target.value })} className="w-full accent-brand-600" />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Line Height: {settings.hero_title_line_height || '1.2'}</label>
+                                  <input type="range" min={1} max={2} step={0.05} value={parseFloat(settings.hero_title_line_height || '1.2') || 1.2} onChange={(e) => updateBranding({ hero_title_line_height: e.target.value })} className="w-full accent-brand-600" />
+                                </div>
                                 </div>
                               </details>
                             </div>
@@ -10979,21 +11067,84 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   </svg>
                                 </summary>
                                 <div className="px-3 pb-3 pt-1 grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-slate-200 dark:border-slate-700">
-                                  {([
-                                    ['hero_subtitle_color', 'Subtitle Color (Light)', '#475569'],
-                                    ['hero_subtitle_color_dark', 'Subtitle Color (Dark)', '#cbd5e1'],
-                                  ] as const).map(([key, label, fallback]) => (
-                                    <div key={key} className="sm:col-span-2">
-                                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">{label}</label>
-                                      <div className="flex items-center gap-2">
-                                        <input type="color" value={(settings as any)[key] || fallback} onChange={(e) => updateBranding({ [key]: e.target.value })} className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent" />
-                                        <input type="text" value={(settings as any)[key] || ''} onChange={(e) => updateBranding({ [key]: e.target.value })} className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm" placeholder="Default" />
-                                        {(settings as any)[key] ? (
-                                          <button type="button" onClick={() => updateBranding({ [key]: '' })} className="text-xs text-slate-500 hover:text-red-600 whitespace-nowrap">Reset</button>
-                                        ) : null}
-                                      </div>
-                                    </div>
-                                  ))}
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                                    Subtitle Size: {settings.hero_subtitle_font_size || '16'}px
+                                  </label>
+                                  <input
+                                    type="range"
+                                    min={10}
+                                    max={28}
+                                    step={1}
+                                    value={parseInt(settings.hero_subtitle_font_size || '16', 10) || 16}
+                                    onChange={(e) => updateBranding({ hero_subtitle_font_size: e.target.value })}
+                                    className="w-full accent-brand-600"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Font Family</label>
+                                  <select
+                                    value={settings.hero_subtitle_font_family || 'inherit'}
+                                    onChange={(e) => updateBranding({ hero_subtitle_font_family: e.target.value })}
+                                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"
+                                  >
+                                    <BrandingFontFamilyOptions />
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Font Weight</label>
+                                  <select
+                                    value={settings.hero_subtitle_font_weight || 'normal'}
+                                    onChange={(e) => updateBranding({ hero_subtitle_font_weight: e.target.value })}
+                                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"
+                                  >
+                                    <option value="normal">Normal</option>
+                                    <option value="bold">Bold</option>
+                                    <option value="300">Light (300)</option>
+                                    <option value="500">Medium (500)</option>
+                                    <option value="600">Semi Bold (600)</option>
+                                    <option value="700">Bold (700)</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Font Style</label>
+                                  <select
+                                    value={settings.hero_subtitle_font_style || 'normal'}
+                                    onChange={(e) => updateBranding({ hero_subtitle_font_style: e.target.value })}
+                                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"
+                                  >
+                                    <option value="normal">Normal</option>
+                                    <option value="italic">Italic</option>
+                                  </select>
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Text Color (Light)</label>
+                                  <div className="flex items-center gap-2">
+                                    <input type="color" value={settings.hero_subtitle_color || '#475569'} onChange={(e) => updateBranding({ hero_subtitle_color: e.target.value })} className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent" title="Hero subtitle text color" />
+                                    <input type="text" value={settings.hero_subtitle_color || ''} onChange={(e) => updateBranding({ hero_subtitle_color: e.target.value })} className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" placeholder="Default (theme)" />
+                                    {settings.hero_subtitle_color ? (
+                                      <button type="button" onClick={() => updateBranding({ hero_subtitle_color: '' })} className="text-xs text-slate-500 hover:text-red-600 dark:hover:text-red-400 whitespace-nowrap">Reset</button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Text Color (Dark mode)</label>
+                                  <div className="flex items-center gap-2">
+                                    <input type="color" value={settings.hero_subtitle_color_dark || '#cbd5e1'} onChange={(e) => updateBranding({ hero_subtitle_color_dark: e.target.value })} className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent" />
+                                    <input type="text" value={settings.hero_subtitle_color_dark || ''} onChange={(e) => updateBranding({ hero_subtitle_color_dark: e.target.value })} className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" placeholder="Default (theme)" />
+                                    {settings.hero_subtitle_color_dark ? (
+                                      <button type="button" onClick={() => updateBranding({ hero_subtitle_color_dark: '' })} className="text-xs text-slate-500 hover:text-red-600 dark:hover:text-red-400 whitespace-nowrap">Reset</button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Letter Spacing: {settings.hero_subtitle_letter_spacing || '0'}em</label>
+                                  <input type="range" min={-0.05} max={0.2} step={0.01} value={parseFloat(settings.hero_subtitle_letter_spacing || '0') || 0} onChange={(e) => updateBranding({ hero_subtitle_letter_spacing: e.target.value })} className="w-full accent-brand-600" />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Line Height: {settings.hero_subtitle_line_height || '1.4'}</label>
+                                  <input type="range" min={1} max={2} step={0.05} value={parseFloat(settings.hero_subtitle_line_height || '1.4') || 1.4} onChange={(e) => updateBranding({ hero_subtitle_line_height: e.target.value })} className="w-full accent-brand-600" />
+                                </div>
                                 </div>
                               </details>
                             </div>

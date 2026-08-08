@@ -15,7 +15,11 @@ const BRANDING_HYDRATE_KEYS = [
   'app_subheading_font_color', 'app_subheading_font_color_dark', 'app_subheading_letter_spacing', 'app_subheading_line_height',
   'nav_bg_light', 'nav_bg_to_light', 'nav_bg_dark', 'nav_bg_to_dark', 'nav_gradient_angle',
   'nav_border_light', 'nav_border_dark', 'nav_icon_color_light', 'nav_icon_color_dark',
-  'hero_icon', 'hero_title_color', 'hero_title_color_dark', 'hero_subtitle_color', 'hero_subtitle_color_dark',
+  'hero_icon',
+  'hero_title_font_size', 'hero_title_font_family', 'hero_title_font_weight', 'hero_title_font_style',
+  'hero_title_color', 'hero_title_color_dark', 'hero_title_letter_spacing', 'hero_title_line_height',
+  'hero_subtitle_font_size', 'hero_subtitle_font_family', 'hero_subtitle_font_weight', 'hero_subtitle_font_style',
+  'hero_subtitle_color', 'hero_subtitle_color_dark', 'hero_subtitle_letter_spacing', 'hero_subtitle_line_height',
   'hero_bg_from', 'hero_bg_to', 'hero_bg_from_dark', 'hero_bg_to_dark', 'hero_bg_angle',
   'hero_overlay_color', 'hero_overlay_to', 'hero_overlay_opacity', 'hero_icon_bg_from', 'hero_icon_bg_to',
   'auth_wash_from', 'auth_wash_to', 'favicon',
@@ -59,10 +63,22 @@ export const BRANDING_PREVIEW_KEYS = [
   'hero_icon',
   'spaces_title',
   'spaces_subtitle',
+  'hero_title_font_size',
+  'hero_title_font_family',
+  'hero_title_font_weight',
+  'hero_title_font_style',
   'hero_title_color',
   'hero_title_color_dark',
+  'hero_title_letter_spacing',
+  'hero_title_line_height',
+  'hero_subtitle_font_size',
+  'hero_subtitle_font_family',
+  'hero_subtitle_font_weight',
+  'hero_subtitle_font_style',
   'hero_subtitle_color',
   'hero_subtitle_color_dark',
+  'hero_subtitle_letter_spacing',
+  'hero_subtitle_line_height',
   'hero_bg_from',
   'hero_bg_to',
   'hero_bg_from_dark',
@@ -128,10 +144,22 @@ export const emptyBrandingDefaults: AppSettings = {
   nav_icon_color_dark: '',
   hero_icon: '',
   spaces_subtitle: '',
+  hero_title_font_size: '36',
+  hero_title_font_family: 'inherit',
+  hero_title_font_weight: 'bold',
+  hero_title_font_style: 'normal',
   hero_title_color: '',
   hero_title_color_dark: '',
+  hero_title_letter_spacing: '0',
+  hero_title_line_height: '1.2',
+  hero_subtitle_font_size: '16',
+  hero_subtitle_font_family: 'inherit',
+  hero_subtitle_font_weight: 'normal',
+  hero_subtitle_font_style: 'normal',
   hero_subtitle_color: '',
   hero_subtitle_color_dark: '',
+  hero_subtitle_letter_spacing: '0',
+  hero_subtitle_line_height: '1.4',
   hero_bg_from: '',
   hero_bg_to: '',
   hero_bg_from_dark: '',
@@ -222,6 +250,14 @@ function applyBrandingCss(s: AppSettings) {
   const subLh = s.app_subheading_line_height || '1.3';
   const nameFamily = s.app_name_font_family && s.app_name_font_family !== 'inherit' ? s.app_name_font_family : null;
   const subFamily = s.app_subheading_font_family && s.app_subheading_font_family !== 'inherit' ? s.app_subheading_font_family : null;
+  const heroTitleSize = parseInt(s.hero_title_font_size || '36', 10) || 36;
+  const heroSubSize = parseInt(s.hero_subtitle_font_size || '16', 10) || 16;
+  const heroTitleLs = s.hero_title_letter_spacing ?? '0';
+  const heroSubLs = s.hero_subtitle_letter_spacing ?? '0';
+  const heroTitleLh = s.hero_title_line_height || '1.2';
+  const heroSubLh = s.hero_subtitle_line_height || '1.4';
+  const heroTitleFamily = s.hero_title_font_family && s.hero_title_font_family !== 'inherit' ? s.hero_title_font_family : null;
+  const heroSubFamily = s.hero_subtitle_font_family && s.hero_subtitle_font_family !== 'inherit' ? s.hero_subtitle_font_family : null;
   const overlayOpacity = Math.min(40, Math.max(0, parseFloat(s.hero_overlay_opacity || '0') || 0)) / 100;
 
   const rules: string[] = [];
@@ -292,14 +328,30 @@ nav.linknest-nav .linknest-brand-subheading {
     rules.push(`.dark nav.linknest-nav .linknest-nav-icon { color: ${s.nav_icon_color_dark} !important; }`);
   }
 
-  if (s.hero_title_color) {
-    rules.push(`.linknest-hero-section .linknest-spaces-title { color: ${s.hero_title_color} !important; -webkit-text-fill-color: ${s.hero_title_color} !important; background: none !important; }`);
-  }
+  rules.push(`.linknest-hero-section .linknest-spaces-title {
+  font-size: ${heroTitleSize}px !important;
+  font-weight: ${s.hero_title_font_weight || 'bold'} !important;
+  font-style: ${s.hero_title_font_style || 'normal'} !important;
+  letter-spacing: ${heroTitleLs}em !important;
+  line-height: ${heroTitleLh} !important;
+  ${heroTitleFamily ? `font-family: ${heroTitleFamily} !important;` : ''}
+  ${s.hero_title_color ? `color: ${s.hero_title_color} !important; -webkit-text-fill-color: ${s.hero_title_color} !important; background: none !important;` : ''}
+}
+.linknest-hero-section .linknest-spaces-subtitle {
+  font-size: ${heroSubSize}px !important;
+  font-weight: ${s.hero_subtitle_font_weight || 'normal'} !important;
+  font-style: ${s.hero_subtitle_font_style || 'normal'} !important;
+  letter-spacing: ${heroSubLs}em !important;
+  line-height: ${heroSubLh} !important;
+  ${heroSubFamily ? `font-family: ${heroSubFamily} !important;` : ''}
+  ${s.hero_subtitle_color ? `color: ${s.hero_subtitle_color} !important;` : ''}
+}
+@media (max-width: 639px) {
+  .linknest-hero-section .linknest-spaces-title { font-size: ${Math.min(heroTitleSize, 36)}px !important; }
+  .linknest-hero-section .linknest-spaces-subtitle { font-size: ${Math.min(heroSubSize, 14)}px !important; }
+}`);
   if (s.hero_title_color_dark) {
     rules.push(`.dark .linknest-hero-section .linknest-spaces-title { color: ${s.hero_title_color_dark} !important; -webkit-text-fill-color: ${s.hero_title_color_dark} !important; background: none !important; }`);
-  }
-  if (s.hero_subtitle_color) {
-    rules.push(`.linknest-hero-section .linknest-spaces-subtitle { color: ${s.hero_subtitle_color} !important; }`);
   }
   if (s.hero_subtitle_color_dark) {
     rules.push(`.dark .linknest-hero-section .linknest-spaces-subtitle { color: ${s.hero_subtitle_color_dark} !important; }`);
