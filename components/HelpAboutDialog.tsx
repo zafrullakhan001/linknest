@@ -1,20 +1,143 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useSettings } from '../contexts/SettingsContext';
+import { HelpGuidesPanel } from './HelpGuidesPanel';
+
+type TabType = 'help' | 'guides' | 'about';
 
 interface HelpAboutDialogProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Optional starting tab (defaults to help). */
+  initialTab?: TabType;
 }
 
-type TabType = 'help' | 'about';
-
-export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClose }) => {
+export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
+  isOpen,
+  onClose,
+  initialTab = 'help',
+}) => {
   const { settings } = useSettings();
   const appName = settings?.app_name || 'LinkNest';
-  const [activeTab, setActiveTab] = useState<TabType>('help');
-  const [appVersion, setAppVersion] = useState<string>('2.1.0');
+  const [activeTab, setActiveTab] = useState<TabType>(initialTab);
+  const [appVersion, setAppVersion] = useState<string>('2.2.0');
 
+  type WindowGeom = { x: number; y: number; width: number; height: number };
+  const [geom, setGeom] = useState<WindowGeom>({ x: 0, y: 0, width: 1200, height: 800 });
+  const [isMaximized, setIsMaximized] = useState(false);
+  const [preMaxGeom, setPreMaxGeom] = useState<WindowGeom | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isResizing, setIsResizing] = useState(false);
+  const [resizeStart, setResizeStart] = useState({ w: 0, h: 0, x: 0, y: 0 });
+
+  const computeLargeGeom = (): WindowGeom => {
+    const margin = 12;
+    const width = Math.min(window.innerWidth - margin * 2, 1600);
+    const height = Math.min(window.innerHeight - margin * 2, Math.floor(window.innerHeight * 0.94));
+    return {
+      width,
+      height,
+      x: Math.max(0, Math.round((window.innerWidth - width) / 2)),
+      y: Math.max(0, Math.round((window.innerHeight - height) / 2)),
+    };
+  };
+
+  useEffect(() => {
+    if (isOpen) setActiveTab(initialTab);
+  }, [isOpen, initialTab]);
+
+  // Open large (near fullscreen) each time the dialog opens
+  useEffect(() => {
+    if (!isOpen) return;
+    setIsMaximized(false);
+    setPreMaxGeom(null);
+    setGeom(computeLargeGeom());
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onResize = () => {
+      if (isMaximized) return;
+      setGeom((prev) => {
+        const maxW = window.innerWidth - 8;
+        const maxH = window.innerHeight - 8;
+        return {
+          width: Math.min(prev.width, maxW),
+          height: Math.min(prev.height, maxH),
+          x: Math.min(Math.max(0, prev.x), Math.max(0, maxW - Math.min(prev.width, maxW))),
+          y: Math.min(Math.max(0, prev.y), Math.max(0, maxH - Math.min(prev.height, maxH))),
+        };
+      });
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [isOpen, isMaximized]);
+
+  const toggleMaximize = () => {
+    if (isMaximized) {
+      setGeom(preMaxGeom || computeLargeGeom());
+      setPreMaxGeom(null);
+      setIsMaximized(false);
+    } else {
+      setPreMaxGeom(geom);
+      setIsMaximized(true);
+    }
+  };
+
+  const handleHeaderMouseDown = (e: React.MouseEvent) => {
+    if (isMaximized) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('button')) return;
+    e.preventDefault();
+    setIsDragging(true);
+    setDragOffset({ x: e.clientX - geom.x, y: e.clientY - geom.y });
+  };
+
+  const handleResizeMouseDown = (e: React.MouseEvent) => {
+    if (isMaximized) return;
+    e.stopPropagation();
+    e.preventDefault();
+    setIsResizing(true);
+    setResizeStart({ w: geom.width, h: geom.height, x: e.clientX, y: e.clientY });
+  };
+
+  useEffect(() => {
+    if (!isDragging && !isResizing) return;
+
+    const onMove = (e: MouseEvent) => {
+      if (isDragging) {
+        const nextX = e.clientX - dragOffset.x;
+        const nextY = e.clientY - dragOffset.y;
+        setGeom((prev) => ({
+          ...prev,
+          x: Math.min(Math.max(-prev.width + 80, nextX), window.innerWidth - 80),
+          y: Math.min(Math.max(0, nextY), window.innerHeight - 48),
+        }));
+      }
+      if (isResizing) {
+        const dw = e.clientX - resizeStart.x;
+        const dh = e.clientY - resizeStart.y;
+        setGeom((prev) => ({
+          ...prev,
+          width: Math.max(480, Math.min(window.innerWidth - prev.x - 8, resizeStart.w + dw)),
+          height: Math.max(360, Math.min(window.innerHeight - prev.y - 8, resizeStart.h + dh)),
+        }));
+      }
+    };
+
+    const onUp = () => {
+      setIsDragging(false);
+      setIsResizing(false);
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [isDragging, isResizing, dragOffset, resizeStart]);
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
@@ -77,36 +200,99 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
-      <div 
-        className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col"
+    <div className="fixed inset-0 z-[9999] pointer-events-none">
+      <div
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm pointer-events-auto"
+        onClick={onClose}
+      />
+      <div
+        className={`bg-white dark:bg-slate-800 shadow-2xl overflow-hidden flex flex-col pointer-events-auto border border-slate-200 dark:border-slate-700 relative ${
+          isMaximized ? 'rounded-none' : 'rounded-2xl'
+        } ${isDragging ? 'select-none' : ''}`}
+        style={
+          isMaximized
+            ? {
+                position: 'fixed',
+                left: 0,
+                top: 0,
+                width: '100vw',
+                height: '100dvh',
+                maxWidth: '100vw',
+                maxHeight: '100dvh',
+              }
+            : {
+                position: 'fixed',
+                left: geom.x,
+                top: geom.y,
+                width: geom.width,
+                height: geom.height,
+                maxWidth: '100vw',
+                maxHeight: '100dvh',
+              }
+        }
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center text-white text-xl font-bold">
+        {/* Header — drag handle */}
+        <div
+          onMouseDown={handleHeaderMouseDown}
+          onDoubleClick={toggleMaximize}
+          className={`flex items-center justify-between px-4 sm:px-5 py-3 border-b border-slate-200 dark:border-slate-700 shrink-0 ${
+            isMaximized ? '' : isDragging ? 'cursor-grabbing' : 'cursor-grab'
+          }`}
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center text-white text-xl font-bold shrink-0">
               ?
             </div>
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Help & About</h2>
+            <div className="min-w-0">
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white truncate">
+                Help & About
+              </h2>
+              <p className="text-[11px] text-slate-500 hidden sm:block">
+                Drag header to move · Resize corner · Double-click or use Maximize for full screen
+              </p>
+            </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 transition-colors"
-            aria-label="Close"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={toggleMaximize}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 transition-colors"
+              aria-label={isMaximized ? 'Restore' : 'Maximize'}
+              title={isMaximized ? 'Restore' : 'Maximize'}
+            >
+              {isMaximized ? (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                  <path d="M5 4a1 1 0 00-1 1v3h2V6h2V4H5zm8 0v2h2v2h2V5a1 1 0 00-1-1h-3zM4 12v3a1 1 0 001 1h3v-2H6v-2H4zm12 0h-2v2h-2v2h3a1 1 0 001-1v-3z" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                  <path fillRule="evenodd" d="M4 4a1 1 0 011-1h10a1 1 0 011 1v10a1 1 0 01-1 1H5a1 1 0 01-1-1V4zm2 1v8h8V5H6z" clipRule="evenodd" />
+                </svg>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 transition-colors"
+              aria-label="Close"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-slate-200 dark:border-slate-700">
+        <div className="flex border-b border-slate-200 dark:border-slate-700 shrink-0 overflow-x-auto">
           <button
+            type="button"
             onClick={() => setActiveTab('help')}
-            className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
+            className={`flex-1 min-w-[5.5rem] px-4 sm:px-6 py-3 text-sm font-medium transition-colors ${
               activeTab === 'help'
                 ? 'text-brand-600 dark:text-brand-400 border-b-2 border-brand-600 dark:border-brand-400 bg-brand-50 dark:bg-brand-900/20'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700/50'
@@ -115,8 +301,20 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
             Help
           </button>
           <button
+            type="button"
+            onClick={() => setActiveTab('guides')}
+            className={`flex-1 min-w-[5.5rem] px-4 sm:px-6 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'guides'
+                ? 'text-brand-600 dark:text-brand-400 border-b-2 border-brand-600 dark:border-brand-400 bg-brand-50 dark:bg-brand-900/20'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700/50'
+            }`}
+          >
+            Guides
+          </button>
+          <button
+            type="button"
             onClick={() => setActiveTab('about')}
-            className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
+            className={`flex-1 min-w-[5.5rem] px-4 sm:px-6 py-3 text-sm font-medium transition-colors ${
               activeTab === 'about'
                 ? 'text-brand-600 dark:text-brand-400 border-b-2 border-brand-600 dark:border-brand-400 bg-brand-50 dark:bg-brand-900/20'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700/50'
@@ -127,7 +325,12 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div
+          className={`flex-1 min-h-0 ${
+            activeTab === 'guides' ? 'overflow-hidden p-0' : 'overflow-y-auto p-4 sm:p-6'
+          }`}
+        >
+          {activeTab === 'guides' && <HelpGuidesPanel />}
           {activeTab === 'help' && (
             <div className="space-y-6">
               <section>
@@ -147,6 +350,8 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                       <li>View all public tiles and links</li>
                       <li>Search and filter links</li>
                       <li>Navigate between tiles</li>
+                      <li>Share the app via QR code from the navigation bar</li>
+                      <li>Use floating widgets allowed for guests (clock, weather, calculator, and more)</li>
                       <li>Cannot create, edit, or delete content</li>
                     </ul>
                   </div>
@@ -154,13 +359,20 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     <p className="font-medium text-brand-900 dark:text-brand-100">For Authenticated Users:</p>
                     <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
                       <li>All guest features</li>
-                      <li>Create new tiles/spaces</li>
-                      <li>Edit existing tiles</li>
-                      <li>Delete tiles</li>
-                      <li>Manage links and sections</li>
-                      <li>Organize tiles into categories</li>
-                      <li>Favorite tiles for quick access</li>
+                      <li>Create, edit, and delete tiles/spaces</li>
+                      <li>Manage links, tabs, sections, and rich text (including boxed content)</li>
+                      <li>Customize tiles with header/emoji images and display options</li>
+                      <li>Organize tiles into categories and favorite them</li>
+                      <li>Share spaces with other users and accept shared-tile invitations</li>
+                      <li>View visitor stats on spaces you can manage</li>
+                      <li>Use Notes, Chat, Favorites Organizer, and other signed-in widgets</li>
                     </ul>
+                  </div>
+                  <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 border border-emerald-200 dark:border-emerald-800">
+                    <p className="font-medium text-emerald-900 dark:text-emerald-100">Guides tab:</p>
+                    <p className="text-sm">
+                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (setup, architecture, App Updates, deployment, and more). Start with App Updates or Architecture for the latest admin workflows.
+                    </p>
                   </div>
                 </div>
               </section>
@@ -177,10 +389,11 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     <li><strong>Sign In:</strong> Click "Sign In" in the navigation bar and create an account or log in</li>
                     <li><strong>Create Space:</strong> Click the "New Space" button on the main page</li>
                     <li><strong>Choose Type:</strong> Select between a "Space" (for organizing links) or "Hyperlink" (for quick external links)</li>
-                    <li><strong>Customize:</strong> Choose an emoji, color theme, title, and description for your space</li>
+                    <li><strong>Customize:</strong> Choose an emoji or emoji image, color theme, optional header image, title, and description</li>
                     <li><strong>Add Links:</strong> Click on your tile to open it, then add links to sections</li>
                     <li><strong>Organize:</strong> Create tabs and sections to organize your links logically</li>
-                    <li><strong>Optional:</strong> Set scheduling dates, browser preferences, or visibility settings</li>
+                    <li><strong>Enrich:</strong> Add rich text or boxed content, scheduling, browser preferences, or visibility settings</li>
+                    <li><strong>Share:</strong> Use QR codes or Share with a user when you want others to open the space quickly</li>
                   </ol>
                 </div>
               </section>
@@ -236,9 +449,33 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
-                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Rich Text Content</h4>
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Rich Text &amp; Boxed Content</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Add rich text content to sections with full formatting support, emoji picker, and image uploads. Create formatted notes, documentation, or announcements directly in your tiles.
+                      Add rich text to sections with formatting, emoji, and images. Turn items into boxed cards with optional titles and footers for polished notes, docs, or announcements.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Tile Visuals</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Upload header and emoji images, control title/description visibility, and adjust header image position. Compact mobile layouts adapt automatically on smaller screens.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">QR Code Sharing</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Share the app URL via a branded QR code from the nav bar (desktop and mobile). Open space QR codes from tile views for quick access on phones and shared displays.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Share Spaces</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Share a space with another user, manage active shares, and revoke access anytime. Recipients get share notifications they can accept or decline.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Visitor Insights</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Track space visits with hit counts and unique visitors. Review stats from Space Info to understand engagement over time.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -286,7 +523,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Floating Widgets</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Access helpful widgets including Clock with timezone display, Phonetic Alphabet reference, Notes (authenticated users), Weather forecast, and Calculator. Toggle widgets on/off from the navigation bar.
+                      Clock (timezones), Weather, Calculator, Password Generator, Phonetic Alphabet, Page Zoom, Theme, Notes, Favorites Organizer, Chat, and Snake Game. Toggle from the nav bar or press Ctrl+Shift+Y for Quick Access.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -296,9 +533,27 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Add-ons (Analytics &amp; Monitorv2)</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Optional PostgreSQL-backed add-ons: Performance Analytics (beacons, sampling, dashboards) and Monitorv2 for advanced monitoring with TimescaleDB retention. Configure under Admin → Add-ons.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">In-app App Updates</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Admins can check GitHub commits/releases, preview changes, apply updates with database backup, and roll back from the App Updates UI (XAMPP/filesystem installs).
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Email Notifications</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
                       Advanced email notification system with multiple SMTP server support, custom templates, time-based rules, day-of-week filters, and recipient management. Pause/resume notifications globally.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Link Health Statuses</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Health checks surface up, down, and redirected states so you can spot broken links and unexpected redirects before users hit them.
                     </p>
                   </div>
                 </div>
@@ -340,6 +595,71 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     <p className="text-sm text-amber-800 dark:text-amber-200">
                       <strong>Note:</strong> Browser integration requires the Browser Launcher Pro extension. Links will open normally in your default browser if the extension is not installed or enabled.
                     </p>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <path fillRule="evenodd" d="M4.5 2A1.5 1.5 0 003 3.5v13A1.5 1.5 0 004.5 18h11a1.5 1.5 0 001.5-1.5V7.621a1.5 1.5 0 00-.44-1.06l-4.12-4.122A1.5 1.5 0 0011.378 2H4.5zm5.75 7.75a.75.75 0 00-1.5 0v2.546l-.72-.72a.75.75 0 00-1.06 1.06l2 2a.75.75 0 001.06 0l2-2a.75.75 0 10-1.06-1.06l-.72.72V9.75z" clipRule="evenodd" />
+                  </svg>
+                  In-app App Updates
+                </h3>
+                <div className="space-y-3 text-slate-700 dark:text-slate-300">
+                  <p>
+                    On XAMPP / filesystem installs, admins can update {appName} from GitHub without manually copying a deploy ZIP. Open the bell in the nav or <strong>Admin → Tools → App Updates</strong>.
+                  </p>
+                  <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-brand-900 dark:text-brand-100">What you can do:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>Track a branch (e.g. <code className="bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded text-xs">main</code>) and see new commits ahead of your install</li>
+                      <li>Apply versioned GitHub Releases (<code className="bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded text-xs">vX.Y.Z</code>)</li>
+                      <li>Preview changed files, approximate size, and ETA before updating</li>
+                      <li>Back up the database before apply (on by default) and keep rollback snapshots</li>
+                      <li>Restore a previous snapshot (optionally with the linked DB backup)</li>
+                      <li>See <strong>local only</strong> commits made on this machine that are not yet pushed</li>
+                    </ul>
+                  </div>
+                  <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
+                    <p className="text-sm text-amber-800 dark:text-amber-200">
+                      <strong>Note:</strong> Private repos need a GitHub classic PAT with <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">repo</code> scope. Docker in-container updates are out of scope — use your image rebuild process instead. Full details are in Guides → App Updates.
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <path fillRule="evenodd" d="M3 4.25A2.25 2.25 0 015.25 2h2.5A2.25 2.25 0 0110 4.25v2.5A2.25 2.25 0 017.75 9h-2.5A2.25 2.25 0 013 6.75v-2.5zm0 9A2.25 2.25 0 015.25 11h2.5A2.25 2.25 0 0110 13.25v2.5A2.25 2.25 0 017.75 18h-2.5A2.25 2.25 0 013 15.75v-2.5zm9-9A2.25 2.25 0 0114.25 2h2.5A2.25 2.25 0 0119 4.25v2.5A2.25 2.25 0 0116.75 9h-2.5A2.25 2.25 0 0112 6.75v-2.5zm2.25 9a.75.75 0 00-.75.75v.5c0 .414.336.75.75.75h.5a.75.75 0 00.75-.75v-.5a.75.75 0 00-.75-.75h-.5zM12 13.25a.75.75 0 01.75-.75h.5a.75.75 0 01.75.75v.5a.75.75 0 01-.75.75h-.5a.75.75 0 01-.75-.75v-.5zm4.5 2.25a.75.75 0 00-.75.75v.5c0 .414.336.75.75.75h.5a.75.75 0 00.75-.75v-.5a.75.75 0 00-.75-.75h-.5zM12 16.75a.75.75 0 01.75-.75h.5a.75.75 0 01.75.75v.5a.75.75 0 01-.75.75h-.5a.75.75 0 01-.75-.75v-.5z" clipRule="evenodd" />
+                  </svg>
+                  QR Codes, Sharing &amp; Visits
+                </h3>
+                <div className="space-y-3 text-slate-700 dark:text-slate-300">
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-slate-900 dark:text-white">QR codes:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>Tap the QR icon in the navigation bar to share the app URL (guests included)</li>
+                      <li>Open space QR codes from tile / mobile views for on-the-go access</li>
+                      <li>Branded QR centers use your logo or emoji; admins can tune branding in Settings</li>
+                    </ul>
+                  </div>
+                  <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-brand-900 dark:text-brand-100">Share a space with a user:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>From a space you manage, open Share and pick a user (search by username or email)</li>
+                      <li>Recipients see share notifications and can accept or reject</li>
+                      <li>Revoke shares anytime from the same dialog</li>
+                      <li>Block a user to stop future shares from them; manage the list under Blocked Users</li>
+                    </ul>
+                  </div>
+                  <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-emerald-900 dark:text-emerald-100">Visitor stats:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>Opening a space records visits (hits and unique visitors)</li>
+                      <li>View totals under Space Info → Visitors</li>
+                    </ul>
                   </div>
                 </div>
               </section>
@@ -391,6 +711,14 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                       <li>Recipient management (to, cc, bcc)</li>
                       <li>Global notification pause/resume</li>
                       <li>Email log viewing and troubleshooting</li>
+                    </ul>
+                  </div>
+                  <div className="bg-violet-50 dark:bg-violet-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-violet-900 dark:text-violet-100">Add-ons — Monitorv2 &amp; Analytics:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li><strong>Monitorv2:</strong> Optional advanced monitoring stack backed by PostgreSQL / TimescaleDB with retention and cleanup controls</li>
+                      <li><strong>Performance Analytics:</strong> Optional beacon-based metrics with sampling, anonymous/login tracking, and dashboard URL</li>
+                      <li>Enable and configure both under <strong>Admin → Tools → Add-ons</strong> (includes connection tests and setup helpers)</li>
                     </ul>
                   </div>
                 </div>
@@ -658,29 +986,37 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                 <div className="space-y-2 text-slate-700 dark:text-slate-300">
                   <ul className="list-disc list-inside space-y-1 ml-2">
                     <li>Use the search bar to quickly find links across all tiles</li>
-                    <li>Favorite frequently used tiles for quick access</li>
+                    <li>Favorite frequently used tiles for quick access; organize favorites with the Favorites Organizer widget</li>
                     <li>Organize related tiles into categories</li>
                     <li>Use tabs within tiles to group related links</li>
                     <li>Create hyperlink tiles for quick access to external resources</li>
+                    <li>Upload header or emoji images and hide title/description when you want a visual-first card</li>
+                    <li>Use boxed rich text for titled cards with optional footers inside sections</li>
                     <li>Schedule tiles and tabs to appear or expire automatically</li>
                     <li>Set browser preferences per tile or link for testing workflows</li>
                     <li>Hold Ctrl/Cmd while clicking links to override browser settings</li>
+                    <li>Share the app or a space via branded QR codes</li>
+                    <li>Share a private/authenticated space with another user and manage shares from the Share dialog</li>
+                    <li>Block unwanted sharers; review Blocked Users when needed</li>
+                    <li>Check Space Info → Visitors for hit counts and unique visitors</li>
                     <li>Export and import spaces to share with others</li>
                     <li>Use the recycle bin to recover accidentally deleted tiles</li>
                     <li>Archive old tiles to keep your workspace clean</li>
-                    <li>Add rich text content with formatting, emojis, and images to sections</li>
-                    <li>Use style profiles to customize the application appearance (admin only)</li>
+                    <li>Watch for redirected link-health status when a URL unexpectedly changes destination</li>
+                    <li>Use style profiles and page backgrounds to customize appearance (admin / style manager)</li>
                     <li>Create teams and assign entire teams to spaces (admin only)</li>
                     <li>Assign space editor privileges to people or teams with fine-tune permission control (admin only)</li>
                     <li>Manage roles and assign them to users and groups for streamlined access control (admin only)</li>
-                    <li>Track tile changes with version control - view, compare, and restore versions</li>
+                    <li>Track tile changes with version control — view, compare, and restore versions</li>
+                    <li>Apply App Updates from the admin bell, with DB backup and rollback (admin, XAMPP installs)</li>
+                    <li>Configure optional Analytics and Monitorv2 add-ons under Admin → Add-ons</li>
                     <li>Clone {appName} instances for testing or backup purposes (admin only)</li>
                     <li>Run database cleanup to remove orphaned records and optimize performance (admin only)</li>
                     <li>Create custom widgets with full development framework (admin only)</li>
                     <li>Customize tile animations from 200+ options for a personalized experience</li>
                     <li>Add seasonal decorations to tiles for holidays and special occasions</li>
                     <li>Toggle floating widgets from the navigation bar or press <strong>Ctrl+Shift+Y</strong> for the Widget Quick Access menu</li>
-                    <li>Use the Notes widget to keep quick notes (authenticated users only)</li>
+                    <li>Use the Notes and Chat widgets when signed in; Password Generator and Zoom Control are available from the widgets pill</li>
                     <li>Monitor system health with URL, keyword, port, and ping checks</li>
                     <li>Set up email notifications with advanced rules and multiple SMTP servers</li>
                     <li>View monitoring history with interactive charts and graphs</li>
@@ -689,6 +1025,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     <li>Use SAML/SSO for enterprise Single Sign-On authentication (admin only)</li>
                     <li>Control tab visibility to show/hide specific tabs application-wide (admin only)</li>
                     <li>Send broadcast messages that scroll across the application (admin only)</li>
+                    <li>Open the <strong>Guides</strong> tab for searchable docs (Architecture, App Updates, deployment, and more)</li>
                   </ul>
                 </div>
               </section>
@@ -753,22 +1090,25 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                       <li><strong>Space editors:</strong> Let people or teams edit specific spaces without full admin rights</li>
                       <li><strong>Fine-tune permissions:</strong> Control what space editors can add, edit, or delete</li>
                       <li><strong>Assign access:</strong> Add, replace, or remove roles for people or teams in bulk</li>
-                      <li><strong>Style Management:</strong> Create and switch between custom style profiles</li>
+                      <li><strong>Branding &amp; Settings:</strong> App name, logos, favicon, header logo, fonts, QR branding, footer, and guest access</li>
+                      <li><strong>Style Management:</strong> Create style profiles, page backgrounds, and switch themes instantly</li>
+                      <li><strong>App Updates:</strong> Check GitHub commits/releases, preview changes, apply with DB backup, and roll back</li>
+                      <li><strong>Add-ons:</strong> Enable Performance Analytics and Monitorv2 (PostgreSQL), test connections, and manage retention</li>
                       <li><strong>Instance Cloning:</strong> Clone {appName} installations with progress tracking</li>
                       <li><strong>LDAP Integration:</strong> Configure LDAP authentication for enterprise environments</li>
                       <li><strong>SAML/SSO:</strong> Enterprise Single Sign-On with SAML 2.0 support</li>
                       <li><strong>Browser Extension:</strong> Configure Browser Launcher Pro extension settings</li>
-                      <li><strong>Database Management:</strong> Export/import backups, cleanup orphaned records</li>
-                      <li><strong>Database Cleanup:</strong> Scan and remove orphaned records, optimize database performance</li>
+                      <li><strong>Database Management:</strong> Export/import backups, cleanup orphaned records, duplicate-tile cleanup</li>
                       <li><strong>Space Management:</strong> Bulk import/export spaces, manage all spaces</li>
+                      <li><strong>Staging:</strong> Admin sandbox with AI Offline Kit (CSV → JSON → Staging → Public)</li>
                       <li><strong>Tab Visibility:</strong> Control which tabs are visible in the application</li>
                       <li><strong>Custom Widgets:</strong> Create, enable/disable, and manage custom widgets</li>
-                      <li><strong>Application Settings:</strong> Customize app name, logo, footer, and other global settings</li>
                       <li><strong>Broadcast Messages:</strong> Display scrolling messages across the application</li>
                       <li><strong>Monitoring Management:</strong> Create, edit, and manage system monitors with advanced configuration</li>
                       <li><strong>SMTP Configuration:</strong> Configure multiple SMTP servers for email notifications</li>
                       <li><strong>Email Templates:</strong> Customize email notification templates and manage notification rules</li>
-                      <li><strong>Monitoring Settings:</strong> Configure monitoring intervals, timeouts, and notification preferences</li>
+                      <li><strong>Load Test:</strong> Run and review load-test tooling from Admin → Tools</li>
+                      <li><strong>Maintenance:</strong> Maintenance mode and maintenance scripts</li>
                     </ul>
                   </div>
                 </div>
@@ -792,12 +1132,27 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
               </section>
 
               <section>
-                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3">What&apos;s New in 2.1.0</h3>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3">What&apos;s New in 2.2.0</h3>
                 <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 text-sm text-slate-700 dark:text-slate-300">
                   <ul className="list-disc list-inside space-y-1 ml-2">
-                    <li><strong>LDAP Add User search:</strong> Short/partial name search (2+ chars) with AD-safe filters and fallbacks; richer diagnostics when search fails</li>
-                    <li><strong>LDAP Directory Info:</strong> Expandable User Actions panel with lock status, CN/DN, account flags, and group membership (loads on demand)</li>
-                    <li><strong>Change Password:</strong> Admins can change passwords for local (non-admin) users from User Actions</li>
+                    <li><strong>In-app App Updates:</strong> Check GitHub commits/releases, preview changes, apply with DB backup, and roll back from Admin (XAMPP installs)</li>
+                    <li><strong>Guides tab:</strong> Searchable in-app documentation (Architecture, App Updates, deployment, and more)</li>
+                    <li><strong>QR sharing:</strong> Branded QR codes for the app URL and spaces (desktop + mobile)</li>
+                    <li><strong>Share spaces:</strong> Share with users, accept/reject notifications, and revoke access</li>
+                    <li><strong>Visitor stats:</strong> Hit counts and unique visitors on Space Info</li>
+                    <li><strong>Tile visuals:</strong> Header &amp; emoji images, title/description visibility, and compact mobile layouts</li>
+                    <li><strong>Boxed rich text:</strong> Optional titled/footer cards inside sections</li>
+                    <li><strong>Add-ons:</strong> Performance Analytics and Monitorv2 (PostgreSQL) management under Admin → Add-ons</li>
+                    <li><strong>Link health:</strong> Redirected status alongside up/down</li>
+                    <li><strong>Branding:</strong> Favicon, header logo, QR branding options, and improved logo handling</li>
+                  </ul>
+                </div>
+                <div className="mt-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2 text-sm text-slate-700 dark:text-slate-300">
+                  <p className="font-medium text-slate-900 dark:text-white">Also in recent 2.1.x:</p>
+                  <ul className="list-disc list-inside space-y-1 ml-2">
+                    <li>LDAP short/partial name search with richer diagnostics</li>
+                    <li>LDAP Directory Info panel on User Actions</li>
+                    <li>Admin change-password for local (non-admin) users</li>
                   </ul>
                 </div>
               </section>
@@ -805,12 +1160,11 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
               <section>
                 <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3">Description</h3>
                 <p className="text-slate-700 dark:text-slate-300">
-                  {appName} helps you create beautiful, organized landing pages for your important links. 
-                  Organize links into visual tiles, customize their appearance, and share them with your team or make them public. 
-                  With advanced features like <strong>teams</strong>, <strong>roles for visibility</strong>, <strong>space editors with fine-tuned permissions</strong>, 
-                  <strong>version control</strong>, browser integration, scheduling, link health monitoring, rich text content, style management, 
-                  flexible visibility controls, system monitoring, email notifications, floating widgets, custom widget development, database cleanup tools, 
-                  SAML/SSO authentication, and 200+ tile animations, {appName} makes managing and sharing links simple, powerful, and elegant.
+                  {appName} helps you create beautiful, organized landing pages for your important links.
+                  Organize links into visual tiles, customize their appearance (including header images and boxed rich text), and share them with your team — via roles, space editors, user shares, or QR codes.
+                  With <strong>Access Manager</strong>, <strong>Staging &amp; AI Offline Kit</strong>, <strong>version control</strong>, <strong>in-app App Updates</strong>, browser integration, scheduling, link health monitoring, visitor insights,
+                  style management, system monitoring and optional add-ons, email notifications, floating widgets, SAML/SSO, and 200+ tile animations,
+                  {appName} makes managing and sharing links simple, powerful, and elegant.
                 </p>
               </section>
 
@@ -843,22 +1197,28 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                 <div className="grid md:grid-cols-2 gap-3">
                   {[
                     'Visual Tile Management',
+                    'Header & Emoji Images',
                     'Link Organization',
-                    'Link Health Monitoring',
+                    'Link Health Monitoring (incl. Redirected)',
                     'User Authentication',
                     'Visibility Controls',
                     'Categories & Groups',
                     'Favorites & Archive',
+                    'Share Spaces with Users',
+                    'Shared Tile Notifications',
+                    'QR Code Sharing',
+                    'Visitor Hit & Unique Stats',
                     'Export/Import',
                     'Dark Mode',
-                    'Responsive Design',
+                    'Responsive / Mobile Layouts',
                     'Guest Access Mode',
                     'Browser Integration',
                     'Hyperlink Tiles',
                     'Scheduling & Time-based Content',
                     'Tab & Section Organization',
-                    'Rich Text Content Editor',
+                    'Rich Text & Boxed Content',
                     'Style Profile Management',
+                    'Page Backgrounds',
                     'Teams Management',
                     'Roles & Visibility Access',
                     'Space Editors with Team Support',
@@ -867,6 +1227,8 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     'Version Comparison & Restore',
                     'Access Manager',
                     'Staging & AI Offline Kit',
+                    'In-app App Updates & Rollback',
+                    'Help Guides (in-app docs)',
                     'Instance Cloning',
                     'LDAP Authentication',
                     'LDAP Directory User Details',
@@ -874,6 +1236,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     'SAML/SSO Authentication',
                     'Admin Panel',
                     'Admin Change Local Password',
+                    'Branding (Logo, Favicon, Header Logo)',
                     'Bulk Import/Export',
                     'Database Cleanup Tools',
                     'Custom Widget Development',
@@ -894,10 +1257,9 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     'Chat Widget',
                     'Snake Game Widget',
                     'System Monitoring Dashboard',
-                    'URL Monitoring',
-                    'Keyword Monitoring',
-                    'Port Monitoring',
-                    'Ping Monitoring',
+                    'URL / Keyword / Port / Ping Monitoring',
+                    'Monitorv2 Add-on (PostgreSQL)',
+                    'Performance Analytics Add-on',
                     'Response Time Tracking',
                     'Historical Charts & Graphs',
                     'Maintenance Windows',
@@ -931,14 +1293,33 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+        <div className="p-3 sm:p-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 shrink-0">
           <button
+            type="button"
             onClick={onClose}
             className="w-full px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium transition-colors"
           >
             Close
           </button>
         </div>
+
+        {/* Resize handle */}
+        {!isMaximized && (
+          <div
+            onMouseDown={handleResizeMouseDown}
+            className="absolute right-0 bottom-0 w-5 h-5 cursor-nwse-resize z-10"
+            title="Resize"
+            aria-hidden
+          >
+            <svg
+              viewBox="0 0 20 20"
+              className="w-4 h-4 absolute right-1 bottom-1 text-slate-400 dark:text-slate-500"
+              fill="currentColor"
+            >
+              <path d="M14 18l4-4v4h-4zM10 18l8-8v2l-6 6h-2zM6 18l12-12v2L8 18H6z" />
+            </svg>
+          </div>
+        )}
       </div>
     </div>,
     document.body

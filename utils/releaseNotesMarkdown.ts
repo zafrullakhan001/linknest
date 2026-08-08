@@ -11,22 +11,26 @@ export function escapeHtml(text: string): string {
     .replace(/'/g, '&#39;');
 }
 
-function formatInline(text: string): string {
+export function formatInlineMarkdown(text: string): string {
   let s = escapeHtml(text);
-  // links [label](url)
-  s = s.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, (_m, label, url) => {
-    const safeUrl = String(url).replace(/"/g, '');
-    return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="text-brand-600 dark:text-brand-400 underline">${label}</a>`;
+  // links [label](url) — http(s) or relative .md paths (rendered as span for in-app; http opens)
+  s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, label, url) => {
+    const raw = String(url).replace(/"/g, '');
+    if (/^https?:/i.test(raw)) {
+      return `<a href="${raw}" target="_blank" rel="noopener noreferrer" class="text-brand-600 dark:text-brand-400 underline">${label}</a>`;
+    }
+    return `<span class="text-brand-600 dark:text-brand-400">${label}</span>`;
   });
-  // bold **text** or __text__
   s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   s = s.replace(/__(.+?)__/g, '<strong>$1</strong>');
-  // italic *text* (single asterisks remaining) or _text_
   s = s.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
   s = s.replace(/_([^_\n]+)_/g, '<em>$1</em>');
-  // inline code
   s = s.replace(/`([^`]+)`/g, '<code class="px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-[0.85em]">$1</code>');
   return s;
+}
+
+function formatInline(text: string): string {
+  return formatInlineMarkdown(text);
 }
 
 export function renderReleaseNotesHtml(markdown: string): string {

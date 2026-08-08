@@ -7780,3 +7780,36 @@ body {
     transform: translateY(0);
   }
 }
+/* Help Guides: Mermaid label overflow / cutoff fixes */
+.docs-reader .mermaid-diagram {
+  overflow-x: auto;
+  overflow-y: visible;
+}
+.docs-reader .mermaid {
+  overflow: visible !important;
+  text-align: center;
+}
+.docs-reader .mermaid svg {
+  overflow: visible !important;
+  max-width: 100%;
+  height: auto;
+}
+.docs-reader .mermaid foreignObject {
+  overflow: visible !important;
+}
+.docs-reader .mermaid .nodeLabel,
+.docs-reader .mermaid .edgeLabel,
+.docs-reader .mermaid .label,
+.docs-reader .mermaid .nodeLabel *,
+.docs-reader .mermaid foreignObject div,
+.docs-reader .mermaid foreignObject span {
+  overflow: visible !important;
+  white-space: normal !important;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.35 !important;
+  text-overflow: clip !important;
+}
+.docs-reader .mermaid .edgeLabel {
+  background-color: transparent;
+}
