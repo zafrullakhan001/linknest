@@ -5113,15 +5113,20 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     };
 
     try {
-      const updatedTiles = tiles.map(t => t.id === updatedTile.id ? updatedTile : t);
+      const sourceTiles = activeTab === 'staging' ? stagingTiles : tiles;
+      const updatedTiles = sourceTiles.map(t => t.id === updatedTile.id ? updatedTile : t);
 
       // Save first so a subsequent list reload cannot wipe headerImage with stale data
       if (isAuthenticated) {
         await saveTile(updatedTile);
       }
 
-      // skipReload=true: avoid race with getTiles() overwriting local header fields
-      onUpdateTiles(updatedTiles, true);
+      // Staging uses local state; public list goes through App (skipReload avoids stale overwrite)
+      if (activeTab === 'staging') {
+        setStagingTiles(updatedTiles);
+      } else {
+        onUpdateTiles(updatedTiles, true);
+      }
 
       if (closeModal) {
         resetForm();
@@ -11545,9 +11550,14 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                               };
 
                               try {
-                                // Update local state
-                                const updatedTiles = tiles.map(t => t.id === updatedTile.id ? updatedTile : t);
-                                onUpdateTiles(updatedTiles);
+                                // Update local state (staging vs public)
+                                const sourceTiles = activeTab === 'staging' ? stagingTiles : tiles;
+                                const updatedTiles = sourceTiles.map(t => t.id === updatedTile.id ? updatedTile : t);
+                                if (activeTab === 'staging') {
+                                  setStagingTiles(updatedTiles);
+                                } else {
+                                  onUpdateTiles(updatedTiles);
+                                }
 
                                 // Save to backend if authenticated
                                 if (isAuthenticated) {
