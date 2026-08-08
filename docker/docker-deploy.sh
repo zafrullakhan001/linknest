@@ -56,7 +56,7 @@ docker compose -f docker/docker-compose.yml down 2>/dev/null || true
 echo "🔨 Building Docker image..."
 docker compose -f docker/docker-compose.yml build
 
-echo "🚀 Starting container on port 8000..."
+echo "🚀 Starting containers (HTTP 8090, HTTPS 8443, Mailpit 8025)..."
 docker compose -f docker/docker-compose.yml up -d
 
 # Wait for container to be ready
@@ -68,7 +68,10 @@ if docker compose -f docker/docker-compose.yml ps | grep -q "Up"; then
     echo ""
     echo "✅ LinkNest is now running!"
     echo ""
-    echo "📍 Access the application at: http://localhost:8000"
+    echo "📍 Access the application at:"
+    echo "   HTTP:  http://localhost:8090"
+    echo "   HTTPS: https://localhost:8443"
+    echo "   Mailpit UI: http://localhost:8025"
     echo ""
     echo "📋 Default credentials:"
     echo "   Username: admin"

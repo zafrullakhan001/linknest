@@ -59,13 +59,21 @@ echo 🛑 Stopping existing containers (if any)...
 REM Build and start the container
 echo 🔨 Building Docker image...
 %COMPOSE_CMD% -f docker\docker-compose.yml build
+if %ERRORLEVEL% NEQ 0 (
+    echo ❌ Docker image build failed.
+    exit /b 1
+)
 
-echo 🚀 Starting container on port 8000...
+echo 🚀 Starting containers (HTTP 8090, HTTPS 8443, Mailpit 8025)...
 %COMPOSE_CMD% -f docker\docker-compose.yml up -d
+if %ERRORLEVEL% NEQ 0 (
+    echo ❌ Failed to start containers. Check logs with: %COMPOSE_CMD% -f docker\docker-compose.yml logs
+    exit /b 1
+)
 
-REM Wait for container to be ready
+REM Wait for container to be ready (ping works in non-interactive shells; timeout does not)
 echo ⏳ Waiting for container to be ready...
-timeout /t 5 /nobreak >nul
+ping -n 6 127.0.0.1 >nul
 
 REM Check if container is running
 %COMPOSE_CMD% -f docker\docker-compose.yml ps | findstr "Up" >nul
@@ -73,7 +81,10 @@ if %ERRORLEVEL% EQU 0 (
     echo.
     echo ✅ LinkNest is now running!
     echo.
-    echo 📍 Access the application at: http://localhost:8000
+    echo 📍 Access the application at:
+    echo    HTTP:  http://localhost:8090
+    echo    HTTPS: https://localhost:8443
+    echo    Mailpit UI: http://localhost:8025
     echo.
     echo 📋 Default credentials:
     echo    Username: admin

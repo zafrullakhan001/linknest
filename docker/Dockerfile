@@ -1,7 +1,9 @@
 # Single Container Dockerfile for LinkNest
 # Multi-stage build (build-time only) - final result is ONE container
 # Stage 1: Build frontend assets
-FROM node:20-alpine AS frontend-builder
+# Use Debian-based Node (not Alpine) — Alpine/musl npm has been crashing with
+# "Exit handler never called!" and leaving vite missing from node_modules.
+FROM node:20-bookworm-slim AS frontend-builder
 
 WORKDIR /app
 
@@ -10,13 +12,16 @@ COPY package*.json ./
 COPY vite.config.ts vite.docker.config.ts tsconfig.json ./
 COPY tailwind.config.js postcss.config.js ./
 
-# Install dependencies
-# Use npm install if package-lock.json doesn't exist, otherwise use npm ci
-RUN if [ -f package-lock.json ]; then \
-        npm ci; \
+# Install dependencies (vite lives in devDependencies and is required to build)
+RUN set -eux; \
+    if [ -f package-lock.json ]; then \
+        npm ci --include=dev --no-audit --no-fund; \
     else \
-        npm install; \
-    fi
+        npm install --include=dev --no-audit --no-fund; \
+    fi; \
+    test -f node_modules/vite/package.json; \
+    test -x node_modules/.bin/vite; \
+    echo "✓ vite installed"
 
 # Copy source files (index.html MUST be copied for Vite to transform it)
 COPY index.html index.tsx index.css ./
@@ -34,8 +39,9 @@ RUN if [ ! -f index.html ]; then echo "ERROR: index.html not found!" && exit 1; 
     echo "✓ Source index.html verified"
 
 # Build frontend for Docker (base path is /)
+# Keep production mode for the Vite build only; do not set NODE_ENV before npm ci
 ENV NODE_ENV=production
-RUN npm run build -- --config vite.docker.config.ts && \
+RUN ./node_modules/.bin/vite build --config vite.docker.config.ts && \
     echo "=== Build Output Verification ===" && \
     ls -la dist/ && \
     echo "" && \
