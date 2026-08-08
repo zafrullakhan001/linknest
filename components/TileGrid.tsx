@@ -2525,6 +2525,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [headerBgMode, setHeaderBgMode] = useState<'auto' | 'custom'>('auto');
   const [headerBgColor, setHeaderBgColor] = useState('#ffffff');
   const [headerImageUploading, setHeaderImageUploading] = useState(false);
+  const [isUpdatingTile, setIsUpdatingTile] = useState(false);
   const [newColor, setNewColor] = useState<ThemeColor>('blue');
   const [newVisibility, setNewVisibility] = useState<TileVisibility>('public');
   const [visibleFrom, setVisibleFrom] = useState<string>('');
@@ -5014,15 +5015,19 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     }
   }, [isEditModalOpen, editModalActiveTab, messageType, messageCelebrationEffect, messageCelebrationConfig.triggerIntervalMs]);
 
-  const handleUpdateTile = async () => {
-    if (!editingTile || !newTitle.trim()) return;
+  const persistEditingTile = async ({ closeModal }: { closeModal: boolean }) => {
+    if (!editingTile || !newTitle.trim() || isUpdatingTile) return;
 
     if (tileType === 'hyperlink' && !hyperlinkUrl.trim()) return;
+
+    if (newVisibility === 'private' && newAllowedUsers.length === 0) return;
 
     if (!isAuthenticated && onAuthRequired) {
       onAuthRequired();
       return;
     }
+
+    setIsUpdatingTile(true);
 
     // Ensure owner is always included in allowed users for private tiles
     let finalAllowedUsers = newAllowedUsers;
@@ -5118,14 +5123,34 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       // skipReload=true: avoid race with getTiles() overwriting local header fields
       onUpdateTiles(updatedTiles, true);
 
-      resetForm();
-      setIsEditModalOpen(false);
-      setEditingTile(null);
+      if (closeModal) {
+        resetForm();
+        setIsEditModalOpen(false);
+        setEditingTile(null);
+      } else {
+        // Keep modal open so the live grid tile can be compared while editing continues
+        setEditingTile(updatedTile);
+      }
     } catch (error) {
       console.error('Failed to update tile:', error);
       alert('Failed to update tile. Please try again.');
+    } finally {
+      setIsUpdatingTile(false);
     }
   };
+
+  const handleUpdateTile = async () => {
+    await persistEditingTile({ closeModal: true });
+  };
+
+  const handleApplyTile = async () => {
+    await persistEditingTile({ closeModal: false });
+  };
+
+  const isEditFormInvalid =
+    !newTitle.trim() ||
+    (tileType === 'hyperlink' && !hyperlinkUrl.trim()) ||
+    (newVisibility === 'private' && newAllowedUsers.length === 0);
 
   const isPrivateScopeSave = activeTab === 'private' && !!user;
   const buildArrangementAndScope = useCallback(
@@ -11284,6 +11309,15 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                               Fill region
                             </button>
                           </div>
+                          <button
+                            type="button"
+                            onClick={handleApplyTile}
+                            disabled={isEditFormInvalid || isUpdatingTile}
+                            title="Save changes and refresh the live tile without closing this dialog"
+                            className="ml-auto px-3 py-1 rounded-md text-xs font-semibold border border-brand-500 bg-brand-500 text-white hover:bg-brand-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          >
+                            {isUpdatingTile ? 'Applying…' : 'Apply'}
+                          </button>
                         </div>
                         {newHeaderImage ? (
                           <div className="mb-4 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-inner">
@@ -11884,14 +11918,14 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                   </button>
                   <button
                     onClick={handleUpdateTile}
-                    disabled={
-                      !newTitle.trim() ||
-                      (tileType === 'hyperlink' && !hyperlinkUrl.trim()) ||
-                      (newVisibility === 'private' && newAllowedUsers.length === 0)
-                    }
+                    disabled={isEditFormInvalid || isUpdatingTile}
                     className="bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-md shadow-brand-500/20 hover:shadow-lg hover:shadow-brand-500/30 hover:scale-105 active:scale-95"
                   >
-                    {tileType === 'hyperlink' ? 'Update Hyperlink' : 'Update Space'}
+                    {isUpdatingTile
+                      ? 'Saving…'
+                      : tileType === 'hyperlink'
+                        ? 'Update Hyperlink'
+                        : 'Update Space'}
                   </button>
                 </div>
               </div>
