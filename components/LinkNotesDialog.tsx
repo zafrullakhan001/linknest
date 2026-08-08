@@ -176,8 +176,8 @@ export const LinkNotesDialog: React.FC<LinkNotesDialogProps> = ({
   useEffect(() => {
     if (!isOpen) return;
 
-    const width = Math.min(640, window.innerWidth - 32);
-    const height = Math.min(560, window.innerHeight - 32);
+    const width = Math.min(920, window.innerWidth - 32);
+    const height = Math.min(780, window.innerHeight - 32);
     const nextSize = { width, height };
     const nextPos = {
       x: Math.max(16, (window.innerWidth - width) / 2),
@@ -254,8 +254,8 @@ export const LinkNotesDialog: React.FC<LinkNotesDialogProps> = ({
 
   const handleResize = useCallback((e: MouseEvent) => {
     if (!dialogRef.current) return;
-    const minWidth = 360;
-    const minHeight = 280;
+    const minWidth = 480;
+    const minHeight = 360;
     const maxWidth = window.innerWidth - positionRef.current.x - 8;
     const maxHeight = window.innerHeight - positionRef.current.y - 8;
     const newWidth = Math.max(

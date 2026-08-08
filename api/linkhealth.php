@@ -28,6 +28,8 @@ switch ($method) {
     case 'POST':
         if ($path === '/check') {
             handleCheckSingleLink();
+        } elseif ($path === '/check-url') {
+            handleCheckUrl();
         } elseif ($path === '/check-tile') {
             handleCheckTileLinks();
         } elseif ($path === '/check-all') {
@@ -119,8 +121,10 @@ function determineHealthStatus($httpCode, $errno, $error, $redirectCount = 0) {
 
 /**
  * Check if a URL is reachable and return health status
+ * @param string $url
+ * @param int $timeoutSeconds Total cURL timeout (default 1s for bulk checks)
  */
-function checkUrlHealth($url) {
+function checkUrlHealth($url, $timeoutSeconds = 1) {
     // Validate URL format
     if (!filter_var($url, FILTER_VALIDATE_URL)) {
         return [
@@ -131,6 +135,9 @@ function checkUrlHealth($url) {
         ];
     }
 
+    $timeoutSeconds = max(1, min(10, (int)$timeoutSeconds));
+    $connectTimeout = min(2, $timeoutSeconds);
+
     // Initialize cURL
     $ch = curl_init();
     
@@ -140,8 +147,8 @@ function checkUrlHealth($url) {
         CURLOPT_FOLLOWLOCATION => true,
         CURLOPT_MAXREDIRS => 2, // Reduced from 3 to 2
         // Aggressive timeouts: fail fast for better UX
-        CURLOPT_TIMEOUT => 1, // Reduced to 1 second total
-        CURLOPT_CONNECTTIMEOUT => 1, // 1 second to connect
+        CURLOPT_TIMEOUT => $timeoutSeconds,
+        CURLOPT_CONNECTTIMEOUT => $connectTimeout,
         CURLOPT_NOBODY => true, // HEAD request for efficiency
         CURLOPT_SSL_VERIFYPEER => false, // Allow self-signed certs
         CURLOPT_SSL_VERIFYHOST => 0,
@@ -576,6 +583,72 @@ function handleGetHealthStats() {
             'error' => 'Failed to get health stats',
             'details' => $e->getMessage()
         ], 500);
+    }
+}
+
+/**
+ * POST /api/linkhealth.php/check-url - Probe an arbitrary URL (edit-form preview)
+ * Returns round-trip latency and HTTP status without requiring a saved link ID.
+ */
+function handleCheckUrl() {
+    requireAuth();
+    set_time_limit(8);
+
+    try {
+        $data = getJSONInput();
+        $url = isset($data['url']) ? trim((string)$data['url']) : '';
+
+        if ($url === '') {
+            sendJSON(['error' => 'URL is required'], 400);
+            return;
+        }
+
+        // Normalize scheme-less URLs
+        if (!preg_match('#^https?://#i', $url)) {
+            $url = 'https://' . $url;
+        }
+
+        $parts = parse_url($url);
+        $scheme = strtolower((string)($parts['scheme'] ?? ''));
+        if ($scheme !== 'http' && $scheme !== 'https') {
+            sendJSON(['error' => 'Only HTTP and HTTPS URLs are supported'], 400);
+            return;
+        }
+
+        if (!filter_var($url, FILTER_VALIDATE_URL)) {
+            sendJSON([
+                'success' => true,
+                'url' => $url,
+                'scheme' => $scheme,
+                'health' => [
+                    'status' => 'broken',
+                    'httpCode' => null,
+                    'error' => 'Invalid URL format',
+                    'serverLatency' => 0,
+                    'checkedAt' => time()
+                ]
+            ]);
+            return;
+        }
+
+        // Slightly longer timeout for interactive edit-form previews
+        $healthResult = checkUrlHealth($url, 5);
+
+        sendJSON([
+            'success' => true,
+            'url' => $url,
+            'scheme' => $scheme,
+            'health' => [
+                'status' => $healthResult['status'],
+                'httpCode' => $healthResult['http_code'] ?: null,
+                'error' => $healthResult['error'],
+                'serverLatency' => $healthResult['server_latency'],
+                'checkedAt' => time()
+            ]
+        ]);
+    } catch (Exception $e) {
+        error_log('URL probe failed: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to check URL: ' . $e->getMessage()], 500);
     }
 }
 

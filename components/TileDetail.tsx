@@ -260,6 +260,235 @@ const EmojiPickerTabs: React.FC<{
     );
 };
 
+const LINK_EDIT_SECTION_ACCENTS = {
+    sky: {
+        border: 'border-sky-200 dark:border-sky-800/50',
+        header: 'bg-sky-50 dark:bg-sky-950/35 hover:bg-sky-100/90 dark:hover:bg-sky-900/40',
+        emoji: 'bg-sky-100 dark:bg-sky-900/50',
+        title: 'text-sky-900 dark:text-sky-100',
+        body: 'border-sky-100 dark:border-sky-900/40 bg-white/80 dark:bg-slate-900/40',
+    },
+    amber: {
+        border: 'border-amber-200 dark:border-amber-800/50',
+        header: 'bg-amber-50 dark:bg-amber-950/35 hover:bg-amber-100/90 dark:hover:bg-amber-900/40',
+        emoji: 'bg-amber-100 dark:bg-amber-900/50',
+        title: 'text-amber-900 dark:text-amber-100',
+        body: 'border-amber-100 dark:border-amber-900/40 bg-white/80 dark:bg-slate-900/40',
+    },
+    violet: {
+        border: 'border-violet-200 dark:border-violet-800/50',
+        header: 'bg-violet-50 dark:bg-violet-950/35 hover:bg-violet-100/90 dark:hover:bg-violet-900/40',
+        emoji: 'bg-violet-100 dark:bg-violet-900/50',
+        title: 'text-violet-900 dark:text-violet-100',
+        body: 'border-violet-100 dark:border-violet-900/40 bg-white/80 dark:bg-slate-900/40',
+    },
+    slate: {
+        border: 'border-slate-200 dark:border-slate-700',
+        header: 'bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800',
+        emoji: 'bg-slate-200/80 dark:bg-slate-700',
+        title: 'text-slate-800 dark:text-slate-100',
+        body: 'border-slate-100 dark:border-slate-700/80 bg-white/80 dark:bg-slate-900/40',
+    },
+} as const;
+
+type LinkEditSectionAccent = keyof typeof LINK_EDIT_SECTION_ACCENTS;
+
+const LinkEditSection: React.FC<{
+    emoji: string;
+    title: string;
+    subtitle?: string;
+    accent?: LinkEditSectionAccent;
+    defaultOpen?: boolean;
+    badge?: React.ReactNode;
+    children: React.ReactNode;
+}> = ({ emoji, title, subtitle, accent = 'slate', defaultOpen = false, badge, children }) => {
+    const [open, setOpen] = useState(defaultOpen);
+    const styles = LINK_EDIT_SECTION_ACCENTS[accent];
+
+    return (
+        <div className={`rounded-xl border-2 overflow-hidden shadow-sm ${styles.border}`}>
+            <button
+                type="button"
+                aria-expanded={open}
+                onClick={() => setOpen((v) => !v)}
+                className={`w-full flex items-center gap-3 px-3.5 py-3 text-left transition-colors ${styles.header}`}
+            >
+                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-lg ${styles.emoji}`} aria-hidden>
+                    {emoji}
+                </span>
+                <span className="min-w-0 flex-1">
+                    <span className={`block text-sm font-semibold ${styles.title}`}>{title}</span>
+                    {subtitle && (
+                        <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">{subtitle}</span>
+                    )}
+                </span>
+                {badge}
+                <svg
+                    className={`w-4 h-4 shrink-0 text-slate-400 transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    aria-hidden
+                >
+                    <path
+                        fillRule="evenodd"
+                        d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"
+                        clipRule="evenodd"
+                    />
+                </svg>
+            </button>
+            {open && (
+                <div className={`px-3.5 py-3.5 space-y-3 border-t ${styles.body}`}>
+                    {children}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const isProbableUrl = (value: string): boolean => {
+    const trimmed = (value || '').trim();
+    if (!trimmed || trimmed.length < 4) return false;
+    try {
+        const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+        const parsed = new URL(withScheme);
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+        return false;
+    }
+};
+
+const formatProbeLatency = (ms?: number | null): string => {
+    if (ms === undefined || ms === null) return '';
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(1)}s`;
+};
+
+const UrlProbeBadges: React.FC<{ url: string }> = ({ url }) => {
+    const [phase, setPhase] = useState<'idle' | 'checking' | 'done' | 'error'>('idle');
+    const [scheme, setScheme] = useState<string>('');
+    const [httpCode, setHttpCode] = useState<number | null>(null);
+    const [latency, setLatency] = useState<number | null>(null);
+    const [healthStatus, setHealthStatus] = useState<string>('');
+    const [error, setError] = useState<string>('');
+    const abortRef = useRef<AbortController | null>(null);
+    const requestIdRef = useRef(0);
+
+    useEffect(() => {
+        const trimmed = (url || '').trim();
+        abortRef.current?.abort();
+        abortRef.current = null;
+
+        if (!isProbableUrl(trimmed)) {
+            setPhase('idle');
+            setScheme('');
+            setHttpCode(null);
+            setLatency(null);
+            setHealthStatus('');
+            setError('');
+            return;
+        }
+
+        const detectedScheme = /^http:\/\//i.test(trimmed)
+            ? 'http'
+            : /^https:\/\//i.test(trimmed)
+                ? 'https'
+                : 'https';
+        setScheme(detectedScheme);
+        setPhase('checking');
+        setError('');
+
+        const requestId = ++requestIdRef.current;
+        const timer = window.setTimeout(async () => {
+            const controller = new AbortController();
+            abortRef.current = controller;
+            const started = performance.now();
+            try {
+                const result = await linkHealthService.checkUrl(trimmed, controller.signal);
+                if (requestId !== requestIdRef.current) return;
+                const roundTrip = Math.round(performance.now() - started);
+                setScheme(result.scheme || detectedScheme);
+                setHttpCode(result.health.httpCode ?? null);
+                setLatency(result.health.serverLatency ?? roundTrip);
+                setHealthStatus(result.health.status || '');
+                setError(result.health.error || '');
+                setPhase('done');
+            } catch (err: any) {
+                if (controller.signal.aborted || requestId !== requestIdRef.current) return;
+                if (err?.name === 'AbortError') return;
+                setHttpCode(null);
+                setLatency(Math.round(performance.now() - started));
+                setHealthStatus('broken');
+                setError(err?.message || 'Check failed');
+                setPhase('error');
+            }
+        }, 650);
+
+        return () => {
+            window.clearTimeout(timer);
+            abortRef.current?.abort();
+        };
+    }, [url]);
+
+    if (phase === 'idle') return null;
+
+    const codeColor =
+        httpCode && httpCode >= 200 && httpCode < 300
+            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700'
+            : httpCode && httpCode >= 300 && httpCode < 400
+                ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 border-amber-200 dark:border-amber-700'
+                : httpCode
+                    ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200 border-rose-200 dark:border-rose-700'
+                    : healthStatus === 'timeout'
+                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 border-amber-200 dark:border-amber-700'
+                        : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-600';
+
+    const latencyColor =
+        latency !== null && latency < 300
+            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700'
+            : latency !== null && latency < 1000
+                ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 border-amber-200 dark:border-amber-700'
+                : 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200 border-rose-200 dark:border-rose-700';
+
+    const schemeUpper = (scheme || 'https').toUpperCase();
+    const statusLabel =
+        phase === 'checking'
+            ? 'Checking…'
+            : httpCode
+                ? String(httpCode)
+                : healthStatus === 'timeout'
+                    ? 'Timeout'
+                    : error
+                        ? 'Error'
+                        : '—';
+
+    return (
+        <div className="flex flex-wrap items-center gap-1.5" title={error || undefined}>
+            {phase === 'checking' ? (
+                <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border bg-sky-100 text-sky-800 dark:bg-sky-900/50 dark:text-sky-200 border-sky-200 dark:border-sky-700 animate-pulse">
+                    <span aria-hidden>⏳</span> Checking…
+                </span>
+            ) : (
+                <>
+                    <span
+                        className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${latencyColor}`}
+                        title="Round-trip time (server probe latency)"
+                    >
+                        <span aria-hidden>⚡</span>
+                        RTT {formatProbeLatency(latency) || '—'}
+                    </span>
+                    <span
+                        className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${codeColor}`}
+                        title={`${schemeUpper} status code${error ? `: ${error}` : ''}`}
+                    >
+                        <span aria-hidden>{scheme === 'http' ? '🔓' : '🔒'}</span>
+                        {schemeUpper} {statusLabel}
+                    </span>
+                </>
+            )}
+        </div>
+    );
+};
+
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
 export const TileDetail: React.FC<TileDetailProps> = ({
@@ -7423,110 +7652,89 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 const isHovered = hoveredLinkId === link.id;
 
                                                                                 return editingLinkId === link.id ? (
-                                                                                    // Edit Mode
-                                                                                    <div key={link.id} className="bg-white dark:bg-slate-800 border-2 border-brand-500 dark:border-brand-500/50 rounded-xl p-4 shadow-lg space-y-3">
-                                                                                        {/* Link Label & URL */}
-                                                                                        <div className="space-y-3">
-                                                                                            <div>
-                                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Link Label (Rich Text)</label>
-                                                                                                <RichTextEditor
-                                                                                                    value={editLinkState[link.id]?.label || ''}
-                                                                                                    onChange={(value) => updateEditLinkState(link.id, 'label', value)}
-                                                                                                    placeholder="Enter link name with formatting..."
-                                                                                                />
-                                                                                            </div>
-                                                                                            <div>
-                                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">URL</label>
-                                                                                                <input
-                                                                                                    type="text"
-                                                                                                    value={editLinkState[link.id]?.url || ''}
-                                                                                                    onChange={(e) => updateEditLinkState(link.id, 'url', e.target.value)}
-                                                                                                    placeholder="https://example.com"
-                                                                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-mono"
-                                                                                                />
-                                                                                            </div>
-                                                                                        </div>
-
-                                                                                        {/* Emoji Selection */}
-                                                                                        <div className="relative">
-                                                                                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Emoji</label>
-                                                                                            <div className="flex gap-2 items-center">
-                                                                                                <button
-                                                                                                    type="button"
-                                                                                                    onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: !prev[link.id] }))}
-                                                                                                    className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg hover:border-brand-400 dark:hover:border-brand-500 hover:shadow-md transition-all focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
-                                                                                                    title="Select emoji"
-                                                                                                >
-                                                                                                    <span className="text-xl">
-                                                                                                        {editLinkState[link.id]?.icon || '😀'}
-                                                                                                    </span>
-                                                                                                </button>
-                                                                                                <input
-                                                                                                    type="text"
-                                                                                                    value={editLinkState[link.id]?.icon || ''}
-                                                                                                    onChange={(e) => updateEditLinkState(link.id, 'icon', e.target.value)}
-                                                                                                    placeholder="Or type emoji..."
-                                                                                                    className="flex-1 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                                                                                                />
-                                                                                            </div>
-                                                                                            {showLinkEmojiPicker[link.id] && (
-                                                                                                <>
-                                                                                                    <div className="fixed inset-0 z-[9998]" onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: false }))}></div>
-                                                                                                    <div className="fixed z-[9999] bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl w-96 max-h-[500px] flex flex-col overflow-hidden" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
-                                                                                                        <EmojiPickerTabs linkId={link.id} editLinkState={editLinkState[link.id]} updateEditLinkState={updateEditLinkState} setShowLinkEmojiPicker={setShowLinkEmojiPicker} />
-                                                                                                    </div>
-                                                                                                </>
-                                                                                            )}
-                                                                                        </div>
-
-                                                                                        {/* Text Color & Visibility - Side by Side */}
-                                                                                        <div className="grid grid-cols-2 gap-3">
-                                                                                            <div>
-                                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Text Color</label>
-                                                                                                <div className="flex gap-2 items-center">
-                                                                                                    <input
-                                                                                                        type="color"
-                                                                                                        value={editLinkState[link.id]?.textColor && editLinkState[link.id]!.textColor.trim() ? editLinkState[link.id]!.textColor : '#000000'}
-                                                                                                        onChange={(e) => updateEditLinkState(link.id, 'textColor', e.target.value)}
-                                                                                                        className="w-12 h-12 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer hover:border-brand-400 dark:hover:border-brand-500 transition-all"
-                                                                                                        title="Select text color"
-                                                                                                    />
-                                                                                                    <div className="flex-1 flex gap-1.5">
-                                                                                                        <input
-                                                                                                            type="text"
-                                                                                                            value={editLinkState[link.id]?.textColor || ''}
-                                                                                                            onChange={(e) => updateEditLinkState(link.id, 'textColor', e.target.value)}
-                                                                                                            placeholder="#000000"
-                                                                                                            className="flex-1 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-xs text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-mono"
-                                                                                                        />
-                                                                                                        <button
-                                                                                                            type="button"
-                                                                                                            onClick={() => updateEditLinkState(link.id, 'textColor', '')}
-                                                                                                            className="px-2.5 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg transition-colors text-xs font-medium"
-                                                                                                            title="Clear color"
-                                                                                                        >
-                                                                                                            Clear
-                                                                                                        </button>
-                                                                                                    </div>
+                                                                                    // Edit Mode — organized & collapsible
+                                                                                    <div key={link.id} className="bg-gradient-to-br from-white via-slate-50 to-brand-50/40 dark:from-slate-800 dark:via-slate-800 dark:to-slate-900 border-2 border-brand-500 dark:border-brand-500/50 rounded-xl p-4 shadow-lg space-y-3">
+                                                                                        <div className="flex items-center justify-between gap-2 pb-1">
+                                                                                            <div className="flex items-center gap-2 min-w-0">
+                                                                                                <span className="text-xl shrink-0" aria-hidden>✏️</span>
+                                                                                                <div className="min-w-0">
+                                                                                                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">Edit Link</h4>
+                                                                                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                                                                                                        Organize access, content, and display options below
+                                                                                                    </p>
                                                                                                 </div>
                                                                                             </div>
-                                                                                            <div>
-                                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Visibility</label>
+                                                                                        </div>
+
+                                                                                        {/* Access row — Publish + Visibility always on top */}
+                                                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                                                            {user?.is_admin && (
+                                                                                                <div className={`flex items-center justify-between gap-3 p-3.5 rounded-xl border-2 ${
+                                                                                                    (editLinkState[link.id]?.published !== false)
+                                                                                                        ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/40'
+                                                                                                        : 'border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-900/60'
+                                                                                                }`}>
+                                                                                                    <div className="flex items-center gap-2.5 min-w-0">
+                                                                                                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/80 dark:bg-slate-800 text-lg shadow-sm" aria-hidden>
+                                                                                                            {(editLinkState[link.id]?.published !== false) ? '🚀' : '⏸️'}
+                                                                                                        </span>
+                                                                                                        <div className="min-w-0">
+                                                                                                            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Publish</div>
+                                                                                                            <div className={`text-sm font-semibold ${
+                                                                                                                (editLinkState[link.id]?.published !== false)
+                                                                                                                    ? 'text-emerald-700 dark:text-emerald-300'
+                                                                                                                    : 'text-slate-600 dark:text-slate-300'
+                                                                                                            }`}>
+                                                                                                                {(editLinkState[link.id]?.published !== false) ? 'Published' : 'Unpublished'}
+                                                                                                            </div>
+                                                                                                        </div>
+                                                                                                    </div>
+                                                                                                    <button
+                                                                                                        type="button"
+                                                                                                        role="switch"
+                                                                                                        aria-checked={editLinkState[link.id]?.published !== false}
+                                                                                                        onClick={() => updateEditLinkState(link.id, 'published', editLinkState[link.id]?.published === false)}
+                                                                                                        className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${(editLinkState[link.id]?.published !== false) ? 'bg-emerald-500' : 'bg-slate-400 dark:bg-slate-600'}`}
+                                                                                                    >
+                                                                                                        <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${(editLinkState[link.id]?.published !== false) ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                                                                    </button>
+                                                                                                </div>
+                                                                                            )}
+                                                                                            <div className={`p-3.5 rounded-xl border-2 ${
+                                                                                                editLinkState[link.id]?.visibility === 'private'
+                                                                                                    ? 'border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/30'
+                                                                                                    : editLinkState[link.id]?.visibility === 'authenticated'
+                                                                                                        ? 'border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30'
+                                                                                                        : 'border-sky-300 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/30'
+                                                                                            } ${!user?.is_admin ? 'sm:col-span-2' : ''}`}>
+                                                                                                <div className="flex items-center gap-2.5 mb-2">
+                                                                                                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/80 dark:bg-slate-800 text-lg shadow-sm" aria-hidden>
+                                                                                                        {editLinkState[link.id]?.visibility === 'private' ? '🔒' : editLinkState[link.id]?.visibility === 'authenticated' ? '👤' : '🌍'}
+                                                                                                    </span>
+                                                                                                    <div>
+                                                                                                        <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Visibility</div>
+                                                                                                        <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">Who can see this link</div>
+                                                                                                    </div>
+                                                                                                </div>
                                                                                                 <select
                                                                                                     value={editLinkState[link.id]?.visibility || 'public'}
                                                                                                     onChange={(e) => updateEditLinkState(link.id, 'visibility', e.target.value as LinkVisibility)}
-                                                                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-medium"
+                                                                                                    className="w-full bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-medium"
                                                                                                 >
-                                                                                                    {user?.is_admin && <option value="public">Public (visible to everyone)</option>}
-                                                                                                    {user?.is_admin && <option value="authenticated">Authenticated (logged-in users only)</option>}
-                                                                                                    <option value="private">Private (specific users only)</option>
+                                                                                                    {user?.is_admin && <option value="public">🌍 Public (visible to everyone)</option>}
+                                                                                                    {user?.is_admin && <option value="authenticated">👤 Authenticated (logged-in users only)</option>}
+                                                                                                    <option value="private">🔒 Private (specific users only)</option>
                                                                                                 </select>
                                                                                             </div>
                                                                                         </div>
 
-                                                                                        {/* User and Group Selector for Private Visibility */}
+                                                                                        {/* Private access pickers */}
                                                                                         {editLinkState[link.id]?.visibility === 'private' && (
-                                                                                            <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border-2 border-slate-200 dark:border-slate-700 space-y-3">
+                                                                                            <div className="p-3.5 bg-rose-50/80 dark:bg-rose-950/20 rounded-xl border-2 border-rose-200 dark:border-rose-800/60 space-y-3">
+                                                                                                <div className="flex items-center gap-2 text-sm font-semibold text-rose-800 dark:text-rose-200">
+                                                                                                    <span aria-hidden>👥</span>
+                                                                                                    Allowed users & groups
+                                                                                                </div>
                                                                                                 <div>
                                                                                                     <div className="flex items-center justify-between mb-2">
                                                                                                         <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Select Users</label>
@@ -7679,28 +7887,111 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                             </div>
                                                                                         )}
 
-                                                                                        {user?.is_admin && (
-                                                                                            <div className="flex items-center justify-between gap-3 p-3 rounded-lg border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+                                                                                        {/* Basics */}
+                                                                                        <LinkEditSection
+                                                                                            emoji="🔗"
+                                                                                            title="Basics"
+                                                                                            subtitle="Label, URL, emoji & color"
+                                                                                            accent="sky"
+                                                                                            defaultOpen
+                                                                                        >
+                                                                                            <div>
+                                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Link Label (Rich Text)</label>
+                                                                                                <RichTextEditor
+                                                                                                    value={editLinkState[link.id]?.label || ''}
+                                                                                                    onChange={(value) => updateEditLinkState(link.id, 'label', value)}
+                                                                                                    placeholder="Enter link name with formatting..."
+                                                                                                />
+                                                                                            </div>
+                                                                                            <div>
+                                                                                                <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+                                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">URL</label>
+                                                                                                    <UrlProbeBadges url={editLinkState[link.id]?.url || ''} />
+                                                                                                </div>
+                                                                                                <input
+                                                                                                    type="text"
+                                                                                                    value={editLinkState[link.id]?.url || ''}
+                                                                                                    onChange={(e) => updateEditLinkState(link.id, 'url', e.target.value)}
+                                                                                                    placeholder="https://example.com"
+                                                                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-mono"
+                                                                                                />
+                                                                                            </div>
+                                                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                                                                <div className="relative">
+                                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Emoji</label>
+                                                                                                    <div className="flex gap-2 items-center">
+                                                                                                        <button
+                                                                                                            type="button"
+                                                                                                            onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: !prev[link.id] }))}
+                                                                                                            className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg hover:border-brand-400 dark:hover:border-brand-500 hover:shadow-md transition-all focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
+                                                                                                            title="Select emoji"
+                                                                                                        >
+                                                                                                            <span className="text-xl">
+                                                                                                                {editLinkState[link.id]?.icon || '😀'}
+                                                                                                            </span>
+                                                                                                        </button>
+                                                                                                        <input
+                                                                                                            type="text"
+                                                                                                            value={editLinkState[link.id]?.icon || ''}
+                                                                                                            onChange={(e) => updateEditLinkState(link.id, 'icon', e.target.value)}
+                                                                                                            placeholder="Or type emoji..."
+                                                                                                            className="flex-1 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
+                                                                                                        />
+                                                                                                    </div>
+                                                                                                    {showLinkEmojiPicker[link.id] && (
+                                                                                                        <>
+                                                                                                            <div className="fixed inset-0 z-[9998]" onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: false }))}></div>
+                                                                                                            <div className="fixed z-[9999] bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl w-96 max-h-[500px] flex flex-col overflow-hidden" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
+                                                                                                                <EmojiPickerTabs linkId={link.id} editLinkState={editLinkState[link.id]} updateEditLinkState={updateEditLinkState} setShowLinkEmojiPicker={setShowLinkEmojiPicker} />
+                                                                                                            </div>
+                                                                                                        </>
+                                                                                                    )}
+                                                                                                </div>
                                                                                                 <div>
-                                                                                                    <div className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Publish Status</div>
-                                                                                                    <div className="text-sm font-medium text-slate-800 dark:text-slate-200">
-                                                                                                        {(editLinkState[link.id]?.published !== false) ? 'Published' : 'Unpublished'}
+                                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Text Color</label>
+                                                                                                    <div className="flex gap-2 items-center">
+                                                                                                        <input
+                                                                                                            type="color"
+                                                                                                            value={editLinkState[link.id]?.textColor && editLinkState[link.id]!.textColor.trim() ? editLinkState[link.id]!.textColor : '#000000'}
+                                                                                                            onChange={(e) => updateEditLinkState(link.id, 'textColor', e.target.value)}
+                                                                                                            className="w-12 h-12 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer hover:border-brand-400 dark:hover:border-brand-500 transition-all"
+                                                                                                            title="Select text color"
+                                                                                                        />
+                                                                                                        <div className="flex-1 flex gap-1.5">
+                                                                                                            <input
+                                                                                                                type="text"
+                                                                                                                value={editLinkState[link.id]?.textColor || ''}
+                                                                                                                onChange={(e) => updateEditLinkState(link.id, 'textColor', e.target.value)}
+                                                                                                                placeholder="#000000"
+                                                                                                                className="flex-1 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-xs text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-mono"
+                                                                                                            />
+                                                                                                            <button
+                                                                                                                type="button"
+                                                                                                                onClick={() => updateEditLinkState(link.id, 'textColor', '')}
+                                                                                                                className="px-2.5 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg transition-colors text-xs font-medium"
+                                                                                                                title="Clear color"
+                                                                                                            >
+                                                                                                                Clear
+                                                                                                            </button>
+                                                                                                        </div>
                                                                                                     </div>
                                                                                                 </div>
-                                                                                                <button
-                                                                                                    type="button"
-                                                                                                    role="switch"
-                                                                                                    aria-checked={editLinkState[link.id]?.published !== false}
-                                                                                                    onClick={() => updateEditLinkState(link.id, 'published', editLinkState[link.id]?.published === false)}
-                                                                                                    className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${(editLinkState[link.id]?.published !== false) ? 'bg-emerald-500' : 'bg-slate-400 dark:bg-slate-600'}`}
-                                                                                                >
-                                                                                                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${(editLinkState[link.id]?.published !== false) ? 'translate-x-6' : 'translate-x-1'}`} />
-                                                                                                </button>
                                                                                             </div>
-                                                                                        )}
+                                                                                        </LinkEditSection>
 
-                                                                                        {/* Notes & Tooltip - Side by Side */}
-                                                                                        <div className="grid grid-cols-2 gap-3">
+                                                                                        {/* Notes & Tooltip */}
+                                                                                        <LinkEditSection
+                                                                                            emoji="📝"
+                                                                                            title="Notes & Tooltip"
+                                                                                            subtitle="Owner info, support details, hover text"
+                                                                                            accent="amber"
+                                                                                            defaultOpen={!!(editLinkState[link.id]?.notes || editLinkState[link.id]?.tooltip || link.notes || link.tooltip)}
+                                                                                            badge={
+                                                                                                (editLinkState[link.id]?.notes || link.notes) ? (
+                                                                                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-200/80 dark:bg-amber-800/50 text-amber-800 dark:text-amber-200 font-medium shrink-0">Has notes</span>
+                                                                                                ) : undefined
+                                                                                            }
+                                                                                        >
                                                                                             <div>
                                                                                                 <div className="flex items-center justify-between mb-1.5">
                                                                                                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Notes</label>
@@ -7722,8 +8013,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     value={editLinkState[link.id]?.notes || ''}
                                                                                                     onChange={(e) => updateEditLinkState(link.id, 'notes', e.target.value)}
                                                                                                     placeholder="Add notes... or use Preset Form button above"
-                                                                                                    rows={2}
-                                                                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all resize-none"
+                                                                                                    rows={12}
+                                                                                                    className="w-full min-h-[280px] bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm leading-relaxed text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all resize-y font-mono"
                                                                                                 />
                                                                                             </div>
                                                                                             <div>
@@ -7736,14 +8027,25 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
                                                                                                 />
                                                                                             </div>
-                                                                                        </div>
+                                                                                        </LinkEditSection>
 
-                                                                                        {/* Rich Text Content */}
-                                                                                        <div>
-                                                                                            <div className="flex items-center justify-between mb-1.5">
-                                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                                                                                                    Information Content (Rich Text)
-                                                                                                </label>
+                                                                                        {/* Information Content */}
+                                                                                        <LinkEditSection
+                                                                                            emoji="📄"
+                                                                                            title="Information Content"
+                                                                                            subtitle="Rich text dialog instead of opening the URL"
+                                                                                            accent="violet"
+                                                                                            defaultOpen={!!(editLinkState[link.id]?.richTextContent || link.richTextContent)}
+                                                                                            badge={
+                                                                                                (editLinkState[link.id]?.richTextContent || link.richTextContent) ? (
+                                                                                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-200/80 dark:bg-violet-800/50 text-violet-800 dark:text-violet-200 font-medium shrink-0">Has content</span>
+                                                                                                ) : undefined
+                                                                                            }
+                                                                                        >
+                                                                                            <div className="flex items-center justify-between gap-2">
+                                                                                                <p className="text-xs text-slate-500 dark:text-slate-400">
+                                                                                                    If provided, clicking this link opens a rich text dialog instead of navigating to the URL.
+                                                                                                </p>
                                                                                                 <button
                                                                                                     type="button"
                                                                                                     onClick={() => {
@@ -7770,14 +8072,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                             }
                                                                                                         });
                                                                                                     }}
-                                                                                                    className="px-3 py-1 text-xs bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition-colors"
+                                                                                                    className="px-3 py-1 text-xs bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition-colors shrink-0"
                                                                                                 >
                                                                                                     Demo Fill
                                                                                                 </button>
                                                                                             </div>
-                                                                                            <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-                                                                                                If provided, clicking this link will open a rich text dialog instead of navigating to the URL. Leave empty to open the URL normally.
-                                                                                            </p>
                                                                                             <RichTextEditor
                                                                                                 value={editLinkState[link.id]?.richTextContent || ''}
                                                                                                 onChange={(html) => {
@@ -7806,73 +8105,78 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                 placeholder="Enter rich text content that will be displayed in a dialog when the link is clicked..."
                                                                                                 className="min-h-[200px]"
                                                                                             />
-                                                                                        </div>
+                                                                                        </LinkEditSection>
 
-                                                                                        {/* Browser Selection - Only show if feature is enabled and user has canChangeBrowser */}
-                                                                                        {settings.browser_specific_links_enabled === '1' && (user?.is_admin || tile.canChangeBrowser === true) && (
+                                                                                        {/* Advanced */}
+                                                                                        <LinkEditSection
+                                                                                            emoji="⚙️"
+                                                                                            title="Advanced"
+                                                                                            subtitle="Browser target & entrance animation"
+                                                                                            accent="slate"
+                                                                                            defaultOpen={false}
+                                                                                        >
+                                                                                            {settings.browser_specific_links_enabled === '1' && (user?.is_admin || tile.canChangeBrowser === true) && (
+                                                                                                <div>
+                                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Open link in</label>
+                                                                                                    <select
+                                                                                                        value={editLinkState[link.id]?.browser || 'default'}
+                                                                                                        onChange={(e) => updateEditLinkState(link.id, 'browser', e.target.value)}
+                                                                                                        className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
+                                                                                                    >
+                                                                                                        <option value="default">Default Browser</option>
+                                                                                                        {availableBrowsers.length > 0 ? (
+                                                                                                            availableBrowsers.map((browserId) => {
+                                                                                                                const displayName = browserId
+                                                                                                                    .replace(/-/g, ' ')
+                                                                                                                    .replace(/\b\w/g, (l) => l.toUpperCase())
+                                                                                                                    .replace('Wsl', '(WSL)')
+                                                                                                                    .replace('Stable', 'Stable')
+                                                                                                                    .replace('Beta', 'Beta')
+                                                                                                                    .replace('Dev', 'Dev');
+                                                                                                                return (
+                                                                                                                    <option key={browserId} value={browserId}>
+                                                                                                                        {displayName}
+                                                                                                                    </option>
+                                                                                                                );
+                                                                                                            })
+                                                                                                        ) : (
+                                                                                                            <>
+                                                                                                                <option value="chrome-stable">Chrome Stable</option>
+                                                                                                                <option value="chrome-beta">Chrome Beta</option>
+                                                                                                                <option value="chrome-dev">Chrome Dev</option>
+                                                                                                                <option value="edge-stable">Edge Stable</option>
+                                                                                                                <option value="edge-beta">Edge Beta</option>
+                                                                                                                <option value="edge-dev">Edge Dev</option>
+                                                                                                                <option value="firefox">Firefox (WSL)</option>
+                                                                                                            </>
+                                                                                                        )}
+                                                                                                    </select>
+                                                                                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                                                                                                        Select which browser should open this link. Requires browser extension to be installed.
+                                                                                                    </p>
+                                                                                                </div>
+                                                                                            )}
                                                                                             <div>
-                                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Open link in</label>
-                                                                                                <select
-                                                                                                    value={editLinkState[link.id]?.browser || 'default'}
-                                                                                                    onChange={(e) => updateEditLinkState(link.id, 'browser', e.target.value)}
-                                                                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                                                                                                >
-                                                                                                    <option value="default">Default Browser</option>
-                                                                                                    {availableBrowsers.length > 0 ? (
-                                                                                                        availableBrowsers.map((browserId) => {
-                                                                                                            // Format browser ID for display
-                                                                                                            const displayName = browserId
-                                                                                                                .replace(/-/g, ' ')
-                                                                                                                .replace(/\b\w/g, (l) => l.toUpperCase())
-                                                                                                                .replace('Wsl', '(WSL)')
-                                                                                                                .replace('Stable', 'Stable')
-                                                                                                                .replace('Beta', 'Beta')
-                                                                                                                .replace('Dev', 'Dev');
-                                                                                                            return (
-                                                                                                                <option key={browserId} value={browserId}>
-                                                                                                                    {displayName}
-                                                                                                                </option>
-                                                                                                            );
-                                                                                                        })
-                                                                                                    ) : (
-                                                                                                        <>
-                                                                                                            <option value="chrome-stable">Chrome Stable</option>
-                                                                                                            <option value="chrome-beta">Chrome Beta</option>
-                                                                                                            <option value="chrome-dev">Chrome Dev</option>
-                                                                                                            <option value="edge-stable">Edge Stable</option>
-                                                                                                            <option value="edge-beta">Edge Beta</option>
-                                                                                                            <option value="edge-dev">Edge Dev</option>
-                                                                                                            <option value="firefox">Firefox (WSL)</option>
-                                                                                                        </>
-                                                                                                    )}
-                                                                                                </select>
-                                                                                                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
-                                                                                                    Select which browser should open this link. Requires browser extension to be installed.
-                                                                                                </p>
+                                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
+                                                                                                    Entrance Animation
+                                                                                                </label>
+                                                                                                <div className="flex items-center gap-3">
+                                                                                                    <TileAnimationSelector
+                                                                                                        persistGlobal={false}
+                                                                                                        animationsOnly
+                                                                                                        includeInherit
+                                                                                                        value={linkAnimationForEdit(editLinkState[link.id]?.animation)}
+                                                                                                        onAnimationChange={(animation) => updateEditLinkState(link.id, 'animation', animation)}
+                                                                                                        scopeLabel="Link Animation"
+                                                                                                        scopeHint="Overrides space Links Animation when not Inherit"
+                                                                                                        buttonTitle="Choose entrance animation for this link (or inherit space default)"
+                                                                                                    />
+                                                                                                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                                                                                                        {getAnimationOption(linkAnimationForEdit(editLinkState[link.id]?.animation)).name}
+                                                                                                    </span>
+                                                                                                </div>
                                                                                             </div>
-                                                                                        )}
-
-                                                                                        {/* Link entrance animation */}
-                                                                                        <div>
-                                                                                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-                                                                                                Entrance Animation
-                                                                                            </label>
-                                                                                            <div className="flex items-center gap-3">
-                                                                                                <TileAnimationSelector
-                                                                                                    persistGlobal={false}
-                                                                                                    animationsOnly
-                                                                                                    includeInherit
-                                                                                                    value={linkAnimationForEdit(editLinkState[link.id]?.animation)}
-                                                                                                    onAnimationChange={(animation) => updateEditLinkState(link.id, 'animation', animation)}
-                                                                                                    scopeLabel="Link Animation"
-                                                                                                    scopeHint="Overrides space Links Animation when not Inherit"
-                                                                                                    buttonTitle="Choose entrance animation for this link (or inherit space default)"
-                                                                                                />
-                                                                                                <span className="text-xs text-slate-500 dark:text-slate-400">
-                                                                                                    {getAnimationOption(linkAnimationForEdit(editLinkState[link.id]?.animation)).name}
-                                                                                                </span>
-                                                                                            </div>
-                                                                                        </div>
+                                                                                        </LinkEditSection>
 
                                                                                         {/* Action Buttons */}
                                                                                         <div className="flex gap-2 justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
@@ -8100,7 +8404,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     />
                                                                                 </div>
                                                                                 <div>
-                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">URL</label>
+                                                                                    <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+                                                                                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">URL</label>
+                                                                                        <UrlProbeBadges url={newLinkState[section.id]?.url || ''} />
+                                                                                    </div>
                                                                                     <input
                                                                                         type="text"
                                                                                         value={newLinkState[section.id]?.url || ''}
@@ -8343,28 +8650,28 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 </div>
                                                                             )}
 
-                                                                            {/* Notes & Tooltip - Side by Side */}
-                                                                            <div className="grid grid-cols-2 gap-3">
-                                                                                <div>
-                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Notes</label>
-                                                                                    <textarea
-                                                                                        value={newLinkState[section.id]?.notes || ''}
-                                                                                        onChange={(e) => updateNewLinkState(section.id, 'notes', e.target.value)}
-                                                                                        placeholder="Add notes..."
-                                                                                        rows={2}
-                                                                                        className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all resize-none"
-                                                                                    />
-                                                                                </div>
-                                                                                <div>
-                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Hover Tooltip</label>
-                                                                                    <input
-                                                                                        type="text"
-                                                                                        value={newLinkState[section.id]?.tooltip || ''}
-                                                                                        onChange={(e) => updateNewLinkState(section.id, 'tooltip', e.target.value)}
-                                                                                        placeholder="Text shown on hover..."
-                                                                                        className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                                                                                    />
-                                                                                </div>
+                                                                            {/* Notes - full width for readability */}
+                                                                            <div>
+                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Notes</label>
+                                                                                <textarea
+                                                                                    value={newLinkState[section.id]?.notes || ''}
+                                                                                    onChange={(e) => updateNewLinkState(section.id, 'notes', e.target.value)}
+                                                                                    placeholder="Add notes..."
+                                                                                    rows={12}
+                                                                                    className="w-full min-h-[280px] bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm leading-relaxed text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all resize-y font-mono"
+                                                                                />
+                                                                            </div>
+
+                                                                            {/* Hover Tooltip */}
+                                                                            <div>
+                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Hover Tooltip</label>
+                                                                                <input
+                                                                                    type="text"
+                                                                                    value={newLinkState[section.id]?.tooltip || ''}
+                                                                                    onChange={(e) => updateNewLinkState(section.id, 'tooltip', e.target.value)}
+                                                                                    placeholder="Text shown on hover..."
+                                                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
+                                                                                />
                                                                             </div>
 
                                                                             {/* Rich Text Content */}

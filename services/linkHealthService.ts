@@ -147,6 +147,39 @@ export const linkHealthService = {
   },
 
   /**
+   * Probe an arbitrary URL (edit-form preview) — returns RTT + HTTP status
+   */
+  async checkUrl(url: string, signal?: AbortSignal): Promise<{
+    url: string;
+    scheme: 'http' | 'https' | string;
+    health: LinkHealth & { serverLatency?: number };
+  }> {
+    const response = await withTimeout(
+      fetch(`${API_BASE}/linkhealth/check-url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ url }),
+        signal
+      }),
+      10000,
+      'checkUrl'
+    );
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to check URL');
+    }
+
+    const data = await response.json();
+    return {
+      url: data.url,
+      scheme: data.scheme,
+      health: data.health
+    };
+  },
+
+  /**
    * Get health indicator color class
    */
   getHealthColor(status: string): string {
