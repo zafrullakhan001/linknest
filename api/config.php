@@ -112,7 +112,7 @@ define('SYSTEM_TOKEN', 'linknest_secret_token_123'); // Change this for producti
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 79);
+    define('LINKNEST_SCHEMA_VERSION', 80);
 }
 
 /**
@@ -1820,6 +1820,29 @@ function initDatabase() {
 
         try {
             $db->exec('CREATE INDEX IF NOT EXISTS idx_user_ssh_connections_user_id ON user_ssh_connections(user_id)');
+        } catch (PDOException $e) {
+            // ignore if index creation fails
+        }
+
+        // Saved VNC viewer websockify connections per user (no passwords)
+        $db->exec('CREATE TABLE IF NOT EXISTS user_vnc_connections (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            ws_url TEXT NOT NULL,
+            tags TEXT NOT NULL DEFAULT \'[]\',
+            notes TEXT,
+            color TEXT DEFAULT \'#0ea5e9\',
+            view_only INTEGER NOT NULL DEFAULT 0,
+            scale_viewport INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            last_used_at INTEGER,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )');
+
+        try {
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_user_vnc_connections_user_id ON user_vnc_connections(user_id)');
         } catch (PDOException $e) {
             // ignore if index creation fails
         }

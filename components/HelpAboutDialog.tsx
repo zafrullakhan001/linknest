@@ -624,7 +624,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <ol className="list-decimal list-inside space-y-1 ml-2 text-sm">
                       <li>Open a space and hover a link that has a URL</li>
                       <li>Click the phone icon in the hover action toolbar (next to copy / QR)</li>
-                      <li>Choose a device preset: Responsive, iPhone, Android, Tablet, or Watch</li>
+                      <li>Choose a device preset: Responsive, iPhone, Android, Tablet, Watch, or Enterprise (admins can add more under Admin → Device Presets)</li>
                       <li>Rotate the viewport, adjust zoom, or pick a quick preset chip</li>
                       <li>Use <strong>In-app</strong> for a framed mockup preview, or <strong>Device emulation</strong> to open a sized popup window</li>
                     </ol>

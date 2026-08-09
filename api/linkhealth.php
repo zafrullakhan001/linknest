@@ -148,6 +148,182 @@ function isNonHttpHealthUrl($url) {
 }
 
 /**
+ * Load admin-configured link check exception patterns (cached per request).
+ * @return string[]
+ */
+function getLinkCheckExceptions() {
+    static $cached = null;
+    if ($cached !== null) {
+        return $cached;
+    }
+    $raw = function_exists('getSetting') ? (string)getSetting('link_check_exceptions', '[]') : '[]';
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded)) {
+        $cached = [];
+        return $cached;
+    }
+    $out = [];
+    foreach ($decoded as $item) {
+        if (is_string($item)) {
+            $p = trim($item);
+            if ($p !== '') {
+                $out[] = $p;
+            }
+        }
+    }
+    $cached = $out;
+    return $cached;
+}
+
+/**
+ * Normalize a URL or exception pattern for comparison (mirrors settings normalizer lightly).
+ */
+function normalizeLinkHealthMatchTarget($raw) {
+    $value = trim((string)$raw);
+    if ($value === '') {
+        return '';
+    }
+    $hashPos = strpos($value, '#');
+    if ($hashPos !== false) {
+        $value = trim(substr($value, 0, $hashPos));
+    }
+    if ($value === '') {
+        return '';
+    }
+
+    if (!preg_match('#^[a-z][a-z0-9+.-]*:#i', $value) && strpos($value, '/') === false && strpos($value, ' ') === false) {
+        return rtrim(strtolower($value), '.');
+    }
+
+    $hadScheme = (bool)preg_match('#^[a-z][a-z0-9+.-]*:#i', $value);
+    $withScheme = $hadScheme ? $value : ('https://' . $value);
+    $parts = @parse_url($withScheme);
+    if (!is_array($parts) || empty($parts['host'])) {
+        return rtrim(strtolower($value), '/');
+    }
+
+    $host = strtolower((string)$parts['host']);
+    $path = isset($parts['path']) ? (string)$parts['path'] : '';
+    if ($path === '/') {
+        $path = '';
+    } elseif ($path !== '' && str_ends_with($path, '/')) {
+        $path = rtrim($path, '/');
+    }
+    $query = isset($parts['query']) && $parts['query'] !== '' ? ('?' . $parts['query']) : '';
+
+    if (!$hadScheme) {
+        return $host . $path . $query;
+    }
+    $scheme = strtolower((string)($parts['scheme'] ?? 'https'));
+    return $scheme . '://' . $host . $path . $query;
+}
+
+function linkHealthExtractHost($normalized) {
+    if ($normalized === '') {
+        return '';
+    }
+    $withScheme = preg_match('#^[a-z][a-z0-9+.-]*:#i', $normalized) ? $normalized : ('https://' . $normalized);
+    $parts = @parse_url($withScheme);
+    if (is_array($parts) && !empty($parts['host'])) {
+        return strtolower((string)$parts['host']);
+    }
+    $slash = strpos($normalized, '/');
+    return strtolower($slash === false ? $normalized : substr($normalized, 0, $slash));
+}
+
+function linkHealthExtractPathQuery($normalized) {
+    if ($normalized === '') {
+        return '';
+    }
+    $withScheme = preg_match('#^[a-z][a-z0-9+.-]*:#i', $normalized) ? $normalized : ('https://' . $normalized);
+    $parts = @parse_url($withScheme);
+    if (!is_array($parts)) {
+        $slash = strpos($normalized, '/');
+        return $slash === false ? '' : substr($normalized, $slash);
+    }
+    $path = isset($parts['path']) ? (string)$parts['path'] : '';
+    if ($path === '/') {
+        $path = '';
+    } elseif ($path !== '' && str_ends_with($path, '/')) {
+        $path = rtrim($path, '/');
+    }
+    $query = isset($parts['query']) && $parts['query'] !== '' ? ('?' . $parts['query']) : '';
+    return $path . $query;
+}
+
+/**
+ * Whether a URL matches a single exception pattern (host, prefix, or * wildcard).
+ */
+function urlMatchesLinkCheckException($url, $pattern) {
+    $u = normalizeLinkHealthMatchTarget($url);
+    $p = normalizeLinkHealthMatchTarget($pattern);
+    if ($u === '' || $p === '') {
+        return false;
+    }
+    if ($u === $p) {
+        return true;
+    }
+
+    if (strpos($p, '*') !== false) {
+        $regex = '#^' . str_replace('\\*', '.*', preg_quote($p, '#')) . '$#i';
+        if (@preg_match($regex, $u)) {
+            return true;
+        }
+    }
+
+    $urlHost = linkHealthExtractHost($u);
+    $patternHost = linkHealthExtractHost($p);
+    $patternPath = linkHealthExtractPathQuery($p);
+    $urlPath = linkHealthExtractPathQuery($u);
+
+    if ($patternHost !== '' && $patternPath === '') {
+        if (strpos($patternHost, '*') !== false) {
+            $regex = '#^' . str_replace('\\*', '.*', preg_quote($patternHost, '#')) . '$#i';
+            if ($urlHost !== '' && @preg_match($regex, $urlHost)) {
+                return true;
+            }
+        } elseif ($urlHost !== '' && $urlHost === $patternHost) {
+            return true;
+        }
+    }
+
+    if ($patternHost !== '' && $patternPath !== '' && $urlHost === $patternHost) {
+        if ($urlPath === $patternPath || str_starts_with($urlPath, $patternPath . '/')) {
+            return true;
+        }
+    }
+
+    if (strpos($p, '*') === false && (str_starts_with($u, $p . '/') || str_starts_with($u, $p . '?'))) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * True when the URL is on the admin link-check exception list.
+ */
+function isLinkCheckExceptionUrl($url) {
+    $exceptions = getLinkCheckExceptions();
+    if (empty($exceptions)) {
+        return false;
+    }
+    foreach ($exceptions as $pattern) {
+        if (urlMatchesLinkCheckException($url, $pattern)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Skip health probes for non-HTTP schemes and admin exception list.
+ */
+function shouldSkipLinkHealthCheck($url) {
+    return isNonHttpHealthUrl($url) || isLinkCheckExceptionUrl($url);
+}
+
+/**
  * Clear stored health for links that should not be checked (e.g. SSH).
  */
 function clearLinkHealth($linkId) {
@@ -167,7 +343,7 @@ function clearLinkHealth($linkId) {
  * @param int $timeoutSeconds Total cURL timeout (default 2s)
  */
 function checkUrlHealth($url, $timeoutSeconds = 2) {
-    if (isNonHttpHealthUrl($url)) {
+    if (shouldSkipLinkHealthCheck($url)) {
         return [
             'status' => null,
             'http_code' => 0,
@@ -559,8 +735,8 @@ function handleGetHealthStatus() {
                 continue; // Skip invalid rows
             }
 
-            // Never surface health for SSH / non-HTTP links
-            if (isNonHttpHealthUrl($link['url'] ?? '')) {
+            // Never surface health for SSH / non-HTTP / exception-listed links
+            if (shouldSkipLinkHealthCheck($link['url'] ?? '')) {
                 if (!empty($link['health_status'])) {
                     clearLinkHealth($link['id']);
                 }
@@ -719,6 +895,17 @@ function handleCheckUrl() {
             return;
         }
 
+        if (isLinkCheckExceptionUrl($url)) {
+            sendJSON([
+                'success' => true,
+                'url' => $url,
+                'scheme' => $scheme,
+                'skipped' => true,
+                'health' => null
+            ]);
+            return;
+        }
+
         // Slightly longer timeout for interactive edit-form previews
         $healthResult = checkUrlHealth($url, 5);
 
@@ -774,8 +961,8 @@ function handleCheckSingleLink() {
             return;
         }
 
-        // SSH / RDP / other non-HTTP links are not HTTP-probed
-        if (isNonHttpHealthUrl($link['url'])) {
+        // SSH / RDP / non-HTTP / exception-listed links are not HTTP-probed
+        if (shouldSkipLinkHealthCheck($link['url'])) {
             clearLinkHealth($link['id']);
             sendJSON([
                 'success' => true,
@@ -909,8 +1096,8 @@ function handleCheckTileLinks() {
             $lastChecked = isset($link['health_checked_at']) ? (int)$link['health_checked_at'] : null;
             $currentStatus = $link['health_status'] ?? null;
 
-            // Skip SSH / RDP / non-HTTP schemes — never mark them broken via HTTP probe
-            if (isNonHttpHealthUrl($link['url'])) {
+            // Skip SSH / RDP / non-HTTP / exception-listed URLs — never mark them broken via HTTP probe
+            if (shouldSkipLinkHealthCheck($link['url'])) {
                 clearLinkHealth($link['id']);
                 $results[$link['id']] = [
                     'skipped' => true,
@@ -1031,7 +1218,7 @@ function handleCheckAllLinks() {
     $urlToLinkIds = []; // Map URL to array of link IDs (handles duplicates)
     $skippedIds = [];
     foreach ($links as $link) {
-        if (isNonHttpHealthUrl($link['url'])) {
+        if (shouldSkipLinkHealthCheck($link['url'])) {
             clearLinkHealth($link['id']);
             $skippedIds[] = $link['id'];
             continue;

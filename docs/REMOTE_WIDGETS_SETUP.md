@@ -5,13 +5,15 @@ LinkNest includes two desktop floating widgets for remote access. Browsers canno
 | Widget | Client | How you connect |
 |--------|--------|-----------------|
 | **SSH / RDP** | xterm.js + iframe | **SSH Easy:** host / port / username (LinkNest starts ttyd). **SSH Advanced:** ttyd WebSocket URL. **RDP:** paste a Guacamole / web RDP **https://** page URL (embedded in a tab). |
-| **VNC Viewer** | noVNC | websockify (or similar) WebSocket URL |
+| **VNC Viewer** | noVNC | websockify (or similar) WebSocket URL — multi-tab sessions (up to 8), tile layout, same chrome as SSH |
 
 Open widgets from the navigation bar or **Ctrl+Shift+Y**. Assign `ssh-terminal` / `vnc-viewer` under Roles → Widgets if needed.
 
 Also covered in **Help & About → Help → Remote Widgets**.
 
 **Security:** Passwords are never saved. Prefer LAN / VPN; do not expose unauthenticated gateways publicly.
+
+**Saved connections:** When signed in, VNC hosts sync to your account (name, URL, tags, color, notes, view-only / scale options). Guests keep saves in the browser. Session passwords are never written to the DB or localStorage.
 
 **PAM / privileged access:** Easy mode accepts long usernames with `\`, `+`, and custom ports (not only 22). Values are passed to OpenSSH with `ssh -l <username> -p <port> <host>` so special characters are not broken by `user@host` parsing. Saved connections percent-encode the username inside `auto://…`.
 

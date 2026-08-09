@@ -1,7 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getDisplayUrl } from '../utils/urlDisplay';
-import { DeviceMockupFrame, isZebraVariant, type DeviceMockupVariant } from './DeviceMockupFrame';
+import { useSettings } from '../contexts/SettingsContext';
+import {
+  findPreset,
+  getEffectivePresets,
+  PRESET_GROUPS,
+  type DevicePreset,
+} from '../services/devicePresetsService';
+import { DeviceMockupFrame, isZebraVariant } from './DeviceMockupFrame';
 
 type PreviewMode = 'in-app' | 'emulation';
 
@@ -11,59 +18,6 @@ interface MobilePreviewDialogProps {
   url: string;
   label: string;
 }
-
-interface DevicePreset {
-  id: string;
-  label: string;
-  width: number;
-  height: number;
-  variant: DeviceMockupVariant;
-  group: 'Responsive' | 'iPhone' | 'Android' | 'Tablet' | 'Watch' | 'Enterprise';
-}
-
-/** Shared presets for In-app mockups + Device emulation windows. */
-const DEVICE_PRESETS: DevicePreset[] = [
-  { id: 'responsive', label: 'Responsive', width: 543, height: 1006, variant: 'android', group: 'Responsive' },
-  { id: 'iphone-se', label: 'iPhone SE', width: 375, height: 667, variant: 'iphone-legacy', group: 'iPhone' },
-  { id: 'iphone-14', label: 'iPhone 14', width: 390, height: 844, variant: 'iphone-notch', group: 'iPhone' },
-  { id: 'iphone-15-pro', label: 'iPhone 15 Pro', width: 393, height: 852, variant: 'iphone-island', group: 'iPhone' },
-  { id: 'iphone-16-pro', label: 'iPhone 16 Pro', width: 402, height: 874, variant: 'iphone-island', group: 'iPhone' },
-  { id: 'pixel-7', label: 'Pixel 7', width: 412, height: 915, variant: 'android', group: 'Android' },
-  { id: 'pixel-8', label: 'Pixel 8', width: 412, height: 915, variant: 'android', group: 'Android' },
-  { id: 'pixel-9', label: 'Pixel 9', width: 412, height: 924, variant: 'android', group: 'Android' },
-  { id: 'galaxy-s24', label: 'Galaxy S24', width: 360, height: 780, variant: 'android', group: 'Android' },
-  { id: 'ipad', label: 'iPad', width: 820, height: 1180, variant: 'ipad', group: 'Tablet' },
-  { id: 'android-tablet', label: 'Android Tablet', width: 800, height: 1280, variant: 'android-tablet', group: 'Tablet' },
-  { id: 'watch-square', label: 'Watch (Square)', width: 198, height: 242, variant: 'watch-square', group: 'Watch' },
-  { id: 'watch-round', label: 'Watch (Round)', width: 360, height: 360, variant: 'watch-round', group: 'Watch' },
-  // Zebra enterprise — portrait CSS viewports (width × height)
-  { id: 'zebra-tc21', label: 'Zebra TC21 · HD (720×1280)', width: 720, height: 1280, variant: 'zebra-handheld', group: 'Enterprise' },
-  { id: 'zebra-tc52', label: 'Zebra TC52 · HD (720×1280)', width: 720, height: 1280, variant: 'zebra-tc52ax', group: 'Enterprise' },
-  { id: 'zebra-tc52ax', label: 'Zebra TC52ax · HD (720×1280)', width: 720, height: 1280, variant: 'zebra-tc52ax', group: 'Enterprise' },
-  { id: 'zebra-tc57', label: 'Zebra TC57 · HD (720×1280)', width: 720, height: 1280, variant: 'zebra-tc52ax', group: 'Enterprise' },
-  { id: 'zebra-tc58', label: 'Zebra TC58 · Full HD (1080×2160)', width: 1080, height: 2160, variant: 'zebra-tc58', group: 'Enterprise' },
-  { id: 'zebra-tc73', label: 'Zebra TC73 · Full HD+ (1080×2160)', width: 1080, height: 2160, variant: 'zebra-tc73', group: 'Enterprise' },
-  { id: 'zebra-mc3300', label: 'Zebra MC3300 (480×800)', width: 480, height: 800, variant: 'zebra-mc3300', group: 'Enterprise' },
-  { id: 'zebra-mc3300-768', label: 'Zebra MC3300 (480×768)', width: 480, height: 768, variant: 'zebra-mc3300', group: 'Enterprise' },
-  { id: 'zebra-mc9300', label: 'Zebra MC9300 (480×800)', width: 480, height: 800, variant: 'zebra-mc9300', group: 'Enterprise' },
-  { id: 'zebra-et51', label: 'Zebra ET51 · WUXGA (1920×1200)', width: 1920, height: 1200, variant: 'zebra-et51', group: 'Enterprise' },
-  { id: 'zebra-et60', label: 'Zebra ET60 · WUXGA (1920×1200)', width: 1920, height: 1200, variant: 'zebra-et60', group: 'Enterprise' },
-];
-
-const QUICK_PRESETS = [
-  'iphone-14',
-  'iphone-15-pro',
-  'pixel-7',
-  'pixel-8',
-  'galaxy-s24',
-  'ipad',
-  'zebra-tc73',
-  'zebra-et60',
-  'watch-square',
-  'watch-round',
-] as const;
-
-const PRESET_GROUPS = ['Responsive', 'iPhone', 'Android', 'Tablet', 'Enterprise', 'Watch'] as const;
 
 const ZOOM_OPTIONS = [25, 50, 75, 100, 125, 150];
 const PREVIEW_WINDOW_NAME = 'linknest_device_preview';
@@ -291,16 +245,21 @@ async function checkUrlEmbeddable(rawUrl: string): Promise<{ embeddable: boolean
   }
 }
 
-function findPreset(id: string): DevicePreset {
-  return DEVICE_PRESETS.find((p) => p.id === id) || DEVICE_PRESETS[1];
-}
-
 export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
   isOpen,
   onClose,
   url,
   label,
 }) => {
+  const { settings } = useSettings();
+  const { presets: devicePresets, quickPresets } = useMemo(
+    () =>
+      getEffectivePresets({
+        device_presets: settings.device_presets,
+        device_quick_presets: settings.device_quick_presets,
+      }),
+    [settings.device_presets, settings.device_quick_presets]
+  );
   const dialogRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -342,6 +301,15 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
     direction: string;
   } | null>(null);
   const plainLabel = useMemo(() => stripHtmlTags(label || ''), [label]);
+
+  useEffect(() => {
+    if (!devicePresets.some((p) => p.id === presetId)) {
+      const fallback = findPreset(devicePresets, 'iphone-14');
+      setPresetId(fallback.id);
+      setViewWidth(fallback.width);
+      setViewHeight(fallback.height);
+    }
+  }, [devicePresets, presetId]);
 
   useEffect(() => {
     dialogPosRef.current = dialogPos;
@@ -501,7 +469,7 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
 
   const isEmulationMode = previewMode === 'emulation';
   const emulateShortcut = isMacPlatform() ? '⌘ + Shift + M' : 'Ctrl + Shift + M';
-  const activePreset = findPreset(presetId);
+  const activePreset = findPreset(devicePresets, presetId);
   const isWatch = activePreset.group === 'Watch';
   const size = useMemo(
     () => ({ width: viewWidth, height: viewHeight, label: activePreset.label }),
@@ -509,18 +477,23 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
   );
 
   const applyPreset = useCallback((id: string) => {
-    const preset = findPreset(id);
+    const preset = findPreset(devicePresets, id);
     setPresetId(preset.id);
     setViewWidth(preset.width);
     setViewHeight(preset.height);
-  }, []);
+  }, [devicePresets]);
 
   const markResponsiveIfNeeded = useCallback((nextW: number, nextH: number) => {
-    const match = DEVICE_PRESETS.find(
+    const match = devicePresets.find(
       (p) => p.id !== 'responsive' && p.width === nextW && p.height === nextH
     );
-    setPresetId(match ? match.id : 'responsive');
-  }, []);
+    if (match) {
+      setPresetId(match.id);
+      return;
+    }
+    const responsive = devicePresets.find((p) => p.id === 'responsive');
+    setPresetId(responsive?.id || findPreset(devicePresets, 'iphone-14').id);
+  }, [devicePresets]);
 
   const rotateViewport = useCallback(() => {
     const nextW = viewHeight;
@@ -1052,7 +1025,7 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
           >
             {PRESET_GROUPS.map((group) => (
               <optgroup key={group} label={group}>
-                {DEVICE_PRESETS.filter((p) => p.group === group).map((p) => (
+                {devicePresets.filter((p) => p.group === group).map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.label}
                   </option>
@@ -1120,8 +1093,9 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
           </button>
 
           <div className="hidden md:flex flex-wrap items-center gap-1">
-            {QUICK_PRESETS.map((id) => {
-              const p = findPreset(id);
+            {quickPresets.map((id) => {
+              const p = devicePresets.find((preset) => preset.id === id);
+              if (!p) return null;
               const active = presetId === id;
               return (
                 <button

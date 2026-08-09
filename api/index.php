@@ -191,6 +191,15 @@ if ($path === '/') {
     }
     require __DIR__ . '/ssh_connections.php';
     exit;
+} elseif (strpos($path, '/vnc-connections') === 0) {
+    $remainingPath = substr($path, 16); // Remove '/vnc-connections'
+    if (empty($remainingPath) || $remainingPath === '/') {
+        $_SERVER['PATH_INFO'] = '/';
+    } else {
+        $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
+    }
+    require __DIR__ . '/vnc_connections.php';
+    exit;
 } elseif (strpos($path, '/ssh-gateway') === 0) {
     $remainingPath = substr($path, 12); // Remove '/ssh-gateway'
     if (empty($remainingPath) || $remainingPath === '/') {

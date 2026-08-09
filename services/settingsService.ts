@@ -112,6 +112,12 @@ export interface AppSettings {
   guest_access_enabled?: string; // '0' or '1' - controls whether guests can view spaces
   show_database_path_in_footer?: string; // '0' or '1' - controls whether database path is shown in footer
   disabled_tabs?: string; // JSON array string of disabled app tabs (e.g. ["public","favorites"])
+  /** JSON array of device preview presets (DevicePreset[]) */
+  device_presets?: string;
+  /** JSON array of preset ids for the Device Preview quick-select bar */
+  device_quick_presets?: string;
+  /** JSON string array of URL/host patterns skipped by Check Links */
+  link_check_exceptions?: string;
 
   // LDAP Settings
   ldap_enabled?: string;
@@ -278,6 +284,9 @@ export const settingsService = {
       guest_access_enabled: data.settings?.guest_access_enabled || '1', // Default to enabled
       show_database_path_in_footer: data.settings?.show_database_path_in_footer || '1', // Default to enabled
       disabled_tabs: data.settings?.disabled_tabs || '[]',
+      device_presets: data.settings?.device_presets || '',
+      device_quick_presets: data.settings?.device_quick_presets || '',
+      link_check_exceptions: data.settings?.link_check_exceptions || '[]',
 
       // LDAP defaults
       ldap_enabled: data.settings?.ldap_enabled || '0',

@@ -30,6 +30,8 @@ import { getCustomWidgets, createWidget, updateWidget, deleteWidget, CustomWidge
 import { GranularPermissionsModal } from './GranularPermissionsModal';
 import { AddonsManagement } from './AddonsManagement';
 import { UpdatesPanel } from './UpdatesDialog';
+import { DevicePresetsAdmin } from './DevicePresetsAdmin';
+import { LinkCheckExceptionsAdmin } from './LinkCheckExceptionsAdmin';
 import {
   AccessManagerPanel,
   AccessSubTab,
@@ -88,6 +90,8 @@ type AdminNavTabId =
   | 'ldap'
   | 'saml'
   | 'tabVisibility'
+  | 'devicePresets'
+  | 'linkCheckExceptions'
   | 'access'
   | 'clone'
   | 'browser'
@@ -114,9 +118,11 @@ const ADMIN_NAV_SECTIONS: Array<{
     label: 'Configuration',
     items: [
       { id: 'settings', label: 'Settings', emoji: '⚙️' },
+      { id: 'devicePresets', label: 'Device Presets', emoji: '📱' },
       { id: 'database', label: 'Database', emoji: '🗄️' },
       { id: 'spaces', label: 'Spaces', emoji: '📦' },
       { id: 'tabVisibility', label: 'Enable/Disable Tabs', emoji: '📑' },
+      { id: 'linkCheckExceptions', label: 'Link Check Exceptions', emoji: '🚫' },
       { id: 'access', label: 'Access Manager', emoji: '🛡️' },
     ],
   },
@@ -265,11 +271,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const isMobile = useMobile();
   // Initialize activeTab from localStorage or default to 'pending'
   // Migrate legacy 'footer' tab → Settings › Branding
-  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenanceScripts' | 'maintenance' | 'widgets' | 'addons' | 'appUpdates' | 'loadTest'>(() => {
+  const [activeTab, setActiveTab] = useState<AdminNavTabId | 'footer'>(() => {
     const savedTab = localStorage.getItem('adminPanelActiveTab');
     if (savedTab === 'footer') return 'settings';
-    const validTabs: Array<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenanceScripts' | 'maintenance' | 'widgets' | 'addons' | 'appUpdates' | 'loadTest'> = ['pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'saml', 'footer', 'tabVisibility', 'access', 'clone', 'browser', 'broadcast', 'maintenanceScripts', 'maintenance', 'widgets', 'addons', 'appUpdates', 'loadTest'];
-    return (savedTab && validTabs.includes(savedTab as any)) ? savedTab as any : 'pending';
+    const validTabs: Array<AdminNavTabId | 'footer'> = [
+      'pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'saml', 'footer',
+      'tabVisibility', 'devicePresets', 'linkCheckExceptions', 'access', 'clone', 'browser', 'broadcast',
+      'maintenanceScripts', 'maintenance', 'widgets', 'addons', 'appUpdates', 'loadTest',
+    ];
+    return (savedTab && validTabs.includes(savedTab as AdminNavTabId | 'footer'))
+      ? (savedTab as AdminNavTabId | 'footer')
+      : 'pending';
   });
   // Initialize tab layout from localStorage or default to 'horizontal'
   const [tabLayout, setTabLayout] = useState<'horizontal' | 'vertical'>(() => {
@@ -386,6 +398,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     footer_text: '© 2025 Adventhealth - Designed and developed by AIT Architecture team',
     show_database_path_in_footer: '1',
     disabled_tabs: '[]',
+    device_presets: '',
+    device_quick_presets: '',
     maintenance_enabled: '0',
     maintenance_message: '',
     semi_pwa_enabled: '0',
@@ -1256,6 +1270,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       loadBroadcast();
     }
     if (activeTab === 'maintenance') {
+      loadSettings();
+    }
+    if (activeTab === 'devicePresets' || activeTab === 'tabVisibility' || activeTab === 'linkCheckExceptions') {
       loadSettings();
     }
     if (activeTab === 'widgets') {
@@ -8708,6 +8725,46 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     </div>
                   </div>
                 </div>
+              )}
+
+              {/* Device Presets Tab */}
+              {activeTab === 'devicePresets' && (
+                settingsLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
+                  </div>
+                ) : (
+                  <DevicePresetsAdmin
+                    settings={settings}
+                    onSettingsChange={(partial) => setSettings((prev) => ({ ...prev, ...partial }))}
+                    onRefresh={async () => {
+                      await refreshSettings();
+                      await loadSettings();
+                    }}
+                    isMobile={isMobile}
+                    setError={setError}
+                  />
+                )
+              )}
+
+              {/* Link Check Exceptions Tab */}
+              {activeTab === 'linkCheckExceptions' && (
+                settingsLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
+                  </div>
+                ) : (
+                  <LinkCheckExceptionsAdmin
+                    settings={settings}
+                    onSettingsChange={(partial) => setSettings((prev) => ({ ...prev, ...partial }))}
+                    onRefresh={async () => {
+                      await refreshSettings();
+                      await loadSettings();
+                    }}
+                    isMobile={isMobile}
+                    setError={setError}
+                  />
+                )
               )}
 
               {/* Enable/Disable Tabs Tab */}

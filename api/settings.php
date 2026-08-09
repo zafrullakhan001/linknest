@@ -119,6 +119,251 @@ function normalizeLogoUrl($url) {
     return $normalized;
 }
 
+/**
+ * Normalize / validate link-check exception patterns (URLs / hosts skipped by health checks).
+ * @return string JSON array string (never empty object — uses "[]")
+ */
+function normalizeLinkCheckExceptionsSetting($value) {
+    $maxItems = 2000;
+    $maxLen = 2048;
+
+    $decoded = null;
+    if (is_array($value)) {
+        $decoded = $value;
+    } elseif (is_string($value)) {
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return '[]';
+        }
+        if ($trimmed[0] === '[') {
+            $decoded = json_decode($trimmed, true);
+            if (!is_array($decoded)) {
+                sendJSON(['error' => 'link_check_exceptions must be a JSON array'], 400);
+            }
+        } else {
+            // Allow newline / comma separated bulk paste via API too
+            $decoded = preg_split('/[\n\r,;]+/', $trimmed) ?: [];
+        }
+    } else {
+        return '[]';
+    }
+
+    if (count($decoded) > $maxItems) {
+        sendJSON(['error' => "link_check_exceptions supports at most {$maxItems} entries"], 400);
+    }
+
+    $out = [];
+    $seen = [];
+    foreach ($decoded as $item) {
+        $raw = '';
+        if (is_string($item)) {
+            $raw = $item;
+        } elseif (is_array($item) && isset($item['pattern'])) {
+            $raw = (string)$item['pattern'];
+        } else {
+            continue;
+        }
+        $pattern = normalizeLinkCheckExceptionPattern($raw, $maxLen);
+        if ($pattern === null || isset($seen[$pattern])) {
+            continue;
+        }
+        $seen[$pattern] = true;
+        $out[] = $pattern;
+    }
+
+    return json_encode(array_values($out), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+}
+
+/**
+ * @return string|null
+ */
+function normalizeLinkCheckExceptionPattern($raw, $maxLen = 2048) {
+    $value = trim((string)$raw);
+    if ($value === '') {
+        return null;
+    }
+    if (
+        (str_starts_with($value, '"') && str_ends_with($value, '"')) ||
+        (str_starts_with($value, "'") && str_ends_with($value, "'"))
+    ) {
+        $value = trim(substr($value, 1, -1));
+    }
+    if ($value === '') {
+        return null;
+    }
+    $hashPos = strpos($value, '#');
+    if ($hashPos !== false) {
+        $value = trim(substr($value, 0, $hashPos));
+    }
+    if ($value === '') {
+        return null;
+    }
+    if (strlen($value) > $maxLen) {
+        $value = substr($value, 0, $maxLen);
+    }
+
+    // Host-only / wildcard host
+    if (!preg_match('#^[a-z][a-z0-9+.-]*:#i', $value) && strpos($value, '/') === false && strpos($value, ' ') === false) {
+        return rtrim(strtolower($value), '.');
+    }
+
+    $hadScheme = (bool)preg_match('#^[a-z][a-z0-9+.-]*:#i', $value);
+    $withScheme = $hadScheme ? $value : ('https://' . $value);
+    $parts = @parse_url($withScheme);
+    if (!is_array($parts) || empty($parts['host'])) {
+        return rtrim(strtolower($value), '/');
+    }
+
+    $host = strtolower((string)$parts['host']);
+    $path = isset($parts['path']) ? (string)$parts['path'] : '';
+    if ($path === '/') {
+        $path = '';
+    } elseif ($path !== '' && str_ends_with($path, '/')) {
+        $path = rtrim($path, '/');
+    }
+    $query = isset($parts['query']) && $parts['query'] !== '' ? ('?' . $parts['query']) : '';
+
+    if (!$hadScheme) {
+        return $host . $path . $query;
+    }
+    $scheme = strtolower((string)($parts['scheme'] ?? 'https'));
+    return $scheme . '://' . $host . $path . $query;
+}
+
+/**
+ * Normalize / validate device preview presets JSON for settings storage.
+ * Empty input stores "" so the app falls back to built-in defaults.
+ * @return string JSON array string or empty string
+ */
+function normalizeDevicePresetsSetting($value) {
+    $allowedGroups = ['Responsive', 'iPhone', 'Android', 'Tablet', 'Watch', 'Enterprise'];
+    $allowedVariants = [
+        'iphone-island', 'iphone-notch', 'iphone-legacy', 'android', 'android-tablet', 'ipad',
+        'watch-square', 'watch-round', 'zebra-handheld', 'zebra-tc73', 'zebra-tc58', 'zebra-tc52ax',
+        'zebra-et60', 'zebra-et51', 'zebra-mc3300', 'zebra-mc9300',
+    ];
+    $maxPresets = 200;
+    $minDim = 120;
+    $maxDim = 4096;
+
+    $decoded = null;
+    if (is_array($value)) {
+        $decoded = $value;
+    } elseif (is_string($value)) {
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return '';
+        }
+        $decoded = json_decode($trimmed, true);
+        if (!is_array($decoded)) {
+            sendJSON(['error' => 'device_presets must be a JSON array'], 400);
+        }
+    } else {
+        return '';
+    }
+
+    if (count($decoded) > $maxPresets) {
+        sendJSON(['error' => "device_presets supports at most {$maxPresets} devices"], 400);
+    }
+
+    $out = [];
+    $seen = [];
+    foreach ($decoded as $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+        $id = strtolower(trim((string)($item['id'] ?? '')));
+        $id = preg_replace('/[^a-z0-9]+/', '-', $id);
+        $id = trim($id, '-');
+        if ($id === '' || isset($seen[$id])) {
+            continue;
+        }
+        $label = trim((string)($item['label'] ?? ''));
+        if ($label === '') {
+            continue;
+        }
+        if (function_exists('mb_substr')) {
+            $label = mb_substr($label, 0, 120);
+        } else {
+            $label = substr($label, 0, 120);
+        }
+        $group = (string)($item['group'] ?? '');
+        $variant = (string)($item['variant'] ?? '');
+        if (!in_array($group, $allowedGroups, true) || !in_array($variant, $allowedVariants, true)) {
+            continue;
+        }
+        $width = (int)round((float)($item['width'] ?? 0));
+        $height = (int)round((float)($item['height'] ?? 0));
+        if ($width < $minDim) {
+            $width = $minDim;
+        }
+        if ($width > $maxDim) {
+            $width = $maxDim;
+        }
+        if ($height < $minDim) {
+            $height = $minDim;
+        }
+        if ($height > $maxDim) {
+            $height = $maxDim;
+        }
+        $seen[$id] = true;
+        $out[] = [
+            'id' => $id,
+            'label' => $label,
+            'width' => $width,
+            'height' => $height,
+            'variant' => $variant,
+            'group' => $group,
+        ];
+    }
+
+    if (count($decoded) > 0 && count($out) === 0) {
+        sendJSON(['error' => 'device_presets contained no valid devices'], 400);
+    }
+
+    return $out === [] ? '' : json_encode($out, JSON_UNESCAPED_UNICODE);
+}
+
+/**
+ * Normalize quick-select preset id list. Empty stores "".
+ * @return string JSON array string or empty string
+ */
+function normalizeDeviceQuickPresetsSetting($value) {
+    $decoded = null;
+    if (is_array($value)) {
+        $decoded = $value;
+    } elseif (is_string($value)) {
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return '';
+        }
+        $decoded = json_decode($trimmed, true);
+        if (!is_array($decoded)) {
+            sendJSON(['error' => 'device_quick_presets must be a JSON array'], 400);
+        }
+    } else {
+        return '';
+    }
+
+    $out = [];
+    $seen = [];
+    foreach ($decoded as $item) {
+        $id = strtolower(trim((string)$item));
+        $id = preg_replace('/[^a-z0-9]+/', '-', $id);
+        $id = trim($id, '-');
+        if ($id === '' || isset($seen[$id])) {
+            continue;
+        }
+        $seen[$id] = true;
+        $out[] = $id;
+        if (count($out) >= 40) {
+            break;
+        }
+    }
+
+    return $out === [] ? '' : json_encode($out, JSON_UNESCAPED_UNICODE);
+}
+
 function handleGetSettings() {
     // Settings are public (for display), but only admins can update
     if (session_status() === PHP_SESSION_NONE) {
@@ -483,6 +728,8 @@ function handleUpdateSettings() {
                 'guest_access_enabled',
                 'show_database_path_in_footer',
                 'disabled_tabs',
+                'device_presets', 'device_quick_presets',
+                'link_check_exceptions',
                 'maintenance_enabled', 'maintenance_message', 'semi_pwa_enabled', 'semi_pwa_include_paths', 'semi_pwa_exclude_paths',
                 'ldap_enabled', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
                 'ldap_login_domain', 'ldap_servers',
@@ -801,6 +1048,18 @@ function handleUpdateSettings() {
                 }
 
                 $value = json_encode(array_values(array_keys($normalized)));
+            }
+
+            if ($key === 'device_presets') {
+                $value = normalizeDevicePresetsSetting($value);
+            }
+
+            if ($key === 'device_quick_presets') {
+                $value = normalizeDeviceQuickPresetsSetting($value);
+            }
+
+            if ($key === 'link_check_exceptions') {
+                $value = normalizeLinkCheckExceptionsSetting($value);
             }
             
             // Store setting in database

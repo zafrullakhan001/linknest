@@ -1,19 +1,35 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isEscapeDialogOpen } from '../hooks/useEscapeToClose';
+import { useAuth } from '../contexts/AuthContext';
+import {
+  VNC_CONNECTION_COLORS,
+  normalizeVncColor,
+  vncConnectionService,
+  type SavedVncConnection,
+} from '../services/vncConnectionService';
 
 interface VncViewerWidgetProps {
   onClose?: () => void;
 }
 
-interface SavedVncConnection {
+type ConnState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
+
+interface VncSessionTab {
   id: string;
-  name: string;
+  title: string;
+  connectionId?: string;
   wsUrl: string;
-  tags: string[];
-  viewOnly?: boolean;
-  scaleViewport?: boolean;
-  createdAt: number;
-  lastUsedAt?: number;
+  status: ConnState;
+  statusMessage: string;
+  color: string;
+  viewOnly: boolean;
+  scaleViewport: boolean;
+}
+
+type RfbInstance = InstanceType<typeof import('@novnc/novnc').default>;
+
+interface SessionHandle {
+  rfb: RfbInstance | null;
 }
 
 const WS_STORAGE_KEY = 'linknest.vncViewer.wsUrl.v1';
@@ -24,6 +40,8 @@ const PANEL_WIDTH_KEY = 'linknest.vncViewer.panelWidth.v1';
 const PANEL_MIN_WIDTH = 160;
 const PANEL_MAX_WIDTH = 420;
 const PANEL_DEFAULT_WIDTH = 210;
+const MAX_VNC_TABS = 8;
+const IDLE_NOTICE = 'Click a saved connection to open a session tab — or fill Settings and Connect.';
 
 function loadPanelWidth(): number {
   try {
@@ -36,8 +54,6 @@ function loadPanelWidth(): number {
     return PANEL_DEFAULT_WIDTH;
   }
 }
-
-type ConnState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
 
 function normalizeWsUrl(raw: string): string {
   const trimmed = raw.trim();
@@ -60,7 +76,7 @@ function parseTags(raw: string): string[] {
   return out;
 }
 
-function loadSavedConnections(): SavedVncConnection[] {
+function loadLocalConnections(): SavedVncConnection[] {
   try {
     const raw = localStorage.getItem(CONNECTIONS_STORAGE_KEY);
     if (!raw) return [];
@@ -73,6 +89,8 @@ function loadSavedConnections(): SavedVncConnection[] {
         name: String(c.name),
         wsUrl: String(c.wsUrl),
         tags: Array.isArray(c.tags) ? c.tags.map(String) : [],
+        notes: c.notes != null && String(c.notes) ? String(c.notes) : undefined,
+        color: normalizeVncColor(c.color),
         viewOnly: Boolean(c.viewOnly),
         scaleViewport: c.scaleViewport !== false,
         createdAt: typeof c.createdAt === 'number' ? c.createdAt : Date.now(),
@@ -83,7 +101,7 @@ function loadSavedConnections(): SavedVncConnection[] {
   }
 }
 
-function persistConnections(list: SavedVncConnection[]) {
+function persistLocalConnections(list: SavedVncConnection[]) {
   try {
     localStorage.setItem(CONNECTIONS_STORAGE_KEY, JSON.stringify(list));
   } catch {
@@ -91,37 +109,94 @@ function persistConnections(list: SavedVncConnection[]) {
   }
 }
 
-function newId(): string {
+function newLocalId(): string {
   return `vnc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function newTabId(): string {
+  return `tab_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function tileGridStyle(count: number): React.CSSProperties {
+  if (count <= 1) return { gridTemplateColumns: '1fr', gridTemplateRows: '1fr' };
+  if (count === 2) return { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr' };
+  if (count === 3) return { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr' };
+  if (count === 4) return { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr' };
+  const cols = count <= 6 ? 3 : 4;
+  const rows = Math.ceil(count / cols);
+  return {
+    gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+    gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
+  };
+}
+
 export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => {
-  const widgetRef = useRef<HTMLDivElement>(null);
-  const screenRef = useRef<HTMLDivElement>(null);
+  const { isAuthenticated } = useAuth();
+  const useServer = Boolean(isAuthenticated);
+
+  const widgetRootRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const rfbRef = useRef<InstanceType<typeof import('@novnc/novnc').default> | null>(null);
+  const sessionHandlesRef = useRef<Map<string, SessionHandle>>(new Map());
+  const tabHostsRef = useRef<Map<string, HTMLDivElement>>(new Map());
+  const activeTabIdRef = useRef<string | null>(null);
+  const tabsRef = useRef<VncSessionTab[]>([]);
+  const closingAllRef = useRef(false);
+  const intentionalDisconnectRef = useRef<Set<string>>(new Set());
 
   const [wsUrl, setWsUrl] = useState(() => localStorage.getItem(WS_STORAGE_KEY) || 'ws://localhost:6080/websockify');
   const [password, setPassword] = useState('');
   const [viewOnly, setViewOnly] = useState(false);
   const [scaleViewport, setScaleViewport] = useState(true);
-  const [status, setStatus] = useState<ConnState>('idle');
-  const [statusMessage, setStatusMessage] = useState('Pick a saved connection or enter a websockify URL.');
-  const [showSettings, setShowSettings] = useState(true);
+  const [notice, setNotice] = useState(IDLE_NOTICE);
+  const [showSettings, setShowSettings] = useState(false);
   const [panelOpen, setPanelOpen] = useState(() => localStorage.getItem(PANEL_OPEN_KEY) !== 'false');
   const [panelWidth, setPanelWidth] = useState<number>(() => loadPanelWidth());
   const [isResizingPanel, setIsResizingPanel] = useState(false);
   const panelWidthRef = useRef(panelWidth);
   const panelResizeCleanupRef = useRef<(() => void) | null>(null);
 
-  const [connections, setConnections] = useState<SavedVncConnection[]>(() => loadSavedConnections());
+  const [storageReady, setStorageReady] = useState(!isAuthenticated);
+  const [connections, setConnections] = useState<SavedVncConnection[]>(() =>
+    isAuthenticated ? [] : loadLocalConnections()
+  );
   const [activeConnectionId, setActiveConnectionId] = useState<string | null>(null);
   const [filterQuery, setFilterQuery] = useState('');
   const [filterTag, setFilterTag] = useState<string | null>(null);
 
   const [draftName, setDraftName] = useState('');
   const [draftTags, setDraftTags] = useState('');
+  const [draftNotes, setDraftNotes] = useState('');
+  const [draftColor, setDraftColor] = useState<string>(VNC_CONNECTION_COLORS[0]);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const [tabs, setTabs] = useState<VncSessionTab[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [tileLayout, setTileLayout] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const activeTab = useMemo(() => tabs.find((t) => t.id === activeTabId) ?? null, [tabs, activeTabId]);
+  const status: ConnState = activeTab?.status ?? 'idle';
+  const statusMessage = activeTab?.statusMessage ?? notice;
+
+  useEffect(() => {
+    activeTabIdRef.current = activeTabId;
+  }, [activeTabId]);
+
+  useEffect(() => {
+    tabsRef.current = tabs;
+  }, [tabs]);
+
+  useEffect(() => {
+    if (tabs.length === 0) {
+      setNotice(IDLE_NOTICE);
+      setActiveTabId(null);
+    }
+  }, [tabs.length]);
+
+  const updateTab = useCallback((tabId: string, patch: Partial<VncSessionTab>) => {
+    setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, ...patch } : t)));
+  }, []);
 
   const allTags = useMemo(() => {
     const set = new Set<string>();
@@ -138,144 +213,47 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
         return (
           c.name.toLowerCase().includes(q) ||
           c.wsUrl.toLowerCase().includes(q) ||
-          c.tags.some((t) => t.includes(q))
+          c.tags.some((t) => t.includes(q)) ||
+          (c.notes || '').toLowerCase().includes(q)
         );
       })
       .sort((a, b) => (b.lastUsedAt || b.createdAt) - (a.lastUsedAt || a.createdAt));
   }, [connections, filterQuery, filterTag]);
 
-  const updateConnections = useCallback((next: SavedVncConnection[]) => {
-    setConnections(next);
-    persistConnections(next);
-  }, []);
-
-  const disconnect = useCallback(() => {
-    const rfb = rfbRef.current;
-    if (rfb) {
-      try {
-        rfb.disconnect();
-      } catch {
-        // ignore
+  const liveConnectionIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const t of tabs) {
+      if (t.connectionId && (t.status === 'connected' || t.status === 'connecting')) {
+        ids.add(t.connectionId);
       }
-      rfbRef.current = null;
     }
-    if (screenRef.current) {
-      screenRef.current.innerHTML = '';
-    }
-    setStatus((s) => (s === 'connecting' || s === 'connected' ? 'disconnected' : s));
-  }, []);
+    return ids;
+  }, [tabs]);
 
-  const connectTo = useCallback(async (opts?: {
-    wsUrl?: string;
-    password?: string;
-    viewOnly?: boolean;
-    scaleViewport?: boolean;
-    connectionId?: string | null;
-    connectionName?: string;
-  }) => {
-    const url = normalizeWsUrl(opts?.wsUrl ?? wsUrl);
-    if (!url) {
-      setStatus('error');
-      setStatusMessage('WebSocket URL is required.');
-      return;
-    }
-
-    const nextViewOnly = opts?.viewOnly ?? viewOnly;
-    const nextScale = opts?.scaleViewport ?? scaleViewport;
-    const nextPassword = opts?.password ?? password;
-    const nextConnectionId = opts?.connectionId !== undefined ? opts.connectionId : activeConnectionId;
-    const nextName = opts?.connectionName;
-
-    disconnect();
-    setStatus('connecting');
-    setStatusMessage(`Connecting to ${nextName || url}…`);
-    setShowSettings(false);
-
-    try {
-      localStorage.setItem(WS_STORAGE_KEY, url);
-    } catch {
-      // ignore
-    }
-
-    try {
-      const RFB = (await import('@novnc/novnc')).default;
-      const target = screenRef.current;
-      if (!target) {
-        setStatus('error');
-        setStatusMessage('Viewer surface is not ready.');
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!useServer) {
+        setConnections(loadLocalConnections());
+        setStorageReady(true);
         return;
       }
-      target.innerHTML = '';
-
-      const rfb = new RFB(target, url, {
-        credentials: nextPassword ? { password: nextPassword } : undefined,
-        shared: true,
-      });
-      rfb.scaleViewport = nextScale;
-      rfb.resizeSession = false;
-      rfb.clipViewport = true;
-      rfb.viewOnly = nextViewOnly;
-
-      rfb.addEventListener('connect', () => {
-        setStatus('connected');
-        setStatusMessage(nextName ? `Connected · ${nextName}` : 'Connected');
-        if (nextConnectionId) {
-          setConnections((prev) => {
-            const next = prev.map((c) =>
-              c.id === nextConnectionId ? { ...c, lastUsedAt: Date.now() } : c
-            );
-            persistConnections(next);
-            return next;
-          });
+      setStorageReady(false);
+      try {
+        const list = await vncConnectionService.list();
+        if (!cancelled) setConnections(list);
+      } catch (err) {
+        if (!cancelled) {
+          setNotice(err instanceof Error ? err.message : 'Failed to load saved connections');
         }
-      });
-      rfb.addEventListener('disconnect', (e: CustomEvent) => {
-        const clean = Boolean((e as any)?.detail?.clean);
-        rfbRef.current = null;
-        setStatus(clean ? 'disconnected' : 'error');
-        setStatusMessage(clean ? 'Disconnected' : 'Connection lost or failed');
-        setShowSettings(true);
-      });
-      rfb.addEventListener('credentialsrequired', () => {
-        setStatus('error');
-        setStatusMessage('VNC server requires a password. Enter it and reconnect.');
-        setShowSettings(true);
-        try {
-          rfb.disconnect();
-        } catch {
-          // ignore
-        }
-        rfbRef.current = null;
-      });
-      rfb.addEventListener('securityfailure', (e: CustomEvent) => {
-        setStatus('error');
-        setStatusMessage((e as any)?.detail?.reason || 'Security handshake failed');
-        setShowSettings(true);
-      });
-
-      rfbRef.current = rfb;
-    } catch (err) {
-      console.error('noVNC connect failed', err);
-      setStatus('error');
-      setStatusMessage(err instanceof Error ? err.message : 'Failed to load or connect noVNC');
-      setShowSettings(true);
-    }
-  }, [wsUrl, password, scaleViewport, viewOnly, disconnect, activeConnectionId]);
-
-  const connect = useCallback(() => connectTo(), [connectTo]);
-
-  useEffect(() => {
+      } finally {
+        if (!cancelled) setStorageReady(true);
+      }
+    })();
     return () => {
-      disconnect();
+      cancelled = true;
     };
-  }, [disconnect]);
-
-  useEffect(() => {
-    const rfb = rfbRef.current;
-    if (!rfb) return;
-    rfb.viewOnly = viewOnly;
-    rfb.scaleViewport = scaleViewport;
-  }, [viewOnly, scaleViewport]);
+  }, [useServer]);
 
   useEffect(() => {
     try {
@@ -299,6 +277,15 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
       panelResizeCleanupRef.current?.();
       panelResizeCleanupRef.current = null;
     };
+  }, []);
+
+  useEffect(() => {
+    const onFs = () => {
+      const el = widgetRootRef.current;
+      setIsFullscreen(Boolean(el && document.fullscreenElement === el));
+    };
+    document.addEventListener('fullscreenchange', onFs);
+    return () => document.removeEventListener('fullscreenchange', onFs);
   }, []);
 
   const startPanelResize = (e: React.PointerEvent) => {
@@ -337,85 +324,443 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
     };
   };
 
+  const markLastUsed = useCallback(
+    async (connectionId: string | null | undefined) => {
+      if (!connectionId) return;
+      const now = Date.now();
+      setConnections((prev) => {
+        const next = prev.map((c) => (c.id === connectionId ? { ...c, lastUsedAt: now } : c));
+        if (!useServer) persistLocalConnections(next);
+        return next;
+      });
+      if (useServer) {
+        try {
+          await vncConnectionService.update(connectionId, { lastUsedAt: now });
+        } catch {
+          // non-fatal
+        }
+      }
+    },
+    [useServer]
+  );
+
+  const disposeSessionHandle = useCallback((tabId: string, opts?: { keepHost?: boolean }) => {
+    intentionalDisconnectRef.current.add(tabId);
+    const handle = sessionHandlesRef.current.get(tabId);
+    if (!handle) return;
+    if (handle.rfb) {
+      try {
+        handle.rfb.disconnect();
+      } catch {
+        // ignore
+      }
+      handle.rfb = null;
+    }
+    const host = tabHostsRef.current.get(tabId);
+    if (host && !opts?.keepHost) {
+      host.innerHTML = '';
+    }
+    sessionHandlesRef.current.set(tabId, handle);
+  }, []);
+
+  const closeTab = useCallback(
+    async (tabId: string) => {
+      disposeSessionHandle(tabId);
+      sessionHandlesRef.current.delete(tabId);
+      tabHostsRef.current.delete(tabId);
+
+      setTabs((prev) => {
+        const next = prev.filter((t) => t.id !== tabId);
+        setActiveTabId((current) => {
+          if (current !== tabId) return current;
+          return next.length ? next[next.length - 1].id : null;
+        });
+        return next;
+      });
+    },
+    [disposeSessionHandle]
+  );
+
+  const closeAllTabs = useCallback(async () => {
+    closingAllRef.current = true;
+    const ids = Array.from(sessionHandlesRef.current.keys());
+    for (const id of ids) {
+      disposeSessionHandle(id);
+      sessionHandlesRef.current.delete(id);
+      tabHostsRef.current.delete(id);
+    }
+    setTabs([]);
+    setActiveTabId(null);
+    setNotice(IDLE_NOTICE);
+    closingAllRef.current = false;
+  }, [disposeSessionHandle]);
+
+  const requestClose = useCallback(async () => {
+    const live = tabsRef.current.filter((t) => t.status === 'connected' || t.status === 'connecting');
+    if (live.length > 0) {
+      if (!window.confirm('Kill all VNC sessions and close?')) return;
+      await closeAllTabs();
+    }
+    onClose?.();
+  }, [closeAllTabs, onClose]);
+
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' && e.key !== 'Esc') return;
       if (e.ctrlKey || e.shiftKey || e.metaKey || e.altKey) return;
       if (isEscapeDialogOpen()) return;
+      if (document.fullscreenElement) return;
       e.preventDefault();
       e.stopPropagation();
-      onClose?.();
+      void requestClose();
     };
     window.addEventListener('keydown', handleEscape, true);
     return () => window.removeEventListener('keydown', handleEscape, true);
-  }, [onClose]);
+  }, [requestClose]);
 
-  const applyConnection = useCallback((c: SavedVncConnection, autoConnect: boolean) => {
-    setActiveConnectionId(c.id);
-    setWsUrl(c.wsUrl);
-    setViewOnly(Boolean(c.viewOnly));
-    setScaleViewport(c.scaleViewport !== false);
-    setDraftName(c.name);
-    setDraftTags(c.tags.join(', '));
-    setEditingId(c.id);
-    setPassword('');
-    setShowSettings(!autoConnect);
-    setStatusMessage(autoConnect ? `Connecting to “${c.name}”…` : `Loaded “${c.name}”`);
-    if (autoConnect) {
-      void connectTo({
-        wsUrl: c.wsUrl,
-        viewOnly: Boolean(c.viewOnly),
-        scaleViewport: c.scaleViewport !== false,
-        password: '',
-        connectionId: c.id,
-        connectionName: c.name,
-      });
+  useEffect(() => {
+    return () => {
+      closingAllRef.current = true;
+      for (const id of Array.from(sessionHandlesRef.current.keys())) {
+        disposeSessionHandle(id);
+      }
+      sessionHandlesRef.current.clear();
+      tabHostsRef.current.clear();
+    };
+  }, [disposeSessionHandle]);
+
+  const toggleFullscreen = useCallback(async () => {
+    const el = widgetRootRef.current;
+    if (!el) return;
+    try {
+      if (document.fullscreenElement === el) {
+        await document.exitFullscreen();
+      } else if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        setPanelOpen(true);
+        await el.requestFullscreen();
+      } else {
+        setPanelOpen(true);
+        await el.requestFullscreen();
+      }
+    } catch {
+      setNotice('Fullscreen is not available in this browser/context');
     }
-  }, [connectTo]);
+  }, []);
 
-  const saveCurrentConnection = () => {
+  const connectTo = useCallback(
+    async (opts?: {
+      wsUrl?: string;
+      password?: string;
+      viewOnly?: boolean;
+      scaleViewport?: boolean;
+      connectionId?: string | null;
+      connectionName?: string;
+      color?: string;
+    }) => {
+      const url = normalizeWsUrl(opts?.wsUrl ?? wsUrl);
+      if (!url) {
+        setNotice('WebSocket URL is required.');
+        setShowSettings(true);
+        return;
+      }
+
+      if (sessionHandlesRef.current.size >= MAX_VNC_TABS) {
+        setNotice(`Maximum of ${MAX_VNC_TABS} open sessions. Close a tab first.`);
+        return;
+      }
+
+      const nextViewOnly = opts?.viewOnly ?? viewOnly;
+      const nextScale = opts?.scaleViewport ?? scaleViewport;
+      const nextPassword = opts?.password ?? password;
+      const nextConnectionId = opts?.connectionId !== undefined ? opts.connectionId : activeConnectionId;
+      const nextName =
+        opts?.connectionName ||
+        draftName.trim() ||
+        url.replace(/^wss?:\/\//i, '').split('/')[0] ||
+        'VNC';
+      const nextColor = normalizeVncColor(
+        opts?.color ||
+          (nextConnectionId ? connections.find((c) => c.id === nextConnectionId)?.color : undefined) ||
+          draftColor
+      );
+
+      const tabId = newTabId();
+      const tab: VncSessionTab = {
+        id: tabId,
+        title: nextName,
+        connectionId: nextConnectionId || undefined,
+        wsUrl: url,
+        status: 'connecting',
+        statusMessage: `Connecting to ${nextName}…`,
+        color: nextColor,
+        viewOnly: nextViewOnly,
+        scaleViewport: nextScale,
+      };
+
+      sessionHandlesRef.current.set(tabId, { rfb: null });
+      setTabs((prev) => [...prev, tab]);
+      setActiveTabId(tabId);
+      setShowSettings(false);
+      setNotice(`Connecting to “${nextName}”…`);
+
+      try {
+        localStorage.setItem(WS_STORAGE_KEY, url);
+      } catch {
+        // ignore
+      }
+
+      // Wait a tick for the host div to mount
+      await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+
+      const target = tabHostsRef.current.get(tabId);
+      if (!target) {
+        updateTab(tabId, {
+          status: 'error',
+          statusMessage: 'Viewer surface is not ready.',
+        });
+        setShowSettings(true);
+        setNotice('Viewer surface is not ready.');
+        return;
+      }
+
+      try {
+        const RFB = (await import('@novnc/novnc')).default;
+        target.innerHTML = '';
+
+        const rfb = new RFB(target, url, {
+          credentials: nextPassword ? { password: nextPassword } : undefined,
+          shared: true,
+        });
+        rfb.scaleViewport = nextScale;
+        rfb.resizeSession = false;
+        rfb.clipViewport = true;
+        rfb.viewOnly = nextViewOnly;
+
+        rfb.addEventListener('connect', () => {
+          updateTab(tabId, {
+            status: 'connected',
+            statusMessage: `Connected · ${nextName}`,
+          });
+          setShowSettings(false);
+          void markLastUsed(nextConnectionId);
+        });
+
+        rfb.addEventListener('disconnect', (e: CustomEvent) => {
+          if (closingAllRef.current) return;
+          const intentional = intentionalDisconnectRef.current.has(tabId);
+          intentionalDisconnectRef.current.delete(tabId);
+          const handle = sessionHandlesRef.current.get(tabId);
+          if (handle) handle.rfb = null;
+          if (intentional) return;
+          const clean = Boolean((e as any)?.detail?.clean);
+          // Natural close / clean disconnect → close tab (like SSH exit)
+          if (clean) {
+            void closeTab(tabId);
+            return;
+          }
+          updateTab(tabId, {
+            status: 'error',
+            statusMessage: 'Connection lost or failed',
+          });
+          setShowSettings(true);
+          setNotice('Connection lost or failed');
+        });
+
+        rfb.addEventListener('credentialsrequired', () => {
+          intentionalDisconnectRef.current.add(tabId);
+          updateTab(tabId, {
+            status: 'error',
+            statusMessage: 'VNC server requires a password. Enter it and Connect again.',
+          });
+          setShowSettings(true);
+          setNotice('VNC server requires a password. Enter it and reconnect.');
+          setActiveTabId(tabId);
+          setActiveConnectionId(nextConnectionId || null);
+          setWsUrl(url);
+          try {
+            rfb.disconnect();
+          } catch {
+            // ignore
+          }
+          const handle = sessionHandlesRef.current.get(tabId);
+          if (handle) handle.rfb = null;
+        });
+
+        rfb.addEventListener('securityfailure', (e: CustomEvent) => {
+          updateTab(tabId, {
+            status: 'error',
+            statusMessage: (e as any)?.detail?.reason || 'Security handshake failed',
+          });
+          setShowSettings(true);
+          setNotice((e as any)?.detail?.reason || 'Security handshake failed');
+        });
+
+        const handle = sessionHandlesRef.current.get(tabId);
+        if (handle) handle.rfb = rfb;
+      } catch (err) {
+        console.error('noVNC connect failed', err);
+        updateTab(tabId, {
+          status: 'error',
+          statusMessage: err instanceof Error ? err.message : 'Failed to load or connect noVNC',
+        });
+        setShowSettings(true);
+        setNotice(err instanceof Error ? err.message : 'Failed to load or connect noVNC');
+      }
+    },
+    [
+      wsUrl,
+      password,
+      scaleViewport,
+      viewOnly,
+      activeConnectionId,
+      draftName,
+      draftColor,
+      connections,
+      updateTab,
+      markLastUsed,
+      closeTab,
+    ]
+  );
+
+  const connect = useCallback(() => void connectTo(), [connectTo]);
+
+  const registerTabHost = useCallback((tabId: string, el: HTMLDivElement | null) => {
+    if (el) tabHostsRef.current.set(tabId, el);
+    else tabHostsRef.current.delete(tabId);
+  }, []);
+
+  const selectTab = useCallback((tabId: string) => {
+    setActiveTabId(tabId);
+    const tab = tabsRef.current.find((t) => t.id === tabId);
+    if (tab?.connectionId) setActiveConnectionId(tab.connectionId);
+  }, []);
+
+  const disconnectConnectionSessions = useCallback(
+    async (connectionId: string) => {
+      const toClose = tabsRef.current.filter((t) => t.connectionId === connectionId).map((t) => t.id);
+      for (const id of toClose) {
+        await closeTab(id);
+      }
+    },
+    [closeTab]
+  );
+
+  const applyConnection = useCallback(
+    (c: SavedVncConnection, autoConnect: boolean) => {
+      setActiveConnectionId(c.id);
+      setWsUrl(c.wsUrl);
+      setViewOnly(Boolean(c.viewOnly));
+      setScaleViewport(c.scaleViewport !== false);
+      setDraftName(c.name);
+      setDraftTags(c.tags.join(', '));
+      setDraftNotes(c.notes || '');
+      setDraftColor(normalizeVncColor(c.color));
+      setEditingId(c.id);
+      setPassword('');
+      setShowSettings(!autoConnect);
+      setNotice(autoConnect ? `Connecting to “${c.name}”…` : `Loaded “${c.name}”`);
+      if (autoConnect) {
+        void connectTo({
+          wsUrl: c.wsUrl,
+          viewOnly: Boolean(c.viewOnly),
+          scaleViewport: c.scaleViewport !== false,
+          password: '',
+          connectionId: c.id,
+          connectionName: c.name,
+          color: c.color,
+        });
+      }
+    },
+    [connectTo]
+  );
+
+  const saveCurrentConnection = async () => {
     const url = normalizeWsUrl(wsUrl);
     if (!url) {
-      setStatus('error');
-      setStatusMessage('Enter a WebSocket URL before saving.');
+      setNotice('Enter a WebSocket URL before saving.');
+      setShowSettings(true);
       return;
     }
     const name = draftName.trim() || url.replace(/^wss?:\/\//i, '').split('/')[0] || 'VNC host';
     const tags = parseTags(draftTags);
+    const notes = draftNotes.trim();
+    const color = normalizeVncColor(draftColor);
 
-    if (editingId) {
-      updateConnections(
-        connections.map((c) =>
+    setSaving(true);
+    try {
+      if (useServer) {
+        if (editingId) {
+          const updated = await vncConnectionService.update(editingId, {
+            name,
+            wsUrl: url,
+            tags,
+            notes,
+            color,
+            viewOnly,
+            scaleViewport,
+          });
+          setConnections((prev) => prev.map((c) => (c.id === editingId ? updated : c)));
+          setActiveConnectionId(editingId);
+          setNotice(`Updated “${name}”`);
+        } else {
+          const created = await vncConnectionService.create({
+            name,
+            wsUrl: url,
+            tags,
+            notes,
+            color,
+            viewOnly,
+            scaleViewport,
+          });
+          setConnections((prev) => [created, ...prev]);
+          setActiveConnectionId(created.id);
+          setEditingId(created.id);
+          setNotice(`Saved “${name}”`);
+        }
+      } else if (editingId) {
+        const next = connections.map((c) =>
           c.id === editingId
             ? {
                 ...c,
                 name,
                 wsUrl: url,
                 tags,
+                notes: notes || undefined,
+                color,
                 viewOnly,
                 scaleViewport,
               }
             : c
-        )
-      );
-      setActiveConnectionId(editingId);
-      setStatusMessage(`Updated “${name}”`);
-      return;
+        );
+        setConnections(next);
+        persistLocalConnections(next);
+        setActiveConnectionId(editingId);
+        setNotice(`Updated “${name}”`);
+      } else {
+        const created: SavedVncConnection = {
+          id: newLocalId(),
+          name,
+          wsUrl: url,
+          tags,
+          notes: notes || undefined,
+          color,
+          viewOnly,
+          scaleViewport,
+          createdAt: Date.now(),
+        };
+        const next = [created, ...connections];
+        setConnections(next);
+        persistLocalConnections(next);
+        setActiveConnectionId(created.id);
+        setEditingId(created.id);
+        setNotice(`Saved “${name}”`);
+      }
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to save connection');
+    } finally {
+      setSaving(false);
     }
-
-    const created: SavedVncConnection = {
-      id: newId(),
-      name,
-      wsUrl: url,
-      tags,
-      viewOnly,
-      scaleViewport,
-      createdAt: Date.now(),
-    };
-    updateConnections([created, ...connections]);
-    setActiveConnectionId(created.id);
-    setEditingId(created.id);
-    setStatusMessage(`Saved “${name}”`);
   };
 
   const startNewDraft = () => {
@@ -423,24 +768,33 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
     setActiveConnectionId(null);
     setDraftName('');
     setDraftTags('');
+    setDraftNotes('');
+    setDraftColor(VNC_CONNECTION_COLORS[Math.floor(Math.random() * VNC_CONNECTION_COLORS.length)]);
+    setPassword('');
+    setViewOnly(false);
+    setScaleViewport(true);
     setShowSettings(true);
-    setStatusMessage('New connection — fill URL, name, tags, then Save.');
+    setNotice('New connection — fill URL, name, tags, then Save.');
   };
 
   const exportConnectionsJson = () => {
     const payload = {
       version: 1,
       exportedAt: new Date().toISOString(),
-      connections: connections.map(({ id, name, wsUrl, tags, viewOnly, scaleViewport, createdAt, lastUsedAt }) => ({
-        id,
-        name,
-        wsUrl,
-        tags,
-        viewOnly: Boolean(viewOnly),
-        scaleViewport: scaleViewport !== false,
-        createdAt,
-        lastUsedAt,
-      })),
+      connections: connections.map(
+        ({ id, name, wsUrl: u, tags, notes, color, viewOnly: vo, scaleViewport: sv, createdAt, lastUsedAt }) => ({
+          id,
+          name,
+          wsUrl: u,
+          tags,
+          notes: notes || undefined,
+          color: normalizeVncColor(color),
+          viewOnly: Boolean(vo),
+          scaleViewport: sv !== false,
+          createdAt,
+          lastUsedAt,
+        })
+      ),
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -451,7 +805,7 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    setStatusMessage(`Exported ${connections.length} connection${connections.length === 1 ? '' : 's'}`);
+    setNotice(`Exported ${connections.length} connection${connections.length === 1 ? '' : 's'}`);
   };
 
   const importConnectionsJson = async (file: File) => {
@@ -464,8 +818,7 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
           ? parsed.connections
           : null;
       if (!list) {
-        setStatus('error');
-        setStatusMessage('Invalid JSON: expected { connections: [...] } or an array.');
+        setNotice('Invalid JSON: expected { connections: [...] } or an array.');
         return;
       }
 
@@ -475,12 +828,15 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
         const url = normalizeWsUrl(String(item.wsUrl));
         if (!url) continue;
         incoming.push({
-          id: typeof item.id === 'string' && item.id ? item.id : newId(),
-          name: typeof item.name === 'string' && item.name.trim()
-            ? item.name.trim()
-            : url.replace(/^wss?:\/\//i, '').split('/')[0] || 'VNC host',
+          id: typeof item.id === 'string' && item.id ? item.id : newLocalId(),
+          name:
+            typeof item.name === 'string' && item.name.trim()
+              ? item.name.trim()
+              : url.replace(/^wss?:\/\//i, '').split('/')[0] || 'VNC host',
           wsUrl: url,
           tags: Array.isArray(item.tags) ? parseTags(item.tags.join(',')) : parseTags(String(item.tags || '')),
+          notes: item.notes != null && String(item.notes).trim() ? String(item.notes).trim() : undefined,
+          color: normalizeVncColor(item.color),
           viewOnly: Boolean(item.viewOnly),
           scaleViewport: item.scaleViewport !== false,
           createdAt: typeof item.createdAt === 'number' ? item.createdAt : Date.now(),
@@ -489,8 +845,14 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
       }
 
       if (incoming.length === 0) {
-        setStatus('error');
-        setStatusMessage('No valid connections found in that file.');
+        setNotice('No valid connections found in that file.');
+        return;
+      }
+
+      if (useServer) {
+        const merged = await vncConnectionService.bulkUpsert(incoming);
+        setConnections(merged);
+        setNotice(`Imported / merged ${incoming.length} connection(s)`);
         return;
       }
 
@@ -505,6 +867,8 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
             ...existing,
             name: item.name,
             tags: item.tags,
+            notes: item.notes,
+            color: item.color,
             viewOnly: item.viewOnly,
             scaleViewport: item.scaleViewport,
             lastUsedAt: item.lastUsedAt || existing.lastUsedAt,
@@ -515,27 +879,63 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
           added += 1;
         }
       }
-      updateConnections(Array.from(byUrl.values()));
-      setStatusMessage(`Imported ${added} new, updated ${updated}`);
+      const next = Array.from(byUrl.values());
+      setConnections(next);
+      persistLocalConnections(next);
+      setNotice(`Imported ${added} new, updated ${updated}`);
     } catch (err) {
-      setStatus('error');
-      setStatusMessage(err instanceof Error ? err.message : 'Failed to import JSON');
+      setNotice(err instanceof Error ? err.message : 'Failed to import JSON');
     }
   };
 
-  const deleteConnection = (id: string) => {
+  const deleteConnection = async (id: string) => {
     const target = connections.find((c) => c.id === id);
     if (!target) return;
-    if (!window.confirm(`Delete saved connection “${target.name}”?`)) return;
-    updateConnections(connections.filter((c) => c.id !== id));
-    if (editingId === id) {
-      setEditingId(null);
-      setDraftName('');
-      setDraftTags('');
+
+    const liveTabs = tabsRef.current.filter((t) => t.connectionId === id);
+    if (liveTabs.some((t) => t.status === 'connected' || t.status === 'connecting')) {
+      if (!window.confirm(`“${target.name}” has open sessions. Disconnect and delete?`)) return;
+      await disconnectConnectionSessions(id);
+    } else if (liveTabs.length > 0) {
+      if (!window.confirm(`Delete “${target.name}” and close its tabs?`)) return;
+      await disconnectConnectionSessions(id);
+    } else if (!window.confirm(`Delete saved connection “${target.name}”?`)) {
+      return;
     }
-    if (activeConnectionId === id) setActiveConnectionId(null);
-    setStatusMessage(`Deleted “${target.name}”`);
+
+    try {
+      if (useServer) {
+        await vncConnectionService.remove(id);
+      }
+      setConnections((prev) => {
+        const next = prev.filter((c) => c.id !== id);
+        if (!useServer) persistLocalConnections(next);
+        return next;
+      });
+      if (editingId === id) {
+        setEditingId(null);
+        setDraftName('');
+        setDraftTags('');
+        setDraftNotes('');
+        setDraftColor(VNC_CONNECTION_COLORS[0]);
+      }
+      if (activeConnectionId === id) setActiveConnectionId(null);
+      setNotice(`Deleted “${target.name}”`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to delete connection');
+    }
   };
+
+  const sendCad = useCallback(() => {
+    const id = activeTabIdRef.current;
+    if (!id) return;
+    const handle = sessionHandlesRef.current.get(id);
+    try {
+      handle?.rfb?.sendCtrlAltDel();
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const statusColor =
     status === 'connected'
@@ -548,8 +948,12 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
 
   return (
     <div
-      ref={widgetRef}
-      className="w-full h-full flex flex-col bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden"
+      ref={widgetRootRef}
+      className={`w-full h-full flex flex-col bg-white dark:bg-slate-800 overflow-hidden ${
+        isFullscreen
+          ? 'rounded-none border-0 shadow-none'
+          : 'rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700'
+      }`}
     >
       <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2 shrink-0 bg-slate-50 dark:bg-slate-900/40">
         <div className="min-w-0 flex items-center gap-2">
@@ -574,57 +978,58 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          {status === 'connected' && (
-            <button
-              type="button"
-              onClick={() => rfbRef.current?.sendCtrlAltDel()}
-              className="px-2 py-1 text-[11px] font-medium rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
-              title="Send Ctrl+Alt+Del"
-            >
-              CAD
-            </button>
-          )}
           <button
             type="button"
-            onClick={() => setShowSettings((v) => !v)}
-            className="px-2 py-1 text-[11px] font-medium rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
-            title="Connection settings"
+            onClick={() => setTileLayout((v) => !v)}
+            disabled={tabs.length === 0}
+            className={`p-1.5 rounded-md border transition-colors disabled:opacity-40 ${
+              tileLayout
+                ? 'border-sky-500 bg-sky-600 text-white hover:bg-sky-500'
+                : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+            }`}
+            title={tileLayout ? 'Single tab view' : 'Tile sessions side by side'}
+            aria-label={tileLayout ? 'Exit tiled view' : 'Tile sessions'}
+            aria-pressed={tileLayout}
           >
-            Settings
-          </button>
-          {status === 'connected' || status === 'connecting' ? (
-            <button
-              type="button"
-              onClick={() => {
-                disconnect();
-                setStatus('disconnected');
-                setStatusMessage('Disconnected');
-                setShowSettings(true);
-              }}
-              className="px-2 py-1 text-[11px] font-medium rounded-md bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-100 hover:bg-slate-300 dark:hover:bg-slate-600"
-            >
-              Disconnect
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => void connect()}
-              className="px-2 py-1 text-[11px] font-medium rounded-md bg-brand-600 hover:bg-brand-700 text-white"
-            >
-              Connect
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-            title="Close"
-            aria-label="Close"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-4 h-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 018.25 20.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25a2.25 2.25 0 01-2.25-2.25v-2.25z" />
             </svg>
           </button>
+          <button
+            type="button"
+            onClick={() => void toggleFullscreen()}
+            className={`p-1.5 rounded-md border transition-colors ${
+              isFullscreen
+                ? 'border-orange-400 bg-orange-500 text-white hover:bg-orange-600'
+                : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+            }`}
+            title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen'}
+            aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            aria-pressed={isFullscreen}
+          >
+            {isFullscreen ? (
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" />
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+              </svg>
+            )}
+          </button>
+          {!isFullscreen && (
+            <button
+              type="button"
+              onClick={() => void requestClose()}
+              className="p-1 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+              title="Close"
+              aria-label="Close"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
 
@@ -651,55 +1056,64 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
             <div className="p-2 border-b border-slate-200 dark:border-slate-700 space-y-2 shrink-0">
               <div className="flex items-center justify-between gap-1">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  Saved
+                  Saved{useServer ? ' · cloud' : ' · local'}
                 </p>
-                <div className="flex items-center gap-0.5">
-                  <button
-                    type="button"
-                    onClick={exportConnectionsJson}
-                    disabled={connections.length === 0}
-                    className="p-1 rounded-md border border-slate-200 dark:border-slate-600 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white dark:hover:bg-slate-800 disabled:opacity-40"
-                    title="Export connections as JSON"
-                    aria-label="Export connections as JSON"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="p-1 rounded-md border border-slate-200 dark:border-slate-600 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white dark:hover:bg-slate-800"
-                    title="Import connections from JSON"
-                    aria-label="Import connections from JSON"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={startNewDraft}
-                    className="p-1 rounded-md bg-brand-600 hover:bg-brand-700 text-white"
-                    title="New connection"
-                    aria-label="New connection"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                    </svg>
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="application/json,.json"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      e.target.value = '';
-                      if (file) void importConnectionsJson(file);
-                    }}
-                  />
-                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-1">
+                <button
+                  type="button"
+                  onClick={startNewDraft}
+                  className="p-1.5 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800"
+                  title="New connection draft"
+                  aria-label="New connection draft"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={exportConnectionsJson}
+                  disabled={connections.length === 0}
+                  className="p-1.5 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 disabled:opacity-40"
+                  title="Export connections as JSON"
+                  aria-label="Export connections as JSON"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-1.5 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800"
+                  title="Import connections from JSON"
+                  aria-label="Import connections from JSON"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                  </svg>
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = '';
+                    if (file) void importConnectionsJson(file);
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => void connect()}
+                  disabled={tabs.length >= MAX_VNC_TABS}
+                  className="px-2 py-1 text-[10px] font-semibold rounded-md bg-brand-600 hover:bg-brand-700 text-white disabled:opacity-50"
+                  title={tabs.length >= MAX_VNC_TABS ? `Maximum ${MAX_VNC_TABS} sessions` : 'Open a new session tab'}
+                >
+                  {status === 'connected' || status === 'connecting' ? 'New tab' : 'Connect'}
+                </button>
               </div>
               <input
                 type="search"
@@ -740,29 +1154,41 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
             </div>
 
             <div className="flex-1 min-h-0 overflow-y-auto p-1.5 space-y-1">
-              {filteredConnections.length === 0 ? (
+              {!storageReady ? (
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 px-1.5 py-3 text-center">Loading…</p>
+              ) : filteredConnections.length === 0 ? (
                 <p className="text-[11px] text-slate-400 dark:text-slate-500 px-1.5 py-3 text-center leading-relaxed">
-                  No saved connections yet. Fill Settings, set a name/tags, then Save.
+                  No saved connections yet. Use <strong>+</strong>, open Settings, then <strong>Save</strong>.
                 </p>
               ) : (
                 filteredConnections.map((c) => {
-                  const active = activeConnectionId === c.id;
+                  const selected = activeConnectionId === c.id;
+                  const live = liveConnectionIds.has(c.id);
+                  const color = normalizeVncColor(c.color);
                   return (
                     <div
                       key={c.id}
-                      className={`rounded-lg border p-2 transition-colors ${
-                        active
-                          ? 'border-brand-400 bg-brand-50 dark:bg-brand-900/20 dark:border-brand-600'
+                      className={`rounded-lg border overflow-hidden transition-colors ${
+                        selected
+                          ? 'border-brand-400 bg-brand-50/80 dark:bg-brand-900/20 dark:border-brand-600'
                           : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-500'
                       }`}
+                      style={{ borderLeftWidth: 3, borderLeftColor: color }}
                     >
                       <button
                         type="button"
-                        className="w-full text-left"
-                        onClick={() => applyConnection(c, true)}
-                        title={`Connect to ${c.name}`}
+                        className="w-full text-left px-2 pt-2 pb-1"
+                        onClick={() => applyConnection(c, false)}
+                        title={`Edit ${c.name}`}
                       >
-                        <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate">{c.name}</p>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate flex-1">{c.name}</p>
+                          {live && (
+                            <span className="shrink-0 px-1 py-0 text-[9px] font-semibold rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                              live
+                            </span>
+                          )}
+                        </div>
                         <p className="text-[10px] font-mono text-slate-400 truncate mt-0.5">{c.wsUrl}</p>
                         {c.tags.length > 0 && (
                           <div className="flex flex-wrap gap-0.5 mt-1">
@@ -777,18 +1203,33 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
                           </div>
                         )}
                       </button>
-                      <div className="flex items-center gap-1 mt-1.5">
+                      <div className="flex items-center gap-1 px-2 pb-2">
                         <button
                           type="button"
                           onClick={() => applyConnection(c, true)}
-                          className="flex-1 inline-flex items-center justify-center h-7 rounded-md bg-brand-600 hover:bg-brand-700 text-white"
-                          title="Connect"
+                          disabled={tabs.length >= MAX_VNC_TABS}
+                          className="inline-flex items-center justify-center h-7 w-7 rounded-md bg-brand-600 hover:bg-brand-700 text-white disabled:opacity-50"
+                          title={tabs.length >= MAX_VNC_TABS ? `Maximum ${MAX_VNC_TABS} sessions` : 'Connect'}
                           aria-label={`Connect to ${c.name}`}
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
                             <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
                           </svg>
                         </button>
+                        {live && (
+                          <button
+                            type="button"
+                            onClick={() => void disconnectConnectionSessions(c.id)}
+                            className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                            title="Disconnect sessions"
+                            aria-label={`Disconnect ${c.name}`}
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 6h12v12H6z" />
+                            </svg>
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => applyConnection(c, false)}
@@ -803,13 +1244,33 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
                         </button>
                         <button
                           type="button"
-                          onClick={() => deleteConnection(c.id)}
+                          onClick={() => void deleteConnection(c.id)}
                           className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-slate-200 dark:border-slate-600 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
                           title="Delete"
                           aria-label={`Delete ${c.name}`}
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            applyConnection(c, false);
+                            setShowSettings(true);
+                          }}
+                          className={`ml-auto inline-flex items-center justify-center h-7 w-7 rounded-md border ${
+                            showSettings && activeConnectionId === c.id
+                              ? 'border-orange-400 bg-orange-500 text-white'
+                              : 'border-slate-200 dark:border-slate-600 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20'
+                          }`}
+                          title="Settings"
+                          aria-label={`Settings for ${c.name}`}
+                          aria-pressed={showSettings && activeConnectionId === c.id}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                           </svg>
                         </button>
                       </div>
@@ -823,7 +1284,33 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
 
         <div className="flex-1 min-w-0 min-h-0 flex flex-col">
           {showSettings && (
-            <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-700 space-y-2 shrink-0 bg-white dark:bg-slate-800">
+            <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-700 space-y-2 shrink-0 bg-white dark:bg-slate-800 overflow-y-auto max-h-[50%]">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">Connection settings</p>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => void saveCurrentConnection()}
+                    disabled={saving}
+                    className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-slate-800 hover:bg-slate-900 dark:bg-slate-200 dark:hover:bg-white text-white dark:text-slate-900 disabled:opacity-50"
+                    title={editingId ? 'Update saved connection' : 'Save connection'}
+                  >
+                    {saving ? 'Saving…' : editingId ? 'Update' : 'Save'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowSettings(false)}
+                    className="inline-flex items-center justify-center h-7 w-7 rounded-md bg-red-600 hover:bg-red-700 text-white"
+                    title="Close settings"
+                    aria-label="Close settings"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor" className="w-3.5 h-3.5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
                   Name
@@ -846,6 +1333,43 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
                   />
                 </label>
               </div>
+
+              <div>
+                <p className="text-[11px] font-medium text-slate-600 dark:text-slate-300 mb-1.5">Color</p>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {VNC_CONNECTION_COLORS.map((hex) => {
+                    const selected = normalizeVncColor(draftColor) === hex;
+                    return (
+                      <button
+                        key={hex}
+                        type="button"
+                        onClick={() => setDraftColor(hex)}
+                        className={`h-6 w-6 rounded-full border-2 transition-transform ${
+                          selected
+                            ? 'border-slate-900 dark:border-white scale-110 ring-2 ring-offset-1 ring-slate-400 dark:ring-offset-slate-800'
+                            : 'border-white dark:border-slate-700 shadow-sm hover:scale-105'
+                        }`}
+                        style={{ backgroundColor: hex }}
+                        title={hex}
+                        aria-label={`Color ${hex}`}
+                        aria-pressed={selected}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+
+              <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                Notes
+                <textarea
+                  value={draftNotes}
+                  onChange={(e) => setDraftNotes(e.target.value)}
+                  rows={2}
+                  placeholder="Optional notes (synced when signed in)"
+                  className="mt-1 w-full px-2 py-1.5 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 resize-y min-h-[2.5rem]"
+                />
+              </label>
+
               <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
                 WebSocket URL (websockify)
                 <input
@@ -853,7 +1377,7 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
                   value={wsUrl}
                   onChange={(e) => setWsUrl(e.target.value)}
                   placeholder="ws://host:6080/websockify"
-                  className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                  className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono"
                   spellCheck={false}
                   autoComplete="off"
                 />
@@ -877,40 +1401,153 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
                   <input type="checkbox" checked={scaleViewport} onChange={(e) => setScaleViewport(e.target.checked)} />
                   Scale to fit
                 </label>
-                <button
-                  type="button"
-                  onClick={saveCurrentConnection}
-                  className="ml-auto px-2.5 py-1 text-[11px] font-medium rounded-md bg-slate-800 hover:bg-slate-900 dark:bg-slate-200 dark:hover:bg-white text-white dark:text-slate-900"
-                >
-                  {editingId ? 'Update saved' : 'Save connection'}
-                </button>
               </div>
               <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed">
-                Saved connections store name, URL, tags, and display options only — passwords are never written to localStorage.
+                Passwords are never stored.{' '}
+                {useServer
+                  ? 'Saved connections sync to your account (name, URL, tags, color, notes, display options).'
+                  : 'Guest saves stay in this browser only.'}
               </p>
             </div>
           )}
 
-          <div className="relative flex-1 min-h-0 bg-slate-950 overflow-hidden">
-            <div ref={screenRef} className="absolute inset-0 w-full h-full [&>canvas]:max-w-full" />
-            {status !== 'connected' && status !== 'connecting' && (
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="text-center px-4">
-                  <div className="mx-auto mb-2 w-10 h-10 rounded-xl bg-slate-800 text-slate-300 flex items-center justify-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
-                      <rect x="2" y="3" width="20" height="14" rx="2" />
-                      <path d="M8 21h8" />
-                      <path d="M12 17v4" />
-                    </svg>
-                  </div>
-                  <p className="text-xs text-slate-400">
-                    {connections.length
-                      ? 'Click a saved connection to connect quickly'
-                      : 'noVNC ready — save hosts in the left panel for one-click access'}
-                  </p>
+          <div className="relative flex-1 min-h-0 bg-slate-950 overflow-hidden flex flex-col">
+            {tabs.length > 0 && (
+              <div className="shrink-0 flex items-center gap-0.5 px-1 py-1 border-b border-slate-800 bg-slate-900 overflow-x-auto">
+                {tabs.map((tab) => {
+                  const active = tab.id === activeTabId;
+                  const connColor = normalizeVncColor(tab.color);
+                  return (
+                    <div
+                      key={tab.id}
+                      className={`group flex items-center gap-1 max-w-[11rem] shrink-0 rounded-md border overflow-hidden ${
+                        active
+                          ? 'bg-slate-800 text-slate-100'
+                          : 'bg-transparent text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+                      }`}
+                      style={{
+                        borderColor: active ? connColor : `${connColor}66`,
+                        boxShadow: active ? `inset 3px 0 0 ${connColor}` : undefined,
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => selectTab(tab.id)}
+                        className="flex items-center gap-1.5 min-w-0 text-left pl-1.5 py-0.5"
+                        title={tab.statusMessage || tab.title}
+                      >
+                        <span
+                          className={`w-2.5 h-2.5 rounded-full shrink-0 ring-1 ring-black/25 ${
+                            tab.status === 'connecting' ? 'animate-pulse' : ''
+                          }`}
+                          style={{
+                            backgroundColor: connColor,
+                            outline:
+                              tab.status === 'connected'
+                                ? '1px solid rgba(52, 211, 153, 0.9)'
+                                : tab.status === 'error'
+                                  ? '1px solid rgba(248, 113, 113, 0.9)'
+                                  : undefined,
+                            outlineOffset: 1,
+                          }}
+                          aria-hidden
+                        />
+                        <span className="text-[11px] truncate font-medium">{tab.title}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void closeTab(tab.id);
+                        }}
+                        className="p-0.5 rounded opacity-60 hover:opacity-100 hover:bg-slate-700 text-slate-300 mr-0.5"
+                        title="Close tab"
+                        aria-label={`Close ${tab.title}`}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                          <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                        </svg>
+                      </button>
+                    </div>
+                  );
+                })}
+                <div className="ml-auto flex items-center gap-1 shrink-0 pr-0.5">
+                  {activeTab?.status === 'connected' && (
+                    <button
+                      type="button"
+                      onClick={sendCad}
+                      className="px-1.5 h-6 text-[10px] font-semibold rounded border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+                      title="Send Ctrl+Alt+Del"
+                    >
+                      CAD
+                    </button>
+                  )}
+                  <span className="px-1.5 text-[10px] text-slate-500">
+                    {tabs.length}/{MAX_VNC_TABS}
+                  </span>
                 </div>
               </div>
             )}
+
+            <div
+              className={`relative flex-1 min-h-0 ${
+                tileLayout && tabs.length > 0 ? 'grid gap-1 p-1' : ''
+              }`}
+              style={tileLayout && tabs.length > 0 ? tileGridStyle(tabs.length) : undefined}
+            >
+              {tabs.map((tab) => {
+                const isActive = tab.id === activeTabId;
+                const connColor = normalizeVncColor(tab.color);
+                return (
+                  <div
+                    key={tab.id}
+                    className={
+                      tileLayout
+                        ? 'relative min-h-0 min-w-0 rounded-md border overflow-hidden bg-black'
+                        : `absolute inset-0 ${isActive ? 'z-10' : 'z-0 pointer-events-none opacity-0'}`
+                    }
+                    style={tileLayout ? { borderColor: `${connColor}99` } : undefined}
+                    aria-hidden={!tileLayout && !isActive}
+                    onMouseDown={() => {
+                      if (tileLayout) setActiveTabId(tab.id);
+                    }}
+                  >
+                    {tileLayout && (
+                      <div
+                        className="absolute top-0 left-0 right-0 z-20 flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium text-white/90 bg-black/50 backdrop-blur-sm"
+                        style={{ borderBottom: `2px solid ${connColor}` }}
+                      >
+                        <span className="truncate">{tab.title}</span>
+                        <span className="ml-auto opacity-70">{tab.status}</span>
+                      </div>
+                    )}
+                    <div
+                      ref={(el) => registerTabHost(tab.id, el)}
+                      className={`absolute inset-0 w-full h-full [&>canvas]:max-w-full ${tileLayout ? 'pt-5' : ''}`}
+                    />
+                  </div>
+                );
+              })}
+
+              {tabs.length === 0 && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="text-center px-4">
+                    <div className="mx-auto mb-2 w-10 h-10 rounded-xl bg-slate-800 text-slate-300 flex items-center justify-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
+                        <rect x="2" y="3" width="20" height="14" rx="2" />
+                        <path d="M8 21h8" />
+                        <path d="M12 17v4" />
+                      </svg>
+                    </div>
+                    <p className="text-xs text-slate-400">
+                      {connections.length
+                        ? 'Click a saved connection to open a session tab (up to 8)'
+                        : 'Connect or pick a saved host — each session opens in its own tab'}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
