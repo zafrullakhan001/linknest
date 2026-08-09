@@ -112,7 +112,7 @@ define('SYSTEM_TOKEN', 'linknest_secret_token_123'); // Change this for producti
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 77);
+    define('LINKNEST_SCHEMA_VERSION', 78);
 }
 
 /**
@@ -399,6 +399,28 @@ function ensureTilesHeaderImageColumns(PDO $db): void {
     }
 }
 
+/** Ensure SSH connection color column exists (identification strip in SSH Terminal). */
+function ensureSshConnectionColorColumn(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $exists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='user_ssh_connections'")->fetchColumn();
+        if (!$exists) {
+            return;
+        }
+        $columns = $db->query('PRAGMA table_info(user_ssh_connections)')->fetchAll(PDO::FETCH_ASSOC);
+        $names = array_column($columns, 'name');
+        if (!in_array('color', $names, true)) {
+            $db->exec("ALTER TABLE user_ssh_connections ADD COLUMN color TEXT DEFAULT '#0ea5e9'");
+        }
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureSshConnectionColorColumn warning: ' . $e->getMessage());
+    }
+}
+
 // Initialize database
 function initDatabase() {
     $initLock = null;
@@ -420,6 +442,7 @@ function initDatabase() {
         }
         if ($currentVersion >= (int)LINKNEST_SCHEMA_VERSION) {
             ensureTilesHeaderImageColumns($db);
+            ensureSshConnectionColorColumn($db);
             ensurePublicGuestRole($db);
             return $db;
         }
@@ -435,6 +458,7 @@ function initDatabase() {
         }
         if ($currentVersion >= (int)LINKNEST_SCHEMA_VERSION) {
             ensureTilesHeaderImageColumns($db);
+            ensureSshConnectionColorColumn($db);
             ensurePublicGuestRole($db);
             releaseDatabaseInitLock($initLock);
             $initLock = null;
@@ -1771,11 +1795,18 @@ function initDatabase() {
             ws_url TEXT NOT NULL,
             tags TEXT NOT NULL DEFAULT \'[]\',
             notes TEXT,
+            color TEXT DEFAULT \'#0ea5e9\',
             created_at INTEGER NOT NULL,
             last_used_at INTEGER,
             updated_at INTEGER NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )');
+
+        try {
+            $db->exec("ALTER TABLE user_ssh_connections ADD COLUMN color TEXT DEFAULT '#0ea5e9'");
+        } catch (PDOException $e) {
+            // Column already exists
+        }
 
         try {
             $db->exec('CREATE INDEX IF NOT EXISTS idx_user_ssh_connections_user_id ON user_ssh_connections(user_id)');

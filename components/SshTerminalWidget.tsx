@@ -8,6 +8,8 @@ import { isEscapeDialogOpen } from '../hooks/useEscapeToClose';
 import {
   sshConnectionService,
   type SavedSshConnection,
+  SSH_CONNECTION_COLORS,
+  normalizeSshColor,
 } from '../services/sshConnectionService';
 import {
   buildAutoTargetUrl,
@@ -94,6 +96,7 @@ function loadLocalConnections(): SavedSshConnection[] {
         wsUrl: String(c.wsUrl),
         tags: Array.isArray(c.tags) ? c.tags.map(String) : [],
         notes: typeof c.notes === 'string' && c.notes ? c.notes : undefined,
+        color: normalizeSshColor(c.color),
         createdAt: typeof c.createdAt === 'number' ? c.createdAt : Date.now(),
         lastUsedAt: typeof c.lastUsedAt === 'number' ? c.lastUsedAt : undefined,
       }));
@@ -150,6 +153,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
   const tabHostsRef = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const activeTabIdRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const widgetRootRef = useRef<HTMLDivElement>(null);
   const panelWidthRef = useRef(loadPanelWidth());
   const panelResizeCleanupRef = useRef<(() => void) | null>(null);
   const encoderRef = useRef(new TextEncoder());
@@ -171,6 +175,9 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
   const [tabs, setTabs] = useState<SessionTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [tileLayout, setTileLayout] = useState(false);
+  const [broadcastCmd, setBroadcastCmd] = useState('');
   const [panelOpen, setPanelOpen] = useState(() => localStorage.getItem(PANEL_OPEN_KEY) !== 'false');
   const [panelWidth, setPanelWidth] = useState(() => loadPanelWidth());
   const [isResizingPanel, setIsResizingPanel] = useState(false);
@@ -187,6 +194,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
   const [draftName, setDraftName] = useState('');
   const [draftTags, setDraftTags] = useState('');
   const [draftNotes, setDraftNotes] = useState('');
+  const [draftColor, setDraftColor] = useState<string>(SSH_CONNECTION_COLORS[0]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [notice, setNotice] = useState(
     'Enter host, port, and username — LinkNest starts ttyd for you.'
@@ -374,12 +382,24 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
     [disposeSessionHandle, stopGatewayFor]
   );
 
-  const disconnectActive = useCallback(() => {
-    if (!activeTabId) return;
-    void closeTab(activeTabId);
-    setNotice('Disconnected');
-    setShowSettings(true);
-  }, [activeTabId, closeTab]);
+  const toggleFullscreen = useCallback(async () => {
+    const el = widgetRootRef.current;
+    if (!el) return;
+    try {
+      if (document.fullscreenElement === el) {
+        await document.exitFullscreen();
+      } else if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        setPanelOpen(true);
+        await el.requestFullscreen();
+      } else {
+        setPanelOpen(true);
+        await el.requestFullscreen();
+      }
+    } catch {
+      setNotice('Fullscreen is not available in this browser/context');
+    }
+  }, []);
 
   const markLastUsed = useCallback(
     async (connectionId: string | null | undefined) => {
@@ -411,6 +431,67 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
     const msg = CMD.RESIZE_TERMINAL + JSON.stringify({ columns: term.cols, rows: term.rows });
     ws.send(encoderRef.current.encode(msg));
   }, []);
+
+  const fitSessions = useCallback(
+    (ids?: string[] | null) => {
+      const list = ids && ids.length ? ids : Array.from(sessionHandlesRef.current.keys());
+      for (const id of list) {
+        try {
+          sessionHandlesRef.current.get(id)?.fit?.fit();
+          sendResize(id);
+        } catch {
+          // ignore
+        }
+      }
+    },
+    [sendResize]
+  );
+
+  const broadcastToAll = useCallback(
+    (raw: string) => {
+      const text = raw.replace(/\r\n/g, '\n');
+      if (!text) return;
+      const payload = text.endsWith('\n') ? text : `${text}\n`;
+      const frame = encoderRef.current.encode(CMD.INPUT + payload);
+      let sent = 0;
+      for (const tab of tabs) {
+        if (tab.status !== 'connected') continue;
+        const ws = sessionHandlesRef.current.get(tab.id)?.ws;
+        if (!ws || ws.readyState !== WebSocket.OPEN) continue;
+        try {
+          ws.send(frame);
+          sent += 1;
+        } catch {
+          // ignore
+        }
+      }
+      setNotice(
+        sent > 0
+          ? `Sent to ${sent} terminal${sent === 1 ? '' : 's'}`
+          : 'No connected terminals to receive the command'
+      );
+    },
+    [tabs]
+  );
+
+  const tileCols = useMemo(() => {
+    const n = tabs.length;
+    if (n <= 1) return 1;
+    if (n === 2) return 2;
+    if (n <= 4) return 2;
+    if (n <= 6) return 3;
+    return 4;
+  }, [tabs.length]);
+
+  useEffect(() => {
+    const onFs = () => {
+      const active = document.fullscreenElement === widgetRootRef.current;
+      setIsFullscreen(active);
+      window.setTimeout(() => fitSessions(), 80);
+    };
+    document.addEventListener('fullscreenchange', onFs);
+    return () => document.removeEventListener('fullscreenchange', onFs);
+  }, [fitSessions]);
 
   const waitForTabHost = useCallback(async (tabId: string): Promise<HTMLDivElement | null> => {
     for (let i = 0; i < 30; i++) {
@@ -753,33 +834,41 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
   useEffect(() => {
     const onWinResize = () => {
       try {
-        const id = activeTabIdRef.current;
-        if (!id) return;
-        sessionHandlesRef.current.get(id)?.fit?.fit();
-        sendResize(id);
+        if (tileLayout) {
+          fitSessions();
+        } else {
+          const id = activeTabIdRef.current;
+          if (!id) return;
+          sessionHandlesRef.current.get(id)?.fit?.fit();
+          sendResize(id);
+        }
       } catch {
         // ignore
       }
     };
     window.addEventListener('resize', onWinResize);
     return () => window.removeEventListener('resize', onWinResize);
-  }, [sendResize]);
+  }, [sendResize, tileLayout, fitSessions]);
 
-  // Refit when panel toggles / settings / tab switch changes layout
+  // Refit when panel toggles / settings / tab switch / tile mode changes layout
   useEffect(() => {
     const t = window.setTimeout(() => {
       try {
-        const id = activeTabId;
-        if (!id) return;
-        sessionHandlesRef.current.get(id)?.fit?.fit();
-        sendResize(id);
-        sessionHandlesRef.current.get(id)?.term?.focus();
+        if (tileLayout) {
+          fitSessions();
+        } else {
+          const id = activeTabId;
+          if (!id) return;
+          sessionHandlesRef.current.get(id)?.fit?.fit();
+          sendResize(id);
+          sessionHandlesRef.current.get(id)?.term?.focus();
+        }
       } catch {
         // ignore
       }
-    }, 50);
+    }, 60);
     return () => window.clearTimeout(t);
-  }, [panelOpen, panelWidth, showSettings, activeTabId, sendResize]);
+  }, [panelOpen, panelWidth, showSettings, activeTabId, isFullscreen, tileLayout, sendResize, fitSessions]);
 
   const startPanelResize = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -822,6 +911,10 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
       if (e.key !== 'Escape' && e.key !== 'Esc') return;
       if (e.ctrlKey || e.shiftKey || e.metaKey || e.altKey) return;
       if (isEscapeDialogOpen()) return;
+      if (document.fullscreenElement) {
+        // Let the browser exit fullscreen; don't also close the widget
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       onClose?.();
@@ -836,6 +929,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
       setDraftName(c.name);
       setDraftTags(c.tags.join(', '));
       setDraftNotes(c.notes || '');
+      setDraftColor(normalizeSshColor(c.color));
       setEditingId(c.id);
       const auto = parseAutoTargetUrl(c.wsUrl);
       if (auto) {
@@ -888,17 +982,18 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
     }
     const tags = parseTags(draftTags);
     const notes = draftNotes.trim() || undefined;
+    const color = normalizeSshColor(draftColor);
 
     setSaving(true);
     try {
       if (useServer) {
         if (editingId) {
-          const updated = await sshConnectionService.update(editingId, { name, wsUrl: url, tags, notes: notes || '' });
+          const updated = await sshConnectionService.update(editingId, { name, wsUrl: url, tags, notes: notes || '', color });
           setConnections((prev) => prev.map((c) => (c.id === editingId ? updated : c)));
           setActiveConnectionId(editingId);
           setNotice(`Updated “${name}”`);
         } else {
-          const created = await sshConnectionService.create({ name, wsUrl: url, tags, notes });
+          const created = await sshConnectionService.create({ name, wsUrl: url, tags, notes, color });
           setConnections((prev) => [created, ...prev]);
           setActiveConnectionId(created.id);
           setEditingId(created.id);
@@ -914,6 +1009,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
                   wsUrl: url,
                   tags,
                   notes,
+                  color,
                 }
               : c
           )
@@ -927,6 +1023,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
           wsUrl: url,
           tags,
           notes,
+          color,
           createdAt: Date.now(),
         };
         updateConnectionsLocal([created, ...connections]);
@@ -948,6 +1045,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
     setDraftName('');
     setDraftTags('');
     setDraftNotes('');
+    setDraftColor(SSH_CONNECTION_COLORS[Math.floor(Math.random() * SSH_CONNECTION_COLORS.length)]);
     setShowSettings(true);
     setNotice('New connection — fill URL, name, tags, then Save.');
   };
@@ -957,12 +1055,13 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
       version: 1,
       type: 'linknest-ssh-connections',
       exportedAt: new Date().toISOString(),
-      connections: connections.map(({ id, name, wsUrl: u, tags, notes, createdAt, lastUsedAt }) => ({
+      connections: connections.map(({ id, name, wsUrl: u, tags, notes, color, createdAt, lastUsedAt }) => ({
         id,
         name,
         wsUrl: u,
         tags,
         notes,
+        color: normalizeSshColor(color),
         createdAt,
         lastUsedAt,
       })),
@@ -1007,6 +1106,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
           wsUrl: url,
           tags: Array.isArray(item.tags) ? parseTags(item.tags.join(',')) : parseTags(String(item.tags || '')),
           notes: typeof item.notes === 'string' && item.notes.trim() ? item.notes.trim() : undefined,
+          color: normalizeSshColor(item.color),
           createdAt: typeof item.createdAt === 'number' ? item.createdAt : Date.now(),
           lastUsedAt: typeof item.lastUsedAt === 'number' ? item.lastUsedAt : undefined,
         });
@@ -1040,6 +1140,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
             name: item.name,
             tags: item.tags,
             notes: item.notes,
+            color: normalizeSshColor(item.color || urlOnly.color),
             lastUsedAt: item.lastUsedAt || urlOnly.lastUsedAt,
           });
           updated += 1;
@@ -1048,11 +1149,12 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
             ...existing,
             tags: item.tags,
             notes: item.notes,
+            color: normalizeSshColor(item.color || existing.color),
             lastUsedAt: item.lastUsedAt || existing.lastUsedAt,
           });
           updated += 1;
         } else {
-          byKey.set(key, { ...item, id: newId() });
+          byKey.set(key, { ...item, id: newId(), color: normalizeSshColor(item.color) });
           added += 1;
         }
       }
@@ -1134,6 +1236,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
         setDraftName('');
         setDraftTags('');
         setDraftNotes('');
+        setDraftColor(SSH_CONNECTION_COLORS[0]);
       }
       if (activeConnectionId === id) setActiveConnectionId(null);
       setNotice(`Deleted “${target.name}”`);
@@ -1152,7 +1255,14 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
           : 'text-slate-500 dark:text-slate-400';
 
   return (
-    <div className="w-full h-full flex flex-col bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+    <div
+      ref={widgetRootRef}
+      className={`w-full h-full flex flex-col bg-white dark:bg-slate-800 overflow-hidden ${
+        isFullscreen
+          ? 'rounded-none border-0 shadow-none'
+          : 'rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700'
+      }`}
+    >
       <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2 shrink-0 bg-slate-50 dark:bg-slate-900/40">
         <div className="min-w-0 flex items-center gap-2">
           <button
@@ -1178,101 +1288,56 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
-            onClick={() => void saveCurrentConnection()}
-            disabled={saving}
-            className="px-2 py-1 text-[11px] font-medium rounded-md bg-slate-800 hover:bg-slate-900 dark:bg-slate-200 dark:hover:bg-white text-white dark:text-slate-900 disabled:opacity-50"
-            title={editingId ? 'Update saved connection' : 'Save connection'}
-          >
-            {saving ? 'Saving…' : editingId ? 'Update' : 'Save'}
-          </button>
-          <button
-            type="button"
-            onClick={startNewDraft}
-            className="p-1.5 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
-            title="New connection draft"
-            aria-label="New connection draft"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={exportConnectionsJson}
-            disabled={connections.length === 0}
-            className="p-1.5 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40"
-            title="Export connections as JSON"
-            aria-label="Export connections as JSON"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="p-1.5 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
-            title="Import connections from JSON"
-            aria-label="Import connections from JSON"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-            </svg>
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="application/json,.json"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              e.target.value = '';
-              if (file) void importConnectionsJson(file);
-            }}
-          />
-          <span className="w-px h-4 bg-slate-200 dark:bg-slate-600 mx-0.5" aria-hidden />
-          <button
-            type="button"
-            onClick={() => setShowSettings((v) => !v)}
-            className={`px-2 py-1 text-[11px] font-medium rounded-md border ${
-              showSettings
-                ? 'bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-500 text-slate-800 dark:text-slate-100'
+            onClick={() => setTileLayout((v) => !v)}
+            disabled={tabs.length === 0}
+            className={`p-1.5 rounded-md border transition-colors disabled:opacity-40 ${
+              tileLayout
+                ? 'border-sky-500 bg-sky-600 text-white hover:bg-sky-500'
                 : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
             }`}
-            title="Connection settings"
+            title={tileLayout ? 'Single tab view' : 'Tile terminals side by side'}
+            aria-label={tileLayout ? 'Exit tiled view' : 'Tile terminals'}
+            aria-pressed={tileLayout}
           >
-            Settings
-          </button>
-          <button
-            type="button"
-            onClick={() => void connect()}
-            disabled={tabs.length >= MAX_SSH_TABS}
-            className="px-2 py-1 text-[11px] font-medium rounded-md bg-brand-600 hover:bg-brand-700 text-white disabled:opacity-50"
-            title={tabs.length >= MAX_SSH_TABS ? `Maximum ${MAX_SSH_TABS} sessions` : 'Open a new session tab'}
-          >
-            {status === 'connected' || status === 'connecting' ? 'New tab' : 'Connect'}
-          </button>
-          {(status === 'connected' || status === 'connecting' || tabs.length > 0) && (
-            <button
-              type="button"
-              onClick={() => disconnectActive()}
-              className="px-2 py-1 text-[11px] font-medium rounded-md bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-100 hover:bg-slate-300 dark:hover:bg-slate-600"
-              title="Close active session tab"
-            >
-              Disconnect
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-            title="Close"
-            aria-label="Close"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-4 h-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 018.25 20.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25a2.25 2.25 0 01-2.25-2.25v-2.25z" />
             </svg>
           </button>
+          <button
+            type="button"
+            onClick={() => void toggleFullscreen()}
+            className={`p-1.5 rounded-md border transition-colors ${
+              isFullscreen
+                ? 'border-orange-400 bg-orange-500 text-white hover:bg-orange-600'
+                : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+            }`}
+            title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen (panel + tabs + terminal)'}
+            aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            aria-pressed={isFullscreen}
+          >
+            {isFullscreen ? (
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" />
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+              </svg>
+            )}
+          </button>
+          {!isFullscreen && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+              title="Close"
+              aria-label="Close"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
 
@@ -1301,6 +1366,62 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                   Saved{useServer ? ' · cloud' : ' · local'}
                 </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-1">
+                <button
+                  type="button"
+                  onClick={startNewDraft}
+                  className="p-1.5 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800"
+                  title="New connection draft"
+                  aria-label="New connection draft"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={exportConnectionsJson}
+                  disabled={connections.length === 0}
+                  className="p-1.5 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 disabled:opacity-40"
+                  title="Export connections as JSON"
+                  aria-label="Export connections as JSON"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-1.5 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800"
+                  title="Import connections from JSON"
+                  aria-label="Import connections from JSON"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                  </svg>
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = '';
+                    if (file) void importConnectionsJson(file);
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => void connect()}
+                  disabled={tabs.length >= MAX_SSH_TABS}
+                  className="px-2 py-1 text-[10px] font-semibold rounded-md bg-brand-600 hover:bg-brand-700 text-white disabled:opacity-50"
+                  title={tabs.length >= MAX_SSH_TABS ? `Maximum ${MAX_SSH_TABS} sessions` : 'Open a new session tab'}
+                >
+                  {status === 'connected' || status === 'connecting' ? 'New tab' : 'Connect'}
+                </button>
               </div>
               <input
                 type="search"
@@ -1345,118 +1466,137 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
                 <p className="text-[11px] text-slate-400 dark:text-slate-500 px-1.5 py-3 text-center">Loading…</p>
               ) : filteredConnections.length === 0 ? (
                 <p className="text-[11px] text-slate-400 dark:text-slate-500 px-1.5 py-3 text-center leading-relaxed">
-                  No saved connections yet. Fill Settings, then click <strong>Save</strong> on the top right.
+                  No saved connections yet. Open Settings on a host after creating one with <strong>+</strong>, then click <strong>Save</strong> in the form.
                 </p>
               ) : (
                 filteredConnections.map((c) => {
                   const active = activeConnectionId === c.id;
                   const liveTabs = liveTabsForConnection(c.id);
                   const isLive = liveTabs.length > 0;
+                  const color = normalizeSshColor(c.color);
                   return (
                     <div
                       key={c.id}
-                      className={`rounded-lg border p-2 transition-colors ${
+                      className={`rounded-lg border overflow-hidden transition-colors ${
                         active
-                          ? 'border-brand-400 bg-brand-50 dark:bg-brand-900/20 dark:border-brand-600'
+                          ? 'border-brand-400 bg-brand-50/80 dark:bg-brand-900/20 dark:border-brand-600'
                           : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-500'
                       }`}
                     >
-                      <button
-                        type="button"
-                        className="w-full text-left"
-                        onClick={() => applyConnection(c, false)}
-                        title={`Edit ${c.name}`}
-                      >
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate">{c.name}</p>
-                          {isLive && (
-                            <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0 rounded-full text-[9px] font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                              live{liveTabs.length > 1 ? ` · ${liveTabs.length}` : ''}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[10px] font-mono text-slate-400 truncate mt-0.5">
-                          {(() => {
-                            const a = parseAutoTargetUrl(c.wsUrl);
-                            return a ? `${a.username}@${a.host}:${a.port}` : c.wsUrl;
-                          })()}
-                        </p>
-                        {c.tags.length > 0 && (
-                          <div className="flex flex-wrap gap-0.5 mt-1">
-                            {c.tags.map((t) => (
-                              <span
-                                key={t}
-                                className="px-1 py-0 text-[9px] rounded bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300"
-                              >
-                                #{t}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </button>
+                      <div className="flex min-w-0">
+                        <div className="w-1.5 shrink-0 self-stretch" style={{ backgroundColor: color }} title={color} />
+                        <div className="flex-1 min-w-0 p-2">
+                          <button
+                            type="button"
+                            className="w-full text-left"
+                            onClick={() => applyConnection(c, false)}
+                            title={`Edit ${c.name}`}
+                          >
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate">{c.name}</p>
+                              {isLive && (
+                                <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0 rounded-full text-[9px] font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                  live{liveTabs.length > 1 ? ` · ${liveTabs.length}` : ''}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] font-mono text-slate-400 truncate mt-0.5">
+                              {(() => {
+                                const a = parseAutoTargetUrl(c.wsUrl);
+                                return a ? `${a.username}@${a.host}:${a.port}` : c.wsUrl;
+                              })()}
+                            </p>
+                            {c.tags.length > 0 && (
+                              <div className="flex flex-wrap gap-0.5 mt-1">
+                                {c.tags.map((t) => (
+                                  <span
+                                    key={t}
+                                    className="px-1 py-0 text-[9px] rounded bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300"
+                                  >
+                                    #{t}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </button>
 
-                      <div className="grid grid-cols-2 gap-1 mt-2">
-                        <button
-                          type="button"
-                          onClick={() => applyConnection(c, true)}
-                          disabled={tabs.length >= MAX_SSH_TABS}
-                          className="inline-flex items-center justify-center gap-1 h-7 px-1.5 rounded-md bg-brand-600 hover:bg-brand-700 text-white text-[10px] font-semibold disabled:opacity-40"
-                          title={
-                            tabs.length >= MAX_SSH_TABS
-                              ? `Maximum ${MAX_SSH_TABS} sessions`
-                              : `Connect to ${c.name}`
-                          }
-                          aria-label={`Connect to ${c.name}`}
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 shrink-0">
-                            <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-                          </svg>
-                          Connect
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void disconnectConnectionSessions(c.id)}
-                          disabled={!isLive && tabsForConnection(c.id).length === 0}
-                          className="inline-flex items-center justify-center gap-1 h-7 px-1.5 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 text-[10px] font-semibold hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-35 disabled:cursor-not-allowed"
-                          title={
-                            isLive
-                              ? `Disconnect live session${liveTabs.length === 1 ? '' : 's'} for ${c.name}`
-                              : `No open session for ${c.name}`
-                          }
-                          aria-label={`Disconnect ${c.name}`}
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3 shrink-0">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 7.5A2.25 2.25 0 017.5 5.25h9a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-9a2.25 2.25 0 01-2.25-2.25v-9z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 9l6 6M15 9l-6 6" />
-                          </svg>
-                          Disconnect
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => applyConnection(c, false)}
-                          className="inline-flex items-center justify-center gap-1 h-7 px-1.5 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 text-[10px] font-semibold hover:bg-slate-100 dark:hover:bg-slate-700"
-                          title={`Edit ${c.name}`}
-                          aria-label={`Edit ${c.name}`}
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3 h-3 shrink-0">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 7.125L16.875 4.5" />
-                          </svg>
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void deleteConnection(c.id)}
-                          className="inline-flex items-center justify-center gap-1 h-7 px-1.5 rounded-md border border-red-200 dark:border-red-900/50 bg-white dark:bg-slate-900 text-red-600 dark:text-red-400 text-[10px] font-semibold hover:bg-red-50 dark:hover:bg-red-900/20"
-                          title={`Delete ${c.name}`}
-                          aria-label={`Delete ${c.name}`}
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3 h-3 shrink-0">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                          </svg>
-                          Delete
-                        </button>
+                          <div className="flex items-center gap-1 mt-2">
+                            <button
+                              type="button"
+                              onClick={() => applyConnection(c, true)}
+                              disabled={tabs.length >= MAX_SSH_TABS}
+                              className="inline-flex items-center justify-center h-7 w-7 rounded-md bg-brand-600 hover:bg-brand-700 text-white disabled:opacity-40"
+                              title={
+                                tabs.length >= MAX_SSH_TABS
+                                  ? `Maximum ${MAX_SSH_TABS} sessions`
+                                  : `Connect to ${c.name}`
+                              }
+                              aria-label={`Connect to ${c.name}`}
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void disconnectConnectionSessions(c.id)}
+                              disabled={!isLive && tabsForConnection(c.id).length === 0}
+                              className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-35 disabled:cursor-not-allowed"
+                              title={
+                                isLive
+                                  ? `Disconnect live session${liveTabs.length === 1 ? '' : 's'} for ${c.name}`
+                                  : `No open session for ${c.name}`
+                              }
+                              aria-label={`Disconnect ${c.name}`}
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 7.5A2.25 2.25 0 017.5 5.25h9a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-9a2.25 2.25 0 01-2.25-2.25v-9z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 9l6 6M15 9l-6 6" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => applyConnection(c, false)}
+                              className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                              title={`Edit ${c.name}`}
+                              aria-label={`Edit ${c.name}`}
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 7.125L16.875 4.5" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void deleteConnection(c.id)}
+                              className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                              title={`Delete ${c.name}`}
+                              aria-label={`Delete ${c.name}`}
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => applyConnection(c, false)}
+                              className={`ml-auto inline-flex items-center justify-center h-7 w-7 rounded-md border transition-colors ${
+                                showSettings && activeConnectionId === c.id
+                                  ? 'bg-orange-500 border-orange-600 text-white shadow-sm shadow-orange-500/30'
+                                  : 'border-orange-300 dark:border-orange-700 text-orange-600 dark:text-orange-300 hover:bg-orange-50 dark:hover:bg-orange-950/40'
+                              }`}
+                              title={`Settings for ${c.name}`}
+                              aria-label={`Settings for ${c.name}`}
+                              aria-pressed={showSettings && activeConnectionId === c.id}
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   );
@@ -1469,29 +1609,53 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
         <div className="flex-1 min-w-0 min-h-0 flex flex-col">
           {showSettings && (
             <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-700 space-y-2 shrink-0 bg-white dark:bg-slate-800 overflow-y-auto max-h-[50%]">
-              <div className="flex flex-wrap gap-1">
-                <button
-                  type="button"
-                  onClick={() => setConnectMode('auto')}
-                  className={`px-2 py-1 text-[11px] rounded-md border ${
-                    connectMode === 'auto'
-                      ? 'bg-brand-600 text-white border-brand-600'
-                      : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
-                  }`}
-                >
-                  Easy (host / port)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConnectMode('ws')}
-                  className={`px-2 py-1 text-[11px] rounded-md border ${
-                    connectMode === 'ws'
-                      ? 'bg-brand-600 text-white border-brand-600'
-                      : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
-                  }`}
-                >
-                  Advanced (WebSocket URL)
-                </button>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap gap-1 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => setConnectMode('auto')}
+                    className={`px-2 py-1 text-[11px] rounded-md border ${
+                      connectMode === 'auto'
+                        ? 'bg-brand-600 text-white border-brand-600'
+                        : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    Easy (host / port)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConnectMode('ws')}
+                    className={`px-2 py-1 text-[11px] rounded-md border ${
+                      connectMode === 'ws'
+                        ? 'bg-brand-600 text-white border-brand-600'
+                        : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    Advanced (WebSocket URL)
+                  </button>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => void saveCurrentConnection()}
+                    disabled={saving}
+                    className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-slate-800 hover:bg-slate-900 dark:bg-slate-200 dark:hover:bg-white text-white dark:text-slate-900 disabled:opacity-50"
+                    title={editingId ? 'Update saved connection' : 'Save connection'}
+                  >
+                    {saving ? 'Saving…' : editingId ? 'Update' : 'Save'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowSettings(false)}
+                    className="inline-flex items-center justify-center h-7 w-7 rounded-md bg-red-600 hover:bg-red-700 text-white"
+                    title="Close settings"
+                    aria-label="Close settings"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor" className="w-3.5 h-3.5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1515,6 +1679,31 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
                     className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
                   />
                 </label>
+              </div>
+
+              <div>
+                <p className="text-[11px] font-medium text-slate-600 dark:text-slate-300 mb-1.5">Color</p>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {SSH_CONNECTION_COLORS.map((hex) => {
+                    const selected = normalizeSshColor(draftColor) === hex;
+                    return (
+                      <button
+                        key={hex}
+                        type="button"
+                        onClick={() => setDraftColor(hex)}
+                        className={`h-6 w-6 rounded-full border-2 transition-transform ${
+                          selected
+                            ? 'border-slate-900 dark:border-white scale-110 ring-2 ring-offset-1 ring-slate-400 dark:ring-offset-slate-800'
+                            : 'border-white dark:border-slate-700 shadow-sm hover:scale-105'
+                        }`}
+                        style={{ backgroundColor: hex }}
+                        title={hex}
+                        aria-label={`Color ${hex}`}
+                        aria-pressed={selected}
+                      />
+                    );
+                  })}
+                </div>
               </div>
 
               {connectMode === 'auto' ? (
@@ -1656,7 +1845,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
                 />
               </label>
               <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed">
-                Use <strong>Save</strong> on the top right to keep this connection. Easy mode starts ttyd on this
+                Use <strong>Update</strong> / <strong>Save</strong> on the settings form to keep this connection. Easy mode starts ttyd on this
                 LinkNest server. <strong>Terminal + GUI</strong> forwards X11 apps to Windows (VcXsrv). Passwords are
                 never saved. {useServer ? 'Saved connections sync to your account.' : 'Guest saves stay in this browser.'}
               </p>
@@ -1668,30 +1857,46 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
               <div className="shrink-0 flex items-center gap-0.5 px-1 py-1 border-b border-slate-800 bg-slate-900 overflow-x-auto">
                 {tabs.map((tab) => {
                   const active = tab.id === activeTabId;
-                  const dot =
-                    tab.status === 'connected'
-                      ? 'bg-emerald-400'
-                      : tab.status === 'connecting'
-                        ? 'bg-amber-400 animate-pulse'
-                        : tab.status === 'error'
-                          ? 'bg-red-400'
-                          : 'bg-slate-500';
+                  const connColor = normalizeSshColor(
+                    (tab.connectionId
+                      ? connections.find((c) => c.id === tab.connectionId)?.color
+                      : undefined) || draftColor
+                  );
                   return (
                     <div
                       key={tab.id}
-                      className={`group flex items-center gap-1 max-w-[11rem] shrink-0 rounded-md border px-1.5 py-0.5 ${
+                      className={`group flex items-center gap-1 max-w-[11rem] shrink-0 rounded-md border overflow-hidden ${
                         active
-                          ? 'bg-slate-800 border-slate-600 text-slate-100'
-                          : 'bg-transparent border-transparent text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+                          ? 'bg-slate-800 text-slate-100'
+                          : 'bg-transparent text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
                       }`}
+                      style={{
+                        borderColor: active ? connColor : `${connColor}66`,
+                        boxShadow: active ? `inset 3px 0 0 ${connColor}` : undefined,
+                      }}
                     >
                       <button
                         type="button"
                         onClick={() => selectTab(tab.id)}
-                        className="flex items-center gap-1.5 min-w-0 text-left"
+                        className="flex items-center gap-1.5 min-w-0 text-left pl-1.5 py-0.5"
                         title={tab.statusMessage || tab.title}
                       >
-                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
+                        <span
+                          className={`w-2.5 h-2.5 rounded-full shrink-0 ring-1 ring-black/25 ${
+                            tab.status === 'connecting' ? 'animate-pulse' : ''
+                          }`}
+                          style={{
+                            backgroundColor: connColor,
+                            outline:
+                              tab.status === 'connected'
+                                ? '1px solid rgba(52, 211, 153, 0.9)'
+                                : tab.status === 'error'
+                                  ? '1px solid rgba(248, 113, 113, 0.9)'
+                                  : undefined,
+                            outlineOffset: 1,
+                          }}
+                          aria-hidden
+                        />
                         <span className="text-[11px] truncate font-medium">{tab.title}</span>
                       </button>
                       <button
@@ -1700,7 +1905,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
                           e.stopPropagation();
                           void closeTab(tab.id);
                         }}
-                        className="p-0.5 rounded opacity-60 hover:opacity-100 hover:bg-slate-700 text-slate-300"
+                        className="p-0.5 rounded opacity-60 hover:opacity-100 hover:bg-slate-700 text-slate-300 mr-0.5"
                         title="Close tab"
                         aria-label={`Close ${tab.title}`}
                       >
@@ -1717,20 +1922,70 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
               </div>
             )}
 
-            <div className="relative flex-1 min-h-0">
-              {tabs.map((tab) => (
-                <div
-                  key={tab.id}
-                  ref={(el) => {
-                    if (el) tabHostsRef.current.set(tab.id, el);
-                    else tabHostsRef.current.delete(tab.id);
-                  }}
-                  className={`absolute inset-0 w-full h-full p-1 overflow-hidden [&_.xterm]:h-full [&_.xterm]:w-full [&_.xterm-viewport]:overflow-auto ${
-                    tab.id === activeTabId ? 'z-10 visible' : 'z-0 invisible pointer-events-none'
-                  }`}
-                  aria-hidden={tab.id !== activeTabId}
-                />
-              ))}
+            <div
+              className={
+                tileLayout
+                  ? 'relative flex-1 min-h-0 grid gap-1 p-1 overflow-hidden'
+                  : 'relative flex-1 min-h-0 overflow-hidden'
+              }
+              style={
+                tileLayout
+                  ? {
+                      gridTemplateColumns: `repeat(${tileCols}, minmax(0, 1fr))`,
+                      gridAutoRows: 'minmax(0, 1fr)',
+                    }
+                  : undefined
+              }
+            >
+              {tabs.map((tab) => {
+                const connColor = normalizeSshColor(
+                  (tab.connectionId
+                    ? connections.find((c) => c.id === tab.connectionId)?.color
+                    : undefined) || draftColor
+                );
+                const isActive = tab.id === activeTabId;
+                return (
+                  <div
+                    key={tab.id}
+                    className={
+                      tileLayout
+                        ? `min-h-0 min-w-0 flex flex-col rounded-md border overflow-hidden bg-slate-950 ${
+                            isActive ? 'ring-1 ring-sky-400/60' : ''
+                          }`
+                        : `absolute inset-0 flex flex-col overflow-hidden ${
+                            isActive ? 'z-10 visible' : 'z-0 invisible pointer-events-none'
+                          }`
+                    }
+                    style={tileLayout ? { borderColor: `${connColor}99` } : undefined}
+                    aria-hidden={!tileLayout && !isActive}
+                    onMouseDown={() => {
+                      if (tileLayout) setActiveTabId(tab.id);
+                    }}
+                  >
+                    {tileLayout && (
+                      <div
+                        className="shrink-0 flex items-center gap-1.5 px-1.5 py-0.5 text-[10px] font-medium text-slate-200 border-b border-slate-800"
+                        style={{ boxShadow: `inset 3px 0 0 ${connColor}` }}
+                      >
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ backgroundColor: connColor }}
+                          aria-hidden
+                        />
+                        <span className="truncate flex-1">{tab.title}</span>
+                        <span className="text-slate-500 shrink-0">{tab.status}</span>
+                      </div>
+                    )}
+                    <div
+                      ref={(el) => {
+                        if (el) tabHostsRef.current.set(tab.id, el);
+                        else tabHostsRef.current.delete(tab.id);
+                      }}
+                      className="relative flex-1 min-h-0 p-1 overflow-hidden [&_.xterm]:h-full [&_.xterm]:w-full [&_.xterm-viewport]:overflow-auto"
+                    />
+                  </div>
+                );
+              })}
               {tabs.length === 0 && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="text-center px-4">
@@ -1749,6 +2004,44 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
                 </div>
               )}
             </div>
+
+            {tabs.length > 0 && (
+              <div className="shrink-0 border-t border-slate-800 bg-slate-900 px-2 py-1.5 flex items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-sky-400 shrink-0">
+                  All
+                </span>
+                <input
+                  type="text"
+                  value={broadcastCmd}
+                  onChange={(e) => setBroadcastCmd(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      const cmd = broadcastCmd;
+                      setBroadcastCmd('');
+                      broadcastToAll(cmd);
+                    }
+                  }}
+                  placeholder="Command to all connected terminals… (Enter to send)"
+                  className="flex-1 min-w-0 h-7 px-2 text-xs rounded-md border border-slate-700 bg-slate-950 text-slate-100 placeholder:text-slate-500 font-mono"
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const cmd = broadcastCmd;
+                    setBroadcastCmd('');
+                    broadcastToAll(cmd);
+                  }}
+                  disabled={!broadcastCmd.trim()}
+                  className="px-2.5 h-7 text-[11px] font-semibold rounded-md bg-sky-600 hover:bg-sky-500 text-white disabled:opacity-40 shrink-0"
+                  title="Send to all connected terminals"
+                >
+                  Send all
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

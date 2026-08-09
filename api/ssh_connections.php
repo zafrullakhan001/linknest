@@ -128,6 +128,14 @@ function newSshConnectionId(): string {
     }
 }
 
+function normalizeSshColor($raw): string {
+    $c = strtolower(trim((string)$raw));
+    if (preg_match('/^#[0-9a-f]{6}$/', $c)) {
+        return $c;
+    }
+    return '#0ea5e9';
+}
+
 function rowToConnection(array $row): array {
     $tags = [];
     if (!empty($row['tags'])) {
@@ -143,6 +151,7 @@ function rowToConnection(array $row): array {
         'wsUrl' => (string)$row['ws_url'],
         'tags' => $tags,
         'notes' => $notes !== '' ? $notes : null,
+        'color' => normalizeSshColor($row['color'] ?? '#0ea5e9'),
         'createdAt' => (int)$row['created_at'],
         'lastUsedAt' => $row['last_used_at'] !== null ? (int)$row['last_used_at'] : null,
     ];
@@ -152,7 +161,7 @@ function handleListSshConnections() {
     $user = requireAuth();
     $db = getDB();
 
-    $stmt = $db->prepare('SELECT id, name, ws_url, tags, notes, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE user_id = ? ORDER BY COALESCE(last_used_at, created_at) DESC');
+    $stmt = $db->prepare('SELECT id, name, ws_url, tags, notes, color, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE user_id = ? ORDER BY COALESCE(last_used_at, created_at) DESC');
     $stmt->execute([(int)$user['id']]);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -184,6 +193,7 @@ function handleCreateSshConnection() {
     if (mb_strlen($notes) > 1000) {
         sendJSON(['error' => 'Notes are too long (max 1000 chars)'], 400);
     }
+    $color = normalizeSshColor($data['color'] ?? '#0ea5e9');
 
     $id = isset($data['id']) && is_string($data['id']) && preg_match('/^[A-Za-z0-9_-]{1,64}$/', $data['id'])
         ? $data['id']
@@ -191,7 +201,7 @@ function handleCreateSshConnection() {
 
     $db = getDB();
     $now = time();
-    $stmt = $db->prepare('INSERT INTO user_ssh_connections (id, user_id, name, ws_url, tags, notes, created_at, last_used_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)');
+    $stmt = $db->prepare('INSERT INTO user_ssh_connections (id, user_id, name, ws_url, tags, notes, color, created_at, last_used_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)');
     try {
         $stmt->execute([
             $id,
@@ -200,6 +210,7 @@ function handleCreateSshConnection() {
             $wsUrl,
             json_encode($tags, JSON_UNESCAPED_UNICODE),
             $notes !== '' ? $notes : null,
+            $color,
             $now,
             $now,
         ]);
@@ -217,6 +228,7 @@ function handleCreateSshConnection() {
             'wsUrl' => $wsUrl,
             'tags' => $tags,
             'notes' => $notes !== '' ? $notes : null,
+            'color' => $color,
             'createdAt' => $now,
             'lastUsedAt' => null,
         ]
@@ -272,6 +284,11 @@ function handleUpdateSshConnection(string $id) {
         $params[] = $notes !== '' ? $notes : null;
     }
 
+    if (array_key_exists('color', $data)) {
+        $fields[] = 'color = ?';
+        $params[] = normalizeSshColor($data['color']);
+    }
+
     if (isset($data['lastUsedAt']) || isset($data['last_used_at'])) {
         $last = isset($data['lastUsedAt']) ? (int)$data['lastUsedAt'] : (int)$data['last_used_at'];
         $fields[] = 'last_used_at = ?';
@@ -292,7 +309,7 @@ function handleUpdateSshConnection(string $id) {
     $stmt = $db->prepare($sql);
     $stmt->execute($params);
 
-    $fetch = $db->prepare('SELECT id, name, ws_url, tags, notes, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE id = ? AND user_id = ?');
+    $fetch = $db->prepare('SELECT id, name, ws_url, tags, notes, color, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE id = ? AND user_id = ?');
     $fetch->execute([$id, (int)$user['id']]);
     $row = $fetch->fetch(PDO::FETCH_ASSOC);
     sendJSON(['connection' => rowToConnection($row)]);
@@ -333,8 +350,8 @@ function handleBulkUpsertSshConnections() {
         $byUrl[(string)$row['ws_url']] = (string)$row['id'];
     }
 
-    $insert = $db->prepare('INSERT INTO user_ssh_connections (id, user_id, name, ws_url, tags, notes, created_at, last_used_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    $update = $db->prepare('UPDATE user_ssh_connections SET name = ?, tags = ?, notes = ?, last_used_at = COALESCE(?, last_used_at), updated_at = ? WHERE id = ? AND user_id = ?');
+    $insert = $db->prepare('INSERT INTO user_ssh_connections (id, user_id, name, ws_url, tags, notes, color, created_at, last_used_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $update = $db->prepare('UPDATE user_ssh_connections SET name = ?, tags = ?, notes = ?, color = ?, last_used_at = COALESCE(?, last_used_at), updated_at = ? WHERE id = ? AND user_id = ?');
 
     $db->beginTransaction();
     try {
@@ -360,6 +377,7 @@ function handleBulkUpsertSshConnections() {
             if (mb_strlen($notes) > 1000) {
                 $notes = mb_substr($notes, 0, 1000);
             }
+            $color = normalizeSshColor($item['color'] ?? '#0ea5e9');
             $lastUsed = null;
             if (isset($item['lastUsedAt'])) {
                 $lastUsed = (int)$item['lastUsedAt'] ?: null;
@@ -376,6 +394,7 @@ function handleBulkUpsertSshConnections() {
                     $name,
                     json_encode($tags, JSON_UNESCAPED_UNICODE),
                     $notes !== '' ? $notes : null,
+                    $color,
                     $lastUsed,
                     $now,
                     $byUrl[$wsUrl],
@@ -398,6 +417,7 @@ function handleBulkUpsertSshConnections() {
                     $wsUrl,
                     json_encode($tags, JSON_UNESCAPED_UNICODE),
                     $notes !== '' ? $notes : null,
+                    $color,
                     $createdAt,
                     $lastUsed,
                     $now,
@@ -412,7 +432,7 @@ function handleBulkUpsertSshConnections() {
         sendJSON(['error' => 'Failed to import connections'], 500);
     }
 
-    $stmt = $db->prepare('SELECT id, name, ws_url, tags, notes, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE user_id = ? ORDER BY COALESCE(last_used_at, created_at) DESC');
+    $stmt = $db->prepare('SELECT id, name, ws_url, tags, notes, color, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE user_id = ? ORDER BY COALESCE(last_used_at, created_at) DESC');
     $stmt->execute([$userId]);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     sendJSON(['connections' => array_map('rowToConnection', $rows)]);
