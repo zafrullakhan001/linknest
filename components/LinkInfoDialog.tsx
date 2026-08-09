@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useSettings } from '../contexts/SettingsContext';
 import { getDisplayUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick } from '../utils/sshLink';
+import { linkifyHtml } from '../utils/richTextDisplay';
 
 interface LinkInfoDialogProps {
   isOpen: boolean;
@@ -95,7 +96,7 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
 
   const plainLabel = useMemo(() => stripHtmlTags(linkLabel || ''), [linkLabel]);
   const displayHtml = useMemo(
-    () => enhanceRichTextWithEmojis(richTextContent || ''),
+    () => enhanceRichTextWithEmojis(linkifyHtml(richTextContent || '')),
     [richTextContent]
   );
 

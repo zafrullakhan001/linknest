@@ -175,6 +175,118 @@ function normalizeLinkCheckExceptionsSetting($value) {
 }
 
 /**
+ * Normalize host patterns that skip in-app mobile preview (iframe block list).
+ * @return string JSON array string
+ */
+function normalizeIframeBlockDomainsSetting($value) {
+    $maxItems = 500;
+    $maxLen = 253;
+
+    $decoded = null;
+    if (is_array($value)) {
+        $decoded = $value;
+    } elseif (is_string($value)) {
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return '[]';
+        }
+        if ($trimmed[0] === '[') {
+            $decoded = json_decode($trimmed, true);
+            if (!is_array($decoded)) {
+                sendJSON(['error' => 'iframe_block_domains must be a JSON array'], 400);
+            }
+        } else {
+            $decoded = preg_split('/[\n\r,;]+/', $trimmed) ?: [];
+        }
+    } else {
+        return '[]';
+    }
+
+    if (count($decoded) > $maxItems) {
+        sendJSON(['error' => "iframe_block_domains supports at most {$maxItems} entries"], 400);
+    }
+
+    $out = [];
+    $seen = [];
+    foreach ($decoded as $item) {
+        $raw = '';
+        if (is_string($item)) {
+            $raw = $item;
+        } elseif (is_array($item) && isset($item['pattern'])) {
+            $raw = (string)$item['pattern'];
+        } elseif (is_array($item) && isset($item['domain'])) {
+            $raw = (string)$item['domain'];
+        } else {
+            continue;
+        }
+        $pattern = normalizeIframeBlockDomainPattern($raw, $maxLen);
+        if ($pattern === null || isset($seen[$pattern])) {
+            continue;
+        }
+        $seen[$pattern] = true;
+        $out[] = $pattern;
+    }
+
+    return json_encode(array_values($out), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+}
+
+/**
+ * @return string|null
+ */
+function normalizeIframeBlockDomainPattern($raw, $maxLen = 253) {
+    $value = trim((string)$raw);
+    if ($value === '') {
+        return null;
+    }
+    if (
+        (str_starts_with($value, '"') && str_ends_with($value, '"')) ||
+        (str_starts_with($value, "'") && str_ends_with($value, "'"))
+    ) {
+        $value = trim(substr($value, 1, -1));
+    }
+    if ($value === '') {
+        return null;
+    }
+    $hashPos = strpos($value, '#');
+    if ($hashPos !== false) {
+        $value = trim(substr($value, 0, $hashPos));
+    }
+    if ($value === '') {
+        return null;
+    }
+
+    // Extract hostname from pasted URLs
+    $hadScheme = (bool)preg_match('#^[a-z][a-z0-9+.-]*:#i', $value);
+    if ($hadScheme || strpos($value, '/') !== false || strpos($value, ':') !== false) {
+        $withScheme = $hadScheme ? $value : ('https://' . $value);
+        $parts = @parse_url($withScheme);
+        if (is_array($parts) && !empty($parts['host'])) {
+            $value = (string)$parts['host'];
+        }
+    }
+
+    $value = strtolower(rtrim(ltrim($value, '.'), '.'));
+    if ($value === '') {
+        return null;
+    }
+    if (strlen($value) > $maxLen) {
+        $value = substr($value, 0, $maxLen);
+    }
+
+    if (strpos($value, '*') !== false) {
+        if (!preg_match('/^(\*\.)?[a-z0-9.*-]+$/i', $value)) {
+            return null;
+        }
+        return $value;
+    }
+
+    if (!preg_match('/^[a-z0-9.-]+$/i', $value) || strpos($value, '..') !== false) {
+        return null;
+    }
+    return $value;
+}
+
+/**
  * @return string|null
  */
 function normalizeLinkCheckExceptionPattern($raw, $maxLen = 2048) {
@@ -730,6 +842,7 @@ function handleUpdateSettings() {
                 'disabled_tabs',
                 'device_presets', 'device_quick_presets',
                 'link_check_exceptions',
+                'iframe_block_domains',
                 'maintenance_enabled', 'maintenance_message', 'semi_pwa_enabled', 'semi_pwa_include_paths', 'semi_pwa_exclude_paths',
                 'ldap_enabled', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
                 'ldap_login_domain', 'ldap_servers',
@@ -1060,6 +1173,10 @@ function handleUpdateSettings() {
 
             if ($key === 'link_check_exceptions') {
                 $value = normalizeLinkCheckExceptionsSetting($value);
+            }
+
+            if ($key === 'iframe_block_domains') {
+                $value = normalizeIframeBlockDomainsSetting($value);
             }
             
             // Store setting in database

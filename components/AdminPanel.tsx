@@ -32,6 +32,7 @@ import { AddonsManagement } from './AddonsManagement';
 import { UpdatesPanel } from './UpdatesDialog';
 import { DevicePresetsAdmin } from './DevicePresetsAdmin';
 import { LinkCheckExceptionsAdmin } from './LinkCheckExceptionsAdmin';
+import { IframeBlockDomainsAdmin } from './IframeBlockDomainsAdmin';
 import {
   AccessManagerPanel,
   AccessSubTab,
@@ -92,6 +93,7 @@ type AdminNavTabId =
   | 'tabVisibility'
   | 'devicePresets'
   | 'linkCheckExceptions'
+  | 'iframeBlockDomains'
   | 'access'
   | 'clone'
   | 'browser'
@@ -123,6 +125,7 @@ const ADMIN_NAV_SECTIONS: Array<{
       { id: 'spaces', label: 'Spaces', emoji: '📦' },
       { id: 'tabVisibility', label: 'Enable/Disable Tabs', emoji: '📑' },
       { id: 'linkCheckExceptions', label: 'Link Check Exceptions', emoji: '🚫' },
+      { id: 'iframeBlockDomains', label: 'Iframe Block Domains', emoji: '🖼️' },
       { id: 'access', label: 'Access Manager', emoji: '🛡️' },
     ],
   },
@@ -276,7 +279,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     if (savedTab === 'footer') return 'settings';
     const validTabs: Array<AdminNavTabId | 'footer'> = [
       'pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'saml', 'footer',
-      'tabVisibility', 'devicePresets', 'linkCheckExceptions', 'access', 'clone', 'browser', 'broadcast',
+      'tabVisibility', 'devicePresets', 'linkCheckExceptions', 'iframeBlockDomains', 'access', 'clone', 'browser', 'broadcast',
       'maintenanceScripts', 'maintenance', 'widgets', 'addons', 'appUpdates', 'loadTest',
     ];
     return (savedTab && validTabs.includes(savedTab as AdminNavTabId | 'footer'))
@@ -1272,7 +1275,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     if (activeTab === 'maintenance') {
       loadSettings();
     }
-    if (activeTab === 'devicePresets' || activeTab === 'tabVisibility' || activeTab === 'linkCheckExceptions') {
+    if (activeTab === 'devicePresets' || activeTab === 'tabVisibility' || activeTab === 'linkCheckExceptions' || activeTab === 'iframeBlockDomains') {
       loadSettings();
     }
     if (activeTab === 'widgets') {
@@ -8755,6 +8758,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
                 ) : (
                   <LinkCheckExceptionsAdmin
+                    settings={settings}
+                    onSettingsChange={(partial) => setSettings((prev) => ({ ...prev, ...partial }))}
+                    onRefresh={async () => {
+                      await refreshSettings();
+                      await loadSettings();
+                    }}
+                    isMobile={isMobile}
+                    setError={setError}
+                  />
+                )
+              )}
+
+              {/* Iframe Block Domains Tab */}
+              {activeTab === 'iframeBlockDomains' && (
+                settingsLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
+                  </div>
+                ) : (
+                  <IframeBlockDomainsAdmin
                     settings={settings}
                     onSettingsChange={(partial) => setSettings((prev) => ({ ...prev, ...partial }))}
                     onRefresh={async () => {

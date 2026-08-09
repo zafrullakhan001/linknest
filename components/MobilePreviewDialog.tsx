@@ -8,6 +8,10 @@ import {
   PRESET_GROUPS,
   type DevicePreset,
 } from '../services/devicePresetsService';
+import {
+  isHostBlockedByIframeDomains,
+  parseIframeBlockDomainsSetting,
+} from '../services/iframeBlockDomainsService';
 import { DeviceMockupFrame, isZebraVariant } from './DeviceMockupFrame';
 
 type PreviewMode = 'in-app' | 'emulation';
@@ -201,14 +205,18 @@ function getUrlHost(raw: string): string | null {
   }
 }
 
-function isKnownFrameBlocker(rawUrl: string): boolean {
+function isKnownFrameBlocker(rawUrl: string, extraDomains: string[] = []): boolean {
   const host = getUrlHost(rawUrl);
   if (!host) return false;
-  return KNOWN_FRAME_BLOCK_HOSTS.some((re) => re.test(host));
+  if (KNOWN_FRAME_BLOCK_HOSTS.some((re) => re.test(host))) return true;
+  return isHostBlockedByIframeDomains(host, extraDomains);
 }
 
-async function checkUrlEmbeddable(rawUrl: string): Promise<{ embeddable: boolean | null; reason: string | null }> {
-  if (isKnownFrameBlocker(rawUrl)) {
+async function checkUrlEmbeddable(
+  rawUrl: string,
+  extraDomains: string[] = []
+): Promise<{ embeddable: boolean | null; reason: string | null }> {
+  if (isKnownFrameBlocker(rawUrl, extraDomains)) {
     return { embeddable: false, reason: 'This site typically blocks iframe embedding' };
   }
 
@@ -239,6 +247,10 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
   label,
 }) => {
   const { settings } = useSettings();
+  const iframeBlockDomains = useMemo(
+    () => parseIframeBlockDomainsSetting(settings.iframe_block_domains),
+    [settings.iframe_block_domains]
+  );
   const { presets: devicePresets, quickPresets } = useMemo(
     () =>
       getEffectivePresets({
@@ -707,7 +719,7 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
       setAllowIframeMount(false);
     };
 
-    if (isKnownFrameBlocker(url)) {
+    if (isKnownFrameBlocker(url, iframeBlockDomains)) {
       markBlocked('This site typically blocks iframe embedding');
       return () => {
         cancelled = true;
@@ -715,7 +727,7 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
     }
 
     (async () => {
-      const result = await checkUrlEmbeddable(url);
+      const result = await checkUrlEmbeddable(url, iframeBlockDomains);
       if (cancelled) return;
 
       if (result.embeddable === false) {
@@ -733,7 +745,7 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
       cancelled = true;
       if (loadGuardRef.current) clearTimeout(loadGuardRef.current);
     };
-  }, [isOpen, url, presetId, isEmulationMode]);
+  }, [isOpen, url, presetId, isEmulationMode, iframeBlockDomains]);
 
   useEffect(() => {
     if (!isOpen || !isEmulationMode || !windowOpened) return;

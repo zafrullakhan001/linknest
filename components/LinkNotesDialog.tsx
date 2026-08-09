@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { linkifyHtml } from '../utils/richTextDisplay';
 
 interface LinkNotesDialogProps {
   isOpen: boolean;
@@ -19,8 +20,11 @@ const SECTION_EMOJIS: Array<{ match: RegExp; emoji: string }> = [
   { match: /^manager\s+information/i, emoji: '👔' },
 ];
 
-const KNOWN_SECTION_RE =
-  /^(Owner Information|Support Team Information|Service Now Group Information|Contact Information|Service Now Ticket Information|Go-Live Information|Major Upgrade Information|Manager Information)\s*:?\s*$/i;
+const KNOWN_SECTION_NAMES =
+  'Owner Information|Support Team Information|Service Now Group Information|Contact Information|Service Now Ticket Information|Go-Live Information|Major Upgrade Information|Manager Information';
+
+const KNOWN_SECTION_LINE_RE = new RegExp(`^(${KNOWN_SECTION_NAMES})\\s*:?\\s*$`, 'i');
+const KNOWN_SECTION_INLINE_RE = new RegExp(`^(${KNOWN_SECTION_NAMES})\\s*:\\s*(.+)$`, 'i');
 
 function stripHtmlTags(content: string): string {
   if (!content) return '';
@@ -30,11 +34,20 @@ function stripHtmlTags(content: string): string {
   return tempDiv.textContent || tempDiv.innerText || '';
 }
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function getSectionEmoji(title: string): string {
   for (const entry of SECTION_EMOJIS) {
     if (entry.match.test(title)) return entry.emoji;
   }
-  return '•';
+  return '';
 }
 
 function parseNotesSections(notes: string): Array<{ title: string; body: string }> {
@@ -60,97 +73,79 @@ function parseNotesSections(notes: string): Array<{ title: string; body: string 
 
   for (const line of lines) {
     const trimmed = line.trim();
-    if (KNOWN_SECTION_RE.test(trimmed)) {
+    if (KNOWN_SECTION_LINE_RE.test(trimmed)) {
       flush();
       currentTitle = trimmed.replace(/:\s*$/, '');
+      continue;
+    }
+    const inline = trimmed.match(KNOWN_SECTION_INLINE_RE);
+    if (inline) {
+      flush();
+      currentTitle = inline[1];
+      if (inline[2]?.trim()) currentBody.push(inline[2].trim());
       continue;
     }
     currentBody.push(line);
   }
   flush();
 
-  if (sections.length === 1 && sections[0].title === 'Notes') {
-    return sections;
-  }
   return sections.filter((s) => s.title || s.body);
 }
 
-function linkifyText(text: string): React.ReactNode[] {
-  if (!text) return [];
-  const pattern =
-    /((https?:\/\/|www\.)[^\s<>"']+[^\s<>"'.,;:!?)\]}])|([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
-  const nodes: React.ReactNode[] = [];
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-  let key = 0;
-
-  while ((match = pattern.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      nodes.push(text.slice(lastIndex, match.index));
-    }
-    const token = match[0];
-    const isEmail = token.includes('@') && !/^https?:\/\//i.test(token) && !/^www\./i.test(token);
-    const href = isEmail
-      ? `mailto:${token}`
-      : /^www\./i.test(token)
-        ? `https://${token}`
-        : token;
-    nodes.push(
-      <a
-        key={`lnk-${key++}`}
-        href={href}
-        target={isEmail ? undefined : '_blank'}
-        rel={isEmail ? undefined : 'noopener noreferrer'}
-        className="text-brand-600 dark:text-brand-500 underline underline-offset-2 hover:text-brand-700 dark:hover:text-brand-400 break-all"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {token}
-      </a>
-    );
-    lastIndex = match.index + token.length;
-  }
-
-  if (lastIndex < text.length) {
-    nodes.push(text.slice(lastIndex));
-  }
-  return nodes.length ? nodes : [text];
+function looksLikeFieldLabel(line: string, colonIdx: number): boolean {
+  if (colonIdx <= 0 || colonIdx >= 64) return false;
+  const label = line.slice(0, colonIdx).trim();
+  if (!label || label.includes('@')) return false;
+  if (/^https?:\/\//i.test(label) || /^www\./i.test(label)) return false;
+  // Prefer short, human labels (e.g. "Business Owner", "Demand")
+  if (/\s{2,}/.test(label)) return false;
+  return /^[A-Za-z][A-Za-z0-9 /&+().-]{0,60}$/.test(label);
 }
 
-function renderBodyLines(body: string): React.ReactNode {
-  if (!body) {
-    return <p className="text-sm text-slate-400 italic">No details</p>;
+function formatBodyLineHtml(line: string): string {
+  const trimmed = line.trim();
+  if (!trimmed) return '';
+
+  const colonIdx = trimmed.indexOf(':');
+  if (looksLikeFieldLabel(trimmed, colonIdx)) {
+    const label = trimmed.slice(0, colonIdx).trim();
+    const value = trimmed.slice(colonIdx + 1).trim();
+    if (!value) {
+      return `<p><strong>${escapeHtml(label)}:</strong></p>`;
+    }
+    return `<p><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</p>`;
   }
 
-  const lines = body.split('\n').filter((l) => l.trim().length > 0);
-  return (
-    <ul className="space-y-1.5">
-      {lines.map((line, idx) => {
-        const colonIdx = line.indexOf(':');
-        const looksLikeLabel =
-          colonIdx > 0 &&
-          colonIdx < 48 &&
-          !line.slice(0, colonIdx).includes('@') &&
-          !/^https?:/i.test(line.slice(0, colonIdx));
+  return `<p>${escapeHtml(trimmed)}</p>`;
+}
 
-        if (looksLikeLabel) {
-          const label = line.slice(0, colonIdx).trim();
-          const value = line.slice(colonIdx + 1).trim();
-          return (
-            <li key={idx} className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
-              <span className="font-medium text-slate-800 dark:text-slate-100">{label}:</span>{' '}
-              <span className="break-words">{linkifyText(value)}</span>
-            </li>
-          );
-        }
+/**
+ * Build a document-style HTML view from plain-text link notes,
+ * then auto-linkify bare URLs and email addresses (same as Info click).
+ */
+function notesToDisplayHtml(notes: string): string {
+  const sections = parseNotesSections(notes);
+  if (!sections.length) return '';
 
-        return (
-          <li key={idx} className="text-sm leading-relaxed text-slate-600 dark:text-slate-300 break-words">
-            {linkifyText(line.trim())}
-          </li>
-        );
-      })}
-    </ul>
-  );
+  const parts: string[] = [];
+  const hideLoneNotesHeading = sections.length === 1 && sections[0].title === 'Notes';
+
+  for (const section of sections) {
+    if (!hideLoneNotesHeading) {
+      const emoji = getSectionEmoji(section.title);
+      const heading = emoji ? `${emoji} ${section.title}` : section.title;
+      parts.push(`<p><strong>${escapeHtml(heading)}:</strong></p>`);
+    }
+
+    if (!section.body) continue;
+
+    for (const line of section.body.split('\n')) {
+      const html = formatBodyLineHtml(line);
+      if (html) parts.push(html);
+    }
+  }
+
+  return linkifyHtml(parts.join(''));
 }
 
 export const LinkNotesDialog: React.FC<LinkNotesDialogProps> = ({
@@ -171,13 +166,13 @@ export const LinkNotesDialog: React.FC<LinkNotesDialogProps> = ({
   const sizeRef = useRef({ width: 0, height: 0 });
 
   const plainLabel = useMemo(() => stripHtmlTags(linkLabel || ''), [linkLabel]);
-  const sections = useMemo(() => parseNotesSections(notes), [notes]);
+  const displayHtml = useMemo(() => notesToDisplayHtml(notes || ''), [notes]);
 
   useEffect(() => {
     if (!isOpen) return;
 
-    const width = Math.min(920, window.innerWidth - 32);
-    const height = Math.min(780, window.innerHeight - 32);
+    const width = Math.min(720, window.innerWidth - 32);
+    const height = Math.min(640, window.innerHeight - 32);
     const nextSize = { width, height };
     const nextPos = {
       x: Math.max(16, (window.innerWidth - width) / 2),
@@ -212,7 +207,7 @@ export const LinkNotesDialog: React.FC<LinkNotesDialogProps> = ({
 
   const handleDragStart = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
-    if (target.closest('button')) return;
+    if (target.closest('button') || target.closest('a')) return;
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(true);
@@ -254,8 +249,8 @@ export const LinkNotesDialog: React.FC<LinkNotesDialogProps> = ({
 
   const handleResize = useCallback((e: MouseEvent) => {
     if (!dialogRef.current) return;
-    const minWidth = 480;
-    const minHeight = 360;
+    const minWidth = 400;
+    const minHeight = 320;
     const maxWidth = window.innerWidth - positionRef.current.x - 8;
     const maxHeight = window.innerHeight - positionRef.current.y - 8;
     const newWidth = Math.max(
@@ -367,35 +362,58 @@ export const LinkNotesDialog: React.FC<LinkNotesDialogProps> = ({
           </div>
         </div>
 
-        {/* Body */}
+        {/* Body — document-style like Info click */}
         <div className="flex-1 overflow-y-auto px-5 py-4 bg-slate-50 dark:bg-slate-900/50">
-          {sections.length === 0 ? (
+          {displayHtml ? (
+            <div
+              className="link-notes-viewer text-sm text-slate-700 dark:text-slate-200"
+              dangerouslySetInnerHTML={{ __html: displayHtml }}
+            />
+          ) : (
             <div className="h-full min-h-[120px] flex flex-col items-center justify-center text-center gap-2 text-slate-400">
               <p className="text-sm">No notes for this link yet.</p>
             </div>
-          ) : (
-            <div className="space-y-2.5">
-              {sections.map((section, idx) => {
-                const emoji = getSectionEmoji(section.title);
-                return (
-                  <section
-                    key={`${section.title}-${idx}`}
-                    className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3.5"
-                  >
-                    <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-100 dark:border-slate-700/80">
-                      <span className="text-sm leading-none opacity-80" aria-hidden>
-                        {emoji}
-                      </span>
-                      <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                        {section.title}
-                      </h4>
-                    </div>
-                    {renderBodyLines(section.body)}
-                  </section>
-                );
-              })}
-            </div>
           )}
+          <style>{`
+            .link-notes-viewer {
+              word-break: break-word;
+              line-height: 1.55;
+            }
+            .link-notes-viewer p {
+              margin: 0.35em 0;
+            }
+            .link-notes-viewer p:has(> strong:only-child) {
+              margin-top: 0.95em;
+              margin-bottom: 0.25em;
+            }
+            .link-notes-viewer p:first-child {
+              margin-top: 0;
+            }
+            .link-notes-viewer strong,
+            .link-notes-viewer b {
+              color: #1e293b;
+              font-weight: 600;
+            }
+            .dark .link-notes-viewer strong,
+            .dark .link-notes-viewer b {
+              color: #e2e8f0;
+            }
+            .link-notes-viewer a {
+              color: #2563eb;
+              text-decoration: underline;
+              text-underline-offset: 2px;
+              word-break: break-all;
+            }
+            .dark .link-notes-viewer a {
+              color: #60a5fa;
+            }
+            .link-notes-viewer a:hover {
+              color: #1d4ed8;
+            }
+            .dark .link-notes-viewer a:hover {
+              color: #93c5fd;
+            }
+          `}</style>
         </div>
 
         {/* Footer */}
@@ -403,7 +421,7 @@ export const LinkNotesDialog: React.FC<LinkNotesDialogProps> = ({
           <button
             type="button"
             onClick={handleCopy}
-            className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
           >
             {copied ? (
               <>
@@ -425,7 +443,7 @@ export const LinkNotesDialog: React.FC<LinkNotesDialogProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-sm font-medium transition-colors"
+            className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors"
           >
             Close
           </button>

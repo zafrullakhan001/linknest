@@ -20,9 +20,11 @@ function isInsideSkippedElement(node: Node): boolean {
 function createLinkElement(doc: Document, href: string, text: string): HTMLAnchorElement {
   const a = doc.createElement('a');
   a.href = href;
-  a.target = '_blank';
-  a.rel = 'noopener noreferrer';
   a.textContent = text;
+  if (!href.toLowerCase().startsWith('mailto:')) {
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+  }
   return a;
 }
 

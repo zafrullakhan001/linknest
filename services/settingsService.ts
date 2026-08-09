@@ -118,6 +118,8 @@ export interface AppSettings {
   device_quick_presets?: string;
   /** JSON string array of URL/host patterns skipped by Check Links */
   link_check_exceptions?: string;
+  /** JSON string array of hosts that skip in-app mobile preview (iframe blocked) */
+  iframe_block_domains?: string;
 
   // LDAP Settings
   ldap_enabled?: string;
@@ -287,6 +289,7 @@ export const settingsService = {
       device_presets: data.settings?.device_presets || '',
       device_quick_presets: data.settings?.device_quick_presets || '',
       link_check_exceptions: data.settings?.link_check_exceptions || '[]',
+      iframe_block_domains: data.settings?.iframe_block_domains || '[]',
 
       // LDAP defaults
       ldap_enabled: data.settings?.ldap_enabled || '0',
