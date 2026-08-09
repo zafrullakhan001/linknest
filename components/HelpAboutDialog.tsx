@@ -372,7 +372,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 border border-emerald-200 dark:border-emerald-800">
                     <p className="font-medium text-emerald-900 dark:text-emerald-100">Guides tab:</p>
                     <p className="text-sm">
-                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (setup, architecture, App Updates, deployment, and more). Start with App Updates or Architecture for the latest admin workflows.
+                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (setup, architecture, App Updates, Remote Widgets / SSH &amp; VNC, deployment, and more). Start with App Updates or Architecture for the latest admin workflows.
                     </p>
                   </div>
                 </div>
@@ -531,7 +531,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Floating Widgets</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Clock (timezones), Weather, Calculator, Password Generator, Phonetic Alphabet, Page Zoom, Theme, Notes, Favorites Organizer, Chat, and Snake Game. Toggle from the nav bar or press Ctrl+Shift+Y for Quick Access.
+                      Clock (timezones), Weather, Calculator, Password Generator, Phonetic Alphabet, Page Zoom, Theme, Notes, Favorites Organizer, Chat, Snake Game, <strong>VNC Viewer</strong>, and <strong>SSH Terminal</strong>. Toggle from the nav bar or press Ctrl+Shift+Y for Quick Access. See the Remote Widgets section below (or Guides → Remote Widgets Setup) for ttyd and websockify setup.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -1028,6 +1028,50 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
 
               <section>
                 <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <polyline points="4 17 10 11 4 5"></polyline>
+                    <line x1="12" y1="19" x2="20" y2="19"></line>
+                  </svg>
+                  Remote Widgets (SSH Terminal &amp; VNC)
+                </h3>
+                <div className="space-y-3 text-slate-700 dark:text-slate-300">
+                  <p className="text-sm">
+                    Browsers cannot open raw SSH or VNC. Each widget talks to a gateway over WebSocket. Full steps live in <strong>Guides → Remote Widgets Setup</strong>.
+                  </p>
+                  <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 border border-emerald-200 dark:border-emerald-800">
+                    <p className="font-medium text-emerald-900 dark:text-emerald-100">SSH Terminal (ttyd)</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>Install: <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">winget install tsl0922.ttyd --source winget</code></li>
+                      <li>
+                        Windows shell-only (avoids CreateProcess error 267):
+                        <pre className="mt-1 p-2 text-[11px] font-mono bg-white dark:bg-slate-900 rounded border border-emerald-200 dark:border-emerald-800 overflow-x-auto whitespace-pre-wrap">ttyd -W -p 7681 -w $env:USERPROFILE C:\Windows\System32\OpenSSH\ssh.exe -tt user@host</pre>
+                      </li>
+                      <li>
+                        Windows with <strong>X11 GUI apps</strong> (windows open on your desktop via VcXsrv — not inside the SSH panel):
+                        <pre className="mt-1 p-2 text-[11px] font-mono bg-white dark:bg-slate-900 rounded border border-emerald-200 dark:border-emerald-800 overflow-x-auto whitespace-pre-wrap">$env:DISPLAY = "127.0.0.1:0.0"
+ttyd -W -p 7681 -w $env:USERPROFILE C:\Windows\System32\OpenSSH\ssh.exe -Y -tt user@host</pre>
+                      </li>
+                      <li>In the widget, connect to <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">ws://localhost:7681/ws</code></li>
+                      <li>Save connections with tags; export/import JSON. Passwords are never stored. Signed-in users sync to the server; guests use this browser only.</li>
+                      <li className="text-xs text-emerald-800 dark:text-emerald-200">If you see <code className="bg-white dark:bg-slate-800 px-1 rounded">Can&apos;t open display:</code>, start VcXsrv, set <code className="bg-white dark:bg-slate-800 px-1 rounded">$env:DISPLAY</code>, use <code className="bg-white dark:bg-slate-800 px-1 rounded">ssh -Y</code>, and enable <code className="bg-white dark:bg-slate-800 px-1 rounded">X11Forwarding yes</code> on the Linux host. Details: Guides → Remote Widgets Setup.</li>
+                    </ul>
+                  </div>
+                  <div className="bg-sky-50 dark:bg-sky-900/20 rounded-lg p-4 space-y-2 border border-sky-200 dark:border-sky-800">
+                    <p className="font-medium text-sky-900 dark:text-sky-100">VNC Viewer (websockify + noVNC)</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>Run a VNC server on the target, then bridge with websockify (example port <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">6080</code>)</li>
+                      <li>In the widget, use a URL like <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">ws://localhost:6080/websockify</code></li>
+                      <li>VNC password is session-only (not saved). Use tags, filter, and export/import like SSH.</li>
+                    </ul>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Prefer LAN or VPN. Do not expose unauthenticated ttyd/websockify to the public internet. Enable widgets per role under Admin → Roles → Widgets (<code className="text-[10px]">ssh-terminal</code>, <code className="text-[10px]">vnc-viewer</code>).
+                  </p>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
                     <path fillRule="evenodd" d="M6 4a1 1 0 011-1h6a1 1 0 011 1v1h1a2 2 0 012 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h1V4zm2 2V4h4v2H8zM5 7a1 1 0 00-1 1v7a1 1 0 001 1h10a1 1 0 001-1V8a1 1 0 00-1-1H5zm3 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" clipRule="evenodd" />
                   </svg>
@@ -1125,6 +1169,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <li>Add seasonal decorations to tiles for holidays and special occasions</li>
                     <li>Toggle floating widgets from the navigation bar or press <strong>Ctrl+Shift+Y</strong> for the Widget Quick Access menu</li>
                     <li>Use the Notes and Chat widgets when signed in; Password Generator and Zoom Control are available from the widgets pill</li>
+                    <li>For SSH Terminal on Windows, run ttyd with <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded text-xs">-w $env:USERPROFILE</code> and the full path to <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded text-xs">ssh.exe</code> (see Remote Widgets / Guides)</li>
                     <li>Monitor system health with URL, keyword, port, and ping checks</li>
                     <li>Set up email notifications with advanced rules and multiple SMTP servers</li>
                     <li>View monitoring history with interactive charts and graphs</li>
@@ -1245,7 +1290,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <ul className="list-disc list-inside space-y-1 ml-2">
                     <li><strong>Mobile Link Preview:</strong> Phone action on Quick Links opens an in-app device mockup (phone / tablet / watch) or a device-sized window for DevTools testing</li>
                     <li><strong>In-app App Updates:</strong> Check GitHub commits/releases, preview changes, apply with DB backup, and roll back from Admin (XAMPP installs)</li>
-                    <li><strong>Guides tab:</strong> Searchable in-app documentation (Architecture, App Updates, deployment, and more)</li>
+                    <li><strong>Guides tab:</strong> Searchable in-app documentation (Architecture, App Updates, Remote Widgets / SSH &amp; VNC, deployment, and more)</li>
                     <li><strong>QR sharing:</strong> Branded QR codes for the app URL and spaces (desktop + mobile)</li>
                     <li><strong>Share spaces:</strong> Share with users, accept/reject notifications, and revoke access</li>
                     <li><strong>Visitor stats:</strong> Hit counts and unique visitors on Space Info</li>
@@ -1366,6 +1411,8 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     'Favorites Organizer Widget',
                     'Chat Widget',
                     'Snake Game Widget',
+                    'SSH Terminal Widget (ttyd)',
+                    'VNC Viewer Widget (noVNC)',
                     'System Monitoring Dashboard',
                     'URL / Keyword / Port / Ping Monitoring',
                     'Monitorv2 Add-on (PostgreSQL)',

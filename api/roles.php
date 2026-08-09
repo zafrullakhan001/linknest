@@ -605,7 +605,9 @@ function handleAssignWidgetsToRole($roleId) {
         'theme',
         'fav-organizer',
         'chat',
-        'snake-game'
+        'snake-game',
+        'vnc-viewer',
+        'ssh-terminal'
     ];
     
     // Get custom widget IDs from database

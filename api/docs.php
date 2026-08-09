@@ -29,6 +29,7 @@ const DOCS_CATEGORY_MAP = [
     'TILE_ADMIN_GRANULAR_PERMISSIONS.md' => 'Features',
     'MULTIPLE_SMTP_SERVERS.md' => 'Features',
     'DATABASE_CLEANUP_UI.md' => 'Features',
+    'REMOTE_WIDGETS_SETUP.md' => 'Features',
     'PYTHON_WORKERS.md' => 'Operations',
     'CLONED_INSTANCE_SCHEDULING.md' => 'Operations',
     'DUPLICATE_TILES_CLEANUP.md' => 'Operations',

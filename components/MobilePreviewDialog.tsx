@@ -18,7 +18,7 @@ interface DevicePreset {
   width: number;
   height: number;
   variant: DeviceMockupVariant;
-  group: 'Responsive' | 'iPhone' | 'Android' | 'Tablet' | 'Watch';
+  group: 'Responsive' | 'iPhone' | 'Android' | 'Tablet' | 'Watch' | 'Enterprise';
 }
 
 /** Shared presets for In-app mockups + Device emulation windows. */
@@ -36,11 +36,25 @@ const DEVICE_PRESETS: DevicePreset[] = [
   { id: 'android-tablet', label: 'Android Tablet', width: 800, height: 1280, variant: 'android-tablet', group: 'Tablet' },
   { id: 'watch-square', label: 'Watch (Square)', width: 198, height: 242, variant: 'watch-square', group: 'Watch' },
   { id: 'watch-round', label: 'Watch (Round)', width: 360, height: 360, variant: 'watch-round', group: 'Watch' },
+  // Approx. CSS viewports for Zebra TC-series handhelds
+  { id: 'zebra-tc21', label: 'Zebra TC21', width: 360, height: 640, variant: 'zebra-handheld', group: 'Enterprise' },
+  { id: 'zebra-tc52', label: 'Zebra TC52', width: 360, height: 640, variant: 'zebra-handheld', group: 'Enterprise' },
+  { id: 'zebra-tc57', label: 'Zebra TC57', width: 360, height: 640, variant: 'zebra-handheld', group: 'Enterprise' },
 ];
 
-const QUICK_PRESETS = ['iphone-14', 'iphone-15-pro', 'pixel-7', 'pixel-8', 'galaxy-s24', 'ipad', 'watch-square', 'watch-round'] as const;
+const QUICK_PRESETS = [
+  'iphone-14',
+  'iphone-15-pro',
+  'pixel-7',
+  'pixel-8',
+  'galaxy-s24',
+  'ipad',
+  'zebra-tc52',
+  'watch-square',
+  'watch-round',
+] as const;
 
-const PRESET_GROUPS = ['Responsive', 'iPhone', 'Android', 'Tablet', 'Watch'] as const;
+const PRESET_GROUPS = ['Responsive', 'iPhone', 'Android', 'Tablet', 'Enterprise', 'Watch'] as const;
 
 const ZOOM_OPTIONS = [25, 50, 75, 100, 125, 150];
 const PREVIEW_WINDOW_NAME = 'linknest_device_preview';
@@ -310,9 +324,14 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
     const padding = 32;
     const availableWidth = Math.max(120, stage.clientWidth - padding);
     const availableHeight = Math.max(120, stage.clientHeight - padding);
-    const frameExtra = isWatch ? 40 : 36;
-    const frameWidth = size.width + frameExtra;
-    const frameHeight = size.height + frameExtra + (activePreset.variant === 'iphone-legacy' ? 18 : 0);
+    const isZebra = activePreset.variant === 'zebra-handheld';
+    const frameExtra = isWatch ? 40 : isZebra ? 44 : 36;
+    const frameWidth = size.width + frameExtra + (isZebra ? 12 : 0);
+    const frameHeight =
+      size.height +
+      frameExtra +
+      (activePreset.variant === 'iphone-legacy' ? 18 : 0) +
+      (isZebra ? 64 : 0);
     const nextScale = Math.min(1, availableWidth / frameWidth, availableHeight / frameHeight);
     const maxScale = isWatch ? 1.75 : 1;
     setFitScale(Math.min(maxScale, Math.max(0.2, nextScale)));
@@ -725,6 +744,7 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
                   {p.label
                     .replace('iPhone ', 'iP ')
                     .replace('Galaxy ', 'S')
+                    .replace('Zebra TC52', 'Zebra')
                     .replace('Watch (Square)', 'Watch □')
                     .replace('Watch (Round)', 'Watch ○')}
                 </button>

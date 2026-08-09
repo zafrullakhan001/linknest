@@ -33,6 +33,10 @@ interface NavigationProps {
   toggleChat: () => void;
   showSnakeGame: boolean;
   toggleSnakeGame: () => void;
+  showVncViewer: boolean;
+  toggleVncViewer: () => void;
+  showSshTerminal: boolean;
+  toggleSshTerminal: () => void;
   hasUnreadChatMessages?: boolean;
   user: { id: number; username: string; email: string; is_admin?: boolean } | null;
   onLoginClick: () => void;
@@ -40,7 +44,7 @@ interface NavigationProps {
   isWidgetAllowed: (widgetId: string) => boolean;
 }
 
-export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: toggleDarkMode, showClock, toggleClock, showPhoneticAlphabet, togglePhoneticAlphabet, showNotes, toggleNotes, showWeather, toggleWeather, showCalculator, toggleCalculator, showPasswordGenerator, togglePasswordGenerator, showZoomControl, toggleZoomControl, showTheme, toggleThemeWidget, showFavOrganizer, toggleFavOrganizer, showChat, toggleChat, showSnakeGame, toggleSnakeGame, hasUnreadChatMessages = false, user, onLoginClick, onHelpClick, isWidgetAllowed }) => {
+export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: toggleDarkMode, showClock, toggleClock, showPhoneticAlphabet, togglePhoneticAlphabet, showNotes, toggleNotes, showWeather, toggleWeather, showCalculator, toggleCalculator, showPasswordGenerator, togglePasswordGenerator, showZoomControl, toggleZoomControl, showTheme, toggleThemeWidget, showFavOrganizer, toggleFavOrganizer, showChat, toggleChat, showSnakeGame, toggleSnakeGame, showVncViewer, toggleVncViewer, showSshTerminal, toggleSshTerminal, hasUnreadChatMessages = false, user, onLoginClick, onHelpClick, isWidgetAllowed }) => {
   const { logout } = useAuth();
   const { settings, loading: settingsLoading } = useSettings();
   const disabledTabs = getDisabledTabsFromSettings(settings);
@@ -386,6 +390,31 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
                 <path d="M8 8l-4 4 4 4"></path>
                 <path d="M16 8l4 4-4 4"></path>
               </svg>
+              </button>
+            )}
+            {isWidgetAllowed('vnc-viewer') && (
+              <button
+                onClick={toggleVncViewer}
+                className={`p-2 rounded-full transition-all linknest-nav-icon ${showVncViewer ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                title={showVncViewer ? "Hide VNC Viewer Widget" : "Show VNC Viewer Widget"}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
+                  <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+                  <path d="M8 21h8"></path>
+                  <path d="M12 17v4"></path>
+                </svg>
+              </button>
+            )}
+            {isWidgetAllowed('ssh-terminal') && (
+              <button
+                onClick={toggleSshTerminal}
+                className={`p-2 rounded-full transition-all linknest-nav-icon ${showSshTerminal ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                title={showSshTerminal ? "Hide SSH Terminal Widget" : "Show SSH Terminal Widget"}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
+                  <polyline points="4 17 10 11 4 5"></polyline>
+                  <line x1="12" y1="19" x2="20" y2="19"></line>
+                </svg>
               </button>
             )}
           </div>

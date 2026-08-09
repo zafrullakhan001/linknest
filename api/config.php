@@ -112,7 +112,7 @@ define('SYSTEM_TOKEN', 'linknest_secret_token_123'); // Change this for producti
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 75);
+    define('LINKNEST_SCHEMA_VERSION', 76);
 }
 
 /**
@@ -1757,6 +1757,26 @@ function initDatabase() {
         // Index for faster per-user lookup
         try {
             $db->exec('CREATE INDEX IF NOT EXISTS idx_user_alarms_user_id ON user_alarms(user_id)');
+        } catch (PDOException $e) {
+            // ignore if index creation fails
+        }
+
+        // Saved SSH terminal gateway connections (ttyd WebSocket URLs) per user
+        $db->exec('CREATE TABLE IF NOT EXISTS user_ssh_connections (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            ws_url TEXT NOT NULL,
+            tags TEXT NOT NULL DEFAULT \'[]\',
+            notes TEXT,
+            created_at INTEGER NOT NULL,
+            last_used_at INTEGER,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )');
+
+        try {
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_user_ssh_connections_user_id ON user_ssh_connections(user_id)');
         } catch (PDOException $e) {
             // ignore if index creation fails
         }

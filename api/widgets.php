@@ -90,7 +90,9 @@ function handleGetAllAvailableWidgets() {
         ['id' => 'theme', 'label' => 'Theme', 'description' => 'Theme switcher widget', 'isCustom' => false],
         ['id' => 'fav-organizer', 'label' => 'Favorite Organizer', 'description' => 'Organize favorite links', 'isCustom' => false],
         ['id' => 'chat', 'label' => 'Chat', 'description' => 'Chat widget (requires authentication)', 'isCustom' => false],
-        ['id' => 'snake-game', 'label' => 'Snake Game', 'description' => 'Snake game widget', 'isCustom' => false]
+        ['id' => 'snake-game', 'label' => 'Snake Game', 'description' => 'Snake game widget', 'isCustom' => false],
+        ['id' => 'vnc-viewer', 'label' => 'VNC Viewer', 'description' => 'noVNC remote desktop viewer (websockify URL)', 'isCustom' => false],
+        ['id' => 'ssh-terminal', 'label' => 'SSH Terminal', 'description' => 'xterm.js web SSH terminal (ttyd WebSocket URL)', 'isCustom' => false]
     ];
     
     $db = getDB();
@@ -166,7 +168,9 @@ function handleGetAllowedWidgets() {
         ['id' => 'theme', 'label' => 'Theme', 'description' => 'Theme switcher widget', 'isCustom' => false],
         ['id' => 'fav-organizer', 'label' => 'Favorite Organizer', 'description' => 'Organize favorite links', 'isCustom' => false],
         ['id' => 'chat', 'label' => 'Chat', 'description' => 'Chat widget (requires authentication)', 'isCustom' => false],
-        ['id' => 'snake-game', 'label' => 'Snake Game', 'description' => 'Snake game widget', 'isCustom' => false]
+        ['id' => 'snake-game', 'label' => 'Snake Game', 'description' => 'Snake game widget', 'isCustom' => false],
+        ['id' => 'vnc-viewer', 'label' => 'VNC Viewer', 'description' => 'noVNC remote desktop viewer (websockify URL)', 'isCustom' => false],
+        ['id' => 'ssh-terminal', 'label' => 'SSH Terminal', 'description' => 'xterm.js web SSH terminal (ttyd WebSocket URL)', 'isCustom' => false]
     ];
     
     $customWidgets = [];

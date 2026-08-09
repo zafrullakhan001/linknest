@@ -34,6 +34,10 @@ import { FloatingChatWidget } from './components/FloatingChatWidget';
 import { ChatWidget } from './components/ChatWidget';
 import { FloatingSnakeGameWidget } from './components/FloatingSnakeGameWidget';
 import { SnakeGameWidget } from './components/SnakeGameWidget';
+import { FloatingVncViewerWidget } from './components/FloatingVncViewerWidget';
+import { VncViewerWidget } from './components/VncViewerWidget';
+import { FloatingSshTerminalWidget } from './components/FloatingSshTerminalWidget';
+import { SshTerminalWidget } from './components/SshTerminalWidget';
 import { themeService } from './services/themeService';
 import { getMessages, ChatMessage } from './services/chatService';
 import { WidgetQuickAccess } from './components/WidgetQuickAccess';
@@ -228,6 +232,26 @@ const AppContent: React.FC = () => {
     localStorage.setItem('linknest_show_snake_game_widget', showSnakeGame.toString());
   }, [showSnakeGame]);
 
+  // VNC Viewer Widget Visibility State
+  const [showVncViewer, setShowVncViewer] = useState(() => {
+    const saved = localStorage.getItem('linknest_show_vnc_viewer_widget');
+    return saved !== null ? saved === 'true' : false;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('linknest_show_vnc_viewer_widget', showVncViewer.toString());
+  }, [showVncViewer]);
+
+  // SSH Terminal Widget Visibility State
+  const [showSshTerminal, setShowSshTerminal] = useState(() => {
+    const saved = localStorage.getItem('linknest_show_ssh_terminal_widget');
+    return saved !== null ? saved === 'true' : false;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('linknest_show_ssh_terminal_widget', showSshTerminal.toString());
+  }, [showSshTerminal]);
+
   // Chat unread messages state
   const [hasUnreadChatMessages, setHasUnreadChatMessages] = useState(false);
 
@@ -291,7 +315,7 @@ const AppContent: React.FC = () => {
         // For logged out users, allow all non-auth widgets
         setAllowedWidgetIds(new Set([
           'clock', 'weather', 'calculator', 'password-generator',
-          'phonetic-alphabet', 'zoom-control', 'theme', 'snake-game'
+          'phonetic-alphabet', 'zoom-control', 'theme', 'snake-game', 'vnc-viewer', 'ssh-terminal'
         ]));
         setWidgetsLoading(false);
         return;
@@ -302,7 +326,7 @@ const AppContent: React.FC = () => {
         setAllowedWidgetIds(new Set([
           'clock', 'weather', 'calculator', 'notes', 'password-generator',
           'phonetic-alphabet', 'zoom-control', 'theme', 'fav-organizer',
-          'chat', 'snake-game'
+          'chat', 'snake-game', 'vnc-viewer', 'ssh-terminal'
         ]));
         setWidgetsLoading(false);
         return;
@@ -572,6 +596,14 @@ const AppContent: React.FC = () => {
 
   const toggleSnakeGame = () => {
     setShowSnakeGame(!showSnakeGame);
+  };
+
+  const toggleVncViewer = () => {
+    setShowVncViewer(!showVncViewer);
+  };
+
+  const toggleSshTerminal = () => {
+    setShowSshTerminal(!showSshTerminal);
   };
 
   const handleTabClick = (tab: string) => {
@@ -873,6 +905,10 @@ const AppContent: React.FC = () => {
             toggleChat={toggleChat}
             showSnakeGame={showSnakeGame}
             toggleSnakeGame={toggleSnakeGame}
+            showVncViewer={showVncViewer}
+            toggleVncViewer={toggleVncViewer}
+            showSshTerminal={showSshTerminal}
+            toggleSshTerminal={toggleSshTerminal}
             hasUnreadChatMessages={hasUnreadChatMessages}
             user={user}
             onLoginClick={() => setAuthModalOpen(true)}
@@ -1114,6 +1150,10 @@ const AppContent: React.FC = () => {
           toggleChat={toggleChat}
           showSnakeGame={showSnakeGame}
           toggleSnakeGame={toggleSnakeGame}
+          showVncViewer={showVncViewer}
+          toggleVncViewer={toggleVncViewer}
+          showSshTerminal={showSshTerminal}
+          toggleSshTerminal={toggleSshTerminal}
           hasUnreadChatMessages={hasUnreadChatMessages}
             user={user}
             onLoginClick={() => setAuthModalOpen(true)}
@@ -1412,6 +1452,16 @@ const AppContent: React.FC = () => {
               <SnakeGameWidget onClose={toggleSnakeGame} />
             </FloatingSnakeGameWidget>
           )}
+          {showVncViewer && isWidgetAllowed('vnc-viewer') && (
+            <FloatingVncViewerWidget>
+              <VncViewerWidget onClose={toggleVncViewer} />
+            </FloatingVncViewerWidget>
+          )}
+          {showSshTerminal && isWidgetAllowed('ssh-terminal') && (
+            <FloatingSshTerminalWidget>
+              <SshTerminalWidget onClose={toggleSshTerminal} />
+            </FloatingSshTerminalWidget>
+          )}
         </>
       )}
       <AuthModal
@@ -1595,6 +1645,31 @@ const AppContent: React.FC = () => {
                 ),
                 isVisible: showSnakeGame,
                 onToggle: toggleSnakeGame,
+              },
+              {
+                id: 'vnc-viewer',
+                name: 'VNC Viewer',
+                icon: (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                    <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+                    <path d="M8 21h8"></path>
+                    <path d="M12 17v4"></path>
+                  </svg>
+                ),
+                isVisible: showVncViewer,
+                onToggle: toggleVncViewer,
+              },
+              {
+                id: 'ssh-terminal',
+                name: 'SSH Terminal',
+                icon: (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                    <polyline points="4 17 10 11 4 5"></polyline>
+                    <line x1="12" y1="19" x2="20" y2="19"></line>
+                  </svg>
+                ),
+                isVisible: showSshTerminal,
+                onToggle: toggleSshTerminal,
               },
             ].filter(widget => isWidgetAllowed(widget.id))}
           />
