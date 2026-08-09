@@ -927,7 +927,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [expandedBulkRoleTargets, setExpandedBulkRoleTargets] = useState<Set<string>>(new Set());
   const [groupRolesMap, setGroupRolesMap] = useState<Record<number, Array<{ id: number; name: string; description?: string }>>>({});
   const [loadingGroupRoles, setLoadingGroupRoles] = useState<Set<number>>(new Set());
-  const [roleForm, setRoleForm] = useState({ name: '', description: '' });
+  const [roleForm, setRoleForm] = useState({ name: '', description: '', isGuest: false });
   const [allTiles, setAllTiles] = useState<Tile[]>([]);
   const [allLinks, setAllLinks] = useState<Array<{ id: string; label: string; url: string; tileId: string; tileTitle: string }>>([]);
   const [roleTilesLoading, setRoleTilesLoading] = useState(false);
@@ -1395,7 +1395,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         } else if (showRoleModal) {
           setShowRoleModal(false);
           setSelectedRole(null);
-          setRoleForm({ name: '', description: '' });
+          setRoleForm({ name: '', description: '', isGuest: false });
         }
       }
     };
@@ -2525,13 +2525,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
   // Roles management handlers
   const handleAddRole = () => {
-    setRoleForm({ name: '', description: '' });
+    setRoleForm({ name: '', description: '', isGuest: false });
     setSelectedRole(null);
     setShowRoleModal(true);
   };
 
   const handleEditRole = (role: Role) => {
-    setRoleForm({ name: role.name, description: role.description || '' });
+    setRoleForm({ name: role.name, description: role.description || '', isGuest: !!role.isGuest });
     setSelectedRole(role);
     setShowRoleModal(true);
   };
@@ -2550,7 +2550,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         await rolesService.createRole(roleForm);
       }
       setShowRoleModal(false);
-      setRoleForm({ name: '', description: '' });
+      setRoleForm({ name: '', description: '', isGuest: false });
       setSelectedRole(null);
       await loadRoles();
     } catch (err: any) {
@@ -9752,6 +9752,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🎭</span> Roles</h3>
                           <p className={ADMIN_SECTION_SUBTITLE}>
                             Roles control visibility. They do not grant edit rights. Configure what each role can see, then assign it to people or teams.
+                            The role marked for guests controls which widgets appear for users who are not logged in — use Configure to adjust its widgets.
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-2 shrink-0">
@@ -9821,10 +9822,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     <button
                                       type="button"
                                       onClick={() => handleEditRole(role)}
-                                      className="text-sm font-medium text-slate-900 dark:text-white hover:text-brand-600 dark:hover:text-brand-400 text-left transition-colors"
+                                      className="text-sm font-medium text-slate-900 dark:text-white hover:text-brand-600 dark:hover:text-brand-400 text-left transition-colors inline-flex items-center gap-2"
                                       title="Edit role name and description"
                                     >
                                       {role.name}
+                                      {role.isGuest && (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">
+                                          Guests
+                                        </span>
+                                      )}
                                     </button>
                                   </td>
                                   <td className="px-4 py-4">
@@ -16428,7 +16434,7 @@ node .\\load-tests\\generate-report.js`}
                 <button
                   onClick={() => {
                     setShowRoleModal(false);
-                    setRoleForm({ name: '', description: '' });
+                    setRoleForm({ name: '', description: '', isGuest: false });
                     setSelectedRole(null);
                     setError('');
                   }}
@@ -16474,11 +16480,28 @@ node .\\load-tests\\generate-report.js`}
                 />
               </div>
 
+              <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={roleForm.isGuest}
+                  onChange={(e) => setRoleForm({ ...roleForm, isGuest: e.target.checked })}
+                  className="mt-0.5 rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                />
+                <span>
+                  <span className="block text-sm font-medium text-slate-800 dark:text-slate-200">
+                    Apply to guests (not logged in)
+                  </span>
+                  <span className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Only one role can have this. Its widget permissions control what visitors see before they log in.
+                  </span>
+                </span>
+              </label>
+
               <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
                 <button
                   onClick={() => {
                     setShowRoleModal(false);
-                    setRoleForm({ name: '', description: '' });
+                    setRoleForm({ name: '', description: '', isGuest: false });
                     setSelectedRole(null);
                     setError('');
                   }}

@@ -115,6 +115,7 @@ function handleGetRoles() {
             'id' => (int)$row['id'],
             'name' => $row['name'],
             'description' => $row['description'],
+            'isGuest' => !empty($row['is_guest']),
             'userCount' => (int)$row['user_count'],
             'groupCount' => (int)$row['group_count'],
             'tileCount' => (int)$row['tile_count'],
@@ -162,6 +163,7 @@ function handleGetRole($roleId) {
         'id' => (int)$role['id'],
         'name' => $role['name'],
         'description' => $role['description'],
+        'isGuest' => !empty($role['is_guest']),
         'users' => $users,
         'createdAt' => (int)$role['created_at'],
         'updatedAt' => (int)$role['updated_at']
@@ -377,27 +379,39 @@ function handleCreateRole() {
     
     $name = trim($data['name']);
     $description = isset($data['description']) ? trim($data['description']) : null;
+    $isGuest = !empty($data['isGuest']) || !empty($data['is_guest']);
     
     $db = getDB();
     $currentTime = time();
     
     try {
-        $stmt = $db->prepare('INSERT INTO roles (name, description, created_at, updated_at) VALUES (?, ?, ?, ?)');
-        $stmt->execute([$name, $description, $currentTime, $currentTime]);
+        $db->beginTransaction();
+
+        if ($isGuest) {
+            $db->exec('UPDATE roles SET is_guest = 0, updated_at = ' . (int)$currentTime . ' WHERE is_guest = 1');
+        }
+
+        $stmt = $db->prepare('INSERT INTO roles (name, description, is_guest, created_at, updated_at) VALUES (?, ?, ?, ?, ?)');
+        $stmt->execute([$name, $description, $isGuest ? 1 : 0, $currentTime, $currentTime]);
         
-        $roleId = $db->lastInsertId();
+        $roleId = (int)$db->lastInsertId();
+        $db->commit();
         
         sendJSON([
             'success' => true,
             'role' => [
-                'id' => (int)$roleId,
+                'id' => $roleId,
                 'name' => $name,
                 'description' => $description,
+                'isGuest' => $isGuest,
                 'createdAt' => $currentTime,
                 'updatedAt' => $currentTime
             ]
         ]);
     } catch (PDOException $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
         if (strpos($e->getMessage(), 'UNIQUE constraint') !== false) {
             sendJSON(['error' => 'A role with this name already exists'], 409);
         }
@@ -430,21 +444,41 @@ function handleUpdateRole($roleId) {
         $updates[] = 'description = ?';
         $params[] = trim($data['description']);
     }
+
+    $isGuestSpecified = array_key_exists('isGuest', $data) || array_key_exists('is_guest', $data);
+    $isGuest = $isGuestSpecified
+        ? (!empty($data['isGuest']) || !empty($data['is_guest']))
+        : null;
     
-    if (empty($updates)) {
+    if (empty($updates) && !$isGuestSpecified) {
         sendJSON(['error' => 'No fields to update'], 400);
     }
     
     $updates[] = 'updated_at = ?';
     $params[] = time();
-    $params[] = $roleId;
     
     try {
+        $db->beginTransaction();
+
+        if ($isGuestSpecified) {
+            if ($isGuest) {
+                $clearStmt = $db->prepare('UPDATE roles SET is_guest = 0, updated_at = ? WHERE is_guest = 1 AND id != ?');
+                $clearStmt->execute([time(), $roleId]);
+            }
+            $updates[] = 'is_guest = ?';
+            $params[] = $isGuest ? 1 : 0;
+        }
+
+        $params[] = $roleId;
         $stmt = $db->prepare('UPDATE roles SET ' . implode(', ', $updates) . ' WHERE id = ?');
         $stmt->execute($params);
+        $db->commit();
         
         sendJSON(['success' => true]);
     } catch (PDOException $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
         if (strpos($e->getMessage(), 'UNIQUE constraint') !== false) {
             sendJSON(['error' => 'A role with this name already exists'], 409);
         }

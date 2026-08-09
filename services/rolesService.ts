@@ -4,6 +4,7 @@ export interface Role {
   id: number;
   name: string;
   description?: string;
+  isGuest?: boolean;
   userCount?: number;
   groupCount?: number;
   tileCount?: number;
@@ -65,11 +66,13 @@ export interface BatchUserRolesResponse {
 export interface CreateRoleRequest {
   name: string;
   description?: string;
+  isGuest?: boolean;
 }
 
 export interface UpdateRoleRequest {
   name?: string;
   description?: string;
+  isGuest?: boolean;
 }
 
 export interface AssignTilesRequest {

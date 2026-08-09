@@ -311,18 +311,8 @@ const AppContent: React.FC = () => {
   // Fetch allowed widgets when user logs in or auth state changes
   useEffect(() => {
     const fetchAllowedWidgets = async () => {
-      if (!isAuthenticated || !user) {
-        // For logged out users, allow all non-auth widgets
-        setAllowedWidgetIds(new Set([
-          'clock', 'weather', 'calculator', 'password-generator',
-          'phonetic-alphabet', 'zoom-control', 'theme', 'snake-game', 'vnc-viewer', 'ssh-terminal'
-        ]));
-        setWidgetsLoading(false);
-        return;
-      }
-
       // Admins get all widgets
-      if (user.is_admin) {
+      if (isAuthenticated && user?.is_admin) {
         setAllowedWidgetIds(new Set([
           'clock', 'weather', 'calculator', 'notes', 'password-generator',
           'phonetic-alphabet', 'zoom-control', 'theme', 'fav-organizer',
@@ -332,6 +322,8 @@ const AppContent: React.FC = () => {
         return;
       }
 
+      // Guests and authenticated non-admins: load from role permissions
+      // (guests use the designated Public/is_guest role via the API)
       try {
         setWidgetsLoading(true);
         const allowedWidgets = await getAllowedWidgets();
@@ -339,7 +331,7 @@ const AppContent: React.FC = () => {
         setAllowedWidgetIds(widgetIds);
       } catch (error) {
         console.error('Failed to fetch allowed widgets:', error);
-        // On error, show no widgets for non-admins (strict security)
+        // On error, show no widgets (strict security)
         setAllowedWidgetIds(new Set());
       } finally {
         setWidgetsLoading(false);
@@ -351,23 +343,20 @@ const AppContent: React.FC = () => {
 
   // Helper function to check if a widget is allowed
   const isWidgetAllowed = useCallback((widgetId: string): boolean => {
-    // If user is not authenticated, allow public widgets
-    if (!isAuthenticated || !user) {
-      // Allow non-auth widgets for logged out users
-      return !['notes', 'chat', 'fav-organizer'].includes(widgetId);
+    // Auth-only widgets are never available to guests
+    if ((!isAuthenticated || !user) && ['notes', 'chat', 'fav-organizer'].includes(widgetId)) {
+      return false;
     }
-    
+
     // Admins can see all widgets
-    if (user.is_admin) return true;
-    
+    if (user?.is_admin) return true;
+
     // During loading, don't show any widgets (prevent flickering)
     if (widgetsLoading) {
       return false;
     }
-    
-    // Check if widget is in allowed list
-    const isAllowed = allowedWidgetIds.has(widgetId);
-    return isAllowed;
+
+    return allowedWidgetIds.has(widgetId);
   }, [isAuthenticated, user, allowedWidgetIds, widgetsLoading]);
 
   // Theme State — keep in sync with index.html bootstrap + auto-switch defaults

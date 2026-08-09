@@ -137,7 +137,7 @@ function handleGetAllowedWidgets() {
         return;
     }
     
-    // Get user's role IDs (including from groups)
+    // Get user's role IDs (including from groups). Guests resolve the is_guest role.
     $userRoleIds = getUserRoleIds($user ? $user['id'] : null, $db);
     
     // If user has no roles, return empty array (no widgets allowed)
@@ -154,6 +154,17 @@ function handleGetAllowedWidgets() {
     $allowedWidgetIds = [];
     while ($row = $stmt->fetch()) {
         $allowedWidgetIds[] = $row['widget_id'];
+    }
+
+    // Guests must never receive auth-only widgets even if mis-assigned on the guest role
+    if (!$user) {
+        $authOnlyWidgets = ['notes', 'chat', 'fav-organizer'];
+        $allowedWidgetIds = array_values(array_filter(
+            $allowedWidgetIds,
+            function ($widgetId) use ($authOnlyWidgets) {
+                return !in_array($widgetId, $authOnlyWidgets, true);
+            }
+        ));
     }
     
     // Get all available widgets

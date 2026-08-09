@@ -112,7 +112,7 @@ define('SYSTEM_TOKEN', 'linknest_secret_token_123'); // Change this for producti
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 76);
+    define('LINKNEST_SCHEMA_VERSION', 77);
 }
 
 /**
@@ -420,6 +420,7 @@ function initDatabase() {
         }
         if ($currentVersion >= (int)LINKNEST_SCHEMA_VERSION) {
             ensureTilesHeaderImageColumns($db);
+            ensurePublicGuestRole($db);
             return $db;
         }
 
@@ -434,6 +435,7 @@ function initDatabase() {
         }
         if ($currentVersion >= (int)LINKNEST_SCHEMA_VERSION) {
             ensureTilesHeaderImageColumns($db);
+            ensurePublicGuestRole($db);
             releaseDatabaseInitLock($initLock);
             $initLock = null;
             return $db;
@@ -2363,9 +2365,18 @@ function initDatabase() {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE NOT NULL,
             description TEXT,
+            is_guest INTEGER DEFAULT 0,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         )');
+
+        // Guest/public role flag (widgets for unauthenticated users)
+        try {
+            $db->exec('ALTER TABLE roles ADD COLUMN is_guest INTEGER DEFAULT 0');
+        } catch (PDOException $e) {
+            // Column already exists, ignore
+        }
+        ensurePublicGuestRole($db);
         
         // Create user_roles table for assigning multiple roles to users
         $db->exec('CREATE TABLE IF NOT EXISTS user_roles (
@@ -2928,10 +2939,91 @@ function canUserEditTile($userId, $tileId, $db) {
     return true;
 }
 
-// Helper function to get user's role IDs (including roles from groups)
+/**
+ * Role id marked for unauthenticated (guest) users, or null if none.
+ */
+function getGuestRoleId($db) {
+    try {
+        $stmt = $db->query('SELECT id FROM roles WHERE is_guest = 1 LIMIT 1');
+        $row = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : false;
+        return $row ? (int)$row['id'] : null;
+    } catch (PDOException $e) {
+        return null;
+    }
+}
+
+/**
+ * Ensure a Public guest role exists with default widget permissions for anonymous users.
+ * Safe to call multiple times.
+ */
+function ensurePublicGuestRole($db): void {
+    try {
+        $cols = $db->query('PRAGMA table_info(roles)')->fetchAll(PDO::FETCH_ASSOC);
+        $colNames = array_column($cols, 'name');
+        if (!in_array('is_guest', $colNames, true)) {
+            return;
+        }
+
+        $guestId = getGuestRoleId($db);
+        $now = time();
+
+        if ($guestId === null) {
+            $existingPublic = $db->query("SELECT id FROM roles WHERE lower(name) = 'public' LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+            if ($existingPublic) {
+                $guestId = (int)$existingPublic['id'];
+                $db->prepare('UPDATE roles SET is_guest = 1, updated_at = ? WHERE id = ?')->execute([$now, $guestId]);
+            } else {
+                $stmt = $db->prepare('INSERT INTO roles (name, description, is_guest, created_at, updated_at) VALUES (?, ?, 1, ?, ?)');
+                $stmt->execute([
+                    'Public',
+                    'Widgets and visibility for users who are not logged in',
+                    $now,
+                    $now,
+                ]);
+                $guestId = (int)$db->lastInsertId();
+            }
+        }
+
+        if (!$guestId) {
+            return;
+        }
+
+        $countStmt = $db->prepare('SELECT COUNT(*) FROM role_widget_permissions WHERE role_id = ?');
+        $countStmt->execute([$guestId]);
+        if ((int)$countStmt->fetchColumn() > 0) {
+            return;
+        }
+
+        $defaultWidgets = [
+            'clock',
+            'weather',
+            'calculator',
+            'password-generator',
+            'phonetic-alphabet',
+            'zoom-control',
+            'theme',
+            'snake-game',
+            'vnc-viewer',
+            'ssh-terminal',
+        ];
+        $insert = $db->prepare('
+            INSERT OR IGNORE INTO role_widget_permissions (role_id, widget_id, can_view, created_at, updated_at)
+            VALUES (?, ?, 1, ?, ?)
+        ');
+        foreach ($defaultWidgets as $widgetId) {
+            $insert->execute([$guestId, $widgetId, $now, $now]);
+        }
+    } catch (PDOException $e) {
+        error_log('ensurePublicGuestRole failed: ' . $e->getMessage());
+    }
+}
+
+// Helper function to get user's role IDs (including roles from groups).
+// When $userId is null, returns the designated guest/public role (if any).
 function getUserRoleIds($userId, $db) {
     if (!$userId) {
-        return [];
+        $guestRoleId = getGuestRoleId($db);
+        return $guestRoleId !== null ? [$guestRoleId] : [];
     }
     
     $roleIds = [];

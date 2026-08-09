@@ -30,9 +30,25 @@ const PANEL_OPEN_KEY = 'linknest.sshTerminal.panelOpen.v1';
 const PANEL_WIDTH_KEY = 'linknest.sshTerminal.panelWidth.v1';
 const PANEL_MIN_WIDTH = 160;
 const PANEL_MAX_WIDTH = 420;
+const MAX_SSH_TABS = 8;
 
 type ConnState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
 type ConnectMode = 'auto' | 'ws';
+
+interface SessionTab {
+  id: string;
+  title: string;
+  connectionId: string | null;
+  status: ConnState;
+  statusMessage: string;
+}
+
+interface SessionHandle {
+  term: Terminal | null;
+  fit: FitAddon | null;
+  ws: WebSocket | null;
+  gatewaySessionId: string | null;
+}
 
 const CMD = {
   OUTPUT: '0',
@@ -130,11 +146,9 @@ function parseTtydFrame(data: ArrayBuffer | Blob | string): { cmd: string; paylo
 
 export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose }) => {
   const { isAuthenticated } = useAuth();
-  const termHostRef = useRef<HTMLDivElement>(null);
-  const termRef = useRef<Terminal | null>(null);
-  const fitRef = useRef<FitAddon | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-  const gatewaySessionRef = useRef<string | null>(null);
+  const sessionHandlesRef = useRef<Map<string, SessionHandle>>(new Map());
+  const tabHostsRef = useRef<Map<string, HTMLDivElement | null>>(new Map());
+  const activeTabIdRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const panelWidthRef = useRef(loadPanelWidth());
   const panelResizeCleanupRef = useRef<(() => void) | null>(null);
@@ -154,8 +168,8 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
   const [guiDisplayReady, setGuiDisplayReady] = useState<boolean | null>(null);
 
   const [wsUrl, setWsUrl] = useState(() => localStorage.getItem(WS_STORAGE_KEY) || 'ws://localhost:7681/ws');
-  const [status, setStatus] = useState<ConnState>('idle');
-  const [statusMessage, setStatusMessage] = useState('Enter host, port, and username — LinkNest starts ttyd for you.');
+  const [tabs, setTabs] = useState<SessionTab[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(true);
   const [panelOpen, setPanelOpen] = useState(() => localStorage.getItem(PANEL_OPEN_KEY) !== 'false');
   const [panelWidth, setPanelWidth] = useState(() => loadPanelWidth());
@@ -174,8 +188,26 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
   const [draftTags, setDraftTags] = useState('');
   const [draftNotes, setDraftNotes] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [notice, setNotice] = useState(
+    'Enter host, port, and username — LinkNest starts ttyd for you.'
+  );
 
   const useServer = Boolean(isAuthenticated);
+
+  const activeTab = useMemo(
+    () => tabs.find((t) => t.id === activeTabId) ?? null,
+    [tabs, activeTabId]
+  );
+  const status: ConnState = activeTab?.status ?? 'idle';
+  const statusMessage = activeTab?.statusMessage ?? notice;
+
+  useEffect(() => {
+    activeTabIdRef.current = activeTabId;
+  }, [activeTabId]);
+
+  const updateTab = useCallback((tabId: string, patch: Partial<SessionTab>) => {
+    setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, ...patch } : t)));
+  }, []);
 
   useEffect(() => {
     try {
@@ -275,8 +307,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
       } catch (err) {
         console.error('Failed to load SSH connections', err);
         if (!cancelled) {
-          setStatus('error');
-          setStatusMessage(err instanceof Error ? err.message : 'Failed to load saved connections');
+          setNotice(err instanceof Error ? err.message : 'Failed to load saved connections');
           setStorageReady(true);
         }
       }
@@ -287,41 +318,68 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
     };
   }, [useServer]);
 
-  const stopGateway = useCallback(async () => {
-    const id = gatewaySessionRef.current;
-    gatewaySessionRef.current = null;
-    if (!id) return;
+  const stopGatewayFor = useCallback(async (gatewaySessionId: string | null | undefined) => {
+    if (!gatewaySessionId) return;
     try {
-      await sshGatewayService.stop(id);
+      await sshGatewayService.stop(gatewaySessionId);
     } catch {
       // ignore
     }
   }, []);
 
-  const disposeTerminal = useCallback(() => {
+  const disposeSessionHandle = useCallback((tabId: string, opts?: { keepHost?: boolean }) => {
+    const handle = sessionHandlesRef.current.get(tabId);
+    if (!handle) return;
     try {
-      wsRef.current?.close();
+      handle.ws?.close();
     } catch {
       // ignore
     }
-    wsRef.current = null;
+    handle.ws = null;
     try {
-      termRef.current?.dispose();
+      handle.term?.dispose();
     } catch {
       // ignore
     }
-    termRef.current = null;
-    fitRef.current = null;
-    if (termHostRef.current) {
-      termHostRef.current.innerHTML = '';
+    handle.term = null;
+    handle.fit = null;
+    const host = tabHostsRef.current.get(tabId);
+    if (host && !opts?.keepHost) {
+      host.innerHTML = '';
     }
+    const gw = handle.gatewaySessionId;
+    handle.gatewaySessionId = null;
+    sessionHandlesRef.current.set(tabId, handle);
+    return gw;
   }, []);
 
-  const disconnect = useCallback(() => {
-    disposeTerminal();
-    void stopGateway();
-    setStatus((s) => (s === 'connecting' || s === 'connected' ? 'disconnected' : s));
-  }, [disposeTerminal, stopGateway]);
+  const closeTab = useCallback(
+    async (tabId: string) => {
+      const handle = sessionHandlesRef.current.get(tabId);
+      const gw = handle?.gatewaySessionId ?? null;
+      disposeSessionHandle(tabId);
+      sessionHandlesRef.current.delete(tabId);
+      tabHostsRef.current.delete(tabId);
+      void stopGatewayFor(gw);
+
+      setTabs((prev) => {
+        const next = prev.filter((t) => t.id !== tabId);
+        setActiveTabId((current) => {
+          if (current !== tabId) return current;
+          return next.length ? next[next.length - 1].id : null;
+        });
+        return next;
+      });
+    },
+    [disposeSessionHandle, stopGatewayFor]
+  );
+
+  const disconnectActive = useCallback(() => {
+    if (!activeTabId) return;
+    void closeTab(activeTabId);
+    setNotice('Disconnected');
+    setShowSettings(true);
+  }, [activeTabId, closeTab]);
 
   const markLastUsed = useCallback(
     async (connectionId: string | null | undefined) => {
@@ -343,12 +401,24 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
     [useServer]
   );
 
-  const sendResize = useCallback(() => {
-    const term = termRef.current;
-    const ws = wsRef.current;
+  const sendResize = useCallback((tabId?: string | null) => {
+    const id = tabId ?? activeTabIdRef.current;
+    if (!id) return;
+    const handle = sessionHandlesRef.current.get(id);
+    const term = handle?.term;
+    const ws = handle?.ws;
     if (!term || !ws || ws.readyState !== WebSocket.OPEN) return;
     const msg = CMD.RESIZE_TERMINAL + JSON.stringify({ columns: term.cols, rows: term.rows });
     ws.send(encoderRef.current.encode(msg));
+  }, []);
+
+  const waitForTabHost = useCallback(async (tabId: string): Promise<HTMLDivElement | null> => {
+    for (let i = 0; i < 30; i++) {
+      const el = tabHostsRef.current.get(tabId);
+      if (el) return el;
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    }
+    return tabHostsRef.current.get(tabId) ?? null;
   }, []);
 
   const connectTo = useCallback(
@@ -362,42 +432,82 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
       mode?: ConnectMode;
       x11?: boolean;
     }) => {
+      if (sessionHandlesRef.current.size >= MAX_SSH_TABS) {
+        setNotice(`Maximum of ${MAX_SSH_TABS} open sessions. Close a tab first.`);
+        return;
+      }
+
       const mode = opts?.mode ?? connectMode;
       let url = normalizeWsUrl(opts?.wsUrl ?? wsUrl);
       const nextConnectionId = opts?.connectionId !== undefined ? opts.connectionId : activeConnectionId;
       const nextName = opts?.connectionName;
+      const tabId = `tab_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+      const tabTitle = (nextName || '').trim() || (opts?.host ? `${opts.username || sshUsername}@${opts.host}` : 'Session');
 
-      await stopGateway();
-      disposeTerminal();
-      setStatus('connecting');
+      sessionHandlesRef.current.set(tabId, {
+        term: null,
+        fit: null,
+        ws: null,
+        gatewaySessionId: null,
+      });
+      setTabs((prev) => [
+        ...prev,
+        {
+          id: tabId,
+          title: tabTitle || 'Session',
+          connectionId: nextConnectionId,
+          status: 'connecting',
+          statusMessage: 'Starting session…',
+        },
+      ]);
+      setActiveTabId(tabId);
+      setActiveConnectionId(nextConnectionId ?? null);
       setShowSettings(false);
 
-      // Auto mode: start ttyd on the LinkNest server, then connect to returned WS URL
+      const failTab = (message: string) => {
+        const handle = sessionHandlesRef.current.get(tabId);
+        const gw = handle?.gatewaySessionId ?? null;
+        if (handle) handle.gatewaySessionId = null;
+        disposeSessionHandle(tabId);
+        sessionHandlesRef.current.delete(tabId);
+        tabHostsRef.current.delete(tabId);
+        void stopGatewayFor(gw);
+        setTabs((prev) => {
+          const next = prev.filter((t) => t.id !== tabId);
+          setActiveTabId((current) => {
+            if (current !== tabId) return current;
+            return next.length ? next[next.length - 1].id : null;
+          });
+          return next;
+        });
+        setNotice(message);
+        setShowSettings(true);
+      };
+
       const autoFromUrl = parseAutoTargetUrl(url);
       const wantAuto =
         mode === 'auto' || Boolean(autoFromUrl) || (Boolean(opts?.host) && Boolean(opts?.username));
 
       if (wantAuto) {
         if (!useServer) {
-          setStatus('error');
-          setStatusMessage('Sign in to use automatic SSH (LinkNest starts ttyd for you). Or switch to WebSocket URL mode.');
-          setShowSettings(true);
+          failTab('Sign in to use automatic SSH (LinkNest starts ttyd for you). Or switch to WebSocket URL mode.');
           return;
         }
         const host = (opts?.host ?? autoFromUrl?.host ?? sshHost).trim();
         const username = (opts?.username ?? autoFromUrl?.username ?? sshUsername).trim();
         const port = opts?.port ?? autoFromUrl?.port ?? (Number.parseInt(sshPort, 10) || 22);
         if (!host || !username) {
-          setStatus('error');
-          setStatusMessage('Host and username are required.');
-          setShowSettings(true);
+          failTab('Host and username are required.');
           return;
         }
-          setStatusMessage(
+        const title = nextName?.trim() || `${username}@${host}`;
+        updateTab(tabId, {
+          title,
+          statusMessage:
             (opts?.x11 ?? x11Forward)
               ? `Starting SSH+GUI gateway to ${username}@${host}:${port}…`
-              : `Starting SSH gateway to ${username}@${host}:${port}…`
-          );
+              : `Starting SSH gateway to ${username}@${host}:${port}…`,
+        });
         try {
           const session = await sshGatewayService.start({
             host,
@@ -405,7 +515,8 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
             username,
             x11: opts?.x11 ?? x11Forward,
           });
-          gatewaySessionRef.current = session.sessionId;
+          const handle = sessionHandlesRef.current.get(tabId);
+          if (handle) handle.gatewaySessionId = session.sessionId;
           url = session.wsUrl;
           setWsUrl(url);
           setSshHost(host);
@@ -413,21 +524,20 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
           setSshUsername(username);
           setConnectMode('auto');
         } catch (err) {
-          setStatus('error');
-          setStatusMessage(err instanceof Error ? err.message : 'Failed to start SSH gateway');
-          setShowSettings(true);
+          failTab(err instanceof Error ? err.message : 'Failed to start SSH gateway');
           return;
         }
       }
 
       if (!url || /^auto:\/\//i.test(url)) {
-        setStatus('error');
-        setStatusMessage('WebSocket URL is required.');
-        setShowSettings(true);
+        failTab('WebSocket URL is required.');
         return;
       }
 
-      setStatusMessage(`Connecting to ${nextName || url}…`);
+      updateTab(tabId, {
+        status: 'connecting',
+        statusMessage: `Connecting to ${nextName || url}…`,
+      });
 
       try {
         localStorage.setItem(WS_STORAGE_KEY, url);
@@ -435,10 +545,9 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
         // ignore
       }
 
-      const hostEl = termHostRef.current;
+      const hostEl = await waitForTabHost(tabId);
       if (!hostEl) {
-        setStatus('error');
-        setStatusMessage('Terminal surface is not ready.');
+        failTab('Terminal surface is not ready.');
         return;
       }
 
@@ -465,23 +574,32 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
           // ignore
         }
       });
-      termRef.current = term;
-      fitRef.current = fit;
+
+      const handle = sessionHandlesRef.current.get(tabId);
+      if (!handle) {
+        try {
+          term.dispose();
+        } catch {
+          // ignore
+        }
+        failTab('Session was closed.');
+        return;
+      }
+      handle.term = term;
+      handle.fit = fit;
 
       let ws: WebSocket;
       try {
         ws = new WebSocket(url, ['tty']);
       } catch (err) {
-        disposeTerminal();
-        void stopGateway();
-        setStatus('error');
-        setStatusMessage(err instanceof Error ? err.message : 'Failed to open WebSocket');
-        setShowSettings(true);
+        const gw = disposeSessionHandle(tabId);
+        void stopGatewayFor(gw);
+        failTab(err instanceof Error ? err.message : 'Failed to open WebSocket');
         return;
       }
 
       ws.binaryType = 'arraybuffer';
-      wsRef.current = ws;
+      handle.ws = ws;
 
       ws.onopen = () => {
         try {
@@ -493,15 +611,17 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
         const rows = Math.max(term.rows || 24, 1);
         const hello = JSON.stringify({ AuthToken: '', columns: cols, rows });
         ws.send(encoderRef.current.encode(hello));
-        term.focus();
-        setStatus('connected');
-        setStatusMessage(nextName ? `Connected · ${nextName}` : 'Connected — enter SSH password if prompted');
+        if (activeTabIdRef.current === tabId) term.focus();
+        updateTab(tabId, {
+          status: 'connected',
+          statusMessage: nextName ? `Connected · ${nextName}` : 'Connected — enter SSH password if prompted',
+        });
         void markLastUsed(nextConnectionId);
         window.setTimeout(() => {
           try {
             fit.fit();
-            sendResize();
-            term.focus();
+            sendResize(tabId);
+            if (activeTabIdRef.current === tabId) term.focus();
           } catch {
             // ignore
           }
@@ -516,26 +636,32 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
           term.write(payload);
         } else if (cmd === CMD.SET_WINDOW_TITLE) {
           const title = typeof payload === 'string' ? payload : new TextDecoder().decode(payload);
-          setStatusMessage(nextName ? `${nextName} · ${title}` : title);
+          updateTab(tabId, {
+            statusMessage: nextName ? `${nextName} · ${title}` : title,
+            title: nextName?.trim() || title.split(' ')[0] || 'Session',
+          });
         }
       };
 
       ws.onerror = () => {
-        setStatus('error');
-        setStatusMessage('WebSocket error — check that ttyd is running');
-        setShowSettings(true);
+        updateTab(tabId, {
+          status: 'error',
+          statusMessage: `WebSocket error — cannot reach ${url}. If Easy mode was used, ttyd may have exited; try Connect again.`,
+        });
+        if (activeTabIdRef.current === tabId) setShowSettings(true);
       };
 
-      ws.onclose = () => {
-        wsRef.current = null;
-        void stopGateway();
-        setStatus((s) => (s === 'connecting' ? 'error' : 'disconnected'));
-        setStatusMessage((prev) =>
-          prev.startsWith('Connected') || prev.includes('Connecting') || prev.includes('Starting')
-            ? 'Disconnected'
-            : prev
-        );
-        setShowSettings(true);
+      ws.onclose = (ev) => {
+        const current = sessionHandlesRef.current.get(tabId);
+        if (current) current.ws = null;
+        const gw = current?.gatewaySessionId ?? null;
+        if (current) current.gatewaySessionId = null;
+        void stopGatewayFor(gw);
+        updateTab(tabId, {
+          status: 'disconnected',
+          statusMessage: ev.code ? `Disconnected (code ${ev.code})` : 'Disconnected',
+        });
+        if (activeTabIdRef.current === tabId) setShowSettings(true);
       };
 
       term.onData((data) => {
@@ -544,7 +670,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
       });
 
       term.onResize(() => {
-        sendResize();
+        sendResize(tabId);
       });
     },
     [
@@ -556,8 +682,10 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
       x11Forward,
       useServer,
       activeConnectionId,
-      disposeTerminal,
-      stopGateway,
+      updateTab,
+      disposeSessionHandle,
+      stopGatewayFor,
+      waitForTabHost,
       sendResize,
       markLastUsed,
     ]
@@ -565,12 +693,38 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
 
   const connect = useCallback(() => connectTo(), [connectTo]);
 
+  const selectTab = useCallback(
+    (tabId: string) => {
+      setActiveTabId(tabId);
+      const tab = tabs.find((t) => t.id === tabId);
+      if (tab?.connectionId) setActiveConnectionId(tab.connectionId);
+      requestAnimationFrame(() => {
+        const handle = sessionHandlesRef.current.get(tabId);
+        try {
+          handle?.fit?.fit();
+          sendResize(tabId);
+          handle?.term?.focus();
+        } catch {
+          // ignore
+        }
+      });
+    },
+    [tabs, sendResize]
+  );
+
   useEffect(() => {
     return () => {
-      disposeTerminal();
-      void stopGateway();
+      const ids = Array.from(sessionHandlesRef.current.keys());
+      for (const id of ids) {
+        const handle = sessionHandlesRef.current.get(id);
+        const gw = handle?.gatewaySessionId ?? null;
+        disposeSessionHandle(id);
+        void stopGatewayFor(gw);
+      }
+      sessionHandlesRef.current.clear();
+      tabHostsRef.current.clear();
     };
-  }, [disposeTerminal, stopGateway]);
+  }, [disposeSessionHandle, stopGatewayFor]);
 
   useEffect(() => {
     try {
@@ -599,8 +753,10 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
   useEffect(() => {
     const onWinResize = () => {
       try {
-        fitRef.current?.fit();
-        sendResize();
+        const id = activeTabIdRef.current;
+        if (!id) return;
+        sessionHandlesRef.current.get(id)?.fit?.fit();
+        sendResize(id);
       } catch {
         // ignore
       }
@@ -609,18 +765,21 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
     return () => window.removeEventListener('resize', onWinResize);
   }, [sendResize]);
 
-  // Refit when panel toggles / settings changes layout
+  // Refit when panel toggles / settings / tab switch changes layout
   useEffect(() => {
     const t = window.setTimeout(() => {
       try {
-        fitRef.current?.fit();
-        sendResize();
+        const id = activeTabId;
+        if (!id) return;
+        sessionHandlesRef.current.get(id)?.fit?.fit();
+        sendResize(id);
+        sessionHandlesRef.current.get(id)?.term?.focus();
       } catch {
         // ignore
       }
     }, 50);
     return () => window.clearTimeout(t);
-  }, [panelOpen, panelWidth, showSettings, sendResize]);
+  }, [panelOpen, panelWidth, showSettings, activeTabId, sendResize]);
 
   const startPanelResize = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -690,7 +849,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
         setWsUrl(c.wsUrl);
       }
       setShowSettings(!autoConnect);
-      setStatusMessage(autoConnect ? `Connecting to “${c.name}”…` : `Loaded “${c.name}”`);
+      setNotice(autoConnect ? `Connecting to “${c.name}”…` : `Loaded “${c.name}”`);
       if (autoConnect) {
         void connectTo({
           wsUrl: c.wsUrl,
@@ -714,8 +873,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
       const username = sshUsername.trim();
       const port = Number.parseInt(sshPort, 10) || 22;
       if (!host || !username) {
-        setStatus('error');
-        setStatusMessage('Enter host and username before saving.');
+        setNotice('Enter host and username before saving.');
         return;
       }
       url = buildAutoTargetUrl(username, host, port);
@@ -723,8 +881,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
     } else {
       url = normalizeWsUrl(wsUrl);
       if (!url || /^auto:\/\//i.test(url)) {
-        setStatus('error');
-        setStatusMessage('Enter a WebSocket URL before saving.');
+        setNotice('Enter a WebSocket URL before saving.');
         return;
       }
       if (!name) name = url.replace(/^wss?:\/\//i, '').split('/')[0] || 'SSH host';
@@ -739,13 +896,13 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
           const updated = await sshConnectionService.update(editingId, { name, wsUrl: url, tags, notes: notes || '' });
           setConnections((prev) => prev.map((c) => (c.id === editingId ? updated : c)));
           setActiveConnectionId(editingId);
-          setStatusMessage(`Updated “${name}”`);
+          setNotice(`Updated “${name}”`);
         } else {
           const created = await sshConnectionService.create({ name, wsUrl: url, tags, notes });
           setConnections((prev) => [created, ...prev]);
           setActiveConnectionId(created.id);
           setEditingId(created.id);
-          setStatusMessage(`Saved “${name}”`);
+          setNotice(`Saved “${name}”`);
         }
       } else if (editingId) {
         updateConnectionsLocal(
@@ -762,7 +919,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
           )
         );
         setActiveConnectionId(editingId);
-        setStatusMessage(`Updated “${name}”`);
+        setNotice(`Updated “${name}”`);
       } else {
         const created: SavedSshConnection = {
           id: newId(),
@@ -775,12 +932,11 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
         updateConnectionsLocal([created, ...connections]);
         setActiveConnectionId(created.id);
         setEditingId(created.id);
-        setStatusMessage(`Saved “${name}”`);
+        setNotice(`Saved “${name}”`);
       }
       setWsUrl(url);
     } catch (err) {
-      setStatus('error');
-      setStatusMessage(err instanceof Error ? err.message : 'Failed to save connection');
+      setNotice(err instanceof Error ? err.message : 'Failed to save connection');
     } finally {
       setSaving(false);
     }
@@ -793,7 +949,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
     setDraftTags('');
     setDraftNotes('');
     setShowSettings(true);
-    setStatusMessage('New connection — fill URL, name, tags, then Save.');
+    setNotice('New connection — fill URL, name, tags, then Save.');
   };
 
   const exportConnectionsJson = () => {
@@ -820,7 +976,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    setStatusMessage(`Exported ${connections.length} connection${connections.length === 1 ? '' : 's'}`);
+    setNotice(`Exported ${connections.length} connection${connections.length === 1 ? '' : 's'}`);
   };
 
   const importConnectionsJson = async (file: File) => {
@@ -833,8 +989,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
           ? parsed.connections
           : null;
       if (!list) {
-        setStatus('error');
-        setStatusMessage('Invalid JSON: expected { connections: [...] } or an array.');
+        setNotice('Invalid JSON: expected { connections: [...] } or an array.');
         return;
       }
 
@@ -858,15 +1013,14 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
       }
 
       if (incoming.length === 0) {
-        setStatus('error');
-        setStatusMessage('No valid connections found in that file.');
+        setNotice('No valid connections found in that file.');
         return;
       }
 
       if (useServer) {
         const merged = await sshConnectionService.bulkUpsert(incoming);
         setConnections(merged);
-        setStatusMessage(`Imported / merged ${incoming.length} connection(s)`);
+        setNotice(`Imported / merged ${incoming.length} connection(s)`);
         return;
       }
 
@@ -903,10 +1057,9 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
         }
       }
       updateConnectionsLocal(Array.from(byKey.values()));
-      setStatusMessage(`Imported ${added} new, updated ${updated}`);
+      setNotice(`Imported ${added} new, updated ${updated}`);
     } catch (err) {
-      setStatus('error');
-      setStatusMessage(err instanceof Error ? err.message : 'Failed to import JSON');
+      setNotice(err instanceof Error ? err.message : 'Failed to import JSON');
     }
   };
 
@@ -931,10 +1084,9 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
         setDraftNotes('');
       }
       if (activeConnectionId === id) setActiveConnectionId(null);
-      setStatusMessage(`Deleted “${target.name}”`);
+      setNotice(`Deleted “${target.name}”`);
     } catch (err) {
-      setStatus('error');
-      setStatusMessage(err instanceof Error ? err.message : 'Failed to delete connection');
+      setNotice(err instanceof Error ? err.message : 'Failed to delete connection');
     }
   };
 
@@ -974,32 +1126,88 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
+            onClick={() => void saveCurrentConnection()}
+            disabled={saving}
+            className="px-2 py-1 text-[11px] font-medium rounded-md bg-slate-800 hover:bg-slate-900 dark:bg-slate-200 dark:hover:bg-white text-white dark:text-slate-900 disabled:opacity-50"
+            title={editingId ? 'Update saved connection' : 'Save connection'}
+          >
+            {saving ? 'Saving…' : editingId ? 'Update' : 'Save'}
+          </button>
+          <button
+            type="button"
+            onClick={startNewDraft}
+            className="p-1.5 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+            title="New connection draft"
+            aria-label="New connection draft"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={exportConnectionsJson}
+            disabled={connections.length === 0}
+            className="p-1.5 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40"
+            title="Export connections as JSON"
+            aria-label="Export connections as JSON"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="p-1.5 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+            title="Import connections from JSON"
+            aria-label="Import connections from JSON"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+            </svg>
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (file) void importConnectionsJson(file);
+            }}
+          />
+          <span className="w-px h-4 bg-slate-200 dark:bg-slate-600 mx-0.5" aria-hidden />
+          <button
+            type="button"
             onClick={() => setShowSettings((v) => !v)}
-            className="px-2 py-1 text-[11px] font-medium rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+            className={`px-2 py-1 text-[11px] font-medium rounded-md border ${
+              showSettings
+                ? 'bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-500 text-slate-800 dark:text-slate-100'
+                : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+            }`}
             title="Connection settings"
           >
             Settings
           </button>
-          {status === 'connected' || status === 'connecting' ? (
+          <button
+            type="button"
+            onClick={() => void connect()}
+            disabled={tabs.length >= MAX_SSH_TABS}
+            className="px-2 py-1 text-[11px] font-medium rounded-md bg-brand-600 hover:bg-brand-700 text-white disabled:opacity-50"
+            title={tabs.length >= MAX_SSH_TABS ? `Maximum ${MAX_SSH_TABS} sessions` : 'Open a new session tab'}
+          >
+            {status === 'connected' || status === 'connecting' ? 'New tab' : 'Connect'}
+          </button>
+          {(status === 'connected' || status === 'connecting' || tabs.length > 0) && (
             <button
               type="button"
-              onClick={() => {
-                disconnect();
-                setStatus('disconnected');
-                setStatusMessage('Disconnected');
-                setShowSettings(true);
-              }}
+              onClick={() => disconnectActive()}
               className="px-2 py-1 text-[11px] font-medium rounded-md bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-100 hover:bg-slate-300 dark:hover:bg-slate-600"
+              title="Close active session tab"
             >
               Disconnect
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => void connect()}
-              className="px-2 py-1 text-[11px] font-medium rounded-md bg-brand-600 hover:bg-brand-700 text-white"
-            >
-              Connect
             </button>
           )}
           <button
@@ -1041,53 +1249,6 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                   Saved{useServer ? ' · cloud' : ' · local'}
                 </p>
-                <div className="flex items-center gap-0.5">
-                  <button
-                    type="button"
-                    onClick={exportConnectionsJson}
-                    disabled={connections.length === 0}
-                    className="p-1 rounded-md border border-slate-200 dark:border-slate-600 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white dark:hover:bg-slate-800 disabled:opacity-40"
-                    title="Export connections as JSON"
-                    aria-label="Export connections as JSON"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="p-1 rounded-md border border-slate-200 dark:border-slate-600 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white dark:hover:bg-slate-800"
-                    title="Import connections from JSON"
-                    aria-label="Import connections from JSON"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={startNewDraft}
-                    className="p-1 rounded-md bg-brand-600 hover:bg-brand-700 text-white"
-                    title="New connection"
-                    aria-label="New connection"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                    </svg>
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="application/json,.json"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      e.target.value = '';
-                      if (file) void importConnectionsJson(file);
-                    }}
-                  />
-                </div>
               </div>
               <input
                 type="search"
@@ -1132,7 +1293,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
                 <p className="text-[11px] text-slate-400 dark:text-slate-500 px-1.5 py-3 text-center">Loading…</p>
               ) : filteredConnections.length === 0 ? (
                 <p className="text-[11px] text-slate-400 dark:text-slate-500 px-1.5 py-3 text-center leading-relaxed">
-                  No saved connections yet. Fill Settings, set a name/tags, then Save.
+                  No saved connections yet. Fill Settings, then click <strong>Save</strong> on the top right.
                 </p>
               ) : (
                 filteredConnections.map((c) => {
@@ -1405,43 +1566,100 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
                   className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
                 />
               </label>
-              <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-600 dark:text-slate-300">
-                <button
-                  type="button"
-                  onClick={() => void saveCurrentConnection()}
-                  disabled={saving}
-                  className="ml-auto px-2.5 py-1 text-[11px] font-medium rounded-md bg-slate-800 hover:bg-slate-900 dark:bg-slate-200 dark:hover:bg-white text-white dark:text-slate-900 disabled:opacity-50"
-                >
-                  {saving ? 'Saving…' : editingId ? 'Update saved' : 'Save connection'}
-                </button>
-              </div>
               <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed">
-                Easy mode starts ttyd on this LinkNest server automatically. Choose <strong>Terminal + GUI</strong> to
-                forward X11 apps to Windows (VcXsrv). Passwords are never saved.{' '}
-                {useServer ? 'Saved connections sync to your account.' : 'Guest saves stay in this browser.'}
+                Use <strong>Save</strong> on the top right to keep this connection. Easy mode starts ttyd on this
+                LinkNest server. <strong>Terminal + GUI</strong> forwards X11 apps to Windows (VcXsrv). Passwords are
+                never saved. {useServer ? 'Saved connections sync to your account.' : 'Guest saves stay in this browser.'}
               </p>
             </div>
           )}
 
-          <div className="relative flex-1 min-h-0 bg-slate-950 overflow-hidden">
-            <div ref={termHostRef} className="absolute inset-0 w-full h-full p-1 overflow-hidden [&_.xterm]:h-full [&_.xterm]:w-full [&_.xterm-viewport]:overflow-auto" />
-            {status !== 'connected' && status !== 'connecting' && (
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="text-center px-4">
-                  <div className="mx-auto mb-2 w-10 h-10 rounded-xl bg-slate-800 text-slate-300 flex items-center justify-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
-                      <polyline points="4 17 10 11 4 5" />
-                      <line x1="12" y1="19" x2="20" y2="19" />
-                    </svg>
-                  </div>
-                  <p className="text-xs text-slate-400">
-                    {connections.length
-                      ? 'Click a saved connection to open the terminal'
-                      : 'xterm ready — save ttyd gateways in the left panel for one-click access'}
-                  </p>
-                </div>
+          <div className="relative flex-1 min-h-0 bg-slate-950 overflow-hidden flex flex-col">
+            {tabs.length > 0 && (
+              <div className="shrink-0 flex items-center gap-0.5 px-1 py-1 border-b border-slate-800 bg-slate-900 overflow-x-auto">
+                {tabs.map((tab) => {
+                  const active = tab.id === activeTabId;
+                  const dot =
+                    tab.status === 'connected'
+                      ? 'bg-emerald-400'
+                      : tab.status === 'connecting'
+                        ? 'bg-amber-400 animate-pulse'
+                        : tab.status === 'error'
+                          ? 'bg-red-400'
+                          : 'bg-slate-500';
+                  return (
+                    <div
+                      key={tab.id}
+                      className={`group flex items-center gap-1 max-w-[11rem] shrink-0 rounded-md border px-1.5 py-0.5 ${
+                        active
+                          ? 'bg-slate-800 border-slate-600 text-slate-100'
+                          : 'bg-transparent border-transparent text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => selectTab(tab.id)}
+                        className="flex items-center gap-1.5 min-w-0 text-left"
+                        title={tab.statusMessage || tab.title}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
+                        <span className="text-[11px] truncate font-medium">{tab.title}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void closeTab(tab.id);
+                        }}
+                        className="p-0.5 rounded opacity-60 hover:opacity-100 hover:bg-slate-700 text-slate-300"
+                        title="Close tab"
+                        aria-label={`Close ${tab.title}`}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                          <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                        </svg>
+                      </button>
+                    </div>
+                  );
+                })}
+                <span className="ml-auto px-1.5 text-[10px] text-slate-500 shrink-0">
+                  {tabs.length}/{MAX_SSH_TABS}
+                </span>
               </div>
             )}
+
+            <div className="relative flex-1 min-h-0">
+              {tabs.map((tab) => (
+                <div
+                  key={tab.id}
+                  ref={(el) => {
+                    if (el) tabHostsRef.current.set(tab.id, el);
+                    else tabHostsRef.current.delete(tab.id);
+                  }}
+                  className={`absolute inset-0 w-full h-full p-1 overflow-hidden [&_.xterm]:h-full [&_.xterm]:w-full [&_.xterm-viewport]:overflow-auto ${
+                    tab.id === activeTabId ? 'z-10 visible' : 'z-0 invisible pointer-events-none'
+                  }`}
+                  aria-hidden={tab.id !== activeTabId}
+                />
+              ))}
+              {tabs.length === 0 && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="text-center px-4">
+                    <div className="mx-auto mb-2 w-10 h-10 rounded-xl bg-slate-800 text-slate-300 flex items-center justify-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
+                        <polyline points="4 17 10 11 4 5" />
+                        <line x1="12" y1="19" x2="20" y2="19" />
+                      </svg>
+                    </div>
+                    <p className="text-xs text-slate-400">
+                      {connections.length
+                        ? 'Click a saved connection to open a session tab (up to 8)'
+                        : 'Connect or pick a saved host — each session opens in its own tab'}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

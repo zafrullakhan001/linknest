@@ -20,7 +20,7 @@ $path = rtrim($path, '/') ?: '/';
 define('SSH_GATEWAY_DIR', DB_DIR . '/ssh_gateway');
 define('SSH_GATEWAY_PORT_MIN', 17681);
 define('SSH_GATEWAY_PORT_MAX', 17780);
-define('SSH_GATEWAY_MAX_PER_USER', 2);
+define('SSH_GATEWAY_MAX_PER_USER', 8);
 define('SSH_GATEWAY_TTL_SEC', 6 * 3600);
 
 if ($method === 'GET' && ($path === '/' || $path === '/status')) {
@@ -112,12 +112,29 @@ function sshGatewayCleanup(array $sessions): array {
             continue;
         }
         $pid = isset($s['pid']) ? (int)$s['pid'] : 0;
+        $listenPort = isset($s['listenPort']) ? (int)$s['listenPort'] : 0;
         $created = isset($s['createdAt']) ? (int)$s['createdAt'] : 0;
         $alive = sshGatewayIsProcessAlive($pid);
+        if (!$alive && $listenPort > 0) {
+            $portPid = sshGatewayPidListeningOnPort($listenPort);
+            if ($portPid > 0) {
+                $alive = true;
+                $s['pid'] = $portPid;
+                $pid = $portPid;
+            }
+        }
         $expired = $created > 0 && ($now - $created) > SSH_GATEWAY_TTL_SEC;
         if (!$alive || $expired) {
             if ($pid > 0) {
                 sshGatewayKillPid($pid);
+            } elseif ($listenPort > 0) {
+                $portPid = sshGatewayPidListeningOnPort($listenPort);
+                if ($portPid > 0) {
+                    sshGatewayKillPid($portPid);
+                }
+            }
+            if (!empty($s['launcher']) && is_string($s['launcher']) && is_file($s['launcher'])) {
+                @unlink($s['launcher']);
             }
             continue;
         }
@@ -456,6 +473,179 @@ function handleSshGatewayStatus() {
     ]);
 }
 
+function sshGatewayQuoteCmd(string $s): string {
+    return '"' . str_replace('"', '""', $s) . '"';
+}
+
+/** Find OS PID listening on TCP port (Windows netstat / Linux ss|lsof). */
+function sshGatewayPidListeningOnPort(int $port): int {
+    if ($port < 1 || $port > 65535) {
+        return 0;
+    }
+    if (stripos(PHP_OS, 'WIN') === 0) {
+        $out = [];
+        @exec('netstat -ano -p tcp 2>NUL', $out);
+        foreach ($out as $line) {
+            if (stripos($line, 'LISTENING') === false) {
+                continue;
+            }
+            // Match :PORT before whitespace (IPv4 / IPv6 forms)
+            if (!preg_match('/[:\]]' . (int)$port . '\s/', $line)) {
+                continue;
+            }
+            if (preg_match('/\s(\d+)\s*$/', $line, $m)) {
+                $pid = (int)$m[1];
+                if ($pid > 0) {
+                    return $pid;
+                }
+            }
+        }
+        return 0;
+    }
+
+    $out = [];
+    @exec('ss -ltnp \'sport = :' . (int)$port . '\' 2>/dev/null', $out);
+    foreach ($out as $line) {
+        if (preg_match('/pid=(\d+)/', $line, $m)) {
+            return (int)$m[1];
+        }
+    }
+    $out = [];
+    @exec('lsof -nP -iTCP:' . (int)$port . ' -sTCP:LISTEN -t 2>/dev/null', $out);
+    foreach ($out as $line) {
+        $pid = (int)trim($line);
+        if ($pid > 0) {
+            return $pid;
+        }
+    }
+    return 0;
+}
+
+/**
+ * Spawn ttyd detached so it survives after the PHP/Apache request ends (critical on Windows).
+ * @return array{pid:int,ready:bool}
+ */
+function sshGatewaySpawnTtyd(
+    string $ttyd,
+    string $ssh,
+    int $listenPort,
+    string $cwd,
+    array $sshArgs,
+    bool $x11,
+    string $x11Display,
+    string $logFile
+): array {
+    if (stripos(PHP_OS, 'WIN') === 0) {
+        $bat = sshGatewayEnsureDir() . DIRECTORY_SEPARATOR . 'run_' . bin2hex(random_bytes(6)) . '.cmd';
+        $lines = ['@echo off'];
+        if ($x11) {
+            // Safe charset already validated by caller
+            $lines[] = 'set "DISPLAY=' . $x11Display . '"';
+            $lines[] = 'set "LIBGL_ALWAYS_INDIRECT=1"';
+        }
+        $line = sshGatewayQuoteCmd($ttyd)
+            . ' -W -i 0.0.0.0 -p ' . (int)$listenPort
+            . ' -w ' . sshGatewayQuoteCmd($cwd)
+            . ' ' . sshGatewayQuoteCmd($ssh);
+        foreach ($sshArgs as $a) {
+            $line .= ' ' . sshGatewayQuoteCmd((string)$a);
+        }
+        $lines[] = $line . ' >> ' . sshGatewayQuoteCmd($logFile) . ' 2>&1';
+        if (@file_put_contents($bat, implode("\r\n", $lines) . "\r\n") === false) {
+            sendJSON(['error' => 'Failed to write ttyd launcher script'], 500);
+        }
+
+        $launch = 'cmd.exe /c start /B "" ' . escapeshellarg($bat);
+        $ok = false;
+        if (function_exists('popen') && function_exists('pclose')) {
+            $h = @popen($launch, 'r');
+            if (is_resource($h)) {
+                pclose($h);
+                $ok = true;
+            }
+        }
+        if (!$ok) {
+            @exec($launch);
+            $ok = true;
+        }
+        if (!$ok) {
+            @unlink($bat);
+            sendJSON(['error' => 'Failed to launch detached ttyd process'], 500);
+        }
+
+        $ready = false;
+        $pid = 0;
+        for ($i = 0; $i < 25; $i++) {
+            usleep(200000);
+            $fp = @fsockopen('127.0.0.1', $listenPort, $errno, $errstr, 0.2);
+            if ($fp) {
+                fclose($fp);
+                $ready = true;
+                $pid = sshGatewayPidListeningOnPort($listenPort);
+                break;
+            }
+        }
+        // Do not delete $bat while ttyd is alive — cmd.exe keeps reading the .cmd and will fail with
+        // "The batch file cannot be found" if we unlink it, which can kill the gateway.
+        return ['pid' => $pid, 'ready' => $ready, 'launcher' => $bat];
+    }
+
+    // Unix: process group + nohup-style detach via proc_open then exit
+    $cmd = array_merge(
+        [$ttyd, '-W', '-i', '0.0.0.0', '-p', (string)$listenPort, '-w', $cwd, $ssh],
+        $sshArgs
+    );
+    $env = null;
+    if ($x11) {
+        $env = [];
+        foreach ($_ENV as $k => $v) {
+            if (is_string($k) && is_string($v)) {
+                $env[$k] = $v;
+            }
+        }
+        foreach ($_SERVER as $k => $v) {
+            if (is_string($k) && is_string($v) && !array_key_exists($k, $env) && preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $k)) {
+                $env[$k] = $v;
+            }
+        }
+        $env['DISPLAY'] = $x11Display;
+        $env['LIBGL_ALWAYS_INDIRECT'] = $env['LIBGL_ALWAYS_INDIRECT'] ?? '1';
+    }
+
+    $descriptors = [
+        0 => ['pipe', 'r'],
+        1 => ['file', $logFile, 'a'],
+        2 => ['file', $logFile, 'a'],
+    ];
+    $process = @proc_open($cmd, $descriptors, $pipes, $cwd, $env, ['bypass_shell' => true]);
+    if (!is_resource($process)) {
+        sendJSON(['error' => 'Failed to start ttyd process. Ensure PHP may spawn executables and ttyd is installed.'], 500);
+    }
+    if (isset($pipes[0]) && is_resource($pipes[0])) {
+        @fclose($pipes[0]);
+    }
+    $status = proc_get_status($process);
+    $pid = isset($status['pid']) ? (int)$status['pid'] : 0;
+
+    $ready = false;
+    for ($i = 0; $i < 20; $i++) {
+        usleep(200000);
+        $fp = @fsockopen('127.0.0.1', $listenPort, $errno, $errstr, 0.2);
+        if ($fp) {
+            fclose($fp);
+            $ready = true;
+            break;
+        }
+        $st = proc_get_status($process);
+        if (isset($st['running']) && !$st['running']) {
+            break;
+        }
+    }
+
+    // Don't proc_close — that would wait/reap. Leave process running.
+    return ['pid' => $pid > 0 ? $pid : sshGatewayPidListeningOnPort($listenPort), 'ready' => $ready];
+}
+
 function handleSshGatewayStart() {
     $user = requireAuth();
     $data = getJSONInput();
@@ -487,7 +677,7 @@ function handleSshGatewayStart() {
         }
     }
     if ($mine >= SSH_GATEWAY_MAX_PER_USER) {
-        sendJSON(['error' => 'Too many active SSH gateways. Disconnect one first.'], 429);
+        sendJSON(['error' => 'Too many active SSH gateways (max 8). Close a session tab first.'], 429);
     }
 
     $ttyd = sshGatewayResolveTtyd();
@@ -499,7 +689,6 @@ function handleSshGatewayStart() {
 
     $sshArgs = [];
     if ($x11) {
-        // Trusted X11 + explicit OpenSSH options (works through ttyd-spawned ssh)
         $sshArgs[] = '-Y';
         $sshArgs[] = '-o';
         $sshArgs[] = 'ForwardX11=yes';
@@ -511,104 +700,27 @@ function handleSshGatewayStart() {
     $sshArgs[] = (string)$sshPort;
     $sshArgs[] = $username . '@' . $host;
 
-    // Build argv for bypass_shell spawn
-    $cmd = array_merge(
-        [$ttyd, '-W', '-i', '0.0.0.0', '-p', (string)$listenPort, '-w', $cwd, $ssh],
-        $sshArgs
-    );
-
-    // Always build env when X11 is on so DISPLAY reaches OpenSSH (Windows Apache included)
-    $env = null;
-    if ($x11) {
-        $env = [];
-        foreach ($_ENV as $k => $v) {
-            if (is_string($k) && is_string($v)) {
-                $env[$k] = $v;
-            }
-        }
-        foreach ($_SERVER as $k => $v) {
-            if (is_string($k) && is_string($v) && !array_key_exists($k, $env) && preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $k)) {
-                $env[$k] = $v;
-            }
-        }
-        $env['DISPLAY'] = $x11Display;
-        // Help some Windows X servers / OpenSSH clients
-        if (!isset($env['LIBGL_ALWAYS_INDIRECT'])) {
-            $env['LIBGL_ALWAYS_INDIRECT'] = '1';
-        }
-    }
-
-    $descriptors = [
-        0 => ['pipe', 'r'],
-        1 => ['file', $logFile, 'a'],
-        2 => ['file', $logFile, 'a'],
-    ];
-
-    $options = ['bypass_shell' => true];
-    if (stripos(PHP_OS, 'WIN') === 0) {
-        $options['create_process_group'] = true;
-    }
-
-    $process = @proc_open($cmd, $descriptors, $pipes, $cwd, $env, $options);
-    if (!is_resource($process) && stripos(PHP_OS, 'WIN') === 0) {
-        $q = static function (string $s): string {
-            return '"' . str_replace('"', '""', $s) . '"';
-        };
-        $line = $q($ttyd) . ' -W -i 0.0.0.0 -p ' . (int)$listenPort . ' -w ' . $q($cwd) . ' ' . $q($ssh);
-        foreach ($sshArgs as $a) {
-            $line .= ' ' . $q($a);
-        }
-        $displayPrefix = $x11 ? ('set DISPLAY=' . $x11Display . '&& set LIBGL_ALWAYS_INDIRECT=1&& ') : '';
-        $batch = 'cmd /C ' . $displayPrefix . 'start /B "" ' . $line;
-        $process = @proc_open($batch, $descriptors, $pipes, $cwd, null, ['bypass_shell' => false]);
-    }
-
-    if (!is_resource($process)) {
-        sendJSON(['error' => 'Failed to start ttyd process. Ensure Apache/PHP may spawn executables and ttyd is installed.'], 500);
-    }
-
-    if (isset($pipes[0]) && is_resource($pipes[0])) {
-        @fclose($pipes[0]);
-    }
-
-    $status = proc_get_status($process);
-    $pid = isset($status['pid']) ? (int)$status['pid'] : 0;
-
-    // Wait until listen port is open (up to ~3s)
-    $ready = false;
-    for ($i = 0; $i < 15; $i++) {
-        usleep(200000);
-        $fp = @fsockopen('127.0.0.1', $listenPort, $errno, $errstr, 0.2);
-        if ($fp) {
-            fclose($fp);
-            $ready = true;
-            break;
-        }
-        $st = proc_get_status($process);
-        if (isset($st['running']) && !$st['running']) {
-            break;
-        }
-    }
+    $spawn = sshGatewaySpawnTtyd($ttyd, $ssh, $listenPort, $cwd, $sshArgs, $x11, $x11Display, $logFile);
+    $pid = (int)($spawn['pid'] ?? 0);
+    $ready = !empty($spawn['ready']);
 
     if (!$ready) {
-        $st = proc_get_status($process);
         if ($pid > 0) {
             sshGatewayKillPid($pid);
         }
-        @proc_close($process);
+        if (!empty($spawn['launcher']) && is_string($spawn['launcher']) && is_file($spawn['launcher'])) {
+            @unlink($spawn['launcher']);
+        }
         $tail = is_file($logFile) ? substr((string)@file_get_contents($logFile), -800) : '';
         sendJSON([
-            'error' => 'ttyd did not open a listening port. Is ttyd installed and is the port free?',
+            'error' => 'ttyd did not open a listening port. Check Admin → Add-ons → SSH Gateway paths, or install ttyd.',
             'log' => $tail,
             'code' => 'ttyd_not_listening',
-            'exitcode' => $st['exitcode'] ?? null,
         ], 500);
     }
 
-    // Detach: don't wait on process when request ends
-    if (stripos(PHP_OS, 'WIN') === 0) {
-        // On Windows, proc_close waits; leave resource dangling carefully.
-        // Prefer killing via PID later; mark resource for ignore.
+    if ($pid < 1) {
+        $pid = sshGatewayPidListeningOnPort($listenPort);
     }
 
     $wsUrl = sshGatewayBuildWsUrl($listenPort);
@@ -625,6 +737,7 @@ function handleSshGatewayStart() {
         'wsUrl' => $wsUrl,
         'createdAt' => time(),
         'logFile' => $logFile,
+        'launcher' => $spawn['launcher'] ?? null,
     ];
     $sessions[] = $record;
     sshGatewaySaveSessions($sessions);
@@ -662,8 +775,17 @@ function handleSshGatewayStop() {
             }
             $found = true;
             $pid = isset($s['pid']) ? (int)$s['pid'] : 0;
+            $listenPort = isset($s['listenPort']) ? (int)$s['listenPort'] : 0;
             if ($pid > 0) {
                 sshGatewayKillPid($pid);
+            } elseif ($listenPort > 0) {
+                $portPid = sshGatewayPidListeningOnPort($listenPort);
+                if ($portPid > 0) {
+                    sshGatewayKillPid($portPid);
+                }
+            }
+            if (!empty($s['launcher']) && is_string($s['launcher']) && is_file($s['launcher'])) {
+                @unlink($s['launcher']);
             }
             continue;
         }
