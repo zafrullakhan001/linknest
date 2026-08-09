@@ -14,7 +14,7 @@ import {
 import { cloneTile, getTiles, saveTile, toggleLinkFavorite, createTempVersion, updateTilePageAnimation, recordTileVisit } from '../services/storageService';
 import { removeSharedTile } from '../services/tileShareService';
 import { useSettings } from '../contexts/SettingsContext';
-import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import { isEscapeDialogOpen, useEscapeToClose } from '../hooks/useEscapeToClose';
 import { RichTextEditor } from './RichTextEditor';
 import { RichTextContentItem } from './RichTextContentItem';
 import { RichTextBoxedView } from './RichTextBoxedView';
@@ -1362,23 +1362,75 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     }, [settings.browser_specific_links_enabled]);
 
-    // Close browser menu on ESC key
+    const goBackToDashboard = useCallback(() => {
+        window.location.hash = '#/';
+    }, []);
+
+    // Escape: close menus/overlays first; otherwise go back (same as header Back button)
     useEffect(() => {
         const handleEscape = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
+            if (e.key !== 'Escape' && e.key !== 'Esc') return;
+            if (e.ctrlKey || e.shiftKey || e.metaKey || e.altKey) return;
+            // Dialogs that register via useEscapeToClose (and similar) handle Escape themselves
+            if (isEscapeDialogOpen()) return;
+            // Local dialogs with their own Escape handlers
+            if (notesDialogState || linkInfoDialog || qrDialogState || notesPresetFormState || diffViewerOpen) return;
+            if (
+                visibilityDialogTab ||
+                visibilityDialogSection ||
+                schedulingDialogTab ||
+                schedulingDialogSection ||
+                schedulingDialogLink ||
+                schedulingDialogRichText
+            ) {
+                return;
+            }
+
+            const anyBrowserMenuOpen = Object.values(showBrowserMenu).some(Boolean);
+            if (anyBrowserMenuOpen) {
                 setShowBrowserMenu({});
                 setSaveBrowserForLink({});
                 setSelectedBrowserForLink({});
-                if (mobilePageAnimOpen) {
-                    setMobilePageAnimOpen(false);
-                    return;
-                }
-                setShowHeaderActionsMenu(false);
+                e.preventDefault();
+                return;
             }
+            if (mobilePageAnimOpen) {
+                setMobilePageAnimOpen(false);
+                e.preventDefault();
+                return;
+            }
+            if (showHeaderActionsMenu) {
+                setShowHeaderActionsMenu(false);
+                e.preventDefault();
+                return;
+            }
+
+            // Don't navigate away while editing (Cancel uses a confirm dialog)
+            if (isEditing) return;
+
+            e.preventDefault();
+            goBackToDashboard();
         };
         document.addEventListener('keydown', handleEscape);
         return () => document.removeEventListener('keydown', handleEscape);
-    }, [mobilePageAnimOpen]);
+    }, [
+        mobilePageAnimOpen,
+        showHeaderActionsMenu,
+        showBrowserMenu,
+        notesDialogState,
+        linkInfoDialog,
+        qrDialogState,
+        notesPresetFormState,
+        diffViewerOpen,
+        visibilityDialogTab,
+        visibilityDialogSection,
+        schedulingDialogTab,
+        schedulingDialogSection,
+        schedulingDialogLink,
+        schedulingDialogRichText,
+        isEditing,
+        goBackToDashboard,
+    ]);
 
     // Close header actions menu when leaving mobile
     useEffect(() => {
@@ -4822,9 +4874,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                                 {/* Back stays visible on all screen sizes */}
                                 <button
-                                    onClick={() => window.location.hash = '#/'}
+                                    onClick={goBackToDashboard}
                                     className="p-2 rounded-lg bg-white/20 hover:bg-white/30 text-white border border-white/20 transition-all backdrop-blur-sm flex items-center justify-center"
-                                    title="Back to Dashboard"
+                                    title="Back to Dashboard (Esc)"
+                                    aria-label="Back to Dashboard"
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
                                         <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clipRule="evenodd" />

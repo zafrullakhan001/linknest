@@ -6511,40 +6511,49 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               {/* LDAP Tab */}
               {activeTab === 'ldap' && (
                 <div className="space-y-6">
-                  <div className={`bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl ${isMobile ? 'p-4' : 'p-6'}`}>
-                    <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} ${isMobile ? 'gap-4' : ''} mb-6`}>
-                      <div className={isMobile ? 'w-full' : ''}>
-                        <h3 className={`${isMobile ? 'text-base' : 'text-lg'} font-bold text-slate-900 dark:text-white`}>LDAP Configuration</h3>
-                        <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400`}>
-                          Configure LDAP integration for user authentication.
-                        </p>
-                      </div>
-                      <div className={`flex items-center ${isMobile ? 'w-full justify-between' : 'gap-3'}`}>
-                        <label className={`relative inline-flex items-center cursor-pointer touch-manipulation ${isMobile ? 'flex-1' : ''}`}>
-                          <input
-                            type="checkbox"
-                            className="sr-only peer"
-                            checked={settings.ldap_enabled === '1'}
-                            onChange={(e) => setSettings({ ...settings, ldap_enabled: e.target.checked ? '1' : '0' })}
-                          />
-                          {isMobile ? (
-                            // Mobile: Larger toggle with better touch target
-                            <div className="w-14 h-8 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-brand-300 dark:peer-focus:ring-brand-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-7 after:w-7 after:transition-all dark:border-gray-600 peer-checked:bg-brand-600"></div>
-                          ) : (
-                            // Desktop: Original size
-                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-brand-300 dark:peer-focus:ring-brand-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-brand-600"></div>
-                          )}
-                          <span className={`${isMobile ? 'ml-3 text-sm' : 'ml-3 text-sm'} font-medium text-slate-900 dark:text-slate-300`}>Enable LDAP</span>
-                        </label>
+                  <div className={`bg-white dark:bg-slate-800 border border-sky-200/70 dark:border-sky-800/40 rounded-xl overflow-hidden shadow-sm shadow-sky-500/5 ${isMobile ? '' : ''}`}>
+                    <div className={`bg-gradient-to-r from-sky-50 via-teal-50/80 to-cyan-50/60 dark:from-sky-950/40 dark:via-teal-950/30 dark:to-cyan-950/20 border-b border-sky-100 dark:border-sky-800/40 ${isMobile ? 'p-4' : 'px-6 py-5'}`}>
+                      <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} ${isMobile ? 'gap-4' : ''}`}>
+                        <div className={isMobile ? 'w-full' : ''}>
+                          <h3 className={`${isMobile ? 'text-base' : 'text-lg'} font-bold text-slate-900 dark:text-white flex items-center gap-2`}>
+                            <span aria-hidden>🏢</span> LDAP Configuration
+                          </h3>
+                          <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-sky-800/70 dark:text-sky-200/70 mt-0.5`}>
+                            Configure LDAP / Active Directory for enterprise sign-in.
+                          </p>
+                        </div>
+                        <div className={`flex items-center ${isMobile ? 'w-full justify-between' : 'gap-3'} bg-white/70 dark:bg-slate-900/40 border border-sky-200/60 dark:border-sky-700/40 rounded-xl px-3 py-2`}>
+                          <label className={`relative inline-flex items-center cursor-pointer touch-manipulation ${isMobile ? 'flex-1' : ''}`}>
+                            <input
+                              type="checkbox"
+                              className="sr-only peer"
+                              checked={settings.ldap_enabled === '1'}
+                              onChange={(e) => setSettings({ ...settings, ldap_enabled: e.target.checked ? '1' : '0' })}
+                            />
+                            {isMobile ? (
+                              // Mobile: Larger toggle with better touch target
+                              <div className="w-14 h-8 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-sky-300 dark:peer-focus:ring-sky-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-7 after:w-7 after:transition-all dark:border-gray-600 peer-checked:bg-sky-600"></div>
+                            ) : (
+                              // Desktop: Original size
+                              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-sky-300 dark:peer-focus:ring-sky-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-sky-600"></div>
+                            )}
+                            <span className={`${isMobile ? 'ml-3 text-sm' : 'ml-3 text-sm'} font-medium text-slate-900 dark:text-slate-300`}>
+                              <span className="mr-1" aria-hidden>🔐</span>Enable LDAP
+                            </span>
+                          </label>
+                        </div>
                       </div>
                     </div>
 
+                    <div className={isMobile ? 'p-4' : 'p-6'}>
                     {/* LDAP Servers Management */}
                     {settings.ldap_enabled === '1' && (
-                      <div className="mb-6 mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
-                        <div className="flex items-center justify-between mb-4">
+                      <div className="mb-6">
+                        <div className="flex items-center justify-between mb-4 gap-3">
                           <div>
-                            <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-slate-900 dark:text-white`}>LDAP Servers</h4>
+                            <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-slate-900 dark:text-white flex items-center gap-1.5`}>
+                              <span aria-hidden>🌐</span> LDAP Servers
+                            </h4>
                             <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-slate-500 dark:text-slate-400 mt-1`}>
                               Configure multiple LDAP servers. Users will select their server from a dropdown during login.
                             </p>
@@ -6585,36 +6594,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               setEditingServerIndex(ldapServers.length);
                               setShowServerForm(true);
                             }}
-                            className={`${isMobile ? 'px-3 py-2 text-xs' : 'px-3 py-1.5 text-xs'} bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium transition-colors flex items-center gap-1.5 touch-manipulation`}
+                            className={`${isMobile ? 'px-3 py-2 text-xs' : 'px-3 py-1.5 text-xs'} bg-sky-600 hover:bg-sky-500 text-white rounded-lg font-medium transition-colors flex items-center gap-1.5 touch-manipulation shadow-sm shadow-sky-500/20`}
                             style={isMobile ? { minHeight: '44px' } : {}}
                           >
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                              <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
-                            </svg>
+                            <span aria-hidden>➕</span>
                             Add Server
                           </button>
                         </div>
 
                         {/* Servers List */}
                         {ldapServers.length === 0 ? (
-                          <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4 text-center">
-                            <p className="text-sm text-slate-600 dark:text-slate-400">No LDAP servers configured. Click "Add Server" to get started.</p>
+                          <div className="bg-sky-50/80 dark:bg-sky-950/20 border border-dashed border-sky-200 dark:border-sky-800/50 rounded-xl p-5 text-center">
+                            <p className="text-2xl mb-2" aria-hidden>📡</p>
+                            <p className="text-sm text-sky-800 dark:text-sky-200">No LDAP servers configured yet.</p>
+                            <p className="text-xs text-sky-600/80 dark:text-sky-400 mt-1">Click &quot;Add Server&quot; to get started.</p>
                           </div>
                         ) : (
                           <div className="space-y-3">
                             {ldapServers.map((server, index) => (
                               <div
                                 key={index}
-                                className={`bg-slate-50 dark:bg-slate-900/50 border-2 rounded-lg p-4 transition-all ${editingServerIndex === index
-                                  ? 'border-brand-500 dark:border-brand-400'
-                                  : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                                className={`bg-gradient-to-br from-sky-50/60 to-white dark:from-sky-950/20 dark:to-slate-900/50 border-2 rounded-xl p-4 transition-all ${editingServerIndex === index
+                                  ? 'border-sky-400 dark:border-sky-500 shadow-md shadow-sky-500/10'
+                                  : 'border-sky-100 dark:border-slate-700 hover:border-sky-300 dark:hover:border-sky-700'
                                   }`}
                               >
                                 {editingServerIndex === index ? (
                                   <div className="space-y-6 max-h-[80vh] overflow-y-auto pr-2">
                                     {/* Basic Information */}
-                                    <div>
-                                      <h5 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Basic Information</h5>
+                                    <div className="rounded-xl bg-sky-50/50 dark:bg-sky-950/20 border border-sky-100 dark:border-sky-900/40 p-4">
+                                      <h5 className="text-sm font-semibold text-sky-900 dark:text-sky-100 mb-3 border-b border-sky-200/70 dark:border-sky-800/50 pb-2 flex items-center gap-1.5">
+                                        <span aria-hidden>🏷️</span> Basic Information
+                                      </h5>
                                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
                                           <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Server Name *</label>
@@ -6649,8 +6660,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     </div>
 
                                     {/* Connection Settings */}
-                                    <div>
-                                      <h5 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Connection</h5>
+                                    <div className="rounded-xl bg-teal-50/50 dark:bg-teal-950/20 border border-teal-100 dark:border-teal-900/40 p-4">
+                                      <h5 className="text-sm font-semibold text-teal-900 dark:text-teal-100 mb-3 border-b border-teal-200/70 dark:border-teal-800/50 pb-2 flex items-center gap-1.5">
+                                        <span aria-hidden>🔌</span> Connection
+                                      </h5>
                                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
                                           <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Server Host *</label>
@@ -6730,8 +6743,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     </div>
 
                                     {/* Service Account (Bind) */}
-                                    <div>
-                                      <h5 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Service Account (Bind)</h5>
+                                    <div className="rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/40 p-4">
+                                      <h5 className="text-sm font-semibold text-amber-900 dark:text-amber-100 mb-3 border-b border-amber-200/70 dark:border-amber-800/50 pb-2 flex items-center gap-1.5">
+                                        <span aria-hidden>🔑</span> Service Account (Bind)
+                                      </h5>
                                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
                                           <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Bind DN</label>
@@ -6776,8 +6791,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     </div>
 
                                     {/* User Schema */}
-                                    <div>
-                                      <h5 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">User Schema</h5>
+                                    <div className="rounded-xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/40 p-4">
+                                      <h5 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-3 border-b border-blue-200/70 dark:border-blue-800/50 pb-2 flex items-center gap-1.5">
+                                        <span aria-hidden>👤</span> User Schema
+                                      </h5>
                                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
                                           <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Base DN</label>
@@ -6827,8 +6844,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     </div>
 
                                     {/* Group Membership */}
-                                    <div>
-                                      <h5 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Group Membership</h5>
+                                    <div className="rounded-xl bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/40 p-4">
+                                      <h5 className="text-sm font-semibold text-indigo-900 dark:text-indigo-100 mb-3 border-b border-indigo-200/70 dark:border-indigo-800/50 pb-2 flex items-center gap-1.5">
+                                        <span aria-hidden>👥</span> Group Membership
+                                      </h5>
                                       <div className="space-y-4">
                                         <div className="space-y-2">
                                           <label className="flex items-center gap-2 cursor-pointer">
@@ -6926,8 +6945,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     </div>
 
                                     {/* Advanced Options */}
-                                    <div>
-                                      <h5 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Advanced Options</h5>
+                                    <div className="rounded-xl bg-slate-50/80 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 p-4">
+                                      <h5 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-3 border-b border-slate-200 dark:border-slate-700 pb-2 flex items-center gap-1.5">
+                                        <span aria-hidden>⚙️</span> Advanced Options
+                                      </h5>
                                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
                                           <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Search Scope</label>
@@ -7109,9 +7130,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                           setEditingServerIndex(null);
                                           setShowServerForm(false);
                                         }}
-                                        className="px-4 py-2 text-sm bg-brand-600 hover:bg-brand-500 text-white rounded-lg transition-colors"
+                                        className="px-4 py-2 text-sm bg-sky-600 hover:bg-sky-500 text-white rounded-lg transition-colors flex items-center gap-1.5"
                                       >
-                                        Save Server
+                                        <span aria-hidden>💾</span> Save Server
                                       </button>
                                     </div>
                                   </div>
@@ -7119,11 +7140,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   <div className="flex items-center justify-between">
                                     <div className="flex-1 min-w-0">
                                       <div className="flex items-center gap-2 mb-1">
+                                        <span className="text-base flex-shrink-0" aria-hidden>🖥️</span>
                                         <h5 className="text-sm font-semibold text-slate-900 dark:text-white truncate">
                                           {server.name || `Server ${index + 1}`}
                                         </h5>
                                         {server.login_domain && (
-                                          <span className="text-xs px-2 py-0.5 bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 rounded">
+                                          <span className="text-xs px-2 py-0.5 bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 rounded">
                                             {server.login_domain}
                                           </span>
                                         )}
@@ -7617,8 +7639,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                     {/* Test Connection — only when at least one server is configured */}
                     {ldapServers.length > 0 && (
-                    <div className={`${isMobile ? 'mt-6' : 'mt-8'} ${isMobile ? 'pt-6' : 'pt-6'} border-t border-slate-200 dark:border-slate-700`}>
-                      <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-slate-900 dark:text-white mb-4`}>Test Connection</h4>
+                    <div className={`${isMobile ? 'mt-6' : 'mt-8'} ${isMobile ? 'pt-6' : 'pt-6'} border-t border-sky-100 dark:border-sky-900/40`}>
+                      <div className="rounded-xl bg-gradient-to-r from-emerald-50/80 to-teal-50/60 dark:from-emerald-950/25 dark:to-teal-950/20 border border-emerald-100 dark:border-emerald-900/40 p-4 mb-4">
+                        <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-emerald-900 dark:text-emerald-100 flex items-center gap-1.5`}>
+                          <span aria-hidden>🧪</span> Test Connection
+                        </h4>
+                        <p className="text-[10px] sm:text-xs text-emerald-700/80 dark:text-emerald-300/70 mt-1">
+                          Verify bind credentials and directory reachability before going live.
+                        </p>
+                      </div>
 
                       {/* Server Selection Dropdown */}
                       {ldapServers.length > 1 && (
@@ -7861,7 +7890,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         <button
                           type="submit"
                           disabled={ldapTestLoading}
-                          className={`${isMobile ? 'w-full px-4 py-3 text-sm' : 'px-4 py-2 text-sm'} bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2 whitespace-nowrap touch-manipulation`}
+                          className={`${isMobile ? 'w-full px-4 py-3 text-sm' : 'px-4 py-2 text-sm'} bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2 whitespace-nowrap touch-manipulation shadow-sm shadow-emerald-500/20`}
                           style={isMobile ? { minHeight: '44px' } : {}}
                         >
                           {ldapTestLoading ? (
@@ -7870,9 +7899,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
                           ) : (
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clipRule="evenodd" />
-                            </svg>
+                            <span aria-hidden>🧪</span>
                           )}
                           Test Connection
                         </button>
@@ -7884,13 +7911,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800'
                           }`}>
                           {ldapTestResult.success ? (
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 flex-shrink-0 mt-0.5">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
-                            </svg>
+                            <span className="text-lg leading-none flex-shrink-0" aria-hidden>✅</span>
                           ) : (
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 flex-shrink-0 mt-0.5">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
-                            </svg>
+                            <span className="text-lg leading-none flex-shrink-0" aria-hidden>❌</span>
                           )}
                           <div>
                             <p className="font-semibold">{ldapTestResult.success ? 'Connection Successful' : 'Connection Failed'}</p>
@@ -7902,8 +7925,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     )}
 
                     {/* Export & Import LDAP Settings */}
-                    <div className={`${isMobile ? 'mt-6' : 'mt-8'} ${isMobile ? 'pt-6' : 'pt-6'} border-t border-slate-200 dark:border-slate-700`}>
-                      <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-slate-900 dark:text-white mb-4`}>Export & Import LDAP Settings</h4>
+                    <div className={`${isMobile ? 'mt-6' : 'mt-8'} ${isMobile ? 'pt-6' : 'pt-6'} border-t border-sky-100 dark:border-sky-900/40`}>
+                      <div className="rounded-xl bg-gradient-to-r from-violet-50/70 to-sky-50/60 dark:from-violet-950/25 dark:to-sky-950/20 border border-violet-100 dark:border-violet-900/40 p-4 mb-4">
+                        <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-violet-900 dark:text-violet-100 flex items-center gap-1.5`}>
+                          <span aria-hidden>📦</span> Export & Import LDAP Settings
+                        </h4>
+                        <p className="text-[10px] sm:text-xs text-violet-700/80 dark:text-violet-300/70 mt-1">
+                          Back up or restore your LDAP configuration as a JSON file.
+                        </p>
+                      </div>
 
                       <label className={`inline-flex items-start gap-2 mb-3 cursor-pointer touch-manipulation ${isMobile ? 'w-full' : ''}`}>
                         <input
@@ -8389,7 +8419,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           }
                         }}
                         disabled={settingsSaving}
-                        className={`${isMobile ? 'w-full px-4 py-3 text-sm' : 'px-6 py-2.5 text-sm'} bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white rounded-lg font-semibold transition-colors flex items-center justify-center gap-2 touch-manipulation`}
+                        className={`${isMobile ? 'w-full px-4 py-3 text-sm' : 'px-6 py-2.5 text-sm'} bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white rounded-lg font-semibold transition-colors flex items-center justify-center gap-2 touch-manipulation shadow-sm shadow-sky-500/20`}
                         style={isMobile ? { minHeight: '44px' } : {}}
                       >
                         {settingsSaving ? (
@@ -8402,13 +8432,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           </>
                         ) : (
                           <>
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                              <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-                            </svg>
+                            <span aria-hidden>💾</span>
                             Save Settings
                           </>
                         )}
                       </button>
+                    </div>
                     </div>
                   </div>
                 </div>
@@ -8417,66 +8446,71 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               {/* SAML Tab */}
               {activeTab === 'saml' && (
                 <div className="space-y-6">
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-center justify-between mb-6">
-                      <div>
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">SAML 2.0 Configuration</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                          Configure SAML 2.0 single sign-on for enterprise authentication.
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <label className="relative inline-flex items-center cursor-pointer">
-                          <input
-                            type="checkbox"
-                            className="sr-only peer"
-                            checked={settings.saml_enabled === '1'}
-                            onChange={async (e) => {
-                              const newValue = e.target.checked ? '1' : '0';
-                              setSettings({ ...settings, saml_enabled: newValue });
+                  <div className="bg-white dark:bg-slate-800 border border-sky-200/70 dark:border-sky-800/40 rounded-xl overflow-hidden shadow-sm shadow-sky-500/5">
+                    <div className="bg-gradient-to-r from-sky-50 via-teal-50/80 to-cyan-50/60 dark:from-sky-950/40 dark:via-teal-950/30 dark:to-cyan-950/20 border-b border-sky-100 dark:border-sky-800/40 px-6 py-5">
+                      <div className="flex items-center justify-between gap-4 flex-wrap">
+                        <div>
+                          <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                            <span aria-hidden>🔐</span> SAML 2.0 Configuration
+                          </h3>
+                          <p className="text-sm text-sky-800/70 dark:text-sky-200/70 mt-0.5">
+                            Configure SAML 2.0 single sign-on for enterprise authentication.
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-3 bg-white/70 dark:bg-slate-900/40 border border-sky-200/60 dark:border-sky-700/40 rounded-xl px-3 py-2">
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              className="sr-only peer"
+                              checked={settings.saml_enabled === '1'}
+                              onChange={async (e) => {
+                                const newValue = e.target.checked ? '1' : '0';
+                                setSettings({ ...settings, saml_enabled: newValue });
 
-                              // Auto-save the setting
-                              try {
-                                setSettingsSaving(true);
-                                await settingsService.updateSettings({ saml_enabled: newValue });
-                                await loadSettings();
-                                await refreshSettings();
-                              } catch (err: any) {
-                                setError(err.message || 'Failed to save SAML setting');
-                                // Revert on error
-                                setSettings({ ...settings, saml_enabled: settings.saml_enabled });
-                              } finally {
-                                setSettingsSaving(false);
-                              }
-                            }}
-                            disabled={settingsSaving}
-                          />
-                          <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-brand-300 dark:peer-focus:ring-brand-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-brand-600 peer-disabled:opacity-50"></div>
-                          <span className="ml-3 text-sm font-medium text-slate-900 dark:text-slate-300">Enable SAML</span>
-                        </label>
+                                // Auto-save the setting
+                                try {
+                                  setSettingsSaving(true);
+                                  await settingsService.updateSettings({ saml_enabled: newValue });
+                                  await loadSettings();
+                                  await refreshSettings();
+                                } catch (err: any) {
+                                  setError(err.message || 'Failed to save SAML setting');
+                                  // Revert on error
+                                  setSettings({ ...settings, saml_enabled: settings.saml_enabled });
+                                } finally {
+                                  setSettingsSaving(false);
+                                }
+                              }}
+                              disabled={settingsSaving}
+                            />
+                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-sky-300 dark:peer-focus:ring-sky-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-sky-600 peer-disabled:opacity-50"></div>
+                            <span className="ml-3 text-sm font-medium text-slate-900 dark:text-slate-300">
+                              <span className="mr-1" aria-hidden>🔑</span>Enable SAML
+                            </span>
+                          </label>
+                        </div>
                       </div>
                     </div>
 
-                    <div className="rounded-xl border border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-900/20 p-4 mb-6">
+                    <div className="p-6">
+                    <div className="rounded-xl border border-sky-200 dark:border-sky-800 bg-gradient-to-r from-sky-50 to-teal-50/70 dark:from-sky-950/30 dark:to-teal-950/20 p-4 mb-6">
                       <div className="flex items-start gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-brand-100 dark:bg-brand-800 text-brand-700 dark:text-brand-200 flex items-center justify-center shrink-0">
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                          </svg>
+                        <div className="w-10 h-10 rounded-lg bg-sky-100 dark:bg-sky-900/50 text-sky-700 dark:text-sky-200 flex items-center justify-center shrink-0 text-xl" aria-hidden>
+                          🚀
                         </div>
                         <div className="flex-1 min-w-0">
-                          <h4 className="text-sm font-semibold text-brand-900 dark:text-brand-100 mb-1">SAML 2.0 Single Sign-On</h4>
-                          <p className="text-sm text-brand-800/80 dark:text-brand-200/80 mb-3">
+                          <h4 className="text-sm font-semibold text-sky-900 dark:text-sky-100 mb-1 flex items-center gap-1.5">
+                            <span aria-hidden>🔐</span> SAML 2.0 Single Sign-On
+                          </h4>
+                          <p className="text-sm text-sky-800/80 dark:text-sky-200/80 mb-3">
                             Configure enterprise SAML 2.0 authentication to allow users to sign in using their organization&apos;s identity provider (IdP).
                             Supports Azure AD, Okta, Auth0, and other SAML 2.0 compliant providers.
                           </p>
                           <button
                             onClick={() => setSamlConfigModalOpen(true)}
-                            className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold rounded-xl transition-colors"
+                            className="inline-flex items-center gap-2 px-4 py-2.5 bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm shadow-sky-500/20"
                           >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                            </svg>
+                            <span aria-hidden>⚙️</span>
                             <span>Open SAML Configuration</span>
                           </button>
                         </div>
@@ -8484,23 +8518,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-                        <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Status Indicators</h4>
+                      <div className="bg-gradient-to-br from-emerald-50/70 to-white dark:from-emerald-950/20 dark:to-slate-900/50 border border-emerald-100 dark:border-emerald-900/40 rounded-xl p-4">
+                        <h4 className="text-sm font-semibold text-emerald-900 dark:text-emerald-100 mb-2 flex items-center gap-1.5">
+                          <span aria-hidden>📡</span> Status Indicators
+                        </h4>
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
-                            <span className="text-xs text-slate-600 dark:text-slate-400">SAML Enabled</span>
+                            <span className="text-xs text-slate-600 dark:text-slate-400">🔐 SAML Enabled</span>
                             <span className={`text-xs px-2 py-1 rounded ${settings.saml_enabled === '1' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}`}>
                               {settings.saml_enabled === '1' ? 'Active' : 'Inactive'}
                             </span>
                           </div>
                           <div className="flex items-center justify-between">
-                            <span className="text-xs text-slate-600 dark:text-slate-400">Local Auth</span>
+                            <span className="text-xs text-slate-600 dark:text-slate-400">👤 Local Auth</span>
                             <span className={`text-xs px-2 py-1 rounded ${settings.local_auth_enabled === '1' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}`}>
                               {settings.local_auth_enabled === '1' ? 'Active' : 'Inactive'}
                             </span>
                           </div>
                           <div className="flex items-center justify-between">
-                            <span className="text-xs text-slate-600 dark:text-slate-400">LDAP</span>
+                            <span className="text-xs text-slate-600 dark:text-slate-400">🏢 LDAP</span>
                             <span className={`text-xs px-2 py-1 rounded ${settings.ldap_enabled === '1' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}`}>
                               {settings.ldap_enabled === '1' ? 'Active' : 'Inactive'}
                             </span>
@@ -8508,19 +8544,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         </div>
                       </div>
 
-                      <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-                        <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Quick Actions</h4>
+                      <div className="bg-gradient-to-br from-sky-50/70 to-white dark:from-sky-950/20 dark:to-slate-900/50 border border-sky-100 dark:border-sky-900/40 rounded-xl p-4">
+                        <h4 className="text-sm font-semibold text-sky-900 dark:text-sky-100 mb-2 flex items-center gap-1.5">
+                          <span aria-hidden>⚡</span> Quick Actions
+                        </h4>
                         <div className="space-y-2">
                           <a
                             href={`${resolveApiBase().replace('/api', '')}/api/saml?action=metadata`}
                             target="_blank"
                             rel="noreferrer"
-                            className="block w-full text-left px-3 py-2 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                            className="block w-full text-left px-3 py-2 text-xs bg-white dark:bg-slate-800 border border-sky-200 dark:border-sky-800/50 rounded-lg hover:bg-sky-50 dark:hover:bg-sky-950/30 transition-colors"
                           >
                             <div className="flex items-center space-x-2">
-                              <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                              </svg>
+                              <span aria-hidden>📄</span>
                               <span>View SP Metadata XML</span>
                             </div>
                           </a>
@@ -8529,20 +8565,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     </div>
 
                     {/* SAML Bulk Import Section */}
-                    <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
-                      <h4 className="text-md font-semibold text-slate-900 dark:text-white mb-4">Bulk Import SAML Users</h4>
-                      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
-                        <p className="text-sm text-blue-800 dark:text-blue-300">
-                          <strong>Bulk Import SAML Users</strong>
-                        </p>
-                        <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
+                    <div className="mt-6 pt-6 border-t border-sky-100 dark:border-sky-900/40">
+                      <div className="rounded-xl bg-gradient-to-r from-blue-50/80 to-sky-50/60 dark:from-blue-950/25 dark:to-sky-950/20 border border-blue-100 dark:border-blue-900/40 p-4 mb-4">
+                        <h4 className="text-md font-semibold text-blue-900 dark:text-blue-100 flex items-center gap-1.5">
+                          <span aria-hidden>📦</span> Bulk Import SAML Users
+                        </h4>
+                        <p className="text-xs text-blue-700/80 dark:text-blue-300/70 mt-1">
                           Upload a CSV file with columns: username, email, saml_nameid, displayName. The header row is optional and will be automatically skipped.
                         </p>
                       </div>
                       <div>
                         <div className="flex items-center justify-between mb-2">
                           <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                            Upload CSV File
+                            <span className="mr-1" aria-hidden>📎</span>Upload CSV File
                           </label>
                           <button
                             onClick={() => {
@@ -8558,12 +8593,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               document.body.removeChild(a);
                               window.URL.revokeObjectURL(url);
                             }}
-                            className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                            className="text-xs text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1"
                           >
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                              <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z" />
-                              <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
-                            </svg>
+                            <span aria-hidden>⬇️</span>
                             Download Template
                           </button>
                         </div>
@@ -8577,7 +8609,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               setError('');
                             }
                           }}
-                          className="w-full text-sm text-slate-600 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-900/30 dark:file:text-brand-300 cursor-pointer"
+                          className="w-full text-sm text-slate-600 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100 dark:file:bg-sky-900/30 dark:file:text-sky-300 cursor-pointer"
                         />
                         {samlImportFile && (
                           <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
@@ -8589,9 +8621,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         <button
                           onClick={handleBulkImportSaml}
                           disabled={samlImporting || !samlImportFile}
-                          className="w-full px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                          className="w-full px-4 py-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors shadow-sm shadow-sky-500/20"
                         >
-                          {samlImporting ? 'Importing...' : 'Import SAML Users'}
+                          {samlImporting ? 'Importing...' : '📥 Import SAML Users'}
                         </button>
                       </div>
                       {bulkImportResults && (
@@ -8599,7 +8631,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
                           : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
                           }`}>
-                          <p className="text-sm font-medium mb-2">
+                          <p className="text-sm font-medium mb-2 flex items-start gap-1.5">
+                            <span aria-hidden>{bulkImportResults.summary?.errors > 0 ? '⚠️' : '✅'}</span>
                             {bulkImportResults.message}
                           </p>
                           {bulkImportResults.summary && (
@@ -8615,6 +8648,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           )}
                         </div>
                       )}
+                    </div>
                     </div>
                   </div>
                 </div>
@@ -8723,32 +8757,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               {activeTab === 'clone' && (
                 <div className="space-y-6">
                   {/* Clone Form */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Clone Instance</h3>
-                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
-                      Clone the current LinkNest setup to a new folder. This will create a complete copy of the application with all necessary files.
-                    </p>
+                  <div className="bg-white dark:bg-slate-800 border border-sky-200/70 dark:border-sky-800/40 rounded-xl overflow-hidden shadow-sm shadow-sky-500/5">
+                    <div className="bg-gradient-to-r from-sky-50 via-teal-50/80 to-cyan-50/60 dark:from-sky-950/40 dark:via-teal-950/30 dark:to-cyan-950/20 border-b border-sky-100 dark:border-sky-800/40 px-6 py-5">
+                      <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <span aria-hidden>🧬</span> Clone Instance
+                      </h3>
+                      <p className="text-sm text-sky-800/70 dark:text-sky-200/70 mt-0.5">
+                        Clone the current LinkNest setup to a new folder with all necessary files.
+                      </p>
+                    </div>
 
-                    <div className="space-y-4">
+                    <div className="p-6 space-y-4">
+                      <div className="rounded-xl bg-sky-50/50 dark:bg-sky-950/20 border border-sky-100 dark:border-sky-900/40 p-4 space-y-4">
                       <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          New Folder Name <span className="text-red-500">*</span>
+                          <span className="mr-1" aria-hidden>📁</span>New Folder Name <span className="text-red-500">*</span>
                         </label>
                         <input
                           type="text"
                           value={cloneFolderName}
                           onChange={(e) => setCloneFolderName(e.target.value)}
                           placeholder="e.g., myspaces"
-                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                          className="w-full bg-white dark:bg-slate-900/50 border border-sky-200 dark:border-sky-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                         />
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        <p className="text-xs text-sky-700/70 dark:text-sky-300/70 mt-1">
                           Name of the new folder to create (no path separators or special characters)
                         </p>
                       </div>
 
                       <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Source Folder
+                          <span className="mr-1" aria-hidden>📦</span>Source Folder
                         </label>
                         <div className="flex gap-2">
                           <input
@@ -8756,7 +8795,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             value={cloneSourcePath}
                             onChange={(e) => setCloneSourcePath(e.target.value)}
                             placeholder="e.g., C:\xampp\htdocs\linknest"
-                            className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                            className="flex-1 bg-white dark:bg-slate-900/50 border border-sky-200 dark:border-sky-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                           />
                           <input
                             type="file"
@@ -8790,20 +8829,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 picker.click();
                               }
                             }}
-                            className="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+                            className="px-4 py-2 bg-sky-100 dark:bg-sky-900/40 hover:bg-sky-200 dark:hover:bg-sky-800/50 text-sky-800 dark:text-sky-200 rounded-lg text-sm font-medium transition-colors whitespace-nowrap border border-sky-200 dark:border-sky-700"
                             title="Browse for source folder (Chrome/Edge - limited by browser security)"
                           >
-                            Browse
+                            📂 Browse
                           </button>
                         </div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        <p className="text-xs text-sky-700/70 dark:text-sky-300/70 mt-1">
                           Source directory to clone from (defaults to current app directory)
                         </p>
                       </div>
 
                       <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Target Folder
+                          <span className="mr-1" aria-hidden>🎯</span>Target Folder
                         </label>
                         <div className="flex gap-2">
                           <input
@@ -8811,7 +8850,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             value={cloneTargetPath}
                             onChange={(e) => setCloneTargetPath(e.target.value)}
                             placeholder="e.g., C:\projects"
-                            className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                            className="flex-1 bg-white dark:bg-slate-900/50 border border-sky-200 dark:border-sky-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                           />
                           <input
                             type="file"
@@ -8841,44 +8880,48 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 picker.click();
                               }
                             }}
-                            className="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+                            className="px-4 py-2 bg-sky-100 dark:bg-sky-900/40 hover:bg-sky-200 dark:hover:bg-sky-800/50 text-sky-800 dark:text-sky-200 rounded-lg text-sm font-medium transition-colors whitespace-nowrap border border-sky-200 dark:border-sky-700"
                             title="Browse for target folder (Chrome/Edge - limited by browser security)"
                           >
-                            Browse
+                            📂 Browse
                           </button>
                         </div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        <p className="text-xs text-sky-700/70 dark:text-sky-300/70 mt-1">
                           Target directory where the new folder will be created (defaults to parent of source)
                         </p>
                       </div>
 
                       <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Instance URL <span className="text-red-500">*</span>
+                          <span className="mr-1" aria-hidden>🔗</span>Instance URL <span className="text-red-500">*</span>
                         </label>
                         <input
                           type="url"
                           value={cloneUrl}
                           onChange={(e) => setCloneUrl(e.target.value)}
                           placeholder="e.g., https://myspaces.example.com or http://localhost/myspaces"
-                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                          className="w-full bg-white dark:bg-slate-900/50 border border-sky-200 dark:border-sky-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                         />
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                          Full URL where the cloned instance will be accessible (include protocol and path, e.g., https://myspaces.example.com or http://localhost/myspaces)
+                        <p className="text-xs text-sky-700/70 dark:text-sky-300/70 mt-1">
+                          Full URL where the cloned instance will be accessible (include protocol and path)
                         </p>
                       </div>
+                      </div>
 
-                      <div className="space-y-3">
+                      <div className="rounded-xl bg-teal-50/50 dark:bg-teal-950/20 border border-teal-100 dark:border-teal-900/40 p-4 space-y-3">
+                        <h4 className="text-sm font-semibold text-teal-900 dark:text-teal-100 flex items-center gap-1.5">
+                          <span aria-hidden>⚙️</span> Copy Options
+                        </h4>
                         <label className="flex items-center gap-3 cursor-pointer">
                           <input
                             type="checkbox"
                             checked={cloneCopyAssets}
                             onChange={(e) => setCloneCopyAssets(e.target.checked)}
-                            className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
+                            className="w-4 h-4 text-sky-600 border-slate-300 dark:border-slate-600 rounded focus:ring-sky-500 focus:ring-2"
                           />
                           <div>
-                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Copy Assets</span>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300"><span className="mr-1" aria-hidden>🖼️</span>Copy Assets</span>
+                            <p className="text-xs text-teal-700/70 dark:text-teal-300/70">
                               Copy logos and favicon from uploads folder
                             </p>
                           </div>
@@ -8889,11 +8932,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             type="checkbox"
                             checked={cloneCopyDatabase}
                             onChange={(e) => setCloneCopyDatabase(e.target.checked)}
-                            className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
+                            className="w-4 h-4 text-sky-600 border-slate-300 dark:border-slate-600 rounded focus:ring-sky-500 focus:ring-2"
                           />
                           <div>
-                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Copy Database</span>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300"><span className="mr-1" aria-hidden>🗄️</span>Copy Database</span>
+                            <p className="text-xs text-teal-700/70 dark:text-teal-300/70">
                               Copy database file from data folder (LDAP passwords will be encrypted automatically)
                             </p>
                           </div>
@@ -8902,9 +8945,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                       {/* Progress Bar - show as soon as a clone is started */}
                       {currentCloneId && cloneStatus !== 'complete' && cloneStatus !== 'error' && (
-                        <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                        <div className="pt-4 border-t border-sky-100 dark:border-sky-900/40">
                           <div className="mb-2 flex justify-between items-center">
-                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                            <span className="text-sm font-medium text-sky-800 dark:text-sky-200 flex items-center gap-1.5">
+                              <span aria-hidden>⏳</span>
                               {cloneStatus === 'validating' ? 'Validating...' :
                                 cloneStatus === 'creating' ? 'Creating directory...' :
                                   cloneStatus === 'copying' ? 'Copying files...' :
@@ -8916,11 +8960,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                               cloneStatus === 'pending' ? 'Starting...' :
                                                 cloneStatus ? String(cloneStatus) : 'Starting...'}
                             </span>
-                            <span className="text-sm text-slate-600 dark:text-slate-400">{cloneProgress}%</span>
+                            <span className="text-sm text-sky-700 dark:text-sky-300">{cloneProgress}%</span>
                           </div>
-                          <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2.5">
+                          <div className="w-full bg-sky-100 dark:bg-sky-900/40 rounded-full h-2.5">
                             <div
-                              className="bg-brand-600 h-2.5 rounded-full transition-all duration-300"
+                              className="bg-sky-600 h-2.5 rounded-full transition-all duration-300"
                               style={{ width: `${Math.max(0, cloneProgress)}%` }}
                             ></div>
                           </div>
@@ -8929,37 +8973,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                       {/* Completion Message */}
                       {currentCloneId && (cloneStatus === 'complete' || cloneStatus === 'error') && (
-                        <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
-                          <div className={`p-3 rounded-lg ${cloneStatus === 'complete'
-                            ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+                        <div className="pt-4 border-t border-sky-100 dark:border-sky-900/40">
+                          <div className={`p-3 rounded-lg flex items-start gap-2 ${cloneStatus === 'complete'
+                            ? 'bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800'
                             : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
                             }`}>
-                            <div className="flex items-center gap-2">
-                              {cloneStatus === 'complete' ? (
-                                <>
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-green-600 dark:text-green-400">
-                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
-                                  </svg>
-                                  <span className="text-sm font-medium text-green-700 dark:text-green-400">Clone completed successfully!</span>
-                                </>
-                              ) : (
-                                <>
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-red-600 dark:text-red-400">
-                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
-                                  </svg>
-                                  <span className="text-sm font-medium text-red-700 dark:text-red-400">Clone failed</span>
-                                </>
-                              )}
-                            </div>
+                            {cloneStatus === 'complete' ? (
+                              <>
+                                <span className="text-lg" aria-hidden>✅</span>
+                                <span className="text-sm font-medium text-emerald-700 dark:text-emerald-400">Clone completed successfully!</span>
+                              </>
+                            ) : (
+                              <>
+                                <span className="text-lg" aria-hidden>❌</span>
+                                <span className="text-sm font-medium text-red-700 dark:text-red-400">Clone failed</span>
+                              </>
+                            )}
                           </div>
                         </div>
                       )}
 
                       {/* Logs Display */}
                       {cloneLogs.length > 0 && (
-                        <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
-                          <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Logs</h4>
-                          <div className="bg-slate-900 text-green-400 font-mono text-xs p-3 rounded-lg max-h-60 overflow-y-auto">
+                        <div className="pt-4 border-t border-sky-100 dark:border-sky-900/40">
+                          <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2 flex items-center gap-1.5">
+                            <span aria-hidden>📜</span> Logs
+                          </h4>
+                          <div className="bg-slate-900 text-green-400 font-mono text-xs p-3 rounded-lg max-h-60 overflow-y-auto border border-sky-800/40">
                             {cloneLogs.map((log, idx) => (
                               <div key={idx} className="mb-1">
                                 <span className="text-slate-500">[{log.time}]</span> {log.message}
@@ -9000,8 +9040,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               }
                             }}
                             disabled={prechecksLoading}
-                            className="flex-1 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 dark:text-slate-300 px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                            className="flex-1 bg-teal-100 dark:bg-teal-900/40 hover:bg-teal-200 dark:hover:bg-teal-800/50 disabled:opacity-50 disabled:cursor-not-allowed text-teal-800 dark:text-teal-200 px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors border border-teal-200 dark:border-teal-700 flex items-center justify-center gap-1.5"
                           >
+                            <span aria-hidden>🧪</span>
                             {prechecksLoading ? 'Running Prechecks...' : 'Run Prechecks'}
                           </button>
                           <button
@@ -9065,8 +9106,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               }
                             }}
                             disabled={cloneLoading || !cloneFolderName.trim() || !cloneUrl.trim() || (currentCloneId !== null)}
-                            className="flex-1 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                            className="flex-1 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-sm shadow-sky-500/20 flex items-center justify-center gap-1.5"
                           >
+                            <span aria-hidden>🚀</span>
                             {cloneLoading ? 'Starting Clone Process...' : (currentCloneId ? 'Clone in Progress...' : 'Start Clone')}
                           </button>
                         </div>
@@ -9074,17 +9116,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                       {/* Prechecks Results */}
                       {showPrechecks && prechecksResults && (
-                        <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
-                          <div className="flex justify-between items-center mb-4">
-                            <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Prechecks Results</h4>
+                        <div className="pt-4 border-t border-sky-100 dark:border-sky-900/40">
+                          <div className="rounded-xl bg-gradient-to-r from-cyan-50/80 to-teal-50/60 dark:from-cyan-950/25 dark:to-teal-950/20 border border-cyan-100 dark:border-cyan-900/40 p-4 mb-4">
+                          <div className="flex justify-between items-center">
+                            <h4 className="text-sm font-semibold text-cyan-900 dark:text-cyan-100 flex items-center gap-1.5">
+                              <span aria-hidden>🧪</span> Prechecks Results
+                            </h4>
                             <button
                               onClick={() => setShowPrechecks(false)}
-                              className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                              className="text-cyan-500 hover:text-cyan-700 dark:text-cyan-400 dark:hover:text-cyan-200"
                             >
                               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
                                 <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
                               </svg>
                             </button>
+                          </div>
                           </div>
 
                           <div className={`p-4 rounded-lg mb-4 ${prechecksResults.allGood
@@ -9161,9 +9207,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
 
                   {/* Clones List */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
-                      <h3 className="text-lg font-bold text-slate-900 dark:text-white">Cloned Instances</h3>
+                  <div className="bg-white dark:bg-slate-800 border border-sky-200/70 dark:border-sky-800/40 rounded-xl overflow-hidden shadow-sm shadow-sky-500/5">
+                    <div className="bg-gradient-to-r from-sky-50 via-teal-50/70 to-cyan-50/50 dark:from-sky-950/40 dark:via-teal-950/30 dark:to-cyan-950/20 border-b border-sky-100 dark:border-sky-800/40 px-6 py-4">
+                    <div className="flex flex-wrap justify-between items-center gap-3">
+                      <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <span aria-hidden>🗂️</span> Cloned Instances
+                      </h3>
                       <div className="flex items-center gap-2">
                         {selectedCloneIds.size > 0 && (
                           <button
@@ -9171,9 +9220,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             disabled={bulkDeleteClonesLoading || clonesLoading}
                             className="px-3 py-1.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5"
                           >
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                              <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
-                            </svg>
+                            <span aria-hidden>🗑️</span>
                             {bulkDeleteClonesLoading
                               ? 'Deleting...'
                               : `Delete Selected (${selectedCloneIds.size})`}
@@ -9182,15 +9229,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         <button
                           onClick={loadClonesList}
                           disabled={clonesLoading || bulkDeleteClonesLoading}
-                          className="px-3 py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                          className="px-3 py-1.5 bg-sky-100 dark:bg-sky-900/40 hover:bg-sky-200 dark:hover:bg-sky-800/50 text-sky-800 dark:text-sky-200 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 border border-sky-200 dark:border-sky-700 flex items-center gap-1.5"
                         >
+                          <span aria-hidden>🔄</span>
                           {clonesLoading ? 'Loading...' : 'Refresh'}
                         </button>
                       </div>
                     </div>
+                    </div>
 
+                    <div className="p-6">
                     {clonesList.length === 0 ? (
-                      <div className="text-center py-8 text-slate-500 dark:text-slate-400">
+                      <div className="text-center py-8 rounded-xl bg-sky-50/60 dark:bg-sky-950/20 border border-dashed border-sky-200 dark:border-sky-800/50 text-sky-700 dark:text-sky-300">
+                        <p className="text-2xl mb-2" aria-hidden>📭</p>
                         <p>No clones created yet.</p>
                       </div>
                     ) : (
@@ -9437,6 +9488,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         </table>
                       </div>
                     )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -9445,13 +9497,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               {editCloneModal.open && editCloneModal.clone && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
                   <div className="absolute inset-0 bg-slate-900/20 dark:bg-slate-900/40" onClick={() => setEditCloneModal({ open: false, clone: null })}></div>
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-2xl p-6 relative shadow-2xl max-h-[90vh] overflow-y-auto">
-                    <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Edit Clone</h3>
+                  <div className="bg-white dark:bg-slate-800 border border-sky-200/70 dark:border-sky-800/40 rounded-2xl w-full max-w-2xl overflow-hidden relative shadow-2xl max-h-[90vh] flex flex-col shadow-sky-500/10">
+                    <div className="bg-gradient-to-r from-sky-50 via-teal-50/80 to-cyan-50/60 dark:from-sky-950/40 dark:via-teal-950/30 dark:to-cyan-950/20 border-b border-sky-100 dark:border-sky-800/40 px-6 py-4">
+                      <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <span aria-hidden>✏️</span> Edit Clone
+                      </h3>
+                    </div>
 
-                    <div className="space-y-4">
+                    <div className="p-6 space-y-4 overflow-y-auto">
                       <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Folder Name <span className="text-red-500">*</span>
+                          <span className="mr-1" aria-hidden>📁</span>Folder Name <span className="text-red-500">*</span>
                         </label>
                         <input
                           type="text"
@@ -9460,13 +9516,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             ...editCloneModal,
                             clone: { ...editCloneModal.clone!, folderName: e.target.value }
                           })}
-                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                          className="w-full bg-white dark:bg-slate-900/50 border border-sky-200 dark:border-sky-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                         />
                       </div>
 
                       <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Source Path
+                          <span className="mr-1" aria-hidden>📦</span>Source Path
                         </label>
                         <input
                           type="text"
@@ -9475,13 +9531,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             ...editCloneModal,
                             clone: { ...editCloneModal.clone!, sourcePath: e.target.value }
                           })}
-                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                          className="w-full bg-white dark:bg-slate-900/50 border border-sky-200 dark:border-sky-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                         />
                       </div>
 
                       <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Target Path
+                          <span className="mr-1" aria-hidden>🎯</span>Target Path
                         </label>
                         <input
                           type="text"
@@ -9490,13 +9546,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             ...editCloneModal,
                             clone: { ...editCloneModal.clone!, targetPath: e.target.value }
                           })}
-                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                          className="w-full bg-white dark:bg-slate-900/50 border border-sky-200 dark:border-sky-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                         />
                       </div>
 
                       <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Instance URL
+                          <span className="mr-1" aria-hidden>🔗</span>Instance URL
                         </label>
                         <input
                           type="url"
@@ -9506,14 +9562,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             clone: { ...editCloneModal.clone!, url: e.target.value }
                           })}
                           placeholder="e.g., https://myspaces.example.com or http://localhost/myspaces"
-                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                          className="w-full bg-white dark:bg-slate-900/50 border border-sky-200 dark:border-sky-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                         />
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        <p className="text-xs text-sky-700/70 dark:text-sky-300/70 mt-1">
                           Full URL where the cloned instance will be accessible
                         </p>
                       </div>
 
-                      <div className="space-y-3">
+                      <div className="rounded-xl bg-teal-50/50 dark:bg-teal-950/20 border border-teal-100 dark:border-teal-900/40 p-3 space-y-3">
                         <label className="flex items-center gap-3 cursor-pointer">
                           <input
                             type="checkbox"
@@ -9522,9 +9578,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               ...editCloneModal,
                               clone: { ...editCloneModal.clone!, copyAssets: e.target.checked }
                             })}
-                            className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
+                            className="w-4 h-4 text-sky-600 border-slate-300 dark:border-slate-600 rounded focus:ring-sky-500 focus:ring-2"
                           />
-                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Copy Assets</span>
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300"><span className="mr-1" aria-hidden>🖼️</span>Copy Assets</span>
                         </label>
 
                         <label className="flex items-center gap-3 cursor-pointer">
@@ -9535,22 +9591,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               ...editCloneModal,
                               clone: { ...editCloneModal.clone!, copyDatabase: e.target.checked }
                             })}
-                            className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
+                            className="w-4 h-4 text-sky-600 border-slate-300 dark:border-slate-600 rounded focus:ring-sky-500 focus:ring-2"
                           />
-                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Copy Database</span>
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300"><span className="mr-1" aria-hidden>🗄️</span>Copy Database</span>
                         </label>
                       </div>
 
                       {error && (
-                        <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 text-sm">
-                          {error}
+                        <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 text-sm flex items-start gap-2">
+                          <span aria-hidden>⚠️</span>
+                          <span>{error}</span>
                         </div>
                       )}
+                    </div>
 
-                      <div className="flex justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                      <div className="flex justify-end gap-3 px-6 py-4 border-t border-sky-100 dark:border-sky-900/40 bg-gradient-to-r from-sky-50/80 to-teal-50/50 dark:from-sky-950/30 dark:to-teal-950/20">
                         <button
                           onClick={() => setEditCloneModal({ open: false, clone: null })}
-                          className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium"
+                          className="px-4 py-2 text-sky-700 dark:text-sky-300 hover:text-sky-900 dark:hover:text-white transition-colors font-medium"
                         >
                           Cancel
                         </button>
@@ -9594,12 +9652,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             }
                           }}
                           disabled={editCloneLoading || !editCloneModal.clone.folderName.trim()}
-                          className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
+                          className="px-4 py-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors shadow-sm shadow-sky-500/20 flex items-center gap-1.5"
                         >
+                          <span aria-hidden>💾</span>
                           {editCloneLoading ? 'Saving...' : 'Save Changes'}
                         </button>
                       </div>
-                    </div>
                   </div>
                 </div>
               )}
@@ -12529,111 +12587,141 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 <div className="space-y-6">
                   {broadcastLoading ? (
                     <div className="flex items-center justify-center py-12">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
                     </div>
                   ) : (
-                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                      <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Broadcast Message Settings</h3>
-                      <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
-                        Create and manage site-wide broadcast messages that appear at the top of all pages. Messages scroll from right to left with customizable speed. Users can hover to pause the message or click to read the full content in a popup.
-                      </p>
+                    <div className="bg-white dark:bg-slate-800 border border-sky-200/70 dark:border-sky-800/40 rounded-xl overflow-hidden shadow-sm shadow-sky-500/5">
+                      <div className="bg-gradient-to-r from-sky-50 via-teal-50/80 to-cyan-50/60 dark:from-sky-950/40 dark:via-teal-950/30 dark:to-cyan-950/20 border-b border-sky-100 dark:border-sky-800/40 px-6 py-5">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                          <span aria-hidden>📢</span> Broadcast Message Settings
+                        </h3>
+                        <p className="text-sm text-sky-800/70 dark:text-sky-200/70 mt-0.5">
+                          Create and manage site-wide scrolling banners that appear at the top of every page.
+                        </p>
+                      </div>
 
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                            Message Text
+                      <div className="p-6 space-y-5">
+                        <div className="rounded-xl bg-sky-50/50 dark:bg-sky-950/20 border border-sky-100 dark:border-sky-900/40 p-4">
+                          <label className="block text-sm font-semibold text-sky-900 dark:text-sky-100 mb-2 flex items-center gap-1.5">
+                            <span aria-hidden>💬</span> Message *
                           </label>
                           <textarea
                             value={broadcastMessage}
                             onChange={(e) => setBroadcastMessage(e.target.value)}
-                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                            className="w-full bg-white dark:bg-slate-900/50 border border-sky-200 dark:border-sky-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                             placeholder="Enter your broadcast message here..."
                             rows={3}
                           />
-                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                            This message will be displayed in a scrolling banner at the top of all pages.
+                          <p className="text-xs text-sky-700/70 dark:text-sky-300/70 mt-1.5 flex items-center gap-1">
+                            <span aria-hidden>💡</span>
+                            Shown in a scrolling banner. Users can hover to pause or click for the full message.
                           </p>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="rounded-xl bg-teal-50/50 dark:bg-teal-950/20 border border-teal-100 dark:border-teal-900/40 p-4">
+                          <h4 className="text-sm font-semibold text-teal-900 dark:text-teal-100 mb-3 flex items-center gap-1.5">
+                            <span aria-hidden>🎨</span> Appearance
+                          </h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                <span className="mr-1" aria-hidden>🔤</span>Font Family
+                              </label>
+                              <select
+                                value={broadcastFontFamily}
+                                onChange={(e) => setBroadcastFontFamily(e.target.value)}
+                                className="w-full bg-white dark:bg-slate-900/50 border border-teal-200 dark:border-teal-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-400/50 focus:border-teal-400"
+                              >
+                                <option value="Arial, sans-serif">Arial</option>
+                                <option value="'Times New Roman', serif">Times New Roman</option>
+                                <option value="'Courier New', monospace">Courier New</option>
+                                <option value="Georgia, serif">Georgia</option>
+                                <option value="Verdana, sans-serif">Verdana</option>
+                                <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                <span className="mr-1" aria-hidden>📏</span>Font Size
+                              </label>
+                              <select
+                                value={broadcastFontSize}
+                                onChange={(e) => setBroadcastFontSize(e.target.value)}
+                                className="w-full bg-white dark:bg-slate-900/50 border border-teal-200 dark:border-teal-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-400/50 focus:border-teal-400"
+                              >
+                                <option value="12px">12px</option>
+                                <option value="14px">14px</option>
+                                <option value="16px">16px</option>
+                                <option value="18px">18px</option>
+                                <option value="20px">20px</option>
+                                <option value="24px">24px</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="mt-4">
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                              <span className="mr-1" aria-hidden>🌈</span>Color
+                            </label>
+                            <div className="flex gap-4 items-center">
+                              <input
+                                type="color"
+                                value={broadcastColor}
+                                onChange={(e) => setBroadcastColor(e.target.value)}
+                                className="w-16 h-10 border border-teal-200 dark:border-teal-800/50 rounded-lg cursor-pointer"
+                              />
+                              <input
+                                type="text"
+                                value={broadcastColor}
+                                onChange={(e) => setBroadcastColor(e.target.value)}
+                                className="flex-1 bg-white dark:bg-slate-900/50 border border-teal-200 dark:border-teal-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-400/50 focus:border-teal-400 font-mono"
+                                placeholder="#ff0000"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl bg-cyan-50/50 dark:bg-cyan-950/20 border border-cyan-100 dark:border-cyan-900/40 p-4 space-y-4">
+                          <h4 className="text-sm font-semibold text-cyan-900 dark:text-cyan-100 flex items-center gap-1.5">
+                            <span aria-hidden>⏱️</span> Timing
+                          </h4>
                           <div>
                             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Font Family
+                              <span className="mr-1" aria-hidden>🏃</span>Scroll Speed (seconds)
                             </label>
-                            <select
-                              value={broadcastFontFamily}
-                              onChange={(e) => setBroadcastFontFamily(e.target.value)}
-                              className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                            >
-                              <option value="Arial, sans-serif">Arial</option>
-                              <option value="'Times New Roman', serif">Times New Roman</option>
-                              <option value="'Courier New', monospace">Courier New</option>
-                              <option value="Georgia, serif">Georgia</option>
-                              <option value="Verdana, sans-serif">Verdana</option>
-                              <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
-                            </select>
+                            <input
+                              type="number"
+                              min="5"
+                              max="120"
+                              step="1"
+                              value={broadcastScrollSpeed}
+                              onChange={(e) => setBroadcastScrollSpeed(Number(e.target.value))}
+                              className="w-full bg-white dark:bg-slate-900/50 border border-cyan-200 dark:border-cyan-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:border-cyan-400"
+                              placeholder="30"
+                            />
+                            <p className="text-xs text-cyan-700/70 dark:text-cyan-300/70 mt-1">
+                              Lower = faster, higher = slower. Recommended: 20–40 seconds.
+                            </p>
                           </div>
 
                           <div>
                             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Font Size
+                              <span className="mr-1" aria-hidden>📅</span>Expiration Date/Time (Optional)
                             </label>
-                            <select
-                              value={broadcastFontSize}
-                              onChange={(e) => setBroadcastFontSize(e.target.value)}
-                              className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                            >
-                              <option value="12px">12px</option>
-                              <option value="14px">14px</option>
-                              <option value="16px">16px</option>
-                              <option value="18px">18px</option>
-                              <option value="20px">20px</option>
-                              <option value="24px">24px</option>
-                            </select>
+                            <input
+                              type="datetime-local"
+                              value={broadcastExpiresAt}
+                              onChange={(e) => setBroadcastExpiresAt(e.target.value)}
+                              className="w-full bg-white dark:bg-slate-900/50 border border-cyan-200 dark:border-cyan-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:border-cyan-400"
+                            />
+                            <p className="text-xs text-cyan-700/70 dark:text-cyan-300/70 mt-1">
+                              Leave empty for no expiration. The banner stops after this date/time.
+                            </p>
                           </div>
                         </div>
 
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                            Color
-                          </label>
-                          <div className="flex gap-4 items-center">
-                            <input
-                              type="color"
-                              value={broadcastColor}
-                              onChange={(e) => setBroadcastColor(e.target.value)}
-                              className="w-16 h-10 border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer"
-                            />
-                            <input
-                              type="text"
-                              value={broadcastColor}
-                              onChange={(e) => setBroadcastColor(e.target.value)}
-                              className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 font-mono"
-                              placeholder="#ff0000"
-                            />
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                            Scroll Speed (seconds)
-                          </label>
-                          <input
-                            type="number"
-                            min="5"
-                            max="120"
-                            step="1"
-                            value={broadcastScrollSpeed}
-                            onChange={(e) => setBroadcastScrollSpeed(Number(e.target.value))}
-                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                            placeholder="30"
-                          />
-                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                            Time in seconds for the message to scroll across the screen. Lower = faster, higher = slower. Recommended: 20-40 seconds.
-                          </p>
-                        </div>
-
-                        <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                        <div className="flex gap-3 pt-2">
                           <button
                             onClick={async () => {
                               if (!broadcastMessage.trim()) {
@@ -12666,7 +12754,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   });
                                   alert('Broadcast message created successfully!');
                                 }
-                                // Reload current broadcast
                                 const updated = await broadcastService.getBroadcast();
                                 setCurrentBroadcast(updated);
                               } catch (err: any) {
@@ -12676,8 +12763,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               }
                             }}
                             disabled={broadcastLoading || !broadcastMessage.trim()}
-                            className="flex-1 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                            className="flex-1 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-sm shadow-sky-500/20 flex items-center justify-center gap-1.5"
                           >
+                            <span aria-hidden>{currentBroadcast ? '💾' : '✨'}</span>
                             {broadcastLoading ? 'Saving...' : currentBroadcast ? 'Update Message' : 'Create Message'}
                           </button>
                           {currentBroadcast && (
@@ -12704,32 +12792,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 }
                               }}
                               disabled={broadcastLoading}
-                              className="px-4 py-2.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold transition-colors"
+                              className="px-4 py-2.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5"
                             >
+                              <span aria-hidden>🗑️</span>
                               Delete
                             </button>
                           )}
                         </div>
 
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                            Expiration Date/Time (Optional)
-                          </label>
-                          <input
-                            type="datetime-local"
-                            value={broadcastExpiresAt}
-                            onChange={(e) => setBroadcastExpiresAt(e.target.value)}
-                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                          />
-                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                            Leave empty for no expiration. The message will automatically stop displaying after this date/time.
-                          </p>
-                        </div>
-
                         {currentBroadcast && (
-                          <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
-                            <div className="flex items-center justify-between mb-4">
-                              <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Current Active Message</h4>
+                          <div className="rounded-xl bg-gradient-to-r from-emerald-50/80 to-teal-50/60 dark:from-emerald-950/25 dark:to-teal-950/20 border border-emerald-100 dark:border-emerald-900/40 p-4">
+                            <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+                              <h4 className="text-sm font-semibold text-emerald-900 dark:text-emerald-100 flex items-center gap-1.5">
+                                <span aria-hidden>✅</span> Current Active Message
+                              </h4>
                               <button
                                 onClick={async () => {
                                   if (!confirm('Are you sure you want to delete the current broadcast message?')) {
@@ -12752,19 +12828,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     setBroadcastLoading(false);
                                   }
                                 }}
-                                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm font-medium transition-colors"
+                                className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
                               >
+                                <span aria-hidden>🗑️</span>
                                 Delete Current Message
                               </button>
                             </div>
-                            <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                            <div className="bg-white/80 dark:bg-slate-900/50 border border-emerald-200/70 dark:border-emerald-800/40 rounded-lg p-4">
                               <p className="text-sm text-slate-700 dark:text-slate-300 mb-2" style={{ fontFamily: currentBroadcast.fontFamily, fontSize: currentBroadcast.fontSize, color: currentBroadcast.color }}>
                                 {currentBroadcast.message}
                               </p>
-                              <p className="text-xs text-slate-500 dark:text-slate-400">
-                                Created: {new Date(currentBroadcast.createdAt * 1000).toLocaleString()}
+                              <p className="text-xs text-emerald-700/70 dark:text-emerald-300/70 flex flex-wrap gap-x-2">
+                                <span>📅 Created: {new Date(currentBroadcast.createdAt * 1000).toLocaleString()}</span>
                                 {currentBroadcast.expiresAt && (
-                                  <> | Expires: {new Date(currentBroadcast.expiresAt * 1000).toLocaleString()}</>
+                                  <span>⏳ Expires: {new Date(currentBroadcast.expiresAt * 1000).toLocaleString()}</span>
                                 )}
                               </p>
                             </div>
@@ -12775,7 +12852,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   )}
                 </div>
               )}
-
               {/* Maintenance Scripts Tab - DB cleanup, duplicates, invisible, optimize, vacuum, health, SQLite RAM, system specs */}
               {activeTab === 'maintenanceScripts' && (
                 <div className="space-y-6 mt-6">
