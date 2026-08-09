@@ -997,10 +997,18 @@ function handleGetTile($tileId) {
         sendJSON(['error' => 'Tile not found'], 404);
     }
 
-    // Staging tiles are visible only to admins
+    // Role assignment (Your Apps → Your Assigned Apps) must be checked before the staging gate
+    $hasRoleAccess = false;
+    if ($user && !empty($user['id']) && empty($user['is_admin'])) {
+        $hasRoleAccess = canUserViewTileByRole($user['id'], $tileId, $db);
+    }
+
+    // Staging tiles: admins always; non-admins only when explicitly role-assigned
     $rowSourceTab = isset($row['source_tab']) ? trim($row['source_tab']) : 'public';
     if ($rowSourceTab === 'staging' && (!$user || empty($user['is_admin']))) {
-        sendJSON(['error' => 'Tile not found'], 404);
+        if (!$hasRoleAccess) {
+            sendJSON(['error' => 'Tile not found'], 404);
+        }
     }
 
     // Unpublished tiles are admin-only
@@ -1008,10 +1016,16 @@ function handleGetTile($tileId) {
         sendJSON(['error' => 'Tile not found'], 404);
     }
     
-    // Filter tiles based on visibility
+    // Filter tiles based on visibility (must match handleGetTiles for Assigned Apps)
     $tileVisibility = $row['visibility'] ?? 'public';
     $tileAllowedUsers = $row['allowed_users'] ? json_decode($row['allowed_users'], true) : [];
+    if (!is_array($tileAllowedUsers)) {
+        $tileAllowedUsers = [];
+    }
     $tileAllowedGroups = $row['allowed_groups'] ? json_decode($row['allowed_groups'], true) : [];
+    if (!is_array($tileAllowedGroups)) {
+        $tileAllowedGroups = [];
+    }
     
     // Get user's group IDs if user is logged in
     $userGroupIds = [];
@@ -1023,32 +1037,25 @@ function handleGetTile($tileId) {
         }
     }
     
-    // Check if tile should be visible to current user
-    // Admin users can see all tiles regardless of visibility
-    $isTileVisible = false;
-    if ($user && $user['is_admin']) {
-        $isTileVisible = true; // Admins see everything
-    } elseif ($tileVisibility === 'public') {
-        $isTileVisible = true; // Public tiles visible to everyone
-    } elseif ($tileVisibility === 'authenticated' && $user) {
-        $isTileVisible = true; // Authenticated tiles visible to logged-in users
-    } elseif ($tileVisibility === 'private' && $user) {
-        // Private tiles visible only to specific users or groups
-        $isTileVisible = in_array($user['id'], $tileAllowedUsers);
-        
-        // Also check if user is in any allowed groups
-        if (!$isTileVisible && !empty($tileAllowedGroups) && !empty($userGroupIds)) {
-            $isTileVisible = !empty(array_intersect($userGroupIds, $tileAllowedGroups));
+    $isTileVisible = canUserSeeByVisibility($user, $row, $userGroupIds);
+
+    // Owner can always open their own private tile
+    if (!$isTileVisible && $user && isset($row['user_id']) && (int)$row['user_id'] === (int)$user['id']) {
+        $isTileVisible = true;
+    }
+
+    // Accepted share invitations
+    if (!$isTileVisible && $user) {
+        $sharedCheck = $db->prepare('SELECT id, sharer_user_id FROM tile_share_invitations WHERE tile_id = ? AND receiver_user_id = ? AND status = ?');
+        $sharedCheck->execute([$row['id'], $user['id'], 'accepted']);
+        if ($sharedCheck->fetch()) {
+            $isTileVisible = true;
         }
-        // Also include tiles shared with user and accepted (via tile_share_invitations)
-        if (!$isTileVisible) {
-            $sharedCheck = $db->prepare('SELECT id, sharer_user_id FROM tile_share_invitations WHERE tile_id = ? AND receiver_user_id = ? AND status = ?');
-            $sharedCheck->execute([$row['id'], $user['id'], 'accepted']);
-            $sharedRow = $sharedCheck->fetch();
-            if ($sharedRow) {
-                $isTileVisible = true;
-            }
-        }
+    }
+
+    // Role-based tile access (private + role_tile_permissions → Your Assigned Apps)
+    if (!$isTileVisible && $hasRoleAccess) {
+        $isTileVisible = true;
     }
     
     if (!$isTileVisible) {
@@ -1138,6 +1145,7 @@ function handleGetTile($tileId) {
         'canView' => $canView,
         'canEdit' => $canEdit,
         'canDelete' => $canDelete,
+        'hasRoleAccess' => $hasRoleAccess,
         'visibleFrom' => $row['visible_from'] ?? null,
         'expiresAt' => $row['expires_at'] ?? null,
         'tileBackgroundColor' => !empty($row['tile_background_color']) ? $row['tile_background_color'] : null,

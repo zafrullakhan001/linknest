@@ -423,8 +423,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                             </button>
                             <button
                                 onClick={onSave}
-                                disabled={editVisibility === 'private' && editAllowedUsers.length === 0}
-                                className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-semibold active:bg-brand-700 touch-manipulation"
+                                className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-semibold active:bg-brand-700 touch-manipulation"
                                 style={{ minHeight: '44px' }}
                             >
                                 Save
