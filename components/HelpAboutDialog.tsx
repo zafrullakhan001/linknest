@@ -463,7 +463,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">QR Code Sharing</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Share the app URL via a branded QR code from the nav bar (desktop and mobile). Open space QR codes from tile views for quick access on phones and shared displays.
+                      Share the app URL via a branded QR code from the nav bar (desktop and mobile). Open space QR codes from tile views for quick access on phones and shared displays. Long URLs (for example many SharePoint links) intentionally omit the center logo or emoji so the code stays scannable — that is expected, not a missing branding setting.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -643,6 +643,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                       <li>Tap the QR icon in the navigation bar to share the app URL (guests included)</li>
                       <li>Open space QR codes from tile / mobile views for on-the-go access</li>
                       <li>Branded QR centers use your logo or emoji; admins can tune branding in Settings</li>
+                      <li>Very long links skip the center image on purpose so the QR can still encode and scan reliably (common with SharePoint and similar URLs)</li>
                     </ul>
                   </div>
                   <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">

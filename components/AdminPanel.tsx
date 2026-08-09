@@ -10833,6 +10833,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               <div className="px-4 pb-4 space-y-4 border-t border-slate-200 dark:border-slate-700 pt-4">
                                 <p className="text-xs text-slate-600 dark:text-slate-400">
                                   Choose what appears in the center of link QR codes for branding. Save Settings to apply.
+                                  Long URLs automatically omit the center mark so the QR stays scannable — that is expected behavior, not a branding failure.
                                 </p>
 
                                 <div>
