@@ -145,10 +145,11 @@ export const SecurePasswordInput: React.FC<SecurePasswordInputProps> = ({ value 
 
     // Trigger onChange - only if password actually changed
     if (onChangeRef.current && newPassword !== oldPassword) {
-      // Always use realPasswordRef.current (which we just updated) to ensure we never send asterisks
+      // Always use realPasswordRef.current (which we just updated)
       const passwordToSend = realPasswordRef.current;
-      if (passwordToSend.includes('*')) {
-        console.error('SecurePasswordInput: Password ref contains asterisks! Skipping onChange.');
+      // Only reject fully-masked placeholders (all *), not real passwords that contain *
+      if (passwordToSend.length > 0 && /^[\*\u2022\u00B7\u25CF\u25E6•·]+$/.test(passwordToSend)) {
+        console.error('SecurePasswordInput: Password ref is a masked placeholder! Skipping onChange.');
         return;
       }
       
@@ -183,10 +184,10 @@ export const SecurePasswordInput: React.FC<SecurePasswordInputProps> = ({ value 
     }, 0);
 
     if (onChangeRef.current) {
-      // Always use realPasswordRef.current to ensure we never send asterisks
       const passwordToSend = realPasswordRef.current;
-      if (passwordToSend.includes('*')) {
-        console.error('SecurePasswordInput: Password ref contains asterisks after paste! Skipping onChange.');
+      // Only reject fully-masked placeholders (all *), not real passwords that contain *
+      if (passwordToSend.length > 0 && /^[\*\u2022\u00B7\u25CF\u25E6•·]+$/.test(passwordToSend)) {
+        console.error('SecurePasswordInput: Password ref is a masked placeholder after paste! Skipping onChange.');
         return;
       }
       

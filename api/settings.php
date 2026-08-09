@@ -493,7 +493,7 @@ function handleUpdateSettings() {
                 'ldap_require_group_membership', 'ldap_required_groups', 'ldap_denied_groups', 'ldap_timeout', 'ldap_tls',
                 'ldap_search_scope', 'ldap_user_dn_template', 'ldap_nested_groups', 'ldap_case_sensitive',
                 'ldap_ssl_verify', 'ldap_connection_retry', 'ldap_retry_delay', 'ldap_email_attribute',
-                'ldap_display_name_attribute', 'ldap_referrals',
+                'ldap_display_name_attribute', 'ldap_referrals', 'ldap_dropdown_show_host',
                 'access_control_enabled', 'access_control_mode', 'access_control_allow_anonymous', 'access_control_audit_logging',
                 'browser_specific_links_enabled', 'browser_extension_id',
                 'saml_enabled', 'local_auth_enabled', 'sp_entity_id', 'sp_assertion_consumer_service',
@@ -693,11 +693,12 @@ function handleUpdateSettings() {
                 $value = $trimmedEmoji !== '' ? $trimmedEmoji : '❤️';
             }
             
-            // Handle LDAP bind password - encrypt if provided; leave blank clears only when intentionally empty
+            // Handle LDAP bind password - encrypt if provided; blank = keep existing (UI: "leave blank to keep")
             if ($key === 'ldap_bind_password') {
                 $trimmedValue = is_string($value) ? trim($value) : '';
                 if ($value === null || $trimmedValue === '') {
-                    $value = '';
+                    // Do not overwrite a password mirrored from ldap_servers (or a previously saved one)
+                    continue;
                 } elseif (isMaskedPasswordPlaceholder($trimmedValue)) {
                     sendJSON(['error' => 'LDAP bind password looks masked (asterisks). Re-enter the real password and save again.'], 400);
                 } elseif (!isLikelyEncryptedPassword($trimmedValue)) {

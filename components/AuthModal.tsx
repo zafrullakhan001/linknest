@@ -182,7 +182,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
               servers = parsed.map((s: any) => ({
                 name: s.name || s.server || 'LDAP Server',
                 server: s.server || '',
-                login_domain: s.login_domain || s.name || ''
+                login_domain: s.login_domain || ''
               }));
             }
           } catch (e) {
@@ -771,11 +771,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                     className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 sm:px-4 sm:py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                     title="Select which LDAP server or domain to authenticate against"
                   >
-                    {ldapServers.map((server, index) => (
-                      <option key={index} value={index}>
-                        {server.name}{server.login_domain ? ` · ${server.login_domain}` : ''}{server.server ? ` (${server.server})` : ''}
-                      </option>
-                    ))}
+                    {ldapServers.map((server, index) => {
+                      const showHost = String(appSettings.ldap_dropdown_show_host ?? '1') !== '0';
+                      const namePart = server.name || `LDAP Server ${index + 1}`;
+                      const domainPart = server.login_domain && server.login_domain !== namePart
+                        ? ` (${server.login_domain})`
+                        : '';
+                      const hostPart = showHost && server.server
+                        ? ` - ${server.server}`
+                        : '';
+                      return (
+                        <option key={index} value={index}>
+                          {namePart}{domainPart}{hostPart}
+                        </option>
+                      );
+                    })}
                   </select>
                   {ldapServers.length > 1 && (
                     <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">

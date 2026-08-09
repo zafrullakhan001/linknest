@@ -805,7 +805,7 @@ function handleLogin() {
         
         // Check if user is disabled
         if ($user['is_disabled'] && !$user['is_admin']) {
-            sendJSON(['error' => 'Your account has been disabled. Please contact an administrator.'], 403);
+            sendJSON(['error' => 'Your account has been disabled. Please contact your administrator.'], 403);
         }
         
         // Check approval
@@ -898,7 +898,7 @@ function handleLogin() {
     
     // Check if user is disabled
     if ($user['is_disabled'] && !$user['is_admin']) {
-        sendJSON(['error' => 'Your account has been disabled. Please contact an administrator.'], 403);
+        sendJSON(['error' => 'Your account has been disabled. Please contact your administrator.'], 403);
     }
     
     // Check if user is approved

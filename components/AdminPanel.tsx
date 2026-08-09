@@ -430,6 +430,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [ldapExporting, setLdapExporting] = useState(false);
   const [ldapImporting, setLdapImporting] = useState(false);
   const [ldapImportFile, setLdapImportFile] = useState<File | null>(null);
+  const [ldapExportIncludePasswords, setLdapExportIncludePasswords] = useState(false);
   const [samlImportFile, setSamlImportFile] = useState<File | null>(null);
   const [samlImporting, setSamlImporting] = useState(false);
 
@@ -7161,6 +7162,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     </div>
                                     <div className="flex items-center gap-2 ml-4">
                                       <button
+                                        type="button"
                                         onClick={() => {
                                           setEditingServerIndex(index);
                                           setShowServerForm(true);
@@ -7173,6 +7175,51 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                         </svg>
                                       </button>
                                       <button
+                                        type="button"
+                                        onClick={() => {
+                                          const baseName = (server.name || `Server ${index + 1}`).replace(/\s*\(copy(?:\s+\d+)?\)\s*$/i, '').trim() || 'LDAP Server';
+                                          const existingNames = new Set(ldapServers.map((s) => (s.name || '').toLowerCase()));
+                                          let cloneName = `${baseName} (copy)`;
+                                          let n = 2;
+                                          while (existingNames.has(cloneName.toLowerCase())) {
+                                            cloneName = `${baseName} (copy ${n})`;
+                                            n += 1;
+                                          }
+                                          const baseDomain = (server.login_domain || '').replace(/\s*\(copy(?:\s+\d+)?\)\s*$/i, '').trim();
+                                          let cloneDomain = baseDomain;
+                                          if (baseDomain) {
+                                            const existingDomains = new Set(
+                                              ldapServers.map((s) => (s.login_domain || '').toLowerCase()).filter(Boolean)
+                                            );
+                                            cloneDomain = `${baseDomain} (copy)`;
+                                            let d = 2;
+                                            while (existingDomains.has(cloneDomain.toLowerCase())) {
+                                              cloneDomain = `${baseDomain} (copy ${d})`;
+                                              d += 1;
+                                            }
+                                          }
+                                          const clonedServer = {
+                                            ...server,
+                                            name: cloneName,
+                                            login_domain: cloneDomain,
+                                            // Copy bind password so the clone is usable immediately after Save
+                                            bind_password: server.bind_password || '',
+                                          };
+                                          const updated = [...ldapServers, clonedServer];
+                                          setLdapServers(updated);
+                                          setEditingServerIndex(updated.length - 1);
+                                          setShowServerForm(true);
+                                        }}
+                                        className="p-2 text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                                        title="Clone server"
+                                      >
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                          <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
+                                          <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.439A1.5 1.5 0 008.378 6H4.5z" />
+                                        </svg>
+                                      </button>
+                                      <button
+                                        type="button"
                                         onClick={() => {
                                           if (confirm(`Are you sure you want to remove "${server.name || `Server ${index + 1}`}"?`)) {
                                             const updated = ldapServers.filter((_, i) => i !== index);
@@ -7576,25 +7623,74 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       {/* Server Selection Dropdown */}
                       {ldapServers.length > 1 && (
                         <div className="mb-4">
-                          <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>Select LDAP Server to Test</label>
+                          <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                            <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300`}>Select LDAP Server to Test</label>
+                            <label className="inline-flex items-center gap-2 cursor-pointer touch-manipulation">
+                              <input
+                                type="checkbox"
+                                className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                                checked={settings.ldap_dropdown_show_host !== '0'}
+                                onChange={async (e) => {
+                                  const value = e.target.checked ? '1' : '0';
+                                  setSettings({ ...settings, ldap_dropdown_show_host: value });
+                                  try {
+                                    await settingsService.updateSettings({ ldap_dropdown_show_host: value });
+                                    await refreshSettings();
+                                  } catch (err: any) {
+                                    setError(err.message || 'Failed to update dropdown display setting');
+                                  }
+                                }}
+                              />
+                              <span className="text-[10px] sm:text-xs text-slate-600 dark:text-slate-400">Show host and port</span>
+                            </label>
+                          </div>
                           <select
                             value={selectedTestServerIndex}
                             onChange={(e) => setSelectedTestServerIndex(parseInt(e.target.value))}
                             className={`w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg ${isMobile ? 'px-3 py-2.5 text-sm' : 'px-3 py-2 text-sm'} touch-manipulation`}
                             style={isMobile ? { minHeight: '44px' } : {}}
                           >
-                            {ldapServers.map((server, index) => (
-                              <option key={index} value={index}>
-                                {server.name} {server.login_domain ? `(${server.login_domain})` : ''} - {server.server}:{server.port}
-                              </option>
-                            ))}
+                            {ldapServers.map((server, index) => {
+                              const namePart = `${server.name || `Server ${index + 1}`}${server.login_domain ? ` (${server.login_domain})` : ''}`;
+                              const hostPart = settings.ldap_dropdown_show_host !== '0' && server.server
+                                ? ` - ${server.server}:${server.port || '389'}`
+                                : '';
+                              return (
+                                <option key={index} value={index}>
+                                  {namePart}{hostPart}
+                                </option>
+                              );
+                            })}
                           </select>
                         </div>
                       )}
                       {ldapServers.length === 1 && (
-                        <p className={`${isMobile ? 'text-xs' : 'text-xs'} text-slate-600 dark:text-slate-400 mb-3`}>
-                          Testing server: {ldapServers[0]?.name || 'LDAP Server'}
-                        </p>
+                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                          <p className={`${isMobile ? 'text-xs' : 'text-xs'} text-slate-600 dark:text-slate-400`}>
+                            Testing server: {ldapServers[0]?.name || 'LDAP Server'}
+                            {settings.ldap_dropdown_show_host !== '0' && ldapServers[0]?.server
+                              ? ` (${ldapServers[0].server}:${ldapServers[0].port || '389'})`
+                              : ''}
+                          </p>
+                          <label className="inline-flex items-center gap-2 cursor-pointer touch-manipulation">
+                            <input
+                              type="checkbox"
+                              className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                              checked={settings.ldap_dropdown_show_host !== '0'}
+                              onChange={async (e) => {
+                                const value = e.target.checked ? '1' : '0';
+                                setSettings({ ...settings, ldap_dropdown_show_host: value });
+                                try {
+                                  await settingsService.updateSettings({ ldap_dropdown_show_host: value });
+                                  await refreshSettings();
+                                } catch (err: any) {
+                                  setError(err.message || 'Failed to update dropdown display setting');
+                                }
+                              }}
+                            />
+                            <span className="text-[10px] sm:text-xs text-slate-600 dark:text-slate-400">Show host and port</span>
+                          </label>
+                        </div>
                       )}
 
                       <form
@@ -7809,6 +7905,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     <div className={`${isMobile ? 'mt-6' : 'mt-8'} ${isMobile ? 'pt-6' : 'pt-6'} border-t border-slate-200 dark:border-slate-700`}>
                       <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-slate-900 dark:text-white mb-4`}>Export & Import LDAP Settings</h4>
 
+                      <label className={`inline-flex items-start gap-2 mb-3 cursor-pointer touch-manipulation ${isMobile ? 'w-full' : ''}`}>
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                          checked={ldapExportIncludePasswords}
+                          onChange={(e) => setLdapExportIncludePasswords(e.target.checked)}
+                        />
+                        <span className={`${isMobile ? 'text-xs' : 'text-xs'} text-slate-600 dark:text-slate-400`}>
+                          Include bind passwords in export (encrypted only — never plaintext). Import decrypts them with this instance’s key.
+                        </span>
+                      </label>
+
                       <div className={`flex ${isMobile ? 'flex-col' : 'flex-wrap'} gap-3 items-start`}>
                         <button
                           type="button"
@@ -7841,21 +7949,71 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                         {/* Export Section */}
                         <button
+                          type="button"
                           onClick={async () => {
                             try {
                               setLdapExporting(true);
                               setError('');
 
+                              const looksEncryptedPassword = (pw: string): boolean => {
+                                const parts = pw.split('.');
+                                if (parts.length !== 3) return false;
+                                return parts.every((p) => p.length > 0 && !/\s/.test(p));
+                              };
+                              const isMaskedPassword = (pw: string) => /^[\*\u2022\u00B7\u25CF\u25E6•·]+$/.test(pw || '');
+
+                              const encryptForExport = async (password: string): Promise<string> => {
+                                const trimmed = String(password || '').trim();
+                                if (!trimmed || isMaskedPassword(trimmed)) return '';
+                                if (looksEncryptedPassword(trimmed)) return trimmed;
+                                return await settingsService.encryptPassword(trimmed);
+                              };
+
+                              if (ldapExportIncludePasswords) {
+                                const ok = confirm(
+                                  'Export will include encrypted LDAP bind passwords.\n\n' +
+                                  'They can only be decrypted by a LinkNest instance using the same encryption key. ' +
+                                  'Do not share this file. Continue?'
+                                );
+                                if (!ok) {
+                                  return;
+                                }
+                              }
+
                               // Prefer multi-server JSON; only include non-empty flat keys to avoid stale leftovers.
-                              // Never export bind passwords (multi-server or legacy flat).
-                              const ldapSettings: Partial<AppSettings> & { ldap_servers?: string } = {};
+                              // ldap_servers is a nested array (not a stringified JSON blob) so the file pretty-prints cleanly.
+                              const ldapSettings: Record<string, unknown> = {};
+
                               if (ldapServers.length > 0) {
                                 ldapSettings.ldap_enabled = settings.ldap_enabled || '1';
-                                const serversForExport = ldapServers.map((server) => {
-                                  const { bind_password: _omitBindPassword, ...rest } = server;
-                                  return rest;
-                                });
-                                ldapSettings.ldap_servers = JSON.stringify(serversForExport);
+                                if (settings.ldap_dropdown_show_host !== undefined) {
+                                  ldapSettings.ldap_dropdown_show_host = settings.ldap_dropdown_show_host;
+                                }
+
+                                let includedPasswordCount = 0;
+                                const serversForExport: Array<Record<string, unknown>> = [];
+                                for (const server of ldapServers) {
+                                  const { bind_password: rawPassword, ...rest } = server;
+                                  if (ldapExportIncludePasswords) {
+                                    const encrypted = await encryptForExport(rawPassword || '');
+                                    if (encrypted) includedPasswordCount += 1;
+                                    serversForExport.push({ ...rest, bind_password: encrypted });
+                                  } else {
+                                    serversForExport.push({ ...rest });
+                                  }
+                                }
+                                ldapSettings.ldap_servers = serversForExport;
+                                if (ldapExportIncludePasswords) {
+                                  ldapSettings.ldap_passwords_format = 'encrypted';
+                                  // Mirror first server password for legacy flat-key importers
+                                  const firstPw = String(serversForExport[0]?.bind_password || '');
+                                  if (firstPw) {
+                                    ldapSettings.ldap_bind_password = firstPw;
+                                  }
+                                  if (includedPasswordCount === 0) {
+                                    alert('No bind passwords were available to encrypt. Exporting configuration without passwords.');
+                                  }
+                                }
                               } else {
                                 const ldapKeys = [
                                   'ldap_enabled', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
@@ -7866,15 +8024,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   'ldap_require_group_membership', 'ldap_required_groups', 'ldap_denied_groups', 'ldap_timeout', 'ldap_tls',
                                   'ldap_search_scope', 'ldap_user_dn_template', 'ldap_nested_groups', 'ldap_case_sensitive',
                                   'ldap_ssl_verify', 'ldap_connection_retry', 'ldap_retry_delay', 'ldap_email_attribute',
-                                  'ldap_display_name_attribute', 'ldap_referrals'
+                                  'ldap_display_name_attribute', 'ldap_referrals', 'ldap_dropdown_show_host'
                                 ] as const;
 
                                 ldapKeys.forEach((key) => {
                                   const val = settings[key as keyof AppSettings];
                                   if (val !== undefined && String(val).trim() !== '') {
-                                    (ldapSettings as any)[key] = val;
+                                    ldapSettings[key] = val;
                                   }
                                 });
+
+                                if (ldapExportIncludePasswords) {
+                                  const encrypted = await encryptForExport(settings.ldap_bind_password || '');
+                                  if (encrypted) {
+                                    ldapSettings.ldap_bind_password = encrypted;
+                                    ldapSettings.ldap_passwords_format = 'encrypted';
+                                  } else {
+                                    alert('No bind password was available to encrypt. Exporting configuration without a password.');
+                                  }
+                                }
                               }
 
                               // Create JSON blob
@@ -7891,7 +8059,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               document.body.removeChild(a);
                               URL.revokeObjectURL(url);
 
-                              alert('LDAP settings exported successfully!');
+                              alert(
+                                ldapExportIncludePasswords
+                                  ? 'LDAP settings exported with encrypted bind passwords.'
+                                  : 'LDAP settings exported successfully (passwords omitted).'
+                              );
                             } catch (err: any) {
                               setError(err.message || 'Failed to export LDAP settings');
                             } finally {
@@ -7937,6 +8109,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             style={isMobile ? { minHeight: '44px' } : {}}
                           />
                           <button
+                            type="button"
                             onClick={async () => {
                               if (!ldapImportFile) {
                                 setError('Please select a JSON file to import');
@@ -7956,13 +8129,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 const importedSettings = JSON.parse(fileContent);
 
                                 // Validate that it's an object
-                                if (typeof importedSettings !== 'object' || importedSettings === null) {
+                                if (typeof importedSettings !== 'object' || importedSettings === null || Array.isArray(importedSettings)) {
                                   throw new Error('Invalid JSON format');
                                 }
 
-                                // Filter only valid LDAP keys
+                                // Filter only valid LDAP keys (include ldap_servers — export uses this for multi-server)
                                 const validLdapKeys = [
-                                  'ldap_enabled', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
+                                  'ldap_enabled', 'ldap_servers', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
                                   'ldap_login_domain', 'ldap_bind_dn', 'ldap_bind_password',
                                   'ldap_user_search_base', 'ldap_user_filter', 'ldap_user_attributes',
                                   'ldap_group_search_base', 'ldap_group_filter', 'ldap_group_attributes',
@@ -7970,29 +8143,147 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   'ldap_require_group_membership', 'ldap_required_groups', 'ldap_denied_groups', 'ldap_timeout', 'ldap_tls',
                                   'ldap_search_scope', 'ldap_user_dn_template', 'ldap_nested_groups', 'ldap_case_sensitive',
                                   'ldap_ssl_verify', 'ldap_connection_retry', 'ldap_retry_delay', 'ldap_email_attribute',
-                                  'ldap_display_name_attribute', 'ldap_referrals'
-                                ];
+                                  'ldap_display_name_attribute', 'ldap_referrals', 'ldap_dropdown_show_host'
+                                ] as const;
 
                                 const filteredSettings: Partial<AppSettings> = {};
-                                validLdapKeys.forEach(key => {
+                                validLdapKeys.forEach((key) => {
                                   if (importedSettings[key] !== undefined) {
-                                    filteredSettings[key as keyof AppSettings] = importedSettings[key];
+                                    (filteredSettings as any)[key] = importedSettings[key];
                                   }
                                 });
 
-                                // Decrypt password if it's encrypted (handles both encrypted and plain text for backward compatibility)
-                                if (filteredSettings.ldap_bind_password && filteredSettings.ldap_bind_password.trim() !== '') {
-                                  try {
-                                    // Try to decrypt - decryptPassword handles plain text passwords too
-                                    filteredSettings.ldap_bind_password = await settingsService.decryptPassword(filteredSettings.ldap_bind_password);
-                                  } catch (decryptErr: any) {
-                                    // If decryption fails, it might be plain text (old export format)
-                                    // Keep it as is - the backend will handle it
-                                    console.warn('Password decryption failed, assuming plain text:', decryptErr.message);
+                                const looksEncryptedPassword = (pw: string): boolean => {
+                                  const parts = pw.split('.');
+                                  if (parts.length !== 3) return false;
+                                  return parts.every((p) => p.length > 0 && !/\s/.test(p));
+                                };
+                                const isMaskedPassword = (pw: string) => /^[\*\u2022\u00B7\u25CF\u25E6•·]+$/.test(pw || '');
+
+                                // Resolve import passwords safely:
+                                // - encrypted (this instance key) → decrypt to plaintext, backend re-encrypts on save
+                                // - encrypted (wrong key) → drop password and warn (never store foreign ciphertext)
+                                // - plaintext (legacy export) → keep as plaintext for backend encrypt
+                                let passwordDecryptFailures = 0;
+                                let passwordsImported = 0;
+                                const resolveImportPassword = async (password: string): Promise<string> => {
+                                  const trimmed = String(password || '').trim();
+                                  if (!trimmed || isMaskedPassword(trimmed)) return '';
+                                  if (looksEncryptedPassword(trimmed)) {
+                                    try {
+                                      const plain = await settingsService.decryptPassword(trimmed);
+                                      if (!plain) {
+                                        passwordDecryptFailures += 1;
+                                        return '';
+                                      }
+                                      passwordsImported += 1;
+                                      return plain;
+                                    } catch {
+                                      passwordDecryptFailures += 1;
+                                      return '';
+                                    }
+                                  }
+                                  passwordsImported += 1;
+                                  return trimmed;
+                                };
+
+                                // Normalize ldap_servers (array or JSON string) and resolve per-server bind passwords
+                                let importedServers: any[] | null = null;
+                                if (filteredSettings.ldap_servers !== undefined) {
+                                  const rawServers = filteredSettings.ldap_servers as unknown;
+                                  if (Array.isArray(rawServers)) {
+                                    importedServers = rawServers;
+                                  } else if (typeof rawServers === 'string' && rawServers.trim() !== '') {
+                                    try {
+                                      const parsed = JSON.parse(rawServers);
+                                      if (!Array.isArray(parsed)) {
+                                        throw new Error('ldap_servers must be a JSON array');
+                                      }
+                                      importedServers = parsed;
+                                    } catch {
+                                      throw new Error('Invalid ldap_servers JSON in import file');
+                                    }
+                                  } else {
+                                    importedServers = [];
+                                  }
+
+                                  for (let i = 0; i < importedServers.length; i++) {
+                                    const server = importedServers[i];
+                                    if (!server || typeof server !== 'object') continue;
+                                    if (typeof server.bind_password === 'string' && server.bind_password.trim() !== '') {
+                                      server.bind_password = await resolveImportPassword(server.bind_password);
+                                    } else {
+                                      server.bind_password = '';
+                                    }
+                                  }
+                                  filteredSettings.ldap_servers = JSON.stringify(importedServers);
+                                } else if (
+                                  typeof filteredSettings.ldap_server === 'string' &&
+                                  filteredSettings.ldap_server.trim() !== ''
+                                ) {
+                                  // Legacy flat-key export → convert to ldap_servers so UI/DB stay consistent
+                                  if (filteredSettings.ldap_bind_password && String(filteredSettings.ldap_bind_password).trim() !== '') {
+                                    filteredSettings.ldap_bind_password = await resolveImportPassword(String(filteredSettings.ldap_bind_password));
+                                  }
+                                  importedServers = [{
+                                    name: filteredSettings.ldap_login_domain || filteredSettings.ldap_server || 'LDAP Server',
+                                    server: filteredSettings.ldap_server || '',
+                                    port: filteredSettings.ldap_port || '389',
+                                    protocol: filteredSettings.ldap_protocol || 'ldap',
+                                    tls: filteredSettings.ldap_tls || '0',
+                                    timeout: filteredSettings.ldap_timeout || '30',
+                                    bind_dn: filteredSettings.ldap_bind_dn || '',
+                                    bind_password: filteredSettings.ldap_bind_password || '',
+                                    user_search_base: filteredSettings.ldap_user_search_base || '',
+                                    user_filter: filteredSettings.ldap_user_filter || '(sAMAccountName={username})',
+                                    user_attributes: filteredSettings.ldap_user_attributes || 'sAMAccountName,mail,displayName',
+                                    group_search_base: filteredSettings.ldap_group_search_base || '',
+                                    group_filter: filteredSettings.ldap_group_filter || '(objectClass=group)',
+                                    group_attributes: filteredSettings.ldap_group_attributes || 'cn,distinguishedName,member',
+                                    require_group_membership: filteredSettings.ldap_require_group_membership || '0',
+                                    required_groups: filteredSettings.ldap_required_groups || '',
+                                    denied_groups: (filteredSettings as any).ldap_denied_groups || '',
+                                    search_scope: filteredSettings.ldap_search_scope || 'sub',
+                                    user_dn_template: filteredSettings.ldap_user_dn_template || '',
+                                    nested_groups: filteredSettings.ldap_nested_groups || '0',
+                                    case_sensitive: filteredSettings.ldap_case_sensitive || '0',
+                                    ssl_verify: filteredSettings.ldap_ssl_verify || '1',
+                                    connection_retry: filteredSettings.ldap_connection_retry || '3',
+                                    retry_delay: filteredSettings.ldap_retry_delay || '1',
+                                    email_attribute: filteredSettings.ldap_email_attribute || '',
+                                    display_name_attribute: filteredSettings.ldap_display_name_attribute || '',
+                                    referrals: filteredSettings.ldap_referrals || '0',
+                                    login_domain: filteredSettings.ldap_login_domain || '',
+                                  }];
+                                  filteredSettings.ldap_servers = JSON.stringify(importedServers);
+                                }
+
+                                if (filteredSettings.ldap_bind_password && String(filteredSettings.ldap_bind_password).trim() !== '') {
+                                  // Only resolve flat key if we did not already fold it into ldap_servers above
+                                  if (importedServers === null) {
+                                    filteredSettings.ldap_bind_password = await resolveImportPassword(String(filteredSettings.ldap_bind_password));
+                                  } else {
+                                    // Avoid double-counting / overwriting mirrored empty after server import
+                                    delete filteredSettings.ldap_bind_password;
                                   }
                                 }
 
-                                // Update settings
+                                if (Object.keys(filteredSettings).length === 0) {
+                                  throw new Error('No LDAP settings found in the import file');
+                                }
+
+                                // Never import ldap_servers as [] unless the file explicitly had an empty list —
+                                // an accidental empty save would purge all LDAP rows on the server.
+                                if (filteredSettings.ldap_servers === '[]' && importedServers !== null && importedServers.length === 0) {
+                                  const proceedEmpty = confirm(
+                                    'The import file has no LDAP servers. Continuing will clear all LDAP server configuration. Continue?'
+                                  );
+                                  if (!proceedEmpty) {
+                                    return;
+                                  }
+                                }
+
+                                // Update settings (ldap_servers path mirrors legacy flat keys server-side)
                                 await settingsService.updateSettings(filteredSettings);
 
                                 // Reload settings to reflect changes
@@ -8000,7 +8291,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 await refreshSettings();
 
                                 setLdapImportFile(null);
-                                alert('LDAP settings imported successfully!');
+                                const serverCount = importedServers?.length ?? 0;
+                                let message = serverCount > 0
+                                  ? `LDAP settings imported successfully (${serverCount} server${serverCount === 1 ? '' : 's'}).`
+                                  : 'LDAP settings imported successfully!';
+                                if (passwordsImported > 0) {
+                                  message += ` Restored ${passwordsImported} bind password${passwordsImported === 1 ? '' : 's'}.`;
+                                } else if (!(importedSettings as any).ldap_passwords_format && !(importedSettings as any).ldap_bind_password) {
+                                  message += ' Re-enter bind passwords if they were omitted from the export.';
+                                }
+                                if (passwordDecryptFailures > 0) {
+                                  message += ` ${passwordDecryptFailures} encrypted password${passwordDecryptFailures === 1 ? '' : 's'} could not be decrypted (different encryption key?) — re-enter ${passwordDecryptFailures === 1 ? 'it' : 'them'} and Save.`;
+                                }
+                                alert(message);
                               } catch (err: any) {
                                 setError(err.message || 'Failed to import LDAP settings. Please check the file format.');
                               } finally {
@@ -8036,6 +8339,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     {/* Save Button */}
                     <div className={`mt-6 flex ${isMobile ? 'justify-stretch' : 'justify-end'}`}>
                       <button
+                        type="button"
                         onClick={async () => {
                           try {
                             setSettingsSaving(true);
@@ -8051,11 +8355,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 }
                                 return { ...s, bind_dn: String(s.bind_dn || '').trim(), bind_password: pw };
                               });
+                              // Spread settings for ldap_enabled etc., but never send a stale empty
+                              // ldap_bind_password — it is written AFTER ldap_servers in JSON key order
+                              // and would overwrite the encrypted password mirrored from ldap_servers.
+                              const { ldap_bind_password: _omitFlatBindPassword, ldap_servers: _omitOldServers, ...restSettings } = settings;
                               settingsToSave = {
-                                ...settings,
+                                ...restSettings,
                                 ldap_servers: JSON.stringify(serversForSave),
                               };
                             } else {
+                              if (!confirm('No LDAP servers are configured. Saving will remove all LDAP server settings from the database and disable LDAP. Continue?')) {
+                                return;
+                              }
                               // Do NOT send leftover flat ldap_* fields — they would re-insert after purge
                               settingsToSave = {
                                 ldap_servers: '[]',
