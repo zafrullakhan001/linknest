@@ -9756,15 +9756,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             >
                               <option value="">All Owners</option>
                               {(() => {
-                                // Get all approved users from the database
+                                const ownedCountByUserId = new Map<number, number>();
+                                allTiles.forEach((tile) => {
+                                  const visibility = tile.visibility || 'public';
+                                  if (visibility !== tileAdminsFilterMenu) return;
+                                  const userIdNum =
+                                    typeof tile.userId === 'string'
+                                      ? parseInt(tile.userId, 10)
+                                      : tile.userId;
+                                  if (userIdNum == null || Number.isNaN(userIdNum)) return;
+                                  ownedCountByUserId.set(
+                                    userIdNum,
+                                    (ownedCountByUserId.get(userIdNum) || 0) + 1
+                                  );
+                                });
+
                                 return allUsers
-                                  .filter(user => user.is_approved)
+                                  .filter((user) => user.is_approved)
                                   .sort((a, b) => a.username.localeCompare(b.username))
-                                  .map(user => (
-                                    <option key={user.id} value={user.username}>
-                                      {user.username}
-                                    </option>
-                                  ));
+                                  .map((user) => {
+                                    const ownedCount = ownedCountByUserId.get(user.id) || 0;
+                                    return (
+                                      <option key={user.id} value={user.username}>
+                                        {user.username} ({ownedCount})
+                                      </option>
+                                    );
+                                  });
                               })()}
                             </select>
                           </div>
