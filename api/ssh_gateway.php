@@ -464,6 +464,15 @@ function sshGatewaySslPaths(): ?array {
 }
 
 function sshGatewayBuildWsUrl(int $listenPort, ?bool $useSsl = null): string {
+    // Docker HTTPS: browsers reject self-signed wss on ttyd's own port. Proxy via Apache
+    // so the WebSocket stays same-origin with https://host:8443 (already trusted).
+    if (sshGatewayIsDocker()) {
+        $https = sshGatewayRequestIsHttps();
+        $scheme = $https ? 'wss' : 'ws';
+        $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+        return $scheme . '://' . $host . '/_ln_sshgw/' . $listenPort . '/ws';
+    }
+
     $https = $useSsl === null ? sshGatewayRequestIsHttps() : $useSsl;
     // Only advertise wss when ttyd was (or will be) started with TLS certs
     if ($https && sshGatewaySslPaths() === null) {
@@ -763,8 +772,10 @@ function sshGatewaySpawnTtyd(
     }
 
     // Unix: process group + nohup-style detach via proc_open then exit
-    $cmd = [$ttyd, '-W', '-i', '0.0.0.0', '-p', (string)$listenPort];
-    $sslPaths = $useSsl ? sshGatewaySslPaths() : null;
+    // Docker: bind loopback only — Apache proxies same-origin WSS to ttyd (no TLS on ttyd).
+    $bind = sshGatewayIsDocker() ? '127.0.0.1' : '0.0.0.0';
+    $cmd = [$ttyd, '-W', '-i', $bind, '-p', (string)$listenPort];
+    $sslPaths = ($useSsl && !sshGatewayIsDocker()) ? sshGatewaySslPaths() : null;
     if ($sslPaths !== null) {
         $cmd[] = '--ssl';
         $cmd[] = '--ssl-cert';
@@ -895,8 +906,9 @@ function handleSshGatewayStart() {
     $sshArgs[] = $username;
     $sshArgs[] = $host;
 
-    // On HTTPS pages (e.g. Docker :8443), start ttyd with the container TLS certs so the browser can use wss://
-    $wantSsl = sshGatewayRequestIsHttps() && sshGatewaySslPaths() !== null;
+    // On HTTPS pages outside Docker, start ttyd with TLS so the browser can use wss://
+    // In Docker, Apache terminates TLS and proxies /_ln_sshgw/<port>/ to plain ttyd.
+    $wantSsl = !sshGatewayIsDocker() && sshGatewayRequestIsHttps() && sshGatewaySslPaths() !== null;
     $spawn = sshGatewaySpawnTtyd($ttyd, $ssh, $listenPort, $cwd, $sshArgs, $x11, $x11Display, $logFile, $wantSsl);
     $pid = (int)($spawn['pid'] ?? 0);
     $ready = !empty($spawn['ready']);

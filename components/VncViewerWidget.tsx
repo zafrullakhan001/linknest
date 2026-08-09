@@ -163,6 +163,8 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
   const [vncHost, setVncHost] = useState(() => localStorage.getItem(HOST_STORAGE_KEY) || '');
   const [vncPort, setVncPort] = useState(() => localStorage.getItem(PORT_STORAGE_KEY) || '5900');
   const [password, setPassword] = useState('');
+  const passwordRef = useRef('');
+  const [pendingCredentialsTabId, setPendingCredentialsTabId] = useState<string | null>(null);
   const [viewOnly, setViewOnly] = useState(false);
   const [scaleViewport, setScaleViewport] = useState(true);
   const [notice, setNotice] = useState(IDLE_NOTICE);
@@ -204,6 +206,10 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
   useEffect(() => {
     tabsRef.current = tabs;
   }, [tabs]);
+
+  useEffect(() => {
+    passwordRef.current = password;
+  }, [password]);
 
   useEffect(() => {
     if (tabs.length === 0) {
@@ -411,6 +417,7 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
       sessionHandlesRef.current.delete(tabId);
       tabHostsRef.current.delete(tabId);
       void stopGatewayFor(gw);
+      setPendingCredentialsTabId((prev) => (prev === tabId ? null : prev));
 
       setTabs((prev) => {
         const next = prev.filter((t) => t.id !== tabId);
@@ -437,6 +444,7 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
     }
     setTabs([]);
     setActiveTabId(null);
+    setPendingCredentialsTabId(null);
     setNotice(IDLE_NOTICE);
     closingAllRef.current = false;
   }, [disposeSessionHandle, stopGatewayFor]);
@@ -652,6 +660,7 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
         rfb.viewOnly = nextViewOnly;
 
         rfb.addEventListener('connect', () => {
+          setPendingCredentialsTabId((prev) => (prev === tabId ? null : prev));
           updateTab(tabId, {
             status: 'connected',
             statusMessage: `Connected · ${nextName}`,
@@ -681,15 +690,31 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
         });
 
         rfb.addEventListener('credentialsrequired', () => {
-          intentionalDisconnectRef.current.add(tabId);
+          // Prefer live field value (user may type after Connect) over the connect-time snapshot.
+          const livePassword = passwordRef.current || nextPassword;
+          if (livePassword) {
+            try {
+              rfb.sendCredentials({ password: livePassword });
+              updateTab(tabId, {
+                status: 'connecting',
+                statusMessage: `Authenticating · ${nextName}…`,
+              });
+              setNotice(`Authenticating “${nextName}”…`);
+              return;
+            } catch (err) {
+              console.error('sendCredentials failed', err);
+            }
+          }
+
           updateTab(tabId, {
             status: 'error',
-            statusMessage: 'VNC server requires a password. Enter it and Connect again.',
+            statusMessage: 'VNC server requires a password. Enter it below, then click Send password.',
           });
           setShowSettings(true);
-          setNotice('VNC server requires a password. Enter it and reconnect.');
+          setNotice('VNC server requires a password. Enter it below, then click Send password.');
           setActiveTabId(tabId);
           setActiveConnectionId(nextConnectionId || null);
+          setPendingCredentialsTabId(tabId);
           if (wantAuto) {
             setConnectMode('auto');
             setVncHost(gatewayHost);
@@ -697,13 +722,6 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
           } else {
             setWsUrl(url);
           }
-          try {
-            rfb.disconnect();
-          } catch {
-            // ignore
-          }
-          const handle = sessionHandlesRef.current.get(tabId);
-          if (handle) handle.rfb = null;
         });
 
         rfb.addEventListener('securityfailure', (e: CustomEvent) => {
@@ -752,6 +770,37 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
   );
 
   const connect = useCallback(() => void connectTo(), [connectTo]);
+
+  const sendPendingPassword = useCallback(() => {
+    const tabId = pendingCredentialsTabId || activeTabId;
+    if (!tabId) {
+      setNotice('No VNC session waiting for a password. Click Connect first.');
+      return;
+    }
+    const pw = passwordRef.current.trim();
+    if (!pw) {
+      setNotice('Enter the VNC password first.');
+      setShowSettings(true);
+      return;
+    }
+    const handle = sessionHandlesRef.current.get(tabId);
+    if (!handle?.rfb) {
+      setNotice('Session is not waiting for credentials anymore. Click Connect again with the password filled in.');
+      setPendingCredentialsTabId(null);
+      return;
+    }
+    try {
+      handle.rfb.sendCredentials({ password: pw });
+      updateTab(tabId, {
+        status: 'connecting',
+        statusMessage: 'Authenticating…',
+      });
+      setNotice('Authenticating…');
+    } catch (err) {
+      console.error('sendCredentials failed', err);
+      setNotice(err instanceof Error ? err.message : 'Failed to send VNC password');
+    }
+  }, [pendingCredentialsTabId, activeTabId, updateTab]);
 
   const registerTabHost = useCallback((tabId: string, el: HTMLDivElement | null) => {
     if (el) tabHostsRef.current.set(tabId, el);
@@ -1601,10 +1650,25 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && pendingCredentialsTabId) {
+                      e.preventDefault();
+                      sendPendingPassword();
+                    }
+                  }}
                   className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
                   autoComplete="off"
                 />
               </label>
+              {pendingCredentialsTabId && (
+                <button
+                  type="button"
+                  onClick={sendPendingPassword}
+                  className="w-full h-8 rounded-md text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white"
+                >
+                  Send password
+                </button>
+              )}
               <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-600 dark:text-slate-300">
                 <label className="inline-flex items-center gap-1.5">
                   <input type="checkbox" checked={viewOnly} onChange={(e) => setViewOnly(e.target.checked)} />

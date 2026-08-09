@@ -121,8 +121,8 @@ RUN set -eux; \
     /usr/local/bin/ttyd --version; \
     rm -rf /var/www/html/bin
 
-# Enable Apache modules (including SSL and performance modules)
-RUN a2enmod rewrite headers mime ssl expires deflate cache
+# Enable Apache modules (including SSL, WebSocket proxy for SSH/VNC gateways)
+RUN a2enmod rewrite headers mime ssl expires deflate cache proxy proxy_http proxy_wstunnel
 
 # Set working directory
 WORKDIR /var/www/html
@@ -225,6 +225,7 @@ RUN echo '<IfModule mpm_prefork_module>' > /etc/apache2/conf-available/mpm-perfo
 # Configure Apache
 COPY docker/apache-config.conf /etc/apache2/sites-available/000-default.conf
 COPY docker/apache-ssl-config.conf /etc/apache2/sites-available/000-default-ssl.conf
+COPY docker/apache-gateway-proxy.conf /etc/apache2/conf-available/linknest-gateway-proxy.conf
 
 # Enable SSL site
 RUN a2ensite 000-default-ssl.conf

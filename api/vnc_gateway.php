@@ -420,6 +420,13 @@ function vncGatewayRequestIsHttps(): bool {
         || (isset($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443);
 }
 
+function vncGatewayIsDocker(): bool {
+    if (getenv('LINKNEST_DOCKER') === '1' || getenv('VNC_GATEWAY_DOCKER') === '1') {
+        return true;
+    }
+    return is_file('/.dockerenv');
+}
+
 function vncGatewaySslPaths(): ?array {
     $candidates = [
         ['cert' => '/etc/apache2/ssl/linknest.crt', 'key' => '/etc/apache2/ssl/linknest.key'],
@@ -434,6 +441,14 @@ function vncGatewaySslPaths(): ?array {
 }
 
 function vncGatewayBuildWsUrl(int $listenPort, bool $useSsl = false): string {
+    // Docker HTTPS: proxy via Apache so WSS shares the trusted :8443 cert
+    if (vncGatewayIsDocker()) {
+        $https = vncGatewayRequestIsHttps();
+        $scheme = $https ? 'wss' : 'ws';
+        $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+        return $scheme . '://' . $host . '/_ln_vncgw/' . $listenPort . '/websockify';
+    }
+
     $https = $useSsl;
     if ($https && vncGatewaySslPaths() === null) {
         $https = false;
@@ -463,8 +478,9 @@ function vncGatewaySpawnWebsockify(
     bool $useSsl = false
 ): array {
     $target = $vncHost . ':' . $vncPort;
-    $listen = '0.0.0.0:' . $listenPort;
-    $sslPaths = $useSsl ? vncGatewaySslPaths() : null;
+    $listenHost = vncGatewayIsDocker() ? '127.0.0.1' : '0.0.0.0';
+    $listen = $listenHost . ':' . $listenPort;
+    $sslPaths = ($useSsl && !vncGatewayIsDocker()) ? vncGatewaySslPaths() : null;
     $sslArgs = [];
     if ($sslPaths !== null) {
         $sslArgs = ['--cert=' . $sslPaths['cert'], '--key=' . $sslPaths['key']];
@@ -703,7 +719,8 @@ function handleVncGatewayStart() {
     $sessionId = 'vgw_' . bin2hex(random_bytes(8));
     $logFile = vncGatewayEnsureDir() . DIRECTORY_SEPARATOR . $sessionId . '.log';
 
-    $wantSsl = vncGatewayRequestIsHttps() && vncGatewaySslPaths() !== null;
+    // Docker: Apache proxies /_ln_vncgw/<port>/ — keep websockify plain HTTP on loopback
+    $wantSsl = !vncGatewayIsDocker() && vncGatewayRequestIsHttps() && vncGatewaySslPaths() !== null;
     $spawn = vncGatewaySpawnWebsockify($runner, $listenPort, $host, $vncPort, $logFile, $wantSsl);
     $pid = (int)($spawn['pid'] ?? 0);
     $ready = !empty($spawn['ready']);
