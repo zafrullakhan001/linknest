@@ -18,6 +18,8 @@ switch ($method) {
             handleGetRoleTabs($matches[1]);
         } elseif (preg_match('#^/(\d+)/widgets$#', $path, $matches)) {
             handleGetRoleWidgets($matches[1]);
+        } elseif (preg_match('#^/(\d+)/groups$#', $path, $matches)) {
+            handleGetRoleGroups($matches[1]);
         } elseif ($path === '/current-user/tabs' || $path === '/current-user/tabs/') {
             handleGetCurrentUserTabs();
         } elseif (preg_match('#^/user/(\d+)$#', $path, $matches)) {
@@ -74,6 +76,8 @@ switch ($method) {
             handleRemoveWidgetFromRole($matches[1], $matches[2]);
         } elseif (preg_match('#^/user/(\d+)/role/(\d+)$#', $path, $matches)) {
             handleRemoveRoleFromUser($matches[1], $matches[2]);
+        } elseif (preg_match('#^/(\d+)/group/(\d+)$#', $path, $matches)) {
+            handleRemoveGroupFromRole($matches[1], $matches[2]);
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -91,11 +95,13 @@ function handleGetRoles() {
         SELECT 
             r.*,
             COUNT(DISTINCT ur.user_id) as user_count,
+            COUNT(DISTINCT gr.group_id) as group_count,
             COUNT(DISTINCT rtp.tile_id) as tile_count,
             COUNT(DISTINCT rlp.link_id) as link_count,
             COUNT(DISTINCT rwp.widget_id) as widget_count
         FROM roles r
         LEFT JOIN user_roles ur ON r.id = ur.role_id
+        LEFT JOIN group_roles gr ON r.id = gr.role_id
         LEFT JOIN role_tile_permissions rtp ON r.id = rtp.role_id
         LEFT JOIN role_link_permissions rlp ON r.id = rlp.role_id
         LEFT JOIN role_widget_permissions rwp ON r.id = rwp.role_id
@@ -110,6 +116,7 @@ function handleGetRoles() {
             'name' => $row['name'],
             'description' => $row['description'],
             'userCount' => (int)$row['user_count'],
+            'groupCount' => (int)$row['group_count'],
             'tileCount' => (int)$row['tile_count'],
             'linkCount' => (int)$row['link_count'],
             'widgetCount' => (int)$row['widget_count'],
@@ -1036,6 +1043,56 @@ function handleRemoveRoleFromUser($userId, $roleId) {
     $stmt = $db->prepare('DELETE FROM user_roles WHERE user_id = ? AND role_id = ?');
     $stmt->execute([$userId, $roleId]);
     
+    sendJSON(['success' => true]);
+}
+
+function handleGetRoleGroups($roleId) {
+    requireAdmin();
+    $db = getDB();
+
+    $roleCheck = $db->prepare('SELECT id FROM roles WHERE id = ?');
+    $roleCheck->execute([$roleId]);
+    if (!$roleCheck->fetch()) {
+        sendJSON(['error' => 'Role not found'], 404);
+    }
+
+    $stmt = $db->prepare('
+        SELECT
+            ug.id,
+            ug.name,
+            ug.description,
+            COUNT(DISTINCT ugm.user_id) as member_count,
+            gr.created_at
+        FROM user_groups ug
+        INNER JOIN group_roles gr ON ug.id = gr.group_id
+        LEFT JOIN user_group_members ugm ON ug.id = ugm.group_id
+        WHERE gr.role_id = ?
+        GROUP BY ug.id, ug.name, ug.description, gr.created_at
+        ORDER BY ug.name
+    ');
+    $stmt->execute([$roleId]);
+
+    $groups = [];
+    while ($row = $stmt->fetch()) {
+        $groups[] = [
+            'id' => (int)$row['id'],
+            'name' => $row['name'],
+            'description' => $row['description'],
+            'memberCount' => (int)$row['member_count'],
+            'assignedAt' => (int)$row['created_at']
+        ];
+    }
+
+    sendJSON($groups);
+}
+
+function handleRemoveGroupFromRole($roleId, $groupId) {
+    requireAdmin();
+    $db = getDB();
+
+    $stmt = $db->prepare('DELETE FROM group_roles WHERE role_id = ? AND group_id = ?');
+    $stmt->execute([$roleId, $groupId]);
+
     sendJSON(['success' => true]);
 }
 

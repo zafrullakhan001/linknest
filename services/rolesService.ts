@@ -5,6 +5,7 @@ export interface Role {
   name: string;
   description?: string;
   userCount?: number;
+  groupCount?: number;
   tileCount?: number;
   linkCount?: number;
   widgetCount?: number;
@@ -15,6 +16,14 @@ export interface Role {
     username: string;
     email: string;
   }>;
+}
+
+export interface RoleGroupAssignment {
+  id: number;
+  name: string;
+  description: string | null;
+  memberCount: number;
+  assignedAt: number;
 }
 
 export interface RoleTilePermission {
@@ -437,6 +446,32 @@ export const rolesService = {
     if (!response.ok) {
       const data = await response.json();
       throw new Error(data.error || 'Failed to remove role from user');
+    }
+  },
+
+  async getRoleGroups(roleId: number): Promise<RoleGroupAssignment[]> {
+    const response = await fetch(`${API_BASE}/roles/${roleId}/groups`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to fetch teams for role');
+    }
+
+    return response.json();
+  },
+
+  async removeGroupFromRole(roleId: number, groupId: number): Promise<void> {
+    const response = await fetch(`${API_BASE}/roles/${roleId}/group/${groupId}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to remove team from role');
     }
   },
 

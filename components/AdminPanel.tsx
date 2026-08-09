@@ -20,9 +20,10 @@ import { userGroupsService, UserGroup } from '../services/userGroupsService';
 import SamlConfigModal from './SamlConfigModal';
 import { BulkAssignRolesModal } from './BulkAssignRolesModal';
 import { RoleMembersModal } from './RoleMembersModal';
+import { RoleTeamsModal } from './RoleTeamsModal';
 import { TeamFormWizard } from './TeamFormWizard';
-import { TeamMembersWizard } from './TeamMembersWizard';
-import { TeamRolesWizard } from './TeamRolesWizard';
+import { TeamMembersModal } from './TeamMembersModal';
+import { TeamRolesModal } from './TeamRolesModal';
 import { AssignSpaceEditorsWizard } from './AssignSpaceEditorsWizard';
 import { useMobile } from '../hooks/useMobile';
 import { getCustomWidgets, createWidget, updateWidget, deleteWidget, CustomWidget, CreateWidgetRequest, UpdateWidgetRequest } from '../services/widgetService';
@@ -825,6 +826,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [roleOverflowMenuId, setRoleOverflowMenuId] = useState<number | null>(null);
   const [showRoleMembersModal, setShowRoleMembersModal] = useState(false);
   const [roleMembersRole, setRoleMembersRole] = useState<Role | null>(null);
+  const [showRoleTeamsModal, setShowRoleTeamsModal] = useState(false);
+  const [roleTeamsRole, setRoleTeamsRole] = useState<Role | null>(null);
 
   // User Groups state
   const [userGroups, setUserGroups] = useState<Array<{ id: number; name: string; description: string | null; memberCount: number; roleCount: number; createdAt: number; updatedAt: number }>>([]);
@@ -1333,6 +1336,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         } else if (showRoleMembersModal) {
           setShowRoleMembersModal(false);
           setRoleMembersRole(null);
+        } else if (showRoleTeamsModal) {
+          setShowRoleTeamsModal(false);
+          setRoleTeamsRole(null);
         } else if (showTileAdminsModal) {
           closeTileAdminsModal();
         } else if (showUserGroupModal) {
@@ -1377,6 +1383,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     if (activeTab === 'access' && (
       showRoleConfigureModal ||
       showRoleMembersModal ||
+      showRoleTeamsModal ||
       showTileAdminsModal ||
       showUserGroupModal ||
       showGroupMembersModal ||
@@ -1397,6 +1404,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     activeTab,
     showRoleConfigureModal,
     showRoleMembersModal,
+    showRoleTeamsModal,
     showTileAdminsModal,
     showUserGroupModal,
     showGroupMembersModal,
@@ -1892,6 +1900,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }
   };
 
+  const openRoleTeamsModal = async (role: Role) => {
+    setRoleTeamsRole(role);
+    setShowRoleTeamsModal(true);
+    setRoleOverflowMenuId(null);
+    if (userGroups.length === 0 && !userGroupsLoading) {
+      await loadUserGroups();
+    }
+  };
+
   const handleAccessSubTabChange = (tab: AccessSubTab) => {
     setAccessSubTab(tab);
     setRoleOverflowMenuId(null);
@@ -2036,7 +2053,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
   const loadAllTilesAndLinks = async (sourceTab?: 'public' | 'staging') => {
     try {
-      const tiles = await getTiles(sourceTab !== undefined ? { sourceTab } : undefined);
+      // Full nested tabs/sections/links required for role assignment UI (not card summary)
+      const tiles = await getTiles({
+        ...(sourceTab !== undefined ? { sourceTab } : {}),
+        summary: false,
+      });
       setAllTiles(tiles);
 
       // Extract all links from tiles
@@ -2052,6 +2073,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 tileId: tile.id,
                 tileTitle: tile.title
               });
+            });
+          });
+          // Legacy tab-level links
+          tab.links?.forEach(link => {
+            linksList.push({
+              id: link.id,
+              label: link.label,
+              url: link.url,
+              tileId: tile.id,
+              tileTitle: tile.title
             });
           });
         });
@@ -3084,61 +3115,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
   const handleManageGroupMembers = async (group: UserGroup) => {
     setSelectedGroupId(group.id);
-    setGroupMembersLoading(true);
-    try {
-      // Ensure users are loaded
-      if (allUsers.length === 0) {
-        await loadAllUsers();
-      }
-      const members = await userGroupsService.getGroupMembers(group.id);
-      setGroupMembers(members);
-      setSelectedUsersToAdd(new Set());
-      setGroupMembersSearchTerm('');
-      setShowGroupMembersModal(true);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load group members');
-    } finally {
-      setGroupMembersLoading(false);
+    setError('');
+    if (allUsers.length === 0) {
+      await loadAllUsers();
     }
+    setShowGroupMembersModal(true);
   };
 
   const handleManageGroupRoles = async (group: UserGroup) => {
     setSelectedGroupId(group.id);
-    setGroupRolesLoading(true);
-    try {
-      // Ensure roles are loaded
-      if (roles.length === 0) {
-        await loadRoles();
-      }
-      const groupRolesList = await userGroupsService.getGroupRoles(group.id);
-      setGroupRoles(groupRolesList);
-      const roleIds = new Set(groupRolesList.map(r => r.id));
-      setSelectedRolesToAssign(roleIds);
-      setInitialGroupRoleIds(new Set(roleIds));
-      setGroupRolesSearchTerm('');
-      setShowGroupRolesModal(true);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load group roles');
-    } finally {
-      setGroupRolesLoading(false);
+    setError('');
+    if (roles.length === 0) {
+      await loadRoles();
     }
+    setShowGroupRolesModal(true);
   };
 
   const closeGroupMembersModal = () => {
     setShowGroupMembersModal(false);
-    setGroupMembers([]);
-    setSelectedUsersToAdd(new Set());
-    setGroupMembersSearchTerm('');
     setSelectedGroupId(null);
     setError('');
   };
 
   const closeGroupRolesModal = () => {
     setShowGroupRolesModal(false);
-    setGroupRoles([]);
-    setSelectedRolesToAssign(new Set());
-    setInitialGroupRoleIds(new Set());
-    setGroupRolesSearchTerm('');
     setSelectedGroupId(null);
     setError('');
   };
@@ -3157,78 +3157,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     setTileAdminModalFilterMenu('public');
     setTileAdminModalFilterCategory('');
     setError('');
-  };
-
-  const handleAddMembersToGroup = async () => {
-    if (!selectedGroupId || selectedUsersToAdd.size === 0) {
-      setError('Please select at least one user to add');
-      return;
-    }
-
-    try {
-      setError('');
-      setAddingMembersLoading(true);
-      await userGroupsService.addMembersToGroup(selectedGroupId, Array.from(selectedUsersToAdd));
-      await loadUserGroups();
-      closeGroupMembersModal();
-    } catch (err: any) {
-      setError(err.message || 'Failed to add members to group');
-    } finally {
-      setAddingMembersLoading(false);
-    }
-  };
-
-  const handleRemoveMembersFromGroupBatch = async (userIds: number[]) => {
-    if (!selectedGroupId || userIds.length === 0) return;
-
-    try {
-      setError('');
-      setRemovingMembersLoading(true);
-      for (const userId of userIds) {
-        await userGroupsService.removeMemberFromGroup(selectedGroupId, userId);
-      }
-      await loadUserGroups();
-      closeGroupMembersModal();
-    } catch (err: any) {
-      setError(err.message || 'Failed to remove members from group');
-    } finally {
-      setRemovingMembersLoading(false);
-    }
-  };
-
-  const handleRemoveMemberFromGroup = async (userId: number) => {
-    if (!selectedGroupId) return;
-
-    if (!confirm('Are you sure you want to remove this member from the group?')) {
-      return;
-    }
-
-    try {
-      setError('');
-      await userGroupsService.removeMemberFromGroup(selectedGroupId, userId);
-      // Reload members
-      const members = await userGroupsService.getGroupMembers(selectedGroupId);
-      setGroupMembers(members);
-      await loadUserGroups(); // Refresh the group list to update member count
-    } catch (err: any) {
-      setError(err.message || 'Failed to remove member from group');
-    }
-  };
-
-  const handleAssignRolesToGroup = async () => {
-    if (!selectedGroupId) return;
-
-    try {
-      setError('');
-      setAssigningRolesLoading(true);
-      await userGroupsService.assignRolesToGroup(selectedGroupId, Array.from(selectedRolesToAssign));
-      await loadUserGroups();
-      closeGroupRolesModal();
-    } catch (err: any) {
-      setError(err.message || 'Failed to assign roles to group');
-    } finally {
-      setAssigningRolesLoading(false);
-    }
   };
 
   const handleAssignSpaceEditorsWizardSubmit = async () => {
@@ -3266,26 +3194,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setError(err.message || 'Failed to assign space editors');
     } finally {
       setAssigningEditorsLoading(false);
-    }
-  };
-
-  const handleRemoveRoleFromGroup = async (roleId: number) => {
-    if (!selectedGroupId) return;
-
-    if (!confirm('Are you sure you want to remove this role from the group?')) {
-      return;
-    }
-
-    try {
-      setError('');
-      await userGroupsService.removeRoleFromGroup(selectedGroupId, roleId);
-      // Reload roles
-      const groupRolesList = await userGroupsService.getGroupRoles(selectedGroupId);
-      setGroupRoles(groupRolesList);
-      setSelectedRolesToAssign(new Set(groupRolesList.map(r => r.id)));
-      await loadUserGroups(); // Refresh the group list to update role count
-    } catch (err: any) {
-      setError(err.message || 'Failed to remove role from group');
     }
   };
 
@@ -9469,6 +9377,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Role</th>
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Description</th>
                                 <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">People</th>
+                                <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Teams</th>
                                 <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Spaces</th>
                                 <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Links</th>
                                 <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Widgets</th>
@@ -9479,10 +9388,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               {roles.map((role) => (
                                 <tr key={role.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/50">
                                   <td className="px-4 py-4 whitespace-nowrap">
-                                    <div className="text-sm font-medium text-slate-900 dark:text-white">{role.name}</div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleEditRole(role)}
+                                      className="text-sm font-medium text-slate-900 dark:text-white hover:text-brand-600 dark:hover:text-brand-400 text-left transition-colors"
+                                      title="Edit role name and description"
+                                    >
+                                      {role.name}
+                                    </button>
                                   </td>
                                   <td className="px-4 py-4">
-                                    <div className="text-sm text-slate-600 dark:text-slate-400">{role.description || '—'}</div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleEditRole(role)}
+                                      className="text-sm text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 text-left transition-colors max-w-xs"
+                                      title="Edit role name and description"
+                                    >
+                                      {role.description || '—'}
+                                    </button>
                                   </td>
                                   <td className="px-4 py-4 whitespace-nowrap text-center">
                                     <button
@@ -9492,6 +9415,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       title="View people and add users to this role"
                                     >
                                       {role.userCount || 0}
+                                    </button>
+                                  </td>
+                                  <td className="px-4 py-4 whitespace-nowrap text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => { void openRoleTeamsModal(role); }}
+                                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 hover:bg-brand-100 dark:hover:bg-brand-900/50 transition-colors"
+                                      title="View teams and assign this role to teams"
+                                    >
+                                      {role.groupCount || 0}
                                     </button>
                                   </td>
                                   <td className="px-4 py-4 whitespace-nowrap text-center">
@@ -9537,6 +9470,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     <div className="flex justify-end items-center gap-2 flex-wrap">
                                       <button
                                         type="button"
+                                        onClick={() => handleEditRole(role)}
+                                        className="px-2.5 py-1 rounded-md text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                                        title="Edit role name and description"
+                                      >
+                                        Edit
+                                      </button>
+                                      <button
+                                        type="button"
                                         onClick={() => {
                                           setSelectedRole(role);
                                           setShowRoleConfigureModal(true);
@@ -9558,7 +9499,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                           </svg>
                                         </button>
                                         {roleOverflowMenuId === role.id && (
-                                          <div className="absolute right-0 mt-1 w-40 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-20 py-1">
+                                          <div className="absolute right-0 bottom-full mb-1 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-30 py-1">
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setRoleOverflowMenuId(null);
+                                                handleEditRole(role);
+                                              }}
+                                              className="w-full text-left px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+                                            >
+                                              Edit name &amp; description
+                                            </button>
                                             <button
                                               type="button"
                                               onClick={() => {
@@ -9573,11 +9524,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                               type="button"
                                               onClick={() => {
                                                 setRoleOverflowMenuId(null);
-                                                handleEditRole(role);
+                                                void openRoleTeamsModal(role);
                                               }}
                                               className="w-full text-left px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
                                             >
-                                              Edit name
+                                              Manage teams
                                             </button>
                                             <button
                                               type="button"
@@ -9676,14 +9627,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     <div className="text-sm text-slate-600 dark:text-slate-400">{group.description || '—'}</div>
                                   </td>
                                   <td className="px-6 py-4 whitespace-nowrap text-center">
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
+                                    <button
+                                      type="button"
+                                      onClick={() => { void handleManageGroupMembers(group); }}
+                                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 hover:bg-brand-100 dark:hover:bg-brand-900/50 transition-colors"
+                                      title="Manage team members"
+                                    >
                                       {group.memberCount || 0}
-                                    </span>
+                                    </button>
                                   </td>
                                   <td className="px-6 py-4 whitespace-nowrap text-center">
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
+                                    <button
+                                      type="button"
+                                      onClick={() => { void handleManageGroupRoles(group); }}
+                                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 hover:bg-brand-100 dark:hover:bg-brand-900/50 transition-colors"
+                                      title="Manage team roles"
+                                    >
                                       {group.roleCount || 0}
-                                    </span>
+                                    </button>
                                   </td>
                                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                     <div className="flex justify-end gap-2 flex-wrap">
@@ -16091,38 +16052,25 @@ node .\\load-tests\\generate-report.js`}
       />
 
       {/* Group Members Modal */}
-      <TeamMembersWizard
-        isOpen={showGroupMembersModal && !!selectedGroupId}
-        teamName={userGroups.find((g) => g.id === selectedGroupId)?.name}
-        members={groupMembers}
-        membersLoading={groupMembersLoading}
-        allUsers={allUsers}
-        selectedUserIds={selectedUsersToAdd}
-        onSelectedUserIdsChange={setSelectedUsersToAdd}
-        searchTerm={groupMembersSearchTerm}
-        onSearchTermChange={setGroupMembersSearchTerm}
-        error={error}
-        loading={addingMembersLoading || removingMembersLoading}
+      <TeamMembersModal
+        isOpen={showGroupMembersModal}
+        team={userGroups.find((g) => g.id === selectedGroupId) ?? null}
+        allUsers={allUsers.map((u) => ({ id: u.id, username: u.username, email: u.email || '' }))}
         onClose={closeGroupMembersModal}
-        onAddMembers={handleAddMembersToGroup}
-        onRemoveMembers={handleRemoveMembersFromGroupBatch}
+        onChanged={async () => {
+          await loadUserGroups();
+        }}
       />
 
       {/* Group Roles Modal */}
-      <TeamRolesWizard
-        isOpen={showGroupRolesModal && !!selectedGroupId}
-        teamName={userGroups.find((g) => g.id === selectedGroupId)?.name}
-        roles={roles}
-        rolesLoading={groupRolesLoading || rolesLoading}
-        selectedRoleIds={selectedRolesToAssign}
-        onSelectedRoleIdsChange={setSelectedRolesToAssign}
-        initialRoleIds={initialGroupRoleIds}
-        searchTerm={groupRolesSearchTerm}
-        onSearchTermChange={setGroupRolesSearchTerm}
-        error={error}
-        loading={assigningRolesLoading}
+      <TeamRolesModal
+        isOpen={showGroupRolesModal}
+        team={userGroups.find((g) => g.id === selectedGroupId) ?? null}
+        allRoles={roles}
         onClose={closeGroupRolesModal}
-        onSave={handleAssignRolesToGroup}
+        onChanged={async () => {
+          await Promise.all([loadUserGroups(), loadRoles()]);
+        }}
       />
 
       {/* Role Configure Hub Modal */}
@@ -16155,6 +16103,21 @@ node .\\load-tests\\generate-report.js`}
             </div>
 
             <div className="p-6 space-y-3">
+              <button
+                type="button"
+                onClick={() => {
+                  const role = selectedRole;
+                  setShowRoleConfigureModal(false);
+                  handleEditRole(role);
+                }}
+                className="w-full text-left px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-brand-300 dark:hover:border-brand-600 hover:bg-brand-50/60 dark:hover:bg-brand-900/20 transition-colors"
+              >
+                <div className="font-semibold text-slate-900 dark:text-white">Name &amp; description</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Update this role’s display name and description
+                </div>
+              </button>
+
               <button
                 type="button"
                 onClick={() => {
@@ -17049,6 +17012,24 @@ node .\\load-tests\\generate-report.js`}
         }}
         onChanged={async () => {
           await loadRoles();
+        }}
+      />
+
+      <RoleTeamsModal
+        isOpen={showRoleTeamsModal}
+        role={roleTeamsRole}
+        allTeams={userGroups.map((g) => ({
+          id: g.id,
+          name: g.name,
+          description: g.description,
+          memberCount: g.memberCount || 0,
+        }))}
+        onClose={() => {
+          setShowRoleTeamsModal(false);
+          setRoleTeamsRole(null);
+        }}
+        onChanged={async () => {
+          await Promise.all([loadRoles(), loadUserGroups()]);
         }}
       />
 
