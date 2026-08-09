@@ -35,6 +35,7 @@ import { isPublicLinkFavorite, togglePublicLinkFavorite } from '../services/publ
 import { LinkInfoDialog } from './LinkInfoDialog';
 import { LinkNotesDialog } from './LinkNotesDialog';
 import { QRCodeDialog } from './QRCodeDialog';
+import { MobilePreviewDialog } from './MobilePreviewDialog';
 import { BrandedQRCode } from './BrandedQRCode';
 import { MobileTileEdit } from './MobileTileEdit';
 import { useMobile } from '../hooks/useMobile';
@@ -720,6 +721,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [notesDialogState, setNotesDialogState] = useState<{ linkId: string; notes: string; linkLabel: string } | null>(null);
     const [linkInfoDialog, setLinkInfoDialog] = useState<{ link: Link } | null>(null);
     const [qrDialogState, setQrDialogState] = useState<{ url: string; label: string } | null>(null);
+    const [mobilePreviewState, setMobilePreviewState] = useState<{ url: string; label: string } | null>(null);
 
     // Version Control State
     const [showVersions, setShowVersions] = useState(false);
@@ -1374,7 +1376,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             // Dialogs that register via useEscapeToClose (and similar) handle Escape themselves
             if (isEscapeDialogOpen()) return;
             // Local dialogs with their own Escape handlers
-            if (notesDialogState || linkInfoDialog || qrDialogState || notesPresetFormState || diffViewerOpen) return;
+            if (notesDialogState || linkInfoDialog || qrDialogState || mobilePreviewState || notesPresetFormState || diffViewerOpen) return;
             if (
                 visibilityDialogTab ||
                 visibilityDialogSection ||
@@ -1420,6 +1422,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         notesDialogState,
         linkInfoDialog,
         qrDialogState,
+        mobilePreviewState,
         notesPresetFormState,
         diffViewerOpen,
         visibilityDialogTab,
@@ -5880,6 +5883,30 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         )}
                                                                     </button>
 
+                                                                    {/* Mobile / tablet preview button */}
+                                                                    {link.url ? (
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.preventDefault();
+                                                                                e.stopPropagation();
+                                                                                const tempDiv = document.createElement('div');
+                                                                                tempDiv.innerHTML = link.label || '';
+                                                                                const plainLabel = tempDiv.textContent || tempDiv.innerText || link.label || link.url;
+                                                                                setMobilePreviewState({
+                                                                                    url: link.url,
+                                                                                    label: plainLabel
+                                                                                });
+                                                                            }}
+                                                                            className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all"
+                                                                            title="Preview on mobile"
+                                                                        >
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                                                <path d="M8 16.25a.75.75 0 01.75-.75h2.5a.75.75 0 010 1.5h-2.5a.75.75 0 01-.75-.75z" />
+                                                                                <path fillRule="evenodd" d="M4 4a3 3 0 013-3h6a3 3 0 013 3v12a3 3 0 01-3 3H7a3 3 0 01-3-3V4zm4-1.5v.75c0 .414.336.75.75.75h2.5a.75.75 0 00.75-.75V2.5h1A1.5 1.5 0 0114.5 4v12a1.5 1.5 0 01-1.5 1.5H7A1.5 1.5 0 015.5 16V4A1.5 1.5 0 017 2.5h1z" clipRule="evenodd" />
+                                                                            </svg>
+                                                                        </button>
+                                                                    ) : null}
+
                                                                     {/* QR code button */}
                                                                     <button
                                                                         onClick={(e) => {
@@ -5990,6 +6017,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     onClose={() => setQrDialogState(null)}
                     url={qrDialogState?.url || ''}
                     label={qrDialogState?.label || ''}
+                />
+
+                {/* Mobile / tablet preview dialog */}
+                <MobilePreviewDialog
+                    isOpen={!!mobilePreviewState}
+                    onClose={() => setMobilePreviewState(null)}
+                    url={mobilePreviewState?.url || ''}
+                    label={mobilePreviewState?.label || ''}
                 />
             </>
         );

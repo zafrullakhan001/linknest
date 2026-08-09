@@ -110,6 +110,8 @@ if ($path === '/') {
         $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
     }
     require __DIR__ . '/linkhealth.php';
+} elseif (strpos($path, '/framecheck') === 0) {
+    require __DIR__ . '/framecheck.php';
 } elseif (strpos($path, '/styles') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 7); // Remove '/styles'
     require __DIR__ . '/styles.php';
