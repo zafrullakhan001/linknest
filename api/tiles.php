@@ -6515,6 +6515,8 @@ function handleGetTileInfo($tileId) {
             t.visibility,
             t.source_tab,
             t.allowed_users,
+            t.allowed_groups,
+            t.published,
             u.username as owner_username,
             u.email as owner_email,
             u.uuid as owner_uuid,
@@ -6529,20 +6531,46 @@ function handleGetTileInfo($tileId) {
     if (!$row) {
         sendJSON(['error' => 'Tile not found'], 404);
     }
+
+    // Unpublished tiles are admin-only (same as tile list / get)
+    if (!canUserSeePublishedContent($user, $row)) {
+        sendJSON(['error' => 'Tile not found'], 404);
+    }
     
-    // Check visibility
+    // Check visibility — must match handleGetTiles so users who can see a tile
+    // (groups, roles, shares, ownership) can also open Tile Information.
     $tileVisibility = $row['visibility'] ?? 'public';
-    $tileAllowedUsers = $row['allowed_users'] ? json_decode($row['allowed_users'], true) : [];
     
-    $isTileVisible = false;
-    if ($user && $user['is_admin']) {
+    $userGroupIds = [];
+    if ($user) {
+        $groupStmt = $db->prepare('SELECT group_id FROM user_group_members WHERE user_id = ?');
+        $groupStmt->execute([$user['id']]);
+        while ($group = $groupStmt->fetch()) {
+            $userGroupIds[] = (int)$group['group_id'];
+        }
+    }
+    
+    $isTileVisible = canUserSeeByVisibility($user, $row, $userGroupIds);
+
+    // Owner can always view their own private tile info
+    if (!$isTileVisible && $user && isset($row['user_id']) && (int)$row['user_id'] === (int)$user['id']) {
         $isTileVisible = true;
-    } elseif ($tileVisibility === 'public') {
-        $isTileVisible = true;
-    } elseif ($tileVisibility === 'authenticated' && $user) {
-        $isTileVisible = true;
-    } elseif ($tileVisibility === 'private' && $user) {
-        $isTileVisible = in_array($user['id'], $tileAllowedUsers);
+    }
+
+    // Accepted share invitations (same as tile list / get)
+    if (!$isTileVisible && $user) {
+        $sharedCheck = $db->prepare('SELECT id FROM tile_share_invitations WHERE tile_id = ? AND receiver_user_id = ? AND status = ?');
+        $sharedCheck->execute([$tileId, $user['id'], 'accepted']);
+        if ($sharedCheck->fetch()) {
+            $isTileVisible = true;
+        }
+    }
+
+    // Role-based tile access (e.g. Your Apps / role_tile_permissions)
+    if (!$isTileVisible && $user && !empty($user['id']) && empty($user['is_admin'])) {
+        if (canUserViewTileByRole($user['id'], $tileId, $db)) {
+            $isTileVisible = true;
+        }
     }
     
     if (!$isTileVisible) {
@@ -6550,7 +6578,7 @@ function handleGetTileInfo($tileId) {
     }
     
     // Check granular permission for viewing tile info.
-    // Allow: public tiles, creator, admin, or anyone who can see the tile (e.g. allowed_users for private).
+    // Allow: public tiles, creator, admin, or anyone who can see the tile (e.g. allowed_users/groups/roles).
     // Deny only when user is a tile admin and can_view_tile_info is explicitly false.
     if ($user && !$user['is_admin'] && $tileVisibility !== 'public') {
         $isCreator = isset($row['user_id']) && (int)$row['user_id'] === (int)$user['id'];
