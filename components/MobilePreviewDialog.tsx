@@ -58,6 +58,116 @@ const PRESET_GROUPS = ['Responsive', 'iPhone', 'Android', 'Tablet', 'Enterprise'
 
 const ZOOM_OPTIONS = [25, 50, 75, 100, 125, 150];
 const PREVIEW_WINDOW_NAME = 'linknest_device_preview';
+const DIALOG_POS_KEY = 'linknest.mobilePreviewDialog.position.v1';
+const DIALOG_SIZE_KEY = 'linknest.mobilePreviewDialog.size.v1';
+const DIALOG_MIN_W = 520;
+const DIALOG_MIN_H = 420;
+const DIALOG_MAX_W = 1600;
+const DIALOG_MAX_H = 1200;
+const DIALOG_MIN_VISIBLE = 64;
+
+type DialogPoint = { x: number; y: number };
+type DialogSize = { width: number; height: number };
+
+function clampNum(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function getCssZoom(): number {
+  const raw = getComputedStyle(document.documentElement).zoom;
+  const z = raw && raw !== 'normal' ? Number.parseFloat(raw) : 1;
+  return Number.isFinite(z) && z > 0 ? z : 1;
+}
+
+function getViewportSize() {
+  const vv = window.visualViewport;
+  return {
+    width: vv?.width ?? window.innerWidth,
+    height: vv?.height ?? window.innerHeight,
+  };
+}
+
+function safeParsePoint(raw: string | null): DialogPoint | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (
+      parsed &&
+      typeof parsed.x === 'number' &&
+      typeof parsed.y === 'number' &&
+      Number.isFinite(parsed.x) &&
+      Number.isFinite(parsed.y)
+    ) {
+      return { x: parsed.x, y: parsed.y };
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+function safeParseSize(raw: string | null): DialogSize | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (
+      parsed &&
+      typeof parsed.width === 'number' &&
+      typeof parsed.height === 'number' &&
+      Number.isFinite(parsed.width) &&
+      Number.isFinite(parsed.height)
+    ) {
+      return { width: parsed.width, height: parsed.height };
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+function defaultDialogSize(): DialogSize {
+  const { width: vvW, height: vvH } = getViewportSize();
+  const zoom = getCssZoom();
+  const layoutW = vvW / zoom;
+  const layoutH = vvH / zoom;
+  return {
+    width: clampNum(Math.min(1024, layoutW - 48), DIALOG_MIN_W, Math.min(DIALOG_MAX_W, layoutW - 24)),
+    height: clampNum(Math.min(860, layoutH - 48), DIALOG_MIN_H, Math.min(DIALOG_MAX_H, layoutH - 24)),
+  };
+}
+
+function centeredDialogPos(size: DialogSize): DialogPoint {
+  const { width: vvW, height: vvH } = getViewportSize();
+  const zoom = getCssZoom();
+  const layoutW = vvW / zoom;
+  const layoutH = vvH / zoom;
+  return {
+    x: Math.max(12, Math.round((layoutW - size.width) / 2)),
+    y: Math.max(12, Math.round((layoutH - size.height) / 2)),
+  };
+}
+
+function clampDialogPos(p: DialogPoint, size: DialogSize): DialogPoint {
+  const { width: vvW, height: vvH } = getViewportSize();
+  const zoom = getCssZoom();
+  const layoutW = vvW / zoom;
+  const layoutH = vvH / zoom;
+  return {
+    x: clampNum(p.x, -size.width + DIALOG_MIN_VISIBLE, layoutW - DIALOG_MIN_VISIBLE),
+    y: clampNum(p.y, -size.height + DIALOG_MIN_VISIBLE, layoutH - DIALOG_MIN_VISIBLE),
+  };
+}
+
+function clampDialogSize(size: DialogSize): DialogSize {
+  const { width: vvW, height: vvH } = getViewportSize();
+  const zoom = getCssZoom();
+  const layoutW = vvW / zoom;
+  const layoutH = vvH / zoom;
+  return {
+    width: clampNum(size.width, DIALOG_MIN_W, Math.min(DIALOG_MAX_W, Math.max(DIALOG_MIN_W, layoutW - 16))),
+    height: clampNum(size.height, DIALOG_MIN_H, Math.min(DIALOG_MAX_H, Math.max(DIALOG_MIN_H, layoutH - 16))),
+  };
+}
 
 function stripHtmlTags(content: string): string {
   if (!content) return '';
@@ -183,6 +293,7 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
   label,
 }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const previewWinRef = useRef<Window | null>(null);
   const [previewMode, setPreviewMode] = useState<PreviewMode>('in-app');
@@ -197,9 +308,187 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
   const [allowIframeMount, setAllowIframeMount] = useState(false);
   const [popupBlocked, setPopupBlocked] = useState(false);
   const [windowOpened, setWindowOpened] = useState(false);
+  const [dialogSize, setDialogSize] = useState<DialogSize>(() => {
+    return safeParseSize(localStorage.getItem(DIALOG_SIZE_KEY)) || defaultDialogSize();
+  });
+  const [dialogPos, setDialogPos] = useState<DialogPoint>(() => {
+    const size = safeParseSize(localStorage.getItem(DIALOG_SIZE_KEY)) || defaultDialogSize();
+    return safeParsePoint(localStorage.getItem(DIALOG_POS_KEY)) || centeredDialogPos(size);
+  });
+  const [isDraggingDialog, setIsDraggingDialog] = useState(false);
+  const [isResizingDialog, setIsResizingDialog] = useState(false);
   const loadGuardRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const dialogPosRef = useRef(dialogPos);
+  const dialogSizeRef = useRef(dialogSize);
+  const dragCleanupRef = useRef<(() => void) | null>(null);
+  const dragStartRef = useRef<{ x: number; y: number; posX: number; posY: number } | null>(null);
+  const resizeStartRef = useRef<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    posX: number;
+    posY: number;
+    direction: string;
+  } | null>(null);
   const plainLabel = useMemo(() => stripHtmlTags(label || ''), [label]);
+
+  useEffect(() => {
+    dialogPosRef.current = dialogPos;
+  }, [dialogPos]);
+
+  useEffect(() => {
+    dialogSizeRef.current = dialogSize;
+  }, [dialogSize]);
+
+  useEffect(() => {
+    return () => {
+      dragCleanupRef.current?.();
+      dragCleanupRef.current = null;
+    };
+  }, []);
+
+  const persistDialogLayout = useCallback((pos: DialogPoint, size: DialogSize) => {
+    try {
+      localStorage.setItem(DIALOG_POS_KEY, JSON.stringify(pos));
+      localStorage.setItem(DIALOG_SIZE_KEY, JSON.stringify(size));
+    } catch {
+      // ignore storage failures
+    }
+  }, []);
+
+  const startDialogDrag = useCallback(
+    (e: React.PointerEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target?.closest(
+          'button, a, input, select, textarea, [role="button"], [role="group"], [data-no-drag]'
+        )
+      ) {
+        return;
+      }
+
+      dragCleanupRef.current?.();
+      dragCleanupRef.current = null;
+      dragStartRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        posX: dialogPosRef.current.x,
+        posY: dialogPosRef.current.y,
+      };
+      setIsDraggingDialog(true);
+
+      const onMove = (ev: PointerEvent) => {
+        const start = dragStartRef.current;
+        if (!start) return;
+        const zoom = getCssZoom();
+        const next = clampDialogPos(
+          {
+            x: start.posX + (ev.clientX - start.x) / zoom,
+            y: start.posY + (ev.clientY - start.y) / zoom,
+          },
+          dialogSizeRef.current
+        );
+        dialogPosRef.current = next;
+        setDialogPos(next);
+      };
+
+      const onUp = () => {
+        dragCleanupRef.current?.();
+        dragCleanupRef.current = null;
+        dragStartRef.current = null;
+        setIsDraggingDialog(false);
+        persistDialogLayout(dialogPosRef.current, dialogSizeRef.current);
+      };
+
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp, { once: true });
+      window.addEventListener('pointercancel', onUp, { once: true });
+      dragCleanupRef.current = () => {
+        window.removeEventListener('pointermove', onMove);
+      };
+
+      e.preventDefault();
+    },
+    [persistDialogLayout]
+  );
+
+  const startDialogResize = useCallback(
+    (e: React.PointerEvent, direction: string) => {
+      dragCleanupRef.current?.();
+      dragCleanupRef.current = null;
+      resizeStartRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        width: dialogSizeRef.current.width,
+        height: dialogSizeRef.current.height,
+        posX: dialogPosRef.current.x,
+        posY: dialogPosRef.current.y,
+        direction,
+      };
+      setIsResizingDialog(true);
+
+      const onMove = (ev: PointerEvent) => {
+        const start = resizeStartRef.current;
+        if (!start) return;
+        const zoom = getCssZoom();
+        const dx = (ev.clientX - start.x) / zoom;
+        const dy = (ev.clientY - start.y) / zoom;
+
+        let newWidth = start.width;
+        let newHeight = start.height;
+        let newX = start.posX;
+        let newY = start.posY;
+
+        if (direction.includes('e')) {
+          newWidth = start.width + dx;
+        }
+        if (direction.includes('w')) {
+          newWidth = start.width - dx;
+        }
+        if (direction.includes('s')) {
+          newHeight = start.height + dy;
+        }
+        if (direction.includes('n')) {
+          newHeight = start.height - dy;
+        }
+
+        const nextSize = clampDialogSize({ width: newWidth, height: newHeight });
+        if (direction.includes('w')) {
+          newX = start.posX + (start.width - nextSize.width);
+        }
+        if (direction.includes('n')) {
+          newY = start.posY + (start.height - nextSize.height);
+        }
+
+        const nextPos = clampDialogPos({ x: newX, y: newY }, nextSize);
+        dialogSizeRef.current = nextSize;
+        dialogPosRef.current = nextPos;
+        setDialogSize(nextSize);
+        setDialogPos(nextPos);
+      };
+
+      const onUp = () => {
+        dragCleanupRef.current?.();
+        dragCleanupRef.current = null;
+        resizeStartRef.current = null;
+        setIsResizingDialog(false);
+        persistDialogLayout(dialogPosRef.current, dialogSizeRef.current);
+      };
+
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp, { once: true });
+      window.addEventListener('pointercancel', onUp, { once: true });
+      dragCleanupRef.current = () => {
+        window.removeEventListener('pointermove', onMove);
+      };
+
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    [persistDialogLayout]
+  );
 
   const isEmulationMode = previewMode === 'emulation';
   const emulateShortcut = isMacPlatform() ? '⌘ + Shift + M' : 'Ctrl + Shift + M';
@@ -353,6 +642,16 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
     setPopupBlocked(false);
     setWindowOpened(false);
 
+    const nextSize = clampDialogSize(
+      safeParseSize(localStorage.getItem(DIALOG_SIZE_KEY)) || dialogSizeRef.current || defaultDialogSize()
+    );
+    const storedPos = safeParsePoint(localStorage.getItem(DIALOG_POS_KEY));
+    const nextPos = clampDialogPos(storedPos || centeredDialogPos(nextSize), nextSize);
+    dialogSizeRef.current = nextSize;
+    dialogPosRef.current = nextPos;
+    setDialogSize(nextSize);
+    setDialogPos(nextPos);
+
     const handleEscKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' || e.key === 'Esc') {
         e.preventDefault();
@@ -361,9 +660,22 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
       }
     };
 
+    const clampToViewport = () => {
+      const size = clampDialogSize(dialogSizeRef.current);
+      const pos = clampDialogPos(dialogPosRef.current, size);
+      dialogSizeRef.current = size;
+      dialogPosRef.current = pos;
+      setDialogSize(size);
+      setDialogPos(pos);
+    };
+
     window.addEventListener('keydown', handleEscKey, true);
+    window.addEventListener('resize', clampToViewport);
+    window.visualViewport?.addEventListener('resize', clampToViewport);
     return () => {
       window.removeEventListener('keydown', handleEscKey, true);
+      window.removeEventListener('resize', clampToViewport);
+      window.visualViewport?.removeEventListener('resize', clampToViewport);
       closePreviewWindow();
     };
   }, [isOpen, onClose, closePreviewWindow]);
@@ -483,7 +795,22 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
   };
 
   const inputClass =
-    'h-7 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500/40';
+    'h-7 px-2 text-xs rounded-lg border border-sky-200/70 dark:border-sky-800/40 bg-white dark:bg-slate-900/50 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400';
+
+  const primaryBtnClass =
+    'inline-flex items-center justify-center gap-1.5 font-semibold rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition-colors shadow-sm shadow-sky-500/20 disabled:opacity-50 disabled:cursor-not-allowed';
+  const secondaryBtnClass =
+    'inline-flex items-center justify-center gap-1.5 font-medium rounded-lg border border-sky-200/70 dark:border-sky-700/40 text-sky-900 dark:text-sky-100 bg-white/80 dark:bg-slate-900/40 hover:bg-sky-50 dark:hover:bg-sky-950/40 transition-colors disabled:opacity-50';
+
+  const quickPresetEmoji = (id: string): string => {
+    if (id.startsWith('iphone')) return '📱';
+    if (id.startsWith('pixel') || id.startsWith('galaxy')) return '🤖';
+    if (id === 'ipad') return '📲';
+    if (id.startsWith('zebra')) return '📦';
+    if (id === 'watch-square') return '⌚️';
+    if (id === 'watch-round') return '⭕';
+    return '🖥️';
+  };
 
   const screenContent = (
     <div className="relative w-full h-full overflow-hidden bg-white">
@@ -500,65 +827,74 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
           onError={handleIframeError}
         />
       ) : !isEmulationMode && !url ? (
-        <div className="flex items-center justify-center h-full text-sm text-slate-500">
+        <div className="flex flex-col items-center justify-center gap-2 h-full text-sm text-sky-700 dark:text-sky-300">
+          <span className="text-2xl" aria-hidden>
+            🔗
+          </span>
           No URL to preview
         </div>
       ) : isEmulationMode ? (
-        <div className="flex flex-col items-center justify-center gap-2 px-4 text-center bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-950 w-full h-full">
-          <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-            {size.label}
+        <div className="flex flex-col items-center justify-center gap-2 px-4 text-center bg-gradient-to-b from-sky-50 to-teal-50/60 dark:from-sky-950/40 dark:to-teal-950/30 w-full h-full">
+          <p className="text-2xl" aria-hidden>
+            🧭
           </p>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
+          <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{size.label}</p>
+          <p className="text-xs text-sky-800/70 dark:text-sky-200/70">
             {size.width} × {size.height}
           </p>
-          <p className="text-[11px] text-slate-400 dark:text-slate-500 max-w-[14rem] leading-relaxed">
+          <p className="text-[11px] text-sky-700/70 dark:text-sky-300/70 max-w-[14rem] leading-relaxed">
             Open the device window, then use DevTools device mode ({emulateShortcut}).
           </p>
         </div>
       ) : null}
 
       {!isEmulationMode && iframeLoading && url && !iframeBlocked && (
-        <div className="absolute inset-0 flex items-center justify-center bg-white/85 dark:bg-slate-900/75 pointer-events-none">
-          <div className="flex flex-col items-center gap-2 text-slate-500 dark:text-slate-300">
+        <div className="absolute inset-0 flex items-center justify-center bg-sky-50/90 dark:bg-sky-950/70 pointer-events-none">
+          <div className="flex flex-col items-center gap-2 text-sky-700 dark:text-sky-300">
             <svg className="animate-spin h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              />
             </svg>
-            <span className="text-xs">Checking if this site allows in-app preview…</span>
+            <span className="text-xs">
+              <span aria-hidden>🔍</span> Checking if this site allows in-app preview…
+            </span>
           </div>
         </div>
       )}
 
       {!isEmulationMode && iframeBlocked && url && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center bg-white dark:bg-slate-900 p-4 overflow-auto">
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-gradient-to-b from-sky-50 to-white dark:from-sky-950/50 dark:to-slate-900 p-4 overflow-auto">
           <div className={`text-center space-y-3 ${isWatch ? 'px-1 space-y-2' : 'max-w-sm'}`}>
+            <p className="text-2xl" aria-hidden>
+              🚧
+            </p>
             <p className={`font-semibold text-slate-800 dark:text-slate-100 ${isWatch ? 'text-[10px]' : 'text-sm'}`}>
               This site can’t be previewed in-app
             </p>
             {!isWatch && (
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                {blockReason || 'The site blocks iframe embedding.'}{' '}
-                Try <span className="font-medium text-slate-700 dark:text-slate-200">Device emulation</span> instead.
+              <p className="text-xs text-sky-800/70 dark:text-sky-200/70 leading-relaxed">
+                {blockReason || 'The site blocks iframe embedding.'} Try{' '}
+                <span className="font-medium text-sky-900 dark:text-sky-100">Device emulation</span> instead.
               </p>
             )}
             <div className="flex flex-wrap items-center justify-center gap-2">
               <button
                 type="button"
                 onClick={switchToEmulationMode}
-                className={`inline-flex items-center justify-center font-medium rounded-lg bg-brand-600 hover:bg-brand-700 text-white transition-colors ${
-                  isWatch ? 'px-2 py-1 text-[9px]' : 'px-3.5 py-2 text-xs'
-                }`}
+                className={`${primaryBtnClass} ${isWatch ? 'px-2 py-1 text-[9px]' : 'px-3.5 py-2 text-xs'}`}
               >
-                Try Device emulation
+                <span aria-hidden>🖥️</span> Try Device emulation
               </button>
               <button
                 type="button"
                 onClick={openInNewTab}
-                className={`inline-flex items-center justify-center font-medium rounded-lg border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors ${
-                  isWatch ? 'px-2 py-1 text-[9px]' : 'px-3 py-2 text-xs'
-                }`}
+                className={`${secondaryBtnClass} ${isWatch ? 'px-2 py-1 text-[9px]' : 'px-3 py-2 text-xs'}`}
               >
-                New tab
+                <span aria-hidden>↗</span> New tab
               </button>
             </div>
           </div>
@@ -570,7 +906,7 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
   return createPortal(
     <div
       ref={dialogRef}
-      className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 bg-black/50 backdrop-blur-sm outline-none"
+      className="fixed inset-0 z-[99999] bg-black/50 backdrop-blur-sm outline-none"
       onClick={onClose}
       onKeyDown={(e) => {
         if (e.key === 'Escape' || e.key === 'Esc') {
@@ -585,60 +921,89 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
       tabIndex={-1}
     >
       <div
-        className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-5xl h-[min(92vh,920px)] flex flex-col overflow-hidden"
+        ref={panelRef}
+        className={`absolute bg-white dark:bg-slate-800 rounded-2xl shadow-2xl shadow-sky-500/10 border border-sky-200/70 dark:border-sky-800/40 flex flex-col overflow-hidden ${
+          isDraggingDialog || isResizingDialog ? 'select-none' : ''
+        }`}
+        style={{
+          left: dialogPos.x,
+          top: dialogPos.y,
+          width: dialogSize.width,
+          height: dialogSize.height,
+        }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-4 sm:px-6 py-3 border-b border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-3 shrink-0">
-          <div className="min-w-0">
-            <h3
-              id="mobile-preview-dialog-title"
-              className="text-base sm:text-lg font-bold text-slate-900 dark:text-white truncate"
-              title={plainLabel}
+        <div
+          className={`px-4 sm:px-6 py-3.5 border-b border-sky-100 dark:border-sky-800/40 bg-gradient-to-r from-sky-50 via-teal-50/80 to-cyan-50/60 dark:from-sky-950/40 dark:via-teal-950/30 dark:to-cyan-950/20 flex flex-wrap items-center justify-between gap-3 shrink-0 ${
+            isDraggingDialog ? 'cursor-grabbing' : 'cursor-grab'
+          }`}
+          onPointerDown={startDialogDrag}
+          title="Drag to move"
+        >
+          <div className="flex items-start gap-3 min-w-0">
+            <div
+              className="h-10 w-10 rounded-xl bg-gradient-to-br from-sky-500 to-teal-600 text-white shadow-md shadow-sky-500/25 flex items-center justify-center text-xl shrink-0"
+              aria-hidden
             >
-              {plainLabel || 'Mobile preview'}
-            </h3>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5 truncate font-mono" title={url}>
-              {displayUrl}
-            </p>
+              📱
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] uppercase tracking-[0.14em] font-semibold text-sky-700/80 dark:text-sky-300/80">
+                Device preview
+              </p>
+              <h3
+                id="mobile-preview-dialog-title"
+                className="text-base sm:text-lg font-bold text-slate-900 dark:text-white truncate"
+                title={plainLabel}
+              >
+                {plainLabel || 'Mobile preview'}
+              </h3>
+              <p
+                className="text-xs sm:text-sm text-sky-800/70 dark:text-sky-200/70 mt-0.5 truncate font-mono"
+                title={url}
+              >
+                {displayUrl}
+              </p>
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 shrink-0" data-no-drag>
             <div
-              className="inline-flex rounded-lg border border-slate-200 dark:border-slate-600 p-0.5 bg-slate-50 dark:bg-slate-900/50"
+              className="inline-flex rounded-xl border border-sky-200/60 dark:border-sky-700/40 p-0.5 bg-white/70 dark:bg-slate-900/40"
               role="group"
               aria-label="Preview method"
             >
               <button
                 type="button"
                 onClick={() => setPreviewMode('in-app')}
-                className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors ${
                   !isEmulationMode
-                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                    ? 'bg-sky-600 text-white shadow-sm shadow-sky-500/25'
+                    : 'text-sky-800/80 dark:text-sky-200/80 hover:bg-sky-50 dark:hover:bg-sky-950/40'
                 }`}
                 aria-pressed={!isEmulationMode}
               >
-                In-app
+                <span aria-hidden>🖼️</span> In-app
               </button>
               <button
                 type="button"
                 onClick={switchToEmulationMode}
-                className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors ${
                   isEmulationMode
-                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                    ? 'bg-sky-600 text-white shadow-sm shadow-sky-500/25'
+                    : 'text-sky-800/80 dark:text-sky-200/80 hover:bg-sky-50 dark:hover:bg-sky-950/40'
                 }`}
                 aria-pressed={isEmulationMode}
                 title="Sized browser window + DevTools device mode"
               >
-                Device emulation
+                <span aria-hidden>🖥️</span> Device emulation
               </button>
             </div>
 
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+              className="p-1.5 rounded-lg hover:bg-white/80 dark:hover:bg-slate-700 text-sky-700/70 dark:text-sky-300/70 hover:text-sky-900 dark:hover:text-sky-100 transition-colors"
               title="Close"
               aria-label="Close"
             >
@@ -650,7 +1015,10 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
         </div>
 
         {/* DevTools-style / device toolbar */}
-        <div className="px-3 sm:px-4 py-2 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 flex flex-wrap items-center gap-2 shrink-0">
+        <div className="px-3 sm:px-4 py-2.5 border-b border-sky-100 dark:border-sky-800/40 bg-gradient-to-r from-sky-50/60 to-teal-50/40 dark:from-sky-950/20 dark:to-teal-950/10 flex flex-wrap items-center gap-2 shrink-0">
+          <span className="text-sm leading-none" aria-hidden title="Device">
+            📟
+          </span>
           <select
             className={`${inputClass} min-w-[10rem]`}
             value={presetId}
@@ -669,6 +1037,9 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
           </select>
 
           <div className="inline-flex items-center gap-1">
+            <span className="text-[11px] text-sky-700/70 dark:text-sky-300/70" aria-hidden>
+              📐
+            </span>
             <input
               type="number"
               min={120}
@@ -682,7 +1053,7 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
               className={`${inputClass} w-[4.5rem]`}
               aria-label="Viewport width"
             />
-            <span className="text-xs text-slate-400">×</span>
+            <span className="text-xs text-sky-500">×</span>
             <input
               type="number"
               min={120}
@@ -716,13 +1087,11 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
           <button
             type="button"
             onClick={rotateViewport}
-            className="h-7 w-7 inline-flex items-center justify-center rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 transition-colors"
+            className="h-7 w-7 inline-flex items-center justify-center rounded-lg border border-sky-200/70 dark:border-sky-700/40 text-sky-700 dark:text-sky-300 hover:bg-white dark:hover:bg-sky-950/40 transition-colors"
             title="Rotate viewport"
             aria-label="Rotate viewport"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-4 h-4">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
-            </svg>
+            <span aria-hidden>🔄</span>
           </button>
 
           <div className="hidden md:flex flex-wrap items-center gap-1">
@@ -734,13 +1103,14 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
                   key={id}
                   type="button"
                   onClick={() => applyPreset(id)}
-                  className={`px-2 py-1 text-[11px] font-medium rounded-md border transition-colors ${
+                  className={`inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-lg border transition-colors ${
                     active
-                      ? 'bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-500 text-slate-900 dark:text-white shadow-sm'
-                      : 'border-transparent text-slate-500 dark:text-slate-400 hover:bg-white/70 dark:hover:bg-slate-800'
+                      ? 'bg-sky-600 text-white border-sky-600 shadow-sm shadow-sky-500/25'
+                      : 'border-sky-100 dark:border-sky-800/40 text-sky-800/80 dark:text-sky-200/80 hover:bg-white/80 dark:hover:bg-sky-950/40'
                   }`}
                   title={`${p.label} (${p.width}×${p.height})`}
                 >
+                  <span aria-hidden>{quickPresetEmoji(id)}</span>
                   {p.label
                     .replace('iPhone ', 'iP ')
                     .replace('Galaxy ', 'S')
@@ -759,8 +1129,9 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
               type="button"
               onClick={() => openDeviceWindow()}
               disabled={!url}
-              className="h-7 px-3 text-xs font-medium rounded-md bg-brand-600 hover:bg-brand-700 text-white transition-colors disabled:opacity-50"
+              className={`h-7 px-3 text-xs ${primaryBtnClass}`}
             >
+              <span aria-hidden>{windowOpened ? '🎯' : '🚀'}</span>
               {windowOpened ? 'Focus window' : 'Open window'}
             </button>
           )}
@@ -768,7 +1139,7 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
 
         <div
           ref={stageRef}
-          className="flex-1 min-h-0 overflow-auto bg-slate-100 dark:bg-slate-900/60 flex items-start justify-center p-4"
+          className="flex-1 min-h-0 overflow-auto bg-gradient-to-b from-sky-50/40 via-slate-50 to-teal-50/30 dark:from-sky-950/20 dark:via-slate-900/60 dark:to-teal-950/20 flex items-start justify-center p-4"
         >
           <div className="flex flex-col items-center gap-4 py-2 w-full">
             <DeviceMockupFrame
@@ -781,28 +1152,31 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
             </DeviceMockupFrame>
 
             {isEmulationMode && (
-              <div className="w-full max-w-lg rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-3 text-left space-y-2">
-                <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+              <div className="w-full max-w-lg rounded-xl border border-sky-200/70 dark:border-sky-800/40 bg-gradient-to-br from-sky-50/70 to-white dark:from-sky-950/30 dark:to-slate-900/50 px-4 py-3 text-left space-y-2 shadow-sm shadow-sky-500/5">
+                <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                  <span aria-hidden>💡</span>
                   Use the browser like DevTools ({size.label})
                 </p>
-                <ol className="text-xs text-slate-500 dark:text-slate-400 space-y-1.5 list-decimal list-inside leading-relaxed">
+                <ol className="text-xs text-sky-800/70 dark:text-sky-200/70 space-y-1.5 list-decimal list-inside leading-relaxed">
                   <li>
-                    Click <span className="font-medium text-slate-700 dark:text-slate-200">Open window</span> to load the real site at {size.width}×{size.height}.
+                    Click <span className="font-medium text-sky-900 dark:text-sky-100">Open window</span> to load the
+                    real site at {size.width}×{size.height}.
                   </li>
                   <li>
                     Open DevTools (<span className="font-mono text-[11px]">F12</span>), then press{' '}
-                    <kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 font-mono text-[11px]">
+                    <kbd className="px-1.5 py-0.5 rounded border border-sky-200 dark:border-sky-700 bg-sky-50 dark:bg-sky-950/40 font-mono text-[11px]">
                       {emulateShortcut}
                     </kbd>{' '}
                     for device emulation.
                   </li>
                   <li>
-                    Match Dimensions to <span className="font-medium">{size.label}</span> or pick the same device in DevTools.
+                    Match Dimensions to <span className="font-medium text-sky-900 dark:text-sky-100">{size.label}</span>{' '}
+                    or pick the same device in DevTools.
                   </li>
                 </ol>
                 {popupBlocked && (
-                  <p className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
-                    Pop-up was blocked. Allow pop-ups for this site, then open again.
+                  <p className="text-xs text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
+                    <span aria-hidden>⚠️</span> Pop-up was blocked. Allow pop-ups for this site, then open again.
                   </p>
                 )}
               </div>
@@ -810,10 +1184,13 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
           </div>
         </div>
 
-        <div className="px-4 sm:px-6 py-3 border-t border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-3 shrink-0">
-          <p className="text-xs text-slate-400 dark:text-slate-500 truncate">
-            {isEmulationMode ? 'Device emulation' : 'In-app mockup'} · {size.label} · {size.width}×{size.height}
-            {isEmulationMode ? ` · zoom ${zoomPercent}%` : ` · fit ${Math.round(fitScale * 100)}%`}
+        <div className="px-4 sm:px-6 py-3 border-t border-sky-100 dark:border-sky-900/40 bg-gradient-to-r from-sky-50/80 to-teal-50/50 dark:from-sky-950/30 dark:to-teal-950/20 flex flex-wrap items-center justify-between gap-3 shrink-0">
+          <p className="text-xs text-sky-800/70 dark:text-sky-200/70 truncate flex items-center gap-1.5 min-w-0">
+            <span aria-hidden>{isEmulationMode ? '🖥️' : '🖼️'}</span>
+            <span className="truncate">
+              {isEmulationMode ? 'Device emulation' : 'In-app mockup'} · {size.label} · {size.width}×{size.height}
+              {isEmulationMode ? ` · zoom ${zoomPercent}%` : ` · fit ${Math.round(fitScale * 100)}%`}
+            </span>
           </p>
           <div className="flex items-center gap-2">
             {isEmulationMode ? (
@@ -821,37 +1198,83 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
                 type="button"
                 onClick={() => openDeviceWindow()}
                 disabled={!url}
-                className="px-3 py-2 text-sm font-medium rounded-lg bg-brand-600 hover:bg-brand-700 text-white transition-colors disabled:opacity-50"
+                className={`px-3 py-2 text-sm ${primaryBtnClass}`}
               >
-                Open device window
+                <span aria-hidden>🚀</span> Open device window
               </button>
             ) : (
               <button
                 type="button"
                 onClick={switchToEmulationMode}
                 disabled={!url}
-                className="px-3 py-2 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
+                className={`px-3 py-2 text-sm ${secondaryBtnClass}`}
               >
-                Device emulation
+                <span aria-hidden>🖥️</span> Device emulation
               </button>
             )}
             <button
               type="button"
               onClick={openInNewTab}
               disabled={!url}
-              className="px-3 py-2 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
+              className={`px-3 py-2 text-sm ${secondaryBtnClass}`}
             >
-              Open in new tab
+              <span aria-hidden>↗</span> Open in new tab
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg font-medium transition-colors text-sm"
+              className="px-4 py-2 text-sm font-medium rounded-lg border border-sky-200/70 dark:border-sky-700/40 bg-white/80 dark:bg-slate-900/40 text-sky-900 dark:text-sky-100 hover:bg-sky-50 dark:hover:bg-sky-950/40 transition-colors"
             >
               Close
             </button>
           </div>
         </div>
+
+        {/* Resize handles */}
+        <div
+          className="absolute top-0 right-0 z-20 w-3.5 h-3.5 cursor-ne-resize"
+          onPointerDown={(e) => startDialogResize(e, 'ne')}
+          style={{ background: 'linear-gradient(135deg, transparent 50%, rgba(14, 165, 233, 0.55) 50%)' }}
+          aria-hidden
+        />
+        <div
+          className="absolute bottom-0 right-0 z-20 w-3.5 h-3.5 cursor-se-resize"
+          onPointerDown={(e) => startDialogResize(e, 'se')}
+          style={{ background: 'linear-gradient(45deg, transparent 50%, rgba(14, 165, 233, 0.55) 50%)' }}
+          aria-hidden
+        />
+        <div
+          className="absolute bottom-0 left-0 z-20 w-3.5 h-3.5 cursor-sw-resize"
+          onPointerDown={(e) => startDialogResize(e, 'sw')}
+          style={{ background: 'linear-gradient(-45deg, transparent 50%, rgba(14, 165, 233, 0.55) 50%)' }}
+          aria-hidden
+        />
+        <div
+          className="absolute top-0 left-0 z-20 w-3.5 h-3.5 cursor-nw-resize"
+          onPointerDown={(e) => startDialogResize(e, 'nw')}
+          style={{ background: 'linear-gradient(-135deg, transparent 50%, rgba(14, 165, 233, 0.55) 50%)' }}
+          aria-hidden
+        />
+        <div
+          className="absolute top-0 left-3 right-3 z-10 h-1.5 cursor-n-resize"
+          onPointerDown={(e) => startDialogResize(e, 'n')}
+          aria-hidden
+        />
+        <div
+          className="absolute bottom-0 left-3 right-3 z-10 h-1.5 cursor-s-resize"
+          onPointerDown={(e) => startDialogResize(e, 's')}
+          aria-hidden
+        />
+        <div
+          className="absolute top-3 bottom-3 left-0 z-10 w-1.5 cursor-w-resize"
+          onPointerDown={(e) => startDialogResize(e, 'w')}
+          aria-hidden
+        />
+        <div
+          className="absolute top-3 bottom-3 right-0 z-10 w-1.5 cursor-e-resize"
+          onPointerDown={(e) => startDialogResize(e, 'e')}
+          aria-hidden
+        />
       </div>
     </div>,
     document.body
