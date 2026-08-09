@@ -26,14 +26,16 @@ export function readPageZoom(): number {
 
 export interface XtermZoomSafeHostProps {
   className?: string;
-  /** Called after size/zoom sync so FitAddon can refit. */
+  /** Extra classes on the zoom-compensated inner element (xterm/noVNC mount target). */
+  innerClassName?: string;
+  /** Called after size/zoom sync so FitAddon / noVNC can refit. */
   onZoomCompensated?: () => void;
   style?: React.CSSProperties;
 }
 
 /**
- * Full-bleed xterm host that counters `html { zoom }` for accurate selection
- * without leaving a black strip.
+ * Full-bleed host that counters `html { zoom }` for accurate mouse hit-testing
+ * (xterm selection, noVNC cursor) without leaving a black strip.
  *
  * Uses pixel sizes (not %) from the outer box:
  *   child.zoom = 1/pageZoom
@@ -41,7 +43,7 @@ export interface XtermZoomSafeHostProps {
  * so after zoom, painted size === outer size.
  */
 export const XtermZoomSafeHost = forwardRef<HTMLDivElement, XtermZoomSafeHostProps>(
-  function XtermZoomSafeHost({ className = '', onZoomCompensated, style }, ref) {
+  function XtermZoomSafeHost({ className = '', innerClassName = '', onZoomCompensated, style }, ref) {
     const outerRef = useRef<HTMLDivElement>(null);
     const innerRef = useRef<HTMLDivElement>(null);
 
@@ -143,10 +145,13 @@ export const XtermZoomSafeHost = forwardRef<HTMLDivElement, XtermZoomSafeHostPro
       >
         <div
           ref={innerRef}
-          className="[&_.xterm]:h-full [&_.xterm]:w-full [&_.xterm-viewport]:h-full [&_.xterm-viewport]:w-full [&_.xterm-viewport]:overflow-auto"
+          className={`[&_.xterm]:h-full [&_.xterm]:w-full [&_.xterm-viewport]:h-full [&_.xterm-viewport]:w-full [&_.xterm-viewport]:overflow-auto ${innerClassName}`}
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
         />
       </div>
     );
   }
 );
+
+/** Alias for non-xterm consumers (e.g. noVNC). */
+export const ZoomSafeHost = XtermZoomSafeHost;

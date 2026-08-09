@@ -12,6 +12,7 @@ import {
   parseAutoVncTargetUrl,
   vncGatewayService,
 } from '../services/vncGatewayService';
+import { ZoomSafeHost } from './XtermZoomSafeHost';
 
 interface VncViewerWidgetProps {
   onClose?: () => void;
@@ -623,7 +624,12 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
       sessionHandlesRef.current.set(tabId, { rfb: null, gatewaySessionId });
       setTabs((prev) => [...prev, tab]);
       setActiveTabId(tabId);
-      setShowSettings(false);
+      // Keep settings open until authenticated so the password field stays visible.
+      if (!nextPassword) {
+        setShowSettings(true);
+      } else {
+        setShowSettings(false);
+      }
       setNotice(`Connecting to “${nextName}”…`);
 
       try {
@@ -805,6 +811,24 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
   const registerTabHost = useCallback((tabId: string, el: HTMLDivElement | null) => {
     if (el) tabHostsRef.current.set(tabId, el);
     else tabHostsRef.current.delete(tabId);
+  }, []);
+
+  const nudgeRfbLayout = useCallback((tabId: string) => {
+    const handle = sessionHandlesRef.current.get(tabId);
+    const rfb = handle?.rfb as
+      | (RfbInstance & { _updateScale?: () => void; _requestRemoteResize?: () => void; blur?: () => void })
+      | null
+      | undefined;
+    if (!rfb) return;
+    try {
+      // Re-apply public scale flag so noVNC recomputes canvas layout after zoom sync.
+      const scaled = Boolean((rfb as { scaleViewport?: boolean }).scaleViewport);
+      (rfb as { scaleViewport: boolean }).scaleViewport = scaled;
+      rfb._updateScale?.();
+      rfb._requestRemoteResize?.();
+    } catch {
+      // ignore
+    }
   }, []);
 
   const selectTab = useCallback((tabId: string) => {
@@ -1325,6 +1349,33 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
                   {status === 'connected' || status === 'connecting' ? 'New tab' : 'Connect'}
                 </button>
               </div>
+              <label className="block text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                VNC password
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (pendingCredentialsTabId) sendPendingPassword();
+                      else void connect();
+                    }
+                  }}
+                  placeholder="Enter before Connect"
+                  className="mt-1 w-full h-7 px-2 text-[11px] rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+                  autoComplete="off"
+                />
+              </label>
+              {pendingCredentialsTabId && (
+                <button
+                  type="button"
+                  onClick={sendPendingPassword}
+                  className="w-full h-7 rounded-md text-[10px] font-semibold bg-sky-600 hover:bg-sky-500 text-white"
+                >
+                  Send password
+                </button>
+              )}
               <input
                 type="search"
                 value={filterQuery}
@@ -1807,9 +1858,11 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
                         <span className="ml-auto opacity-70">{tab.status}</span>
                       </div>
                     )}
-                    <div
+                    <ZoomSafeHost
                       ref={(el) => registerTabHost(tab.id, el)}
-                      className={`absolute inset-0 w-full h-full [&>canvas]:max-w-full ${tileLayout ? 'pt-5' : ''}`}
+                      className={`absolute inset-0 w-full h-full ${tileLayout ? 'pt-5' : ''}`}
+                      innerClassName="[&>div]:h-full [&>div]:w-full [&>canvas]:max-w-full"
+                      onZoomCompensated={() => nudgeRfbLayout(tab.id)}
                     />
                   </div>
                 );
