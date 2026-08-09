@@ -361,6 +361,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                       <li>All guest features</li>
                       <li>Create, edit, and delete tiles/spaces</li>
                       <li>Manage links, tabs, sections, and rich text (including boxed content)</li>
+                      <li>Preview links on phone, tablet, or watch sizes via the hover phone action</li>
                       <li>Customize tiles with header/emoji images and display options</li>
                       <li>Organize tiles into categories and favorite them</li>
                       <li>Share spaces with other users and accept shared-tile invitations</li>
@@ -393,6 +394,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <li><strong>Add Links:</strong> Click on your tile to open it, then add links to sections</li>
                     <li><strong>Organize:</strong> Create tabs and sections to organize your links logically</li>
                     <li><strong>Enrich:</strong> Add rich text or boxed content, scheduling, browser preferences, or visibility settings</li>
+                    <li><strong>Test on mobile:</strong> Hover a Quick Link and click the phone icon to preview the URL on phone, tablet, or watch sizes</li>
                     <li><strong>Share:</strong> Use QR codes or Share with a user when you want others to open the space quickly</li>
                   </ol>
                 </div>
@@ -415,7 +417,13 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Link Management</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Add, edit, and organize links with custom icons, notes, tooltips, and rich text content. Set visibility levels, scheduling, and browser preferences for each link.
+                      Add, edit, and organize links with custom icons, notes, tooltips, and rich text content. Set visibility levels, scheduling, and browser preferences for each link. Hover a link for quick actions including copy, QR, and mobile preview.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Mobile Link Preview</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Hover a link and tap the phone icon to preview how the URL looks on phone, tablet, or watch sizes. Switch devices, rotate, zoom, or open a device-sized window for browser DevTools device mode when a site blocks in-app embedding.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -594,6 +602,44 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
                     <p className="text-sm text-amber-800 dark:text-amber-200">
                       <strong>Note:</strong> Browser integration requires the Browser Launcher Pro extension. Links will open normally in your default browser if the extension is not installed or enabled.
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <path d="M8 16.25a.75.75 0 01.75-.75h2.5a.75.75 0 010 1.5h-2.5a.75.75 0 01-.75-.75z" />
+                    <path fillRule="evenodd" d="M4 4a3 3 0 013-3h6a3 3 0 013 3v12a3 3 0 01-3 3H7a3 3 0 01-3-3V4zm4-1.5v.75c0 .414.336.75.75.75h2.5a.75.75 0 00.75-.75V2.5h1A1.5 1.5 0 0114.5 4v12a1.5 1.5 0 01-1.5 1.5H7A1.5 1.5 0 015.5 16V4A1.5 1.5 0 017 2.5h1z" clipRule="evenodd" />
+                  </svg>
+                  Mobile Link Preview (Testing)
+                </h3>
+                <div className="space-y-3 text-slate-700 dark:text-slate-300">
+                  <p>
+                    Test how a link behaves on small screens without leaving {appName}. Open a space, hover a Quick Link, and click the <strong>phone</strong> action button (<em>Preview on mobile</em>).
+                  </p>
+                  <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-brand-900 dark:text-brand-100">How to use it:</p>
+                    <ol className="list-decimal list-inside space-y-1 ml-2 text-sm">
+                      <li>Open a space and hover a link that has a URL</li>
+                      <li>Click the phone icon in the hover action toolbar (next to copy / QR)</li>
+                      <li>Choose a device preset: Responsive, iPhone, Android, Tablet, or Watch</li>
+                      <li>Rotate the viewport, adjust zoom, or pick a quick preset chip</li>
+                      <li>Use <strong>In-app</strong> for a framed mockup preview, or <strong>Device emulation</strong> to open a sized popup window</li>
+                    </ol>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-slate-900 dark:text-white">In-app vs Device emulation:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li><strong>In-app:</strong> Loads the URL inside a phone/tablet/watch frame so you can quickly check layout at common sizes</li>
+                      <li><strong>Device emulation:</strong> Opens a popup sized to the selected device; then use browser DevTools device mode (<kbd className="px-1.5 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono">Ctrl</kbd>+<kbd className="px-1.5 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono">Shift</kbd>+<kbd className="px-1.5 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono">M</kbd> / <kbd className="px-1.5 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono">⌘</kbd>+<kbd className="px-1.5 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono">Shift</kbd>+<kbd className="px-1.5 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono">M</kbd>) for a closer mobile test</li>
+                      <li>Sites that block iframe embedding (Google, Microsoft, social networks, and many others) show a fallback — switch to Device emulation or open in a new tab</li>
+                    </ul>
+                  </div>
+                  <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
+                    <p className="text-sm text-amber-800 dark:text-amber-200">
+                      <strong>Note:</strong> This is a viewport / layout preview for testing, not a full phone OS emulator. Touch, sensors, and native apps are not simulated.
                     </p>
                   </div>
                 </div>
@@ -1056,6 +1102,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <li>Schedule tiles and tabs to appear or expire automatically</li>
                     <li>Set browser preferences per tile or link for testing workflows</li>
                     <li>Hold Ctrl/Cmd while clicking links to override browser settings</li>
+                    <li>Hover a Quick Link and click the phone icon to preview the URL on phone, tablet, or watch sizes (use Device emulation when a site blocks the in-app frame)</li>
                     <li>Share the app or a space via branded QR codes</li>
                     <li>Share a private/authenticated space with another user and manage shares from the Share dialog</li>
                     <li>Block unwanted sharers; review Blocked Users when needed</li>
@@ -1196,6 +1243,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                 <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3">What&apos;s New in 2.2.0</h3>
                 <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 text-sm text-slate-700 dark:text-slate-300">
                   <ul className="list-disc list-inside space-y-1 ml-2">
+                    <li><strong>Mobile Link Preview:</strong> Phone action on Quick Links opens an in-app device mockup (phone / tablet / watch) or a device-sized window for DevTools testing</li>
                     <li><strong>In-app App Updates:</strong> Check GitHub commits/releases, preview changes, apply with DB backup, and roll back from Admin (XAMPP installs)</li>
                     <li><strong>Guides tab:</strong> Searchable in-app documentation (Architecture, App Updates, deployment, and more)</li>
                     <li><strong>QR sharing:</strong> Branded QR codes for the app URL and spaces (desktop + mobile)</li>
@@ -1223,7 +1271,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                 <p className="text-slate-700 dark:text-slate-300">
                   {appName} helps you create beautiful, organized landing pages for your important links.
                   Organize links into visual tiles, customize their appearance (including header images and boxed rich text), and share them with your team — via roles, space editors, user shares, or QR codes.
-                  With <strong>Access Manager</strong>, <strong>Staging &amp; AI Offline Kit</strong>, <strong>version control</strong>, <strong>in-app App Updates</strong>, browser integration, scheduling, link health monitoring, visitor insights,
+                  With <strong>Access Manager</strong>, <strong>Staging &amp; AI Offline Kit</strong>, <strong>version control</strong>, <strong>mobile link preview</strong> for small-screen testing, <strong>in-app App Updates</strong>, browser integration, scheduling, link health monitoring, visitor insights,
                   style management, system monitoring and optional add-ons, email notifications, floating widgets, SAML/SSO, and 200+ tile animations,
                   {appName} makes managing and sharing links simple, powerful, and elegant.
                 </p>
@@ -1268,6 +1316,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     'Share Spaces with Users',
                     'Shared Tile Notifications',
                     'QR Code Sharing',
+                    'Mobile Link Preview (Phone / Tablet / Watch)',
                     'Visitor Hit & Unique Stats',
                     'Export/Import',
                     'Dark Mode',
