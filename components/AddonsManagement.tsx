@@ -1984,7 +1984,9 @@ const SshGatewayAddonCard: React.FC = () => {
                                     className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm font-mono max-w-xs"
                                 />
                                 <p className="mt-1 text-xs text-slate-500">
-                                    Used when Easy mode starts Terminal + GUI. Clear ttyd/ssh paths to auto-detect from common install locations.
+                                    Local XAMPP: <code className="font-mono">127.0.0.1:0.0</code>. Docker:{' '}
+                                    <code className="font-mono">host.docker.internal:0.0</code> (VcXsrv on the host with
+                                    “Disable access control”).
                                 </p>
                                 {resolved?.vcxsrvPath && (
                                     <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">VcXsrv: {resolved.vcxsrvPath}</p>

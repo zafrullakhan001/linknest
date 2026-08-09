@@ -18,10 +18,16 @@ $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
 $path = rtrim($path, '/') ?: '/';
 
 define('SSH_GATEWAY_DIR', DB_DIR . '/ssh_gateway');
-define('SSH_GATEWAY_PORT_MIN', 17681);
-define('SSH_GATEWAY_PORT_MAX', 17780);
+// Override via env in Docker when host XAMPP already uses 17681–17780
+define('SSH_GATEWAY_PORT_MIN', (int)(getenv('SSH_GATEWAY_PORT_MIN') ?: 17681));
+define('SSH_GATEWAY_PORT_MAX', (int)(getenv('SSH_GATEWAY_PORT_MAX') ?: 17780));
 define('SSH_GATEWAY_MAX_PER_USER', 8);
 define('SSH_GATEWAY_TTL_SEC', 6 * 3600);
+
+if (SSH_GATEWAY_PORT_MIN < 1024 || SSH_GATEWAY_PORT_MAX > 65535 || SSH_GATEWAY_PORT_MIN > SSH_GATEWAY_PORT_MAX) {
+    // Keep safe defaults if env is misconfigured
+    // (constants already set; allocatePort still bounds-checks each port)
+}
 
 if ($method === 'GET' && ($path === '/' || $path === '/status')) {
     handleSshGatewayStatus();
@@ -209,17 +215,47 @@ function sshGatewayConfiguredPath(string $settingKey): string {
     return $raw;
 }
 
+/**
+ * True when a configured path belongs to the other OS (e.g. Windows .exe path
+ * baked into a DB that was copied into a Linux Docker image).
+ */
+function sshGatewayIsForeignOsPath(string $path): bool {
+    $path = trim($path);
+    if ($path === '') {
+        return false;
+    }
+    $isWin = stripos(PHP_OS, 'WIN') === 0;
+    if ($isWin) {
+        // Absolute Unix path on Windows (e.g. /usr/local/bin/ttyd)
+        return str_starts_with($path, '/') && !preg_match('/^[A-Za-z]:/', $path);
+    }
+    // Windows drive / backslash / .exe paths on Linux/Docker
+    if (preg_match('/^[A-Za-z]:[\\\\\\/]/', $path)) {
+        return true;
+    }
+    if (str_contains($path, '\\')) {
+        return true;
+    }
+    if (preg_match('/\.exe$/i', $path)) {
+        return true;
+    }
+    return false;
+}
+
 function sshGatewayResolveTtyd(): string {
     $configured = sshGatewayConfiguredPath('ssh_gateway_ttyd_path');
     if ($configured !== '') {
-        if (is_file($configured)) {
+        if (!sshGatewayIsForeignOsPath($configured) && is_file($configured)) {
             return $configured;
         }
-        sendJSON([
-            'error' => 'Configured ttyd path was not found: ' . $configured . '. Update Admin → Add-ons → SSH Gateway paths.',
-            'code' => 'ttyd_missing',
-            'configuredPath' => $configured,
-        ], 503);
+        // Stale Windows paths in a Docker DB: fall through to Linux auto-detect
+        if (!sshGatewayIsForeignOsPath($configured)) {
+            sendJSON([
+                'error' => 'Configured ttyd path was not found: ' . $configured . '. Update Admin → Add-ons → SSH Gateway paths.',
+                'code' => 'ttyd_missing',
+                'configuredPath' => $configured,
+            ], 503);
+        }
     }
 
     $found = sshGatewayFindBinary('ttyd', sshGatewayDefaultTtydCandidates());
@@ -236,14 +272,16 @@ function sshGatewayResolveTtyd(): string {
 function sshGatewayResolveSsh(): string {
     $configured = sshGatewayConfiguredPath('ssh_gateway_ssh_path');
     if ($configured !== '') {
-        if (is_file($configured)) {
+        if (!sshGatewayIsForeignOsPath($configured) && is_file($configured)) {
             return $configured;
         }
-        sendJSON([
-            'error' => 'Configured OpenSSH path was not found: ' . $configured . '. Update Admin → Add-ons → SSH Gateway paths.',
-            'code' => 'ssh_missing',
-            'configuredPath' => $configured,
-        ], 503);
+        if (!sshGatewayIsForeignOsPath($configured)) {
+            sendJSON([
+                'error' => 'Configured OpenSSH path was not found: ' . $configured . '. Update Admin → Add-ons → SSH Gateway paths.',
+                'code' => 'ssh_missing',
+                'configuredPath' => $configured,
+            ], 503);
+        }
     }
 
     $found = sshGatewayFindBinary('ssh', sshGatewayDefaultSshCandidates());
@@ -260,7 +298,7 @@ function sshGatewayResolveSsh(): string {
 function sshGatewaySoftResolve(string $kind): ?string {
     $key = $kind === 'ssh' ? 'ssh_gateway_ssh_path' : 'ssh_gateway_ttyd_path';
     $configured = sshGatewayConfiguredPath($key);
-    if ($configured !== '' && is_file($configured)) {
+    if ($configured !== '' && !sshGatewayIsForeignOsPath($configured) && is_file($configured)) {
         return $configured;
     }
     $candidates = $kind === 'ssh' ? sshGatewayDefaultSshCandidates() : sshGatewayDefaultTtydCandidates();
@@ -290,7 +328,7 @@ function handleSshGatewayGetConfig() {
         'config' => [
             'ttydPath' => $ttydConfigured,
             'sshPath' => $sshConfigured,
-            'x11Display' => $displayConfigured !== '' ? $displayConfigured : '127.0.0.1:0.0',
+            'x11Display' => sshGatewayDefaultDisplay(),
         ],
         'resolved' => [
             'ttydPath' => $ttydResolved,
@@ -389,10 +427,32 @@ function sshGatewayValidatePort($port): int {
     return $p;
 }
 
-function sshGatewayBuildWsUrl(int $listenPort): string {
-    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+function sshGatewayRequestIsHttps(): bool {
+    return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
         || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower((string)$_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https')
         || (isset($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443);
+}
+
+/** Apache self-signed certs (Docker) — used so HTTPS UI can open wss:// to ttyd. */
+function sshGatewaySslPaths(): ?array {
+    $candidates = [
+        ['cert' => '/etc/apache2/ssl/linknest.crt', 'key' => '/etc/apache2/ssl/linknest.key'],
+        ['cert' => '/var/www/html/data/ssh_gateway/ttyd.crt', 'key' => '/var/www/html/data/ssh_gateway/ttyd.key'],
+    ];
+    foreach ($candidates as $pair) {
+        if (is_readable($pair['cert']) && is_readable($pair['key'])) {
+            return $pair;
+        }
+    }
+    return null;
+}
+
+function sshGatewayBuildWsUrl(int $listenPort, ?bool $useSsl = null): string {
+    $https = $useSsl === null ? sshGatewayRequestIsHttps() : $useSsl;
+    // Only advertise wss when ttyd was (or will be) started with TLS certs
+    if ($https && sshGatewaySslPaths() === null) {
+        $https = false;
+    }
     $scheme = $https ? 'wss' : 'ws';
     $host = $_SERVER['HTTP_HOST'] ?? '127.0.0.1';
     // Strip :port from HTTP_HOST if present — ttyd uses its own listen port
@@ -421,6 +481,94 @@ function sshGatewayWorkingDir(): string {
     return sys_get_temp_dir();
 }
 
+function sshGatewayIsDocker(): bool {
+    if (getenv('LINKNEST_DOCKER') === '1' || getenv('SSH_GATEWAY_DOCKER') === '1') {
+        return true;
+    }
+    return is_file('/.dockerenv');
+}
+
+function sshGatewayDisplayIsLoopback(string $display): bool {
+    return (bool)preg_match('/^(127\.0\.0\.1|localhost|::1)(:|$)/i', trim($display));
+}
+
+/**
+ * Resolve DISPLAY for ssh -Y.
+ * In Docker, 127.0.0.1 is the container — X must go to the Docker host (VcXsrv).
+ *
+ * @return array{host:string,port:int,display:string}
+ */
+function sshGatewayParseDisplay(string $display): array {
+    $display = trim($display);
+    $host = '127.0.0.1';
+    $num = 0;
+    if (preg_match('/^([^:]*):(\d+)(?:\.\d+)?$/', $display, $m)) {
+        $hostPart = $m[1];
+        $num = (int)$m[2];
+        if ($hostPart === '' || strcasecmp($hostPart, 'unix') === 0) {
+            $host = '127.0.0.1';
+        } else {
+            $host = $hostPart;
+        }
+    } elseif (preg_match('/^:(\d+)/', $display, $m)) {
+        $num = (int)$m[1];
+    }
+    return [
+        'host' => $host,
+        'port' => 6000 + $num,
+        'display' => $display !== '' ? $display : '127.0.0.1:0.0',
+    ];
+}
+
+/** Prefer IPv4 — Docker Desktop often resolves host.docker.internal to IPv6 first; VcXsrv is IPv4. */
+function sshGatewayResolveDisplayHost(string $host): string {
+    if (filter_var($host, FILTER_VALIDATE_IP)) {
+        return $host;
+    }
+    $ip = gethostbyname($host);
+    if (is_string($ip) && $ip !== '' && $ip !== $host && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+        return $ip;
+    }
+    return $host;
+}
+
+/**
+ * Canonical DISPLAY string for ssh -Y (hostname rewritten to IPv4 when useful).
+ */
+function sshGatewayNormalizeDisplay(string $display): string {
+    $parsed = sshGatewayParseDisplay($display);
+    $host = sshGatewayResolveDisplayHost($parsed['host']);
+    $num = max(0, $parsed['port'] - 6000);
+    return $host . ':' . $num . '.0';
+}
+
+function sshGatewayDefaultDisplay(): string {
+    $fromEnv = getenv('DISPLAY');
+    $fromDockerOverride = getenv('SSH_GATEWAY_X11_DISPLAY');
+    $fromSetting = trim((string)getSetting('ssh_gateway_x11_display', ''));
+
+    if (sshGatewayIsDocker()) {
+        if (is_string($fromDockerOverride) && trim($fromDockerOverride) !== '' && !sshGatewayDisplayIsLoopback(trim($fromDockerOverride))) {
+            return sshGatewayNormalizeDisplay(trim($fromDockerOverride));
+        }
+        if (is_string($fromEnv) && trim($fromEnv) !== '' && !sshGatewayDisplayIsLoopback(trim($fromEnv))) {
+            return sshGatewayNormalizeDisplay(trim($fromEnv));
+        }
+        if ($fromSetting !== '' && !sshGatewayDisplayIsLoopback($fromSetting)) {
+            return sshGatewayNormalizeDisplay($fromSetting);
+        }
+        return sshGatewayNormalizeDisplay('host.docker.internal:0.0');
+    }
+
+    if ($fromSetting !== '') {
+        return $fromSetting;
+    }
+    if (is_string($fromEnv) && trim($fromEnv) !== '') {
+        return trim($fromEnv);
+    }
+    return '127.0.0.1:0.0';
+}
+
 function handleSshGatewayStatus() {
     $user = requireAuth();
     $sessions = sshGatewayCleanup(sshGatewayLoadSessions());
@@ -432,17 +580,23 @@ function handleSshGatewayStatus() {
     $ttydPath = sshGatewaySoftResolve('ttyd');
     $sshPath = sshGatewaySoftResolve('ssh');
 
-    $displaySetting = trim((string)getSetting('ssh_gateway_x11_display', ''));
-    $display = $displaySetting !== '' ? $displaySetting : (getenv('DISPLAY') ?: '127.0.0.1:0.0');
-    $x11Port = 6000;
-    if (preg_match('/:(\d+)/', $display, $dm)) {
-        $x11Port = 6000 + (int)$dm[1];
-    }
+    $display = sshGatewayDefaultDisplay();
+    $parsed = sshGatewayParseDisplay($display);
+    $connectHost = sshGatewayResolveDisplayHost($parsed['host']);
     $displayReachable = false;
-    $fp = @fsockopen('127.0.0.1', $x11Port, $errno, $errstr, 0.15);
+    $fp = @fsockopen($connectHost, $parsed['port'], $errno, $errstr, 0.35);
     if ($fp) {
         fclose($fp);
         $displayReachable = true;
+    }
+
+    $inDocker = sshGatewayIsDocker();
+    if ($displayReachable) {
+        $hint = 'X server looks reachable at ' . $display . ' — GUI mode can forward apps to your desktop.';
+    } elseif ($inDocker) {
+        $hint = 'Docker cannot reach an X server at ' . $display . '. Start VcXsrv on Windows (XLaunch → Multiple windows → Start no client → check “Disable access control”), allow it in the firewall, then retry. DISPLAY must be host.docker.internal:0.0 (not 127.0.0.1).';
+    } else {
+        $hint = 'Start VcXsrv (or another X server) on this PC before using GUI mode. XLaunch → Multiple windows → Start no client → Disable access control (recommended).';
     }
 
     sendJSON([
@@ -450,13 +604,14 @@ function handleSshGatewayStatus() {
         'ttydPath' => $ttydPath,
         'sshPath' => $sshPath,
         'platform' => PHP_OS,
+        'docker' => $inDocker,
         'gui' => [
             'supported' => true,
             'display' => $display,
+            'displayHost' => $parsed['host'],
+            'displayPort' => $parsed['port'],
             'displayReachable' => $displayReachable,
-            'hint' => $displayReachable
-                ? 'X server looks reachable — GUI mode can forward apps to your desktop.'
-                : 'Start VcXsrv (or another X server) on this PC before using GUI mode. XLaunch → Multiple windows → Start no client.',
+            'hint' => $hint,
         ],
         'sessions' => array_map(static function ($s) {
             return [
@@ -533,7 +688,8 @@ function sshGatewaySpawnTtyd(
     array $sshArgs,
     bool $x11,
     string $x11Display,
-    string $logFile
+    string $logFile,
+    bool $useSsl = false
 ): array {
     if (stripos(PHP_OS, 'WIN') === 0) {
         $bat = sshGatewayEnsureDir() . DIRECTORY_SEPARATOR . 'run_' . bin2hex(random_bytes(6)) . '.cmd';
@@ -587,14 +743,22 @@ function sshGatewaySpawnTtyd(
         }
         // Do not delete $bat while ttyd is alive — cmd.exe keeps reading the .cmd and will fail with
         // "The batch file cannot be found" if we unlink it, which can kill the gateway.
-        return ['pid' => $pid, 'ready' => $ready, 'launcher' => $bat];
+        return ['pid' => $pid, 'ready' => $ready, 'launcher' => $bat, 'ssl' => false];
     }
 
     // Unix: process group + nohup-style detach via proc_open then exit
-    $cmd = array_merge(
-        [$ttyd, '-W', '-i', '0.0.0.0', '-p', (string)$listenPort, '-w', $cwd, $ssh],
-        $sshArgs
-    );
+    $cmd = [$ttyd, '-W', '-i', '0.0.0.0', '-p', (string)$listenPort];
+    $sslPaths = $useSsl ? sshGatewaySslPaths() : null;
+    if ($sslPaths !== null) {
+        $cmd[] = '--ssl';
+        $cmd[] = '--ssl-cert';
+        $cmd[] = $sslPaths['cert'];
+        $cmd[] = '--ssl-key';
+        $cmd[] = $sslPaths['key'];
+    } else {
+        $useSsl = false;
+    }
+    $cmd = array_merge($cmd, ['-w', $cwd, $ssh], $sshArgs);
     $env = null;
     if ($x11) {
         $env = [];
@@ -643,7 +807,11 @@ function sshGatewaySpawnTtyd(
     }
 
     // Don't proc_close — that would wait/reap. Leave process running.
-    return ['pid' => $pid > 0 ? $pid : sshGatewayPidListeningOnPort($listenPort), 'ready' => $ready];
+    return [
+        'pid' => $pid > 0 ? $pid : sshGatewayPidListeningOnPort($listenPort),
+        'ready' => $ready,
+        'ssl' => $useSsl && $sslPaths !== null,
+    ];
 }
 
 function handleSshGatewayStart() {
@@ -662,8 +830,10 @@ function handleSshGatewayStart() {
     $x11 = !empty($data['x11']);
     $x11Display = isset($data['x11Display']) ? trim((string)$data['x11Display']) : '';
     if ($x11Display === '') {
-        $fromSetting = trim((string)getSetting('ssh_gateway_x11_display', ''));
-        $x11Display = $fromSetting !== '' ? $fromSetting : (getenv('DISPLAY') ?: '127.0.0.1:0.0');
+        $x11Display = sshGatewayDefaultDisplay();
+    } elseif (sshGatewayIsDocker() && sshGatewayDisplayIsLoopback($x11Display)) {
+        // Never use container loopback for X11 inside Docker
+        $x11Display = sshGatewayDefaultDisplay();
     }
     if ($x11 && !preg_match('/^[0-9A-Za-z.:_-]+$/', $x11Display)) {
         sendJSON(['error' => 'Invalid X11 display value'], 400);
@@ -700,9 +870,12 @@ function handleSshGatewayStart() {
     $sshArgs[] = (string)$sshPort;
     $sshArgs[] = $username . '@' . $host;
 
-    $spawn = sshGatewaySpawnTtyd($ttyd, $ssh, $listenPort, $cwd, $sshArgs, $x11, $x11Display, $logFile);
+    // On HTTPS pages (e.g. Docker :8443), start ttyd with the container TLS certs so the browser can use wss://
+    $wantSsl = sshGatewayRequestIsHttps() && sshGatewaySslPaths() !== null;
+    $spawn = sshGatewaySpawnTtyd($ttyd, $ssh, $listenPort, $cwd, $sshArgs, $x11, $x11Display, $logFile, $wantSsl);
     $pid = (int)($spawn['pid'] ?? 0);
     $ready = !empty($spawn['ready']);
+    $usedSsl = !empty($spawn['ssl']);
 
     if (!$ready) {
         if ($pid > 0) {
@@ -723,7 +896,7 @@ function handleSshGatewayStart() {
         $pid = sshGatewayPidListeningOnPort($listenPort);
     }
 
-    $wsUrl = sshGatewayBuildWsUrl($listenPort);
+    $wsUrl = sshGatewayBuildWsUrl($listenPort, $usedSsl);
     $record = [
         'id' => $sessionId,
         'userId' => (int)$user['id'],

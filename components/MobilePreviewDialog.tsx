@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getDisplayUrl } from '../utils/urlDisplay';
-import { DeviceMockupFrame, type DeviceMockupVariant } from './DeviceMockupFrame';
+import { DeviceMockupFrame, isZebraVariant, type DeviceMockupVariant } from './DeviceMockupFrame';
 
 type PreviewMode = 'in-app' | 'emulation';
 
@@ -36,10 +36,18 @@ const DEVICE_PRESETS: DevicePreset[] = [
   { id: 'android-tablet', label: 'Android Tablet', width: 800, height: 1280, variant: 'android-tablet', group: 'Tablet' },
   { id: 'watch-square', label: 'Watch (Square)', width: 198, height: 242, variant: 'watch-square', group: 'Watch' },
   { id: 'watch-round', label: 'Watch (Round)', width: 360, height: 360, variant: 'watch-round', group: 'Watch' },
-  // Approx. CSS viewports for Zebra TC-series handhelds
-  { id: 'zebra-tc21', label: 'Zebra TC21', width: 360, height: 640, variant: 'zebra-handheld', group: 'Enterprise' },
-  { id: 'zebra-tc52', label: 'Zebra TC52', width: 360, height: 640, variant: 'zebra-handheld', group: 'Enterprise' },
-  { id: 'zebra-tc57', label: 'Zebra TC57', width: 360, height: 640, variant: 'zebra-handheld', group: 'Enterprise' },
+  // Zebra enterprise — portrait CSS viewports (width × height)
+  { id: 'zebra-tc21', label: 'Zebra TC21 · HD (720×1280)', width: 720, height: 1280, variant: 'zebra-handheld', group: 'Enterprise' },
+  { id: 'zebra-tc52', label: 'Zebra TC52 · HD (720×1280)', width: 720, height: 1280, variant: 'zebra-tc52ax', group: 'Enterprise' },
+  { id: 'zebra-tc52ax', label: 'Zebra TC52ax · HD (720×1280)', width: 720, height: 1280, variant: 'zebra-tc52ax', group: 'Enterprise' },
+  { id: 'zebra-tc57', label: 'Zebra TC57 · HD (720×1280)', width: 720, height: 1280, variant: 'zebra-tc52ax', group: 'Enterprise' },
+  { id: 'zebra-tc58', label: 'Zebra TC58 · Full HD (1080×2160)', width: 1080, height: 2160, variant: 'zebra-tc58', group: 'Enterprise' },
+  { id: 'zebra-tc73', label: 'Zebra TC73 · Full HD+ (1080×2160)', width: 1080, height: 2160, variant: 'zebra-tc73', group: 'Enterprise' },
+  { id: 'zebra-mc3300', label: 'Zebra MC3300 (480×800)', width: 480, height: 800, variant: 'zebra-mc3300', group: 'Enterprise' },
+  { id: 'zebra-mc3300-768', label: 'Zebra MC3300 (480×768)', width: 480, height: 768, variant: 'zebra-mc3300', group: 'Enterprise' },
+  { id: 'zebra-mc9300', label: 'Zebra MC9300 (480×800)', width: 480, height: 800, variant: 'zebra-mc9300', group: 'Enterprise' },
+  { id: 'zebra-et51', label: 'Zebra ET51 · WUXGA (1920×1200)', width: 1920, height: 1200, variant: 'zebra-et51', group: 'Enterprise' },
+  { id: 'zebra-et60', label: 'Zebra ET60 · WUXGA (1920×1200)', width: 1920, height: 1200, variant: 'zebra-et60', group: 'Enterprise' },
 ];
 
 const QUICK_PRESETS = [
@@ -49,7 +57,8 @@ const QUICK_PRESETS = [
   'pixel-8',
   'galaxy-s24',
   'ipad',
-  'zebra-tc52',
+  'zebra-tc73',
+  'zebra-et60',
   'watch-square',
   'watch-round',
 ] as const;
@@ -613,14 +622,16 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
     const padding = 32;
     const availableWidth = Math.max(120, stage.clientWidth - padding);
     const availableHeight = Math.max(120, stage.clientHeight - padding);
-    const isZebra = activePreset.variant === 'zebra-handheld';
+    const isZebra = isZebraVariant(activePreset.variant);
+    const isMc = activePreset.variant === 'zebra-mc3300' || activePreset.variant === 'zebra-mc9300';
+    const isEt = activePreset.variant === 'zebra-et51' || activePreset.variant === 'zebra-et60';
     const frameExtra = isWatch ? 40 : isZebra ? 44 : 36;
-    const frameWidth = size.width + frameExtra + (isZebra ? 12 : 0);
+    const frameWidth = size.width + frameExtra + (isZebra ? 18 : 0);
     const frameHeight =
       size.height +
       frameExtra +
       (activePreset.variant === 'iphone-legacy' ? 18 : 0) +
-      (isZebra ? 64 : 0);
+      (isMc ? 170 : isEt ? 50 : isZebra ? 64 : 0);
     const nextScale = Math.min(1, availableWidth / frameWidth, availableHeight / frameHeight);
     const maxScale = isWatch ? 1.75 : 1;
     setFitScale(Math.min(maxScale, Math.max(0.2, nextScale)));
@@ -806,10 +817,24 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
     if (id.startsWith('iphone')) return '📱';
     if (id.startsWith('pixel') || id.startsWith('galaxy')) return '🤖';
     if (id === 'ipad') return '📲';
+    if (id.startsWith('zebra-et')) return '🖥️';
+    if (id.startsWith('zebra-mc')) return '⌨️';
     if (id.startsWith('zebra')) return '📦';
     if (id === 'watch-square') return '⌚️';
     if (id === 'watch-round') return '⭕';
     return '🖥️';
+  };
+
+  const quickPresetShortLabel = (preset: DevicePreset): string => {
+    if (preset.id === 'zebra-tc73') return 'TC73';
+    if (preset.id === 'zebra-et60') return 'ET60';
+    return preset.label
+      .replace(/\s*\(\d+×\d+\)\s*$/, '')
+      .replace('iPhone ', 'iP ')
+      .replace('Galaxy ', 'S')
+      .replace('Zebra TC52', 'Zebra')
+      .replace('Watch (Square)', 'Watch □')
+      .replace('Watch (Round)', 'Watch ○');
   };
 
   const screenContent = (
@@ -1111,12 +1136,7 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
                   title={`${p.label} (${p.width}×${p.height})`}
                 >
                   <span aria-hidden>{quickPresetEmoji(id)}</span>
-                  {p.label
-                    .replace('iPhone ', 'iP ')
-                    .replace('Galaxy ', 'S')
-                    .replace('Zebra TC52', 'Zebra')
-                    .replace('Watch (Square)', 'Watch □')
-                    .replace('Watch (Round)', 'Watch ○')}
+                  {quickPresetShortLabel(p)}
                 </button>
               );
             })}

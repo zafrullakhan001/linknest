@@ -1873,7 +1873,14 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                             </a>{' '}
                             (or X410) on this Windows PC
                           </li>
-                          <li>Start XLaunch → Multiple windows → Start no client → finish (allow access if prompted)</li>
+                          <li>
+                            Start XLaunch → Multiple windows → Start no client → enable{' '}
+                            <strong>Disable access control</strong> → finish (allow firewall if prompted)
+                          </li>
+                          <li>
+                            Docker: keep DISPLAY as <code className="font-mono">host.docker.internal:0.0</code> (Admin →
+                            Add-ons → SSH Gateway). Local XAMPP uses <code className="font-mono">127.0.0.1:0.0</code>.
+                          </li>
                           <li>On the Linux host: <code className="font-mono">X11Forwarding yes</code> in sshd, then restart sshd</li>
                           <li>Connect here, then run e.g. <code className="font-mono">xclock</code> — the window opens on your Windows desktop</li>
                         </ol>

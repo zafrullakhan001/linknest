@@ -13,6 +13,8 @@ export default defineConfig(({ mode }) => {
         emptyOutDir: true,
         sourcemap: false,
         minify: 'esbuild',
+        // Required for @novnc/novnc (top-level await in RFB / WebCodecs probe)
+        target: 'esnext',
         rollupOptions: {
           output: {
             manualChunks: {
