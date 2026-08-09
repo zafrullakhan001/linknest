@@ -1,10 +1,14 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 
-function readPageZoom(): number {
+/** Read LinkNest page zoom as a scale factor (1 = 100%). Prefer live CSS over storage. */
+export function readPageZoom(): number {
   try {
     const raw = getComputedStyle(document.documentElement).zoom;
-    const z = raw && raw !== 'normal' ? Number.parseFloat(String(raw)) : 1;
-    if (Number.isFinite(z) && z > 0) return z;
+    if (raw && raw !== 'normal') {
+      let z = Number.parseFloat(String(raw));
+      if (Number.isFinite(z) && z >= 5 && z <= 500) z = z / 100;
+      if (Number.isFinite(z) && z > 0.25 && z < 4) return z;
+    }
   } catch {
     // ignore
   }
@@ -12,7 +16,7 @@ function readPageZoom(): number {
     const stored = localStorage.getItem('linknest_user_page_zoom');
     if (stored) {
       const pct = Number.parseFloat(stored);
-      if (Number.isFinite(pct) && pct > 0) return pct / 100;
+      if (Number.isFinite(pct) && pct >= 25 && pct <= 400) return pct / 100;
     }
   } catch {
     // ignore
@@ -22,76 +26,125 @@ function readPageZoom(): number {
 
 export interface XtermZoomSafeHostProps {
   className?: string;
-  /** Called after zoom compensation changes so FitAddon can refit. */
+  /** Called after size/zoom sync so FitAddon can refit. */
   onZoomCompensated?: () => void;
   style?: React.CSSProperties;
 }
 
 /**
- * Host element for xterm.open(). Counteracts app-wide CSS `html { zoom }` so
- * mouse selection / hit-testing line up with glyphs.
+ * Full-bleed xterm host that counters `html { zoom }` for accurate selection
+ * without leaving a black strip.
+ *
+ * Uses pixel sizes (not %) from the outer box:
+ *   child.zoom = 1/pageZoom
+ *   child.width = outer.clientWidth * pageZoom
+ * so after zoom, painted size === outer size.
  */
 export const XtermZoomSafeHost = forwardRef<HTMLDivElement, XtermZoomSafeHostProps>(
   function XtermZoomSafeHost({ className = '', onZoomCompensated, style }, ref) {
     const outerRef = useRef<HTMLDivElement>(null);
     const innerRef = useRef<HTMLDivElement>(null);
-    const lastZoomRef = useRef(1);
 
     useImperativeHandle(ref, () => innerRef.current as HTMLDivElement, []);
 
     useEffect(() => {
       let raf = 0;
+      let lastKey = '';
+
       const sync = () => {
+        const outer = outerRef.current;
         const inner = innerRef.current;
-        if (!inner) return;
-        const zoom = readPageZoom();
-        lastZoomRef.current = zoom;
-        if (Math.abs(zoom - 1) < 0.001) {
+        if (!outer || !inner) return;
+
+        const pageZoom = readPageZoom();
+        const ow = Math.max(0, outer.clientWidth);
+        const oh = Math.max(0, outer.clientHeight);
+        const key = `${pageZoom.toFixed(4)}:${ow}x${oh}`;
+
+        inner.style.position = 'absolute';
+        inner.style.left = '0';
+        inner.style.top = '0';
+        inner.style.right = 'auto';
+        inner.style.bottom = 'auto';
+        inner.style.boxSizing = 'border-box';
+        inner.style.margin = '0';
+        inner.style.padding = '0';
+        inner.style.overflow = 'hidden';
+
+        if (ow < 2 || oh < 2) {
+          return;
+        }
+
+        if (Math.abs(pageZoom - 1) < 0.005) {
+          // No compensation — fill the pane exactly
           inner.style.zoom = '';
           inner.style.width = '100%';
           inner.style.height = '100%';
+          inner.style.right = '0';
+          inner.style.bottom = '0';
         } else {
-          // Neutralize page zoom for xterm math; enlarge box so it still fills the outer.
-          inner.style.zoom = String(1 / zoom);
-          inner.style.width = `${zoom * 100}%`;
-          inner.style.height = `${zoom * 100}%`;
+          // Painted size = cssSize * (1/pageZoom). Want painted === outer.
+          // cssSize = outer * pageZoom (integer px avoids subpixel black gaps).
+          inner.style.zoom = String(1 / pageZoom);
+          inner.style.width = `${Math.round(ow * pageZoom)}px`;
+          inner.style.height = `${Math.round(oh * pageZoom)}px`;
         }
+
+        if (key === lastKey) return;
+        lastKey = key;
         window.cancelAnimationFrame(raf);
-        raf = window.requestAnimationFrame(() => onZoomCompensated?.());
+        raf = window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => onZoomCompensated?.());
+        });
       };
 
       sync();
 
-      // Observe zoom changes on <html> and injected style tags
-      const obs = new MutationObserver(sync);
+      const ro =
+        typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => sync()) : null;
+      if (outerRef.current) ro?.observe(outerRef.current);
+
+      const obs = new MutationObserver(() => {
+        lastKey = '';
+        sync();
+      });
       obs.observe(document.documentElement, {
         attributes: true,
         attributeFilter: ['style', 'class'],
       });
-      const headObs = new MutationObserver(sync);
+      const headObs = new MutationObserver(() => {
+        lastKey = '';
+        sync();
+      });
       headObs.observe(document.head, { childList: true, subtree: true, characterData: true });
 
-      const onStylesApplied = () => sync();
+      const onStylesApplied = () => {
+        lastKey = '';
+        sync();
+      };
       window.addEventListener('linknest-styles-applied', onStylesApplied);
-      window.addEventListener('resize', sync);
+      window.addEventListener('resize', onStylesApplied);
+
       return () => {
         window.cancelAnimationFrame(raf);
+        ro?.disconnect();
         obs.disconnect();
         headObs.disconnect();
         window.removeEventListener('linknest-styles-applied', onStylesApplied);
-        window.removeEventListener('resize', sync);
+        window.removeEventListener('resize', onStylesApplied);
       };
     }, [onZoomCompensated]);
 
     return (
       <div
         ref={outerRef}
-        className={`relative min-h-0 min-w-0 overflow-hidden ${className}`}
+        className={`relative h-full w-full min-h-0 min-w-0 overflow-hidden ${className}`}
         style={style}
       >
         <div
           ref={innerRef}
-          className="absolute top-0 left-0 overflow-hidden [&_.xterm]:h-full [&_.xterm]:w-full [&_.xterm-viewport]:overflow-auto"
+          className="[&_.xterm]:h-full [&_.xterm]:w-full [&_.xterm-viewport]:h-full [&_.xterm-viewport]:w-full [&_.xterm-viewport]:overflow-auto"
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
         />
       </div>
     );

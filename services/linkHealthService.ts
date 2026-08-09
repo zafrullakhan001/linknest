@@ -48,6 +48,19 @@ export interface LinkHealthMap {
   [linkId: string]: LinkHealth;
 }
 
+/** Apply check-tile results; drop skipped (SSH/etc.) so they never show as Broken. */
+function mergeHealthResults(prev: LinkHealthMap, results: Record<string, any>): LinkHealthMap {
+  const next = { ...prev };
+  for (const [linkId, health] of Object.entries(results || {})) {
+    if (!health || health.skipped || health.status == null) {
+      delete next[linkId];
+      continue;
+    }
+    next[linkId] = health as LinkHealth;
+  }
+  return next;
+}
+
 export const linkHealthService = {
   /**
    * Get health status for all links
@@ -131,6 +144,13 @@ export const linkHealthService = {
     
     const data = await response.json();
     return data.results || {};
+  },
+
+  /**
+   * Merge check results into a health map, removing skipped non-HTTP links (SSH, etc.).
+   */
+  mergeResults(prev: LinkHealthMap, results: Record<string, any>): LinkHealthMap {
+    return mergeHealthResults(prev, results);
   },
 
   /**

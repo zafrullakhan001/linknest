@@ -31,7 +31,7 @@ import { LinkNotesDialog } from './LinkNotesDialog';
 import { useMobile } from '../hooks/useMobile';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { getDisplayUrl } from '../utils/urlDisplay';
-import { tryHandleSshLinkClick } from '../utils/sshLink';
+import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
 import { MobileTileView } from './MobileTileView';
 import { StagingOverview } from './StagingOverview';
 import { StagingOfflineKit, StagingOfflineKitHandle } from './StagingOfflineKit';
@@ -3409,10 +3409,17 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     const checkHealth = async () => {
       setIsCheckingHealth(true);
 
-      const linksToCheck = favoriteLinks.map(link => ({
-        id: link.id,
-        url: link.url
-      }));
+      const linksToCheck = favoriteLinks
+        .filter(link => typeof link.url === 'string' && !isSshLinkUrl(link.url))
+        .map(link => ({
+          id: link.id,
+          url: link.url
+        }));
+
+      if (linksToCheck.length === 0) {
+        setIsCheckingHealth(false);
+        return;
+      }
 
       try {
         const results = await favoriteLinkHealthService.checkMultipleLinks(
@@ -3458,10 +3465,17 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     if (favoriteLinks.length === 0 || isCheckingHealth) return;
 
     setIsCheckingHealth(true);
-    const linksToCheck = favoriteLinks.map(link => ({
-      id: link.id,
-      url: link.url
-    }));
+    const linksToCheck = favoriteLinks
+      .filter(link => typeof link.url === 'string' && !isSshLinkUrl(link.url))
+      .map(link => ({
+        id: link.id,
+        url: link.url
+      }));
+
+    if (linksToCheck.length === 0) {
+      setIsCheckingHealth(false);
+      return;
+    }
 
     try {
       await favoriteLinkHealthService.checkMultipleLinks(

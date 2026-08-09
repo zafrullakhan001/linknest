@@ -30,6 +30,8 @@ interface SshTerminalWidgetProps {
   onPendingOpenConsumed?: () => void;
 }
 
+const IDLE_NOTICE = 'Click a saved connection to open a session — or fill Easy / RDP settings and Connect.';
+
 const WS_STORAGE_KEY = 'linknest.sshTerminal.wsUrl.v1';
 const HOST_STORAGE_KEY = 'linknest.sshTerminal.host.v1';
 const PORT_STORAGE_KEY = 'linknest.sshTerminal.port.v1';
@@ -215,9 +217,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
   const [draftColor, setDraftColor] = useState<string>(SSH_CONNECTION_COLORS[0]);
   const [draftProtocol, setDraftProtocol] = useState<RemoteConnectionProtocol>('ssh');
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [notice, setNotice] = useState(
-    'Enter host, port, and username — Easy mode starts ttyd for you.'
-  );
+  const [notice, setNotice] = useState(IDLE_NOTICE);
 
   const useServer = Boolean(isAuthenticated);
 
@@ -236,6 +236,14 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
   useEffect(() => {
     tabsRef.current = tabs;
   }, [tabs]);
+
+  // After exit / last tab closed, don't leave "Connecting…" stuck in the header
+  useEffect(() => {
+    if (tabs.length === 0) {
+      setNotice(IDLE_NOTICE);
+      setActiveTabId(null);
+    }
+  }, [tabs.length]);
 
   const updateTab = useCallback((tabId: string, patch: Partial<SessionTab>) => {
     setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, ...patch } : t)));
@@ -490,7 +498,14 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       const list = ids && ids.length ? ids : Array.from(sessionHandlesRef.current.keys());
       for (const id of list) {
         try {
-          sessionHandlesRef.current.get(id)?.fit?.fit();
+          const handle = sessionHandlesRef.current.get(id);
+          if (!handle?.fit || !handle.term) continue;
+          handle.fit.fit();
+          try {
+            handle.term.refresh(0, Math.max(0, handle.term.rows - 1));
+          } catch {
+            // ignore
+          }
           sendResize(id);
         } catch {
           // ignore
@@ -644,7 +659,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
               : `Starting SSH gateway to ${username}@${host}:${port}…`,
         });
         try {
-          const session = await sshGatewayService.start({
+          let session = await sshGatewayService.start({
             host,
             port,
             username,
@@ -659,8 +674,36 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
           setSshUsername(username);
           setConnectMode('auto');
         } catch (err) {
-          failTab(err instanceof Error ? err.message : 'Failed to start SSH gateway');
-          return;
+          const msg = err instanceof Error ? err.message : 'Failed to start SSH gateway';
+          // Orphan ttyd processes can remain after UI tabs are closed and still count toward max 8.
+          if (/too many active ssh gateways|gateway_limit/i.test(msg) && sessionHandlesRef.current.size <= 1) {
+            try {
+              const cleared = await sshGatewayService.stopAll();
+              const session = await sshGatewayService.start({
+                host,
+                port,
+                username,
+                x11: opts?.x11 ?? x11Forward,
+              });
+              const handle = sessionHandlesRef.current.get(tabId);
+              if (handle) handle.gatewaySessionId = session.sessionId;
+              url = session.wsUrl;
+              setWsUrl(url);
+              setSshHost(host);
+              setSshPort(String(port));
+              setSshUsername(username);
+              setConnectMode('auto');
+              if (cleared.stopped > 0) {
+                setNotice(`Cleared ${cleared.stopped} leftover gateway(s), then connected`);
+              }
+            } catch (err2) {
+              failTab(err2 instanceof Error ? err2.message : msg);
+              return;
+            }
+          } else {
+            failTab(msg);
+            return;
+          }
         }
       }
 

@@ -130,11 +130,52 @@ function releaseSessionLock() {
 }
 
 /**
+ * Non-HTTP schemes (SSH, RDP, etc.) cannot be probed with cURL HEAD — skip health checks.
+ */
+function isNonHttpHealthUrl($url) {
+    $url = trim((string)$url);
+    if ($url === '') {
+        return true;
+    }
+    if (preg_match('#^(ssh|auto|rdp|vnc|sftp|ftp|file|mailto|tel)://#i', $url)) {
+        return true;
+    }
+    // Bare user@host:port (sometimes pasted without ssh://)
+    if (preg_match('#^[^\\s/@]+@[^\\s/@]+:\\d+$#', $url)) {
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Clear stored health for links that should not be checked (e.g. SSH).
+ */
+function clearLinkHealth($linkId) {
+    try {
+        $db = getDB();
+        $db->exec('PRAGMA busy_timeout = 500');
+        $stmt = $db->prepare('UPDATE links SET health_status = NULL, health_http_code = NULL, health_error = NULL, health_checked_at = NULL WHERE id = ?');
+        $stmt->execute([$linkId]);
+    } catch (Exception $e) {
+        error_log('Failed to clear link health for ' . $linkId . ': ' . $e->getMessage());
+    }
+}
+
+/**
  * Check if a URL is reachable and return health status
  * @param string $url
  * @param int $timeoutSeconds Total cURL timeout (default 2s)
  */
 function checkUrlHealth($url, $timeoutSeconds = 2) {
+    if (isNonHttpHealthUrl($url)) {
+        return [
+            'status' => null,
+            'http_code' => 0,
+            'error' => null,
+            'server_latency' => 0,
+            'skipped' => true
+        ];
+    }
     // Validate URL format
     if (!filter_var($url, FILTER_VALIDATE_URL)) {
         return [
@@ -517,6 +558,14 @@ function handleGetHealthStatus() {
             if (!isset($link['id'])) {
                 continue; // Skip invalid rows
             }
+
+            // Never surface health for SSH / non-HTTP links
+            if (isNonHttpHealthUrl($link['url'] ?? '')) {
+                if (!empty($link['health_status'])) {
+                    clearLinkHealth($link['id']);
+                }
+                continue;
+            }
             
             $result[$link['id']] = [
                 'status' => $link['health_status'] ?? 'unknown',
@@ -724,6 +773,18 @@ function handleCheckSingleLink() {
             sendJSON(['error' => 'Link not found'], 404);
             return;
         }
+
+        // SSH / RDP / other non-HTTP links are not HTTP-probed
+        if (isNonHttpHealthUrl($link['url'])) {
+            clearLinkHealth($link['id']);
+            sendJSON([
+                'success' => true,
+                'linkId' => $link['id'],
+                'skipped' => true,
+                'health' => null
+            ]);
+            return;
+        }
         
         // Always perform a fresh check for individual link health checks
         // This ensures consistent results with the "Check Links" button
@@ -847,6 +908,19 @@ function handleCheckTileLinks() {
         foreach ($links as $link) {
             $lastChecked = isset($link['health_checked_at']) ? (int)$link['health_checked_at'] : null;
             $currentStatus = $link['health_status'] ?? null;
+
+            // Skip SSH / RDP / non-HTTP schemes — never mark them broken via HTTP probe
+            if (isNonHttpHealthUrl($link['url'])) {
+                clearLinkHealth($link['id']);
+                $results[$link['id']] = [
+                    'skipped' => true,
+                    'status' => null,
+                    'httpCode' => null,
+                    'error' => null,
+                    'checkedAt' => null
+                ];
+                continue;
+            }
             
             // If force is true, check all links regardless of when they were last checked
             if ($force) {
@@ -955,7 +1029,13 @@ function handleCheckAllLinks() {
     // Use array structure to handle duplicate URLs properly
     $urls = [];
     $urlToLinkIds = []; // Map URL to array of link IDs (handles duplicates)
+    $skippedIds = [];
     foreach ($links as $link) {
+        if (isNonHttpHealthUrl($link['url'])) {
+            clearLinkHealth($link['id']);
+            $skippedIds[] = $link['id'];
+            continue;
+        }
         if (!isset($urlToLinkIds[$link['url']])) {
             $urlToLinkIds[$link['url']] = [];
             $urls[] = $link['url'];
@@ -964,7 +1044,7 @@ function handleCheckAllLinks() {
     }
     
     // Rolling parallel checks (12 at a time)
-    $allHealthResults = checkUrlsParallel($urls, 12);
+    $allHealthResults = empty($urls) ? [] : checkUrlsParallel($urls, 12);
     
     // Prepare batch update
     $batchUpdates = [];

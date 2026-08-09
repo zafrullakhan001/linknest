@@ -141,6 +141,19 @@ export const sshGatewayService = {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error((data as any).error || 'Failed to stop SSH gateway');
   },
+
+  /** Kill all ttyd gateways for the signed-in user (orphans left after UI closed). */
+  async stopAll(): Promise<{ stopped: number }> {
+    const res = await fetch(`${GW_BASE}/stop-all`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error((data as any).error || 'Failed to stop SSH gateways');
+    return { stopped: Number((data as any).stopped) || 0 };
+  },
 };
 
 /** Encode auto-connect target as a synthetic URL for saved connections. */

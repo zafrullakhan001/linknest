@@ -50,7 +50,7 @@ import { VersionDiffViewer } from './VersionDiffViewer';
 import { TileAnimationSelector, getTileAnimationClass, TileAnimation, getAnimationOption, resolveLinkAnimation } from './TileAnimationSelector';
 import { AuthSourceBadge } from './AuthSourceBadge';
 import { getDisplayUrl, isHttpOrHttpsUrl, normalizeStoredLinkUrl } from '../utils/urlDisplay';
-import { tryHandleSshLinkClick } from '../utils/sshLink';
+import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
 
 type ViewLayoutMode = 'stacked' | 'side-by-side' | 'grid' | 'compact' | 'qr';
 
@@ -1143,7 +1143,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             try {
                 const health = await linkHealthService.getAllHealth();
                 if (cancelled || abortController.signal.aborted) return;
-                setLinkHealth(health);
+                // Drop any stored health for SSH / non-HTTP links in this tile
+                const sectionsForFilter = tile.tabs
+                    ? tile.tabs.flatMap(tab => tab.sections || [])
+                    : (tile.sections || []);
+                const cleaned = { ...health };
+                sectionsForFilter.flatMap(s => s.links || []).forEach(l => {
+                    if (isSshLinkUrl(l.url || '')) delete cleaned[l.id];
+                });
+                setLinkHealth(cleaned);
             } catch (error) {
                 console.error('Failed to load link health:', error);
             }
@@ -1154,14 +1162,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             const sections = tile.tabs
                 ? tile.tabs.flatMap(tab => tab.sections || [])
                 : (tile.sections || []);
-            const linkIds = sections.flatMap(s => (s.links || []).map(l => l.id));
+            const checkableLinks = sections.flatMap(s => (s.links || [])).filter(l => !isSshLinkUrl(l.url || ''));
+            const linkIds = checkableLinks.map(l => l.id);
             if (!linkIds.length) return;
 
             setCheckingHealth(true);
             setLinkHealth(prev => {
                 const next = { ...prev };
-                linkIds.forEach(id => {
-                    next[id] = { ...(next[id] || {}), status: 'checking' };
+                // Clear any stale health on SSH links; mark HTTP links as checking
+                sections.flatMap(s => s.links || []).forEach(l => {
+                    if (isSshLinkUrl(l.url || '')) {
+                        delete next[l.id];
+                    } else if (linkIds.includes(l.id)) {
+                        next[l.id] = { ...(next[l.id] || {}), status: 'checking' };
+                    }
                 });
                 return next;
             });
@@ -1171,7 +1185,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 const results = await linkHealthService.checkTileLinks(tileId, false, abortController.signal);
                 if (cancelled || abortController.signal.aborted) return;
                 if (results && typeof results === 'object') {
-                    setLinkHealth(prev => ({ ...prev, ...results }));
+                    setLinkHealth(prev => linkHealthService.mergeResults(prev, results));
                 }
             } catch (error) {
                 if (abortController.signal.aborted || cancelled) return;
@@ -3946,7 +3960,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             const results = await linkHealthService.checkTileLinks(tile.id, true, abortController.signal);
             if (abortController.signal.aborted) return;
             if (results && typeof results === 'object') {
-                setLinkHealth(prev => ({ ...prev, ...results }));
+                setLinkHealth(prev => linkHealthService.mergeResults(prev, results));
 
                 // Best-effort: also record per-URL client/server latency into Performance Analytics (if enabled).
                 // This is intentionally fire-and-forget: health check UX must remain fast.
@@ -4047,6 +4061,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
         try {
             const health = await linkHealthService.checkLink(linkId);
+            if (!health || (health as any).skipped) {
+                setLinkHealth(prev => {
+                    const next = { ...prev };
+                    delete next[linkId];
+                    return next;
+                });
+                return;
+            }
             setLinkHealth(prev => ({ ...prev, [linkId]: health }));
         } catch (error) {
             console.error('Failed to check link:', error);
@@ -5431,8 +5453,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                                                         // Render link (itemType === 'link')
                                                         const link = item as Link;
-                                                        const health = linkHealth[link.id];
-                                                        const isBroken = health?.status === 'broken';
+                                                        const isSsh = isSshLinkUrl(link.url || '');
+                                                        const health = isSsh ? undefined : linkHealth[link.id];
+                                                        const isBroken = !isSsh && health?.status === 'broken';
                                                         const isGridCards = sectionLinkLayout === 'grid';
                                                         const isCompact = sectionLinkLayout === 'compact';
                                                         const isQrView = sectionLinkLayout === 'qr';
@@ -5537,7 +5560,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             ? 'absolute bottom-full left-1/2 -translate-x-1/2 mb-[5px] z-10'
                                                                             : ''
                                                                     }`}>
-                                                                        {getHealthIndicator(link.id)}
+                                                                        {!isSsh && getHealthIndicator(link.id)}
                                                                     </div>
 
                                                                     <div className={`linknest-content-link-icon rounded-xl ${styles.iconBg} flex items-center justify-center select-none shadow-sm border border-white/20 ${
@@ -5855,7 +5878,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         </svg>
                                                                     </button>
 
-                                                                    {/* Re-check button */}
+                                                                    {/* Re-check button (HTTP(S) only — SSH is not HTTP-probed) */}
+                                                                    {!isSsh && (
                                                                     <button
                                                                         onClick={(e) => {
                                                                             e.preventDefault();
@@ -5877,6 +5901,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             </svg>
                                                                         )}
                                                                     </button>
+                                                                    )}
 
                                                                     {/* Copy button */}
                                                                     <button

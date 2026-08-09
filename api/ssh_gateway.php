@@ -4,6 +4,7 @@
  *
  * POST /api/ssh-gateway/start  { host, port?, username, x11? }
  * POST /api/ssh-gateway/stop   { sessionId }
+ * POST /api/ssh-gateway/stop-all
  * GET  /api/ssh-gateway/status
  */
 
@@ -39,6 +40,8 @@ if ($method === 'GET' && ($path === '/' || $path === '/status')) {
     handleSshGatewayStart();
 } elseif ($method === 'POST' && $path === '/stop') {
     handleSshGatewayStop();
+} elseif ($method === 'POST' && $path === '/stop-all') {
+    handleSshGatewayStopAll();
 } else {
     sendJSON(['error' => 'Invalid endpoint'], 404);
 }
@@ -120,23 +123,27 @@ function sshGatewayCleanup(array $sessions): array {
         $pid = isset($s['pid']) ? (int)$s['pid'] : 0;
         $listenPort = isset($s['listenPort']) ? (int)$s['listenPort'] : 0;
         $created = isset($s['createdAt']) ? (int)$s['createdAt'] : 0;
-        $alive = sshGatewayIsProcessAlive($pid);
-        if (!$alive && $listenPort > 0) {
-            $portPid = sshGatewayPidListeningOnPort($listenPort);
-            if ($portPid > 0) {
-                $alive = true;
-                $s['pid'] = $portPid;
-                $pid = $portPid;
-            }
-        }
         $expired = $created > 0 && ($now - $created) > SSH_GATEWAY_TTL_SEC;
+
+        // A gateway slot is only "active" if ttyd is actually listening.
+        // Stale launcher/cmd PIDs without a listen port were filling the max-8 quota.
+        $portPid = $listenPort > 0 ? sshGatewayPidListeningOnPort($listenPort) : 0;
+        $alive = $portPid > 0;
+        if ($alive) {
+            $s['pid'] = $portPid;
+            $pid = $portPid;
+        }
+
         if (!$alive || $expired) {
             if ($pid > 0) {
                 sshGatewayKillPid($pid);
-            } elseif ($listenPort > 0) {
-                $portPid = sshGatewayPidListeningOnPort($listenPort);
-                if ($portPid > 0) {
-                    sshGatewayKillPid($portPid);
+            }
+            if ($listenPort > 0 && $portPid > 0 && $portPid !== $pid) {
+                sshGatewayKillPid($portPid);
+            } elseif ($listenPort > 0 && !$alive) {
+                $again = sshGatewayPidListeningOnPort($listenPort);
+                if ($again > 0) {
+                    sshGatewayKillPid($again);
                 }
             }
             if (!empty($s['launcher']) && is_string($s['launcher']) && is_file($s['launcher'])) {
@@ -849,6 +856,7 @@ function handleSshGatewayStart() {
     }
 
     $sessions = sshGatewayCleanup(sshGatewayLoadSessions());
+    sshGatewaySaveSessions($sessions);
     $mine = 0;
     foreach ($sessions as $s) {
         if ((int)($s['userId'] ?? 0) === (int)$user['id']) {
@@ -856,7 +864,12 @@ function handleSshGatewayStart() {
         }
     }
     if ($mine >= SSH_GATEWAY_MAX_PER_USER) {
-        sendJSON(['error' => 'Too many active SSH gateways (max 8). Close a session tab first.'], 429);
+        sendJSON([
+            'error' => 'Too many active SSH gateways (max ' . SSH_GATEWAY_MAX_PER_USER . '). Close a session tab first, or use stop-all if tabs are already gone.',
+            'code' => 'gateway_limit',
+            'active' => $mine,
+            'max' => SSH_GATEWAY_MAX_PER_USER,
+        ], 429);
     }
 
     $ttyd = sshGatewayResolveTtyd();
@@ -981,4 +994,35 @@ function handleSshGatewayStop() {
         sendJSON(['success' => true, 'message' => 'Session already gone']);
     }
     sendJSON(['success' => true]);
+}
+
+/** Stop every gateway session for the current user (orphans left when UI tabs were closed). */
+function handleSshGatewayStopAll() {
+    $user = requireAuth();
+    $sessions = sshGatewayCleanup(sshGatewayLoadSessions());
+    $kept = [];
+    $stopped = 0;
+    foreach ($sessions as $s) {
+        if ((int)($s['userId'] ?? 0) !== (int)$user['id']) {
+            $kept[] = $s;
+            continue;
+        }
+        $stopped++;
+        $pid = isset($s['pid']) ? (int)$s['pid'] : 0;
+        $listenPort = isset($s['listenPort']) ? (int)$s['listenPort'] : 0;
+        if ($pid > 0) {
+            sshGatewayKillPid($pid);
+        }
+        if ($listenPort > 0) {
+            $portPid = sshGatewayPidListeningOnPort($listenPort);
+            if ($portPid > 0) {
+                sshGatewayKillPid($portPid);
+            }
+        }
+        if (!empty($s['launcher']) && is_string($s['launcher']) && is_file($s['launcher'])) {
+            @unlink($s['launcher']);
+        }
+    }
+    sshGatewaySaveSessions($kept);
+    sendJSON(['success' => true, 'stopped' => $stopped]);
 }
