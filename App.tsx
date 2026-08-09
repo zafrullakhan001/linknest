@@ -629,7 +629,12 @@ const AppContent: React.FC = () => {
   };
 
   const toggleSshTerminal = () => {
-    setShowSshTerminal(!showSshTerminal);
+    if (showSshTerminal) {
+      // Ask the widget to confirm / kill live sessions before hiding
+      window.dispatchEvent(new CustomEvent('requestCloseSshTerminal'));
+      return;
+    }
+    setShowSshTerminal(true);
   };
 
   const handleTabClick = (tab: string) => {
@@ -1486,7 +1491,7 @@ const AppContent: React.FC = () => {
           {showSshTerminal && isWidgetAllowed('ssh-terminal') && (
             <FloatingSshTerminalWidget>
               <SshTerminalWidget
-                onClose={toggleSshTerminal}
+                onClose={() => setShowSshTerminal(false)}
                 pendingOpen={sshPendingOpen}
                 onPendingOpenConsumed={() => setSshPendingOpen(null)}
               />

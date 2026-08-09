@@ -182,7 +182,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
   const [wsUrl, setWsUrl] = useState(() => localStorage.getItem(WS_STORAGE_KEY) || 'ws://localhost:7681/ws');
   const [tabs, setTabs] = useState<SessionTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
-  const [showSettings, setShowSettings] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [tileLayout, setTileLayout] = useState(false);
   const [broadcastCmd, setBroadcastCmd] = useState('');
@@ -220,6 +220,11 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
   useEffect(() => {
     activeTabIdRef.current = activeTabId;
   }, [activeTabId]);
+
+  const tabsRef = useRef(tabs);
+  useEffect(() => {
+    tabsRef.current = tabs;
+  }, [tabs]);
 
   const updateTab = useCallback((tabId: string, patch: Partial<SessionTab>) => {
     setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, ...patch } : t)));
@@ -395,6 +400,29 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     },
     [disposeSessionHandle, stopGatewayFor]
   );
+
+  const requestClose = useCallback(async () => {
+    const live = tabsRef.current.filter(
+      (t) => t.status === 'connected' || t.status === 'connecting'
+    );
+    if (live.length > 0) {
+      const ok = window.confirm('Kill all terminals and close?');
+      if (!ok) return;
+      const ids = tabsRef.current.map((t) => t.id);
+      for (const id of ids) {
+        await closeTab(id);
+      }
+    }
+    onClose?.();
+  }, [closeTab, onClose]);
+
+  useEffect(() => {
+    const onExternalClose = () => {
+      void requestClose();
+    };
+    window.addEventListener('requestCloseSshTerminal', onExternalClose);
+    return () => window.removeEventListener('requestCloseSshTerminal', onExternalClose);
+  }, [requestClose]);
 
   const toggleFullscreen = useCallback(async () => {
     const el = widgetRootRef.current;
@@ -938,11 +966,11 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       }
       e.preventDefault();
       e.stopPropagation();
-      onClose?.();
+      void requestClose();
     };
     window.addEventListener('keydown', handleEscape, true);
     return () => window.removeEventListener('keydown', handleEscape, true);
-  }, [onClose]);
+  }, [requestClose]);
 
   const applyConnection = useCallback(
     (c: SavedSshConnection, autoConnect: boolean) => {
@@ -1414,7 +1442,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
           {!isFullscreen && (
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => void requestClose()}
               className="p-1 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
               title="Close"
               aria-label="Close"
