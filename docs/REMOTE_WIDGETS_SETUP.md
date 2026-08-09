@@ -5,7 +5,7 @@ LinkNest includes two desktop floating widgets for remote access. Browsers canno
 | Widget | Client | How you connect |
 |--------|--------|-----------------|
 | **SSH / RDP** | xterm.js + iframe | **SSH Easy:** host / port / username (LinkNest starts ttyd). **SSH Advanced:** ttyd WebSocket URL. **RDP:** paste a Guacamole / web RDP **https://** page URL (embedded in a tab). |
-| **VNC Viewer** | noVNC | websockify (or similar) WebSocket URL — multi-tab sessions (up to 8), tile layout, same chrome as SSH |
+| **VNC Viewer** | noVNC | **Easy:** VNC host + port (LinkNest starts websockify). **Advanced:** existing websockify WebSocket URL. Multi-tab (up to 8). |
 
 Open widgets from the navigation bar or **Ctrl+Shift+Y**. Assign `ssh-terminal` / `vnc-viewer` under Roles → Widgets if needed.
 
@@ -13,7 +13,7 @@ Also covered in **Help & About → Help → Remote Widgets**.
 
 **Security:** Passwords are never saved. Prefer LAN / VPN; do not expose unauthenticated gateways publicly.
 
-**Saved connections:** When signed in, VNC hosts sync to your account (name, URL, tags, color, notes, view-only / scale options). Guests keep saves in the browser. Session passwords are never written to the DB or localStorage.
+**Saved connections:** When signed in, VNC hosts sync to your account (name, URL / `auto-vnc://host:port`, tags, color, notes, view-only / scale options). Guests keep saves in the browser. Session passwords are never written to the DB or localStorage.
 
 **PAM / privileged access:** Easy mode accepts long usernames with `\`, `+`, and custom ports (not only 22). Values are passed to OpenSSH with `ssh -l <username> -p <port> <host>` so special characters are not broken by `user@host` parsing. Saved connections percent-encode the username inside `auto://…`.
 
@@ -63,7 +63,28 @@ API (admin session): `GET/PUT /api/ssh-gateway/config` with `{ ttydPath, sshPath
 | Dependency | Required for | Notes |
 |------------|--------------|-------|
 | **VNC server** on target | Desktop view | RealVNC, TightVNC, TigerVNC, x11vnc, etc. (often port 5900+) |
-| **websockify** (or equivalent) | Browser bridge | Example: listen on `6080`, forward to `localhost:5900` |
+| **Python 3** + **websockify** | Easy mode | `powershell -File scripts/install-websockify.ps1` vendors into `bin/python-packages`. Or set paths under **Admin → Add-ons → VNC Gateway**. |
+| **websockify** (manual) | Advanced mode only | Example: listen on `6080`, forward to `localhost:5900` |
+
+#### VNC Easy mode (recommended)
+
+Signed-in users can skip running websockify by hand:
+
+1. Install **Python 3** and run `scripts/install-websockify.ps1` (or `python -m pip install --target=bin/python-packages websockify`)
+2. Open **VNC Viewer** → Settings → **Easy (host / port)**
+3. Enter the remote **host** and **VNC port** (default `5900`), optional password (session only), Connect
+4. LinkNest starts websockify on a localhost port in **17881–17980** and opens noVNC against it
+5. Closing the tab stops that websockify process
+
+Saved Easy connections use `auto-vnc://host:port` (not the ephemeral `ws://` listen port).
+
+#### VNC Advanced mode
+
+1. Run websockify yourself (e.g. `:6080` → `:5900`)
+2. In Settings → Advanced, paste `ws://localhost:6080/websockify` (or `wss://…`)
+3. Connect
+
+Admin API: `GET/PUT /api/vnc-gateway/config` with `{ pythonPath, websockifyPath }`.
 
 ### Quick verify (PowerShell on LinkNest host)
 

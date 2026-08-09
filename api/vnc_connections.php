@@ -73,6 +73,22 @@ function vncNormalizeWsUrl(string $raw): string {
 }
 
 function vncValidateWsUrl(string $url): ?string {
+    $trimmed = trim($url);
+    // auto-vnc://host:port — LinkNest local websockify launcher target
+    if (preg_match('#^auto-vnc://#i', $trimmed)) {
+        if (mb_strlen($trimmed) > 512) {
+            return null;
+        }
+        if (!preg_match('#^auto-vnc://([A-Za-z0-9.-]+):(\d{1,5})$#i', $trimmed, $m)) {
+            return null;
+        }
+        $port = (int)$m[2];
+        if ($port < 1 || $port > 65535) {
+            return null;
+        }
+        return 'auto-vnc://' . $m[1] . ':' . $port;
+    }
+
     $normalized = vncNormalizeWsUrl($url);
     if ($normalized === '' || !preg_match('#^wss?://#i', $normalized)) {
         return null;
@@ -189,13 +205,17 @@ function handleCreateVncConnection() {
         isset($data['wsUrl']) ? (string)$data['wsUrl'] : (isset($data['ws_url']) ? (string)$data['ws_url'] : '')
     );
     if ($wsUrl === null) {
-        sendJSON(['error' => 'Valid WebSocket URL (ws:// or wss://) is required'], 400);
+        sendJSON(['error' => 'Valid WebSocket URL (ws:// or wss://) or auto-vnc://host:port is required'], 400);
     }
 
     $name = isset($data['name']) ? trim((string)$data['name']) : '';
     if ($name === '') {
-        $hostPart = preg_replace('#^wss?://#i', '', $wsUrl);
-        $name = explode('/', $hostPart)[0] ?: 'VNC host';
+        if (preg_match('#^auto-vnc://(.+)$#i', $wsUrl, $m)) {
+            $name = $m[1];
+        } else {
+            $hostPart = preg_replace('#^wss?://#i', '', $wsUrl);
+            $name = explode('/', $hostPart)[0] ?: 'VNC host';
+        }
     }
     if (mb_strlen($name) > 128) {
         sendJSON(['error' => 'Name is too long (max 128 chars)'], 400);
@@ -282,7 +302,7 @@ function handleUpdateVncConnection(string $id) {
         $raw = isset($data['wsUrl']) ? (string)$data['wsUrl'] : (string)$data['ws_url'];
         $wsUrl = vncValidateWsUrl($raw);
         if ($wsUrl === null) {
-            sendJSON(['error' => 'Valid WebSocket URL (ws:// or wss://) is required'], 400);
+            sendJSON(['error' => 'Valid WebSocket URL (ws:// or wss://) or auto-vnc://host:port is required'], 400);
         }
         $fields[] = 'ws_url = ?';
         $params[] = $wsUrl;

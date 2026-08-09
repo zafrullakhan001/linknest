@@ -21,7 +21,7 @@ interface MobilePreviewDialogProps {
 
 const ZOOM_OPTIONS = [25, 50, 75, 100, 125, 150];
 const PREVIEW_WINDOW_NAME = 'linknest_device_preview';
-const DIALOG_POS_KEY = 'linknest.mobilePreviewDialog.position.v1';
+const DIALOG_POS_KEY = 'linknest.mobilePreviewDialog.position.v1'; // legacy; no longer persisted
 const DIALOG_SIZE_KEY = 'linknest.mobilePreviewDialog.size.v1';
 const DIALOG_MIN_W = 520;
 const DIALOG_MIN_H = 420;
@@ -48,25 +48,6 @@ function getViewportSize() {
     width: vv?.width ?? window.innerWidth,
     height: vv?.height ?? window.innerHeight,
   };
-}
-
-function safeParsePoint(raw: string | null): DialogPoint | null {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw);
-    if (
-      parsed &&
-      typeof parsed.x === 'number' &&
-      typeof parsed.y === 'number' &&
-      Number.isFinite(parsed.x) &&
-      Number.isFinite(parsed.y)
-    ) {
-      return { x: parsed.x, y: parsed.y };
-    }
-  } catch {
-    // ignore
-  }
-  return null;
 }
 
 function safeParseSize(raw: string | null): DialogSize | null {
@@ -281,7 +262,7 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
   });
   const [dialogPos, setDialogPos] = useState<DialogPoint>(() => {
     const size = safeParseSize(localStorage.getItem(DIALOG_SIZE_KEY)) || defaultDialogSize();
-    return safeParsePoint(localStorage.getItem(DIALOG_POS_KEY)) || centeredDialogPos(size);
+    return centeredDialogPos(size);
   });
   const [isDraggingDialog, setIsDraggingDialog] = useState(false);
   const [isResizingDialog, setIsResizingDialog] = useState(false);
@@ -326,13 +307,29 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
     };
   }, []);
 
-  const persistDialogLayout = useCallback((pos: DialogPoint, size: DialogSize) => {
+  const persistDialogSize = useCallback((size: DialogSize) => {
     try {
-      localStorage.setItem(DIALOG_POS_KEY, JSON.stringify(pos));
+      // Position is intentionally not persisted (avoids dialog stuck off-screen).
+      localStorage.removeItem(DIALOG_POS_KEY);
       localStorage.setItem(DIALOG_SIZE_KEY, JSON.stringify(size));
     } catch {
       // ignore storage failures
     }
+  }, []);
+
+  const resetDialogSize = useCallback(() => {
+    try {
+      localStorage.removeItem(DIALOG_POS_KEY);
+      localStorage.removeItem(DIALOG_SIZE_KEY);
+    } catch {
+      // ignore
+    }
+    const nextSize = clampDialogSize(defaultDialogSize());
+    const nextPos = clampDialogPos(centeredDialogPos(nextSize), nextSize);
+    dialogSizeRef.current = nextSize;
+    dialogPosRef.current = nextPos;
+    setDialogSize(nextSize);
+    setDialogPos(nextPos);
   }, []);
 
   const startDialogDrag = useCallback(
@@ -376,7 +373,6 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
         dragCleanupRef.current = null;
         dragStartRef.current = null;
         setIsDraggingDialog(false);
-        persistDialogLayout(dialogPosRef.current, dialogSizeRef.current);
       };
 
       window.addEventListener('pointermove', onMove);
@@ -388,7 +384,7 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
 
       e.preventDefault();
     },
-    [persistDialogLayout]
+    []
   );
 
   const startDialogResize = useCallback(
@@ -451,7 +447,7 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
         dragCleanupRef.current = null;
         resizeStartRef.current = null;
         setIsResizingDialog(false);
-        persistDialogLayout(dialogPosRef.current, dialogSizeRef.current);
+        persistDialogSize(dialogSizeRef.current);
       };
 
       window.addEventListener('pointermove', onMove);
@@ -464,7 +460,7 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
       e.preventDefault();
       e.stopPropagation();
     },
-    [persistDialogLayout]
+    [persistDialogSize]
   );
 
   const isEmulationMode = previewMode === 'emulation';
@@ -629,8 +625,13 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
     const nextSize = clampDialogSize(
       safeParseSize(localStorage.getItem(DIALOG_SIZE_KEY)) || dialogSizeRef.current || defaultDialogSize()
     );
-    const storedPos = safeParsePoint(localStorage.getItem(DIALOG_POS_KEY));
-    const nextPos = clampDialogPos(storedPos || centeredDialogPos(nextSize), nextSize);
+    // Always recenter — do not restore a saved position (can leave the dialog unreachable).
+    try {
+      localStorage.removeItem(DIALOG_POS_KEY);
+    } catch {
+      // ignore
+    }
+    const nextPos = clampDialogPos(centeredDialogPos(nextSize), nextSize);
     dialogSizeRef.current = nextSize;
     dialogPosRef.current = nextPos;
     setDialogSize(nextSize);
@@ -1178,7 +1179,13 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
           </div>
         </div>
 
-        <div className="px-4 sm:px-6 py-3 border-t border-sky-100 dark:border-sky-900/40 bg-gradient-to-r from-sky-50/80 to-teal-50/50 dark:from-sky-950/30 dark:to-teal-950/20 flex flex-wrap items-center justify-between gap-3 shrink-0">
+        <div
+          className={`px-4 sm:px-6 py-3 border-t border-sky-100 dark:border-sky-900/40 bg-gradient-to-r from-sky-50/80 to-teal-50/50 dark:from-sky-950/30 dark:to-teal-950/20 flex flex-wrap items-center justify-between gap-3 shrink-0 ${
+            isDraggingDialog ? 'cursor-grabbing' : 'cursor-grab'
+          }`}
+          onPointerDown={startDialogDrag}
+          title="Drag to move"
+        >
           <p className="text-xs text-sky-800/70 dark:text-sky-200/70 truncate flex items-center gap-1.5 min-w-0">
             <span aria-hidden>{isEmulationMode ? '🖥️' : '🖼️'}</span>
             <span className="truncate">
@@ -1186,7 +1193,15 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
               {isEmulationMode ? ` · zoom ${zoomPercent}%` : ` · fit ${Math.round(fitScale * 100)}%`}
             </span>
           </p>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2" data-no-drag>
+            <button
+              type="button"
+              onClick={resetDialogSize}
+              className={`px-3 py-2 text-sm ${secondaryBtnClass}`}
+              title="Reset dialog size to default and clear saved size"
+            >
+              <span aria-hidden>↺</span> Reset size
+            </button>
             {isEmulationMode ? (
               <button
                 type="button"

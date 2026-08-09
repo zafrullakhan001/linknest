@@ -7,12 +7,18 @@ import {
   vncConnectionService,
   type SavedVncConnection,
 } from '../services/vncConnectionService';
+import {
+  buildAutoVncTargetUrl,
+  parseAutoVncTargetUrl,
+  vncGatewayService,
+} from '../services/vncGatewayService';
 
 interface VncViewerWidgetProps {
   onClose?: () => void;
 }
 
 type ConnState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
+type ConnectMode = 'auto' | 'ws';
 
 interface VncSessionTab {
   id: string;
@@ -30,9 +36,13 @@ type RfbInstance = InstanceType<typeof import('@novnc/novnc').default>;
 
 interface SessionHandle {
   rfb: RfbInstance | null;
+  gatewaySessionId: string | null;
 }
 
 const WS_STORAGE_KEY = 'linknest.vncViewer.wsUrl.v1';
+const MODE_STORAGE_KEY = 'linknest.vncViewer.connectMode.v1';
+const HOST_STORAGE_KEY = 'linknest.vncViewer.host.v1';
+const PORT_STORAGE_KEY = 'linknest.vncViewer.port.v1';
 const CONNECTIONS_STORAGE_KEY = 'linknest.vncViewer.savedConnections.v1';
 const PANEL_OPEN_KEY = 'linknest.vncViewer.panelOpen.v1';
 const PANEL_WIDTH_KEY = 'linknest.vncViewer.panelWidth.v1';
@@ -41,7 +51,8 @@ const PANEL_MIN_WIDTH = 160;
 const PANEL_MAX_WIDTH = 420;
 const PANEL_DEFAULT_WIDTH = 210;
 const MAX_VNC_TABS = 8;
-const IDLE_NOTICE = 'Click a saved connection to open a session tab — or fill Settings and Connect.';
+const IDLE_NOTICE =
+  'Easy mode: enter VNC host and port — LinkNest starts websockify for you. Or use Advanced WebSocket URL.';
 
 function loadPanelWidth(): number {
   try {
@@ -58,6 +69,7 @@ function loadPanelWidth(): number {
 function normalizeWsUrl(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return '';
+  if (/^auto-vnc:\/\//i.test(trimmed)) return trimmed;
   if (/^wss?:\/\//i.test(trimmed)) return trimmed;
   if (/^https:\/\//i.test(trimmed)) return `wss://${trimmed.slice(8)}`;
   if (/^http:\/\//i.test(trimmed)) return `ws://${trimmed.slice(7)}`;
@@ -144,6 +156,12 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
   const intentionalDisconnectRef = useRef<Set<string>>(new Set());
 
   const [wsUrl, setWsUrl] = useState(() => localStorage.getItem(WS_STORAGE_KEY) || 'ws://localhost:6080/websockify');
+  const [connectMode, setConnectMode] = useState<ConnectMode>(() => {
+    const raw = localStorage.getItem(MODE_STORAGE_KEY);
+    return raw === 'ws' ? 'ws' : 'auto';
+  });
+  const [vncHost, setVncHost] = useState(() => localStorage.getItem(HOST_STORAGE_KEY) || '');
+  const [vncPort, setVncPort] = useState(() => localStorage.getItem(PORT_STORAGE_KEY) || '5900');
   const [password, setPassword] = useState('');
   const [viewOnly, setViewOnly] = useState(false);
   const [scaleViewport, setScaleViewport] = useState(true);
@@ -257,6 +275,16 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
 
   useEffect(() => {
     try {
+      localStorage.setItem(MODE_STORAGE_KEY, connectMode);
+      localStorage.setItem(HOST_STORAGE_KEY, vncHost);
+      localStorage.setItem(PORT_STORAGE_KEY, vncPort);
+    } catch {
+      // ignore
+    }
+  }, [connectMode, vncHost, vncPort]);
+
+  useEffect(() => {
+    try {
       localStorage.setItem(PANEL_OPEN_KEY, panelOpen ? 'true' : 'false');
     } catch {
       // ignore
@@ -344,10 +372,19 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
     [useServer]
   );
 
+  const stopGatewayFor = useCallback(async (sessionId: string | null | undefined) => {
+    if (!sessionId) return;
+    try {
+      await vncGatewayService.stop(sessionId);
+    } catch {
+      // non-fatal
+    }
+  }, []);
+
   const disposeSessionHandle = useCallback((tabId: string, opts?: { keepHost?: boolean }) => {
     intentionalDisconnectRef.current.add(tabId);
     const handle = sessionHandlesRef.current.get(tabId);
-    if (!handle) return;
+    if (!handle) return null;
     if (handle.rfb) {
       try {
         handle.rfb.disconnect();
@@ -360,14 +397,20 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
     if (host && !opts?.keepHost) {
       host.innerHTML = '';
     }
+    const gw = handle.gatewaySessionId;
+    handle.gatewaySessionId = null;
     sessionHandlesRef.current.set(tabId, handle);
+    return gw;
   }, []);
 
   const closeTab = useCallback(
     async (tabId: string) => {
+      const handle = sessionHandlesRef.current.get(tabId);
+      const gw = handle?.gatewaySessionId ?? null;
       disposeSessionHandle(tabId);
       sessionHandlesRef.current.delete(tabId);
       tabHostsRef.current.delete(tabId);
+      void stopGatewayFor(gw);
 
       setTabs((prev) => {
         const next = prev.filter((t) => t.id !== tabId);
@@ -378,22 +421,25 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
         return next;
       });
     },
-    [disposeSessionHandle]
+    [disposeSessionHandle, stopGatewayFor]
   );
 
   const closeAllTabs = useCallback(async () => {
     closingAllRef.current = true;
     const ids = Array.from(sessionHandlesRef.current.keys());
     for (const id of ids) {
+      const handle = sessionHandlesRef.current.get(id);
+      const gw = handle?.gatewaySessionId ?? null;
       disposeSessionHandle(id);
       sessionHandlesRef.current.delete(id);
       tabHostsRef.current.delete(id);
+      void stopGatewayFor(gw);
     }
     setTabs([]);
     setActiveTabId(null);
     setNotice(IDLE_NOTICE);
     closingAllRef.current = false;
-  }, [disposeSessionHandle]);
+  }, [disposeSessionHandle, stopGatewayFor]);
 
   const requestClose = useCallback(async () => {
     const live = tabsRef.current.filter((t) => t.status === 'connected' || t.status === 'connecting');
@@ -422,7 +468,12 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
     return () => {
       closingAllRef.current = true;
       for (const id of Array.from(sessionHandlesRef.current.keys())) {
+        const handle = sessionHandlesRef.current.get(id);
+        const gw = handle?.gatewaySessionId ?? null;
         disposeSessionHandle(id);
+        if (gw) {
+          void vncGatewayService.stop(gw).catch(() => undefined);
+        }
       }
       sessionHandlesRef.current.clear();
       tabHostsRef.current.clear();
@@ -457,17 +508,80 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
       connectionId?: string | null;
       connectionName?: string;
       color?: string;
+      mode?: ConnectMode;
+      host?: string;
+      port?: number;
     }) => {
-      const url = normalizeWsUrl(opts?.wsUrl ?? wsUrl);
-      if (!url) {
-        setNotice('WebSocket URL is required.');
-        setShowSettings(true);
-        return;
-      }
-
       if (sessionHandlesRef.current.size >= MAX_VNC_TABS) {
         setNotice(`Maximum of ${MAX_VNC_TABS} open sessions. Close a tab first.`);
         return;
+      }
+
+      const rawStored = (opts?.wsUrl ?? wsUrl).trim();
+      const parsedAuto = parseAutoVncTargetUrl(rawStored);
+      const mode: ConnectMode =
+        opts?.mode ||
+        (parsedAuto ? 'auto' : undefined) ||
+        (connectMode === 'auto' && (opts?.host || vncHost.trim()) ? 'auto' : connectMode);
+
+      let gatewayHost = (opts?.host || vncHost).trim();
+        let gatewayPort = opts?.port ?? (Number.parseInt(vncPort, 10) || 5900);
+      if (parsedAuto) {
+        gatewayHost = parsedAuto.host;
+        gatewayPort = parsedAuto.port;
+      }
+
+      const wantAuto = mode === 'auto' || Boolean(parsedAuto) || (Boolean(gatewayHost) && mode !== 'ws');
+      let url = '';
+      let gatewaySessionId: string | null = null;
+
+      if (wantAuto) {
+        if (!useServer) {
+          setNotice('Easy mode requires sign-in so LinkNest can start websockify on this server.');
+          setShowSettings(true);
+          return;
+        }
+        if (!gatewayHost) {
+          setNotice('Enter VNC host (and port) for Easy mode.');
+          setShowSettings(true);
+          return;
+        }
+        if (!Number.isFinite(gatewayPort) || gatewayPort < 1 || gatewayPort > 65535) {
+          setNotice('VNC port must be 1–65535.');
+          setShowSettings(true);
+          return;
+        }
+
+        setNotice(`Starting websockify → ${gatewayHost}:${gatewayPort}…`);
+        try {
+          let session;
+          try {
+            session = await vncGatewayService.start({ host: gatewayHost, port: gatewayPort });
+          } catch (err: any) {
+            if (err?.code === 'gateway_limit' && sessionHandlesRef.current.size <= 1) {
+              const cleared = await vncGatewayService.stopAll();
+              session = await vncGatewayService.start({ host: gatewayHost, port: gatewayPort });
+              if (cleared.stopped > 0) {
+                setNotice(`Cleared ${cleared.stopped} leftover gateway(s), then connected`);
+              }
+            } else {
+              throw err;
+            }
+          }
+          url = session.wsUrl;
+          gatewaySessionId = session.sessionId;
+        } catch (err) {
+          setNotice(err instanceof Error ? err.message : 'Failed to start VNC gateway');
+          setShowSettings(true);
+          return;
+        }
+      } else {
+        url = normalizeWsUrl(rawStored);
+        if (!url || /^auto-vnc:/i.test(url)) {
+          setNotice('WebSocket URL is required for Advanced mode.');
+          setShowSettings(true);
+          return;
+        }
       }
 
       const nextViewOnly = opts?.viewOnly ?? viewOnly;
@@ -477,7 +591,7 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
       const nextName =
         opts?.connectionName ||
         draftName.trim() ||
-        url.replace(/^wss?:\/\//i, '').split('/')[0] ||
+        (wantAuto ? `${gatewayHost}:${gatewayPort}` : url.replace(/^wss?:\/\//i, '').split('/')[0]) ||
         'VNC';
       const nextColor = normalizeVncColor(
         opts?.color ||
@@ -490,7 +604,7 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
         id: tabId,
         title: nextName,
         connectionId: nextConnectionId || undefined,
-        wsUrl: url,
+        wsUrl: wantAuto ? buildAutoVncTargetUrl(gatewayHost, gatewayPort) : url,
         status: 'connecting',
         statusMessage: `Connecting to ${nextName}…`,
         color: nextColor,
@@ -498,19 +612,18 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
         scaleViewport: nextScale,
       };
 
-      sessionHandlesRef.current.set(tabId, { rfb: null });
+      sessionHandlesRef.current.set(tabId, { rfb: null, gatewaySessionId });
       setTabs((prev) => [...prev, tab]);
       setActiveTabId(tabId);
       setShowSettings(false);
       setNotice(`Connecting to “${nextName}”…`);
 
       try {
-        localStorage.setItem(WS_STORAGE_KEY, url);
+        if (!wantAuto) localStorage.setItem(WS_STORAGE_KEY, url);
       } catch {
         // ignore
       }
 
-      // Wait a tick for the host div to mount
       await new Promise((r) => requestAnimationFrame(() => r(undefined)));
 
       const target = tabHostsRef.current.get(tabId);
@@ -521,6 +634,7 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
         });
         setShowSettings(true);
         setNotice('Viewer surface is not ready.');
+        void stopGatewayFor(gatewaySessionId);
         return;
       }
 
@@ -554,7 +668,6 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
           if (handle) handle.rfb = null;
           if (intentional) return;
           const clean = Boolean((e as any)?.detail?.clean);
-          // Natural close / clean disconnect → close tab (like SSH exit)
           if (clean) {
             void closeTab(tabId);
             return;
@@ -577,7 +690,13 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
           setNotice('VNC server requires a password. Enter it and reconnect.');
           setActiveTabId(tabId);
           setActiveConnectionId(nextConnectionId || null);
-          setWsUrl(url);
+          if (wantAuto) {
+            setConnectMode('auto');
+            setVncHost(gatewayHost);
+            setVncPort(String(gatewayPort));
+          } else {
+            setWsUrl(url);
+          }
           try {
             rfb.disconnect();
           } catch {
@@ -597,7 +716,10 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
         });
 
         const handle = sessionHandlesRef.current.get(tabId);
-        if (handle) handle.rfb = rfb;
+        if (handle) {
+          handle.rfb = rfb;
+          handle.gatewaySessionId = gatewaySessionId;
+        }
       } catch (err) {
         console.error('noVNC connect failed', err);
         updateTab(tabId, {
@@ -606,10 +728,14 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
         });
         setShowSettings(true);
         setNotice(err instanceof Error ? err.message : 'Failed to load or connect noVNC');
+        void stopGatewayFor(gatewaySessionId);
       }
     },
     [
       wsUrl,
+      connectMode,
+      vncHost,
+      vncPort,
       password,
       scaleViewport,
       viewOnly,
@@ -617,9 +743,11 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
       draftName,
       draftColor,
       connections,
+      useServer,
       updateTab,
       markLastUsed,
       closeTab,
+      stopGatewayFor,
     ]
   );
 
@@ -649,7 +777,16 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
   const applyConnection = useCallback(
     (c: SavedVncConnection, autoConnect: boolean) => {
       setActiveConnectionId(c.id);
-      setWsUrl(c.wsUrl);
+      const auto = parseAutoVncTargetUrl(c.wsUrl);
+      if (auto) {
+        setConnectMode('auto');
+        setVncHost(auto.host);
+        setVncPort(String(auto.port));
+        setWsUrl(c.wsUrl);
+      } else {
+        setConnectMode('ws');
+        setWsUrl(c.wsUrl);
+      }
       setViewOnly(Boolean(c.viewOnly));
       setScaleViewport(c.scaleViewport !== false);
       setDraftName(c.name);
@@ -669,6 +806,9 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
           connectionId: c.id,
           connectionName: c.name,
           color: c.color,
+          mode: auto ? 'auto' : 'ws',
+          host: auto?.host,
+          port: auto?.port,
         });
       }
     },
@@ -676,13 +816,34 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
   );
 
   const saveCurrentConnection = async () => {
-    const url = normalizeWsUrl(wsUrl);
-    if (!url) {
-      setNotice('Enter a WebSocket URL before saving.');
-      setShowSettings(true);
-      return;
+    let url = '';
+    if (connectMode === 'auto') {
+      const host = vncHost.trim();
+      const port = Number.parseInt(vncPort, 10) || 5900;
+      if (!host) {
+        setNotice('Enter host before saving.');
+        setShowSettings(true);
+        return;
+      }
+      if (!useServer) {
+        setNotice('Sign in to save Easy-mode connections (auto-vnc:// needs the gateway).');
+        return;
+      }
+      url = buildAutoVncTargetUrl(host, port);
+    } else {
+      url = normalizeWsUrl(wsUrl);
+      if (!url || /^auto-vnc:/i.test(url)) {
+        setNotice('Enter a WebSocket URL before saving.');
+        setShowSettings(true);
+        return;
+      }
     }
-    const name = draftName.trim() || url.replace(/^wss?:\/\//i, '').split('/')[0] || 'VNC host';
+    const name =
+      draftName.trim() ||
+      (connectMode === 'auto'
+        ? `${vncHost.trim()}:${Number.parseInt(vncPort, 10) || 5900}`
+        : url.replace(/^wss?:\/\//i, '').split('/')[0]) ||
+      'VNC host';
     const tags = parseTags(draftTags);
     const notes = draftNotes.trim();
     const color = normalizeVncColor(draftColor);
@@ -1286,7 +1447,30 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
           {showSettings && (
             <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-700 space-y-2 shrink-0 bg-white dark:bg-slate-800 overflow-y-auto max-h-[50%]">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">Connection settings</p>
+                <div className="flex flex-wrap gap-1 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => setConnectMode('auto')}
+                    className={`px-2 py-1 text-[11px] rounded-md border ${
+                      connectMode === 'auto'
+                        ? 'bg-brand-600 text-white border-brand-600'
+                        : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    Easy (host / port)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConnectMode('ws')}
+                    className={`px-2 py-1 text-[11px] rounded-md border ${
+                      connectMode === 'ws'
+                        ? 'bg-brand-600 text-white border-brand-600'
+                        : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    Advanced (WebSocket URL)
+                  </button>
+                </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
@@ -1370,18 +1554,47 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
                 />
               </label>
 
-              <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
-                WebSocket URL (websockify)
-                <input
-                  type="text"
-                  value={wsUrl}
-                  onChange={(e) => setWsUrl(e.target.value)}
-                  placeholder="ws://host:6080/websockify"
-                  className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono"
-                  spellCheck={false}
-                  autoComplete="off"
-                />
-              </label>
+              {connectMode === 'auto' ? (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300 sm:col-span-2">
+                    VNC host
+                    <input
+                      type="text"
+                      value={vncHost}
+                      onChange={(e) => setVncHost(e.target.value)}
+                      placeholder="192.168.1.50"
+                      className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono"
+                      spellCheck={false}
+                      autoComplete="off"
+                    />
+                  </label>
+                  <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                    Port
+                    <input
+                      type="number"
+                      min={1}
+                      max={65535}
+                      value={vncPort}
+                      onChange={(e) => setVncPort(e.target.value)}
+                      placeholder="5900"
+                      className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono"
+                    />
+                  </label>
+                </div>
+              ) : (
+                <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                  WebSocket URL (websockify)
+                  <input
+                    type="text"
+                    value={wsUrl}
+                    onChange={(e) => setWsUrl(e.target.value)}
+                    placeholder="ws://host:6080/websockify"
+                    className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono"
+                    spellCheck={false}
+                    autoComplete="off"
+                  />
+                </label>
+              )}
               <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
                 VNC password (session only — not saved)
                 <input
@@ -1403,10 +1616,19 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
                 </label>
               </div>
               <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed">
-                Passwords are never stored.{' '}
-                {useServer
-                  ? 'Saved connections sync to your account (name, URL, tags, color, notes, display options).'
-                  : 'Guest saves stay in this browser only.'}
+                {connectMode === 'auto' ? (
+                  <>
+                    Easy mode starts <strong>websockify</strong> on this LinkNest server (ports 17881–17980) and bridges to your VNC host.
+                    Requires sign-in. Passwords stay in the browser session only.
+                  </>
+                ) : (
+                  <>
+                    Advanced mode uses an existing websockify WebSocket URL. Passwords are never stored.{' '}
+                    {useServer
+                      ? 'Saved connections sync to your account.'
+                      : 'Guest saves stay in this browser only.'}
+                  </>
+                )}
               </p>
             </div>
           )}

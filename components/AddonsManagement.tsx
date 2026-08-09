@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { SecurePasswordInput } from './SecurePasswordInput';
 import { resolveApiBase } from '../services/apiHelpers';
 import { sshGatewayService, type SshGatewayConfigResponse } from '../services/sshGatewayService';
+import { vncGatewayService, type VncGatewayConfigResponse } from '../services/vncGatewayService';
 
 // Resolve API base URL once at module load
 const API_BASE = resolveApiBase();
@@ -960,6 +961,9 @@ export const AddonsManagement: React.FC = () => {
 
             {/* SSH Gateway paths */}
             <SshGatewayAddonCard />
+
+            {/* VNC Gateway (websockify) */}
+            <VncGatewayAddonCard />
 
             {/* Future Add-ons Placeholder */}
             <div className="mt-6 bg-white rounded-xl shadow-lg border border-sky-100 dark:border-sky-900/40 p-6 opacity-60">
@@ -2010,6 +2014,198 @@ const SshGatewayAddonCard: React.FC = () => {
                                     onClick={handleSave}
                                     disabled={saving}
                                     className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors disabled:opacity-50 font-medium"
+                                >
+                                    {saving ? 'Saving…' : 'Save Paths'}
+                                </button>
+                            </div>
+                        </>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const VncGatewayAddonCard: React.FC = () => {
+    const [expanded, setExpanded] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [savedMsg, setSavedMsg] = useState<string | null>(null);
+    const [pythonPath, setPythonPath] = useState('');
+    const [websockifyPath, setWebsockifyPath] = useState('');
+    const [resolved, setResolved] = useState<VncGatewayConfigResponse['resolved'] | null>(null);
+    const [defaults, setDefaults] = useState<VncGatewayConfigResponse['defaults'] | null>(null);
+
+    const applyResponse = (data: VncGatewayConfigResponse) => {
+        setPythonPath(data.config.pythonPath || '');
+        setWebsockifyPath(data.config.websockifyPath || '');
+        setResolved(data.resolved);
+        setDefaults(data.defaults);
+    };
+
+    const loadConfiguration = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            const data = await vncGatewayService.getConfig();
+            applyResponse(data);
+        } catch (err: any) {
+            setError(err.message || 'Failed to load VNC gateway config');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        loadConfiguration();
+    }, []);
+
+    const handleSave = async () => {
+        try {
+            setSaving(true);
+            setError(null);
+            setSavedMsg(null);
+            const data = await vncGatewayService.putConfig({
+                pythonPath: pythonPath.trim(),
+                websockifyPath: websockifyPath.trim(),
+            });
+            applyResponse(data);
+            setSavedMsg('VNC gateway paths saved.');
+        } catch (err: any) {
+            setError(err.message || 'Failed to save');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const ready = Boolean(resolved?.websockifyExists && resolved?.pythonExists);
+
+    return (
+        <div className="mt-6 bg-white rounded-xl shadow-lg border border-sky-100 dark:border-sky-900/40 overflow-hidden">
+            <div className="p-6 bg-gradient-to-r from-violet-50 via-fuchsia-50/70 to-sky-50/60 dark:from-violet-950/40 dark:via-fuchsia-950/30 dark:to-sky-950/20 border-b border-sky-100 dark:border-sky-900/40">
+                <div className="flex items-start justify-between">
+                    <div className="flex items-start gap-4 flex-1">
+                        <div className="text-4xl">🖥️</div>
+                        <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                                <h2 className="text-xl font-bold text-slate-900 dark:text-white">VNC Gateway</h2>
+                                <span
+                                    className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                        ready
+                                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
+                                            : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
+                                    }`}
+                                >
+                                    {loading ? 'Checking…' : ready ? 'Ready' : 'Needs setup'}
+                                </span>
+                            </div>
+                            <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+                                Easy mode starts <code className="text-xs bg-white/70 dark:bg-slate-900 px-1 rounded">websockify</code> on
+                                this server so the VNC Viewer only needs host + port (like SSH Easy mode).
+                            </p>
+                            {resolved && !loading && (
+                                <div className="flex flex-wrap gap-2 text-xs">
+                                    <span className="px-2 py-1 bg-white rounded border border-sky-100 dark:border-sky-900/40 dark:bg-slate-900/40">
+                                        Python: {resolved.pythonExists ? 'found' : 'missing'}
+                                    </span>
+                                    <span className="px-2 py-1 bg-white rounded border border-sky-100 dark:border-sky-900/40 dark:bg-slate-900/40">
+                                        websockify: {resolved.websockifyExists ? 'ready' : 'missing'}
+                                    </span>
+                                    <span className="px-2 py-1 bg-white rounded border border-sky-100 dark:border-sky-900/40 dark:bg-slate-900/40">
+                                        packages: {resolved.packagesPresent ? 'vendored' : 'run install script'}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={() => setExpanded(!expanded)}
+                        className="px-4 py-2 text-sm text-violet-700 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-950/40 rounded-lg transition-colors"
+                    >
+                        {expanded ? 'Hide' : 'Configure'}
+                    </button>
+                </div>
+            </div>
+
+            {expanded && (
+                <div className="p-6 space-y-5 bg-violet-50/30 dark:bg-violet-950/10">
+                    {error && (
+                        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                            <strong>Error:</strong> {error}
+                        </div>
+                    )}
+                    {savedMsg && (
+                        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-lg text-sm">
+                            {savedMsg}
+                        </div>
+                    )}
+
+                    {loading ? (
+                        <p className="text-sm text-slate-500">Loading…</p>
+                    ) : (
+                        <>
+                            <p className="text-sm text-slate-600 dark:text-slate-400">
+                                Install once:{' '}
+                                <code className="text-xs bg-white dark:bg-slate-900 px-1 rounded">
+                                    powershell -File scripts/install-websockify.ps1
+                                </code>{' '}
+                                (vendors packages into <code className="text-xs">bin/python-packages</code>). Leave paths blank to
+                                auto-detect.
+                            </p>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Python path</label>
+                                <input
+                                    type="text"
+                                    value={pythonPath}
+                                    onChange={(e) => setPythonPath(e.target.value)}
+                                    placeholder={resolved?.pythonPath || 'C:\\Program Files\\Python312\\python.exe'}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm font-mono"
+                                />
+                                {resolved?.pythonPath && (
+                                    <p className="mt-1 text-xs text-slate-500">Resolved: {resolved.pythonPath}</p>
+                                )}
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
+                                    websockify launcher (optional)
+                                </label>
+                                <input
+                                    type="text"
+                                    value={websockifyPath}
+                                    onChange={(e) => setWebsockifyPath(e.target.value)}
+                                    placeholder={resolved?.websockifyPath || 'bin\\run-websockify.cmd'}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm font-mono"
+                                />
+                                {resolved?.websockifyPath && (
+                                    <p className="mt-1 text-xs text-slate-500">Resolved: {resolved.websockifyPath}</p>
+                                )}
+                                {resolved?.packagesDir && (
+                                    <p className="mt-1 text-xs text-slate-500">Packages dir: {resolved.packagesDir}</p>
+                                )}
+                            </div>
+
+                            <div className="flex justify-end gap-3 pt-2 border-t border-violet-100 dark:border-violet-900/40">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setExpanded(false);
+                                        loadConfiguration();
+                                        setSavedMsg(null);
+                                    }}
+                                    className="px-5 py-2 text-slate-700 dark:text-slate-200 bg-white border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleSave}
+                                    disabled={saving}
+                                    className="px-5 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-lg transition-colors disabled:opacity-50 font-medium"
                                 >
                                     {saving ? 'Saving…' : 'Save Paths'}
                                 </button>
