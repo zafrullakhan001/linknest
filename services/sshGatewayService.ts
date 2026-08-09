@@ -145,15 +145,22 @@ export const sshGatewayService = {
 
 /** Encode auto-connect target as a synthetic URL for saved connections. */
 export function buildAutoTargetUrl(username: string, host: string, port: number): string {
+  // Percent-encode username so PAM chars (\ + @ /) survive storage and restore.
   return `auto://${encodeURIComponent(username)}@${host}:${port}`;
 }
 
 export function parseAutoTargetUrl(raw: string): { username: string; host: string; port: number } | null {
   const m = /^auto:\/\/([^@]+)@([^:\/]+):(\d+)$/i.exec(String(raw || '').trim());
   if (!m) return null;
-  const username = decodeURIComponent(m[1]);
+  let username: string;
+  try {
+    username = decodeURIComponent(m[1]);
+  } catch {
+    username = m[1];
+  }
   const host = m[2];
   const port = Number.parseInt(m[3], 10);
-  if (!username || !host || !Number.isFinite(port)) return null;
+  if (!username || !host || !Number.isFinite(port) || port < 1 || port > 65535) return null;
+  if (username.length > 256) return null;
   return { username, host, port };
 }

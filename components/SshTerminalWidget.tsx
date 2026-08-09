@@ -1801,8 +1801,8 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                         type="text"
                         value={sshHost}
                         onChange={(e) => setSshHost(e.target.value)}
-                        placeholder="192.168.127.134"
-                        className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                        placeholder="pam.example.com"
+                        className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono"
                         spellCheck={false}
                         autoComplete="off"
                       />
@@ -1815,7 +1815,8 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                         max={65535}
                         value={sshPort}
                         onChange={(e) => setSshPort(e.target.value)}
-                        className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                        placeholder="22"
+                        className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono"
                       />
                     </label>
                   </div>
@@ -1825,12 +1826,16 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                       type="text"
                       value={sshUsername}
                       onChange={(e) => setSshUsername(e.target.value)}
-                      placeholder="zafar"
-                      className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                      placeholder="user or domain\user+target…"
+                      title="Supports PAM / privileged-access usernames (\, +, custom ports)."
+                      className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono"
                       spellCheck={false}
                       autoComplete="off"
                     />
                   </label>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug">
+                    PAM-friendly: long usernames with `\`, `+`, and non-22 ports (e.g. 4489) are passed verbatim to SSH.
+                  </p>
                   <div className="rounded-lg border border-slate-200 dark:border-slate-600 p-2 space-y-2 bg-slate-50 dark:bg-slate-900/40">
                     <p className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">Session type (via ttyd)</p>
                     <div className="flex flex-wrap gap-1">

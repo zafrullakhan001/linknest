@@ -409,11 +409,20 @@ function sshGatewayValidateHost(string $host): string {
 }
 
 function sshGatewayValidateUsername(string $user): string {
+    // Trim only ends — PAM / PSM usernames may include \, +, @, / and long target chains.
     $user = trim($user);
-    if ($user === '' || mb_strlen($user) > 64) {
-        sendJSON(['error' => 'Invalid username'], 400);
+    if ($user === '' || mb_strlen($user) > 256) {
+        sendJSON(['error' => 'Invalid username (empty or longer than 256 characters)'], 400);
     }
-    if (!preg_match('/^[A-Za-z0-9._-]+$/', $user)) {
+    // Reject shell / control metacharacters and whitespace; allow typical PAM tokens.
+    if (preg_match('/[\x00-\x1F\x7F]/u', $user)) {
+        sendJSON(['error' => 'Username contains invalid characters'], 400);
+    }
+    if (preg_match('/[;|&$`<>(){}\[\]"\'\s]/u', $user)) {
+        sendJSON(['error' => 'Username contains invalid characters'], 400);
+    }
+    // Letters, digits, and common PAM separators: . _ - \ + @ / % = : ,
+    if (!preg_match('/^[A-Za-z0-9._\-\\\\+@\/%=:,]+$/u', $user)) {
         sendJSON(['error' => 'Username contains invalid characters'], 400);
     }
     return $user;
@@ -868,7 +877,10 @@ function handleSshGatewayStart() {
     $sshArgs[] = '-tt';
     $sshArgs[] = '-p';
     $sshArgs[] = (string)$sshPort;
-    $sshArgs[] = $username . '@' . $host;
+    // Use -l for username so PAM strings with \, +, @ stay intact (avoid user@host parsing issues).
+    $sshArgs[] = '-l';
+    $sshArgs[] = $username;
+    $sshArgs[] = $host;
 
     // On HTTPS pages (e.g. Docker :8443), start ttyd with the container TLS certs so the browser can use wss://
     $wantSsl = sshGatewayRequestIsHttps() && sshGatewaySslPaths() !== null;

@@ -20,7 +20,7 @@ export interface ParsedSshLink {
 
 /**
  * Parse ssh://user@host:port (and auto://user@host:port used by saved connections).
- * Returns null if the string is not an SSH-style LinkNest target.
+ * Username may be percent-encoded (recommended for PAM: \ → %5C, + → %2B).
  */
 export function parseSshLinkUrl(raw: string): ParsedSshLink | null {
   const s = String(raw || '').trim();
@@ -28,9 +28,16 @@ export function parseSshLinkUrl(raw: string): ParsedSshLink | null {
 
   if (/^ssh:\/\//i.test(s)) {
     const without = s.replace(/^ssh:\/\//i, '');
-    const m = /^((?:[^@/?#]*)@)?(\[[^\]]+\]|[^:/?#]+)(?::(\d+))?/i.exec(without);
+    // Allow PAM usernames with \, +, etc. Stop username at the last @ before host.
+    const at = without.lastIndexOf('@');
+    let userRaw = '';
+    let hostPortPath = without;
+    if (at > 0) {
+      userRaw = without.slice(0, at);
+      hostPortPath = without.slice(at + 1);
+    }
+    const m = /^(\[[^\]]+\]|[^:/?#]+)(?::(\d+))?/i.exec(hostPortPath);
     if (!m) return null;
-    const userRaw = m[1] ? m[1].slice(0, -1) : '';
     let username: string | undefined;
     if (userRaw) {
       try {
@@ -39,10 +46,11 @@ export function parseSshLinkUrl(raw: string): ParsedSshLink | null {
         username = userRaw;
       }
     }
-    const hostPart = m[2];
+    const hostPart = m[1];
     const host = hostPart.startsWith('[') && hostPart.endsWith(']') ? hostPart.slice(1, -1) : hostPart;
-    const port = m[3] ? Number.parseInt(m[3], 10) : 22;
+    const port = m[2] ? Number.parseInt(m[2], 10) : 22;
     if (!host || !Number.isFinite(port) || port < 1 || port > 65535) return null;
+    if (username && username.length > 256) return null;
     return { host, port, username: username || undefined };
   }
 
@@ -57,6 +65,7 @@ export function parseSshLinkUrl(raw: string): ParsedSshLink | null {
     const host = auto[2];
     const port = Number.parseInt(auto[3], 10);
     if (!username || !host || !Number.isFinite(port) || port < 1 || port > 65535) return null;
+    if (username.length > 256) return null;
     return { host, port, username };
   }
 

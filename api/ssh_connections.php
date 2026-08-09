@@ -75,11 +75,26 @@ function normalizeWsUrl(string $raw): string {
 function validateWsUrl(string $url): ?string {
     $trimmed = trim($url);
     // auto://user@host:port — LinkNest local ttyd launcher target (not a WebSocket URL)
+    // Username is percent-encoded so PAM characters (\ + @ /) round-trip safely.
     if (preg_match('#^auto://#i', $trimmed)) {
-        if (mb_strlen($trimmed) > 512) {
+        if (mb_strlen($trimmed) > 1024) {
             return null;
         }
-        if (!preg_match('#^auto://[A-Za-z0-9._~%-]+@[A-Za-z0-9.-]+:\d{1,5}$#', $trimmed)) {
+        if (!preg_match('#^auto://([^@]+)@([A-Za-z0-9.-]+):(\d{1,5})$#', $trimmed, $m)) {
+            return null;
+        }
+        $decodedUser = rawurldecode($m[1]);
+        if ($decodedUser === '' || mb_strlen($decodedUser) > 256) {
+            return null;
+        }
+        if (preg_match('/[\x00-\x1F\x7F;|&$`<>(){}\[\]"\'\s]/u', $decodedUser)) {
+            return null;
+        }
+        if (!preg_match('/^[A-Za-z0-9._\-\\\\+@\/%=:,]+$/u', $decodedUser)) {
+            return null;
+        }
+        $port = (int)$m[3];
+        if ($port < 1 || $port > 65535) {
             return null;
         }
         return $trimmed;

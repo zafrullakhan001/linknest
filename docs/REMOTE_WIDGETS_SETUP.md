@@ -13,6 +13,17 @@ Also covered in **Help & About → Help → Remote Widgets**.
 
 **Security:** Passwords are never saved. Prefer LAN / VPN; do not expose unauthenticated gateways publicly.
 
+**PAM / privileged access:** Easy mode accepts long usernames with `\`, `+`, and custom ports (not only 22). Values are passed to OpenSSH with `ssh -l <username> -p <port> <host>` so special characters are not broken by `user@host` parsing. Saved connections percent-encode the username inside `auto://…`.
+
+Example:
+```
+Host: pam.example.com
+Port: 4489
+Username: domain\user+target.domain\account+TARGETHOST
+```
+
+Or as a space link: `ssh://domain%5Cuser%2Btarget@pam.example.com:4489` (percent-encode `\` and `+` in the username).
+
 ---
 
 ## Required dependencies (install before use)
