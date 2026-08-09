@@ -38,6 +38,10 @@ import { FloatingVncViewerWidget } from './components/FloatingVncViewerWidget';
 import { VncViewerWidget } from './components/VncViewerWidget';
 import { FloatingSshTerminalWidget } from './components/FloatingSshTerminalWidget';
 import { SshTerminalWidget } from './components/SshTerminalWidget';
+import {
+  OPEN_SSH_TERMINAL_EVENT,
+  type OpenSshTerminalDetail,
+} from './utils/sshLink';
 import { themeService } from './services/themeService';
 import { getMessages, ChatMessage } from './services/chatService';
 import { WidgetQuickAccess } from './components/WidgetQuickAccess';
@@ -247,6 +251,7 @@ const AppContent: React.FC = () => {
     const saved = localStorage.getItem('linknest_show_ssh_terminal_widget');
     return saved !== null ? saved === 'true' : false;
   });
+  const [sshPendingOpen, setSshPendingOpen] = useState<(OpenSshTerminalDetail & { requestId: number }) | null>(null);
 
   useEffect(() => {
     localStorage.setItem('linknest_show_ssh_terminal_widget', showSshTerminal.toString());
@@ -500,6 +505,38 @@ const AppContent: React.FC = () => {
       window.removeEventListener('openStyleManager', handleOpenStyleManager);
     };
   }, [user]);
+
+  // Open SSH Terminal from ssh:// (or auto://) space links
+  useEffect(() => {
+    const handleOpenSshTerminal = (ev: Event) => {
+      const detail = (ev as CustomEvent<OpenSshTerminalDetail>).detail;
+      if (!detail?.host) return;
+
+      if (isMobile) {
+        window.alert('SSH Terminal is available on desktop view.');
+        return;
+      }
+      if (!isWidgetAllowed('ssh-terminal')) {
+        window.alert('SSH Terminal widget is not enabled for your account.');
+        return;
+      }
+      if (!isAuthenticated) {
+        setAuthModalOpen(true);
+        return;
+      }
+
+      setShowSshTerminal(true);
+      setSshPendingOpen({
+        ...detail,
+        requestId: Date.now(),
+      });
+    };
+
+    window.addEventListener(OPEN_SSH_TERMINAL_EVENT, handleOpenSshTerminal);
+    return () => {
+      window.removeEventListener(OPEN_SSH_TERMINAL_EVENT, handleOpenSshTerminal);
+    };
+  }, [isMobile, isAuthenticated, isWidgetAllowed]);
 
   // Listen for page background dialog (admin only)
   useEffect(() => {
@@ -1448,7 +1485,11 @@ const AppContent: React.FC = () => {
           )}
           {showSshTerminal && isWidgetAllowed('ssh-terminal') && (
             <FloatingSshTerminalWidget>
-              <SshTerminalWidget onClose={toggleSshTerminal} />
+              <SshTerminalWidget
+                onClose={toggleSshTerminal}
+                pendingOpen={sshPendingOpen}
+                onPendingOpenConsumed={() => setSshPendingOpen(null)}
+              />
             </FloatingSshTerminalWidget>
           )}
         </>

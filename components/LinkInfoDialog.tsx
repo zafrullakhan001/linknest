@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom';
 import { useSettings } from '../contexts/SettingsContext';
 import { getDisplayUrl } from '../utils/urlDisplay';
+import { tryHandleSshLinkClick } from '../utils/sshLink';
 
 interface LinkInfoDialogProps {
   isOpen: boolean;
@@ -453,6 +454,7 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
+                    if (tryHandleSshLinkClick(linkUrl, e)) return;
                     if (settings.browser_specific_links_enabled === '1' && browser && browser !== 'default') {
                       openLinkInBrowser(linkUrl, browser);
                     } else {

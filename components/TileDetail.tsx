@@ -49,7 +49,8 @@ import {
 import { VersionDiffViewer } from './VersionDiffViewer';
 import { TileAnimationSelector, getTileAnimationClass, TileAnimation, getAnimationOption, resolveLinkAnimation } from './TileAnimationSelector';
 import { AuthSourceBadge } from './AuthSourceBadge';
-import { getDisplayUrl } from '../utils/urlDisplay';
+import { getDisplayUrl, isHttpOrHttpsUrl, normalizeStoredLinkUrl } from '../utils/urlDisplay';
+import { tryHandleSshLinkClick } from '../utils/sshLink';
 
 type ViewLayoutMode = 'stacked' | 'side-by-side' | 'grid' | 'compact' | 'qr';
 
@@ -354,11 +355,12 @@ const LinkEditSection: React.FC<{
 };
 
 const isProbableUrl = (value: string): boolean => {
+    // Only probe URLs that already include http(s):// — never invent a scheme.
     const trimmed = (value || '').trim();
-    if (!trimmed || trimmed.length < 4) return false;
+    if (!trimmed || trimmed.length < 8) return false;
+    if (!isHttpOrHttpsUrl(trimmed)) return false;
     try {
-        const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-        const parsed = new URL(withScheme);
+        const parsed = new URL(trimmed);
         return parsed.protocol === 'http:' || parsed.protocol === 'https:';
     } catch {
         return false;
@@ -400,7 +402,11 @@ const UrlProbeBadges: React.FC<{ url: string }> = ({ url }) => {
             ? 'http'
             : /^https:\/\//i.test(trimmed)
                 ? 'https'
-                : 'https';
+                : '';
+        if (!detectedScheme) {
+            setPhase('idle');
+            return;
+        }
         setScheme(detectedScheme);
         setPhase('checking');
         setError('');
@@ -2832,7 +2838,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         const newLink: Link = {
             id: generateId(),
             label: state.label,
-            url: state.url.startsWith('http') ? state.url : `https://${state.url}`,
+            url: normalizeStoredLinkUrl(state.url),
             icon: state.icon?.trim() || undefined,
             textColor: state.textColor?.trim() || undefined,
             visibility: state.visibility || 'public',
@@ -3021,7 +3027,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 newLinks.push({
                     id: generateId(),
                     label,
-                    url: url.startsWith('http://') || url.startsWith('https://') ? url : `https://${url}`,
+                    url: normalizeStoredLinkUrl(url),
                     visibility: 'public',
                     notes: undefined,
                     tooltip: undefined
@@ -3166,7 +3172,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     ? {
                                         ...l,
                                         label: state.label,
-                                        url: state.url.startsWith('http') ? state.url : `https://${state.url}`,
+                                        url: normalizeStoredLinkUrl(state.url),
                                         icon: state.icon?.trim() || undefined,
                                         textColor: state.textColor?.trim() || undefined,
                                         visibility: state.visibility || 'public',
@@ -3198,7 +3204,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             ? {
                                 ...l,
                                 label: state.label,
-                                url: state.url.startsWith('http') ? state.url : `https://${state.url}`,
+                                url: normalizeStoredLinkUrl(state.url),
                                 visibility: state.visibility || 'public',
                                 published: state.published !== false,
                                 allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
@@ -5468,7 +5474,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 target="_blank"
                                                                                 rel="noopener noreferrer"
                                                                                 className="text-xs font-medium text-brand-600 dark:text-brand-400 hover:underline"
-                                                                                onClick={(e) => e.stopPropagation()}
+                                                                                onClick={(e) => {
+                                                                                    if (tryHandleSshLinkClick(link.url, e)) return;
+                                                                                    e.stopPropagation();
+                                                                                }}
                                                                             >
                                                                                 Open link
                                                                             </a>
@@ -5552,6 +5561,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 : 'flex-1 pr-32'
                                                                     }`}
                                                                     onClick={(e) => {
+                                                                        if (tryHandleSshLinkClick(link.url, e)) return;
+
                                                                         // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                                                                         if (e.ctrlKey || e.metaKey) {
                                                                             // Explicitly open in new tab and focus it using window.open
@@ -8054,7 +8065,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     type="text"
                                                                                                     value={editLinkState[link.id]?.url || ''}
                                                                                                     onChange={(e) => updateEditLinkState(link.id, 'url', e.target.value)}
-                                                                                                    placeholder="https://example.com"
+                                                                                                    placeholder="https://…  http://…  or ssh://user@host:22"
                                                                                                     className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-mono"
                                                                                                 />
                                                                                             </div>
@@ -8554,7 +8565,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         type="text"
                                                                                         value={newLinkState[section.id]?.url || ''}
                                                                                         onChange={(e) => updateNewLinkState(section.id, 'url', e.target.value)}
-                                                                                        placeholder="https://example.com"
+                                                                                        placeholder="https://…  http://…  or ssh://user@host:22"
                                                                                         className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-mono"
                                                                                     />
                                                                                 </div>

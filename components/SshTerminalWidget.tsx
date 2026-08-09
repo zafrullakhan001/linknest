@@ -16,9 +16,13 @@ import {
   parseAutoTargetUrl,
   sshGatewayService,
 } from '../services/sshGatewayService';
+import type { OpenSshTerminalDetail } from '../utils/sshLink';
 
 interface SshTerminalWidgetProps {
   onClose?: () => void;
+  /** Request from App (ssh:// click) — requestId changes on every open. */
+  pendingOpen?: (OpenSshTerminalDetail & { requestId: number }) | null;
+  onPendingOpenConsumed?: () => void;
 }
 
 const WS_STORAGE_KEY = 'linknest.sshTerminal.wsUrl.v1';
@@ -147,7 +151,11 @@ function parseTtydFrame(data: ArrayBuffer | Blob | string): { cmd: string; paylo
   return null;
 }
 
-export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose }) => {
+export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
+  onClose,
+  pendingOpen,
+  onPendingOpenConsumed,
+}) => {
   const { isAuthenticated } = useAuth();
   const sessionHandlesRef = useRef<Map<string, SessionHandle>>(new Map());
   const tabHostsRef = useRef<Map<string, HTMLDivElement | null>>(new Map());
@@ -971,6 +979,71 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
     },
     [connectTo]
   );
+
+  // Handle open from ssh:// space links (App → pendingOpen)
+  useEffect(() => {
+    if (!pendingOpen?.requestId || !pendingOpen.host) return;
+    if (!storageReady) return;
+
+    const req = pendingOpen;
+    onPendingOpenConsumed?.();
+
+    const port = req.port && req.port > 0 ? req.port : 22;
+    const username = (req.username || '').trim();
+    const name =
+      (req.connectionName || '').trim() ||
+      (username ? `${username}@${req.host}${port !== 22 ? `:${port}` : ''}` : req.host);
+
+    setConnectMode('auto');
+    setSshHost(req.host);
+    setSshPort(String(port));
+    if (username) setSshUsername(username);
+    setDraftName(name);
+    setEditingId(null);
+
+    const match = connections.find((c) => {
+      const a = parseAutoTargetUrl(c.wsUrl);
+      if (!a) return false;
+      if (a.host.toLowerCase() !== req.host.toLowerCase()) return false;
+      if (a.port !== port) return false;
+      if (username && a.username !== username) return false;
+      return true;
+    });
+
+    const shouldConnect = req.autoConnect !== false && Boolean(username || match);
+    if (match) {
+      applyConnection(match, shouldConnect);
+      return;
+    }
+
+    setActiveConnectionId(null);
+    if (shouldConnect && username) {
+      setShowSettings(false);
+      setNotice(`Connecting to ${name}…`);
+      void connectTo({
+        mode: 'auto',
+        host: req.host,
+        port,
+        username,
+        connectionName: name,
+      });
+    } else {
+      setShowSettings(true);
+      setNotice(
+        username
+          ? `Ready: ${name} — click Connect`
+          : `Host ${req.host} loaded — enter username and Connect`
+      );
+    }
+  }, [
+    pendingOpen?.requestId,
+    storageReady,
+    connections,
+    applyConnection,
+    connectTo,
+    onPendingOpenConsumed,
+    pendingOpen,
+  ]);
 
   const saveCurrentConnection = async () => {
     let url = '';

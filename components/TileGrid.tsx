@@ -31,6 +31,7 @@ import { LinkNotesDialog } from './LinkNotesDialog';
 import { useMobile } from '../hooks/useMobile';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { getDisplayUrl } from '../utils/urlDisplay';
+import { tryHandleSshLinkClick } from '../utils/sshLink';
 import { MobileTileView } from './MobileTileView';
 import { StagingOverview } from './StagingOverview';
 import { StagingOfflineKit, StagingOfflineKitHandle } from './StagingOfflineKit';
@@ -7342,6 +7343,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} ${tileAnimatedClass} overflow-hidden`}
                       style={{ animationDelay: `${animationDelay}ms` }}
                       onClick={(e) => {
+                        if (tryHandleSshLinkClick(link.url, e)) return;
+
                         // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                         if (e.ctrlKey || e.metaKey) {
                           e.preventDefault();
@@ -7813,6 +7816,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-brand-300 dark:hover:border-brand-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} ${tileAnimatedClass}`}
                       style={{ animationDelay: `${animationDelay}ms` }}
                       onClick={(e) => {
+                        if (tryHandleSshLinkClick(link.url, e)) return;
+
                         // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                         if (e.ctrlKey || e.metaKey) {
                           e.preventDefault();
@@ -8068,6 +8073,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} ${tileAnimatedClass} overflow-hidden`}
                         style={{ animationDelay: `${animationDelay}ms` }}
                         onClick={(e) => {
+                          if (tryHandleSshLinkClick(link.url, e)) return;
+
                           // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                           if (e.ctrlKey || e.metaKey) {
                             e.preventDefault();

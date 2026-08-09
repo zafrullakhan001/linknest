@@ -856,7 +856,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                         type="url"
                                                                         value={newLinkState[section.id]?.url || ''}
                                                                         onChange={(e) => updateNewLinkState(section.id, 'url', e.target.value)}
-                                                                        placeholder="https://example.com"
+                                                                        placeholder="https://…  http://…  or ssh://user@host:22"
                                                                         className="w-full bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 font-mono"
                                                                         style={{ minHeight: '44px' }}
                                                                     />
@@ -1091,7 +1091,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                                             type="url"
                                                                                             value={editLinkState[link.id]?.url || ''}
                                                                                             onChange={(e) => updateEditLinkState(link.id, 'url', e.target.value)}
-                                                                                            placeholder="https://example.com"
+                                                                                            placeholder="https://…  http://…  or ssh://user@host:22"
                                                                                             className="w-full bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 font-mono"
                                                                                             style={{ minHeight: '44px' }}
                                                                                         />
