@@ -182,34 +182,35 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
             {user ? (
               <>
                 {user.is_admin && (
-                  <>
+                  <div className="flex items-center gap-0.5 bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-full p-1 shadow-sm backdrop-blur-sm">
                     {!disabledTabs.has('admin') && (
                       <button
                         onClick={() => window.location.hash = '#/admin'}
-                        className="linknest-nav-icon p-2 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/30 rounded-lg transition-colors flex items-center gap-2"
+                        className="p-2 rounded-full transition-all linknest-nav-icon hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400"
                         title="Admin Panel"
+                        aria-label="Admin Panel"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 sm:w-5 sm:h-5">
                           <path fillRule="evenodd" d="M9.293 2.293a1 1 0 011.414 0l7 7A1 1 0 0117 11h-1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-3a1 1 0 00-1-1H9a1 1 0 00-1 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-6H3a1 1 0 01-.707-1.707l7-7z" clipRule="evenodd" />
                         </svg>
-                        <span className="hidden lg:inline text-sm font-medium">Admin</span>
                       </button>
                     )}
                     <button
                       type="button"
                       onClick={() => setShowUpdatesDialog(true)}
-                      className={`linknest-nav-icon p-2 rounded-lg transition-colors relative flex items-center gap-2 ${
+                      className={`p-2 rounded-full transition-all relative linknest-nav-icon ${
                         updateAvailable
                           ? 'text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30'
-                          : 'text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/30'
+                          : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'
                       }`}
                       title={updateAvailable ? `${updateCount} app update${updateCount === 1 ? '' : 's'} available` : 'App updates'}
+                      aria-label={updateAvailable ? `${updateCount} app update${updateCount === 1 ? '' : 's'} available` : 'App updates'}
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 sm:w-5 sm:h-5">
                         <path fillRule="evenodd" d="M10 2a6 6 0 00-6 6c0 1.887-.454 3.665-1.257 5.234a.75.75 0 00.515 1.076 32.91 32.91 0 003.256.508 3.994 3.994 0 006.972 0 32.903 32.903 0 003.256-.508.75.75 0 00.515-1.076A11.448 11.448 0 0116 8a6 6 0 00-6-6zM8.05 14.943a33.54 33.54 0 003.9.001 2.5 2.5 0 01-3.9 0z" clipRule="evenodd" />
                       </svg>
                       {updateAvailable && (
-                        <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-900" />
+                        <span className="absolute top-0 right-0 w-2 h-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-900" />
                       )}
                     </button>
                     {!disabledTabs.has('style') && (
@@ -218,15 +219,16 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
                           const event = new CustomEvent('openStyleManager');
                           window.dispatchEvent(event);
                         }}
-                        className="linknest-nav-icon p-2 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/30 rounded-lg transition-colors flex items-center gap-2"
+                        className="p-2 rounded-full transition-all linknest-nav-icon hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400"
                         title="Style Manager"
+                        aria-label="Style Manager"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 sm:w-5 sm:h-5">
                           <path fillRule="evenodd" d="M2 4.25A2.25 2.25 0 014.25 2h11.5A2.25 2.25 0 0118 4.25v11.5A2.25 2.25 0 0115.75 18h-11.5A2.25 2.25 0 012 15.75V4.25zm11.03 3.28a.75.75 0 00-1.06-1.06l-2.5 2.5a.75.75 0 000 1.06l2.5 2.5a.75.75 0 001.06-1.06l-1.22-1.22h4.69a.75.75 0 000-1.5h-4.69l1.22-1.22z" clipRule="evenodd" />
                         </svg>
                       </button>
                     )}
-                  </>
+                  </div>
                 )}
               </>
             ) : (
