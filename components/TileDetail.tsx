@@ -2788,7 +2788,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
             browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
             richTextContent: state.richTextContent?.trim() || undefined,
-            animation: linkAnimationForSave(state.animation)
+            animation: linkAnimationForSave(state.animation),
+            // Role-assigned spaces: mark new links as role-visible so Your Apps keeps them after save
+            hasRoleAccess: tile.hasRoleAccess === true || undefined,
         };
 
         if (editTabs.length > 0) {
@@ -3595,7 +3597,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                     const linkToClone = items[sourceIndex] as Link;
 
-                    // Clone the link with a new ID
+                    // Clone the link with a new ID (inherit role visibility so Assigned Apps keeps showing it after save)
                     const clonedLink: Link = {
                         id: generateId(),
                         label: `${linkToClone.label} (Copy)`,
@@ -3604,10 +3606,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         textColor: linkToClone.textColor,
                         visibility: linkToClone.visibility,
                         allowedUsers: linkToClone.allowedUsers ? [...linkToClone.allowedUsers] : undefined,
+                        allowedGroups: linkToClone.allowedGroups ? [...linkToClone.allowedGroups] : undefined,
                         notes: linkToClone.notes,
                         tooltip: linkToClone.tooltip,
                         health: linkToClone.health,
-                        browser: linkToClone.browser
+                        browser: linkToClone.browser,
+                        hasRoleAccess: linkToClone.hasRoleAccess === true,
+                        published: linkToClone.published,
+                        animation: linkToClone.animation,
+                        richTextContent: linkToClone.richTextContent,
                     };
 
                     // Insert cloned link after the original in the sorted list
@@ -4242,7 +4249,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         if (!isEditing) {
             // Only apply role-based filtering if we came from "Your Apps" tab
             // BUT for 'authenticated' tiles (which are now in Your Apps), we show full content
-            const shouldApplyRoleFiltering = sourceTab === 'your-apps' && tile.visibility !== 'authenticated';
+            // Tile admins/editors must see every link they manage (including newly added ones)
+            const shouldApplyRoleFiltering =
+                sourceTab === 'your-apps' &&
+                tile.visibility !== 'authenticated' &&
+                tile.canEdit !== true &&
+                !user?.is_admin;
 
             sectionsToFilter = sectionsToFilter
                 .filter(section => isContentVisible(section) && canViewerSeeByVisibility(section))
@@ -5098,7 +5110,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         const isActive = selectedTabId === tab.id;
                                         const tabSections = tab.sections || [];
                                         // Only apply role-based filtering if source is "Your Apps" tab
-                                        const shouldApplyRoleFiltering = sourceTab === 'your-apps';
+                                        // Tile editors see all links (including newly added ones not yet role-filtered in UI)
+                                        const shouldApplyRoleFiltering =
+                                            sourceTab === 'your-apps' &&
+                                            tile.canEdit !== true &&
+                                            !user?.is_admin;
                                         // Count links, filtering by role access if needed
                                         const tabLinksCount = tabSections.reduce((acc, s) => {
                                             const links = s.links || [];

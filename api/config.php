@@ -2886,28 +2886,26 @@ function canUserEditTile($userId, $tileId, $db) {
     if ($user && $user['is_admin']) {
         return true;
     }
+
+    // Explicit permission rows win (including for owners when a system admin restricted them)
+    $stmt = $db->prepare('SELECT can_edit FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
+    $stmt->execute([$userId, $tileId]);
+    $permission = $stmt->fetch();
+    if ($permission !== false) {
+        return (bool)$permission['can_edit'];
+    }
     
-    // Check if user is the creator of the tile
+    // Check if user is the creator of the tile (no explicit row = full owner access)
     $tileStmt = $db->prepare('SELECT user_id FROM tiles WHERE id = ?');
     $tileStmt->execute([$tileId]);
     $tile = $tileStmt->fetch();
     
     if ($tile && isset($tile['user_id']) && (int)$tile['user_id'] === (int)$userId) {
-        return true; // User is the creator, allow edit
+        return true;
     }
     
-    // Check if user has explicit edit permission
-    $stmt = $db->prepare('SELECT can_edit FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
-    $stmt->execute([$userId, $tileId]);
-    $permission = $stmt->fetch();
-    
-    // If no explicit permission exists, default to true (allow edit)
-    // This handles the case where permission tables exist but aren't being used
-    if ($permission === false) {
-        return true; // No permission record = allow edit (backward compatibility)
-    }
-    
-    return (bool)$permission['can_edit'];
+    // If no explicit permission exists, default to true (backward compatibility)
+    return true;
 }
 
 // Helper function to get user's role IDs (including roles from groups)
@@ -3003,48 +3001,48 @@ function getTileAdminPermissions($userId, $tileId, $db) {
 // Helper function to check if user is tile admin with specific permission
 // This respects tile admin restrictions even if user has role-based permissions
 function canTileAdminPerformAction($userId, $tileId, $action, $db) {
-    // Admins and tile creators bypass all restrictions
+    // System admins bypass all restrictions
     $user = getAuthenticatedUser();
     if ($user && $user['is_admin']) {
         return true;
     }
+
+    // Explicit tile-admin permission rows win — including for space owners when
+    // a system admin has fine-tuned their permissions.
+    $perms = getTileAdminPermissions($userId, $tileId, $db);
+    if ($perms !== null) {
+        $actionMap = [
+            'add_link' => 'canAddLinks',
+            'add_section' => 'canAddSections',
+            'add_tab' => 'canAddTabs',
+            'edit_link' => 'canEditLinks',
+            'delete_link' => 'canDeleteLinks',
+            'delete_section' => 'canDeleteSections',
+            'delete_tab' => 'canDeleteTabs',
+            'change_visibility' => 'canChangeVisibility',
+            'change_browser' => 'canChangeBrowser',
+            'clone_tile' => 'canCloneTile',
+            'view_tile_info' => 'canViewTileInfo',
+            'edit_tile' => 'canEditTile'
+        ];
+
+        if (!isset($actionMap[$action])) {
+            return null;
+        }
+
+        return $perms[$actionMap[$action]];
+    }
     
-    // Check if user is the creator
+    // Creator with no explicit permission row has full access
     $tileStmt = $db->prepare('SELECT user_id FROM tiles WHERE id = ?');
     $tileStmt->execute([$tileId]);
     $tile = $tileStmt->fetch();
     if ($tile && isset($tile['user_id']) && (int)$tile['user_id'] === (int)$userId) {
-        return true; // Creator has full access
+        return true;
     }
-    
-    // Get tile admin permissions
-    $perms = getTileAdminPermissions($userId, $tileId, $db);
-    if ($perms === null) {
-        // Not a tile admin, check role-based permissions or default behavior
-        return null; // Let caller decide based on other permissions
-    }
-    
-    // Map action names to permission fields
-    $actionMap = [
-        'add_link' => 'canAddLinks',
-        'add_section' => 'canAddSections',
-        'add_tab' => 'canAddTabs',
-        'edit_link' => 'canEditLinks',
-        'delete_link' => 'canDeleteLinks',
-        'delete_section' => 'canDeleteSections',
-        'delete_tab' => 'canDeleteTabs',
-        'change_visibility' => 'canChangeVisibility',
-        'change_browser' => 'canChangeBrowser',
-        'clone_tile' => 'canCloneTile',
-        'view_tile_info' => 'canViewTileInfo',
-        'edit_tile' => 'canEditTile'
-    ];
-    
-    if (!isset($actionMap[$action])) {
-        return null; // Unknown action
-    }
-    
-    return $perms[$actionMap[$action]];
+
+    // Not a tile admin — let caller decide based on other permissions
+    return null;
 }
 
 // Helper function to check if user can view a link based on roles
@@ -3064,6 +3062,97 @@ function canUserViewLinkByRole($userId, $linkId, $db) {
     $stmt->execute($params);
     
     return (int)$stmt->fetchColumn() > 0;
+}
+
+/**
+ * Collect all link IDs from a tile data structure (tabs/sections or legacy sections).
+ */
+function collectLinkIdsFromTileData(?array $tileData): array {
+    if (!$tileData || !is_array($tileData)) {
+        return [];
+    }
+    $ids = [];
+    foreach ($tileData['tabs'] ?? [] as $tab) {
+        foreach ($tab['sections'] ?? [] as $section) {
+            foreach ($section['links'] ?? [] as $link) {
+                if (!empty($link['id'])) {
+                    $ids[] = (string)$link['id'];
+                }
+            }
+        }
+        foreach ($tab['links'] ?? [] as $link) {
+            if (!empty($link['id'])) {
+                $ids[] = (string)$link['id'];
+            }
+        }
+    }
+    foreach ($tileData['sections'] ?? [] as $section) {
+        foreach ($section['links'] ?? [] as $link) {
+            if (!empty($link['id'])) {
+                $ids[] = (string)$link['id'];
+            }
+        }
+    }
+    return array_values(array_unique($ids));
+}
+
+/**
+ * After a tile save recreates links, grant role_link_permissions for newly added links
+ * so they remain visible in Your Assigned Apps (same roles that already access the tile/links).
+ *
+ * @param array $roleIdsForNewLinks Optional precomputed role IDs (preferred; collect before link delete)
+ */
+function grantRoleLinkAccessForNewLinks($db, $tileId, array $oldLinkIds, array $newLinkIds, array $roleIdsForNewLinks = []): void {
+    $newOnly = array_values(array_diff($newLinkIds, $oldLinkIds));
+    if (empty($newOnly)) {
+        return;
+    }
+
+    $roleIds = array_values(array_unique(array_map('intval', $roleIdsForNewLinks)));
+
+    // Prefer roles that already have tile-level access
+    if (empty($roleIds)) {
+        $tileRoleStmt = $db->prepare('SELECT DISTINCT role_id FROM role_tile_permissions WHERE tile_id = ? AND can_view = 1');
+        $tileRoleStmt->execute([$tileId]);
+        while ($row = $tileRoleStmt->fetch(PDO::FETCH_ASSOC)) {
+            $roleIds[] = (int)$row['role_id'];
+        }
+    }
+
+    // Fallback: roles that already had any link on this tile before the save
+    if (empty($roleIds) && !empty($oldLinkIds)) {
+        $placeholders = implode(',', array_fill(0, count($oldLinkIds), '?'));
+        $linkRoleStmt = $db->prepare("SELECT DISTINCT role_id FROM role_link_permissions WHERE link_id IN ($placeholders) AND can_view = 1");
+        $linkRoleStmt->execute($oldLinkIds);
+        while ($row = $linkRoleStmt->fetch(PDO::FETCH_ASSOC)) {
+            $roleIds[] = (int)$row['role_id'];
+        }
+        $roleIds = array_values(array_unique($roleIds));
+    }
+
+    if (empty($roleIds)) {
+        return;
+    }
+
+    $now = time();
+    $insertStmt = $db->prepare('
+        INSERT OR IGNORE INTO role_link_permissions (role_id, link_id, can_view, created_at, updated_at)
+        VALUES (?, ?, 1, ?, ?)
+    ');
+    foreach ($newOnly as $linkId) {
+        foreach ($roleIds as $roleId) {
+            $insertStmt->execute([$roleId, $linkId, $now, $now]);
+        }
+    }
+
+    // Also ensure those roles keep tile-level access (needed for Assigned Apps listing)
+    $tileInsert = $db->prepare('
+        INSERT OR IGNORE INTO role_tile_permissions (role_id, tile_id, can_view, created_at, updated_at)
+        VALUES (?, ?, 1, ?, ?)
+    ');
+    foreach ($roleIds as $roleId) {
+        $tileInsert->execute([$roleId, $tileId, $now, $now]);
+    }
 }
 
 // Helper function to check if user can view a tab based on roles

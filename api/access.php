@@ -22,6 +22,8 @@ switch ($method) {
     case 'POST':
         if ($path === '' || $path === '/') {
             handleSetPermission();
+        } elseif ($path === '/transfer-ownership') {
+            handleTransferOwnership();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -510,5 +512,134 @@ function handleDeletePermission($permissionId) {
     sendJSON(['success' => true]);
 }
 
+/**
+ * System-admin only: transfer space ownership to another user.
+ * Optionally keeps the previous owner as a space editor.
+ */
+function handleTransferOwnership() {
+    requireAdmin();
+    $data = getJSONInput();
+
+    $tileId = isset($data['tileId']) ? trim((string)$data['tileId']) : '';
+    $newOwnerUserId = isset($data['newOwnerUserId']) ? (int)$data['newOwnerUserId'] : 0;
+    $keepPreviousOwnerAsEditor = !isset($data['keepPreviousOwnerAsEditor']) || (bool)$data['keepPreviousOwnerAsEditor'];
+
+    if ($tileId === '' || $newOwnerUserId <= 0) {
+        sendJSON(['error' => 'tileId and newOwnerUserId are required'], 400);
+    }
+
+    $db = getDB();
+
+    $tileStmt = $db->prepare('SELECT id, user_id, visibility, allowed_users FROM tiles WHERE id = ? AND deleted_at IS NULL');
+    $tileStmt->execute([$tileId]);
+    $tile = $tileStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$tile) {
+        sendJSON(['error' => 'Tile not found'], 404);
+    }
+
+    $userStmt = $db->prepare('SELECT id, username FROM users WHERE id = ?');
+    $userStmt->execute([$newOwnerUserId]);
+    $newOwner = $userStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$newOwner) {
+        sendJSON(['error' => 'New owner user not found'], 404);
+    }
+
+    $previousOwnerId = isset($tile['user_id']) ? (int)$tile['user_id'] : null;
+    if ($previousOwnerId === $newOwnerUserId) {
+        sendJSON(['error' => 'User is already the owner of this space'], 400);
+    }
+
+    $now = time();
+    $startedTx = false;
+    if (!$db->inTransaction()) {
+        $db->beginTransaction();
+        $startedTx = true;
+    }
+
+    try {
+        $upd = $db->prepare('UPDATE tiles SET user_id = ? WHERE id = ?');
+        $upd->execute([$newOwnerUserId, $tileId]);
+
+        // Ensure new owner has full editor permissions
+        $checkNew = $db->prepare('SELECT user_id FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
+        $checkNew->execute([$newOwnerUserId, $tileId]);
+        if ($checkNew->fetch()) {
+            $fullUpd = $db->prepare('
+                UPDATE user_tile_permissions SET
+                    can_view = 1, can_edit = 1, can_delete = 1,
+                    can_add_links = 1, can_add_sections = 1, can_add_tabs = 1,
+                    can_edit_links = 1, can_delete_links = 1, can_delete_sections = 1, can_delete_tabs = 1,
+                    can_change_visibility = 1, can_change_browser = 1, can_clone_tile = 1,
+                    can_view_tile_info = 1, can_edit_tile = 1, updated_at = ?
+                WHERE user_id = ? AND tile_id = ?
+            ');
+            $fullUpd->execute([$now, $newOwnerUserId, $tileId]);
+        } else {
+            $fullIns = $db->prepare('
+                INSERT INTO user_tile_permissions (
+                    user_id, tile_id, can_view, can_edit, can_delete,
+                    can_add_links, can_add_sections, can_add_tabs,
+                    can_edit_links, can_delete_links, can_delete_sections, can_delete_tabs,
+                    can_change_visibility, can_change_browser, can_clone_tile, can_view_tile_info, can_edit_tile,
+                    created_at, updated_at
+                ) VALUES (?, ?, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, ?, ?)
+            ');
+            $fullIns->execute([$newOwnerUserId, $tileId, $now, $now]);
+        }
+
+        // Private spaces: ensure new owner is in allowed_users
+        if (($tile['visibility'] ?? 'public') === 'private') {
+            $allowed = $tile['allowed_users'] ? json_decode($tile['allowed_users'], true) : [];
+            if (!is_array($allowed)) {
+                $allowed = [];
+            }
+            $allowedInts = array_map('intval', $allowed);
+            if (!in_array($newOwnerUserId, $allowedInts, true)) {
+                $allowedInts[] = $newOwnerUserId;
+            }
+            $allowedStmt = $db->prepare('UPDATE tiles SET allowed_users = ? WHERE id = ?');
+            $allowedStmt->execute([json_encode(array_values(array_unique($allowedInts))), $tileId]);
+        }
+
+        if ($previousOwnerId && !$keepPreviousOwnerAsEditor) {
+            $delPrev = $db->prepare('DELETE FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
+            $delPrev->execute([$previousOwnerId, $tileId]);
+        } elseif ($previousOwnerId) {
+            // Keep previous owner as an editor if they already have a row; otherwise create default editor perms
+            $checkPrev = $db->prepare('SELECT user_id FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
+            $checkPrev->execute([$previousOwnerId, $tileId]);
+            if (!$checkPrev->fetch()) {
+                $prevIns = $db->prepare('
+                    INSERT INTO user_tile_permissions (
+                        user_id, tile_id, can_view, can_edit, can_delete,
+                        can_add_links, can_add_sections, can_add_tabs,
+                        can_edit_links, can_delete_links, can_delete_sections, can_delete_tabs,
+                        can_change_visibility, can_change_browser, can_clone_tile, can_view_tile_info, can_edit_tile,
+                        created_at, updated_at
+                    ) VALUES (?, ?, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, ?, ?)
+                ');
+                $prevIns->execute([$previousOwnerId, $tileId, $now, $now]);
+            }
+        }
+
+        if ($startedTx) {
+            $db->commit();
+        }
+    } catch (Exception $e) {
+        if ($startedTx && $db->inTransaction()) {
+            $db->rollBack();
+        }
+        sendJSON(['error' => 'Failed to transfer ownership: ' . $e->getMessage()], 500);
+    }
+
+    sendJSON([
+        'success' => true,
+        'tileId' => $tileId,
+        'previousOwnerUserId' => $previousOwnerId,
+        'newOwnerUserId' => $newOwnerUserId,
+        'newOwnerUsername' => $newOwner['username'],
+        'keepPreviousOwnerAsEditor' => $keepPreviousOwnerAsEditor
+    ]);
+}
 
 

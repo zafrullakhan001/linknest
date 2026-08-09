@@ -384,8 +384,35 @@ function handleGetTiles() {
                 // Check if user is the creator of the tile
                 $isCreator = isset($row['user_id']) && (int)$row['user_id'] === (int)$user['id'];
                 
-                if ($isCreator) {
-                    // Creators have full access to their own tiles
+                if ($isCreator && isset($tilePermissions[$row['id']])) {
+                    // Owner with explicit admin-set permissions — respect them
+                    $permission = $tilePermissions[$row['id']];
+                    $canView = (bool)$permission['can_view'];
+                    $canEdit = (bool)$permission['can_edit'];
+                    $canDelete = (bool)$permission['can_delete'];
+                    if ($canEdit) {
+                        $granularPerms = getTileAdminPermissions($user['id'], $row['id'], $db);
+                        if ($granularPerms) {
+                            $granularPermissions = $granularPerms;
+                        } elseif (isset($permission['can_add_links'])) {
+                            $granularPermissions = [
+                                'canAddLinks' => (bool)($permission['can_add_links'] ?? true),
+                                'canAddSections' => (bool)($permission['can_add_sections'] ?? true),
+                                'canAddTabs' => (bool)($permission['can_add_tabs'] ?? true),
+                                'canEditLinks' => (bool)($permission['can_edit_links'] ?? true),
+                                'canDeleteLinks' => (bool)($permission['can_delete_links'] ?? false),
+                                'canDeleteSections' => (bool)($permission['can_delete_sections'] ?? false),
+                                'canDeleteTabs' => (bool)($permission['can_delete_tabs'] ?? false),
+                                'canChangeVisibility' => (bool)($permission['can_change_visibility'] ?? false),
+                                'canChangeBrowser' => (bool)($permission['can_change_browser'] ?? false),
+                                'canCloneTile' => (bool)($permission['can_clone_tile'] ?? false),
+                                'canViewTileInfo' => (bool)($permission['can_view_tile_info'] ?? true),
+                                'canEditTile' => (bool)($permission['can_edit_tile'] ?? true)
+                            ];
+                        }
+                    }
+                } elseif ($isCreator) {
+                    // Creators without an explicit permission row have full access
                     $canView = true;
                     $canEdit = true;
                     $canDelete = true;
@@ -1086,10 +1113,19 @@ function handleGetTile($tileId) {
             $isCreator = isset($row['user_id']) && (int)$row['user_id'] === (int)$user['id'];
             
             if ($isCreator) {
-                // Creators have full access to their own tiles
-                $canView = true;
-                $canEdit = true;
-                $canDelete = true;
+                // Prefer explicit permission row when a system admin has fine-tuned the owner
+                $permStmt = $db->prepare('SELECT can_view, can_edit, can_delete FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
+                $permStmt->execute([$user['id'], $row['id']]);
+                $permission = $permStmt->fetch();
+                if ($permission) {
+                    $canView = (bool)$permission['can_view'];
+                    $canEdit = (bool)$permission['can_edit'];
+                    $canDelete = (bool)$permission['can_delete'];
+                } else {
+                    $canView = true;
+                    $canEdit = true;
+                    $canDelete = true;
+                }
             } else {
                 // Check for explicit permissions
                 $permStmt = $db->prepare('SELECT can_view, can_edit, can_delete FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
@@ -5625,6 +5661,24 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
             $data['tabs'] = mergeUnpublishedContentForSave($data['tabs'] ?? [], $currentTileData['tabs']);
         }
 
+        // Preserve role assignments across delete/recreate; grant new links the same role access
+        $oldLinkIdsForRoles = collectLinkIdsFromTileData($currentTileData);
+        $rolesForNewLinks = [];
+        $tileRoleStmt = $db->prepare('SELECT DISTINCT role_id FROM role_tile_permissions WHERE tile_id = ? AND can_view = 1');
+        $tileRoleStmt->execute([$tileId]);
+        while ($row = $tileRoleStmt->fetch(PDO::FETCH_ASSOC)) {
+            $rolesForNewLinks[] = (int)$row['role_id'];
+        }
+        if (empty($rolesForNewLinks) && !empty($oldLinkIdsForRoles)) {
+            $placeholders = implode(',', array_fill(0, count($oldLinkIdsForRoles), '?'));
+            $linkRoleStmt = $db->prepare("SELECT DISTINCT role_id FROM role_link_permissions WHERE link_id IN ($placeholders) AND can_view = 1");
+            $linkRoleStmt->execute($oldLinkIdsForRoles);
+            while ($row = $linkRoleStmt->fetch(PDO::FETCH_ASSOC)) {
+                $rolesForNewLinks[] = (int)$row['role_id'];
+            }
+            $rolesForNewLinks = array_values(array_unique($rolesForNewLinks));
+        }
+
         $db->prepare('DELETE FROM rich_text_content WHERE section_id IN (SELECT id FROM sections WHERE tile_id = ?)')->execute([$tileId]);
         $db->prepare('DELETE FROM links WHERE section_id IN (SELECT id FROM sections WHERE tile_id = ?)')->execute([$tileId]);
         $db->prepare('DELETE FROM sections WHERE tile_id = ?')->execute([$tileId]);
@@ -5632,6 +5686,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
         $db->prepare('DELETE FROM tile_messages WHERE tile_id = ?')->execute([$tileId]);
     
         // Insert new tabs, sections, and links
+        $savedLinkIdsForRoles = [];
         if (isset($data['tabs']) && is_array($data['tabs'])) {
             foreach ($data['tabs'] as $tabIndex => $tab) {
                 $tabId = $tab['id'] ?? uniqid('tab_', true);
@@ -5684,6 +5739,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                         if (isset($section['links']) && is_array($section['links'])) {
                             foreach ($section['links'] as $link) {
                                 $linkId = $link['id'] ?? uniqid('link_', true);
+                                $savedLinkIdsForRoles[] = (string)$linkId;
                                 $visibility = $link['visibility'] ?? 'public';
                                 $allowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) ? json_encode($link['allowedUsers']) : null;
                                 $allowedGroups = isset($link['allowedGroups']) && is_array($link['allowedGroups']) ? json_encode($link['allowedGroups']) : null;
@@ -5749,6 +5805,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                     foreach ($section['links'] as $link) {
                         if (!isset($link['label']) || !isset($link['url'])) continue;
                         $linkId = $link['id'] ?? uniqid('link_', true);
+                        $savedLinkIdsForRoles[] = (string)$linkId;
                         $visibility = $link['visibility'] ?? 'public';
                         $allowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) ? json_encode($link['allowedUsers']) : null;
                         $allowedGroups = isset($link['allowedGroups']) && is_array($link['allowedGroups']) ? json_encode($link['allowedGroups']) : null;
@@ -5781,6 +5838,9 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                 }
             }
         }
+
+        // New/cloned links need role_link_permissions or they vanish from Your Assigned Apps after save
+        grantRoleLinkAccessForNewLinks($db, $tileId, $oldLinkIdsForRoles, $savedLinkIdsForRoles, $rolesForNewLinks);
         
         // Messages
         if (isset($data['messages']) && is_array($data['messages'])) {
