@@ -95,12 +95,16 @@ export const OverviewHub: React.FC<OverviewHubProps> = ({
 
   return (
     <div className="space-y-6">
-      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Access Manager</h3>
-        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1 max-w-2xl">
-          Control who can see content and who can edit spaces. Start with roles for visibility, use teams to
-          share roles across people, and assign space editors only when someone needs to change a space.
-        </p>
+      <div className="bg-white dark:bg-slate-800 border border-sky-200/70 dark:border-sky-800/40 rounded-xl overflow-hidden shadow-sm shadow-sky-500/5">
+        <div className="bg-gradient-to-r from-sky-50 via-teal-50/80 to-cyan-50/60 dark:from-sky-950/40 dark:via-teal-950/30 dark:to-cyan-950/20 border-b border-sky-100 dark:border-sky-800/40 px-6 py-5">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <span aria-hidden>🛡️</span> Access Manager
+          </h3>
+          <p className="text-sm text-sky-800/70 dark:text-sky-200/70 mt-0.5 max-w-2xl">
+            Control who can see content and who can edit spaces. Start with roles for visibility, use teams to
+            share roles across people, and assign space editors only when someone needs to change a space.
+          </p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -114,14 +118,12 @@ export const OverviewHub: React.FC<OverviewHubProps> = ({
               onNavigate('roles');
             }
           }}
-          className="text-left bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 hover:border-brand-400 dark:hover:border-brand-500 hover:shadow-md transition-all group cursor-pointer"
+          className="text-left bg-white dark:bg-slate-800 border border-sky-100 dark:border-sky-900/40 rounded-xl p-5 hover:border-sky-400 dark:hover:border-sky-500 hover:shadow-md hover:shadow-sky-500/10 transition-all group cursor-pointer"
         >
-          <div className="w-10 h-10 rounded-lg bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300 flex items-center justify-center mb-3">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-              <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />
-            </svg>
+          <div className="w-10 h-10 rounded-lg bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300 flex items-center justify-center mb-3 text-xl" aria-hidden>
+            🎭
           </div>
-          <h4 className="text-base font-semibold text-slate-900 dark:text-white group-hover:text-brand-600 dark:group-hover:text-brand-400">
+          <h4 className="text-base font-semibold text-slate-900 dark:text-white group-hover:text-sky-600 dark:group-hover:text-sky-400">
             Roles
           </h4>
           <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">
@@ -139,7 +141,7 @@ export const OverviewHub: React.FC<OverviewHubProps> = ({
                 onNavigate('roles');
                 if (rolesCount === 0) onCreateRole();
               }}
-              className="text-sm font-medium text-brand-600 dark:text-brand-400 hover:underline"
+              className="text-sm font-medium text-sky-600 dark:text-sky-400 hover:underline"
             >
               {rolesCount === 0 ? 'Create a role' : 'Manage roles'}
             </button>
@@ -156,14 +158,12 @@ export const OverviewHub: React.FC<OverviewHubProps> = ({
               onNavigate('groups');
             }
           }}
-          className="text-left bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 hover:border-brand-400 dark:hover:border-brand-500 hover:shadow-md transition-all group cursor-pointer"
+          className="text-left bg-white dark:bg-slate-800 border border-sky-100 dark:border-sky-900/40 rounded-xl p-5 hover:border-sky-400 dark:hover:border-sky-500 hover:shadow-md hover:shadow-sky-500/10 transition-all group cursor-pointer"
         >
-          <div className="w-10 h-10 rounded-lg bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 flex items-center justify-center mb-3">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-              <path d="M10 9a3 3 0 100-6 3 3 0 000 6zM6 8a2 2 0 11-4 0 2 2 0 014 0zM1.49 15.326a.78.78 0 01-.358-.442 3 3 0 014.308-3.516 6.484 6.484 0 00-1.905 3.959c-.023.222-.014.442.025.654a4.97 4.97 0 01-2.07-.655zM16.44 15.98a4.97 4.97 0 002.07-.654.78.78 0 00.357-.442 3 3 0 00-4.308-3.517 6.484 6.484 0 011.907 3.96 2.32 2.32 0 01-.026.654zM18 8a2 2 0 11-4 0 2 2 0 014 0zM5.304 16.19a.844.844 0 01-.277-.71 5 5 0 019.947 0 .843.843 0 01-.277.71A6.975 6.975 0 0110 18a6.974 6.974 0 01-4.696-1.81z" />
-            </svg>
+          <div className="w-10 h-10 rounded-lg bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 flex items-center justify-center mb-3 text-xl" aria-hidden>
+            👥
           </div>
-          <h4 className="text-base font-semibold text-slate-900 dark:text-white group-hover:text-brand-600 dark:group-hover:text-brand-400">
+          <h4 className="text-base font-semibold text-slate-900 dark:text-white group-hover:text-sky-600 dark:group-hover:text-sky-400">
             Teams
           </h4>
           <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">
@@ -180,7 +180,7 @@ export const OverviewHub: React.FC<OverviewHubProps> = ({
                 onNavigate('groups');
                 if (teamsCount === 0) onCreateTeam();
               }}
-              className="text-sm font-medium text-brand-600 dark:text-brand-400 hover:underline"
+              className="text-sm font-medium text-sky-600 dark:text-sky-400 hover:underline"
             >
               {teamsCount === 0 ? 'Create a team' : 'Manage teams'}
             </button>
@@ -197,14 +197,12 @@ export const OverviewHub: React.FC<OverviewHubProps> = ({
               onNavigate('editors');
             }
           }}
-          className="text-left bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 hover:border-brand-400 dark:hover:border-brand-500 hover:shadow-md transition-all group cursor-pointer"
+          className="text-left bg-white dark:bg-slate-800 border border-sky-100 dark:border-sky-900/40 rounded-xl p-5 hover:border-sky-400 dark:hover:border-sky-500 hover:shadow-md hover:shadow-sky-500/10 transition-all group cursor-pointer"
         >
-          <div className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 flex items-center justify-center mb-3">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-              <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
-            </svg>
+          <div className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 flex items-center justify-center mb-3 text-xl" aria-hidden>
+            ✏️
           </div>
-          <h4 className="text-base font-semibold text-slate-900 dark:text-white group-hover:text-brand-600 dark:group-hover:text-brand-400">
+          <h4 className="text-base font-semibold text-slate-900 dark:text-white group-hover:text-sky-600 dark:group-hover:text-sky-400">
             Space editors
           </h4>
           <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">
@@ -222,7 +220,7 @@ export const OverviewHub: React.FC<OverviewHubProps> = ({
                 onNavigate('editors');
                 onAssignEditors();
               }}
-              className="text-sm font-medium text-brand-600 dark:text-brand-400 hover:underline"
+              className="text-sm font-medium text-sky-600 dark:text-sky-400 hover:underline"
             >
               Assign editors
             </button>
@@ -231,7 +229,7 @@ export const OverviewHub: React.FC<OverviewHubProps> = ({
       </div>
 
       {/* How access fits together */}
-      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+      <div className="bg-white dark:bg-slate-800 border border-sky-100 dark:border-sky-900/40 rounded-xl p-6 bg-gradient-to-br from-sky-50/40 to-white dark:from-sky-950/20 dark:to-slate-800">
         <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">How access fits together</h4>
         <div className="overflow-x-auto">
           <div className="min-w-[640px] flex flex-col gap-4 text-sm">
@@ -260,18 +258,18 @@ export const OverviewHub: React.FC<OverviewHubProps> = ({
       </div>
 
       {showChecklist && (
-        <div className="bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-xl p-6">
+        <div className="rounded-xl border border-sky-200/70 dark:border-sky-800/40 bg-gradient-to-r from-sky-50/80 to-teal-50/50 dark:from-sky-950/30 dark:to-teal-950/20 p-6">
           <div className="flex items-start justify-between gap-4 mb-4">
             <div>
-              <h4 className="text-sm font-semibold text-brand-900 dark:text-brand-100">Get started</h4>
-              <p className="text-xs text-brand-800/80 dark:text-brand-200/80 mt-1">
+              <h4 className="text-sm font-semibold text-sky-900 dark:text-sky-100">Get started</h4>
+              <p className="text-xs text-sky-800/80 dark:text-sky-200/80 mt-1">
                 Follow these steps once — you can skip optional ones.
               </p>
             </div>
             <button
               type="button"
               onClick={dismissChecklist}
-              className="text-xs text-brand-700 dark:text-brand-300 hover:underline shrink-0"
+              className="text-xs text-sky-700 dark:text-sky-300 hover:underline shrink-0"
             >
               Dismiss
             </button>
@@ -292,7 +290,7 @@ export const OverviewHub: React.FC<OverviewHubProps> = ({
                     className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${
                       step.done
                         ? 'bg-emerald-500 text-white'
-                        : 'bg-brand-100 dark:bg-brand-800 text-brand-700 dark:text-brand-200'
+                        : 'bg-sky-100 dark:bg-sky-800 text-sky-700 dark:text-sky-200'
                     }`}
                   >
                     {step.done ? (
@@ -316,11 +314,11 @@ export const OverviewHub: React.FC<OverviewHubProps> = ({
         </div>
       )}
 
-      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+      <div className="bg-white dark:bg-slate-800 border border-sky-100 dark:border-sky-900/40 rounded-xl overflow-hidden">
         <button
           type="button"
           onClick={() => setComparisonOpen(!comparisonOpen)}
-          className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-slate-50 dark:hover:bg-slate-900/40 transition-colors"
+          className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-sky-50/50 dark:hover:bg-sky-950/30 transition-colors"
         >
           <span className="text-sm font-semibold text-slate-900 dark:text-white">Not sure which to use?</span>
           <svg
@@ -336,7 +334,7 @@ export const OverviewHub: React.FC<OverviewHubProps> = ({
           <div className="px-6 pb-6 overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-200 dark:border-slate-700 text-left">
+                <tr className="border-b border-sky-100 dark:border-sky-900/40 text-left">
                   <th className="py-2 pr-4 font-semibold text-slate-700 dark:text-slate-300">Tool</th>
                   <th className="py-2 pr-4 font-semibold text-slate-700 dark:text-slate-300">What it does</th>
                   <th className="py-2 font-semibold text-slate-700 dark:text-slate-300">When to use it</th>

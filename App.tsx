@@ -1164,7 +1164,7 @@ const AppContent: React.FC = () => {
         <div ref={celebrationContainerRef} className={`absolute inset-0 w-full overflow-hidden pointer-events-none ${styles?.celebrationShowOnForeground ? 'z-[9999]' : 'z-0'}`} aria-hidden>
           <CelebrationEffects containerRef={celebrationContainerRef} styles={styles} />
         </div>
-        <main className={`flex-grow container mx-auto px-4 py-8 max-w-6xl-plus linknest-page-content relative z-10 ${styles?.backgroundRaised ? 'linknest-page-background' : ''} ${!guestAccessEnabled && !isAuthenticated ? 'flex items-center justify-center' : ''}`}>
+        <main className={`flex-grow mx-auto px-4 py-8 w-full linknest-page-content relative z-10 ${route === '#/admin' ? 'max-w-admin' : 'container max-w-6xl-plus'} ${styles?.backgroundRaised ? 'linknest-page-background' : ''} ${!guestAccessEnabled && !isAuthenticated ? 'flex items-center justify-center' : ''}`}>
           <div className="relative min-h-0">
             {content}
           </div>

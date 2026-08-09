@@ -265,44 +265,48 @@ export const AddonsManagement: React.FC = () => {
         return (
             <div className="p-6">
                 <div className="text-center">
-                    <div className="inline-block w-8 h-8 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
-                    <p className="mt-4 text-gray-600">Loading add-ons configuration...</p>
+                    <div className="inline-block w-8 h-8 border-4 border-sky-500/20 border-t-sky-500 rounded-full animate-spin"></div>
+                    <p className="mt-4 text-slate-600 dark:text-slate-400">Loading add-ons configuration...</p>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="p-6 max-w-6xl mx-auto">
-            <div className="mb-6">
-                <h1 className="text-2xl font-bold text-gray-800 mb-2">Add-ons</h1>
-                <p className="text-gray-600">Manage optional features and integrations for LinkNest</p>
+        <div className="w-full space-y-6">
+            <div className="bg-white dark:bg-slate-800 border border-sky-200/70 dark:border-sky-800/40 rounded-xl overflow-hidden shadow-sm shadow-sky-500/5">
+                <div className="bg-gradient-to-r from-sky-50 via-teal-50/80 to-cyan-50/60 dark:from-sky-950/40 dark:via-teal-950/30 dark:to-cyan-950/20 border-b border-sky-100 dark:border-sky-800/40 px-6 py-5">
+                    <h1 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <span aria-hidden>🔌</span> Add-ons
+                    </h1>
+                    <p className="text-sm text-sky-800/70 dark:text-sky-200/70 mt-0.5">Manage optional features and integrations for LinkNest</p>
+                </div>
             </div>
 
             {/* Performance Analytics Add-on Card */}
-            <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
-                <div className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-200">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-sky-200/70 dark:border-sky-800/40 overflow-hidden shadow-sky-500/5">
+                <div className="p-6 bg-gradient-to-r from-sky-50 via-teal-50/80 to-cyan-50/60 dark:from-sky-950/40 dark:via-teal-950/30 dark:to-cyan-950/20 border-b border-sky-100 dark:border-sky-800/40">
                     <div className="flex items-start justify-between">
                         <div className="flex items-start gap-4 flex-1">
-                            <div className="text-4xl">📊</div>
+                            <div className="text-4xl" aria-hidden>📊</div>
                             <div className="flex-1">
                                 <div className="flex items-center gap-3 mb-2">
-                                    <h2 className="text-xl font-bold text-gray-800">Performance Analytics</h2>
+                                    <h2 className="text-xl font-bold text-slate-900 dark:text-white">Performance Analytics</h2>
                                     {getStatusBadge()}
                                 </div>
-                                <p className="text-sm text-gray-600 mb-3">
+                                <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
                                     Real-time URL performance monitoring with geographic insights. Track client vs server latency across different regions with bubble chart visualizations.
                                 </p>
 
                                 {healthStatus && healthStatus.status === 'available' && (
                                     <div className="flex gap-4 text-sm">
-                                        <div className="px-3 py-1 bg-white rounded-lg border border-gray-200">
-                                            <span className="text-gray-600">Metrics:</span>
-                                            <span className="font-semibold text-gray-800 ml-1">{healthStatus.metrics_count?.toLocaleString() || 0}</span>
+                                        <div className="px-3 py-1 bg-white rounded-lg border border-sky-100 dark:border-sky-900/40">
+                                            <span className="text-slate-600 dark:text-slate-400">Metrics:</span>
+                                            <span className="font-semibold text-slate-900 dark:text-white ml-1">{healthStatus.metrics_count?.toLocaleString() || 0}</span>
                                         </div>
-                                        <div className="px-3 py-1 bg-white rounded-lg border border-gray-200">
-                                            <span className="text-gray-600">Queue:</span>
-                                            <span className="font-semibold text-gray-800 ml-1">{healthStatus.queue_pending || 0}</span>
+                                        <div className="px-3 py-1 bg-white rounded-lg border border-sky-100 dark:border-sky-900/40">
+                                            <span className="text-slate-600 dark:text-slate-400">Queue:</span>
+                                            <span className="font-semibold text-slate-900 dark:text-white ml-1">{healthStatus.queue_pending || 0}</span>
                                         </div>
                                     </div>
                                 )}
@@ -312,7 +316,7 @@ export const AddonsManagement: React.FC = () => {
                         <div className="flex items-center gap-3">
                             <button
                                 onClick={() => setExpanded(!expanded)}
-                                className="px-4 py-2 text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                                className="px-4 py-2 text-sm text-sky-600 hover:text-sky-700 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-950/40 rounded-lg transition-colors"
                             >
                                 {expanded ? 'Hide' : 'Configure'}
                             </button>
@@ -324,7 +328,7 @@ export const AddonsManagement: React.FC = () => {
                                     onChange={(e) => setConfig({ ...config, enabled: e.target.checked })}
                                     className="sr-only peer"
                                 />
-                                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-sky-300 dark:peer-focus:ring-sky-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-sky-600"></div>
                             </label>
                         </div>
                     </div>
@@ -332,7 +336,7 @@ export const AddonsManagement: React.FC = () => {
 
                 {/* Configuration Panel */}
                 {expanded && (
-                    <div className="p-6 space-y-6 bg-gray-50">
+                    <div className="p-6 space-y-6 bg-sky-50/40 dark:bg-sky-950/20">
                         {error && (
                             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
                                 <strong>Error:</strong> {error}
@@ -340,25 +344,25 @@ export const AddonsManagement: React.FC = () => {
                         )}
 
                         {/* Tab navigation */}
-                        <div className="flex gap-1 border-b border-gray-200 bg-white rounded-t-lg overflow-hidden">
+                        <div className="flex gap-1 border-b border-sky-100 dark:border-sky-900/40 bg-white rounded-t-lg overflow-hidden">
                             <button
                                 type="button"
                                 onClick={() => setAnalyticsTab('config')}
-                                className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${analyticsTab === 'config' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                                className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${analyticsTab === 'config' ? 'bg-sky-600 text-white' : 'text-slate-600 dark:text-slate-400 hover:bg-gray-100'}`}
                             >
                                 Configuration
                             </button>
                             <button
                                 type="button"
                                 onClick={() => setAnalyticsTab('backup-restore')}
-                                className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${analyticsTab === 'backup-restore' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                                className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${analyticsTab === 'backup-restore' ? 'bg-sky-600 text-white' : 'text-slate-600 dark:text-slate-400 hover:bg-gray-100'}`}
                             >
                                 Backup & Restore
                             </button>
                             <button
                                 type="button"
                                 onClick={() => setAnalyticsTab('geo-resources')}
-                                className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${analyticsTab === 'geo-resources' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                                className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${analyticsTab === 'geo-resources' ? 'bg-sky-600 text-white' : 'text-slate-600 dark:text-slate-400 hover:bg-gray-100'}`}
                             >
                                 Geo-location Resources
                             </button>
@@ -367,8 +371,8 @@ export const AddonsManagement: React.FC = () => {
                         {analyticsTab === 'config' && (
                             <>
                                 {/* PostgreSQL Connection */}
-                                <div className="bg-white rounded-lg border border-gray-200 p-5">
-                                    <h3 className="text-lg font-semibold text-gray-800 mb-4">PostgreSQL Connection</h3>
+                                <div className="bg-white rounded-lg border border-sky-100 dark:border-sky-900/40 p-5">
+                                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">PostgreSQL Connection</h3>
 
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
@@ -379,7 +383,7 @@ export const AddonsManagement: React.FC = () => {
                                                 type="text"
                                                 value={config.pgHost}
                                                 onChange={(e) => setConfig({ ...config, pgHost: e.target.value })}
-                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:ring-sky-800"
                                                 placeholder="localhost"
                                             />
                                         </div>
@@ -392,7 +396,7 @@ export const AddonsManagement: React.FC = () => {
                                                 type="number"
                                                 value={config.pgPort}
                                                 onChange={(e) => setConfig({ ...config, pgPort: parseInt(e.target.value) })}
-                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:ring-sky-800"
                                                 placeholder="5433"
                                             />
                                         </div>
@@ -407,7 +411,7 @@ export const AddonsManagement: React.FC = () => {
                                                 type="text"
                                                 value={config.pgDatabase}
                                                 onChange={(e) => setConfig({ ...config, pgDatabase: e.target.value })}
-                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:ring-sky-800"
                                                 placeholder="linknest_analytics"
                                             />
                                         </div>
@@ -420,7 +424,7 @@ export const AddonsManagement: React.FC = () => {
                                                 type="text"
                                                 value={config.pgUser}
                                                 onChange={(e) => setConfig({ ...config, pgUser: e.target.value })}
-                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:ring-sky-800"
                                                 placeholder="postgres"
                                             />
                                         </div>
@@ -445,7 +449,7 @@ export const AddonsManagement: React.FC = () => {
                                         <button
                                             onClick={handleTestConnection}
                                             disabled={testing || !config.pgHost || !config.pgDatabase}
-                                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                            className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             {testing ? 'Testing...' : 'Test Connection'}
                                         </button>
@@ -480,8 +484,8 @@ export const AddonsManagement: React.FC = () => {
                                 </div>
 
                                 {/* Tracking Options */}
-                                <div className="bg-white rounded-lg border border-gray-200 p-5">
-                                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Tracking Options</h3>
+                                <div className="bg-white rounded-lg border border-sky-100 dark:border-sky-900/40 p-5">
+                                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Tracking Options</h3>
 
                                     <div className="space-y-3">
                                         <label className="flex items-center gap-3 cursor-pointer">
@@ -489,7 +493,7 @@ export const AddonsManagement: React.FC = () => {
                                                 type="checkbox"
                                                 checked={config.trackAnonymous}
                                                 onChange={(e) => setConfig({ ...config, trackAnonymous: e.target.checked })}
-                                                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                className="w-4 h-4 rounded border-gray-300 text-sky-600 dark:text-sky-400 focus:ring-sky-500"
                                             />
                                             <div>
                                                 <span className="text-sm font-medium text-gray-700">Track anonymous visitors</span>
@@ -502,7 +506,7 @@ export const AddonsManagement: React.FC = () => {
                                                 type="checkbox"
                                                 checked={config.trackLogins}
                                                 onChange={(e) => setConfig({ ...config, trackLogins: e.target.checked })}
-                                                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                className="w-4 h-4 rounded border-gray-300 text-sky-600 dark:text-sky-400 focus:ring-sky-500"
                                             />
                                             <div>
                                                 <span className="text-sm font-medium text-gray-700">Track user logins</span>
@@ -515,7 +519,7 @@ export const AddonsManagement: React.FC = () => {
                                                 type="checkbox"
                                                 checked={config.workerEnabled}
                                                 onChange={(e) => setConfig({ ...config, workerEnabled: e.target.checked })}
-                                                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                className="w-4 h-4 rounded border-gray-300 text-sky-600 dark:text-sky-400 focus:ring-sky-500"
                                             />
                                             <div>
                                                 <span className="text-sm font-medium text-gray-700">Enable background worker</span>
@@ -536,7 +540,7 @@ export const AddonsManagement: React.FC = () => {
                                                 step="0.01"
                                                 value={config.sampleRate}
                                                 onChange={(e) => setConfig({ ...config, sampleRate: parseFloat(e.target.value) })}
-                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:ring-sky-800"
                                             />
                                             <p className="text-xs text-gray-500 mt-1">
                                                 0.1 = 10% of traffic (reduces load)
@@ -553,7 +557,7 @@ export const AddonsManagement: React.FC = () => {
                                                 max="365"
                                                 value={config.retentionDays}
                                                 onChange={(e) => setConfig({ ...config, retentionDays: parseInt(e.target.value) })}
-                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:ring-sky-800"
                                             />
                                             <p className="text-xs text-gray-500 mt-1">
                                                 How long to keep metrics data
@@ -563,8 +567,8 @@ export const AddonsManagement: React.FC = () => {
                                 </div>
 
                                 {/* Monitored URLs */}
-                                <div className="bg-white rounded-lg border border-gray-200 p-5">
-                                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Monitored URLs</h3>
+                                <div className="bg-white rounded-lg border border-sky-100 dark:border-sky-900/40 p-5">
+                                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Monitored URLs</h3>
 
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -574,7 +578,7 @@ export const AddonsManagement: React.FC = () => {
                                             value={beaconUrlsText}
                                             onChange={(e) => setBeaconUrlsText(e.target.value)}
                                             rows={5}
-                                            className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 font-mono text-sm"
+                                            className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:ring-sky-800 font-mono text-sm"
                                             placeholder={'https://example.com/app1\nhttps://example.com/app2\n\nLeave empty to monitor all links'}
                                         />
                                         <p className="text-xs text-gray-500 mt-1">
@@ -584,8 +588,8 @@ export const AddonsManagement: React.FC = () => {
                                 </div>
 
                                 {/* Dashboard Access */}
-                                <div className="bg-white rounded-lg border border-gray-200 p-5">
-                                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Analytics Dashboard</h3>
+                                <div className="bg-white rounded-lg border border-sky-100 dark:border-sky-900/40 p-5">
+                                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Analytics Dashboard</h3>
 
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -595,7 +599,7 @@ export const AddonsManagement: React.FC = () => {
                                             type="url"
                                             value={config.dashboardUrl}
                                             onChange={(e) => setConfig({ ...config, dashboardUrl: e.target.value })}
-                                            className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                                            className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:ring-sky-800"
                                             placeholder="http://localhost:9333"
                                         />
                                         <p className="text-xs text-gray-500 mt-1">
@@ -608,7 +612,7 @@ export const AddonsManagement: React.FC = () => {
                                             href={config.dashboardUrl}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
+                                            className="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white shadow-sm shadow-sky-500/20 rounded-lg transition-colors"
                                         >
                                             <span>Open Analytics Dashboard</span>
                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -619,23 +623,23 @@ export const AddonsManagement: React.FC = () => {
                                 </div>
 
                                 {/* Setup Actions */}
-                                <div className="bg-white rounded-lg border border-gray-200 p-5">
-                                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Quick Setup Actions</h3>
+                                <div className="bg-white rounded-lg border border-sky-100 dark:border-sky-900/40 p-5">
+                                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Quick Setup Actions</h3>
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         {/* Setup Schema */}
-                                        <div className="border border-gray-200 rounded-lg p-4">
+                                        <div className="border border-sky-100 dark:border-sky-900/40 rounded-lg p-4">
                                             <div className="flex items-start justify-between mb-3">
                                                 <div>
-                                                    <h4 className="font-semibold text-gray-800 mb-1">1. Setup Database Schema</h4>
-                                                    <p className="text-xs text-gray-600">Initialize TimescaleDB tables and views</p>
+                                                    <h4 className="font-semibold text-slate-900 dark:text-white mb-1">1. Setup Database Schema</h4>
+                                                    <p className="text-xs text-slate-600 dark:text-slate-400">Initialize TimescaleDB tables and views</p>
                                                 </div>
                                                 <span className="text-2xl">🗄️</span>
                                             </div>
                                             <button
                                                 onClick={() => handleSetupAction('setup-schema')}
                                                 disabled={setupActions['setup-schema'] || !config.enabled}
-                                                className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                                                className="w-full px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
                                             >
                                                 {setupActions['setup-schema'] ? 'Setting up...' : 'Setup Schema'}
                                             </button>
@@ -647,23 +651,23 @@ export const AddonsManagement: React.FC = () => {
                                         </div>
 
                                         {/* Download GeoLite2 */}
-                                        <div className="border border-gray-200 rounded-lg p-4">
+                                        <div className="border border-sky-100 dark:border-sky-900/40 rounded-lg p-4">
                                             <div className="flex items-start justify-between mb-3">
                                                 <div>
-                                                    <h4 className="font-semibold text-gray-800 mb-1">2. GeoLite2 Database</h4>
-                                                    <p className="text-xs text-gray-600">Get instructions for offline geolocation</p>
+                                                    <h4 className="font-semibold text-slate-900 dark:text-white mb-1">2. GeoLite2 Database</h4>
+                                                    <p className="text-xs text-slate-600 dark:text-slate-400">Get instructions for offline geolocation</p>
                                                 </div>
                                                 <span className="text-2xl">🌍</span>
                                             </div>
                                             <button
                                                 onClick={() => handleSetupAction('download-geolite2')}
                                                 disabled={setupActions['download-geolite2']}
-                                                className="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                                                className="w-full px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white shadow-sm shadow-sky-500/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
                                             >
                                                 {setupActions['download-geolite2'] ? 'Checking...' : 'Get Instructions'}
                                             </button>
                                             {setupResults['download-geolite2'] && (
-                                                <div className="mt-2 p-2 rounded text-xs bg-blue-50 text-blue-700">
+                                                <div className="mt-2 p-2 rounded text-xs bg-sky-50 dark:bg-sky-950/30 text-sky-700 dark:text-sky-300">
                                                     {setupResults['download-geolite2'].already_exists ? (
                                                         <p>✓ Database already exists</p>
                                                     ) : (
@@ -675,7 +679,7 @@ export const AddonsManagement: React.FC = () => {
                                                                 ))}
                                                             </ol>
                                                             {setupResults['download-geolite2'].download_url && (
-                                                                <a href={setupResults['download-geolite2'].download_url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-blue-600 hover:underline">
+                                                                <a href={setupResults['download-geolite2'].download_url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-sky-600 dark:text-sky-400 hover:underline">
                                                                     Open MaxMind Downloads →
                                                                 </a>
                                                             )}
@@ -716,15 +720,15 @@ export const AddonsManagement: React.FC = () => {
                                         </div>
 
                                         {/* Worker Instructions */}
-                                        <div className="border border-gray-200 rounded-lg p-4">
+                                        <div className="border border-sky-100 dark:border-sky-900/40 rounded-lg p-4">
                                             <div className="flex items-start justify-between mb-3">
                                                 <div>
-                                                    <h4 className="font-semibold text-gray-800 mb-1">3. Start Workers</h4>
-                                                    <p className="text-xs text-gray-600">Run background processing workers</p>
+                                                    <h4 className="font-semibold text-slate-900 dark:text-white mb-1">3. Start Workers</h4>
+                                                    <p className="text-xs text-slate-600 dark:text-slate-400">Run background processing workers</p>
                                                 </div>
                                                 <span className="text-2xl">⚙️</span>
                                             </div>
-                                            <div className="space-y-2 text-xs text-gray-600">
+                                            <div className="space-y-2 text-xs text-slate-600 dark:text-slate-400">
                                                 <p><strong>Option 1: Use Batch File (Recommended for XAMPP)</strong></p>
                                                 <code className="block bg-gray-100 px-2 py-1 rounded">analytics\start-workers-xampp.bat</code>
                                                 <p className="mt-2"><strong>Option 2: Manual Commands</strong></p>
@@ -737,21 +741,21 @@ export const AddonsManagement: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                    <div className="mt-4 p-3 bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800 rounded-lg">
                                         <p className="text-sm text-blue-800">
-                                            <strong>Note:</strong> Ensure PostgreSQL with TimescaleDB is running on <code className="bg-blue-100 px-1 rounded">{config.pgHost}:{config.pgPort}</code> before running setup.
+                                            <strong>Note:</strong> Ensure PostgreSQL with TimescaleDB is running on <code className="bg-sky-100 dark:bg-sky-900/40 px-1 rounded">{config.pgHost}:{config.pgPort}</code> before running setup.
                                         </p>
                                     </div>
                                 </div>
 
                                 {/* Action Buttons - only for Configuration tab */}
-                                <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+                                <div className="flex justify-end gap-3 pt-4 border-t border-sky-100 dark:border-sky-900/40">
                                     <button
                                         onClick={() => {
                                             setExpanded(false);
                                             loadConfiguration(); // Reload to discard changes
                                         }}
-                                        className="px-5 py-2 text-gray-700 hover:text-gray-900 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                                        className="px-5 py-2 text-gray-700 hover:text-gray-900 bg-white border border-gray-300 rounded-lg hover:bg-sky-50/40 dark:bg-sky-950/20 transition-colors"
                                     >
                                         Cancel
                                     </button>
@@ -759,7 +763,7 @@ export const AddonsManagement: React.FC = () => {
                                     <button
                                         onClick={handleSave}
                                         disabled={saving}
-                                        className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                                        className="px-5 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                                     >
                                         {saving ? 'Saving...' : 'Save Configuration'}
                                     </button>
@@ -769,9 +773,9 @@ export const AddonsManagement: React.FC = () => {
 
                         {analyticsTab === 'backup-restore' && (
                             <div className="space-y-6">
-                                <div className="bg-white rounded-lg border border-gray-200 p-5">
-                                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Database Backup</h3>
-                                    <p className="text-sm text-gray-600 mb-4">
+                                <div className="bg-white rounded-lg border border-sky-100 dark:border-sky-900/40 p-5">
+                                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Database Backup</h3>
+                                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                                         Download a full backup of the Analytics PostgreSQL database as a ZIP file (contains a plain SQL dump). Use the same connection settings configured above.
                                     </p>
                                     <button
@@ -803,7 +807,7 @@ export const AddonsManagement: React.FC = () => {
                                             }
                                         }}
                                         disabled={backupLoading || !config.pgHost || !config.pgDatabase}
-                                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                         {backupLoading ? 'Creating backup...' : 'Download backup (ZIP)'}
                                     </button>
@@ -811,9 +815,9 @@ export const AddonsManagement: React.FC = () => {
                                         Backup uses PHP/PDO only (no <code className="bg-gray-100 px-1 rounded">pg_dump</code> required). Data-only SQL; run <code className="bg-gray-100 px-1 rounded">analytics/schema.sql</code> before restore if the database is empty.
                                     </p>
                                 </div>
-                                <div className="bg-white rounded-lg border border-gray-200 p-5">
-                                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Restore from backup</h3>
-                                    <p className="text-sm text-gray-600 mb-4">
+                                <div className="bg-white rounded-lg border border-sky-100 dark:border-sky-900/40 p-5">
+                                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Restore from backup</h3>
+                                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                                         Upload a previously downloaded .sql or .zip backup to restore the analytics database. This will run the SQL against the configured database (existing data may be affected).
                                     </p>
                                     <div className="flex flex-wrap items-center gap-3">
@@ -831,7 +835,7 @@ export const AddonsManagement: React.FC = () => {
                                                 }}
                                             />
                                         </label>
-                                        {restoreFile && <span className="text-sm text-gray-600">{restoreFile.name}</span>}
+                                        {restoreFile && <span className="text-sm text-slate-600 dark:text-slate-400">{restoreFile.name}</span>}
                                         <button
                                             type="button"
                                             onClick={async () => {
@@ -882,36 +886,36 @@ export const AddonsManagement: React.FC = () => {
 
                         {analyticsTab === 'geo-resources' && (
                             <div className="space-y-6">
-                                <div className="bg-white rounded-lg border border-gray-200 p-5">
-                                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Geo-location free resources</h3>
-                                    <p className="text-sm text-gray-600 mb-4">
+                                <div className="bg-white rounded-lg border border-sky-100 dark:border-sky-900/40 p-5">
+                                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Geo-location free resources</h3>
+                                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                                         Use these free datasets and tools for offline reverse geocoding (latitude/longitude → country, region, city). The <code className="bg-gray-100 px-1 rounded">location_lookup</code> table is used by the analytics worker to fill in city/region when only coordinates are available.
                                     </p>
                                     <ul className="space-y-3 text-sm">
                                         <li className="flex flex-wrap items-start gap-2">
-                                            <strong className="text-gray-800">SimpleMaps World Cities (free, ~40k+ cities):</strong>
-                                            <a href="https://simplemaps.com/data/world-cities" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">simplemaps.com/data/world-cities</a>
+                                            <strong className="text-slate-900 dark:text-white">SimpleMaps World Cities (free, ~40k+ cities):</strong>
+                                            <a href="https://simplemaps.com/data/world-cities" target="_blank" rel="noopener noreferrer" className="text-sky-600 dark:text-sky-400 hover:underline">simplemaps.com/data/world-cities</a>
                                         </li>
                                         <li className="flex flex-wrap items-start gap-2">
-                                            <strong className="text-gray-800">GeoNames country dumps (free):</strong>
-                                            <a href="https://www.geonames.org/export/" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">geonames.org/export/</a>
+                                            <strong className="text-slate-900 dark:text-white">GeoNames country dumps (free):</strong>
+                                            <a href="https://www.geonames.org/export/" target="_blank" rel="noopener noreferrer" className="text-sky-600 dark:text-sky-400 hover:underline">geonames.org/export/</a>
                                             <span className="text-gray-500">— US: </span>
-                                            <a href="https://download.geonames.org/export/dump/US.zip" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">US.zip</a>
+                                            <a href="https://download.geonames.org/export/dump/US.zip" target="_blank" rel="noopener noreferrer" className="text-sky-600 dark:text-sky-400 hover:underline">US.zip</a>
                                         </li>
                                         <li className="flex flex-wrap items-start gap-2">
-                                            <strong className="text-gray-800">MaxMind GeoLite2 (free, IP → location):</strong>
-                                            <a href="https://dev.maxmind.com/geoip/geolite2-free-geolocation-data" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">MaxMind GeoLite2</a>
+                                            <strong className="text-slate-900 dark:text-white">MaxMind GeoLite2 (free, IP → location):</strong>
+                                            <a href="https://dev.maxmind.com/geoip/geolite2-free-geolocation-data" target="_blank" rel="noopener noreferrer" className="text-sky-600 dark:text-sky-400 hover:underline">MaxMind GeoLite2</a>
                                             <span className="text-gray-500">— place GeoLite2-City.mmdb in analytics/geoip/</span>
                                         </li>
                                         <li className="flex flex-wrap items-start gap-2">
-                                            <strong className="text-gray-800">ip-api.com (free tier, online):</strong>
+                                            <strong className="text-slate-900 dark:text-white">ip-api.com (free tier, online):</strong>
                                             <span className="text-gray-500">45 requests/minute fallback when GeoLite2 is not used</span>
                                         </li>
                                     </ul>
                                 </div>
-                                <div className="bg-white rounded-lg border border-gray-200 p-5">
-                                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Populated geo region insertion (command line)</h3>
-                                    <p className="text-sm text-gray-600 mb-3">
+                                <div className="bg-white rounded-lg border border-sky-100 dark:border-sky-900/40 p-5">
+                                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Populated geo region insertion (command line)</h3>
+                                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
                                         Run these from the <strong>project root</strong> (e.g. <code className="bg-gray-100 px-1 rounded">c:\xampp\htdocs\linknest</code>). Ensure Analytics PostgreSQL is configured in Add-ons first.
                                     </p>
                                     <div className="space-y-4 font-mono text-sm bg-gray-900 text-gray-100 rounded-lg p-4 overflow-x-auto">
@@ -954,12 +958,12 @@ export const AddonsManagement: React.FC = () => {
             <Monitorv2AddonCard />
 
             {/* Future Add-ons Placeholder */}
-            <div className="mt-6 bg-white rounded-xl shadow-lg border border-gray-200 p-6 opacity-60">
+            <div className="mt-6 bg-white rounded-xl shadow-lg border border-sky-100 dark:border-sky-900/40 p-6 opacity-60">
                 <div className="flex items-center gap-4">
                     <div className="text-4xl">🔌</div>
                     <div>
-                        <h3 className="text-lg font-bold text-gray-800">More Add-ons Coming Soon</h3>
-                        <p className="text-sm text-gray-600">CDN Integration, Advanced Caching, and more...</p>
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">More Add-ons Coming Soon</h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-400">CDN Integration, Advanced Caching, and more...</p>
                     </div>
                 </div>
             </div>
@@ -1169,40 +1173,40 @@ const Monitorv2AddonCard: React.FC = () => {
 
     if (loading) {
         return (
-            <div className="mt-6 p-6 bg-white rounded-xl shadow-lg border border-gray-200">
+            <div className="mt-6 p-6 bg-white rounded-xl shadow-lg border border-sky-100 dark:border-sky-900/40">
                 <div className="text-center">
                     <div className="inline-block w-8 h-8 border-4 border-purple-500/20 border-t-purple-500 rounded-full animate-spin"></div>
-                    <p className="mt-4 text-gray-600">Loading Monitorv2 configuration...</p>
+                    <p className="mt-4 text-slate-600 dark:text-slate-400">Loading Monitorv2 configuration...</p>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="mt-6 bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
-            <div className="p-6 bg-gradient-to-r from-purple-50 to-pink-50 border-b border-gray-200">
+        <div className="mt-6 bg-white rounded-xl shadow-lg border border-sky-100 dark:border-sky-900/40 overflow-hidden">
+            <div className="p-6 bg-gradient-to-r from-sky-50 via-teal-50/80 to-cyan-50/60 dark:from-sky-950/40 dark:via-teal-950/30 dark:to-cyan-950/20 border-b border-sky-100 dark:border-sky-900/40">
                 <div className="flex items-start justify-between">
                     <div className="flex items-start gap-4 flex-1">
                         <div className="text-4xl">📡</div>
                         <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
-                                <h2 className="text-xl font-bold text-gray-800">Monitorv2</h2>
+                                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Monitorv2</h2>
                                 {getStatusBadge()}
                             </div>
-                            <p className="text-sm text-gray-600 mb-3">
+                            <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
                                 Advanced monitoring with PostgreSQL/TimescaleDB. Store monitoring history
                                 with time-series data, automatic aggregation, and high-performance queries.
                             </p>
 
                             {healthStatus && healthStatus.status === 'available' && (
                                 <div className="flex gap-4 text-sm">
-                                    <div className="px-3 py-1 bg-white rounded-lg border border-gray-200">
-                                        <span className="text-gray-600">Monitors:</span>
-                                        <span className="font-semibold text-gray-800 ml-1">{healthStatus.monitors || 0}</span>
+                                    <div className="px-3 py-1 bg-white rounded-lg border border-sky-100 dark:border-sky-900/40">
+                                        <span className="text-slate-600 dark:text-slate-400">Monitors:</span>
+                                        <span className="font-semibold text-slate-900 dark:text-white ml-1">{healthStatus.monitors || 0}</span>
                                     </div>
-                                    <div className="px-3 py-1 bg-white rounded-lg border border-gray-200">
-                                        <span className="text-gray-600">24h Checks:</span>
-                                        <span className="font-semibold text-gray-800 ml-1">{healthStatus.checks_24h?.toLocaleString() || 0}</span>
+                                    <div className="px-3 py-1 bg-white rounded-lg border border-sky-100 dark:border-sky-900/40">
+                                        <span className="text-slate-600 dark:text-slate-400">24h Checks:</span>
+                                        <span className="font-semibold text-slate-900 dark:text-white ml-1">{healthStatus.checks_24h?.toLocaleString() || 0}</span>
                                     </div>
                                 </div>
                             )}
@@ -1212,7 +1216,7 @@ const Monitorv2AddonCard: React.FC = () => {
                     <div className="flex items-center gap-3">
                         <button
                             onClick={() => setExpanded(!expanded)}
-                            className="px-4 py-2 text-sm text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded-lg transition-colors"
+                            className="px-4 py-2 text-sm text-sky-600 dark:text-sky-400 hover:text-sky-700 dark:hover:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/40 rounded-lg transition-colors"
                         >
                             {expanded ? 'Hide' : 'Configure'}
                         </button>
@@ -1224,7 +1228,7 @@ const Monitorv2AddonCard: React.FC = () => {
                                 onChange={(e) => setConfig({ ...config, enabled: e.target.checked })}
                                 className="sr-only peer"
                             />
-                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-sky-300 dark:peer-focus:ring-sky-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-sky-600"></div>
                         </label>
                     </div>
                 </div>
@@ -1232,7 +1236,7 @@ const Monitorv2AddonCard: React.FC = () => {
 
             {/* Configuration Panel */}
             {expanded && (
-                <div className="p-6 space-y-6 bg-gray-50">
+                <div className="p-6 space-y-6 bg-sky-50/40 dark:bg-sky-950/20">
                     {error && (
                         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
                             <strong>Error:</strong> {error}
@@ -1240,18 +1244,18 @@ const Monitorv2AddonCard: React.FC = () => {
                     )}
 
                     {/* Tabs: Configuration | Backup & Restore */}
-                    <div className="flex gap-1 border-b border-gray-200">
+                    <div className="flex gap-1 border-b border-sky-100 dark:border-sky-900/40">
                         <button
                             type="button"
                             onClick={() => setMonitorv2Tab('config')}
-                            className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${monitorv2Tab === 'config' ? 'bg-purple-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                            className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${monitorv2Tab === 'config' ? 'bg-sky-600 text-white' : 'text-slate-600 dark:text-slate-400 hover:bg-gray-100'}`}
                         >
                             Configuration
                         </button>
                         <button
                             type="button"
                             onClick={() => setMonitorv2Tab('backup-restore')}
-                            className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${monitorv2Tab === 'backup-restore' ? 'bg-purple-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                            className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${monitorv2Tab === 'backup-restore' ? 'bg-sky-600 text-white' : 'text-slate-600 dark:text-slate-400 hover:bg-gray-100'}`}
                         >
                             Backup & Restore
                         </button>
@@ -1259,9 +1263,9 @@ const Monitorv2AddonCard: React.FC = () => {
 
                     {monitorv2Tab === 'backup-restore' && (
                         <div className="space-y-6">
-                            <div className="bg-white rounded-lg border border-gray-200 p-5">
-                                <h3 className="text-lg font-semibold text-gray-800 mb-4">Schema Backup (DDL)</h3>
-                                <p className="text-sm text-gray-600 mb-4">
+                            <div className="bg-white rounded-lg border border-sky-100 dark:border-sky-900/40 p-5">
+                                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Schema Backup (DDL)</h3>
+                                <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                                     Download the full DDL of all Monitorv2 tables, views, functions, and triggers. Use this to create or recreate the database structure. Setup and Restore will create the database if it does not exist.
                                 </p>
                                 <button
@@ -1291,7 +1295,7 @@ const Monitorv2AddonCard: React.FC = () => {
                                         }
                                     }}
                                     disabled={schemaBackupLoading}
-                                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white shadow-sm shadow-sky-500/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     {schemaBackupLoading ? 'Downloading...' : 'Download schema (DDL)'}
                                 </button>
@@ -1299,9 +1303,9 @@ const Monitorv2AddonCard: React.FC = () => {
                                     Contains full DDL for schema <code className="bg-gray-100 px-1 rounded">zmonitoring</code>. Run against your PostgreSQL database; the database is created automatically on Setup or Restore if it does not exist.
                                 </p>
                             </div>
-                            <div className="bg-white rounded-lg border border-gray-200 p-5">
-                                <h3 className="text-lg font-semibold text-gray-800 mb-4">Database Backup</h3>
-                                <p className="text-sm text-gray-600 mb-4">
+                            <div className="bg-white rounded-lg border border-sky-100 dark:border-sky-900/40 p-5">
+                                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Database Backup</h3>
+                                <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                                     Download a full backup of the Monitorv2 PostgreSQL database as a ZIP file (contains a plain SQL dump). Use the same connection settings configured in the Configuration tab.
                                 </p>
                                 <button
@@ -1332,7 +1336,7 @@ const Monitorv2AddonCard: React.FC = () => {
                                         }
                                     }}
                                     disabled={backupLoading || !config.pgHost || !config.pgDatabase}
-                                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white shadow-sm shadow-sky-500/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     {backupLoading ? 'Creating backup...' : 'Download backup (ZIP)'}
                                 </button>
@@ -1340,9 +1344,9 @@ const Monitorv2AddonCard: React.FC = () => {
                                     Backup uses PHP/PDO only (no <code className="bg-gray-100 px-1 rounded">pg_dump</code> required). Data-only SQL; run the schema (DDL) first if the database is empty, or use Setup schema / Restore (database is created automatically if missing).
                                 </p>
                             </div>
-                            <div className="bg-white rounded-lg border border-gray-200 p-5">
-                                <h3 className="text-lg font-semibold text-gray-800 mb-4">Restore from backup</h3>
-                                <p className="text-sm text-gray-600 mb-4">
+                            <div className="bg-white rounded-lg border border-sky-100 dark:border-sky-900/40 p-5">
+                                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Restore from backup</h3>
+                                <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                                     Upload a previously downloaded .sql or .zip backup to restore the Monitorv2 database. This will run the SQL against the configured database (existing data may be affected).
                                 </p>
                                 <div className="flex flex-wrap items-center gap-3">
@@ -1359,7 +1363,7 @@ const Monitorv2AddonCard: React.FC = () => {
                                             }}
                                         />
                                     </label>
-                                    {restoreFile && <span className="text-sm text-gray-600">{restoreFile.name}</span>}
+                                    {restoreFile && <span className="text-sm text-slate-600 dark:text-slate-400">{restoreFile.name}</span>}
                                     <button
                                         type="button"
                                         onClick={async () => {
@@ -1389,7 +1393,7 @@ const Monitorv2AddonCard: React.FC = () => {
                                             }
                                         }}
                                         disabled={restoreLoading || !restoreFile}
-                                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white shadow-sm shadow-sky-500/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                         {restoreLoading ? 'Restoring...' : 'Restore'}
                                     </button>
@@ -1409,8 +1413,8 @@ const Monitorv2AddonCard: React.FC = () => {
                     {monitorv2Tab === 'config' && (
                         <>
                             {/* PostgreSQL Connection */}
-                            <div className="bg-white rounded-lg border border-gray-200 p-5">
-                                <h3 className="text-lg font-semibold text-gray-800 mb-4">PostgreSQL Connection</h3>
+                            <div className="bg-white rounded-lg border border-sky-100 dark:border-sky-900/40 p-5">
+                                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">PostgreSQL Connection</h3>
 
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
@@ -1487,7 +1491,7 @@ const Monitorv2AddonCard: React.FC = () => {
                                     <button
                                         onClick={handleTestConnection}
                                         disabled={testing || !config.pgHost || !config.pgDatabase}
-                                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white shadow-sm shadow-sky-500/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                         {testing ? 'Testing...' : 'Test Connection'}
                                     </button>
@@ -1524,8 +1528,8 @@ const Monitorv2AddonCard: React.FC = () => {
                             </div>
 
                             {/* Data Retention */}
-                            <div className="bg-white rounded-lg border border-gray-200 p-5">
-                                <h3 className="text-lg font-semibold text-gray-800 mb-4">Data Retention</h3>
+                            <div className="bg-white rounded-lg border border-sky-100 dark:border-sky-900/40 p-5">
+                                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Data Retention</h3>
 
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
@@ -1563,17 +1567,17 @@ const Monitorv2AddonCard: React.FC = () => {
                             </div>
 
                             {/* Quick Setup Actions */}
-                            <div className="bg-white rounded-lg border border-gray-200 p-5">
-                                <h3 className="text-lg font-semibold text-gray-800 mb-4">Quick Setup Actions</h3>
+                            <div className="bg-white rounded-lg border border-sky-100 dark:border-sky-900/40 p-5">
+                                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Quick Setup Actions</h3>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     {/* Create Database - show if DB doesn't exist */}
                                     {testResult && testResult.details && !testResult.details.db_exists && (
-                                        <div className="border border-blue-200 rounded-lg p-4 bg-blue-50">
+                                        <div className="border border-sky-200 dark:border-sky-800 rounded-lg p-4 bg-sky-50 dark:bg-sky-950/30">
                                             <div className="flex items-start justify-between mb-3">
                                                 <div>
                                                     <h4 className="font-semibold text-blue-800 mb-1">0. Create Database</h4>
-                                                    <p className="text-xs text-blue-600">Create the "{config.pgDatabase}" database</p>
+                                                    <p className="text-xs text-sky-600 dark:text-sky-400">Create the "{config.pgDatabase}" database</p>
                                                 </div>
                                                 <span className="text-2xl">🔧</span>
                                             </div>
@@ -1614,7 +1618,7 @@ const Monitorv2AddonCard: React.FC = () => {
                                                     }
                                                 }}
                                                 disabled={setupActions['create-database'] || !config.enabled}
-                                                className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                                                className="w-full px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
                                             >
                                                 {setupActions['create-database'] ? 'Creating...' : 'Create Database'}
                                             </button>
@@ -1628,7 +1632,7 @@ const Monitorv2AddonCard: React.FC = () => {
 
                                     {/* Install Extensions - show if extensions needed */}
                                     {testResult && testResult.details && testResult.details.db_exists && (!testResult.details.timescaledb_installed || !testResult.details.pg_cron_installed) && (
-                                        <div className="border border-indigo-200 rounded-lg p-4 bg-indigo-50">
+                                        <div className="border border-sky-200 dark:border-sky-800 rounded-lg p-4 bg-sky-50 dark:bg-sky-950/30">
                                             <div className="flex items-start justify-between mb-3">
                                                 <div>
                                                     <h4 className="font-semibold text-indigo-800 mb-1">0. Install Extensions</h4>
@@ -1673,7 +1677,7 @@ const Monitorv2AddonCard: React.FC = () => {
                                                     }
                                                 }}
                                                 disabled={setupActions['install-extensions'] || !config.enabled}
-                                                className="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                                                className="w-full px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white shadow-sm shadow-sky-500/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
                                             >
                                                 {setupActions['install-extensions'] ? 'Installing...' : 'Install Extensions'}
                                             </button>
@@ -1686,18 +1690,18 @@ const Monitorv2AddonCard: React.FC = () => {
                                     )}
 
                                     {/* Setup Schema */}
-                                    <div className="border border-gray-200 rounded-lg p-4">
+                                    <div className="border border-sky-100 dark:border-sky-900/40 rounded-lg p-4">
                                         <div className="flex items-start justify-between mb-3">
                                             <div>
-                                                <h4 className="font-semibold text-gray-800 mb-1">1. Setup Database Schema</h4>
-                                                <p className="text-xs text-gray-600">Initialize TimescaleDB tables and hypertables</p>
+                                                <h4 className="font-semibold text-slate-900 dark:text-white mb-1">1. Setup Database Schema</h4>
+                                                <p className="text-xs text-slate-600 dark:text-slate-400">Initialize TimescaleDB tables and hypertables</p>
                                             </div>
                                             <span className="text-2xl">🗄️</span>
                                         </div>
                                         <button
                                             onClick={() => handleSetupAction('setup-schema')}
                                             disabled={setupActions['setup-schema'] || !config.enabled}
-                                            className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                                            className="w-full px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white shadow-sm shadow-sky-500/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
                                         >
                                             {setupActions['setup-schema'] ? 'Setting up...' : 'Setup Schema'}
                                         </button>
@@ -1739,21 +1743,21 @@ const Monitorv2AddonCard: React.FC = () => {
                                     </div>
                                 </div>
 
-                                <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                                <div className="mt-4 p-3 bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800 rounded-lg">
                                     <p className="text-sm text-purple-800">
-                                        <strong>Note:</strong> Ensure PostgreSQL with TimescaleDB is running on <code className="bg-purple-100 px-1 rounded">{config.pgHost}:{config.pgPort}</code> before running setup.
+                                        <strong>Note:</strong> Ensure PostgreSQL with TimescaleDB is running on <code className="bg-sky-100 dark:bg-sky-900/40 px-1 rounded">{config.pgHost}:{config.pgPort}</code> before running setup.
                                     </p>
                                 </div>
                             </div>
 
                             {/* Action Buttons */}
-                            <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+                            <div className="flex justify-end gap-3 pt-4 border-t border-sky-100 dark:border-sky-900/40">
                                 <button
                                     onClick={() => {
                                         setExpanded(false);
                                         loadConfiguration();
                                     }}
-                                    className="px-5 py-2 text-gray-700 hover:text-gray-900 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                                    className="px-5 py-2 text-gray-700 hover:text-gray-900 bg-white border border-gray-300 rounded-lg hover:bg-sky-50/40 dark:bg-sky-950/20 transition-colors"
                                 >
                                     Cancel
                                 </button>
@@ -1761,7 +1765,7 @@ const Monitorv2AddonCard: React.FC = () => {
                                 <button
                                     onClick={handleSave}
                                     disabled={saving}
-                                    className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                                    className="px-5 py-2 bg-sky-600 hover:bg-sky-500 text-white shadow-sm shadow-sky-500/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                                 >
                                     {saving ? 'Saving...' : 'Save Configuration'}
                                 </button>

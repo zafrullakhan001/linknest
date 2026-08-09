@@ -150,6 +150,26 @@ const ADMIN_NAV_SECTIONS: Array<{
 
 const ADMIN_NAV_ITEMS = ADMIN_NAV_SECTIONS.flatMap((section) => section.items);
 
+/** Shared SAML/LDAP-style sky/teal chrome for Admin content pages */
+const ADMIN_SECTION_CARD =
+  'bg-white dark:bg-slate-800 border border-sky-200/70 dark:border-sky-800/40 rounded-xl overflow-hidden shadow-sm shadow-sky-500/5';
+const ADMIN_SECTION_HEADER =
+  'bg-gradient-to-r from-sky-50 via-teal-50/80 to-cyan-50/60 dark:from-sky-950/40 dark:via-teal-950/30 dark:to-cyan-950/20 border-b border-sky-100 dark:border-sky-800/40 px-6 py-5';
+const ADMIN_SECTION_TITLE =
+  'text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2';
+const ADMIN_SECTION_SUBTITLE = 'text-sm text-sky-800/70 dark:text-sky-200/70 mt-0.5';
+const ADMIN_INNER_CARD =
+  'rounded-xl border border-sky-100 dark:border-sky-900/40 bg-gradient-to-br from-sky-50/40 to-white dark:from-sky-950/20 dark:to-slate-800 p-4';
+const ADMIN_FIELD =
+  'w-full bg-slate-50 dark:bg-slate-900/50 border border-sky-200/70 dark:border-sky-800/40 rounded-xl px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400';
+const ADMIN_PRIMARY_BTN =
+  'bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors shadow-sm shadow-sky-500/20';
+const ADMIN_SUBTAB_ACTIVE = 'bg-sky-600 text-white shadow-sm shadow-sky-500/25';
+const ADMIN_SUBTAB_INACTIVE =
+  'text-sky-800/80 dark:text-sky-200/80 hover:bg-sky-50 dark:hover:bg-sky-950/40';
+const ADMIN_TOGGLE_TRACK =
+  'w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-sky-300 dark:peer-focus:ring-sky-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[\'\'] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-sky-600';
+
 /** Common Windows / web-safe fonts for branding (sans, serif, mono, cursive/script, display). */
 const BRANDING_FONT_FAMILIES: { value: string; label: string; group: string }[] = [
   { value: 'inherit', label: 'Inherit (Default)', group: 'Default' },
@@ -4317,21 +4337,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             <>
               {/* Pending Users Tab */}
               {activeTab === 'pending' && (
-                pendingUsers.length === 0 ? (
-                  <div className="text-center py-12 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl">
-                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-slate-400">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <p className="text-slate-600 dark:text-slate-400 font-medium">No pending users</p>
-                    <p className="text-slate-500 dark:text-slate-500 text-sm mt-1">All users have been processed</p>
+                <div className="space-y-6">
+                <div className={ADMIN_SECTION_CARD}>
+                  <div className={ADMIN_SECTION_HEADER}>
+                    <h3 className={ADMIN_SECTION_TITLE}>
+                      <span aria-hidden>⏳</span> Pending Users
+                    </h3>
+                    <p className={ADMIN_SECTION_SUBTITLE}>
+                      Review and approve or reject users waiting for access.
+                    </p>
+                  </div>
+                  <div className="p-6">
+                {pendingUsers.length === 0 ? (
+                  <div className="text-center py-12 border-2 border-dashed border-sky-200 dark:border-sky-800/50 rounded-xl bg-sky-50/50 dark:bg-sky-950/20">
+                    <p className="text-3xl mb-2" aria-hidden>✅</p>
+                    <p className="text-sky-900 dark:text-sky-100 font-medium">No pending users</p>
+                    <p className="text-sky-700/70 dark:text-sky-300/70 text-sm mt-1">All users have been processed</p>
                   </div>
                 ) : (
                   <div className="space-y-4">
                     {selectedUserIds.size > 0 && (
-                      <div className="flex items-center justify-between bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-lg px-4 py-3">
-                        <span className="text-sm font-medium text-brand-900 dark:text-brand-100">
+                      <div className="flex items-center justify-between bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800 rounded-xl px-4 py-3">
+                        <span className="text-sm font-medium text-sky-900 dark:text-sky-100">
                           {selectedUserIds.size} user{selectedUserIds.size !== 1 ? 's' : ''} selected
                         </span>
                         <button
@@ -4358,40 +4385,40 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         </button>
                       </div>
                     )}
-                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                    <div className="border border-sky-100 dark:border-sky-900/40 rounded-xl overflow-hidden">
                       <div className="overflow-x-auto">
                         <table className="w-full">
-                          <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                          <thead className="bg-sky-50/80 dark:bg-sky-950/30 border-b border-sky-100 dark:border-sky-800/40">
                             <tr>
                               <th className="px-6 py-3 text-left">
                                 <input
                                   type="checkbox"
                                   checked={pendingUsers.length > 0 && selectedUserIds.size === pendingUsers.length}
                                   onChange={handleSelectAll}
-                                  className="w-4 h-4 text-brand-600 bg-gray-100 border-gray-300 rounded focus:ring-brand-500 focus:ring-2"
+                                  className="w-4 h-4 text-sky-600 bg-gray-100 border-gray-300 rounded focus:ring-sky-500 focus:ring-2"
                                 />
                               </th>
-                              <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">User</th>
-                              <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Email</th>
-                              <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Registered</th>
-                              <th className="px-6 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Actions</th>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-sky-800/80 dark:text-sky-200/80 uppercase tracking-wider">User</th>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-sky-800/80 dark:text-sky-200/80 uppercase tracking-wider">Email</th>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-sky-800/80 dark:text-sky-200/80 uppercase tracking-wider">Registered</th>
+                              <th className="px-6 py-3 text-right text-xs font-semibold text-sky-800/80 dark:text-sky-200/80 uppercase tracking-wider">Actions</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                          <tbody className="divide-y divide-sky-100 dark:divide-sky-900/40">
                             {pendingUsers.map((user) => (
-                              <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/30 transition-colors">
+                              <tr key={user.id} className="hover:bg-sky-50/50 dark:hover:bg-sky-950/20 transition-colors">
                                 <td className="px-6 py-4 whitespace-nowrap">
                                   <input
                                     type="checkbox"
                                     checked={selectedUserIds.has(user.id)}
                                     onChange={() => handleToggleUserSelection(user.id)}
                                     disabled={bulkProcessing || processing === user.id}
-                                    className="w-4 h-4 text-brand-600 bg-gray-100 border-gray-300 rounded focus:ring-brand-500 focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="w-4 h-4 text-sky-600 bg-gray-100 border-gray-300 rounded focus:ring-sky-500 focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed"
                                   />
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap">
                                   <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-500 to-brand-600 flex items-center justify-center text-white font-bold">
+                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-sky-500 to-teal-600 flex items-center justify-center text-white font-bold">
                                       {user.username.charAt(0).toUpperCase()}
                                     </div>
                                     <span className="font-medium text-slate-900 dark:text-white">{user.username}</span>
@@ -4448,12 +4475,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       </div>
                     </div>
                   </div>
-                )
+                )}
+                  </div>
+                </div>
+                </div>
               )}
 
               {/* All Users Tab */}
               {activeTab === 'all' && (
-                <div className="space-y-4">
+                <div className="space-y-6">
+                <div className={ADMIN_SECTION_CARD}>
+                  <div className={ADMIN_SECTION_HEADER}>
+                    <h3 className={ADMIN_SECTION_TITLE}>
+                      <span aria-hidden>👥</span> All Users
+                    </h3>
+                    <p className={ADMIN_SECTION_SUBTITLE}>
+                      Search, manage roles, and control access for registered users.
+                    </p>
+                  </div>
+                  <div className="p-6 space-y-4">
                   <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} gap-4`}>
                     {/* Search Input */}
                     <div className={`${isMobile ? 'w-full' : 'flex-1 max-w-md'}`}>
@@ -4466,7 +4506,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             setAllUsersSearchTerm(e.target.value);
                             setAllUsersPage(1); // Reset to first page when searching
                           }}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 pl-10 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                          className="w-full bg-white dark:bg-slate-900 border border-sky-200/70 dark:border-sky-800/40 rounded-xl px-4 py-2 pl-10 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                         />
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
@@ -4658,12 +4698,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       </button>
                       <button
                         onClick={openAddUserModal}
-                        className={`${isMobile ? 'px-3 py-2 text-xs' : 'px-4 py-2 text-sm'} bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium transition-colors flex items-center gap-2 touch-manipulation`}
+                        className={`${isMobile ? 'px-3 py-2 text-xs' : 'px-4 py-2 text-sm'} ${ADMIN_PRIMARY_BTN} flex items-center gap-2 touch-manipulation`}
                         style={isMobile ? { minHeight: '44px' } : {}}
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                          <path d="M10 5a3 3 0 100 6 3 3 0 000-6zM3.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-3.385-.572zM15.75 6a3 3 0 11-6 0 3 3 0 016 0zm1.423 11.285a1.224 1.224 0 00-.569-1.175 5.964 5.964 0 00-1.576-.19 5.964 5.964 0 00-2.383.676.224.224 0 00-.12.219c0 .288.09.567.26.804a5.96 5.96 0 013.5 2.377 5.96 5.96 0 003.5-2.377c.17-.237.26-.516.26-.804a.225.225 0 00-.12-.219z" />
-                        </svg>
+                        <span aria-hidden>➕</span>
                         Add User
                       </button>
                     </div>
@@ -4671,12 +4709,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                   {/* Desktop Table View */}
                   {!isMobile && (
-                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                    <div className="border border-sky-100 dark:border-sky-900/40 rounded-xl overflow-hidden">
                       <div className="overflow-x-auto">
                         <table className="w-full">
-                          <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                          <thead className="bg-sky-50/80 dark:bg-sky-950/30 border-b border-sky-100 dark:border-sky-800/40">
                             <tr>
-                              <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-sky-800/80 dark:text-sky-200/80 uppercase tracking-wider">
                                 <input
                                   type="checkbox"
                                   checked={(() => {
@@ -5204,8 +5242,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       key={pageNum}
                                       onClick={() => setAllUsersPage(pageNum)}
                                       className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors touch-manipulation ${allUsersPage === pageNum
-                                        ? 'bg-brand-600 text-white'
-                                        : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                        ? 'bg-sky-600 text-white shadow-sm shadow-sky-500/20'
+                                        : 'bg-white dark:bg-slate-800 border border-sky-200/70 dark:border-sky-800/40 text-slate-700 dark:text-slate-300 hover:bg-sky-50 dark:hover:bg-sky-950/40'
                                         }`}
                                       style={{ minHeight: '44px', minWidth: '44px' }}
                                     >
@@ -5229,23 +5267,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       </div>
                     );
                   })()}
+                  </div>
+                </div>
                 </div>
               )}
 
               {/* Database Tab */}
               {activeTab === 'database' && (
                 <div className="space-y-6">
-                  <div className={`bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl ${isMobile ? 'p-4' : 'p-6'}`}>
-                    <h3 className={`${isMobile ? 'text-base' : 'text-lg'} font-bold text-slate-900 dark:text-white mb-4`}>Database Export & Import</h3>
-                    <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400 mb-6`}>
-                      Export your database as a JSON file for backup or import it to restore data on a new instance.
-                    </p>
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}>
+                        <span aria-hidden>🗄️</span> Database Export & Import
+                      </h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Export your database as a JSON file for backup or import it to restore data on a new instance.
+                      </p>
+                    </div>
+                    <div className={isMobile ? 'p-4' : 'p-6'}>
 
                     <div className="grid grid-cols-1 gap-6">
                       {/* Export Section */}
-                      <div className="space-y-4">
+                      <div className={`${ADMIN_INNER_CARD} space-y-4`}>
                         <div>
-                          <h4 className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold text-slate-900 dark:text-white mb-2`}>Export Database</h4>
+                          <h4 className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold text-slate-900 dark:text-white mb-2 flex items-center gap-1.5`}>
+                            <span aria-hidden>⬇️</span> Export Database
+                          </h4>
                           <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400 mb-4`}>
                             Download all database data (users, tiles, tabs, sections, links, settings, arrangements, rich text content, favorites, permissions, style profiles, and user preferences) as a JSON file.
                           </p>
@@ -5288,9 +5335,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       </div>
 
                       {/* Import Section */}
-                      <div className="space-y-4">
+                      <div className={`${ADMIN_INNER_CARD} space-y-4`}>
                         <div>
-                          <h4 className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold text-slate-900 dark:text-white mb-2`}>Import Database</h4>
+                          <h4 className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold text-slate-900 dark:text-white mb-2 flex items-center gap-1.5`}>
+                            <span aria-hidden>⬆️</span> Import Database
+                          </h4>
                           <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400 mb-4`}>
                             Import a previously exported JSON file. This will replace all existing data.
                           </p>
@@ -5309,7 +5358,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     setError('');
                                   }
                                 }}
-                                className={`w-full ${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400 file:mr-4 ${isMobile ? 'file:py-3 file:px-3' : 'file:py-2 file:px-4'} file:rounded-lg file:border-0 ${isMobile ? 'file:text-xs' : 'file:text-sm'} file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-900/30 dark:file:text-brand-300 cursor-pointer touch-manipulation`}
+                                className={`w-full ${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400 file:mr-4 ${isMobile ? 'file:py-3 file:px-3' : 'file:py-2 file:px-4'} file:rounded-lg file:border-0 ${isMobile ? 'file:text-xs' : 'file:text-sm'} file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100 dark:file:bg-sky-900/30 dark:file:text-sky-300 cursor-pointer touch-manipulation`}
                                 style={isMobile ? { minHeight: '44px' } : {}}
                               />
                               {importFile && (
@@ -5991,6 +6040,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         </div>
                       )}
                     </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -5998,19 +6048,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               {/* Spaces Tab */}
               {activeTab === 'spaces' && (
                 <div className="space-y-6">
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Spaces Export & Import</h3>
-                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
-                      Export your spaces to JSON or CSV format, or import spaces from previously exported files or CSV spreadsheets.
-                      JSON format includes all features: rich text content, tabs, scheduling, visibility settings, browser preferences, icons, and more.
-                      CSV format is simplified and includes only basic link information.
-                    </p>
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}>
+                        <span aria-hidden>📦</span> Spaces Export & Import
+                      </h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Export spaces to JSON or CSV, or import from previously exported files. JSON keeps full space data; CSV is simplified links only.
+                      </p>
+                    </div>
+                    <div className="p-6">
 
                     <div className="grid grid-cols-1 gap-6">
                       {/* Export Section */}
-                      <div className="space-y-4">
+                      <div className={`${ADMIN_INNER_CARD} space-y-4`}>
                         <div>
-                          <h4 className="text-base font-semibold text-slate-900 dark:text-white mb-2">Export Spaces</h4>
+                          <h4 className="text-base font-semibold text-slate-900 dark:text-white mb-2 flex items-center gap-1.5">
+                            <span aria-hidden>⬇️</span> Export Spaces
+                          </h4>
                           <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                             Export all spaces to JSON or CSV format for backup or sharing.
                             JSON format preserves all data including rich text content, tabs, scheduling, visibility, browser settings, and more.
@@ -6165,9 +6220,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       </div>
 
                       {/* Import Section */}
-                      <div className="space-y-4">
+                      <div className={`${ADMIN_INNER_CARD} space-y-4`}>
                         <div>
-                          <h4 className="text-base font-semibold text-slate-900 dark:text-white mb-2">Import Spaces</h4>
+                          <h4 className="text-base font-semibold text-slate-900 dark:text-white mb-2 flex items-center gap-1.5">
+                            <span aria-hidden>⬆️</span> Import Spaces
+                          </h4>
                           <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                             Import spaces from exported JSON files or CSV spreadsheets.
                           </p>
@@ -6483,14 +6540,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       </div>
                     </div>
 
-                    <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                    <div className="mt-6 rounded-xl border border-sky-200/70 dark:border-sky-800/40 bg-gradient-to-r from-sky-50/80 to-teal-50/50 dark:from-sky-950/30 dark:to-teal-950/20 p-4">
                       <div className="flex gap-3">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5">
-                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
-                        </svg>
+                        <span className="text-xl flex-shrink-0" aria-hidden>💡</span>
                         <div>
-                          <p className="text-sm font-semibold text-blue-800 dark:text-blue-300 mb-1">Import/Export Notes</p>
-                          <ul className="text-xs text-blue-700 dark:text-blue-400 space-y-1 list-disc list-inside">
+                          <p className="text-sm font-semibold text-sky-900 dark:text-sky-100 mb-1">Import/Export Notes</p>
+                          <ul className="text-xs text-sky-800/80 dark:text-sky-200/80 space-y-1 list-disc list-inside">
                             <li><strong>JSON Import:</strong> Supports single space exports, category exports, or all categories exports</li>
                             <li><strong>JSON Export:</strong> Preserves all space data including categories, arrangements, tabs, rich text content, scheduling, visibility settings, browser preferences, icons, and more</li>
                             <li><strong>CSV Export:</strong> Creates a simplified spreadsheet-friendly format for bulk editing. <strong>Note:</strong> CSV format does not include rich text content, tabs, scheduling, or advanced features - use JSON for complete data preservation</li>
@@ -6503,6 +6558,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           </ul>
                         </div>
                       </div>
+                    </div>
                     </div>
                   </div>
                 </div>
@@ -8659,41 +8715,44 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 <div className="space-y-6">
                   {settingsLoading ? (
                     <div className="flex items-center justify-center py-12">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
                     </div>
                   ) : (
-                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Enable/Disable Tabs</h3>
-                          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                            Control which app tabs are visible to users (including admins). Disabled tabs will be hidden and blocked from switching.
-                          </p>
-                          <p className="text-xs text-slate-500 dark:text-slate-500 mt-2">
-                            Tip: If you disable all tabs for a user type (e.g., guests), theyâ€™ll see a friendly â€œfeature disabledâ€ message.
-                          </p>
+                    <div className={ADMIN_SECTION_CARD}>
+                      <div className={ADMIN_SECTION_HEADER}>
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>📑</span> Enable/Disable Tabs</h3>
+                            <p className={ADMIN_SECTION_SUBTITLE}>
+                              Control which app tabs are visible to users (including admins). Disabled tabs will be hidden and blocked from switching.
+                            </p>
+                            <p className="text-xs text-sky-800/60 dark:text-sky-200/60 mt-2">
+                              Tip: If you disable all tabs for a user type (e.g., guests), they'll see a friendly "feature disabled" message.
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => setSettings(prev => ({ ...prev, disabled_tabs: '[]' }))}
+                            className="px-3 py-2 text-sm font-medium bg-white/70 dark:bg-slate-900/40 border border-sky-200/60 dark:border-sky-700/40 hover:bg-sky-50 dark:hover:bg-sky-950/40 text-slate-700 dark:text-slate-200 rounded-lg transition-colors"
+                            title="Enable all tabs"
+                            type="button"
+                          >
+                            Reset
+                          </button>
                         </div>
-                        <button
-                          onClick={() => setSettings(prev => ({ ...prev, disabled_tabs: '[]' }))}
-                          className="px-3 py-2 text-sm font-medium bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg transition-colors"
-                          title="Enable all tabs"
-                          type="button"
-                        >
-                          Reset
-                        </button>
                       </div>
 
-                      <div className="mt-6 space-y-3">
+                      <div className="p-6">
+                      <div className="space-y-3">
                         {APP_TABS.map(tab => {
                           const isDisabled = disabledTabs.has(tab.id);
                           return (
                             <label
                               key={tab.id}
-                              className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 hover:bg-slate-100 dark:hover:bg-slate-900/50 transition-colors cursor-pointer"
+                              className="flex items-start gap-3 p-3 rounded-lg border border-sky-200/70 dark:border-sky-800/40 bg-sky-50/40 dark:bg-sky-950/20 hover:bg-sky-50 dark:hover:bg-sky-950/40 transition-colors cursor-pointer"
                             >
                               <input
                                 type="checkbox"
-                                className="mt-1 h-4 w-4 accent-brand-600"
+                                className="mt-1 h-4 w-4 accent-sky-600"
                                 checked={!isDisabled}
                                 onChange={(e) => setTabDisabled(tab.id, !e.target.checked)}
                               />
@@ -8742,11 +8801,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             }
                           }}
                           disabled={settingsSaving}
-                          className="px-6 py-2.5 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold transition-colors"
+                          className={`px-6 py-2.5 ${ADMIN_PRIMARY_BTN}`}
                           type="button"
                         >
-                          {settingsSaving ? 'Saving...' : 'Save'}
+                          {settingsSaving ? 'Saving...' : '💾 Save'}
                         </button>
+                      </div>
                       </div>
                     </div>
                   )}
@@ -9685,11 +9745,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     onAssignEditors: () => { void handleManageTileAdmins(); },
                   }}
                   rolesWorkspace={
-                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-4">
+                    <div className={ADMIN_SECTION_CARD}>
+                      <div className={ADMIN_SECTION_HEADER}>
+                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
                         <div>
-                          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Roles</h3>
-                          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                          <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🎭</span> Roles</h3>
+                          <p className={ADMIN_SECTION_SUBTITLE}>
                             Roles control visibility. They do not grant edit rights. Configure what each role can see, then assign it to people or teams.
                           </p>
                         </div>
@@ -9705,15 +9766,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           <button
                             type="button"
                             onClick={handleAddRole}
-                            className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                            className={`px-4 py-2 ${ADMIN_PRIMARY_BTN} flex items-center gap-2`}
                           >
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                              <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
-                            </svg>
+                            <span aria-hidden>➕</span>
                             Create role
                           </button>
                         </div>
                       </div>
+                      </div>
+                      <div className="p-6">
 
                       {rolesLoading ? (
                         <div className="flex items-center justify-center py-12">
@@ -9733,7 +9794,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           <button
                             type="button"
                             onClick={handleAddRole}
-                            className="mt-4 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium"
+                            className={`mt-4 px-4 py-2 ${ADMIN_PRIMARY_BTN}`}
                           >
                             Create role
                           </button>
@@ -9923,21 +9984,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       <p className="text-xs text-slate-500 dark:text-slate-500 mt-4">
                         Tip: you can also assign roles to a single person from the All Users tab.
                       </p>
+                      </div>
                     </div>
                   }
                   teamsWorkspace={
-                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                      <div className="flex justify-between items-center mb-4 gap-4 flex-wrap">
+                    <div className={ADMIN_SECTION_CARD}>
+                      <div className={ADMIN_SECTION_HEADER}>
+                      <div className="flex justify-between items-center gap-4 flex-wrap">
                         <div>
-                          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Teams</h3>
-                          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                          <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>👥</span> Teams</h3>
+                          <p className={ADMIN_SECTION_SUBTITLE}>
                             Members inherit every role attached to the team. Use teams when a whole department should share the same visibility.
                           </p>
                         </div>
                         <button
                           type="button"
                           onClick={handleAddUserGroup}
-                          className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                          className={`px-4 py-2 ${ADMIN_PRIMARY_BTN} flex items-center gap-2`}
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                             <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
@@ -9945,6 +10008,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           Create team
                         </button>
                       </div>
+                      </div>
+                      <div className="p-6">
 
                       {userGroupsLoading ? (
                         <div className="flex items-center justify-center py-12">
@@ -9964,7 +10029,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           <button
                             type="button"
                             onClick={handleAddUserGroup}
-                            className="mt-4 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium"
+                            className={`mt-4 px-4 py-2 ${ADMIN_PRIMARY_BTN}`}
                           >
                             Create team
                           </button>
@@ -10053,20 +10118,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           </table>
                         </div>
                       )}
+                      </div>
                     </div>
                   }
                   editorsWorkspace={
-<div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                      <div className="flex justify-between items-center mb-4">
+<div className={ADMIN_SECTION_CARD}>
+                      <div className={ADMIN_SECTION_HEADER}>
+                      <div className="flex justify-between items-center gap-4 flex-wrap">
                         <div>
-                          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Space editors</h3>
-                          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                          <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>✏️</span> Space editors</h3>
+                          <p className={ADMIN_SECTION_SUBTITLE}>
                             Editors can change content on assigned spaces. Defaults allow add/edit links; deletes and sensitive settings stay restricted unless you open Fine-tune permissions.
                           </p>
                         </div>
                         <button
                           onClick={handleManageTileAdmins}
-                          className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                          className={`px-4 py-2 ${ADMIN_PRIMARY_BTN} flex items-center gap-2`}
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                             <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
@@ -10074,6 +10141,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           Assign editors
                         </button>
                       </div>
+                      </div>
+                      <div className="p-6">
 
                       {/* Search and Filters */}
                       <div className="mb-4 space-y-3">
@@ -10084,7 +10153,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             placeholder="Search spaces by name or description..."
                             value={tileAdminsTabSearchTerm}
                             onChange={(e) => setTileAdminsTabSearchTerm(e.target.value)}
-                            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                           />
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
@@ -10121,7 +10190,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             <select
                               value={tileAdminsFilterUsername}
                               onChange={(e) => setTileAdminsFilterUsername(e.target.value)}
-                              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                             >
                               <option value="">All Owners</option>
                               {(() => {
@@ -10163,7 +10232,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             <select
                               value={tileAdminsFilterMenu}
                               onChange={(e) => setTileAdminsFilterMenu(e.target.value as 'public' | 'private')}
-                              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                             >
                               <option value="public">Public</option>
                               <option value="private">Private</option>
@@ -10178,7 +10247,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             <select
                               value={tileAdminsFilterCategory}
                               onChange={(e) => setTileAdminsFilterCategory(e.target.value)}
-                              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                             >
                               <option value="">All Categories</option>
                               {(() => {
@@ -10438,6 +10507,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           </div>
                         )}
                       </div>
+                      </div>
                     </div>
                   }
                 />
@@ -10448,15 +10518,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 <div className="space-y-6">
                   {settingsLoading ? (
                     <div className="flex items-center justify-center py-12">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
                     </div>
                   ) : (
                     <>
-                      <div className="bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl flex flex-wrap gap-1">
+                      <div className="bg-white dark:bg-slate-800 border border-sky-200/70 dark:border-sky-800/40 p-1 rounded-xl flex flex-wrap gap-1 shadow-sm shadow-sky-500/5">
                         {([
-                          { id: 'branding' as const, label: 'Branding' },
-                          { id: 'hero' as const, label: 'Hero' },
-                          { id: 'access' as const, label: 'Access' },
+                          { id: 'branding' as const, label: 'Branding', emoji: '🎨' },
+                          { id: 'hero' as const, label: 'Hero', emoji: '🦸' },
+                          { id: 'access' as const, label: 'Access', emoji: '🔓' },
                         ]).map((item) => (
                           <button
                             key={item.id}
@@ -10464,18 +10534,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             onClick={() => setSettingsSubTab(item.id)}
                             className={`flex-1 min-w-[7rem] px-3 py-2 text-sm font-medium transition-colors rounded-lg ${
                               settingsSubTab === item.id
-                                ? 'bg-brand-600 text-white'
-                                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                                ? ADMIN_SUBTAB_ACTIVE
+                                : ADMIN_SUBTAB_INACTIVE
                             }`}
                           >
-                            {item.label}
+                            <span aria-hidden className="mr-1">{item.emoji}</span>{item.label}
                           </button>
                         ))}
                       </div>
 
                       {settingsSubTab === 'branding' && (
-                        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                          <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Branding</h3>
+                        <div className={ADMIN_SECTION_CARD}>
+                          <div className={ADMIN_SECTION_HEADER}>
+                            <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🎨</span> Branding</h3>
+                            <p className={ADMIN_SECTION_SUBTITLE}>Customize the application name, logo, and brand appearance.</p>
+                          </div>
+                          <div className="p-6">
                           <div className="space-y-3">
                             <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3 bg-slate-50/50 dark:bg-slate-900/20">
                               <label className="block text-sm font-semibold text-slate-900 dark:text-white">
@@ -10485,7 +10559,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 type="text"
                                 value={settings.app_name}
                                 onChange={(e) => updateBranding({ app_name: e.target.value })}
-                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                                 placeholder={settings.app_name || "LinkNest"}
                               />
                               <details className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 group">
@@ -10507,7 +10581,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     step={1}
                                     value={parseInt(settings.app_name_font_size || '20', 10) || 20}
                                     onChange={(e) => updateBranding({ app_name_font_size: e.target.value })}
-                                    className="w-full accent-brand-600"
+                                    className="w-full accent-sky-600"
                                   />
                                 </div>
                                 <div>
@@ -10581,11 +10655,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 </div>
                                 <div>
                                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Letter Spacing: {settings.app_name_letter_spacing || '0'}em</label>
-                                  <input type="range" min={-0.05} max={0.2} step={0.01} value={parseFloat(settings.app_name_letter_spacing || '0') || 0} onChange={(e) => updateBranding({ app_name_letter_spacing: e.target.value })} className="w-full accent-brand-600" />
+                                  <input type="range" min={-0.05} max={0.2} step={0.01} value={parseFloat(settings.app_name_letter_spacing || '0') || 0} onChange={(e) => updateBranding({ app_name_letter_spacing: e.target.value })} className="w-full accent-sky-600" />
                                 </div>
                                 <div>
                                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Line Height: {settings.app_name_line_height || '1.25'}</label>
-                                  <input type="range" min={1} max={2} step={0.05} value={parseFloat(settings.app_name_line_height || '1.25') || 1.25} onChange={(e) => updateBranding({ app_name_line_height: e.target.value })} className="w-full accent-brand-600" />
+                                  <input type="range" min={1} max={2} step={0.05} value={parseFloat(settings.app_name_line_height || '1.25') || 1.25} onChange={(e) => updateBranding({ app_name_line_height: e.target.value })} className="w-full accent-sky-600" />
                                 </div>
                                 </div>
                               </details>
@@ -10599,7 +10673,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 type="text"
                                 value={settings.app_subheading || ''}
                                 onChange={(e) => updateBranding({ app_subheading: e.target.value })}
-                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                                 placeholder="Your landing page for links"
                               />
                               <p className="text-xs text-slate-500 dark:text-slate-400">Shown under the app name in the navigation bar — changes preview live</p>
@@ -10622,7 +10696,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     step={1}
                                     value={parseInt(settings.app_subheading_font_size || '12', 10) || 12}
                                     onChange={(e) => updateBranding({ app_subheading_font_size: e.target.value })}
-                                    className="w-full accent-brand-600"
+                                    className="w-full accent-sky-600"
                                   />
                                 </div>
                                 <div>
@@ -10683,11 +10757,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 </div>
                                 <div>
                                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Letter Spacing: {settings.app_subheading_letter_spacing || '0'}em</label>
-                                  <input type="range" min={-0.05} max={0.2} step={0.01} value={parseFloat(settings.app_subheading_letter_spacing || '0') || 0} onChange={(e) => updateBranding({ app_subheading_letter_spacing: e.target.value })} className="w-full accent-brand-600" />
+                                  <input type="range" min={-0.05} max={0.2} step={0.01} value={parseFloat(settings.app_subheading_letter_spacing || '0') || 0} onChange={(e) => updateBranding({ app_subheading_letter_spacing: e.target.value })} className="w-full accent-sky-600" />
                                 </div>
                                 <div>
                                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Line Height: {settings.app_subheading_line_height || '1.3'}</label>
-                                  <input type="range" min={1} max={2} step={0.05} value={parseFloat(settings.app_subheading_line_height || '1.3') || 1.3} onChange={(e) => updateBranding({ app_subheading_line_height: e.target.value })} className="w-full accent-brand-600" />
+                                  <input type="range" min={1} max={2} step={0.05} value={parseFloat(settings.app_subheading_line_height || '1.3') || 1.3} onChange={(e) => updateBranding({ app_subheading_line_height: e.target.value })} className="w-full accent-sky-600" />
                                 </div>
                                 </div>
                               </details>
@@ -10712,7 +10786,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     setLogoPreview(null);
                                   }}
                                   className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${settings.logo_type === 'icon'
-                                    ? 'bg-brand-600 text-white'
+                                    ? 'bg-sky-600 text-white'
                                     : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
                                     }`}
                                 >
@@ -10726,7 +10800,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     }
                                   }}
                                   className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${settings.logo_type === 'image'
-                                    ? 'bg-brand-600 text-white'
+                                    ? 'bg-sky-600 text-white'
                                     : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
                                     }`}
                                 >
@@ -10744,7 +10818,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   type="text"
                                   value={settings.logo_icon}
                                   onChange={(e) => updateBranding({ logo_icon: e.target.value })}
-                                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-2xl text-center focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-2xl text-center focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                                   placeholder="🔗"
                                   maxLength={2}
                                 />
@@ -10760,7 +10834,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     step={1}
                                     value={parseInt(settings.logo_size || '32', 10) || 32}
                                     onChange={(e) => updateBranding({ logo_size: e.target.value })}
-                                    className="w-full accent-brand-600"
+                                    className="w-full accent-sky-600"
                                   />
                                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                                     Display size of the brand icon in the navigation bar (live preview)
@@ -10868,7 +10942,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                         updateBranding({ logo_image: e.target.value });
                                         setLogoPreview(e.target.value || null);
                                       }}
-                                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                                       placeholder="https://example.com/logo.png"
                                     />
                                   </div>
@@ -10884,7 +10958,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       step={1}
                                       value={parseInt(settings.logo_size || '32', 10) || 32}
                                       onChange={(e) => updateBranding({ logo_size: e.target.value })}
-                                      className="w-full accent-brand-600"
+                                      className="w-full accent-sky-600"
                                     />
                                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                                       Display height of the brand logo in the navigation bar (live preview)
@@ -10994,7 +11068,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     updateBranding({ header_logo_image: e.target.value });
                                     setHeaderLogoPreview(e.target.value || null);
                                   }}
-                                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                                   placeholder="https://example.com/company-logo.png"
                                 />
                               </div>
@@ -11010,7 +11084,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   step={1}
                                   value={parseInt(settings.header_logo_size || '40', 10) || 40}
                                   onChange={(e) => updateBranding({ header_logo_size: e.target.value })}
-                                  className="w-full accent-brand-600"
+                                  className="w-full accent-sky-600"
                                 />
                                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                                   Display height of the company logo on the far left of the navigation bar (live preview)
@@ -11036,7 +11110,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 type="text"
                                 value={settings.page_title}
                                 onChange={(e) => updateBranding({ page_title: e.target.value })}
-                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                                 placeholder={settings.page_title || settings.app_name || "LinkNest"}
                               />
                             </div>
@@ -11049,7 +11123,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 type="text"
                                 value={settings.page_title_pattern || '{page_title}'}
                                 onChange={(e) => updateBranding({ page_title_pattern: e.target.value })}
-                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                                 placeholder="{page_title}"
                               />
                               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -11092,7 +11166,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 ))}
                                 <div className="sm:col-span-2">
                                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Gradient Angle: {settings.nav_gradient_angle || '90'}°</label>
-                                  <input type="range" min={0} max={360} step={1} value={parseInt(settings.nav_gradient_angle || '90', 10) || 90} onChange={(e) => updateBranding({ nav_gradient_angle: e.target.value })} className="w-full accent-brand-600" />
+                                  <input type="range" min={0} max={360} step={1} value={parseInt(settings.nav_gradient_angle || '90', 10) || 90} onChange={(e) => updateBranding({ nav_gradient_angle: e.target.value })} className="w-full accent-sky-600" />
                                 </div>
                               </div>
                               </div>
@@ -11328,7 +11402,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     setSettings({ ...settings, favicon: e.target.value });
                                     setFaviconPreview(e.target.value || null);
                                   }}
-                                  className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                  className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                                   placeholder="https://example.com/favicon.ico"
                                 />
                               </div>
@@ -11357,7 +11431,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       type="button"
                                       onClick={() => setSettings({ ...settings, qr_branding_mode: 'favicon' })}
                                       className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${(settings.qr_branding_mode || 'favicon') === 'favicon'
-                                        ? 'bg-brand-600 text-white'
+                                        ? 'bg-sky-600 text-white'
                                         : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
                                         }`}
                                     >
@@ -11367,7 +11441,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       type="button"
                                       onClick={() => setSettings({ ...settings, qr_branding_mode: 'emoji' })}
                                       className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${settings.qr_branding_mode === 'emoji'
-                                        ? 'bg-brand-600 text-white'
+                                        ? 'bg-sky-600 text-white'
                                         : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
                                         }`}
                                     >
@@ -11466,7 +11540,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 <textarea
                                   value={settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team'}
                                   onChange={(e) => setSettings({ ...settings, footer_text: e.target.value })}
-                                  className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                  className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                                   placeholder="© 2025 Adventhealth - Designed and developed by AIT Architecture team"
                                   rows={3}
                                 />
@@ -11502,17 +11576,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 }
                               }}
                               disabled={settingsSaving}
-                              className="w-full bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                              className={`w-full px-4 py-2.5 ${ADMIN_PRIMARY_BTN}`}
                             >
                               {settingsSaving ? 'Saving...' : 'Save Settings'}
                             </button>
+                          </div>
                           </div>
                         </div>
                       )}
 
                       {settingsSubTab === 'hero' && (
-                        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                          <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Hero</h3>
+                        <div className={ADMIN_SECTION_CARD}>
+                          <div className={ADMIN_SECTION_HEADER}>
+                            <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🦸</span> Hero</h3>
+                            <p className={ADMIN_SECTION_SUBTITLE}>Configure the home page hero message and visuals.</p>
+                          </div>
+                          <div className="p-6">
+                        <div className="space-y-4">
                           <div className="space-y-3">
                             <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3 bg-slate-50/50 dark:bg-slate-900/20">
                               <label className="block text-sm font-semibold text-slate-900 dark:text-white">
@@ -11522,7 +11602,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 type="text"
                                 value={settings.spaces_title}
                                 onChange={(e) => updateBranding({ spaces_title: e.target.value })}
-                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                                 placeholder="My Spaces"
                               />
                               <details className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 group">
@@ -11544,7 +11624,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     step={1}
                                     value={parseInt(settings.hero_title_font_size || '36', 10) || 36}
                                     onChange={(e) => updateBranding({ hero_title_font_size: e.target.value })}
-                                    className="w-full accent-brand-600"
+                                    className="w-full accent-sky-600"
                                   />
                                 </div>
                                 <div>
@@ -11618,11 +11698,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 </div>
                                 <div>
                                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Letter Spacing: {settings.hero_title_letter_spacing || '0'}em</label>
-                                  <input type="range" min={-0.05} max={0.2} step={0.01} value={parseFloat(settings.hero_title_letter_spacing || '0') || 0} onChange={(e) => updateBranding({ hero_title_letter_spacing: e.target.value })} className="w-full accent-brand-600" />
+                                  <input type="range" min={-0.05} max={0.2} step={0.01} value={parseFloat(settings.hero_title_letter_spacing || '0') || 0} onChange={(e) => updateBranding({ hero_title_letter_spacing: e.target.value })} className="w-full accent-sky-600" />
                                 </div>
                                 <div>
                                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Line Height: {settings.hero_title_line_height || '1.2'}</label>
-                                  <input type="range" min={1} max={2} step={0.05} value={parseFloat(settings.hero_title_line_height || '1.2') || 1.2} onChange={(e) => updateBranding({ hero_title_line_height: e.target.value })} className="w-full accent-brand-600" />
+                                  <input type="range" min={1} max={2} step={0.05} value={parseFloat(settings.hero_title_line_height || '1.2') || 1.2} onChange={(e) => updateBranding({ hero_title_line_height: e.target.value })} className="w-full accent-sky-600" />
                                 </div>
                                 </div>
                               </details>
@@ -11636,7 +11716,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 type="text"
                                 value={settings.spaces_subtitle || ''}
                                 onChange={(e) => updateBranding({ spaces_subtitle: e.target.value })}
-                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                                 placeholder="Organize and share your important links"
                               />
                               <p className="text-xs text-slate-500 dark:text-slate-400">Shown under the spaces page title in the hero section</p>
@@ -11659,7 +11739,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     step={1}
                                     value={parseInt(settings.hero_subtitle_font_size || '16', 10) || 16}
                                     onChange={(e) => updateBranding({ hero_subtitle_font_size: e.target.value })}
-                                    className="w-full accent-brand-600"
+                                    className="w-full accent-sky-600"
                                   />
                                 </div>
                                 <div>
@@ -11720,11 +11800,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 </div>
                                 <div>
                                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Letter Spacing: {settings.hero_subtitle_letter_spacing || '0'}em</label>
-                                  <input type="range" min={-0.05} max={0.2} step={0.01} value={parseFloat(settings.hero_subtitle_letter_spacing || '0') || 0} onChange={(e) => updateBranding({ hero_subtitle_letter_spacing: e.target.value })} className="w-full accent-brand-600" />
+                                  <input type="range" min={-0.05} max={0.2} step={0.01} value={parseFloat(settings.hero_subtitle_letter_spacing || '0') || 0} onChange={(e) => updateBranding({ hero_subtitle_letter_spacing: e.target.value })} className="w-full accent-sky-600" />
                                 </div>
                                 <div>
                                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Line Height: {settings.hero_subtitle_line_height || '1.4'}</label>
-                                  <input type="range" min={1} max={2} step={0.05} value={parseFloat(settings.hero_subtitle_line_height || '1.4') || 1.4} onChange={(e) => updateBranding({ hero_subtitle_line_height: e.target.value })} className="w-full accent-brand-600" />
+                                  <input type="range" min={1} max={2} step={0.05} value={parseFloat(settings.hero_subtitle_line_height || '1.4') || 1.4} onChange={(e) => updateBranding({ hero_subtitle_line_height: e.target.value })} className="w-full accent-sky-600" />
                                 </div>
                                 </div>
                               </details>
@@ -11738,7 +11818,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 type="text"
                                 value={settings.hero_icon || ''}
                                 onChange={(e) => updateBranding({ hero_icon: e.target.value })}
-                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-2xl text-center focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-2xl text-center focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                                 placeholder="🚀"
                                 maxLength={4}
                               />
@@ -11801,11 +11881,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   ))}
                                   <div>
                                     <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Background Angle: {settings.hero_bg_angle || '135'}°</label>
-                                    <input type="range" min={0} max={360} step={1} value={parseInt(settings.hero_bg_angle || '135', 10) || 135} onChange={(e) => updateBranding({ hero_bg_angle: e.target.value })} className="w-full accent-brand-600" />
+                                    <input type="range" min={0} max={360} step={1} value={parseInt(settings.hero_bg_angle || '135', 10) || 135} onChange={(e) => updateBranding({ hero_bg_angle: e.target.value })} className="w-full accent-sky-600" />
                                   </div>
                                   <div>
                                     <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Overlay Opacity: {settings.hero_overlay_opacity || '0'}%</label>
-                                    <input type="range" min={0} max={40} step={1} value={parseInt(settings.hero_overlay_opacity || '0', 10) || 0} onChange={(e) => updateBranding({ hero_overlay_opacity: e.target.value })} className="w-full accent-brand-600" />
+                                    <input type="range" min={0} max={40} step={1} value={parseInt(settings.hero_overlay_opacity || '0', 10) || 0} onChange={(e) => updateBranding({ hero_overlay_opacity: e.target.value })} className="w-full accent-sky-600" />
                                   </div>
                                 </div>
                               </div>
@@ -11827,17 +11907,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 }
                               }}
                               disabled={settingsSaving}
-                              className="w-full bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                              className={`w-full px-4 py-2.5 ${ADMIN_PRIMARY_BTN}`}
                             >
                               {settingsSaving ? 'Saving...' : 'Save Settings'}
                             </button>
+                          </div>
+                          </div>
                           </div>
                         </div>
                       )}
 
                       {settingsSubTab === 'access' && (
-                        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                          <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Access</h3>
+                        <div className={ADMIN_SECTION_CARD}>
+                          <div className={ADMIN_SECTION_HEADER}>
+                            <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🔓</span> Guest Access</h3>
+                            <p className={ADMIN_SECTION_SUBTITLE}>Control what guests can see and do without signing in.</p>
+                          </div>
+                          <div className="p-6">
                           <div className="space-y-4">
                             <div>
                               <label className="flex items-center justify-between cursor-pointer">
@@ -11859,7 +11945,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       });
                                     }}
                                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${(settings.guest_access_enabled === '1' || settings.guest_access_enabled === undefined)
-                                      ? 'bg-brand-600'
+                                      ? 'bg-sky-600'
                                       : 'bg-slate-300 dark:bg-slate-600'
                                       }`}
                                   >
@@ -11904,7 +11990,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     }}
                                     disabled={settingsSaving}
                                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.show_database_path_in_footer === '1'
-                                      ? 'bg-brand-600'
+                                      ? 'bg-sky-600'
                                       : 'bg-slate-300 dark:bg-slate-600'
                                       }`}
                                   >
@@ -11935,10 +12021,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 }
                               }}
                               disabled={settingsSaving}
-                              className="w-full bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                              className={`w-full px-4 py-2.5 ${ADMIN_PRIMARY_BTN}`}
                             >
                               {settingsSaving ? 'Saving...' : 'Save Settings'}
                             </button>
+                          </div>
                           </div>
                         </div>
                       )}
@@ -11950,12 +12037,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               {/* Browser Extension Integration Tab */}
               {activeTab === 'browser' && (
                 <div className="space-y-6">
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="mb-6">
-                      <div className="flex items-start justify-between gap-4 mb-2">
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <div className="flex items-start justify-between gap-4">
                         <div className="flex-1">
-                          <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">🚀 Browser Extension Integration</h3>
-                          <p className="text-sm text-slate-600 dark:text-slate-400">
+                          <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🌐</span> Browser Extension Integration</h3>
+                          <p className={ADMIN_SECTION_SUBTITLE}>
                             Configure and test browser-specific link opening using Browser Launcher Pro extension.
                           </p>
                         </div>
@@ -11976,7 +12063,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             }
                           }}
                           disabled={settingsSaving}
-                          className="px-6 py-2.5 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 whitespace-nowrap"
+                          className={`px-6 py-2.5 ${ADMIN_PRIMARY_BTN} flex items-center gap-2 whitespace-nowrap`}
                         >
                           {settingsSaving ? (
                             <>
@@ -11988,19 +12075,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             </>
                           ) : (
                             <>
-                              <svg className="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                              </svg>
+                              <span aria-hidden>💾</span>
                               Save Settings
                             </>
                           )}
                         </button>
                       </div>
                     </div>
-
+                    <div className="p-6">
                     {/* Configuration Section */}
-                    <div className="mb-8 pb-8 border-b border-slate-200 dark:border-slate-700">
-                      <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Configuration</h4>
+                    <div className="mb-8 pb-8 border-b border-sky-100 dark:border-sky-900/40">
+                      <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-1.5"><span aria-hidden>⚙️</span> Configuration</h4>
 
                       <div className="space-y-4">
                         <div className="space-y-2">
@@ -12009,7 +12094,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               type="checkbox"
                               checked={settings.browser_specific_links_enabled === '1'}
                               onChange={(e) => setSettings({ ...settings, browser_specific_links_enabled: e.target.checked ? '1' : '0' })}
-                              className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                              className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
                             />
                             <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Enable Browser-Specific Link Opening</span>
                           </label>
@@ -12028,7 +12113,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   setSettings({ ...settings, browser_extension_id: value });
                                 }
                               }}
-                              className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                              className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                               placeholder="ifllnbjkoabnnbcodbocddplnhmbobim"
                               maxLength={32}
                             />
@@ -12045,7 +12130,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                     {/* Extension Status */}
                     <div className="mb-6">
-                      <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Extension Status</h4>
+                      <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4"><span aria-hidden>📡</span> Extension Status</h4>
                       <div id="extension-status-browser" className="p-4 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
                         <div className="flex items-center gap-2">
                           <svg className="animate-spin h-4 w-4 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -12196,7 +12281,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               });
                             }
                           }}
-                          className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors"
+                          className={`px-4 py-2 ${ADMIN_PRIMARY_BTN}`}
                         >
                           Open GitHub in Chrome
                         </button>
@@ -12217,7 +12302,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               });
                             }
                           }}
-                          className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors"
+                          className={`px-4 py-2 ${ADMIN_PRIMARY_BTN}`}
                         >
                           Open Microsoft in Edge
                         </button>
@@ -12426,7 +12511,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               type="url"
                               value={testUrl}
                               onChange={(e) => setTestUrl(e.target.value)}
-                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                               placeholder="https://example.com"
                             />
                           </div>
@@ -12435,7 +12520,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             <select
                               value={testBrowser}
                               onChange={(e) => setTestBrowser(e.target.value)}
-                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                             >
                               {detectedBrowsers.length > 0 ? (
                                 <>
@@ -12478,7 +12563,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 }
                               });
                             }}
-                            className="w-full px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors"
+                            className={`w-full px-4 py-2 ${ADMIN_PRIMARY_BTN}`}
                           >
                             Open Link in Browser
                           </button>
@@ -12558,7 +12643,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           }
                         }}
                         disabled={settingsSaving}
-                        className="px-6 py-2.5 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
+                        className={`px-6 py-2.5 ${ADMIN_PRIMARY_BTN} flex items-center gap-2`}
                       >
                         {settingsSaving ? (
                           <>
@@ -12580,6 +12665,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     </div>
                   </div>
                 </div>
+                  </div>
               )}
 
               {/* Broadcast Message Tab */}
@@ -12856,20 +12942,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               {activeTab === 'maintenanceScripts' && (
                 <div className="space-y-6 mt-6">
                   {/* Database Cleanup Section */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className="flex-shrink-0 w-10 h-10 bg-orange-500 rounded-lg flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
-                          <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Database Cleanup</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                          Check for and remove orphaned records from the database. Orphaned records occur when tiles are deleted but related data (permissions, links, sections, tabs) remain.
-                        </p>
-                      </div>
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🧰</span> Database Cleanup</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Check for and remove orphaned records left after tiles are deleted.
+                      </p>
                     </div>
+                    <div className="p-6">
 
                     {cleanupResults && (
                       <div className={`mb-6 p-4 rounded-lg border ${cleanupResults.success
@@ -12973,7 +13053,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           }
                         }}
                         disabled={cleanupChecking || cleanupCleaning}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors"
+                        className={`flex items-center gap-2 px-4 py-2.5 ${ADMIN_PRIMARY_BTN}`}
                       >
                         {cleanupChecking ? (
                           <>
@@ -13075,21 +13155,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
 
                   {/* Duplicate Tiles Cleanup Section */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className="flex-shrink-0 w-10 h-10 bg-purple-500 rounded-lg flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
-                          <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
-                          <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.439A1.5 1.5 0 008.378 6H4.5z" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Duplicate Tiles Cleanup</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                          Find and remove duplicate tiles with the same name and category. This tool will automatically keep the tile with content and remove empty duplicates.
-                        </p>
-                      </div>
                     </div>
+
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🧰</span> Duplicate Tiles Cleanup</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Find and remove duplicate tiles with the same name and category. This tool will automatically keep the tile with content and remove empty duplicates.
+                      </p>
+                    </div>
+                    <div className="p-6">
 
                     {dupTilesResults && (
                       <div className={`mb-6 p-4 rounded-lg border ${dupTilesResults.success
@@ -13220,7 +13295,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           }
                         }}
                         disabled={dupTilesFinding || dupTilesCleaning || dupTilesAggressiveCleaning}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors"
+                        className={`flex items-center gap-2 px-4 py-2.5 ${ADMIN_PRIMARY_BTN}`}
                       >
                         {dupTilesFinding ? (
                           <>
@@ -13420,21 +13495,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
 
                   {/* Invisible Tiles Diagnosis Section */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className="flex-shrink-0 w-10 h-10 bg-teal-500 rounded-lg flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
-                          <path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" />
-                          <path fillRule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Invisible Tiles Diagnosis</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                          Find tiles that exist in the database but are invisible to users. These "ghost" tiles show up in admin panels but don't appear in user dashboards.
-                        </p>
-                      </div>
                     </div>
+
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🩺</span> Invisible Tiles Diagnosis</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Find tiles that exist in the database but are invisible to users. These "ghost" tiles show up in admin panels but don't appear in user dashboards.
+                      </p>
+                    </div>
+                    <div className="p-6">
 
                     {invisibleTilesResults && (
                       <div className={`mb-6 p-4 rounded-lg border ${invisibleTilesResults.success
@@ -13560,7 +13630,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           }
                         }}
                         disabled={invisibleTilesDiagnosing || invisibleTilesRemoving}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors"
+                        className={`flex items-center gap-2 px-4 py-2.5 ${ADMIN_PRIMARY_BTN}`}
                       >
                         {invisibleTilesDiagnosing ? (
                           <>
@@ -13663,20 +13733,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
 
                   {/* Optimize Database Section */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className="flex-shrink-0 w-10 h-10 bg-indigo-500 rounded-lg flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
-                          <path fillRule="evenodd" d="M4.5 2A2.5 2.5 0 002 4.5v3.879a2.5 2.5 0 00.732 1.767l7.5 7.5a2.5 2.5 0 003.536 0l3.878-3.878a2.5 2.5 0 000-3.536l-7.5-7.5A2.5 2.5 0 008.38 2H4.5zM5 6a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Optimize Database</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                          Create or update indexes and apply PRAGMA settings to improve query performance. Safe to run periodically.
-                        </p>
-                      </div>
                     </div>
+
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>⚡</span> Optimize Database</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Create or update indexes and apply PRAGMA settings to improve query performance. Safe to run periodically.
+                      </p>
+                    </div>
+                    <div className="p-6">
                     {optimizeDbResult && (
                       <div className={`mb-6 p-4 rounded-lg border ${optimizeDbResult.success ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
                         {optimizeDbResult.success ? (
@@ -13740,20 +13806,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
 
                   {/* Vacuum Database Section */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className="flex-shrink-0 w-10 h-10 bg-cyan-500 rounded-lg flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
-                          <path d="M15.98 1.804a1 1 0 00-1.96 0l-.24 1.192a1 1 0 01-.784.785l-1.192.238a1 1 0 000 1.962l1.192.238a1 1 0 01.785.785l.238 1.192a1 1 0 001.962 0l.238-1.192a1 1 0 01.785-.785l1.192-.238a1 1 0 000-1.962l-1.192-.238a1 1 0 01-.785-.785l-.238-1.192zM6.949 5.684a1 1 0 00-1.898 0l-.683 2.051a1 1 0 01-.633.633l-2.051.683a1 1 0 000 1.898l2.051.684a1 1 0 01.633.632l.683 2.051a1 1 0 001.898 0l.683-2.051a1 1 0 01.633-.633l2.051-.683a1 1 0 000-1.898l-2.051-.683a1 1 0 01-.633-.633L6.95 5.684z" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Vacuum Database</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                          Reclaim disk space and defragment the database file. Run after large deletions or cleanup operations.
-                        </p>
-                      </div>
                     </div>
+
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>⚡</span> Vacuum Database</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Reclaim disk space and defragment the database file. Run after large deletions or cleanup operations.
+                      </p>
+                    </div>
+                    <div className="p-6">
                     {vacuumDbResult && (
                       <div className={`mb-6 p-4 rounded-lg border ${vacuumDbResult.success ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
                         {vacuumDbResult.success ? (
@@ -13861,20 +13923,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
 
                   {/* Database Health Report */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className="flex-shrink-0 w-10 h-10 bg-emerald-500 rounded-lg flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Database Health Report</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                          Run a full health check: integrity, size, table row counts, and recommendations. One-click insight into your database.
-                        </p>
-                      </div>
                     </div>
+
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🧰</span> Database Health Report</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Run a full health check: integrity, size, table row counts, and recommendations. One-click insight into your database.
+                      </p>
+                    </div>
+                    <div className="p-6">
                     {healthResult && (
                       <div className={`mb-6 p-4 rounded-lg border ${healthResult.success ? (healthResult.health_status === 'good' ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800') : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
                         {healthResult.success ? (
@@ -13939,20 +13997,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
 
                   {/* SQLite RAM / Performance Health Check */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className="flex-shrink-0 w-10 h-10 bg-violet-500 rounded-lg flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
-                          <path d="M4.632 3.533A2 2 0 016.577 2h6.846a2 2 0 011.945 1.533l1.976 8.234A3.498 3.498 0 0017 11.5a3.5 3.5 0 01-3.5 3.5h-7A3.5 3.5 0 013 11.5c0-.864.312-1.654.832-2.268L4.632 3.533zM11.25 15.5a.75.75 0 00-1.5 0v.25a.75.75 0 001.5 0v-.25zm3.75-1.5a.75.75 0 01.75.75v.25a.75.75 0 01-1.5 0v-.25a.75.75 0 01.75-.75zm-9 0a.75.75 0 01.75.75v.25a.75.75 0 01-1.5 0v-.25a.75.75 0 01.75-.75z" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">SQLite RAM / Performance Check</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                          Verify SQLite version, page cache, mmap, WAL, and whether the database fits in memory for fast reads (commits still go to disk).
-                        </p>
-                      </div>
                     </div>
+
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🔬</span> SQLite RAM / Performance Check</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Verify SQLite version, page cache, mmap, WAL, and whether the database fits in memory for fast reads (commits still go to disk).
+                      </p>
+                    </div>
+                    <div className="p-6">
                     {sqliteRamResult && (
                       <div className={`mb-6 p-4 rounded-lg border ${
                         sqliteRamResult.success && sqliteRamResult.verdict?.ram_fast_reads
@@ -14069,20 +14123,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
 
                   {/* System Specs / Target Host Parity */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className="flex-shrink-0 w-10 h-10 bg-indigo-500 rounded-lg flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
-                          <path fillRule="evenodd" d="M4.25 2A2.25 2.25 0 002 4.25v11.5A2.25 2.25 0 004.25 18h11.5A2.25 2.25 0 0018 15.75V4.25A2.25 2.25 0 0015.75 2H4.25zM6 6.75A.75.75 0 016.75 6h6.5a.75.75 0 010 1.5h-6.5A.75.75 0 016 6.75zM6.75 9a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zM6 12.75a.75.75 0 01.75-.75h3.5a.75.75 0 010 1.5h-3.5a.75.75 0 01-.75-.75z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">System Specs Check</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                          Validate PHP, SQLite 3.53+, WAL/mmap/cache, writable dirs, and response cache against this known-good host so a target server can match the same specs.
-                        </p>
-                      </div>
                     </div>
+
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🔬</span> System Specs Check</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Validate PHP, SQLite 3.53+, WAL/mmap/cache, writable dirs, and response cache against this known-good host so a target server can match the same specs.
+                      </p>
+                    </div>
+                    <div className="p-6">
                     {systemSpecsResult && (
                       <div className={`mb-6 p-4 rounded-lg border ${
                         systemSpecsResult.success && systemSpecsResult.verdict?.ready_for_target_parity
@@ -14205,20 +14255,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
 
                   {/* PHP OPcache Status */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className="flex-shrink-0 w-10 h-10 bg-cyan-500 rounded-lg flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
-                          <path fillRule="evenodd" d="M4.5 2A1.5 1.5 0 003 3.5v13A1.5 1.5 0 004.5 18h11a1.5 1.5 0 001.5-1.5V7.621a1.5 1.5 0 00-.44-1.06l-4.12-4.122A1.5 1.5 0 0011.378 2H4.5zm2.25 8.5a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zm0 3a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">PHP OPcache Status</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                          View OPcache cache hits, misses, hit rate, memory usage, and configuration. Helps monitor PHP bytecode cache health.
-                        </p>
-                      </div>
                     </div>
+
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>✨</span> PHP OPcache Status</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        View OPcache cache hits, misses, hit rate, memory usage, and configuration. Helps monitor PHP bytecode cache health.
+                      </p>
+                    </div>
+                    <div className="p-6">
                     {opcacheResult && opcacheResult.success && opcacheResult.active && opcacheResult.statistics && (
                       <div className="mb-6 p-4 rounded-lg border bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700">
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
@@ -14292,20 +14338,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
 
                   {/* Tile & Link Statistics */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className="flex-shrink-0 w-10 h-10 bg-violet-500 rounded-lg flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
-                          <path d="M15.5 2A1.5 1.5 0 0014 3.5v13a1.5 1.5 0 001.5 1.5h1a1.5 1.5 0 001.5-1.5v-13A1.5 1.5 0 0016.5 2h-1zM9.5 6A1.5 1.5 0 008 7.5v9A1.5 1.5 0 009.5 18h1a1.5 1.5 0 001.5-1.5v-9A1.5 1.5 0 0010.5 6h-1zM3.5 10A1.5 1.5 0 002 11.5v5A1.5 1.5 0 003.5 18h1A1.5 1.5 0 006 16.5v-5A1.5 1.5 0 004.5 10h-1z" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Tile & Link Statistics</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                          See at a glance: total tiles, links, sections, tabs, users, and top categories. Filter by user or refresh for all.
-                        </p>
-                      </div>
                     </div>
+
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🧰</span> Tile & Link Statistics</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        See at a glance: total tiles, links, sections, tabs, users, and top categories. Filter by user or refresh for all.
+                      </p>
+                    </div>
+                    <div className="p-6">
                     <div className="mb-4 flex flex-wrap items-center gap-3">
                       <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Filter by user</label>
                       <select
@@ -14493,20 +14535,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
 
                   {/* Duplicate URLs Report */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className="flex-shrink-0 w-10 h-10 bg-rose-500 rounded-lg flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
-                          <path fillRule="evenodd" d="M4.5 2A2.5 2.5 0 002 4.5v3.879a2.5 2.5 0 00.732 1.767l7.5 7.5a2.5 2.5 0 003.536 0l3.878-3.878a2.5 2.5 0 000-3.536l-7.5-7.5A2.5 2.5 0 008.38 2H4.5zM8 6a.75.75 0 100-1.5.75.75 0 000 1.5z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Duplicate URLs Report</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                          Find links that share the same URL across your tiles. Helps spot redundant bookmarks and clean up. Read-only report.
-                        </p>
-                      </div>
                     </div>
+
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🧰</span> Duplicate URLs Report</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Find links that share the same URL across your tiles. Helps spot redundant bookmarks and clean up. Read-only report.
+                      </p>
+                    </div>
+                    <div className="p-6">
                     {dupUrlsResult && dupUrlsResult.success && (
                       <div className="mb-6 p-4 rounded-lg border bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700">
                         <div className="flex items-center gap-2 mb-3">
@@ -14575,19 +14613,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     </div>
                   </div>
                 </div>
+                </div>
               )}
 
               {/* Maintenance Tab - mode toggle only */}
               {activeTab === 'maintenance' && (
                 <div className="space-y-6 mt-6">
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Maintenance Mode</h3>
-                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
-                      Enable maintenance mode to restrict access to the application. Only administrators will be able to log in during maintenance mode.
-                    </p>
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🚧</span> Maintenance Mode</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Restrict access so only administrators can log in during maintenance.
+                      </p>
+                    </div>
+                    <div className="p-6">
 
                     <div className="space-y-6">
-                      <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg">
+                      <div className="flex items-center justify-between p-4 bg-sky-50/50 dark:bg-sky-950/20 border border-sky-100 dark:border-sky-900/40 rounded-xl">
                         <div className="flex-1">
                           <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-1">Maintenance Mode</h4>
                           <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -14620,7 +14662,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           }}
                           disabled={settingsSaving}
                           className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${(settings?.maintenance_enabled === '1' || settings?.maintenance_enabled === 'true')
-                            ? 'bg-brand-600'
+                            ? 'bg-sky-600'
                             : 'bg-slate-300 dark:bg-slate-600'
                             } ${settingsSaving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                           type="button"
@@ -14639,7 +14681,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         <textarea
                           value={maintenanceMessage}
                           onChange={(e) => setMaintenanceMessage(e.target.value)}
-                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                           placeholder="Enter a message to display to users during maintenance mode..."
                           rows={6}
                         />
@@ -14670,17 +14712,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             }
                           }}
                           disabled={settingsSaving}
-                          className="flex-1 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                          className={`flex-1 px-4 py-2.5 ${ADMIN_PRIMARY_BTN}`}
                         >
                           {settingsSaving ? 'Saving...' : 'Save Settings'}
                         </button>
                       </div>
                     </div>
+                    </div>
                   </div>
 
                   {/* Semi-PWA / Aggressive cache */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Semi-PWA (Aggressive cache)</h3>
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>📱</span> Semi-PWA (Aggressive cache)</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Serve app and API responses from the browser cache to reduce server load. Hard refresh fetches fresh data.
+                      </p>
+                    </div>
+                    <div className="p-6">
                     <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                       When enabled, the app and API responses are served from the browser cache. This reduces database and server load. Users see cached data until they perform a <strong>hard refresh</strong> (Ctrl+F5 / Cmd+Shift+R), which fetches fresh data and updates the cache.
                     </p>
@@ -14840,6 +14889,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     </div>
                   </div>
                 </div>
+                  </div>
               )}
 
               {/* Custom Widgets Tab */}
@@ -14852,15 +14902,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   )}
 
                   {/* Documentation Section */}
-                  <div className="bg-gradient-to-r from-brand-50 to-purple-50 dark:from-brand-900/20 dark:to-purple-900/20 border border-brand-200 dark:border-brand-800 rounded-xl p-6">
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🧩</span> Widget Development Guide</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>Learn how to create and integrate custom widgets into LinkNest.</p>
+                    </div>
+                    <div className="p-6">
                     <div className="flex items-start gap-4">
-                      <div className="flex-shrink-0 w-10 h-10 bg-brand-500 rounded-lg flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-6 h-6 text-white">
-                          <path d="M10.75 16.82A7.462 7.462 0 0115 15.5c.71 0 1.396.098 2.046.282A.75.75 0 0018 15.06v-11a.75.75 0 00-.546-.721A9.006 9.006 0 0015 3a8.963 8.963 0 00-4.25 1.065V16.82zM9.25 4.065A8.963 8.963 0 005 3c-.85 0-1.673.118-2.454.339A.75.75 0 002 4.06v11a.75.75 0 00.954.721A7.506 7.506 0 015 15.5c1.579 0 3.042.487 4.25 1.32V4.065z" />
-                        </svg>
+                      <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-sky-100 dark:bg-sky-900/50 text-sky-700 dark:text-sky-200 flex items-center justify-center text-xl" aria-hidden>
+                        📚
                       </div>
                       <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Widget Development Guide</h3>
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Quick reference</h3>
                         <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                           Learn how to create and integrate custom widgets into LinkNest. Follow the step-by-step guide to build your own widgets.
                         </p>
@@ -14908,7 +14961,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                               href={`${resolveDocsBase()}/docs/CUSTOM_WIDGETS_DEVELOPMENT.md`}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors"
+                              className={`inline-flex items-center gap-2 px-4 py-2 ${ADMIN_PRIMARY_BTN}`}
                             >
                               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                                 <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.5h-8.5a.75.75 0 000 1.5h8.5v8.5a.75.75 0 001.5 0v-8.5h8.5a.75.75 0 000-1.5h-8.5v-8.5z" />
@@ -14935,11 +14988,12 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     </div>
                   </div>
 
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-center justify-between mb-6">
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                    <div className="flex items-center justify-between gap-4 flex-wrap">
                       <div>
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Custom Widgets</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
+                        <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🧩</span> Custom Widgets</h3>
+                        <p className={ADMIN_SECTION_SUBTITLE}>
                           Manage custom widgets that can be assigned to roles. After creating a widget here, integrate it into App.tsx following the documentation above.
                         </p>
                       </div>
@@ -14960,14 +15014,14 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                           setError('');
                           setWidgetSuccessMessage('');
                         }}
-                        className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                        className={`px-4 py-2 ${ADMIN_PRIMARY_BTN} flex items-center gap-2`}
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                          <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
-                        </svg>
+                        <span aria-hidden>➕</span>
                         Add Widget
                       </button>
                     </div>
+                    </div>
+                    <div className="p-6">
 
                     {customWidgetsLoading ? (
                       <div className="flex items-center justify-center py-12">
@@ -14994,7 +15048,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                             });
                             setShowAddWidgetModal(true);
                           }}
-                          className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors"
+                          className={`px-4 py-2 ${ADMIN_PRIMARY_BTN}`}
                         >
                           Create Your First Widget
                         </button>
@@ -15064,8 +15118,10 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                         ))}
                       </div>
                     )}
+                    </div>
                   </div>
                 </div>
+                  </div>
               )}
 
               {/* Add-ons Tab */}
@@ -15077,13 +15133,17 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
 
               {activeTab === 'appUpdates' && (
                 <div className="mt-6 space-y-4">
-                  <div>
-                    <h2 className="text-xl font-semibold text-slate-900 dark:text-white">App Updates</h2>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                      Check GitHub Releases and apply updates in place (git checkout + rebuild, or download update ZIP).
-                    </p>
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🔔</span> App Updates</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Check GitHub Releases and apply updates in place (git checkout + rebuild, or download update ZIP).
+                      </p>
+                    </div>
+                    <div className="p-6">
+                      <UpdatesPanel />
+                    </div>
                   </div>
-                  <UpdatesPanel />
                 </div>
               )}
 
@@ -15091,7 +15151,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                 <div className="space-y-6 mt-6">
                   {loadTestOpenPrompt && loadTestMeta?.available !== false && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" role="dialog" aria-modal="true" aria-labelledby="load-test-open-title">
-                      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-700">
+                      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full p-6 border border-sky-200/70 dark:border-sky-800/40 shadow-sky-500/10">
                         <h3 id="load-test-open-title" className="text-lg font-bold text-slate-900 dark:text-white">
                           Open load test report?
                         </h3>
@@ -15123,13 +15183,14 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     </div>
                   )}
 
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                       <div>
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                          {(loadTestMeta?.appName || settings.app_name || 'Application')} Load Test Report
+                        <h3 className={ADMIN_SECTION_TITLE}>
+                          <span aria-hidden>📈</span> {(loadTestMeta?.appName || settings.app_name || 'Application')} Load Test Report
                         </h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1 max-w-3xl">
+                        <p className={ADMIN_SECTION_SUBTITLE}>
                           View the latest concurrent-user load test results for this application, including when the test was run and how to run it again.
                         </p>
                       </div>
@@ -15154,6 +15215,8 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                         </button>
                       </div>
                     </div>
+                    </div>
+                    <div className="p-6">
 
                     {loadTestMetaError && (
                       <div className="mt-4 p-3 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 text-sm text-red-800 dark:text-red-200">
@@ -15162,13 +15225,13 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     )}
 
                     <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-                      <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4">
+                      <div className="rounded-lg border border-sky-100 dark:border-sky-900/40 bg-sky-50/40 dark:bg-sky-950/20 p-4">
                         <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Test run date</div>
                         <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
                           {loadTestMeta?.testedAtDisplay || (loadTestMetaLoading ? 'Loading…' : 'Not available yet')}
                         </div>
                       </div>
-                      <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4">
+                      <div className="rounded-lg border border-sky-100 dark:border-sky-900/40 bg-sky-50/40 dark:bg-sky-950/20 p-4">
                         <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Report status</div>
                         <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
                           {loadTestMeta?.available
@@ -15176,23 +15239,24 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                             : 'No report generated'}
                         </div>
                       </div>
-                      <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4">
+                      <div className="rounded-lg border border-sky-100 dark:border-sky-900/40 bg-sky-50/40 dark:bg-sky-950/20 p-4">
                         <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Peak concurrent users</div>
                         <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
                           {loadTestMeta?.vus ?? '—'}
                         </div>
                       </div>
-                      <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4">
+                      <div className="rounded-lg border border-sky-100 dark:border-sky-900/40 bg-sky-50/40 dark:bg-sky-950/20 p-4">
                         <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Overall p95</div>
                         <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
                           {loadTestMeta?.p95 != null ? `${Math.round(loadTestMeta.p95).toLocaleString()} ms` : '—'}
                         </div>
                       </div>
                     </div>
+                    </div>
                   </div>
 
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <h4 className="text-base font-bold text-slate-900 dark:text-white mb-2">Run this load test again</h4>
+                  <div className={`${ADMIN_INNER_CARD}`}>
+                    <h4 className="text-base font-bold text-slate-900 dark:text-white mb-2"><span aria-hidden>🧪</span> Run this load test again</h4>
                     <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                       Use these steps on the server that hosts {(loadTestMeta?.appName || settings.app_name || 'the application')}.
                     </p>
