@@ -93,11 +93,11 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
-echo [deploy] Starting containers [HTTP 8090, HTTPS 8443, Mailpit 8025, ttyd 18681-18780]...
+echo [deploy] Starting containers [HTTP 8090, HTTPS 8443, Mailpit 8025, ttyd 18681-18780, websockify 18881-18980]...
 %COMPOSE_CMD% -f "%COMPOSE_FILE%" up -d
 if %ERRORLEVEL% NEQ 0 (
     echo [error] Failed to start containers.
-    echo [hint]  Port conflict? Host XAMPP may use 17681+; Docker uses 18681-18780 for ttyd.
+    echo [hint]  Port conflict? Host XAMPP may use 17681+/17881+; Docker uses 18681-18780 ^(ttyd^) and 18881-18980 ^(websockify^).
     echo         Check: %COMPOSE_CMD% -f docker\docker-compose.yml logs
     exit /b 1
 )
@@ -121,6 +121,10 @@ echo.
 echo SSH Terminal gateway [Docker]:
 echo    ttyd ports: 18681-18780
 echo    X11: host.docker.internal:0.0  [VcXsrv + Disable access control]
+echo.
+echo VNC Viewer gateway [Docker]:
+echo    websockify ports: 18881-18980
+echo    [avoids host XAMPP 17881-17980]
 echo.
 echo Default credentials:
 echo    Username: admin

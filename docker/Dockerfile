@@ -82,11 +82,20 @@ RUN apt-get update && apt-get install -y \
     libzip-dev \
     zlib1g-dev \
     python3 \
+    python3-pip \
     cron \
     tzdata \
     && docker-php-ext-install pdo pdo_sqlite opcache ldap zip \
     && docker-php-ext-enable pdo_sqlite opcache ldap zip \
     && ln -sf /usr/bin/python3 /usr/local/bin/python \
+    # websockify — VNC Viewer Easy-mode gateway (python3 -m websockify)
+    # --trusted-host helps builds behind SSL inspection / MITM antivirus
+    && pip3 install --break-system-packages --no-cache-dir \
+        --trusted-host pypi.org \
+        --trusted-host pypi.python.org \
+        --trusted-host files.pythonhosted.org \
+        websockify \
+    && python3 -c "import websockify" \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

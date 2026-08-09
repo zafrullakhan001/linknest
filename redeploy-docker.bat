@@ -9,9 +9,9 @@ REM   - Starts Docker Desktop if the daemon is down (with timeout)
 REM   - Ensures data/uploads + uploads\.htaccess exist
 REM   - Vendors Linux ttyd (bin\ttyd.x86_64) so image builds work behind SSL MITM
 REM   - Verifies novnc.d.ts exists (VNC widget Docker build)
-REM   - Warns on host port conflicts (8090/8443/8025/1025 + SSH gateway range)
+REM   - Warns on host port conflicts (8090/8443/8025/1025 + SSH/VNC gateway ranges)
 REM   - Rebuilds and starts via docker\docker-deploy.bat
-REM   - Waits for container healthy + verifies ttyd/ssh inside the image
+REM   - Waits for container healthy + verifies ttyd/ssh/websockify inside the image
 REM =============================================================================
 
 cd /d "%~dp0"
@@ -148,6 +148,7 @@ call :warn_port 8443 "HTTPS LinkNest"
 call :warn_port 8025 "Mailpit UI"
 call :warn_port 1025 "Mailpit SMTP"
 call :warn_port 18681 "SSH gateway ttyd start"
+call :warn_port 18881 "VNC gateway websockify start"
 goto after_helpers
 
 REM ----- helpers -----
@@ -205,10 +206,10 @@ goto wait_health
 echo [redeploy] Container is healthy.
 
 :post_checks
-echo [redeploy] Verifying SSH gateway binaries in container...
-docker exec linknest sh -c "command -v ttyd >/dev/null && ttyd --version; command -v ssh >/dev/null && echo ssh_ok; printenv SSH_GATEWAY_PORT_MIN; printenv SSH_GATEWAY_X11_DISPLAY" 2>nul
+echo [redeploy] Verifying SSH/VNC gateway binaries in container...
+docker exec linknest sh -c "command -v ttyd >/dev/null && ttyd --version; command -v ssh >/dev/null && echo ssh_ok; python3 -c 'import websockify' && echo websockify_ok; printenv SSH_GATEWAY_PORT_MIN; printenv VNC_GATEWAY_PORT_MIN; printenv SSH_GATEWAY_X11_DISPLAY" 2>nul
 if %ERRORLEVEL% NEQ 0 (
-    echo [warn] Could not exec into linknest for SSH checks yet.
+    echo [warn] Could not exec into linknest for gateway checks yet.
 )
 
 echo.
@@ -223,6 +224,9 @@ echo SSH Terminal [Docker]:
 echo    ttyd ports: 18681-18780  [avoids host XAMPP 17681-17780]
 echo    X11 DISPLAY: host.docker.internal:0.0
 echo    GUI tip: start VcXsrv with Disable access control before Terminal+GUI
+echo.
+echo VNC Viewer [Docker]:
+echo    websockify ports: 18881-18980  [avoids host XAMPP 17881-17980]
 echo.
 echo Default login: admin / admin123
 echo.

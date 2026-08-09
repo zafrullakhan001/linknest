@@ -66,7 +66,7 @@ docker compose -f docker/docker-compose.yml down 2>/dev/null || true
 echo "[deploy] Building Docker image..."
 docker compose -f docker/docker-compose.yml build
 
-echo "[deploy] Starting containers (HTTP 8090, HTTPS 8443, Mailpit 8025, ttyd 18681-18780)..."
+echo "[deploy] Starting containers (HTTP 8090, HTTPS 8443, Mailpit 8025, ttyd 18681-18780, websockify 18881-18980)..."
 docker compose -f docker/docker-compose.yml up -d
 
 # Wait for container to be ready
@@ -86,6 +86,10 @@ if docker compose -f docker/docker-compose.yml ps | grep -q "Up"; then
     echo "SSH Terminal gateway (Docker):"
     echo "   ttyd ports: 18681-18780"
     echo "   X11: host.docker.internal:0.0"
+    echo ""
+    echo "VNC Viewer gateway (Docker):"
+    echo "   websockify ports: 18881-18980"
+    echo "   (avoids host XAMPP 17881-17980)"
     echo ""
     echo "Default credentials:"
     echo "   Username: admin"

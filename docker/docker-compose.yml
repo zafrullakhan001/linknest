@@ -10,6 +10,8 @@ services:
       - "8443:443" # HTTPS
       # ttyd SSH Terminal gateway (separate from host XAMPP 17681–17780)
       - "18681-18780:18681-18780"
+      # websockify VNC Viewer gateway (separate from host XAMPP 17881–17980)
+      - "18881-18980:18881-18980"
     # No volume mounts - container is fully isolated with its own database and files
     # Timezone: set TZ in environment (default America/New_York). Do not bind-mount
     # /etc/localtime or /etc/timezone — those paths break on Windows Docker Desktop.
@@ -34,6 +36,9 @@ services:
       # SSH Terminal ttyd listen range (must match published ports above)
       - SSH_GATEWAY_PORT_MIN=18681
       - SSH_GATEWAY_PORT_MAX=18780
+      # VNC Viewer websockify listen range (must match published ports above)
+      - VNC_GATEWAY_PORT_MIN=18881
+      - VNC_GATEWAY_PORT_MAX=18980
       # SSH GUI (X11): point at VcXsrv on the Windows/macOS Docker host — not container localhost
       - LINKNEST_DOCKER=1
       - DISPLAY=host.docker.internal:0.0

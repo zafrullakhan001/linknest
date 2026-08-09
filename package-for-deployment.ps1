@@ -25,6 +25,11 @@
 
     Showcase: bundles load-tests/ including results/report.html + last-summary.json from
     this host so the target can open the performance report for reference.
+
+    Remote widgets: bundles bin/ (ttyd.exe / ttyd.x86_64, run-websockify*, vendored
+    websockify under bin/python-packages) so SSH Easy + VNC Easy work on the target
+    after Python 3 is installed. Runs scripts/install-websockify.ps1 when packages
+    are missing (unless -SkipRemoteRuntime).
 .PARAMETER SkipBuild
     Skip the npm build step (use existing dist/). Not recommended when shipping code changes.
 .PARAMETER IncludeDatabase
@@ -33,6 +38,8 @@
     Do not include the uploads/ directory in the package.
 .PARAMETER SkipSqliteRuntime
     Do not bundle/download SQLite 3.53.4 DLL for XAMPP (not recommended).
+.PARAMETER SkipRemoteRuntime
+    Do not vendor/bundle bin/ ttyd + websockify (SSH/VNC Easy gateways will need manual install on target).
 .PARAMETER OutputDir
     Where to save the final ZIP. Defaults to the project root.
 .PARAMETER BasePath
@@ -43,12 +50,14 @@
     .\package-for-deployment.ps1 -BasePath "/myapp"
     .\package-for-deployment.ps1 -OutputDir "E:\"
     .\package-for-deployment.ps1 -SkipSqliteRuntime
+    .\package-for-deployment.ps1 -SkipRemoteRuntime
 #>
 param(
     [switch]$SkipBuild,
     [switch]$IncludeDatabase,
     [switch]$ExcludeUploads,
     [switch]$SkipSqliteRuntime,
+    [switch]$SkipRemoteRuntime,
     [string]$OutputDir = "",
     [string]$BasePath = "/linknest"
 )
@@ -75,6 +84,11 @@ $SourceSpecsSnapshot = $null
 $SourceSpecsReady = $false
 $LoadTestReportBundled = $false
 $LoadTestReportRel = $null
+$RemoteRuntimeBundled = $false
+$TtydWinBundled = $false
+$TtydLinuxBundled = $false
+$WebsockifyBundled = $false
+$WebsockifyLauncherBundled = $false
 
 # Normalize base path: /linknest (no trailing slash)
 $BasePath = "/" + ($BasePath.Trim().Trim("/").Replace("\", "/"))
@@ -127,19 +141,41 @@ function Copy-TreeReliable {
         [string[]]$ExcludeFiles = @()
     )
     Ensure-Dir $Destination
-    $roboArgs = @($Source, $Destination, "/E", "/NFL", "/NDL", "/NJH", "/NJS", "/nc", "/ns", "/np")
+    # Quote every arg so names with spaces (e.g. "data - Copy") are not split.
+    # Start-Process -ArgumentList is unreliable for that; call robocopy directly.
+    $roboArgs = @(
+        $Source,
+        $Destination,
+        "/E", "/NFL", "/NDL", "/NJH", "/NJS", "/nc", "/ns", "/np"
+    )
     if ($ExcludeDirs.Count -gt 0) {
         $roboArgs += "/XD"
-        $roboArgs += $ExcludeDirs
+        foreach ($xd in $ExcludeDirs) {
+            if ($null -ne $xd -and "$xd".Trim() -ne "") {
+                $roboArgs += "$xd"
+            }
+        }
     }
     if ($ExcludeFiles.Count -gt 0) {
         $roboArgs += "/XF"
-        $roboArgs += $ExcludeFiles
+        foreach ($xf in $ExcludeFiles) {
+            if ($null -ne $xf -and "$xf".Trim() -ne "") {
+                $roboArgs += "$xf"
+            }
+        }
     }
-    $proc = Start-Process -FilePath "robocopy.exe" -ArgumentList $roboArgs -Wait -PassThru -NoNewWindow
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & robocopy.exe @roboArgs | Out-Null
+        $exitCode = [int]$LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $prevEap
+    }
     # Robocopy: 0-7 = success / no-op; >= 8 = failure
-    if ($proc.ExitCode -ge 8) {
-        throw "robocopy failed for '$Source' -> '$Destination' (exit $($proc.ExitCode))"
+    if ($exitCode -ge 8) {
+        throw "robocopy failed for '$Source' -> '$Destination' (exit $exitCode)"
     }
     $fileCount = @(Get-ChildItem -LiteralPath $Destination -Recurse -File -ErrorAction SilentlyContinue).Count
     if ($fileCount -lt 1) {
@@ -195,6 +231,7 @@ Write-Host "  Build ID     : $BuildId" -ForegroundColor Gray
 Write-Host "  Database     : $(if ($IncludeDatabase) { 'INCLUDE live DB from this PC' } else { 'FRESH (no live DB - recommended)' })" -ForegroundColor Gray
 Write-Host "  Uploads      : $(if ($ExcludeUploads) { 'excluded' } else { 'included' })" -ForegroundColor Gray
 Write-Host "  SQLite DLL   : $(if ($SkipSqliteRuntime) { 'SKIPPED' } else { "bundle $SqliteTargetVersion for target XAMPP" })" -ForegroundColor Gray
+Write-Host "  Remote bin/  : $(if ($SkipRemoteRuntime) { 'SKIPPED' } else { 'ttyd + websockify for SSH/VNC Easy' })" -ForegroundColor Gray
 Write-Host "  Load report  : load-tests/results/report.html (if present)" -ForegroundColor Gray
 Write-Host "  Output ZIP   : $ZipOutput"   -ForegroundColor Gray
 Write-Host ""
@@ -804,9 +841,194 @@ if (Test-Path $scriptsSrc) {
     else {
         Write-Warn "scripts/publish-update-release.ps1 missing (re-check scripts/ on packager host)"
     }
+    $installWs = Join-Path $scriptsDst "install-websockify.ps1"
+    if (Test-Path $installWs) {
+        Write-OK "scripts/install-websockify.ps1 present"
+    }
+    else {
+        Write-Warn "scripts/install-websockify.ps1 missing (target can still pip-install websockify manually)"
+    }
 }
 else {
     Write-Warn "scripts/ not found, skipping"
+}
+
+# ---------------------------------------------------------------------------
+#  7a. Bundle remote-widget runtime (bin/: ttyd + websockify)
+# ---------------------------------------------------------------------------
+Write-Header "7a / Remote Widget Runtime (bin/)"
+
+$binSrc = Join-Path $ProjectRoot "bin"
+$binDst = Join-Path $TempDir "bin"
+
+if ($SkipRemoteRuntime) {
+    Write-Warn "Skipping remote widget runtime (-SkipRemoteRuntime)"
+    Ensure-Dir $binDst
+    Ensure-Dir (Join-Path $binDst "python-packages")
+    Set-Content -Path (Join-Path $binDst "SKIPPED.txt") -Value "Remote runtime (ttyd/websockify) was not packaged. Install on target per docs/REMOTE_WIDGETS_SETUP.md." -Encoding ASCII
+}
+else {
+    Ensure-Dir $binSrc
+    Ensure-Dir (Join-Path $binSrc "python-packages")
+
+    # Vendor websockify into bin/python-packages if missing (needs Python on packager host)
+    $wsMarker = Join-Path $binSrc "python-packages\websockify"
+    $wsPy = Join-Path $binSrc "python-packages\websockify\__main__.py"
+    $wsInstalled = (Test-Path $wsMarker) -or (Test-Path $wsPy)
+    if (-not $wsInstalled) {
+        $installScript = Join-Path $ProjectRoot "scripts\install-websockify.ps1"
+        Write-Step "websockify not found under bin/python-packages - attempting install..."
+        $pythonOk = $false
+        try {
+            $pyVer = & python --version 2>&1
+            if ($LASTEXITCODE -eq 0 -or "$pyVer" -match "Python") { $pythonOk = $true }
+        } catch { }
+        if (-not $pythonOk) {
+            try {
+                $pyVer = & py -3 --version 2>&1
+                if ("$pyVer" -match "Python") { $pythonOk = $true }
+            } catch { }
+        }
+        if ($pythonOk -and (Test-Path $installScript)) {
+            try {
+                & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installScript
+                $wsInstalled = (Test-Path $wsMarker) -or (Test-Path $wsPy)
+                if ($wsInstalled) {
+                    Write-OK "websockify vendored into bin/python-packages"
+                }
+                else {
+                    Write-Warn "install-websockify.ps1 finished but websockify still missing"
+                }
+            }
+            catch {
+                Write-Warn ("websockify install failed: {0}" -f $_.Exception.Message)
+            }
+        }
+        else {
+            Write-Warn "Python 3 or scripts/install-websockify.ps1 unavailable - package will ship without vendored websockify"
+            Write-Warn "On target: powershell -File scripts/install-websockify.ps1"
+        }
+    }
+    else {
+        Write-OK "websockify already present under bin/python-packages"
+    }
+
+    # Ensure launcher stubs exist even if packager host never created them
+    $runCmdSrc = Join-Path $binSrc "run-websockify.cmd"
+    $runShSrc = Join-Path $binSrc "run-websockify"
+    if (-not (Test-Path $runCmdSrc)) {
+        $runCmdBody = @'
+@echo off
+REM LinkNest VNC gateway launcher — runs vendored websockify via system Python.
+setlocal
+set "ROOT=%~dp0.."
+set "PACKAGES=%~dp0python-packages"
+set "PYTHONPATH=%PACKAGES%;%PYTHONPATH%"
+
+if defined VNC_GATEWAY_PYTHON (
+  "%VNC_GATEWAY_PYTHON%" -m websockify %*
+  exit /b %ERRORLEVEL%
+)
+
+if exist "C:\Program Files\Python312\python.exe" (
+  "C:\Program Files\Python312\python.exe" -m websockify %*
+  exit /b %ERRORLEVEL%
+)
+if exist "C:\Program Files\Python311\python.exe" (
+  "C:\Program Files\Python311\python.exe" -m websockify %*
+  exit /b %ERRORLEVEL%
+)
+where python >nul 2>&1 && (
+  python -m websockify %*
+  exit /b %ERRORLEVEL%
+)
+where py >nul 2>&1 && (
+  py -3 -m websockify %*
+  exit /b %ERRORLEVEL%
+)
+
+echo websockify launcher: Python not found. Install Python 3 and run: python -m pip install --target="%PACKAGES%" websockify 1>&2
+exit /b 1
+'@
+        Set-Content -Path $runCmdSrc -Value $runCmdBody -Encoding ASCII
+        Write-OK "Created bin/run-websockify.cmd"
+    }
+    if (-not (Test-Path $runShSrc)) {
+        $runShBody = @'
+#!/usr/bin/env bash
+# LinkNest VNC gateway launcher — runs vendored websockify via system Python.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PACKAGES="$(cd "$(dirname "$0")" && pwd)/python-packages"
+export PYTHONPATH="${PACKAGES}${PYTHONPATH:+:$PYTHONPATH}"
+if [[ -n "${VNC_GATEWAY_PYTHON:-}" ]]; then
+  exec "$VNC_GATEWAY_PYTHON" -m websockify "$@"
+fi
+if command -v python3 >/dev/null 2>&1; then
+  exec python3 -m websockify "$@"
+fi
+if command -v python >/dev/null 2>&1; then
+  exec python -m websockify "$@"
+fi
+echo "websockify launcher: Python not found. Install Python 3 and: pip install --target=\"$PACKAGES\" websockify" >&2
+exit 1
+'@
+        Set-Content -Path $runShSrc -Value $runShBody -Encoding UTF8
+        Write-OK "Created bin/run-websockify"
+    }
+
+    Write-Step "Copying bin/ (ttyd, websockify launchers, python-packages)..."
+    $copiedBin = Copy-TreeReliable -Source $binSrc -Destination $binDst `
+        -ExcludeDirs @("__pycache__", ".git", "node_modules") `
+        -ExcludeFiles @("*.pyc", "*.pyo")
+    Write-OK ("bin/ copied ({0} files)" -f $copiedBin)
+
+    $TtydWinBundled = Test-Path (Join-Path $binDst "ttyd.exe")
+    $TtydLinuxBundled = (Test-Path (Join-Path $binDst "ttyd.x86_64")) -or (Test-Path (Join-Path $binDst "ttyd"))
+    $WebsockifyLauncherBundled = (Test-Path (Join-Path $binDst "run-websockify.cmd")) -or (Test-Path (Join-Path $binDst "run-websockify"))
+    $WebsockifyBundled = (Test-Path (Join-Path $binDst "python-packages\websockify")) -or `
+        (Test-Path (Join-Path $binDst "python-packages\websockify\__main__.py"))
+
+    if ($TtydWinBundled) { Write-OK "bin/ttyd.exe bundled (SSH Easy on Windows)" }
+    else { Write-Warn "bin/ttyd.exe missing - winget install tsl0922.ttyd and copy to bin/, or set Admin → SSH Gateway path on target" }
+
+    if ($TtydLinuxBundled) { Write-OK "bin/ttyd (Linux) bundled" }
+    else { Write-Warn "bin/ttyd.x86_64 missing (needed for Linux/Docker SSH Easy)" }
+
+    if ($WebsockifyLauncherBundled) { Write-OK "bin/run-websockify* launcher bundled" }
+    else { Write-Warn "bin/run-websockify* missing" }
+
+    if ($WebsockifyBundled) {
+        $wsFiles = @(Get-ChildItem (Join-Path $binDst "python-packages") -Recurse -File -ErrorAction SilentlyContinue)
+        $wsMB = [math]::Round((($wsFiles | Measure-Object Length -Sum).Sum / 1MB), 2)
+        Write-OK ("bin/python-packages websockify bundled ({0} files, {1} MB)" -f $wsFiles.Count, $wsMB)
+    }
+    else {
+        Write-Warn "bin/python-packages/websockify missing - VNC Easy needs scripts/install-websockify.ps1 on target"
+    }
+
+    $RemoteRuntimeBundled = $TtydWinBundled -or $TtydLinuxBundled -or $WebsockifyBundled -or $WebsockifyLauncherBundled
+
+    $remoteReadme = @(
+        "LinkNest remote widget runtime (SSH Terminal + VNC Viewer Easy modes)"
+        "Packaged: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+        "Build ID: $BuildId"
+        ""
+        "Included:"
+        "  ttyd.exe (Windows)     : $(if ($TtydWinBundled) { 'YES' } else { 'NO' })"
+        "  ttyd Linux binary     : $(if ($TtydLinuxBundled) { 'YES' } else { 'NO' })"
+        "  run-websockify*       : $(if ($WebsockifyLauncherBundled) { 'YES' } else { 'NO' })"
+        "  python-packages/websockify : $(if ($WebsockifyBundled) { 'YES' } else { 'NO' })"
+        ""
+        "Target requirements:"
+        "  - SSH Easy: OpenSSH Client (Windows Optional Features)"
+        "  - VNC Easy: Python 3 on PATH (uses vendored websockify above)"
+        "  - See docs/REMOTE_WIDGETS_SETUP.md"
+        ""
+        "If websockify is missing after deploy:"
+        "  powershell -File scripts/install-websockify.ps1"
+    ) -join [Environment]::NewLine
+    Set-Content -Path (Join-Path $binDst "README.txt") -Value $remoteReadme -Encoding ASCII
+    Write-OK "bin/README.txt written"
 }
 
 # ---------------------------------------------------------------------------
@@ -879,6 +1101,21 @@ $buildInfo = [ordered]@{
     }
     loadTestReport = $loadTestReportInfo
     sourceSpecsReady = [bool]$SourceSpecsReady
+    remoteWidgets = @{
+        bundled = [bool]$RemoteRuntimeBundled
+        ttydWindows = [bool]$TtydWinBundled
+        ttydLinux = [bool]$TtydLinuxBundled
+        websockifyPackages = [bool]$WebsockifyBundled
+        websockifyLauncher = [bool]$WebsockifyLauncherBundled
+        docs = 'docs/REMOTE_WIDGETS_SETUP.md'
+        installScript = 'scripts/install-websockify.ps1'
+        binReadme = 'bin/README.txt'
+        targetNeeds = @(
+            'OpenSSH Client (SSH Easy)',
+            'Python 3 on PATH (VNC Easy uses bin/python-packages)'
+        )
+        adminUi = 'Admin -> Add-ons -> SSH Gateway / VNC Gateway'
+    }
     indexAsset  = $indexAsset
     indexSha12  = $indexHash
     jsAssetCount = $assetJs.Count
@@ -1291,6 +1528,8 @@ if exist "%INSTALL_DIR%\uploads" (
 echo  Wiping old dist/ so stale hashed assets cannot remain ...
 if exist "%INSTALL_DIR%\dist" rd /s /q "%INSTALL_DIR%\dist"
 if exist "%INSTALL_DIR%\vendor" rd /s /q "%INSTALL_DIR%\vendor"
+if exist "%INSTALL_DIR%\bin" rd /s /q "%INSTALL_DIR%\bin"
+if exist "%INSTALL_DIR%\runtime" rd /s /q "%INSTALL_DIR%\runtime"
 
 echo  Copying updated application files (excluding deploy helpers)...
 xcopy "%PKG_DIR%\*" "%INSTALL_DIR%\" /E /I /Y /Q >nul
@@ -1355,6 +1594,18 @@ $verifySqliteChecks = if ($SqliteRuntimeBundled) {
 } else {
     ''
 }
+$verifyRemoteChecks = if (-not $SkipRemoteRuntime) {
+    @(
+        '    "bin\run-websockify.cmd"',
+        '    "bin\run-websockify"',
+        '    "docs\REMOTE_WIDGETS_SETUP.md"',
+        '    "scripts\install-websockify.ps1"',
+        '    "api\vnc_gateway.php"',
+        '    "api\ssh_gateway.php"'
+    ) -join "`r`n"
+} else {
+    ''
+}
 
 $verifyBat = @'
 @echo off
@@ -1396,6 +1647,7 @@ for %%F in (
     "components\UpdatesDialog.tsx"
     "services\updaterService.ts"
 __VERIFY_SQLITE_CHECKS__
+__VERIFY_REMOTE_CHECKS__
 ) do (
     if exist "!TARGET!\%%~F" (
         echo  [OK] %%~F
@@ -1421,10 +1673,33 @@ if exist "!TARGET!\load-tests\results\report.html" (
     echo  [!!] load-tests\results\report.html missing ^(showcase report not packaged^)
 )
 
+if exist "!TARGET!\bin\ttyd.exe" (
+    echo  [OK] bin\ttyd.exe ^(SSH Easy Windows^)
+) else (
+    echo  [!!] bin\ttyd.exe missing ^(SSH Easy needs ttyd on Windows^)
+)
+
+if exist "!TARGET!\bin\python-packages\websockify" (
+    echo  [OK] bin\python-packages\websockify ^(VNC Easy^)
+) else (
+    if exist "!TARGET!\bin\python-packages\websockify\__main__.py" (
+        echo  [OK] bin\python-packages\websockify ^(VNC Easy^)
+    ) else (
+        echo  [!!] websockify not vendored - run scripts\install-websockify.ps1 on target
+    )
+)
+
 if exist "!TARGET!\runtime\sqlite\SQLITE_VERSION.txt" (
     echo.
     echo  --- SQLite runtime ---
     type "!TARGET!\runtime\sqlite\SQLITE_VERSION.txt"
+    echo.
+)
+
+if exist "!TARGET!\bin\README.txt" (
+    echo.
+    echo  --- Remote widget runtime ---
+    type "!TARGET!\bin\README.txt"
     echo.
 )
 
@@ -1445,7 +1720,7 @@ if "!FAIL!"=="1" (
     exit /b 0
 )
 '@
-$verifyBat = $verifyBat.Replace('__BUILD_ID__', $BuildId).Replace('__VERIFY_SQLITE_CHECKS__', $verifySqliteChecks)
+$verifyBat = $verifyBat.Replace('__BUILD_ID__', $BuildId).Replace('__VERIFY_SQLITE_CHECKS__', $verifySqliteChecks).Replace('__VERIFY_REMOTE_CHECKS__', $verifyRemoteChecks)
 
 # -- deploy-xampp.sh (Linux/macOS) ------------------------------------------
 $deploySh = @'
@@ -1562,10 +1837,30 @@ SQLite  : __SQLITE_SHIP_NOTE__
 11. **In-app updates (optional):** Admin → Tools → App Updates (or the nav bell).
     Save a GitHub PAT (``repo`` scope) for private repos. Track branch defaults to ``main``.
     See ``docs/APP_UPDATES.md``. PHP needs **curl** + **zip** extensions enabled.
+12. **Remote widgets (SSH / VNC Easy):** Install **Python 3** + **OpenSSH Client** on the
+    target PC. This ZIP already includes ``bin/ttyd.exe`` and vendored websockify under
+    ``bin/python-packages`` when packaged with remote runtime. See ``docs/REMOTE_WIDGETS_SETUP.md``.
+    If websockify is missing: ``powershell -File scripts/install-websockify.ps1``.
 
 Optional: run ``verify-install.bat`` to confirm required files (including ``runtime/sqlite/``,
-``api/system_specs_check.php``, and ``api/updater*.php``) are present.
+``api/system_specs_check.php``, ``api/updater*.php``, and ``bin/`` remote runtime) are present.
 Optional: run ``install-sqlite-xampp.bat`` alone if you skipped it during deploy.
+
+---
+
+## Remote widgets (SSH Terminal + VNC Viewer)
+
+| Piece | Purpose |
+|-------|---------|
+| ``bin/ttyd.exe`` / ``bin/ttyd.x86_64`` | SSH Easy gateway binary |
+| ``bin/run-websockify.cmd`` / ``bin/run-websockify`` | Launches vendored websockify |
+| ``bin/python-packages/`` | Vendored websockify for VNC Easy |
+| ``api/ssh_gateway.php`` / ``api/vnc_gateway.php`` | Start/stop local gateways |
+| ``docs/REMOTE_WIDGETS_SETUP.md`` | Full setup guide |
+| ``scripts/install-websockify.ps1`` | Re-vendor websockify on the target |
+
+Target still needs **Python 3** (VNC Easy) and **OpenSSH Client** (SSH Easy).
+Admin → Add-ons → SSH Gateway / VNC Gateway if paths differ on that machine.
 
 ---
 
@@ -1659,6 +1954,8 @@ Password : admin123
 | Old SQLite (3.39.x) | Run ``install-sqlite-xampp.bat`` as Administrator; restart Apache |
 | DLL locked / copy failed | Stop Apache in XAMPP Control Panel, re-run install-sqlite-xampp.bat |
 | Specs Check failing | Open Admin → System Specs Check; follow each advice line; compare ``TARGET_REQUIREMENTS.json`` |
+| SSH Easy: ttyd missing | Confirm ``bin/ttyd.exe`` shipped; or winget install + Admin → SSH Gateway path |
+| VNC Easy: websockify missing | Run ``scripts/install-websockify.ps1``; install Python 3; see ``docs/REMOTE_WIDGETS_SETUP.md`` |
 '@
 $readmeMd = $readmeMd.Replace('__CREATED_AT__', $createdAt).Replace('__PACKAGE_NAME__', $PackageName).Replace('__BUILD_ID__', $BuildId).Replace('__PKG_VERSION__', $pkgVersion).Replace('__DB_MODE_NOTE__', $dbModeNote).Replace('__SQLITE_SHIP_NOTE__', $sqliteShipNote).Replace('__SQLITE_TARGET__', $SqliteTargetVersion).Replace('__BASE_PATH_FOR_BAT__', $basePathForBat).Replace('__BASE_PATH_DISPLAY__', $(if ($BasePath) { $BasePath } else { "/" }))
 
@@ -1727,6 +2024,28 @@ if ($LoadTestReportBundled) {
         "load-tests\results\report.html",
         "load-tests\results\last-summary.json"
     )
+}
+
+if (-not $SkipRemoteRuntime) {
+    $requiredInPackage += @(
+        "bin\run-websockify.cmd",
+        "bin\run-websockify",
+        "docs\REMOTE_WIDGETS_SETUP.md",
+        "scripts\install-websockify.ps1",
+        "api\vnc_gateway.php",
+        "api\ssh_gateway.php"
+    )
+    # Prefer at least one ttyd binary; warn-only if neither (integrity still needs launchers)
+    if (-not $TtydWinBundled -and -not $TtydLinuxBundled) {
+        Write-Warn "No ttyd binary in staging bin/ - SSH Easy will need manual ttyd install on target"
+    }
+    if ($WebsockifyBundled) {
+        # Directory marker is enough; __main__.py path varies by pip layout
+        $requiredInPackage += @("bin\python-packages")
+    }
+    else {
+        Write-Warn "websockify not in staging - VNC Easy needs install-websockify.ps1 on target"
+    }
 }
 
 $integrityFailed = $false
@@ -1823,6 +2142,15 @@ try {
             "load-tests/results/report.html"
         )
     }
+    if (-not $SkipRemoteRuntime) {
+        $mustHaveInZip += @(
+            "bin/run-websockify.cmd",
+            "docs/REMOTE_WIDGETS_SETUP.md",
+            "scripts/install-websockify.ps1",
+            "api/vnc_gateway.php",
+            "api/ssh_gateway.php"
+        )
+    }
     $zipBad = $false
     foreach ($m in $mustHaveInZip) {
         if ($names -notcontains $m) {
@@ -1837,6 +2165,25 @@ try {
     }
     else {
         Write-OK ("ZIP vendor/ entries: {0}" -f $vendorCount)
+    }
+    if (-not $SkipRemoteRuntime) {
+        $binCount = @($names | Where-Object { $_ -like "bin/*" }).Count
+        $wsInZip = @($names | Where-Object { $_ -like "bin/python-packages/websockify*" }).Count
+        Write-OK ("ZIP bin/ entries: {0}" -f $binCount)
+        if ($WebsockifyBundled -and $wsInZip -lt 1) {
+            Write-Err "ZIP missing bin/python-packages/websockify*"
+            $zipBad = $true
+        }
+        elseif ($WebsockifyBundled) {
+            Write-OK ("ZIP websockify entries: {0}" -f $wsInZip)
+        }
+        $ttydInZip = ($names -contains "bin/ttyd.exe") -or ($names -contains "bin/ttyd.x86_64") -or ($names -contains "bin/ttyd")
+        if ($ttydInZip) {
+            Write-OK "ZIP includes ttyd binary"
+        }
+        else {
+            Write-Warn "ZIP has no ttyd binary (SSH Easy needs install on target)"
+        }
     }
     if ($zipBad) {
         $zipCheck.Dispose()
@@ -1870,6 +2217,7 @@ Write-Host "  BuildId : $BuildId" -ForegroundColor Green
 Write-Host "  Version : $pkgVersion" -ForegroundColor Green
 Write-Host "  DB mode : $(if ($IncludeDatabase) { 'includes live DB' } else { 'FRESH (no live DB)' })" -ForegroundColor Green
 Write-Host "  SQLite  : $(if ($SqliteRuntimeBundled) { "bundled $SqliteVersionShipped + install-sqlite-xampp.bat" } else { 'not bundled' })" -ForegroundColor Green
+Write-Host "  Remote  : $(if ($SkipRemoteRuntime) { 'skipped' } elseif ($RemoteRuntimeBundled) { "bin/ ttyd=$(if ($TtydWinBundled -or $TtydLinuxBundled) {'yes'} else {'no'}) websockify=$(if ($WebsockifyBundled) {'yes'} else {'no'})" } else { 'partial/missing' })" -ForegroundColor Green
 Write-Host "  Specs   : $(if ($SourceSpecsReady) { 'SOURCE_SPECS.json (ready_for_target_parity=true)' } elseif ($null -ne $SourceSpecsSnapshot) { 'SOURCE_SPECS.json (warnings on source host)' } else { 'no live snapshot' })" -ForegroundColor Green
 Write-Host "  Report  : $(if ($LoadTestReportBundled) { 'load-tests/results/report.html (showcase)' } else { 'not bundled' })" -ForegroundColor Green
 Write-Host "  Updater : api/updater*.php + docs/APP_UPDATES.md + publish-update-release.ps1" -ForegroundColor Green
@@ -1889,8 +2237,9 @@ Write-Host "  7. Ctrl+F5 once if old UI remains (service worker)" -ForegroundCol
 Write-Host "  8. Admin -> Maintenance Scripts -> System Specs Check (match SOURCE_SPECS.json)" -ForegroundColor Yellow
 Write-Host "  9. Admin -> App Updates: set GitHub PAT, track branch, Check for updates" -ForegroundColor Yellow
 Write-Host "  10. Docs: docs/APP_UPDATES.md" -ForegroundColor Yellow
+Write-Host "  11. Remote widgets: install Python 3 + OpenSSH; see docs/REMOTE_WIDGETS_SETUP.md" -ForegroundColor Yellow
 if ($LoadTestReportBundled) {
-    Write-Host "  11. Showcase report: open load-tests\results\report.html in a browser" -ForegroundColor Yellow
+    Write-Host "  12. Showcase report: open load-tests\results\report.html in a browser" -ForegroundColor Yellow
 }
 Write-Host ""
 

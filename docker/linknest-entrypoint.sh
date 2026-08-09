@@ -61,12 +61,20 @@ mkdir -p "$SSH_GW_DIR"
 chown www-data:www-data "$SSH_GW_DIR"
 chmod 755 "$SSH_GW_DIR"
 
+# VNC gateway runtime dir (websockify session state + logs)
+VNC_GW_DIR="/var/www/html/data/vnc_gateway"
+mkdir -p "$VNC_GW_DIR"
+chown www-data:www-data "$VNC_GW_DIR"
+chmod 755 "$VNC_GW_DIR"
+
 # If this container's DB was copied from Windows XAMPP, clear stale Windows exe paths
-# so Linux auto-detect (/usr/local/bin/ttyd, /usr/bin/ssh) can work.
+# so Linux auto-detect (/usr/local/bin/ttyd, /usr/bin/ssh, python3 + websockify) can work.
 if [ -f "${DB_PATH}" ] && command -v sqlite3 >/dev/null 2>&1; then
-  echo "[ENTRYPOINT] Normalizing SSH gateway paths for Linux/Docker..."
+  echo "[ENTRYPOINT] Normalizing SSH/VNC gateway paths for Linux/Docker..."
   sqlite3 "${DB_PATH}" "UPDATE settings SET value='' WHERE key='ssh_gateway_ttyd_path' AND (lower(value) LIKE '%.exe' OR value LIKE '%\\%' OR value GLOB '[A-Za-z]:*');" 2>/dev/null || true
   sqlite3 "${DB_PATH}" "UPDATE settings SET value='' WHERE key='ssh_gateway_ssh_path' AND (lower(value) LIKE '%.exe' OR value LIKE '%\\%' OR value GLOB '[A-Za-z]:*');" 2>/dev/null || true
+  sqlite3 "${DB_PATH}" "UPDATE settings SET value='' WHERE key='vnc_gateway_python_path' AND (lower(value) LIKE '%.exe' OR value LIKE '%\\%' OR value GLOB '[A-Za-z]:*');" 2>/dev/null || true
+  sqlite3 "${DB_PATH}" "UPDATE settings SET value='' WHERE key='vnc_gateway_websockify_path' AND (lower(value) LIKE '%.cmd' OR lower(value) LIKE '%.exe' OR value LIKE '%\\%' OR value GLOB '[A-Za-z]:*');" 2>/dev/null || true
   # Loopback DISPLAY is wrong inside Docker — use host.docker.internal for VcXsrv on the host
   X11_DISPLAY_DOCKER="${SSH_GATEWAY_X11_DISPLAY:-host.docker.internal:0.0}"
   sqlite3 "${DB_PATH}" "UPDATE settings SET value='${X11_DISPLAY_DOCKER}' WHERE key='ssh_gateway_x11_display' AND (value='' OR value LIKE '127.0.0.1%' OR lower(value) LIKE 'localhost%' OR value LIKE '::1%');" 2>/dev/null || true
@@ -86,6 +94,11 @@ else
 fi
 if command -v ssh >/dev/null 2>&1; then
   echo "[ENTRYPOINT] OpenSSH client available: $(command -v ssh)"
+fi
+if python3 -c "import websockify" >/dev/null 2>&1; then
+  echo "[ENTRYPOINT] websockify available (python3 -m websockify); VNC ports ${VNC_GATEWAY_PORT_MIN:-18881}-${VNC_GATEWAY_PORT_MAX:-18980}"
+else
+  echo "[ENTRYPOINT] WARNING: websockify not found — VNC Viewer Easy mode will not work"
 fi
 
 # Start cron daemon for scheduled tasks (database backups at 2:00 AM and 3:00 AM daily)

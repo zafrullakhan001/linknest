@@ -7,9 +7,9 @@
 #   - data/uploads + uploads/.htaccess
 #   - Vendor Linux ttyd (bin/ttyd.x86_64) for builds behind SSL MITM
 #   - novnc.d.ts present
-#   - Port conflict warnings
+#   - Port conflict warnings (SSH + VNC gateway ranges)
 #   - Rebuild via docker/docker-deploy.sh
-#   - Wait for healthy + verify ttyd/ssh
+#   - Wait for healthy + verify ttyd/ssh/websockify
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -120,6 +120,7 @@ warn_port 8443 "HTTPS (LinkNest)"
 warn_port 8025 "Mailpit UI"
 warn_port 1025 "Mailpit SMTP"
 warn_port 18681 "SSH gateway ttyd (Docker range start)"
+warn_port 18881 "VNC gateway websockify (Docker range start)"
 
 echo
 echo "[redeploy] Stopping / rebuilding / starting containers..."
@@ -144,9 +145,9 @@ for ((i=1; i<=HEALTH_WAIT_MAX; i++)); do
   sleep 3
 done
 
-echo "[redeploy] Verifying SSH gateway binaries in container..."
-docker exec linknest sh -c 'command -v ttyd >/dev/null && ttyd --version; command -v ssh >/dev/null && echo ssh_ok; printenv SSH_GATEWAY_PORT_MIN; printenv SSH_GATEWAY_X11_DISPLAY' || \
-  echo "[warn] Could not exec into linknest for SSH checks yet."
+echo "[redeploy] Verifying SSH/VNC gateway binaries in container..."
+docker exec linknest sh -c 'command -v ttyd >/dev/null && ttyd --version; command -v ssh >/dev/null && echo ssh_ok; python3 -c "import websockify" && echo websockify_ok; printenv SSH_GATEWAY_PORT_MIN; printenv VNC_GATEWAY_PORT_MIN; printenv SSH_GATEWAY_X11_DISPLAY' || \
+  echo "[warn] Could not exec into linknest for gateway checks yet."
 
 echo
 echo "[ok] Redeploy finished."
@@ -159,6 +160,9 @@ echo
 echo "SSH Terminal (Docker):"
 echo "   ttyd ports: 18681-18780"
 echo "   X11 DISPLAY: host.docker.internal:0.0"
+echo
+echo "VNC Viewer (Docker):"
+echo "   websockify ports: 18881-18980"
 echo
 echo "Default login: admin / admin123"
 echo
