@@ -9,12 +9,22 @@ import {
   sshConnectionService,
   type SavedSshConnection,
 } from '../services/sshConnectionService';
+import {
+  buildAutoTargetUrl,
+  parseAutoTargetUrl,
+  sshGatewayService,
+} from '../services/sshGatewayService';
 
 interface SshTerminalWidgetProps {
   onClose?: () => void;
 }
 
 const WS_STORAGE_KEY = 'linknest.sshTerminal.wsUrl.v1';
+const HOST_STORAGE_KEY = 'linknest.sshTerminal.host.v1';
+const PORT_STORAGE_KEY = 'linknest.sshTerminal.port.v1';
+const USER_STORAGE_KEY = 'linknest.sshTerminal.username.v1';
+const MODE_STORAGE_KEY = 'linknest.sshTerminal.mode.v1';
+const X11_STORAGE_KEY = 'linknest.sshTerminal.x11.v1';
 const CONNECTIONS_STORAGE_KEY = 'linknest.sshTerminal.savedConnections.v1';
 const PANEL_OPEN_KEY = 'linknest.sshTerminal.panelOpen.v1';
 const PANEL_WIDTH_KEY = 'linknest.sshTerminal.panelWidth.v1';
@@ -22,6 +32,7 @@ const PANEL_MIN_WIDTH = 160;
 const PANEL_MAX_WIDTH = 420;
 
 type ConnState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
+type ConnectMode = 'auto' | 'ws';
 
 const CMD = {
   OUTPUT: '0',
@@ -34,6 +45,7 @@ const CMD = {
 function normalizeWsUrl(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return '';
+  if (/^auto:\/\//i.test(trimmed)) return trimmed;
   if (/^wss?:\/\//i.test(trimmed)) return trimmed;
   if (/^https:\/\//i.test(trimmed)) return `wss://${trimmed.slice(8)}`;
   if (/^http:\/\//i.test(trimmed)) return `ws://${trimmed.slice(7)}`;
@@ -122,14 +134,28 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const gatewaySessionRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const panelWidthRef = useRef(loadPanelWidth());
   const panelResizeCleanupRef = useRef<(() => void) | null>(null);
   const encoderRef = useRef(new TextEncoder());
 
+  const [connectMode, setConnectMode] = useState<ConnectMode>(() => {
+    const saved = localStorage.getItem(MODE_STORAGE_KEY) as ConnectMode | null;
+    if (saved === 'auto' || saved === 'ws') return saved;
+    return 'auto';
+  });
+  const [sshHost, setSshHost] = useState(() => localStorage.getItem(HOST_STORAGE_KEY) || '');
+  const [sshPort, setSshPort] = useState(() => localStorage.getItem(PORT_STORAGE_KEY) || '22');
+  const [sshUsername, setSshUsername] = useState(() => localStorage.getItem(USER_STORAGE_KEY) || '');
+  const [x11Forward, setX11Forward] = useState(() => localStorage.getItem(X11_STORAGE_KEY) === 'true');
+  const [gatewayAvailable, setGatewayAvailable] = useState<boolean | null>(null);
+  const [guiHint, setGuiHint] = useState<string | null>(null);
+  const [guiDisplayReady, setGuiDisplayReady] = useState<boolean | null>(null);
+
   const [wsUrl, setWsUrl] = useState(() => localStorage.getItem(WS_STORAGE_KEY) || 'ws://localhost:7681/ws');
   const [status, setStatus] = useState<ConnState>('idle');
-  const [statusMessage, setStatusMessage] = useState('Pick a saved connection or enter a ttyd WebSocket URL.');
+  const [statusMessage, setStatusMessage] = useState('Enter host, port, and username — LinkNest starts ttyd for you.');
   const [showSettings, setShowSettings] = useState(true);
   const [panelOpen, setPanelOpen] = useState(() => localStorage.getItem(PANEL_OPEN_KEY) !== 'false');
   const [panelWidth, setPanelWidth] = useState(() => loadPanelWidth());
@@ -151,6 +177,50 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
 
   const useServer = Boolean(isAuthenticated);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(MODE_STORAGE_KEY, connectMode);
+      localStorage.setItem(HOST_STORAGE_KEY, sshHost);
+      localStorage.setItem(PORT_STORAGE_KEY, sshPort);
+      localStorage.setItem(USER_STORAGE_KEY, sshUsername);
+      localStorage.setItem(X11_STORAGE_KEY, x11Forward ? 'true' : 'false');
+    } catch {
+      // ignore
+    }
+  }, [connectMode, sshHost, sshPort, sshUsername, x11Forward]);
+
+  useEffect(() => {
+    if (!useServer) {
+      setGatewayAvailable(false);
+      setGuiDisplayReady(null);
+      setGuiHint(null);
+      return;
+    }
+    let cancelled = false;
+    const loadStatus = async () => {
+      try {
+        const st = await sshGatewayService.status();
+        if (cancelled) return;
+        setGatewayAvailable(Boolean(st.available));
+        setGuiDisplayReady(st.gui?.displayReachable ?? null);
+        setGuiHint(st.gui?.hint || null);
+      } catch {
+        if (!cancelled) {
+          setGatewayAvailable(false);
+          setGuiDisplayReady(null);
+        }
+      }
+    };
+    void loadStatus();
+    const t = window.setInterval(() => {
+      if (x11Forward) void loadStatus();
+    }, 8000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+    };
+  }, [useServer, x11Forward]);
+
   const allTags = useMemo(() => {
     const set = new Set<string>();
     connections.forEach((c) => c.tags.forEach((t) => set.add(t)));
@@ -167,7 +237,16 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
           c.name.toLowerCase().includes(q) ||
           c.wsUrl.toLowerCase().includes(q) ||
           (c.notes || '').toLowerCase().includes(q) ||
-          c.tags.some((t) => t.includes(q))
+          c.tags.some((t) => t.includes(q)) ||
+          (() => {
+            const a = parseAutoTargetUrl(c.wsUrl);
+            if (!a) return false;
+            return (
+              a.host.toLowerCase().includes(q) ||
+              a.username.toLowerCase().includes(q) ||
+              String(a.port).includes(q)
+            );
+          })()
         );
       })
       .sort((a, b) => (b.lastUsedAt || b.createdAt) - (a.lastUsedAt || a.createdAt));
@@ -208,6 +287,17 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
     };
   }, [useServer]);
 
+  const stopGateway = useCallback(async () => {
+    const id = gatewaySessionRef.current;
+    gatewaySessionRef.current = null;
+    if (!id) return;
+    try {
+      await sshGatewayService.stop(id);
+    } catch {
+      // ignore
+    }
+  }, []);
+
   const disposeTerminal = useCallback(() => {
     try {
       wsRef.current?.close();
@@ -229,8 +319,9 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
 
   const disconnect = useCallback(() => {
     disposeTerminal();
+    void stopGateway();
     setStatus((s) => (s === 'connecting' || s === 'connected' ? 'disconnected' : s));
-  }, [disposeTerminal]);
+  }, [disposeTerminal, stopGateway]);
 
   const markLastUsed = useCallback(
     async (connectionId: string | null | undefined) => {
@@ -265,21 +356,78 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
       wsUrl?: string;
       connectionId?: string | null;
       connectionName?: string;
+      host?: string;
+      port?: number;
+      username?: string;
+      mode?: ConnectMode;
+      x11?: boolean;
     }) => {
-      const url = normalizeWsUrl(opts?.wsUrl ?? wsUrl);
-      if (!url) {
-        setStatus('error');
-        setStatusMessage('WebSocket URL is required.');
-        return;
-      }
-
+      const mode = opts?.mode ?? connectMode;
+      let url = normalizeWsUrl(opts?.wsUrl ?? wsUrl);
       const nextConnectionId = opts?.connectionId !== undefined ? opts.connectionId : activeConnectionId;
       const nextName = opts?.connectionName;
 
+      await stopGateway();
       disposeTerminal();
       setStatus('connecting');
-      setStatusMessage(`Connecting to ${nextName || url}…`);
       setShowSettings(false);
+
+      // Auto mode: start ttyd on the LinkNest server, then connect to returned WS URL
+      const autoFromUrl = parseAutoTargetUrl(url);
+      const wantAuto =
+        mode === 'auto' || Boolean(autoFromUrl) || (Boolean(opts?.host) && Boolean(opts?.username));
+
+      if (wantAuto) {
+        if (!useServer) {
+          setStatus('error');
+          setStatusMessage('Sign in to use automatic SSH (LinkNest starts ttyd for you). Or switch to WebSocket URL mode.');
+          setShowSettings(true);
+          return;
+        }
+        const host = (opts?.host ?? autoFromUrl?.host ?? sshHost).trim();
+        const username = (opts?.username ?? autoFromUrl?.username ?? sshUsername).trim();
+        const port = opts?.port ?? autoFromUrl?.port ?? (Number.parseInt(sshPort, 10) || 22);
+        if (!host || !username) {
+          setStatus('error');
+          setStatusMessage('Host and username are required.');
+          setShowSettings(true);
+          return;
+        }
+          setStatusMessage(
+            (opts?.x11 ?? x11Forward)
+              ? `Starting SSH+GUI gateway to ${username}@${host}:${port}…`
+              : `Starting SSH gateway to ${username}@${host}:${port}…`
+          );
+        try {
+          const session = await sshGatewayService.start({
+            host,
+            port,
+            username,
+            x11: opts?.x11 ?? x11Forward,
+          });
+          gatewaySessionRef.current = session.sessionId;
+          url = session.wsUrl;
+          setWsUrl(url);
+          setSshHost(host);
+          setSshPort(String(port));
+          setSshUsername(username);
+          setConnectMode('auto');
+        } catch (err) {
+          setStatus('error');
+          setStatusMessage(err instanceof Error ? err.message : 'Failed to start SSH gateway');
+          setShowSettings(true);
+          return;
+        }
+      }
+
+      if (!url || /^auto:\/\//i.test(url)) {
+        setStatus('error');
+        setStatusMessage('WebSocket URL is required.');
+        setShowSettings(true);
+        return;
+      }
+
+      setStatusMessage(`Connecting to ${nextName || url}…`);
 
       try {
         localStorage.setItem(WS_STORAGE_KEY, url);
@@ -287,8 +435,8 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
         // ignore
       }
 
-      const host = termHostRef.current;
-      if (!host) {
+      const hostEl = termHostRef.current;
+      if (!hostEl) {
         setStatus('error');
         setStatusMessage('Terminal surface is not ready.');
         return;
@@ -308,9 +456,8 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
       const fit = new FitAddon();
       term.loadAddon(fit);
       term.loadAddon(new WebLinksAddon());
-      host.innerHTML = '';
-      term.open(host);
-      // Fit after layout settles (flex panels often report 0x0 on first paint)
+      hostEl.innerHTML = '';
+      term.open(hostEl);
       requestAnimationFrame(() => {
         try {
           fit.fit();
@@ -326,6 +473,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
         ws = new WebSocket(url, ['tty']);
       } catch (err) {
         disposeTerminal();
+        void stopGateway();
         setStatus('error');
         setStatusMessage(err instanceof Error ? err.message : 'Failed to open WebSocket');
         setShowSettings(true);
@@ -341,16 +489,14 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
         } catch {
           // ignore
         }
-        // ttyd handshake: first frame must be AuthToken JSON (not RESIZE opcode)
         const cols = Math.max(term.cols || 80, 2);
         const rows = Math.max(term.rows || 24, 1);
         const hello = JSON.stringify({ AuthToken: '', columns: cols, rows });
         ws.send(encoderRef.current.encode(hello));
         term.focus();
         setStatus('connected');
-        setStatusMessage(nextName ? `Connected · ${nextName}` : 'Connected');
+        setStatusMessage(nextName ? `Connected · ${nextName}` : 'Connected — enter SSH password if prompted');
         void markLastUsed(nextConnectionId);
-        // Re-fit once more after settings panel closes
         window.setTimeout(() => {
           try {
             fit.fit();
@@ -376,15 +522,18 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
 
       ws.onerror = () => {
         setStatus('error');
-        setStatusMessage('WebSocket error — check ttyd URL and CORS/TLS');
+        setStatusMessage('WebSocket error — check that ttyd is running');
         setShowSettings(true);
       };
 
       ws.onclose = () => {
         wsRef.current = null;
+        void stopGateway();
         setStatus((s) => (s === 'connecting' ? 'error' : 'disconnected'));
         setStatusMessage((prev) =>
-          prev.startsWith('Connected') || prev.includes('Connecting') ? 'Disconnected' : prev
+          prev.startsWith('Connected') || prev.includes('Connecting') || prev.includes('Starting')
+            ? 'Disconnected'
+            : prev
         );
         setShowSettings(true);
       };
@@ -398,7 +547,20 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
         sendResize();
       });
     },
-    [wsUrl, activeConnectionId, disposeTerminal, sendResize, markLastUsed]
+    [
+      connectMode,
+      wsUrl,
+      sshHost,
+      sshPort,
+      sshUsername,
+      x11Forward,
+      useServer,
+      activeConnectionId,
+      disposeTerminal,
+      stopGateway,
+      sendResize,
+      markLastUsed,
+    ]
   );
 
   const connect = useCallback(() => connectTo(), [connectTo]);
@@ -406,8 +568,9 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
   useEffect(() => {
     return () => {
       disposeTerminal();
+      void stopGateway();
     };
-  }, [disposeTerminal]);
+  }, [disposeTerminal, stopGateway]);
 
   useEffect(() => {
     try {
@@ -511,11 +674,21 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
   const applyConnection = useCallback(
     (c: SavedSshConnection, autoConnect: boolean) => {
       setActiveConnectionId(c.id);
-      setWsUrl(c.wsUrl);
       setDraftName(c.name);
       setDraftTags(c.tags.join(', '));
       setDraftNotes(c.notes || '');
       setEditingId(c.id);
+      const auto = parseAutoTargetUrl(c.wsUrl);
+      if (auto) {
+        setConnectMode('auto');
+        setSshHost(auto.host);
+        setSshPort(String(auto.port));
+        setSshUsername(auto.username);
+        setWsUrl(c.wsUrl);
+      } else {
+        setConnectMode('ws');
+        setWsUrl(c.wsUrl);
+      }
       setShowSettings(!autoConnect);
       setStatusMessage(autoConnect ? `Connecting to “${c.name}”…` : `Loaded “${c.name}”`);
       if (autoConnect) {
@@ -523,6 +696,10 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
           wsUrl: c.wsUrl,
           connectionId: c.id,
           connectionName: c.name,
+          mode: auto ? 'auto' : 'ws',
+          host: auto?.host,
+          port: auto?.port,
+          username: auto?.username,
         });
       }
     },
@@ -530,13 +707,28 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
   );
 
   const saveCurrentConnection = async () => {
-    const url = normalizeWsUrl(wsUrl);
-    if (!url) {
-      setStatus('error');
-      setStatusMessage('Enter a WebSocket URL before saving.');
-      return;
+    let url = '';
+    let name = draftName.trim();
+    if (connectMode === 'auto') {
+      const host = sshHost.trim();
+      const username = sshUsername.trim();
+      const port = Number.parseInt(sshPort, 10) || 22;
+      if (!host || !username) {
+        setStatus('error');
+        setStatusMessage('Enter host and username before saving.');
+        return;
+      }
+      url = buildAutoTargetUrl(username, host, port);
+      if (!name) name = `${username}@${host}:${port}`;
+    } else {
+      url = normalizeWsUrl(wsUrl);
+      if (!url || /^auto:\/\//i.test(url)) {
+        setStatus('error');
+        setStatusMessage('Enter a WebSocket URL before saving.');
+        return;
+      }
+      if (!name) name = url.replace(/^wss?:\/\//i, '').split('/')[0] || 'SSH host';
     }
-    const name = draftName.trim() || url.replace(/^wss?:\/\//i, '').split('/')[0] || 'SSH host';
     const tags = parseTags(draftTags);
     const notes = draftNotes.trim() || undefined;
 
@@ -585,6 +777,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
         setEditingId(created.id);
         setStatusMessage(`Saved “${name}”`);
       }
+      setWsUrl(url);
     } catch (err) {
       setStatus('error');
       setStatusMessage(err instanceof Error ? err.message : 'Failed to save connection');
@@ -960,7 +1153,12 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
                         title={`Connect to ${c.name}`}
                       >
                         <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate">{c.name}</p>
-                        <p className="text-[10px] font-mono text-slate-400 truncate mt-0.5">{c.wsUrl}</p>
+                        <p className="text-[10px] font-mono text-slate-400 truncate mt-0.5">
+                          {(() => {
+                            const a = parseAutoTargetUrl(c.wsUrl);
+                            return a ? `${a.username}@${a.host}:${a.port}` : c.wsUrl;
+                          })()}
+                        </p>
                         {c.tags.length > 0 && (
                           <div className="flex flex-wrap gap-0.5 mt-1">
                             {c.tags.map((t) => (
@@ -1020,7 +1218,32 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
 
         <div className="flex-1 min-w-0 min-h-0 flex flex-col">
           {showSettings && (
-            <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-700 space-y-2 shrink-0 bg-white dark:bg-slate-800 overflow-y-auto max-h-[45%]">
+            <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-700 space-y-2 shrink-0 bg-white dark:bg-slate-800 overflow-y-auto max-h-[50%]">
+              <div className="flex flex-wrap gap-1">
+                <button
+                  type="button"
+                  onClick={() => setConnectMode('auto')}
+                  className={`px-2 py-1 text-[11px] rounded-md border ${
+                    connectMode === 'auto'
+                      ? 'bg-brand-600 text-white border-brand-600'
+                      : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
+                  }`}
+                >
+                  Easy (host / port)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConnectMode('ws')}
+                  className={`px-2 py-1 text-[11px] rounded-md border ${
+                    connectMode === 'ws'
+                      ? 'bg-brand-600 text-white border-brand-600'
+                      : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
+                  }`}
+                >
+                  Advanced (WebSocket URL)
+                </button>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
                   Name
@@ -1043,18 +1266,135 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
                   />
                 </label>
               </div>
-              <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
-                WebSocket URL (ttyd)
-                <input
-                  type="text"
-                  value={wsUrl}
-                  onChange={(e) => setWsUrl(e.target.value)}
-                  placeholder="ws://host:7681/ws"
-                  className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
-                  spellCheck={false}
-                  autoComplete="off"
-                />
-              </label>
+
+              {connectMode === 'auto' ? (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300 sm:col-span-2">
+                      Host
+                      <input
+                        type="text"
+                        value={sshHost}
+                        onChange={(e) => setSshHost(e.target.value)}
+                        placeholder="192.168.127.134"
+                        className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                        spellCheck={false}
+                        autoComplete="off"
+                      />
+                    </label>
+                    <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                      Port
+                      <input
+                        type="number"
+                        min={1}
+                        max={65535}
+                        value={sshPort}
+                        onChange={(e) => setSshPort(e.target.value)}
+                        className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                      />
+                    </label>
+                  </div>
+                  <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                    Username
+                    <input
+                      type="text"
+                      value={sshUsername}
+                      onChange={(e) => setSshUsername(e.target.value)}
+                      placeholder="zafar"
+                      className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                      spellCheck={false}
+                      autoComplete="off"
+                    />
+                  </label>
+                  <div className="rounded-lg border border-slate-200 dark:border-slate-600 p-2 space-y-2 bg-slate-50 dark:bg-slate-900/40">
+                    <p className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">Session type (via ttyd)</p>
+                    <div className="flex flex-wrap gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setX11Forward(false)}
+                        className={`px-2 py-1 text-[11px] rounded-md border ${
+                          !x11Forward
+                            ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900'
+                            : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        Terminal only
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setX11Forward(true)}
+                        className={`px-2 py-1 text-[11px] rounded-md border ${
+                          x11Forward
+                            ? 'bg-brand-600 text-white border-brand-600'
+                            : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        Terminal + GUI (X11)
+                      </button>
+                    </div>
+                    {x11Forward && (
+                      <div className="text-[10px] text-slate-600 dark:text-slate-300 space-y-1.5 leading-relaxed">
+                        <p className="font-medium text-slate-700 dark:text-slate-200">GUI setup (LinkNest starts ttyd with <code className="font-mono">ssh -Y</code>):</p>
+                        <ol className="list-decimal list-inside space-y-0.5 ml-0.5">
+                          <li>
+                            Install{' '}
+                            <a
+                              href="https://sourceforge.net/projects/vcxsrv/"
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-brand-600 dark:text-brand-400 underline"
+                            >
+                              VcXsrv
+                            </a>{' '}
+                            (or X410) on this Windows PC
+                          </li>
+                          <li>Start XLaunch → Multiple windows → Start no client → finish (allow access if prompted)</li>
+                          <li>On the Linux host: <code className="font-mono">X11Forwarding yes</code> in sshd, then restart sshd</li>
+                          <li>Connect here, then run e.g. <code className="font-mono">xclock</code> — the window opens on your Windows desktop</li>
+                        </ol>
+                        <p
+                          className={
+                            guiDisplayReady
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-amber-600 dark:text-amber-400'
+                          }
+                        >
+                          {guiDisplayReady === true
+                            ? 'X server detected on this PC — GUI forwarding is ready.'
+                            : guiDisplayReady === false
+                              ? guiHint || 'X server not detected yet — start VcXsrv, then Connect.'
+                              : 'Checking X server…'}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  {!useServer && (
+                    <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                      Sign in to use Easy mode (server starts ttyd). Guests can use Advanced WebSocket URL mode.
+                    </p>
+                  )}
+                  {useServer && gatewayAvailable === false && (
+                    <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                      ttyd was not found on this server. Install with{' '}
+                      <code className="font-mono">winget install tsl0922.ttyd --source winget</code> then refresh.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                  WebSocket URL (manual ttyd)
+                  <input
+                    type="text"
+                    value={wsUrl}
+                    onChange={(e) => setWsUrl(e.target.value)}
+                    placeholder="ws://localhost:7681/ws"
+                    className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                    spellCheck={false}
+                    autoComplete="off"
+                  />
+                </label>
+              )}
+
               <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
                 Notes (optional)
                 <input
@@ -1076,11 +1416,9 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
                 </button>
               </div>
               <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed">
-                Connects via ttyd WebSocket protocol. Text shell only — GUI apps need X11 on Windows (VcXsrv +{' '}
-                <code className="font-mono">ssh -Y</code>) or the VNC Viewer widget. Windows gateway example:{' '}
-                <code className="font-mono">$env:DISPLAY=&quot;127.0.0.1:0.0&quot;; ttyd -W -p 7681 -w $env:USERPROFILE C:\Windows\System32\OpenSSH\ssh.exe -Y -tt user@host</code>
-                . Then use <code className="font-mono">ws://localhost:7681/ws</code>. See Help → Guides → Remote Widgets Setup.
-                Passwords are never saved. {useServer ? 'Connections sync to your account.' : 'Guest connections stay in this browser.'}
+                Easy mode starts ttyd on this LinkNest server automatically. Choose <strong>Terminal + GUI</strong> to
+                forward X11 apps to Windows (VcXsrv). Passwords are never saved.{' '}
+                {useServer ? 'Saved connections sync to your account.' : 'Guest saves stay in this browser.'}
               </p>
             </div>
           )}

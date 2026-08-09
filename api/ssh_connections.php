@@ -73,6 +73,17 @@ function normalizeWsUrl(string $raw): string {
 }
 
 function validateWsUrl(string $url): ?string {
+    $trimmed = trim($url);
+    // auto://user@host:port — LinkNest local ttyd launcher target (not a WebSocket URL)
+    if (preg_match('#^auto://#i', $trimmed)) {
+        if (mb_strlen($trimmed) > 512) {
+            return null;
+        }
+        if (!preg_match('#^auto://[A-Za-z0-9._~%-]+@[A-Za-z0-9.-]+:\d{1,5}$#', $trimmed)) {
+            return null;
+        }
+        return $trimmed;
+    }
     $normalized = normalizeWsUrl($url);
     if ($normalized === '' || !preg_match('#^wss?://#i', $normalized)) {
         return null;

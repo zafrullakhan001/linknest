@@ -531,7 +531,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Floating Widgets</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Clock (timezones), Weather, Calculator, Password Generator, Phonetic Alphabet, Page Zoom, Theme, Notes, Favorites Organizer, Chat, Snake Game, <strong>VNC Viewer</strong>, and <strong>SSH Terminal</strong>. Toggle from the nav bar or press Ctrl+Shift+Y for Quick Access. See the Remote Widgets section below (or Guides → Remote Widgets Setup) for ttyd and websockify setup.
+                      Clock (timezones), Weather, Calculator, Password Generator, Phonetic Alphabet, Page Zoom, Theme, Notes, Favorites Organizer, Chat, Snake Game, <strong>VNC Viewer</strong>, and <strong>SSH Terminal</strong>. Toggle from the nav bar or press Ctrl+Shift+Y. Install required gateways first (ttyd / OpenSSH; VcXsrv for SSH GUI; websockify for VNC) — see Remote Widgets below or Guides → Remote Widgets Setup.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -1036,34 +1036,96 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                 </h3>
                 <div className="space-y-3 text-slate-700 dark:text-slate-300">
                   <p className="text-sm">
-                    Browsers cannot open raw SSH or VNC. Each widget talks to a gateway over WebSocket. Full steps live in <strong>Guides → Remote Widgets Setup</strong>.
+                    Browsers cannot open raw SSH (<code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 rounded">host:22</code>) or VNC. Gateways run on the <strong>LinkNest server PC</strong>. Full writable guide: <strong>Guides → Remote Widgets Setup</strong>.
                   </p>
+
+                  <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 space-y-2 border border-amber-200 dark:border-amber-800">
+                    <p className="font-medium text-amber-900 dark:text-amber-100">Install these before use (Windows LinkNest host)</p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-amber-200 dark:border-amber-700 text-left">
+                            <th className="py-1.5 pr-3 font-semibold text-amber-900 dark:text-amber-100">Dependency</th>
+                            <th className="py-1.5 pr-3 font-semibold text-amber-900 dark:text-amber-100">Needed for</th>
+                            <th className="py-1.5 font-semibold text-amber-900 dark:text-amber-100">How to install</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-amber-100 dark:divide-amber-900/50 text-xs sm:text-sm">
+                          <tr>
+                            <td className="py-2 pr-3 font-medium">ttyd</td>
+                            <td className="py-2 pr-3">SSH Easy mode &amp; Advanced gateway</td>
+                            <td className="py-2">
+                              <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">winget install tsl0922.ttyd --source winget</code>
+                              <span className="block text-[11px] text-amber-800/80 dark:text-amber-200/70 mt-0.5">Or set full path under Admin → Add-ons → SSH Gateway (e.g. <code className="bg-white dark:bg-slate-900 px-1 rounded">bin\ttyd.exe</code>)</span>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="py-2 pr-3 font-medium">OpenSSH Client</td>
+                            <td className="py-2 pr-3">SSH connections from the server</td>
+                            <td className="py-2">
+                              Windows Optional Features → <em>OpenSSH Client</em>
+                              <span className="block text-[11px] text-amber-800/80 dark:text-amber-200/70 mt-0.5">Default <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">C:\Windows\System32\OpenSSH\ssh.exe</code> — change under Admin → Add-ons → SSH Gateway if yours differs</span>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="py-2 pr-3 font-medium">Signed-in LinkNest user</td>
+                            <td className="py-2 pr-3">Easy mode (auto-start ttyd)</td>
+                            <td className="py-2">Log in to LinkNest (guests use Advanced WebSocket URL only)</td>
+                          </tr>
+                          <tr>
+                            <td className="py-2 pr-3 font-medium">VcXsrv (or X410)</td>
+                            <td className="py-2 pr-3">SSH GUI apps on Windows desktop</td>
+                            <td className="py-2">
+                              <a href="https://sourceforge.net/projects/vcxsrv/" target="_blank" rel="noreferrer" className="text-brand-600 dark:text-brand-400 underline">VcXsrv</a>
+                              {' '}→ XLaunch → Multiple windows → Start no client
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="py-2 pr-3 font-medium">Linux: X11Forwarding</td>
+                            <td className="py-2 pr-3">GUI apps from remote host</td>
+                            <td className="py-2">
+                              <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">X11Forwarding yes</code> in sshd_config + restart sshd; optional <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">apt install x11-apps</code>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="py-2 pr-3 font-medium">VNC server + websockify</td>
+                            <td className="py-2 pr-3">VNC Viewer widget</td>
+                            <td className="py-2">VNC on target (e.g. :5900); websockify bridge (e.g. port 6080)</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
                   <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 border border-emerald-200 dark:border-emerald-800">
-                    <p className="font-medium text-emerald-900 dark:text-emerald-100">SSH Terminal (ttyd)</p>
-                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
-                      <li>Install: <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">winget install tsl0922.ttyd --source winget</code></li>
+                    <p className="font-medium text-emerald-900 dark:text-emerald-100">SSH Terminal — after dependencies</p>
+                    <ol className="list-decimal list-inside space-y-1.5 ml-0.5 text-sm">
+                      <li>Open the widget from the nav (terminal icon) or <strong>Ctrl+Shift+Y</strong></li>
                       <li>
-                        Windows shell-only (avoids CreateProcess error 267):
+                        <strong>Easy (host / port)</strong> — enter Host, Port (22), Username → <strong>Connect</strong>. LinkNest starts ttyd; type the SSH password in the terminal.
+                        If Connect says ttyd/ssh missing, set paths in <strong>Admin → Add-ons → SSH Gateway</strong>.
+                      </li>
+                      <li>
+                        <strong>Terminal + GUI (X11)</strong> — start VcXsrv first, pick this session type, Connect, then run e.g. <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">xclock</code>. Windows appear on your desktop (not inside the SSH panel).
+                      </li>
+                      <li>
+                        <strong>Advanced</strong> — start ttyd yourself, then paste <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">ws://localhost:7681/ws</code>:
                         <pre className="mt-1 p-2 text-[11px] font-mono bg-white dark:bg-slate-900 rounded border border-emerald-200 dark:border-emerald-800 overflow-x-auto whitespace-pre-wrap">ttyd -W -p 7681 -w $env:USERPROFILE C:\Windows\System32\OpenSSH\ssh.exe -tt user@host</pre>
                       </li>
-                      <li>
-                        Windows with <strong>X11 GUI apps</strong> (windows open on your desktop via VcXsrv — not inside the SSH panel):
-                        <pre className="mt-1 p-2 text-[11px] font-mono bg-white dark:bg-slate-900 rounded border border-emerald-200 dark:border-emerald-800 overflow-x-auto whitespace-pre-wrap">$env:DISPLAY = "127.0.0.1:0.0"
-ttyd -W -p 7681 -w $env:USERPROFILE C:\Windows\System32\OpenSSH\ssh.exe -Y -tt user@host</pre>
-                      </li>
-                      <li>In the widget, connect to <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">ws://localhost:7681/ws</code></li>
-                      <li>Save connections with tags; export/import JSON. Passwords are never stored. Signed-in users sync to the server; guests use this browser only.</li>
-                      <li className="text-xs text-emerald-800 dark:text-emerald-200">If you see <code className="bg-white dark:bg-slate-800 px-1 rounded">Can&apos;t open display:</code>, start VcXsrv, set <code className="bg-white dark:bg-slate-800 px-1 rounded">$env:DISPLAY</code>, use <code className="bg-white dark:bg-slate-800 px-1 rounded">ssh -Y</code>, and enable <code className="bg-white dark:bg-slate-800 px-1 rounded">X11Forwarding yes</code> on the Linux host. Details: Guides → Remote Widgets Setup.</li>
-                    </ul>
+                      <li>Save connections with name/tags; export/import JSON. Passwords are never stored. Easy/auto sessions stop ttyd on Disconnect.</li>
+                    </ol>
                   </div>
+
                   <div className="bg-sky-50 dark:bg-sky-900/20 rounded-lg p-4 space-y-2 border border-sky-200 dark:border-sky-800">
-                    <p className="font-medium text-sky-900 dark:text-sky-100">VNC Viewer (websockify + noVNC)</p>
-                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
-                      <li>Run a VNC server on the target, then bridge with websockify (example port <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">6080</code>)</li>
-                      <li>In the widget, use a URL like <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">ws://localhost:6080/websockify</code></li>
-                      <li>VNC password is session-only (not saved). Use tags, filter, and export/import like SSH.</li>
-                    </ul>
+                    <p className="font-medium text-sky-900 dark:text-sky-100">VNC Viewer — after dependencies</p>
+                    <ol className="list-decimal list-inside space-y-1.5 ml-0.5 text-sm">
+                      <li>Run a VNC server on the remote machine</li>
+                      <li>Run websockify (or similar) bridging WebSocket → VNC (example listen port <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">6080</code>)</li>
+                      <li>In the widget set URL to <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">ws://localhost:6080/websockify</code>, enter VNC password if asked (session only), Connect</li>
+                      <li>Save connections with tags; passwords are never saved</li>
+                    </ol>
                   </div>
+
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     Prefer LAN or VPN. Do not expose unauthenticated ttyd/websockify to the public internet. Enable widgets per role under Admin → Roles → Widgets (<code className="text-[10px]">ssh-terminal</code>, <code className="text-[10px]">vnc-viewer</code>).
                   </p>
@@ -1169,7 +1231,7 @@ ttyd -W -p 7681 -w $env:USERPROFILE C:\Windows\System32\OpenSSH\ssh.exe -Y -tt u
                     <li>Add seasonal decorations to tiles for holidays and special occasions</li>
                     <li>Toggle floating widgets from the navigation bar or press <strong>Ctrl+Shift+Y</strong> for the Widget Quick Access menu</li>
                     <li>Use the Notes and Chat widgets when signed in; Password Generator and Zoom Control are available from the widgets pill</li>
-                    <li>For SSH Terminal on Windows, run ttyd with <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded text-xs">-w $env:USERPROFILE</code> and the full path to <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded text-xs">ssh.exe</code> (see Remote Widgets / Guides)</li>
+                    <li>For SSH/VNC: install required dependencies first (ttyd, OpenSSH Client; VcXsrv for GUI; VNC+websockify for VNC) — see Help → Remote Widgets or Guides → Remote Widgets Setup</li>
                     <li>Monitor system health with URL, keyword, port, and ping checks</li>
                     <li>Set up email notifications with advanced rules and multiple SMTP servers</li>
                     <li>View monitoring history with interactive charts and graphs</li>

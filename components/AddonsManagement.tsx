@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { SecurePasswordInput } from './SecurePasswordInput';
 import { resolveApiBase } from '../services/apiHelpers';
+import { sshGatewayService, type SshGatewayConfigResponse } from '../services/sshGatewayService';
 
 // Resolve API base URL once at module load
 const API_BASE = resolveApiBase();
@@ -957,6 +958,9 @@ export const AddonsManagement: React.FC = () => {
             {/* Monitorv2 Add-on Card */}
             <Monitorv2AddonCard />
 
+            {/* SSH Gateway paths */}
+            <SshGatewayAddonCard />
+
             {/* Future Add-ons Placeholder */}
             <div className="mt-6 bg-white rounded-xl shadow-lg border border-sky-100 dark:border-sky-900/40 p-6 opacity-60">
                 <div className="flex items-center gap-4">
@@ -1768,6 +1772,244 @@ const Monitorv2AddonCard: React.FC = () => {
                                     className="px-5 py-2 bg-sky-600 hover:bg-sky-500 text-white shadow-sm shadow-sky-500/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                                 >
                                     {saving ? 'Saving...' : 'Save Configuration'}
+                                </button>
+                            </div>
+                        </>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ============================================
+// SSH Gateway Addon Card Component
+// ============================================
+const SshGatewayAddonCard: React.FC = () => {
+    const [expanded, setExpanded] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [savedMsg, setSavedMsg] = useState<string | null>(null);
+    const [ttydPath, setTtydPath] = useState('');
+    const [sshPath, setSshPath] = useState('');
+    const [x11Display, setX11Display] = useState('127.0.0.1:0.0');
+    const [resolved, setResolved] = useState<SshGatewayConfigResponse['resolved'] | null>(null);
+    const [defaults, setDefaults] = useState<SshGatewayConfigResponse['defaults'] | null>(null);
+
+    const applyResponse = (data: SshGatewayConfigResponse) => {
+        setTtydPath(data.config.ttydPath || '');
+        setSshPath(data.config.sshPath || '');
+        setX11Display(data.config.x11Display || '127.0.0.1:0.0');
+        setResolved(data.resolved);
+        setDefaults(data.defaults);
+    };
+
+    const loadConfiguration = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            const data = await sshGatewayService.getConfig();
+            applyResponse(data);
+        } catch (err: any) {
+            setError(err.message || 'Failed to load SSH gateway config');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        loadConfiguration();
+    }, []);
+
+    const handleSave = async () => {
+        try {
+            setSaving(true);
+            setError(null);
+            setSavedMsg(null);
+            const data = await sshGatewayService.putConfig({
+                ttydPath: ttydPath.trim(),
+                sshPath: sshPath.trim(),
+                x11Display: x11Display.trim(),
+            });
+            applyResponse(data);
+            setSavedMsg('SSH gateway paths saved.');
+        } catch (err: any) {
+            setError(err.message || 'Failed to save');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const ready = Boolean(resolved?.ttydExists && resolved?.sshExists);
+
+    return (
+        <div className="mt-6 bg-white rounded-xl shadow-lg border border-sky-100 dark:border-sky-900/40 overflow-hidden">
+            <div className="p-6 bg-gradient-to-r from-emerald-50 via-teal-50/80 to-cyan-50/60 dark:from-emerald-950/40 dark:via-teal-950/30 dark:to-cyan-950/20 border-b border-sky-100 dark:border-sky-900/40">
+                <div className="flex items-start justify-between">
+                    <div className="flex items-start gap-4 flex-1">
+                        <div className="text-4xl">🖥️</div>
+                        <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                                <h2 className="text-xl font-bold text-slate-900 dark:text-white">SSH Gateway</h2>
+                                <span
+                                    className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                        ready
+                                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
+                                            : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
+                                    }`}
+                                >
+                                    {loading ? 'Checking…' : ready ? 'Ready' : 'Needs paths'}
+                                </span>
+                            </div>
+                            <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+                                Configure full paths to <code className="text-xs bg-white/70 dark:bg-slate-900 px-1 rounded">ttyd</code> and
+                                OpenSSH <code className="text-xs bg-white/70 dark:bg-slate-900 px-1 rounded">ssh</code> when they are not on
+                                Apache/PHP PATH (common on Windows). Used by SSH Terminal Easy mode.
+                            </p>
+                            {resolved && !loading && (
+                                <div className="flex flex-wrap gap-2 text-xs">
+                                    <span className="px-2 py-1 bg-white rounded border border-sky-100 dark:border-sky-900/40 dark:bg-slate-900/40">
+                                        ttyd: {resolved.ttydExists ? 'found' : 'missing'}
+                                    </span>
+                                    <span className="px-2 py-1 bg-white rounded border border-sky-100 dark:border-sky-900/40 dark:bg-slate-900/40">
+                                        ssh: {resolved.sshExists ? 'found' : 'missing'}
+                                    </span>
+                                    <span className="px-2 py-1 bg-white rounded border border-sky-100 dark:border-sky-900/40 dark:bg-slate-900/40">
+                                        VcXsrv: {resolved.vcxsrvPath ? 'found' : 'not detected'}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={() => setExpanded(!expanded)}
+                        className="px-4 py-2 text-sm text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-lg transition-colors"
+                    >
+                        {expanded ? 'Hide' : 'Configure'}
+                    </button>
+                </div>
+            </div>
+
+            {expanded && (
+                <div className="p-6 space-y-5 bg-emerald-50/30 dark:bg-emerald-950/10">
+                    {error && (
+                        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                            <strong>Error:</strong> {error}
+                        </div>
+                    )}
+                    {savedMsg && (
+                        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-lg text-sm">
+                            {savedMsg}
+                        </div>
+                    )}
+
+                    {loading ? (
+                        <p className="text-sm text-slate-600 dark:text-slate-400">Loading…</p>
+                    ) : (
+                        <>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-800 dark:text-slate-200 mb-1">
+                                    ttyd executable path
+                                </label>
+                                <input
+                                    type="text"
+                                    value={ttydPath}
+                                    onChange={(e) => setTtydPath(e.target.value)}
+                                    placeholder="e.g. C:\xampp\htdocs\linknest\bin\ttyd.exe"
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm font-mono"
+                                />
+                                {resolved?.ttydPath && (
+                                    <p className="mt-1 text-xs text-slate-500">Resolved: {resolved.ttydPath}</p>
+                                )}
+                                {defaults?.ttydCandidates && defaults.ttydCandidates.length > 0 && (
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                        {defaults.ttydCandidates.slice(0, 4).map((p) => (
+                                            <button
+                                                key={p}
+                                                type="button"
+                                                onClick={() => setTtydPath(p)}
+                                                className="text-[11px] px-2 py-1 rounded border border-emerald-200 dark:border-emerald-800 bg-white dark:bg-slate-900 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 truncate max-w-full"
+                                                title={p}
+                                            >
+                                                Use detected ttyd
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-800 dark:text-slate-200 mb-1">
+                                    OpenSSH ssh.exe path
+                                </label>
+                                <input
+                                    type="text"
+                                    value={sshPath}
+                                    onChange={(e) => setSshPath(e.target.value)}
+                                    placeholder="e.g. C:\Windows\System32\OpenSSH\ssh.exe"
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm font-mono"
+                                />
+                                {resolved?.sshPath && (
+                                    <p className="mt-1 text-xs text-slate-500">Resolved: {resolved.sshPath}</p>
+                                )}
+                                {defaults?.sshCandidates && defaults.sshCandidates.length > 0 && (
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                        {defaults.sshCandidates.slice(0, 3).map((p) => (
+                                            <button
+                                                key={p}
+                                                type="button"
+                                                onClick={() => setSshPath(p)}
+                                                className="text-[11px] px-2 py-1 rounded border border-emerald-200 dark:border-emerald-800 bg-white dark:bg-slate-900 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 truncate max-w-full"
+                                                title={p}
+                                            >
+                                                Use detected ssh
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-800 dark:text-slate-200 mb-1">
+                                    Default X11 display (GUI mode)
+                                </label>
+                                <input
+                                    type="text"
+                                    value={x11Display}
+                                    onChange={(e) => setX11Display(e.target.value)}
+                                    placeholder="127.0.0.1:0.0"
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm font-mono max-w-xs"
+                                />
+                                <p className="mt-1 text-xs text-slate-500">
+                                    Used when Easy mode starts Terminal + GUI. Clear ttyd/ssh paths to auto-detect from common install locations.
+                                </p>
+                                {resolved?.vcxsrvPath && (
+                                    <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">VcXsrv: {resolved.vcxsrvPath}</p>
+                                )}
+                            </div>
+
+                            <div className="flex justify-end gap-3 pt-2 border-t border-emerald-100 dark:border-emerald-900/40">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setExpanded(false);
+                                        loadConfiguration();
+                                        setSavedMsg(null);
+                                    }}
+                                    className="px-5 py-2 text-slate-700 dark:text-slate-200 bg-white border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleSave}
+                                    disabled={saving}
+                                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors disabled:opacity-50 font-medium"
+                                >
+                                    {saving ? 'Saving…' : 'Save Paths'}
                                 </button>
                             </div>
                         </>

@@ -191,6 +191,15 @@ if ($path === '/') {
     }
     require __DIR__ . '/ssh_connections.php';
     exit;
+} elseif (strpos($path, '/ssh-gateway') === 0) {
+    $remainingPath = substr($path, 12); // Remove '/ssh-gateway'
+    if (empty($remainingPath) || $remainingPath === '/') {
+        $_SERVER['PATH_INFO'] = '/';
+    } else {
+        $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
+    }
+    require __DIR__ . '/ssh_gateway.php';
+    exit;
 } elseif (strpos($path, '/notes') === 0) {
     error_log("api/index.php: Matched /notes route, path: $path");
     $remainingPath = substr($path, 6); // Remove '/notes'

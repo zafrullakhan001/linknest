@@ -4126,3 +4126,14 @@ function getSetting(string $key, $default = null) {
         return $default;
     }
 }
+
+/**
+ * Persist a setting value (string). Creates or updates the row.
+ */
+function setSetting(string $key, string $value): void {
+    $db = getDB();
+    $now = time();
+    $stmt = $db->prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at');
+    $stmt->execute([$key, $value, $now]);
+}
