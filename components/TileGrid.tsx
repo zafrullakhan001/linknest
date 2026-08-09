@@ -3836,7 +3836,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             tabs: filteredTabs && filteredTabs.length > 0 ? filteredTabs : []
           };
         }).filter(tile =>
+          // Keep authenticated tiles and role-assigned tiles even in summary mode
+          // (home grid loads without nested tabs/links; detail loads on open).
           tile.visibility === 'authenticated' ||
+          !!tile.hasRoleAccess ||
           (tile.tabs && tile.tabs.length > 0 && tile.tabs.some(tab =>
             (tab.sections && tab.sections.length > 0) ||
             (tab.links && tab.links.length > 0)
@@ -3845,8 +3848,14 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
         // Apply sub-filter for 'Your Apps' tab
         if (yourAppsFilter === 'assigned') {
-          // Show tiles that are explicitly assigned via roles (not just generically 'authenticated')
-          filteredTiles = filteredTiles.filter(t => t.visibility !== 'authenticated');
+          // Explicit role/group assignment (tile-level or link-level), including authenticated spaces
+          filteredTiles = filteredTiles.filter(t =>
+            !!t.hasRoleAccess ||
+            !!t.tabs?.some(tab =>
+              tab.sections?.some(section => section.links?.some(link => link.hasRoleAccess)) ||
+              tab.links?.some(link => link.hasRoleAccess)
+            )
+          );
         } else {
           // Default: Authenticated — spaces that require sign-in for all logged-in users
           filteredTiles = filteredTiles.filter(t => t.visibility === 'authenticated');

@@ -89,21 +89,23 @@ try {
     
     echo "Creating demo users (password: password)...\n";
     $userIds = [];
+    $demoNotesByEmail = demoDataUserNotesByEmail();
     $userSelectStmt = $db->prepare('SELECT id FROM users WHERE email = ?');
-    $userInsertStmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, created_at) VALUES (?, ?, ?, 0, 1, ?, ?)');
-    $userUpdateStmt = $db->prepare('UPDATE users SET password_hash = ?, is_approved = 1 WHERE email = ?');
+    $userInsertStmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, notes, created_at) VALUES (?, ?, ?, 0, 1, ?, ?, ?)');
+    $userUpdateStmt = $db->prepare('UPDATE users SET password_hash = ?, is_approved = 1, notes = ? WHERE email = ?');
     foreach ($demoUsers as $u) {
+        $notes = $demoNotesByEmail[$u['email']] ?? null;
         $userSelectStmt->execute([$u['email']]);
         $row = $userSelectStmt->fetch(PDO::FETCH_ASSOC);
         if ($row) {
             $userIds[$u['email']] = (int)$row['id'];
-            $userUpdateStmt->execute([$demoPasswordHash, $u['email']]);
+            $userUpdateStmt->execute([$demoPasswordHash, $notes, $u['email']]);
         } else {
-            $userInsertStmt->execute([$u['username'], $u['email'], $demoPasswordHash, 'local', $currentTime]);
+            $userInsertStmt->execute([$u['username'], $u['email'], $demoPasswordHash, 'local', $notes, $currentTime]);
             $userIds[$u['email']] = (int)$db->lastInsertId();
         }
     }
-    echo "  Users: " . count($userIds) . "\n";
+    echo "  Users: " . count($userIds) . " (with role notes)\n";
     
     echo "Assigning roles to demo users...\n";
     $demoUserIdList = array_values($userIds);
@@ -553,7 +555,7 @@ try {
 
         $tileStmt->execute([
             $tile['id'],
-            $adminUserId,
+            demoDataResolveTileOwnerId($tile['id'], $userIds, (int) $adminUserId),
             $tile['title'],
             $tile['description'],
             $tile['emoji'],
@@ -561,7 +563,7 @@ try {
             $tile['group'],
             $tile['position'],
             $currentTime,
-            'public',
+            demoDataResolveTileVisibility($tile['id']),
             'public',
             $gradientEnabled,
             $gradientColors,
@@ -573,6 +575,9 @@ try {
             $backgroundFallback,
         ]);
     }
+    echo "  Tile ownership assigned across demo1–demo10 (heat map uses tiles.user_id).\n";
+    $visCounts = demoDataVisibilityCounts();
+    echo "  Visibility buckets: public={$visCounts['public']}, authenticated={$visCounts['authenticated']}, role-assigned(private)={$visCounts['private']}.\n";
     
     // ============================================
     // TABS AND SECTIONS
@@ -976,7 +981,7 @@ try {
     // ============================================
     // ASSIGN TILES, LINKS, WIDGETS TO ROLES (varied per role); ALL TABS EXCEPT PUBLIC
     // ============================================
-    echo "Assigning varied tiles/links and widgets to demo roles (all tabs except Public)...\n";
+    echo "Assigning varied tiles/links and widgets to demo roles...\n";
     $sectionToTile = [];
     foreach ($tileStructure as $tileId => $tabs) {
         foreach ($tabs as $sections) {
@@ -985,18 +990,7 @@ try {
             }
         }
     }
-    $roleTiles = [
-        'Manager'   => ['tile_dashboard', 'tile_analytics', 'tile_hr_portal', 'tile_finance', 'tile_customer_portal', 'tile_communication', 'tile_project_mgmt', 'tile_file_sharing', 'tile_whiteboard', 'tile_calendar'],
-        'Developer' => ['tile_dev_tools', 'tile_code_repos', 'tile_cicd', 'tile_testing', 'tile_api_gateway', 'tile_cloud_services', 'tile_servers', 'tile_databases', 'tile_networking', 'tile_security'],
-        'Designer'  => ['tile_dev_tools', 'tile_code_repos', 'tile_cicd', 'tile_communication', 'tile_project_mgmt', 'tile_file_sharing', 'tile_whiteboard', 'tile_documentation'],
-        'Support'   => ['tile_dashboard', 'tile_customer_portal', 'tile_communication', 'tile_calendar', 'tile_documentation', 'tile_support'],
-        'Viewer'    => ['tile_dashboard', 'tile_analytics', 'tile_hr_portal', 'tile_finance', 'tile_customer_portal', 'tile_documentation', 'tile_training', 'tile_library'],
-        'Editor'    => ['tile_dashboard', 'tile_analytics', 'tile_hr_portal', 'tile_finance', 'tile_customer_portal', 'tile_communication', 'tile_project_mgmt', 'tile_file_sharing', 'tile_whiteboard', 'tile_calendar', 'tile_documentation', 'tile_forms'],
-        'HR'        => ['tile_dashboard', 'tile_analytics', 'tile_hr_portal', 'tile_calendar', 'tile_documentation', 'tile_training'],
-        'Finance'   => ['tile_dashboard', 'tile_analytics', 'tile_finance', 'tile_documentation', 'tile_forms'],
-        'Guest'     => ['tile_dashboard', 'tile_customer_portal', 'tile_documentation', 'tile_support'],
-        'Auditor'   => ['tile_dashboard', 'tile_analytics', 'tile_hr_portal', 'tile_finance', 'tile_customer_portal', 'tile_dev_tools', 'tile_code_repos', 'tile_documentation', 'tile_training', 'tile_library', 'tile_forms', 'tile_support'],
-    ];
+    $roleTiles = demoDataRoleTileAssignments();
     $allowedTabsForDemoRoles = demoDataAllowedAppTabs();
     $builtInWidgetIds = [
         'clock', 'weather', 'calculator', 'notes', 'password-generator',
@@ -1035,22 +1029,38 @@ try {
             $rwpStmt->execute([$roleId, $widgetId, $currentTime, $currentTime]);
         }
     }
-    echo "  Varied tile/link sets per role; all tabs except Public; all widgets assigned.\n\n";
+    echo "  Varied tile/link sets per role; app tabs + widgets assigned.\n";
+
+    demoDataAssignUserTilePermissions($db, $roleIds, $userIds, $roleTiles, $demoUsers, $currentTime);
+    echo "\n";
     
     // Re-enable foreign keys
     $db->exec('PRAGMA foreign_keys = ON');
-    
+
     $db->commit();
-    
+
+    // Demo seed rewrites tiles; drop guest summary cache so Public tab refreshes immediately
+    if (function_exists('invalidateGuestTilesListCache')) {
+        invalidateGuestTilesListCache();
+    } elseif (is_file(__DIR__ . '/../api/response_cache.php')) {
+        require_once __DIR__ . '/../api/response_cache.php';
+        if (function_exists('invalidateGuestTilesListCache')) {
+            invalidateGuestTilesListCache();
+        }
+    }
+
     echo "\nDemo data generated successfully (colorful / gradients)!\n";
     echo "\nSummary:\n";
     echo "  - Roles: 10 (Manager, Developer, Designer, Support, Viewer, Editor, HR, Finance, Guest, Auditor)\n";
     echo "  - Demo users: 10 (demo1-demo10, password: password)\n";
-    echo "  - Role permissions: varied tile/link sets per role; all tabs except Public; all widgets.\n";
+    echo "  - Role permissions: varied tile/link sets per role; app tabs + widgets.\n";
     echo "  - Categories: 5 (global arrangement)\n";
-    echo "  - Tiles: " . count($tiles) . " (named theme colors + gradient presets)\n";
+    echo "  - Tiles: " . count($tiles) . " (public / authenticated / role-assigned buckets)\n";
+    $visCounts = demoDataVisibilityCounts();
+    echo "  - Public (guest): {$visCounts['public']} | Authenticated: {$visCounts['authenticated']} | Your Assigned Apps: {$visCounts['private']}\n";
     echo "  - Links: " . count($links) . "\n";
     echo "  - Monitors: " . count($monitors) . "\n";
+    echo "  - Heat map: demo users own spaces; try demo3 (Designer) on Your Assigned Apps.\n";
     echo "\n";
 
 } catch (Throwable $e) {

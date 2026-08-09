@@ -3040,10 +3040,15 @@ function handleBulkImport() {
     $created = [];
     $errors = [];
     $currentTime = time();
+    $deletedCount = 0;
+
+    // Optional: soft-delete all existing public spaces before importing (replace-all mode)
+    $replaceAllRaw = $_POST['replace_all'] ?? '';
+    $replaceAll = $replaceAllRaw === '1' || $replaceAllRaw === 'true' || $replaceAllRaw === 'on';
     
-    // Get current max position to append new tiles
-    $maxPositionStmt = $db->prepare('SELECT MAX(position) as max_pos FROM tiles');
-    $maxPositionStmt->execute();
+    // Get current max position to append new tiles (reset to 0 when replacing all)
+    $maxPositionStmt = $db->prepare('SELECT MAX(position) as max_pos FROM tiles WHERE deleted_at IS NULL AND archived_at IS NULL AND (source_tab IS NULL OR source_tab = ? OR source_tab = \'\')');
+    $maxPositionStmt->execute(['public']);
     $maxPosRow = $maxPositionStmt->fetch();
     $nextPosition = ($maxPosRow && $maxPosRow['max_pos'] !== null) ? (int)$maxPosRow['max_pos'] + 1 : 0;
     
@@ -3099,6 +3104,17 @@ function handleBulkImport() {
     $db->beginTransaction();
     
     try {
+        if ($replaceAll) {
+            $softDeleteStmt = $db->prepare(
+                'UPDATE tiles SET deleted_at = ?, archived_at = NULL
+                 WHERE deleted_at IS NULL AND archived_at IS NULL
+                 AND (source_tab IS NULL OR source_tab = ? OR source_tab = \'\')'
+            );
+            $softDeleteStmt->execute([$currentTime, 'public']);
+            $deletedCount = $softDeleteStmt->rowCount();
+            $nextPosition = 0;
+        }
+
         foreach ($tilesMap as $tileKey => $tileData) {
             try {
                 // Generate unique tile ID
@@ -3187,6 +3203,7 @@ function handleBulkImport() {
         sendJSON([
             'success' => true,
             'created' => count($created),
+            'deleted' => $deletedCount,
             'errors' => count($errors),
             'createdTiles' => $created,
             'errorMessages' => $errors

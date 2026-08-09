@@ -6,6 +6,7 @@ export interface User {
   is_approved?: boolean;
   auth_source?: string;
   display_name?: string | null;
+  notes?: string | null;
   impersonating?: boolean;
   impersonating_admin_id?: number;
   impersonating_admin_username?: string;
@@ -26,6 +27,7 @@ export interface AllUser {
   is_approved: boolean;
   is_disabled?: boolean;
   auth_source?: string;
+  notes?: string | null;
   created_at: number;
 }
 
@@ -326,12 +328,12 @@ export const authService = {
     }
   },
 
-  async updateUser(userId: number, username: string, email: string, auth_source: 'local' | 'ldap' | 'saml' = 'local'): Promise<AllUser> {
+  async updateUser(userId: number, username: string, email: string, auth_source: 'local' | 'ldap' | 'saml' = 'local', notes?: string | null): Promise<AllUser> {
     const response = await fetch(`${API_BASE}/auth/update/${userId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ username, email, auth_source })
+      body: JSON.stringify({ username, email, auth_source, notes: notes ?? null })
     });
 
     const data = await response.json();
@@ -444,12 +446,12 @@ export const authService = {
     return data.user as LdapUserDetail;
   },
 
-  async addLocalUser(username: string, email: string, password: string): Promise<{ user: AllUser; message: string }> {
+  async addLocalUser(username: string, email: string, password: string, notes?: string | null): Promise<{ user: AllUser; message: string }> {
     const response = await fetch(`${API_BASE}/auth/add-local-user`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ username, email, password })
+      body: JSON.stringify({ username, email, password, notes: notes ?? null })
     });
 
     const data = await response.json();
@@ -461,12 +463,13 @@ export const authService = {
     return { user: data.user, message: data.message };
   },
 
-  async addLdapUser(username: string, email: string, dn: string, displayName?: string, ldapServerIndex?: number): Promise<{ user: AllUser; message: string }> {
-    const body: { username: string; email: string; dn: string; displayName?: string; ldap_server_index?: number } = {
+  async addLdapUser(username: string, email: string, dn: string, displayName?: string, ldapServerIndex?: number, notes?: string | null): Promise<{ user: AllUser; message: string }> {
+    const body: { username: string; email: string; dn: string; displayName?: string; ldap_server_index?: number; notes?: string | null } = {
       username,
       email,
       dn,
-      displayName
+      displayName,
+      notes: notes ?? null
     };
     if (ldapServerIndex !== undefined && ldapServerIndex !== null) {
       body.ldap_server_index = ldapServerIndex;

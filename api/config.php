@@ -112,7 +112,7 @@ define('SYSTEM_TOKEN', 'linknest_secret_token_123'); // Change this for producti
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 74);
+    define('LINKNEST_SCHEMA_VERSION', 75);
 }
 
 /**
@@ -498,6 +498,11 @@ function initDatabase() {
         }
         try {
             $db->exec('ALTER TABLE users ADD COLUMN uuid TEXT');
+        } catch (PDOException $e) {
+            // Column already exists, ignore
+        }
+        try {
+            $db->exec('ALTER TABLE users ADD COLUMN notes TEXT');
         } catch (PDOException $e) {
             // Column already exists, ignore
         }
@@ -2695,7 +2700,7 @@ function getAuthenticatedUser() {
             $userId = $_SESSION['impersonating_user_id'];
         }
 
-        $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved, auth_source, display_name FROM users WHERE id = ?');
+        $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved, auth_source, display_name, notes FROM users WHERE id = ?');
         $stmt->execute([$userId]);
         $user = $stmt->fetch();
 
@@ -2704,6 +2709,9 @@ function getAuthenticatedUser() {
             $user['is_admin'] = (bool)$user['is_admin'];
             $user['is_approved'] = (bool)$user['is_approved'];
             $user['auth_source'] = $user['auth_source'] ?? 'local';
+            $user['notes'] = isset($user['notes']) && $user['notes'] !== '' && $user['notes'] !== null
+                ? (string)$user['notes']
+                : null;
 
             // Ensure username is in session (fix for analytics)
             if (empty($_SESSION['username']) && !empty($user['username'])) {

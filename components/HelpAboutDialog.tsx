@@ -783,6 +783,66 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
                     <path fillRule="evenodd" d="M6 3.75A2.75 2.75 0 018.75 1h2.5A2.75 2.75 0 0114 3.75v.443c.572.055 1.14.122 1.706.2C17.053 4.582 18 5.75 18 7.07v3.469c0 1.126-.694 2.191-1.759 2.551A41.44 41.44 0 0110 14c-1.392 0-2.767-.128-4.121-.378-1.065-.36-1.759-1.425-1.759-2.55V7.07c0-1.32.947-2.488 2.294-2.676A41.46 41.46 0 016 4.193V3.75zM8.75 2.5a1.25 1.25 0 00-1.25 1.25v.34A41.81 41.81 0 0110 4c.932 0 1.854.04 2.765.118v-.368a1.25 1.25 0 00-1.25-1.25h-2.5zM10 15.5c.967 0 1.92-.073 2.855-.215a.75.75 0 01.845.835l-.112.84a2.75 2.75 0 01-2.728 2.39H9.14a2.75 2.75 0 01-2.728-2.39l-.112-.84a.75.75 0 01.845-.835c.935.142 1.888.215 2.855.215z" clipRule="evenodd" />
                   </svg>
+                  Demo Data Scripts (Public / Authenticated / Assigned)
+                </h3>
+                <div className="space-y-3 text-slate-700 dark:text-slate-300">
+                  <p>
+                    Admins can seed presentation data with CLI scripts under <code className="text-sm bg-slate-100 dark:bg-slate-800 px-1 rounded">scripts/</code>.
+                    The colorful script uses gradients; the simple script uses solid theme colors. Both create the same visibility and role layout.
+                  </p>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-slate-900 dark:text-white">Run (CLI only — requires confirmation):</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm font-mono">
+                      <li>php scripts/generate_demo_data.php --yes</li>
+                      <li>php scripts/generate_demo_data_simple.php --yes</li>
+                    </ul>
+                    <p className="text-sm mt-2">These scripts replace existing tiles, links, and monitors. Backup the database first.</p>
+                  </div>
+                  <div className="bg-sky-50 dark:bg-sky-900/20 rounded-lg p-4 space-y-2 border border-sky-200 dark:border-sky-800">
+                    <p className="font-medium text-sky-900 dark:text-sky-100">How demo spaces are split (25 total):</p>
+                    <ul className="list-disc list-inside space-y-2 ml-2 text-sm">
+                      <li>
+                        <strong>Public (~8)</strong> — visibility <em>public</em>. Appear on the <strong>Public</strong> tab for guests and signed-in users.
+                        Examples: Company Dashboard, Analytics Hub, Customer Portal, Documentation, IT Support.
+                      </li>
+                      <li>
+                        <strong>Authenticated (~5)</strong> — visibility <em>authenticated</em>. Appear under <strong>Your Apps → Authenticated</strong> for every signed-in user (not for guests).
+                        Examples: HR Portal, Communication Hub, Project Management, File Sharing, Collaborative Workspaces.
+                      </li>
+                      <li>
+                        <strong>Your Assigned Apps (~12)</strong> — visibility <em>private</em> plus <strong>role tile/link permissions</strong>.
+                        Appear under <strong>Your Apps → Your Assigned Apps</strong> only for users whose role was granted that space.
+                        Examples: Development Tools, CI/CD, Cloud Services, Finance Center, Forms &amp; Requests.
+                      </li>
+                    </ul>
+                  </div>
+                  <div className="bg-violet-50 dark:bg-violet-900/20 rounded-lg p-4 space-y-2 border border-violet-200 dark:border-violet-800">
+                    <p className="font-medium text-violet-900 dark:text-violet-100">Try it with demo users (password: <code className="text-xs bg-white/60 dark:bg-slate-800 px-1 rounded">password</code>):</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li><strong>Guest (signed out)</strong> — Public tab shows the public showcase only.</li>
+                      <li><strong>Any demo user</strong> — Your Apps → Authenticated shows the shared staff spaces.</li>
+                      <li><strong>demo3 (Designer)</strong> — Your Assigned Apps shows design/dev tools (repos, CI/CD, testing, API, forms). Check Admin → Users notes for the org role blurb.</li>
+                      <li><strong>demo2 (Developer)</strong> — Your Assigned Apps shows the full Development + Infrastructure set.</li>
+                      <li><strong>demo9 (Guest role)</strong> — Your Assigned Apps is minimal (Forms only), while Authenticated still shows the shared five.</li>
+                    </ul>
+                    <p className="text-sm mt-2">Demo accounts include admin <strong>Notes</strong> (role and access context) so presenters can see who each user represents.</p>
+                  </div>
+                  <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 border border-emerald-200 dark:border-emerald-800">
+                    <p className="font-medium text-emerald-900 dark:text-emerald-100">Why Assigned spaces are not on Public:</p>
+                    <p className="text-sm">
+                      Role-assigned demo spaces use private visibility so they stay off the Public/guest grid.
+                      Role permissions unlock them in Your Assigned Apps (and when opening a space, only role-granted links are highlighted for that view).
+                      Authenticated spaces stay separate so you can demo “everyone signed in” vs “only my role.”
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <path fillRule="evenodd" d="M6 3.75A2.75 2.75 0 018.75 1h2.5A2.75 2.75 0 0114 3.75v.443c.572.055 1.14.122 1.706.2C17.053 4.582 18 5.75 18 7.07v3.469c0 1.126-.694 2.191-1.759 2.551A41.44 41.44 0 0110 14c-1.392 0-2.767-.128-4.121-.378-1.065-.36-1.759-1.425-1.759-2.55V7.07c0-1.32.947-2.488 2.294-2.676A41.46 41.46 0 016 4.193V3.75zM8.75 2.5a1.25 1.25 0 00-1.25 1.25v.34A41.81 41.81 0 0110 4c.932 0 1.854.04 2.765.118v-.368a1.25 1.25 0 00-1.25-1.25h-2.5zM10 15.5c.967 0 1.92-.073 2.855-.215a.75.75 0 01.845.835l-.112.84a2.75 2.75 0 01-2.728 2.39H9.14a2.75 2.75 0 01-2.728-2.39l-.112-.84a.75.75 0 01.845-.835c.935.142 1.888.215 2.855.215z" clipRule="evenodd" />
+                  </svg>
                   Staging &amp; Space Lifecycle
                 </h3>
                 <div className="space-y-3 text-slate-700 dark:text-slate-300">

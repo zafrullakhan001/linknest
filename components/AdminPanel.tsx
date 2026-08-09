@@ -5,11 +5,9 @@ import { settingsService, AppSettings, SEMI_PWA_EXCLUDE_PATHS_DEFAULT } from '..
 import { databaseService } from '../services/databaseService';
 import { useSettings, resolvePageTitle } from '../contexts/SettingsContext';
 import { useAuth } from '../contexts/AuthContext';
-import { getTiles, createTile, saveTile } from '../services/storageService';
-import { bulkImportTiles } from '../services/storageService';
+import { getTiles, createTile, saveTile, deleteTile, bulkImportTiles, getCategoryArrangement } from '../services/storageService';
 import { exportAllCategoriesToFile, parseSpaceExportObject, normalizeImportedTiles } from '../services/spaceTransferService';
 import { Tile, POPULAR_EMOJIS } from '../types';
-import { getCategoryArrangement } from '../services/storageService';
 import { SecurePasswordInput } from './SecurePasswordInput';
 import { PasswordCriteriaList } from './PasswordCriteriaList';
 import { validatePassword } from '../services/passwordValidation';
@@ -274,12 +272,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [newPassword, setNewPassword] = useState('');
   const [resetConfirmPassword, setResetConfirmPassword] = useState('');
   const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
-  const [editUserModal, setEditUserModal] = useState<{ open: boolean; userId: number | null; username: string; email: string; auth_source: string }>({ open: false, userId: null, username: '', email: '', auth_source: 'local' });
+  const [editUserModal, setEditUserModal] = useState<{ open: boolean; userId: number | null; username: string; email: string; auth_source: string; notes: string }>({ open: false, userId: null, username: '', email: '', auth_source: 'local', notes: '' });
   const [editUsername, setEditUsername] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editAuthSource, setEditAuthSource] = useState<'local' | 'ldap' | 'saml'>('local');
+  const [editNotes, setEditNotes] = useState('');
   const [editUserLoading, setEditUserLoading] = useState(false);
   const [userActionsDialog, setUserActionsDialog] = useState<{ open: boolean; user: AllUser | null }>({ open: false, user: null });
+  const [userActionsNotes, setUserActionsNotes] = useState('');
+  const [userActionsNotesSaving, setUserActionsNotesSaving] = useState(false);
+  const [userActionsNotesError, setUserActionsNotesError] = useState('');
+  const [userActionsNotesSaved, setUserActionsNotesSaved] = useState(false);
   const [ldapUserDetail, setLdapUserDetail] = useState<LdapUserDetail | null>(null);
   const [ldapUserDetailLoading, setLdapUserDetailLoading] = useState(false);
   const [ldapUserDetailError, setLdapUserDetailError] = useState('');
@@ -417,6 +420,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [spacesImportFile, setSpacesImportFile] = useState<File | null>(null);
   const [spacesBulkImportFile, setSpacesBulkImportFile] = useState<File | null>(null);
   const [spacesImportOverwrite, setSpacesImportOverwrite] = useState(false);
+  const [spacesImportReplaceAll, setSpacesImportReplaceAll] = useState(false);
   const [spacesTiles, setSpacesTiles] = useState<Tile[]>([]);
   const [spacesCategoryOrder, setSpacesCategoryOrder] = useState<string[]>([]);
 
@@ -497,6 +501,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   // Local user form state
   const [localUsername, setLocalUsername] = useState('');
   const [localEmail, setLocalEmail] = useState('');
+  const [addUserNotes, setAddUserNotes] = useState('');
   const [localPassword, setLocalPassword] = useState('');
   const [localConfirmPassword, setLocalConfirmPassword] = useState('');
 
@@ -3498,21 +3503,54 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     try {
       setEditUserLoading(true);
       setError('');
-      const updatedUser = await authService.updateUser(editUserModal.userId, editUsername, editEmail, editAuthSource);
+      const updatedUser = await authService.updateUser(editUserModal.userId, editUsername, editEmail, editAuthSource, editNotes);
       setAllUsers(prevUsers =>
         prevUsers.map(u =>
-          u.id === editUserModal.userId ? { ...u, username: updatedUser.username, email: updatedUser.email, auth_source: updatedUser.auth_source } : u
+          u.id === editUserModal.userId ? { ...u, username: updatedUser.username, email: updatedUser.email, auth_source: updatedUser.auth_source, notes: updatedUser.notes ?? null } : u
         )
       );
-      setEditUserModal({ open: false, userId: null, username: '', email: '', auth_source: 'local' });
+      setEditUserModal({ open: false, userId: null, username: '', email: '', auth_source: 'local', notes: '' });
       setEditUsername('');
       setEditEmail('');
       setEditAuthSource('local');
+      setEditNotes('');
       alert('User updated successfully!');
     } catch (err: any) {
       setError(err.message || 'Failed to update user');
     } finally {
       setEditUserLoading(false);
+    }
+  };
+
+  const handleSaveUserActionsNotes = async () => {
+    const target = userActionsDialog.user;
+    if (!target) return;
+
+    try {
+      setUserActionsNotesSaving(true);
+      setUserActionsNotesError('');
+      setUserActionsNotesSaved(false);
+      const authSource = (target.auth_source || 'local') as 'local' | 'ldap' | 'saml';
+      const updatedUser = await authService.updateUser(
+        target.id,
+        target.username,
+        target.email,
+        authSource,
+        userActionsNotes
+      );
+      const nextNotes = updatedUser.notes ?? null;
+      setAllUsers(prevUsers =>
+        prevUsers.map(u => (u.id === target.id ? { ...u, notes: nextNotes } : u))
+      );
+      setUserActionsDialog(prev =>
+        prev.user ? { ...prev, user: { ...prev.user, notes: nextNotes } } : prev
+      );
+      setUserActionsNotes(nextNotes || '');
+      setUserActionsNotesSaved(true);
+    } catch (err: any) {
+      setUserActionsNotesError(err.message || 'Failed to save notes');
+    } finally {
+      setUserActionsNotesSaving(false);
     }
   };
 
@@ -3619,12 +3657,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     try {
       setAddUserLoading(true);
       setError('');
-      await authService.addLocalUser(localUsername.trim(), localEmail.trim(), localPassword);
+      await authService.addLocalUser(localUsername.trim(), localEmail.trim(), localPassword, addUserNotes.trim() || null);
       setAddUserModal(false);
       setLocalUsername('');
       setLocalEmail('');
       setLocalPassword('');
       setLocalConfirmPassword('');
+      setAddUserNotes('');
       await loadData();
       alert('Local user created successfully. User is pending admin approval.');
     } catch (err: any) {
@@ -3668,10 +3707,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         userToAdd.email,
         userToAdd.dn,
         userToAdd.displayName,
-        serverIndex
+        serverIndex,
+        addUserNotes.trim() || null
       );
       setAddUserModal(false);
       setBulkImportMode(false);
+      setAddUserNotes('');
       setLdapSearchTerm('');
       setLdapSearchResults([]);
       setLdapSearchPerformed(false);
@@ -3888,7 +3929,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         return;
       }
       if (editUserModal.open) {
-        setEditUserModal({ open: false, userId: null, username: '', email: '', auth_source: 'local' });
+        setEditUserModal({ open: false, userId: null, username: '', email: '', auth_source: 'local', notes: '' });
+                    setEditNotes('');
         setError('');
         return;
       }
@@ -4024,12 +4066,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     };
   }, [userActionsDialog.open, userActionsDialog.user?.id, userActionsDialog.user?.username, userActionsDialog.user?.auth_source, ldapDirectoryExpanded]);
 
-  // Clear cached LDAP detail when switching users in the dialog
+  // Clear cached LDAP detail and sync notes when switching users in the dialog
   useEffect(() => {
     setLdapUserDetail(null);
     setLdapUserDetailError('');
     setLdapDirectoryExpanded(false);
-  }, [userActionsDialog.user?.id]);
+    if (userActionsDialog.open && userActionsDialog.user) {
+      setUserActionsNotes(userActionsDialog.user.notes || '');
+      setUserActionsNotesError('');
+      setUserActionsNotesSaved(false);
+    } else {
+      setUserActionsNotes('');
+      setUserActionsNotesError('');
+      setUserActionsNotesSaved(false);
+    }
+  }, [userActionsDialog.open, userActionsDialog.user?.id]);
 
   return (
     <div className="space-y-6">
@@ -4794,6 +4845,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                         </div>
                                         <div className="flex-1 min-w-0">
                                           <span className="font-medium text-slate-900 dark:text-white block">{user.username}</span>
+                                          {user.notes && (
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2" title={user.notes}>
+                                              {user.notes}
+                                            </p>
+                                          )}
                                           <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                                             {user.is_admin && (
                                               <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-xs font-semibold whitespace-nowrap">
@@ -4884,10 +4940,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                         {!user.is_admin && (
                                           <button
                                             onClick={() => {
-                                              setEditUserModal({ open: true, userId: user.id, username: user.username, email: user.email, auth_source: user.auth_source || 'local' });
+                                              setEditUserModal({ open: true, userId: user.id, username: user.username, email: user.email, auth_source: user.auth_source || 'local', notes: user.notes || '' });
                                               setEditUsername(user.username);
                                               setEditEmail(user.email);
                                               setEditAuthSource((user.auth_source || 'local') as 'local' | 'ldap' | 'saml');
+                                              setEditNotes(user.notes || '');
                                             }}
                                             disabled={processing === user.id}
                                             className="px-2.5 py-1.5 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
@@ -5088,10 +5145,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 {!user.is_admin && (
                                   <button
                                     onClick={() => {
-                                      setEditUserModal({ open: true, userId: user.id, username: user.username, email: user.email, auth_source: user.auth_source || 'local' });
+                                      setEditUserModal({ open: true, userId: user.id, username: user.username, email: user.email, auth_source: user.auth_source || 'local', notes: user.notes || '' });
                                       setEditUsername(user.username);
                                       setEditEmail(user.email);
                                       setEditAuthSource((user.auth_source || 'local') as 'local' | 'ldap' | 'saml');
+                                      setEditNotes(user.notes || '');
                                     }}
                                     disabled={processing === user.id}
                                     className="flex-1 min-w-[100px] px-3 py-2 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1.5 touch-manipulation"
@@ -6187,17 +6245,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                             Import spaces from exported JSON files or CSV spreadsheets.
                           </p>
-                          <label className="flex items-center gap-2 mb-4 cursor-pointer">
+                          <label className="flex items-center gap-2 mb-2 cursor-pointer">
                             <input
                               type="checkbox"
                               checked={spacesImportOverwrite}
-                              onChange={(e) => setSpacesImportOverwrite(e.target.checked)}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                setSpacesImportOverwrite(checked);
+                                if (checked) setSpacesImportReplaceAll(false);
+                              }}
                               className="rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500"
                             />
                             <span className="text-sm text-slate-700 dark:text-slate-300">Overwrite existing tiles</span>
                           </label>
                           <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
                             When enabled, spaces with the same title and category as an existing tile will be updated instead of creating duplicates.
+                          </p>
+                          <label className="flex items-center gap-2 mb-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={spacesImportReplaceAll}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                setSpacesImportReplaceAll(checked);
+                                if (checked) setSpacesImportOverwrite(false);
+                              }}
+                              className="rounded border-slate-300 dark:border-slate-600 text-red-600 focus:ring-red-500"
+                            />
+                            <span className="text-sm text-slate-700 dark:text-slate-300">Delete all existing spaces, then import only from this file</span>
+                          </label>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+                            When enabled, all current public spaces are moved to the recycle bin before importing. Only the spaces from the uploaded file will remain. Staging spaces are not affected.
                           </p>
                           <div className="space-y-3">
                             {/* JSON Import - Supports Single Space, Category, or All Categories */}
@@ -6262,9 +6340,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     }
 
                                     const currentTiles = await getTiles();
-                                    const maxPosition = currentTiles.length
-                                      ? Math.max(...currentTiles.map((t) => (t as Tile & { position?: number }).position ?? 0))
-                                      : -1;
+
+                                    if (spacesImportReplaceAll) {
+                                      const confirmReplace = confirm(
+                                        `⚠️ This will delete all ${currentTiles.length} existing public space(s) (moved to recycle bin), then import ${newTiles.length} space(s) from the file.\n\nStaging spaces are not affected. Continue?`
+                                      );
+                                      if (!confirmReplace) {
+                                        return;
+                                      }
+                                    }
+
+                                    let deleted = 0;
+                                    if (spacesImportReplaceAll && currentTiles.length > 0) {
+                                      for (const tile of currentTiles) {
+                                        try {
+                                          await deleteTile(tile.id);
+                                          deleted++;
+                                        } catch (err: any) {
+                                          console.error('Failed to delete tile before replace import:', tile.title, err);
+                                        }
+                                      }
+                                    }
+
+                                    const maxPosition = spacesImportReplaceAll
+                                      ? -1
+                                      : (currentTiles.length
+                                        ? Math.max(...currentTiles.map((t) => (t as Tile & { position?: number }).position ?? 0))
+                                        : -1);
                                     let nextPosition = maxPosition + 1;
                                     let imported = 0;
                                     let updated = 0;
@@ -6272,7 +6374,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                                     for (const tile of newTiles) {
                                       try {
-                                        if (spacesImportOverwrite) {
+                                        if (!spacesImportReplaceAll && spacesImportOverwrite) {
                                           const existing = currentTiles.find(
                                             (t) => t.title === tile.title && (t.group || 'General') === (tile.group || 'General')
                                           );
@@ -6300,6 +6402,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       success: imported > 0 || updated > 0,
                                       created: imported,
                                       updated,
+                                      deleted,
                                       errors: errors.length,
                                       createdTiles: newTiles.slice(0, imported + updated).map(t => ({ id: t.id, title: t.title })),
                                       errorMessages: errors
@@ -6309,7 +6412,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                                     if (result.success) {
                                       let message = '';
-                                      if (result.updated > 0 && result.created > 0) {
+                                      if (spacesImportReplaceAll) {
+                                        message = `Replaced spaces: deleted ${result.deleted} existing space(s) and imported ${result.created} space(s) from ${importType}.`;
+                                      } else if (result.updated > 0 && result.created > 0) {
                                         message = `Successfully imported ${result.created} new space(s) and updated ${result.updated} existing space(s) from ${importType}.`;
                                       } else if (result.updated > 0) {
                                         message = `Successfully updated ${result.updated} space(s) from ${importType}.`;
@@ -6387,13 +6492,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     return;
                                   }
 
+                                  if (spacesImportReplaceAll) {
+                                    const confirmReplace = confirm(
+                                      `⚠️ This will delete all existing public spaces (moved to recycle bin), then import only the spaces from the CSV file.\n\nStaging spaces are not affected. Continue?`
+                                    );
+                                    if (!confirmReplace) {
+                                      return;
+                                    }
+                                  }
+
                                   try {
                                     setSpacesBulkImporting(true);
                                     setError('');
-                                    const result = await bulkImportTiles(spacesBulkImportFile);
+                                    const result = await bulkImportTiles(spacesBulkImportFile, {
+                                      replaceAll: spacesImportReplaceAll,
+                                    });
 
                                     if (result.success) {
-                                      let message = `Successfully imported ${result.created} tile(s).`;
+                                      let message = spacesImportReplaceAll
+                                        ? `Replaced spaces: deleted ${result.deleted ?? 0} existing space(s) and imported ${result.created} tile(s).`
+                                        : `Successfully imported ${result.created} tile(s).`;
                                       if (result.errors > 0) {
                                         message += `\n\n${result.errors} error(s) occurred:`;
                                         result.errorMessages.forEach((msg, idx) => {
@@ -6451,7 +6569,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             <li><strong>JSON Export:</strong> Preserves all space data including categories, arrangements, tabs, rich text content, scheduling, visibility settings, browser preferences, icons, and more</li>
                             <li><strong>CSV Export:</strong> Creates a simplified spreadsheet-friendly format for bulk editing. <strong>Note:</strong> CSV format does not include rich text content, tabs, scheduling, or advanced features - use JSON for complete data preservation</li>
                             <li><strong>CSV Import:</strong> Requires specific column format - download template for reference. Only basic link information is imported</li>
-                            <li>Importing spaces adds them to your existing collection (does not replace existing spaces)</li>
+                            <li>By default, importing spaces adds them to your existing collection. Use <strong>Overwrite existing tiles</strong> to update matches, or <strong>Delete all existing spaces…</strong> to replace everything with the file contents (existing spaces go to the recycle bin; staging is untouched)</li>
                             <li><strong>JSON format supports:</strong> All link properties (visibility, notes, tooltips, icons, text colors, browser settings), rich text content with formatting, tabs with scheduling, section and tab text colors, tile-level browser preferences, and visibility controls</li>
                             <li>Category imports preserve the category name from the export file</li>
                             <li>Rich text content, tabs, and all advanced features are preserved in JSON exports and can be imported back</li>
@@ -14827,7 +14945,7 @@ node .\\load-tests\\generate-report.js`}
                         <strong>Bulk Import Local Users</strong>
                       </p>
                       <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
-                        Upload a CSV file with columns: username, email, password. The header row is optional and will be automatically skipped.
+                        Upload a CSV file with columns: username, email, password, notes (optional). The header row is optional and will be automatically skipped.
                       </p>
                     </div>
                     <div>
@@ -14838,7 +14956,7 @@ node .\\load-tests\\generate-report.js`}
                         <button
                           onClick={() => {
                             // Download CSV template
-                            const csvContent = 'username,email,password\njohn.doe,john.doe@localhost,SecurePassword123\njane.smith,jane.smith@localhost,SecurePassword456\nadmin.user,admin.user@localhost,SecurePassword789';
+                            const csvContent = 'username,email,password,notes\njohn.doe,john.doe@localhost,SecurePassword123!,Team lead for Ops — needs Finance and infrastructure spaces\njane.smith,jane.smith@localhost,SecurePassword456!,Designer on product team\nadmin.user,admin.user@localhost,SecurePassword789!,Temporary local admin for staging reviews';
                             const blob = new Blob([csvContent], { type: 'text/csv' });
                             const url = window.URL.createObjectURL(blob);
                             const a = document.createElement('a');
@@ -15264,6 +15382,22 @@ node .\\load-tests\\generate-report.js`}
                       </p>
                     )}
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Notes <span className="font-normal text-slate-500 dark:text-slate-400">(optional)</span>
+                    </label>
+                    <textarea
+                      value={addUserNotes}
+                      onChange={(e) => setAddUserNotes(e.target.value)}
+                      rows={3}
+                      maxLength={2000}
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 resize-y"
+                      placeholder="Short description of this person — role, team, or why they need access"
+                    />
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Helps admins understand who this user is (shown in the users list and Edit User).
+                    </p>
+                  </div>
                 </div>
               ) : addUserType === 'saml' ? (
                 <div className="space-y-4">
@@ -15272,7 +15406,7 @@ node .\\load-tests\\generate-report.js`}
                       <strong>SAML User Management</strong>
                     </p>
                     <p className="text-xs text-purple-700 dark:text-purple-400 mt-1">
-                      SAML users are typically created automatically when they sign in via SSO. Use the "Bulk Import" option above to manually import SAML users from a CSV file.
+                      SAML users are typically created automatically when they sign in via SSO. Use the "Bulk Import" option above to manually import SAML users from a CSV file. After a user exists, open <strong>Edit User</strong> to add notes describing their role, team, or access needs.
                     </p>
                   </div>
                 </div>
@@ -15375,6 +15509,23 @@ node .\\load-tests\\generate-report.js`}
                       <div className="text-xs text-slate-600 dark:text-slate-400">{selectedLdapUser.email || 'Email will be generated on add'}</div>
                     </div>
                   )}
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Notes <span className="font-normal text-slate-500 dark:text-slate-400">(optional)</span>
+                    </label>
+                    <textarea
+                      value={addUserNotes}
+                      onChange={(e) => setAddUserNotes(e.target.value)}
+                      rows={3}
+                      maxLength={2000}
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 resize-y"
+                      placeholder="Short description of this person — role, team, or why they need access"
+                    />
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Helps admins understand who this user is (shown in the users list and Edit User).
+                    </p>
+                  </div>
                 </div>
               )}
 
@@ -15536,7 +15687,8 @@ node .\\load-tests\\generate-report.js`}
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">Edit User</h2>
                 <button
                   onClick={() => {
-                    setEditUserModal({ open: false, userId: null, username: '', email: '', auth_source: 'local' });
+                    setEditUserModal({ open: false, userId: null, username: '', email: '', auth_source: 'local', notes: '' });
+                    setEditNotes('');
                     setEditUsername('');
                     setEditEmail('');
                     setEditAuthSource('local');
@@ -15602,6 +15754,20 @@ node .\\load-tests\\generate-report.js`}
                 </p>
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Notes <span className="font-normal text-slate-500 dark:text-slate-400">(optional)</span>
+                </label>
+                <textarea
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  rows={3}
+                  maxLength={2000}
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 resize-y"
+                  placeholder="Short description of this person — role, team, or why they need access"
+                />
+              </div>
+
               {editUserModal.userId === user?.id && editAuthSource === 'local' && (
                 <div className="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-3">
                   <div>
@@ -15613,7 +15779,8 @@ node .\\load-tests\\generate-report.js`}
                   <button
                     type="button"
                     onClick={() => {
-                      setEditUserModal({ open: false, userId: null, username: '', email: '', auth_source: 'local' });
+                      setEditUserModal({ open: false, userId: null, username: '', email: '', auth_source: 'local', notes: '' });
+                    setEditNotes('');
                       setEditUsername('');
                       setEditEmail('');
                       setEditAuthSource('local');
@@ -15630,7 +15797,8 @@ node .\\load-tests\\generate-report.js`}
               <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
                 <button
                   onClick={() => {
-                    setEditUserModal({ open: false, userId: null, username: '', email: '', auth_source: 'local' });
+                    setEditUserModal({ open: false, userId: null, username: '', email: '', auth_source: 'local', notes: '' });
+                    setEditNotes('');
                     setEditUsername('');
                     setEditEmail('');
                     setEditAuthSource('local');
@@ -17228,6 +17396,49 @@ node .\\load-tests\\generate-report.js`}
                   )}
                 </div>
               )}
+
+              {/* Admin notes — editable in this dialog */}
+              <div className="rounded-xl border border-slate-200 dark:border-[#333] bg-slate-50/80 dark:bg-[#252525] p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-sm font-semibold text-slate-900 dark:text-white">
+                    Notes <span className="font-normal text-slate-500 dark:text-slate-400">(optional)</span>
+                  </label>
+                  {userActionsNotesSaved && !userActionsNotesError && (
+                    <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">Saved</span>
+                  )}
+                </div>
+                <textarea
+                  value={userActionsNotes}
+                  onChange={(e) => {
+                    setUserActionsNotes(e.target.value);
+                    setUserActionsNotesSaved(false);
+                    setUserActionsNotesError('');
+                  }}
+                  rows={3}
+                  maxLength={2000}
+                  className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 resize-y"
+                  placeholder="Short description of this person — role, team, or why they need access"
+                />
+                {userActionsNotesError && (
+                  <p className="text-xs text-red-600 dark:text-red-400">{userActionsNotesError}</p>
+                )}
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Visible to the user in their profile menu.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleSaveUserActionsNotes}
+                    disabled={
+                      userActionsNotesSaving ||
+                      userActionsNotes === (userActionsDialog.user.notes || '')
+                    }
+                    className="px-3 py-1.5 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors"
+                  >
+                    {userActionsNotesSaving ? 'Saving…' : 'Save Notes'}
+                  </button>
+                </div>
+              </div>
 
               <div className="space-y-2">
                 {/* Promote/Demote */}
