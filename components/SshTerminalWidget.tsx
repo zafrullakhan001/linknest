@@ -335,13 +335,19 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
     }
   }, []);
 
+  /** Tabs whose WebSocket is being closed on purpose (UI close / reconnect) — skip auto-close-on-exit. */
+  const intentionalWsCloseRef = useRef(new Set<string>());
+
   const disposeSessionHandle = useCallback((tabId: string, opts?: { keepHost?: boolean }) => {
     const handle = sessionHandlesRef.current.get(tabId);
     if (!handle) return;
-    try {
-      handle.ws?.close();
-    } catch {
-      // ignore
+    if (handle.ws) {
+      intentionalWsCloseRef.current.add(tabId);
+      try {
+        handle.ws.close();
+      } catch {
+        // ignore
+      }
     }
     handle.ws = null;
     try {
@@ -725,24 +731,30 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
       };
 
       ws.onerror = () => {
+        // Natural close (exit / ttyd stop) follows via onclose and removes the tab.
+        // Connect-time failures use failTab() which already surfaces settings.
         updateTab(tabId, {
           status: 'error',
           statusMessage: `WebSocket error — cannot reach ${url}. If Easy mode was used, ttyd may have exited; try Connect again.`,
         });
-        if (activeTabIdRef.current === tabId) setShowSettings(true);
       };
 
-      ws.onclose = (ev) => {
-        const current = sessionHandlesRef.current.get(tabId);
-        if (current) current.ws = null;
-        const gw = current?.gatewaySessionId ?? null;
-        if (current) current.gatewaySessionId = null;
-        void stopGatewayFor(gw);
-        updateTab(tabId, {
-          status: 'disconnected',
-          statusMessage: ev.code ? `Disconnected (code ${ev.code})` : 'Disconnected',
-        });
-        if (activeTabIdRef.current === tabId) setShowSettings(true);
+      ws.onclose = () => {
+        const intentional = intentionalWsCloseRef.current.delete(tabId);
+        if (intentional) {
+          const current = sessionHandlesRef.current.get(tabId);
+          if (current) {
+            current.ws = null;
+            const gw = current.gatewaySessionId ?? null;
+            current.gatewaySessionId = null;
+            void stopGatewayFor(gw);
+          }
+          return;
+        }
+        // Shell exited / remote closed — drop the tab; do not open settings.
+        if (sessionHandlesRef.current.has(tabId)) {
+          void closeTab(tabId);
+        }
       };
 
       term.onData((data) => {
@@ -769,6 +781,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({ onClose })
       waitForTabHost,
       sendResize,
       markLastUsed,
+      closeTab,
     ]
   );
 
