@@ -72,8 +72,29 @@ function normalizeWsUrl(string $raw): string {
     return 'ws://' . $trimmed;
 }
 
-function validateWsUrl(string $url): ?string {
+function normalizeProtocol($raw): string {
+    return strtolower(trim((string)$raw)) === 'rdp' ? 'rdp' : 'ssh';
+}
+
+function validateWsUrl(string $url, string $protocol = 'ssh'): ?string {
     $trimmed = trim($url);
+    $protocol = normalizeProtocol($protocol);
+
+    // RDP: embeddable Guacamole / web RDP page (http/https). Keep as-is — do not coerce to ws://.
+    if ($protocol === 'rdp') {
+        if ($trimmed === '' || mb_strlen($trimmed) > 2048) {
+            return null;
+        }
+        if (preg_match('#^https?://#i', $trimmed)) {
+            return $trimmed;
+        }
+        // Optional: some deployments expose a Guacamole tunnel as ws(s)
+        if (preg_match('#^wss?://#i', $trimmed)) {
+            return $trimmed;
+        }
+        return null;
+    }
+
     // auto://user@host:port — LinkNest local ttyd launcher target (not a WebSocket URL)
     // Username is percent-encoded so PAM characters (\ + @ /) round-trip safely.
     if (preg_match('#^auto://#i', $trimmed)) {
@@ -164,6 +185,7 @@ function rowToConnection(array $row): array {
         'id' => (string)$row['id'],
         'name' => (string)$row['name'],
         'wsUrl' => (string)$row['ws_url'],
+        'protocol' => normalizeProtocol($row['protocol'] ?? 'ssh'),
         'tags' => $tags,
         'notes' => $notes !== '' ? $notes : null,
         'color' => normalizeSshColor($row['color'] ?? '#0ea5e9'),
@@ -176,7 +198,7 @@ function handleListSshConnections() {
     $user = requireAuth();
     $db = getDB();
 
-    $stmt = $db->prepare('SELECT id, name, ws_url, tags, notes, color, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE user_id = ? ORDER BY COALESCE(last_used_at, created_at) DESC');
+    $stmt = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE user_id = ? ORDER BY COALESCE(last_used_at, created_at) DESC');
     $stmt->execute([(int)$user['id']]);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -189,15 +211,23 @@ function handleCreateSshConnection() {
     $data = getJSONInput();
     rejectSecrets($data);
 
-    $wsUrl = validateWsUrl(isset($data['wsUrl']) ? (string)$data['wsUrl'] : (isset($data['ws_url']) ? (string)$data['ws_url'] : ''));
+    $protocol = normalizeProtocol($data['protocol'] ?? 'ssh');
+    $wsUrl = validateWsUrl(
+        isset($data['wsUrl']) ? (string)$data['wsUrl'] : (isset($data['ws_url']) ? (string)$data['ws_url'] : ''),
+        $protocol
+    );
     if ($wsUrl === null) {
-        sendJSON(['error' => 'Valid WebSocket URL (ws:// or wss://) is required'], 400);
+        sendJSON([
+            'error' => $protocol === 'rdp'
+                ? 'Valid RDP gateway URL (https:// or http://) is required'
+                : 'Valid WebSocket URL (ws:// or wss://) is required',
+        ], 400);
     }
 
     $name = isset($data['name']) ? trim((string)$data['name']) : '';
     if ($name === '') {
-        $hostPart = preg_replace('#^wss?://#i', '', $wsUrl);
-        $name = explode('/', $hostPart)[0] ?: 'SSH host';
+        $hostPart = preg_replace('#^(wss?|https?)://#i', '', $wsUrl);
+        $name = explode('/', $hostPart)[0] ?: ($protocol === 'rdp' ? 'RDP host' : 'SSH host');
     }
     if (mb_strlen($name) > 128) {
         sendJSON(['error' => 'Name is too long (max 128 chars)'], 400);
@@ -216,7 +246,7 @@ function handleCreateSshConnection() {
 
     $db = getDB();
     $now = time();
-    $stmt = $db->prepare('INSERT INTO user_ssh_connections (id, user_id, name, ws_url, tags, notes, color, created_at, last_used_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)');
+    $stmt = $db->prepare('INSERT INTO user_ssh_connections (id, user_id, name, ws_url, tags, notes, color, protocol, created_at, last_used_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)');
     try {
         $stmt->execute([
             $id,
@@ -226,6 +256,7 @@ function handleCreateSshConnection() {
             json_encode($tags, JSON_UNESCAPED_UNICODE),
             $notes !== '' ? $notes : null,
             $color,
+            $protocol,
             $now,
             $now,
         ]);
@@ -241,6 +272,7 @@ function handleCreateSshConnection() {
             'id' => $id,
             'name' => $name,
             'wsUrl' => $wsUrl,
+            'protocol' => $protocol,
             'tags' => $tags,
             'notes' => $notes !== '' ? $notes : null,
             'color' => $color,
@@ -256,14 +288,21 @@ function handleUpdateSshConnection(string $id) {
     rejectSecrets($data);
 
     $db = getDB();
-    $check = $db->prepare('SELECT id FROM user_ssh_connections WHERE id = ? AND user_id = ?');
+    $check = $db->prepare('SELECT id, protocol, ws_url FROM user_ssh_connections WHERE id = ? AND user_id = ?');
     $check->execute([$id, (int)$user['id']]);
-    if (!$check->fetch()) {
+    $existing = $check->fetch(PDO::FETCH_ASSOC);
+    if (!$existing) {
         sendJSON(['error' => 'Connection not found'], 404);
     }
 
     $fields = [];
     $params = [];
+    $protocol = normalizeProtocol($data['protocol'] ?? ($existing['protocol'] ?? 'ssh'));
+
+    if (isset($data['protocol'])) {
+        $fields[] = 'protocol = ?';
+        $params[] = $protocol;
+    }
 
     if (isset($data['name'])) {
         $name = trim((string)$data['name']);
@@ -276,9 +315,13 @@ function handleUpdateSshConnection(string $id) {
 
     if (isset($data['wsUrl']) || isset($data['ws_url'])) {
         $raw = isset($data['wsUrl']) ? (string)$data['wsUrl'] : (string)$data['ws_url'];
-        $wsUrl = validateWsUrl($raw);
+        $wsUrl = validateWsUrl($raw, $protocol);
         if ($wsUrl === null) {
-            sendJSON(['error' => 'Valid WebSocket URL (ws:// or wss://) is required'], 400);
+            sendJSON([
+                'error' => $protocol === 'rdp'
+                    ? 'Valid RDP gateway URL (https:// or http://) is required'
+                    : 'Valid WebSocket URL (ws:// or wss://) is required',
+            ], 400);
         }
         $fields[] = 'ws_url = ?';
         $params[] = $wsUrl;
@@ -324,7 +367,7 @@ function handleUpdateSshConnection(string $id) {
     $stmt = $db->prepare($sql);
     $stmt->execute($params);
 
-    $fetch = $db->prepare('SELECT id, name, ws_url, tags, notes, color, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE id = ? AND user_id = ?');
+    $fetch = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE id = ? AND user_id = ?');
     $fetch->execute([$id, (int)$user['id']]);
     $row = $fetch->fetch(PDO::FETCH_ASSOC);
     sendJSON(['connection' => rowToConnection($row)]);
@@ -365,8 +408,8 @@ function handleBulkUpsertSshConnections() {
         $byUrl[(string)$row['ws_url']] = (string)$row['id'];
     }
 
-    $insert = $db->prepare('INSERT INTO user_ssh_connections (id, user_id, name, ws_url, tags, notes, color, created_at, last_used_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    $update = $db->prepare('UPDATE user_ssh_connections SET name = ?, tags = ?, notes = ?, color = ?, last_used_at = COALESCE(?, last_used_at), updated_at = ? WHERE id = ? AND user_id = ?');
+    $insert = $db->prepare('INSERT INTO user_ssh_connections (id, user_id, name, ws_url, tags, notes, color, protocol, created_at, last_used_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $update = $db->prepare('UPDATE user_ssh_connections SET name = ?, tags = ?, notes = ?, color = ?, protocol = ?, last_used_at = COALESCE(?, last_used_at), updated_at = ? WHERE id = ? AND user_id = ?');
 
     $db->beginTransaction();
     try {
@@ -375,14 +418,18 @@ function handleBulkUpsertSshConnections() {
                 continue;
             }
             rejectSecrets($item);
-            $wsUrl = validateWsUrl(isset($item['wsUrl']) ? (string)$item['wsUrl'] : (isset($item['ws_url']) ? (string)$item['ws_url'] : ''));
+            $protocol = normalizeProtocol($item['protocol'] ?? 'ssh');
+            $wsUrl = validateWsUrl(
+                isset($item['wsUrl']) ? (string)$item['wsUrl'] : (isset($item['ws_url']) ? (string)$item['ws_url'] : ''),
+                $protocol
+            );
             if ($wsUrl === null) {
                 continue;
             }
             $name = isset($item['name']) ? trim((string)$item['name']) : '';
             if ($name === '') {
-                $hostPart = preg_replace('#^wss?://#i', '', $wsUrl);
-                $name = explode('/', $hostPart)[0] ?: 'SSH host';
+                $hostPart = preg_replace('#^(wss?|https?)://#i', '', $wsUrl);
+                $name = explode('/', $hostPart)[0] ?: ($protocol === 'rdp' ? 'RDP host' : 'SSH host');
             }
             if (mb_strlen($name) > 128) {
                 $name = mb_substr($name, 0, 128);
@@ -410,6 +457,7 @@ function handleBulkUpsertSshConnections() {
                     json_encode($tags, JSON_UNESCAPED_UNICODE),
                     $notes !== '' ? $notes : null,
                     $color,
+                    $protocol,
                     $lastUsed,
                     $now,
                     $byUrl[$wsUrl],
@@ -433,6 +481,7 @@ function handleBulkUpsertSshConnections() {
                     json_encode($tags, JSON_UNESCAPED_UNICODE),
                     $notes !== '' ? $notes : null,
                     $color,
+                    $protocol,
                     $createdAt,
                     $lastUsed,
                     $now,
@@ -447,7 +496,7 @@ function handleBulkUpsertSshConnections() {
         sendJSON(['error' => 'Failed to import connections'], 500);
     }
 
-    $stmt = $db->prepare('SELECT id, name, ws_url, tags, notes, color, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE user_id = ? ORDER BY COALESCE(last_used_at, created_at) DESC');
+    $stmt = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE user_id = ? ORDER BY COALESCE(last_used_at, created_at) DESC');
     $stmt->execute([$userId]);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     sendJSON(['connections' => array_map('rowToConnection', $rows)]);

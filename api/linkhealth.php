@@ -1,6 +1,6 @@
 <?php
-// Set execution time limit early to prevent hangs
-set_time_limit(10); // Maximum 10 seconds for entire script
+// Set execution time limit early to prevent hangs (tile checks may probe many URLs)
+set_time_limit(20);
 
 // Start output buffering to prevent any accidental output
 ob_start();
@@ -120,11 +120,21 @@ function determineHealthStatus($httpCode, $errno, $error, $redirectCount = 0) {
 }
 
 /**
+ * Release PHP session lock so long-running health checks do not block
+ * other authenticated API requests (e.g. navigating back to the main page).
+ */
+function releaseSessionLock() {
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
+    }
+}
+
+/**
  * Check if a URL is reachable and return health status
  * @param string $url
- * @param int $timeoutSeconds Total cURL timeout (default 1s for bulk checks)
+ * @param int $timeoutSeconds Total cURL timeout (default 2s)
  */
-function checkUrlHealth($url, $timeoutSeconds = 1) {
+function checkUrlHealth($url, $timeoutSeconds = 2) {
     // Validate URL format
     if (!filter_var($url, FILTER_VALIDATE_URL)) {
         return [
@@ -135,36 +145,11 @@ function checkUrlHealth($url, $timeoutSeconds = 1) {
         ];
     }
 
-    $timeoutSeconds = max(1, min(10, (int)$timeoutSeconds));
-    $connectTimeout = min(2, $timeoutSeconds);
-
-    // Initialize cURL
-    $ch = curl_init();
-    
-    curl_setopt_array($ch, [
-        CURLOPT_URL => $url,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_MAXREDIRS => 2, // Reduced from 3 to 2
-        // Aggressive timeouts: fail fast for better UX
-        CURLOPT_TIMEOUT => $timeoutSeconds,
-        CURLOPT_CONNECTTIMEOUT => $connectTimeout,
-        CURLOPT_NOBODY => true, // HEAD request for efficiency
-        CURLOPT_SSL_VERIFYPEER => false, // Allow self-signed certs
-        CURLOPT_SSL_VERIFYHOST => 0,
-        CURLOPT_USERAGENT => 'LinkNest Health Checker/1.0',
-        CURLOPT_HTTPHEADER => [
-            'Accept: */*',
-            'Cache-Control: no-cache',
-            'Connection: close' // Close connection immediately
-        ],
-        CURLOPT_FRESH_CONNECT => true, // Don't reuse connections
-        CURLOPT_FORBID_REUSE => true // Force new connection
-    ]);
+    $ch = createHealthCurlHandle($url, $timeoutSeconds);
 
     // Measure ONLY cURL execution time (excluding PHP overhead)
     $curlStartTime = microtime(true);
-    $response = curl_exec($ch);
+    curl_exec($ch);
     $serverLatency = round((microtime(true) - $curlStartTime) * 1000); // Convert to milliseconds
     
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -187,26 +172,54 @@ function checkUrlHealth($url, $timeoutSeconds = 1) {
 }
 
 /**
- * Check multiple URLs in parallel using curl_multi (much faster!)
- * Returns array of results indexed by URL
+ * Build a fast cURL handle for health probing (HEAD, short timeouts, connection reuse).
  */
-function checkUrlsParallel($urls, $maxConcurrent = 5) {
+function createHealthCurlHandle($url, $timeoutSeconds = 2) {
+    $timeoutSeconds = max(1, min(5, (int)$timeoutSeconds));
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS => 2,
+        CURLOPT_TIMEOUT => $timeoutSeconds,
+        CURLOPT_CONNECTTIMEOUT => min(1, $timeoutSeconds),
+        CURLOPT_NOBODY => true, // HEAD — fastest probe
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+        CURLOPT_USERAGENT => (function_exists('getAppName') ? (getAppName() ?: 'LinkNest') : 'LinkNest') . ' Health Checker/1.0',
+        CURLOPT_HTTPHEADER => [
+            'Accept: */*',
+            'Cache-Control: no-cache'
+        ],
+        // Reuse connections when checking multiple URLs (much faster than fresh connect each time)
+        CURLOPT_FRESH_CONNECT => false,
+        CURLOPT_FORBID_REUSE => false,
+        CURLOPT_ENCODING => ''
+    ]);
+    return $ch;
+}
+
+/**
+ * Check multiple URLs in parallel using curl_multi (rolling concurrency window).
+ * Returns array of results indexed by URL.
+ */
+function checkUrlsParallel($urls, $maxConcurrent = 12) {
     if (empty($urls)) {
         return [];
     }
-    
-    // If only one URL, use single check for simplicity
+
+    $urls = array_values(array_unique($urls));
+    $maxConcurrent = max(1, min(20, (int)$maxConcurrent));
+
     if (count($urls) === 1) {
-        $url = reset($urls);
-        return [$url => checkUrlHealth($url)];
+        $url = $urls[0];
+        return [$url => checkUrlHealth($url, 2)];
     }
-    
-    $multiHandle = curl_multi_init();
-    $handles = [];
-    $handleStartTimes = []; // Track start time for each handle
+
     $results = [];
-    
-    // Initialize handles for all URLs
+    $queue = [];
+
     foreach ($urls as $url) {
         if (!filter_var($url, FILTER_VALIDATE_URL)) {
             $results[$url] = [
@@ -217,94 +230,119 @@ function checkUrlsParallel($urls, $maxConcurrent = 5) {
             ];
             continue;
         }
-        
-        $ch = curl_init();
-        curl_setopt_array($ch, [
-            CURLOPT_URL => $url,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_MAXREDIRS => 2, // Reduced from 3
-            CURLOPT_TIMEOUT => 1, // Reduced to 1 second
-            CURLOPT_CONNECTTIMEOUT => 1,
-            CURLOPT_NOBODY => true,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_SSL_VERIFYHOST => 0,
-            CURLOPT_USERAGENT => (getAppName() ?: 'LinkNest') . ' Health Checker/1.0',
-            CURLOPT_HTTPHEADER => [
-                'Accept: */*',
-                'Cache-Control: no-cache',
-                'Connection: close'
-            ],
-            CURLOPT_FRESH_CONNECT => true,
-            CURLOPT_FORBID_REUSE => true
-        ]);
-        
-        curl_multi_add_handle($multiHandle, $ch);
-        $handles[$url] = $ch;
-        $handleStartTimes[$url] = microtime(true); // Track start time
+        $queue[] = $url;
     }
-    
-    // Execute all handles in parallel with timeout protection
-    $running = null;
-    $startTime = microtime(true);
-    $maxTime = 3.0; // Maximum 3 seconds total for all requests (reduced from 5)
-    
-    do {
-        $mrc = curl_multi_exec($multiHandle, $running);
-        
-        // Check for timeout
-        if ((microtime(true) - $startTime) > $maxTime) {
-            // Timeout - cancel remaining requests
-            foreach ($handles as $url => $ch) {
-                if (!isset($results[$url])) {
-                    curl_multi_remove_handle($multiHandle, $ch);
-                    curl_close($ch);
-                    $serverLatency = isset($handleStartTimes[$url]) ? round((microtime(true) - $handleStartTimes[$url]) * 1000) : 0;
-                    $results[$url] = [
-                        'status' => 'timeout',
-                        'http_code' => 0,
-                        'error' => 'Request timeout',
-                        'server_latency' => $serverLatency
-                    ];
-                }
-            }
-            break;
-        }
-        
-        if ($running > 0) {
-            curl_multi_select($multiHandle, 0.05); // Reduced from 0.1 to 0.05 for faster polling
-        }
-    } while ($running > 0 && $mrc === CURLM_OK);
-    
-    // Process results
-    foreach ($handles as $url => $ch) {
-        if (isset($results[$url])) {
-            continue; // Already processed (timeout or invalid)
-        }
-        
-        $serverLatency = isset($handleStartTimes[$url]) ? round((microtime(true) - $handleStartTimes[$url]) * 1000) : 0;
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+    if (empty($queue)) {
+        return $results;
+    }
+
+    $multiHandle = curl_multi_init();
+    if (defined('CURLMOPT_MAX_TOTAL_CONNECTIONS')) {
+        curl_multi_setopt($multiHandle, CURLMOPT_MAX_TOTAL_CONNECTIONS, $maxConcurrent);
+    }
+
+    // url => ['ch' => resource, 'started' => float]
+    $active = [];
+    $queueIndex = 0;
+    $queueCount = count($queue);
+    $overallStart = microtime(true);
+    $maxTotalTime = min(8.0, 1.5 + (ceil($queueCount / $maxConcurrent) * 2.0));
+
+    $recordResult = function ($url, $ch, $startedAt) use (&$results) {
+        $serverLatency = round((microtime(true) - $startedAt) * 1000);
+        $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $redirectCount = (int)curl_getinfo($ch, CURLINFO_REDIRECT_COUNT);
         $error = curl_error($ch);
         $errno = curl_errno($ch);
-        
-        // Determine status using shared logic (same as checkUrlHealth)
         $statusResult = determineHealthStatus($httpCode, $errno, $error, $redirectCount);
-        $status = $statusResult['status'];
-        $error = $statusResult['error'];
-        
         $results[$url] = [
-            'status' => $status,
+            'status' => $statusResult['status'],
             'http_code' => $httpCode,
-            'error' => $error,
+            'error' => $statusResult['error'],
             'server_latency' => $serverLatency
         ];
-        
+    };
+
+    $addNext = function () use (&$queue, &$queueIndex, $queueCount, $multiHandle, &$active) {
+        if ($queueIndex >= $queueCount) {
+            return false;
+        }
+        $url = $queue[$queueIndex++];
+        $ch = createHealthCurlHandle($url, 2);
+        curl_multi_add_handle($multiHandle, $ch);
+        $active[$url] = ['ch' => $ch, 'started' => microtime(true)];
+        return true;
+    };
+
+    for ($i = 0; $i < $maxConcurrent && $queueIndex < $queueCount; $i++) {
+        $addNext();
+    }
+
+    $running = null;
+    $mrc = CURLM_OK;
+    do {
+        do {
+            $mrc = curl_multi_exec($multiHandle, $running);
+        } while ($mrc === CURLM_CALL_MULTI_PERFORM);
+
+        while ($info = curl_multi_info_read($multiHandle)) {
+            if ($info['msg'] !== CURLMSG_DONE) {
+                continue;
+            }
+            $ch = $info['handle'];
+            $doneUrl = null;
+            foreach ($active as $url => $meta) {
+                if ($meta['ch'] === $ch) {
+                    $doneUrl = $url;
+                    break;
+                }
+            }
+            if ($doneUrl !== null) {
+                $recordResult($doneUrl, $ch, $active[$doneUrl]['started']);
+                unset($active[$doneUrl]);
+            }
+            curl_multi_remove_handle($multiHandle, $ch);
+            curl_close($ch);
+            $addNext();
+        }
+
+        if ((microtime(true) - $overallStart) > $maxTotalTime) {
+            break;
+        }
+
+        if ($running > 0) {
+            curl_multi_select($multiHandle, 0.05);
+        }
+    } while (($running > 0 || $queueIndex < $queueCount) && $mrc === CURLM_OK);
+
+    // Cancel anything still in-flight (wall-clock cap reached)
+    foreach ($active as $url => $meta) {
+        $ch = $meta['ch'];
+        $results[$url] = [
+            'status' => 'timeout',
+            'http_code' => 0,
+            'error' => 'Request timeout',
+            'server_latency' => round((microtime(true) - $meta['started']) * 1000)
+        ];
         curl_multi_remove_handle($multiHandle, $ch);
         curl_close($ch);
     }
-    
+    $active = [];
+
     curl_multi_close($multiHandle);
+
+    foreach ($queue as $url) {
+        if (!isset($results[$url])) {
+            $results[$url] = [
+                'status' => 'timeout',
+                'http_code' => 0,
+                'error' => 'Request timeout',
+                'server_latency' => 0
+            ];
+        }
+    }
+
     return $results;
 }
 
@@ -592,6 +630,7 @@ function handleGetHealthStats() {
  */
 function handleCheckUrl() {
     requireAuth();
+    releaseSessionLock();
     set_time_limit(8);
 
     try {
@@ -657,7 +696,9 @@ function handleCheckUrl() {
  */
 function handleCheckSingleLink() {
     // Set execution time limit for this specific request
-    set_time_limit(3); // Maximum 3 seconds for this script (reduced from 5)
+    set_time_limit(5);
+    // Unlock session immediately so other page loads are not blocked while we curl
+    releaseSessionLock();
     
     $startTime = microtime(true);
     $healthResult = null;
@@ -758,6 +799,11 @@ function handleCheckSingleLink() {
  */
 function handleCheckTileLinks() {
     try {
+        // Critical: release session lock before slow network probes so navigating
+        // back to the main page does not wait on this request (looks like a freeze/refresh).
+        releaseSessionLock();
+        set_time_limit(20);
+
         $data = getJSONInput();
         
         if (!isset($data['tileId'])) {
@@ -770,7 +816,7 @@ function handleCheckTileLinks() {
         
         $db = getDB();
         // Set busy timeout to handle concurrent access
-        $db->exec('PRAGMA busy_timeout = 3000');
+        $db->exec('PRAGMA busy_timeout = 1500');
         
         // Get all links for this tile (tabbed + legacy sections), including last health check info
         // NOTE: Some installations store sections under tabs with s.tile_id unset; those must be resolved via tabs.tile_id.
@@ -832,9 +878,9 @@ function handleCheckTileLinks() {
             }
         }
         
-        // Check all URLs in parallel (much faster!)
+        // Check all URLs in parallel (rolling window of concurrent probes)
         if (!empty($linksToCheck)) {
-            $healthResults = checkUrlsParallel($linksToCheck, 5); // Check 5 at a time
+            $healthResults = checkUrlsParallel($linksToCheck, 12);
             
             // Prepare batch update
             $batchUpdates = [];
@@ -878,6 +924,8 @@ function handleCheckTileLinks() {
  */
 function handleCheckAllLinks() {
     requireAuth(); // Require authentication for bulk check
+    releaseSessionLock();
+    set_time_limit(60);
     
     $data = getJSONInput();
     $forceRecheck = $data['force'] ?? false;
@@ -915,15 +963,8 @@ function handleCheckAllLinks() {
         $urlToLinkIds[$link['url']][] = $link['id'];
     }
     
-    // Check all URLs in parallel (process in batches of 10 for very large sets)
-    $batchSize = 10;
-    $allHealthResults = [];
-    
-    for ($i = 0; $i < count($urls); $i += $batchSize) {
-        $batch = array_slice($urls, $i, $batchSize);
-        $batchResults = checkUrlsParallel($batch, 5);
-        $allHealthResults = array_merge($allHealthResults, $batchResults);
-    }
+    // Rolling parallel checks (12 at a time)
+    $allHealthResults = checkUrlsParallel($urls, 12);
     
     // Prepare batch update
     $batchUpdates = [];

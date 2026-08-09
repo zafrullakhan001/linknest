@@ -4,7 +4,7 @@ LinkNest includes two desktop floating widgets for remote access. Browsers canno
 
 | Widget | Client | How you connect |
 |--------|--------|-----------------|
-| **SSH Terminal** | xterm.js | **Easy:** host / port / username (LinkNest starts ttyd). **Advanced:** paste a ttyd WebSocket URL. |
+| **SSH / RDP** | xterm.js + iframe | **SSH Easy:** host / port / username (LinkNest starts ttyd). **SSH Advanced:** ttyd WebSocket URL. **RDP:** paste a Guacamole / web RDP **https://** page URL (embedded in a tab). |
 | **VNC Viewer** | noVNC | websockify (or similar) WebSocket URL |
 
 Open widgets from the navigation bar or **Ctrl+Shift+Y**. Assign `ssh-terminal` / `vnc-viewer` under Roles → Widgets if needed.
@@ -23,6 +23,8 @@ Username: domain\user+target.domain\account+TARGETHOST
 ```
 
 Or as a space link: `ssh://domain%5Cuser%2Btarget@pam.example.com:4489` (percent-encode `\` and `+` in the username).
+
+**RDP (same widget):** In Settings choose protocol **RDP**, paste your gateway page URL (for example Apache Guacamole `https://guac.example.com/`), Save, then Connect. The page is embedded in a session tab. Log in with credentials in the gateway UI — LinkNest does not store RDP passwords. If the gateway sends `X-Frame-Options: DENY`, use “Open gateway in new tab” from the error state, or allow framing for your LinkNest origin.
 
 ---
 

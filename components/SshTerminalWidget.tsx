@@ -4,12 +4,15 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../contexts/SettingsContext';
 import { isEscapeDialogOpen } from '../hooks/useEscapeToClose';
 import {
   sshConnectionService,
   type SavedSshConnection,
+  type RemoteConnectionProtocol,
   SSH_CONNECTION_COLORS,
   normalizeSshColor,
+  normalizeConnectionProtocol,
 } from '../services/sshConnectionService';
 import {
   buildAutoTargetUrl,
@@ -17,6 +20,8 @@ import {
   sshGatewayService,
 } from '../services/sshGatewayService';
 import type { OpenSshTerminalDetail } from '../utils/sshLink';
+import { RdpSessionPane } from './RdpSessionPane';
+import { XtermZoomSafeHost } from './XtermZoomSafeHost';
 
 interface SshTerminalWidgetProps {
   onClose?: () => void;
@@ -47,6 +52,8 @@ interface SessionTab {
   connectionId: string | null;
   status: ConnState;
   statusMessage: string;
+  kind?: 'ssh' | 'rdp'; // default ssh
+  rdpUrl?: string;
 }
 
 interface SessionHandle {
@@ -98,6 +105,7 @@ function loadLocalConnections(): SavedSshConnection[] {
         id: c.id,
         name: String(c.name),
         wsUrl: String(c.wsUrl),
+        protocol: normalizeConnectionProtocol(c.protocol),
         tags: Array.isArray(c.tags) ? c.tags.map(String) : [],
         notes: typeof c.notes === 'string' && c.notes ? c.notes : undefined,
         color: normalizeSshColor(c.color),
@@ -157,6 +165,8 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
   onPendingOpenConsumed,
 }) => {
   const { isAuthenticated } = useAuth();
+  const { settings } = useSettings();
+  const brandName = (settings.app_name || '').trim() || 'LinkNest';
   const sessionHandlesRef = useRef<Map<string, SessionHandle>>(new Map());
   const tabHostsRef = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const activeTabIdRef = useRef<string | null>(null);
@@ -203,9 +213,10 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
   const [draftTags, setDraftTags] = useState('');
   const [draftNotes, setDraftNotes] = useState('');
   const [draftColor, setDraftColor] = useState<string>(SSH_CONNECTION_COLORS[0]);
+  const [draftProtocol, setDraftProtocol] = useState<RemoteConnectionProtocol>('ssh');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [notice, setNotice] = useState(
-    'Enter host, port, and username — LinkNest starts ttyd for you.'
+    'Enter host, port, and username — Easy mode starts ttyd for you.'
   );
 
   const useServer = Boolean(isAuthenticated);
@@ -497,6 +508,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       const frame = encoderRef.current.encode(CMD.INPUT + payload);
       let sent = 0;
       for (const tab of tabs) {
+        if ((tab.kind || 'ssh') === 'rdp') continue;
         if (tab.status !== 'connected') continue;
         const ws = sessionHandlesRef.current.get(tab.id)?.ws;
         if (!ws || ws.readyState !== WebSocket.OPEN) continue;
@@ -613,7 +625,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
 
       if (wantAuto) {
         if (!useServer) {
-          failTab('Sign in to use automatic SSH (LinkNest starts ttyd for you). Or switch to WebSocket URL mode.');
+          failTab(`Sign in to use automatic SSH (${brandName} starts ttyd for you). Or switch to WebSocket URL mode.`);
           return;
         }
         const host = (opts?.host ?? autoFromUrl?.host ?? sshHost).trim();
@@ -677,7 +689,12 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       const term = new Terminal({
         cursorBlink: true,
         fontSize: 13,
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+        lineHeight: 1.2,
+        letterSpacing: 0,
+        fontFamily:
+          'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+        // Right-click pastes; selection is left-drag only
+        rightClickSelectsWord: false,
         theme: {
           background: '#020617',
           foreground: '#e2e8f0',
@@ -690,9 +707,53 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       term.loadAddon(new WebLinksAddon());
       hostEl.innerHTML = '';
       term.open(hostEl);
+
+      // Select → copy on mouse-up (when a selection exists)
+      const copySelectionIfAny = () => {
+        const text = term.getSelection();
+        if (!text) return;
+        void navigator.clipboard.writeText(text).catch(() => undefined);
+      };
+      const onMouseUpCopy = (ev: MouseEvent) => {
+        if (ev.button !== 0) return;
+        // Let xterm finalize selection first
+        window.setTimeout(copySelectionIfAny, 0);
+      };
+      hostEl.addEventListener('mouseup', onMouseUpCopy);
+
+      // Right-click → paste (block browser context menu)
+      const pasteFromClipboard = (ev: Event) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        void navigator.clipboard
+          .readText()
+          .then((text) => {
+            if (text) term.paste(text);
+          })
+          .catch(() => undefined);
+      };
+      hostEl.addEventListener('contextmenu', pasteFromClipboard);
+
+      // Keyboard: Ctrl/Cmd+C copies selection; Ctrl/Cmd+V pastes
+      term.attachCustomKeyEventHandler((ev) => {
+        const mod = ev.ctrlKey || ev.metaKey;
+        if (!mod || ev.type !== 'keydown') return true;
+        const key = ev.key.toLowerCase();
+        if (key === 'c' && term.hasSelection()) {
+          copySelectionIfAny();
+          return false;
+        }
+        if (key === 'v') {
+          pasteFromClipboard(ev);
+          return false;
+        }
+        return true;
+      });
+
       requestAnimationFrame(() => {
         try {
           fit.fit();
+          term.refresh(0, Math.max(0, term.rows - 1));
         } catch {
           // ignore
         }
@@ -818,10 +879,123 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       sendResize,
       markLastUsed,
       closeTab,
+      brandName,
     ]
   );
 
+  const copyActiveSelection = useCallback(async () => {
+    const id = activeTabIdRef.current;
+    if (!id) {
+      setNotice('No active terminal');
+      return;
+    }
+    const tab = tabsRef.current.find((t) => t.id === id);
+    if (tab?.kind === 'rdp') {
+      setNotice('Use the RDP gateway UI to copy text');
+      return;
+    }
+    const term = sessionHandlesRef.current.get(id)?.term;
+    const text = term?.getSelection() || '';
+    if (!text.trim()) {
+      setNotice('Select text in the terminal first, then Copy');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setNotice('Copied to clipboard');
+    } catch {
+      setNotice('Clipboard copy was blocked by the browser');
+    }
+  }, []);
+
+  const pasteIntoActive = useCallback(async () => {
+    const id = activeTabIdRef.current;
+    if (!id) {
+      setNotice('No active terminal');
+      return;
+    }
+    const tab = tabsRef.current.find((t) => t.id === id);
+    if (tab?.kind === 'rdp') {
+      setNotice('Use the RDP gateway UI to paste text');
+      return;
+    }
+    const term = sessionHandlesRef.current.get(id)?.term;
+    const ws = sessionHandlesRef.current.get(id)?.ws;
+    if (!term || !ws || ws.readyState !== WebSocket.OPEN) {
+      setNotice('Terminal is not connected');
+      return;
+    }
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) {
+        setNotice('Clipboard is empty');
+        return;
+      }
+      term.paste(text);
+      term.focus();
+      setNotice('Pasted from clipboard');
+    } catch {
+      setNotice('Clipboard paste was blocked — allow clipboard access or use Ctrl+V');
+    }
+  }, []);
+
+  const onHostZoomCompensated = useCallback(() => {
+    window.setTimeout(() => {
+      try {
+        fitSessions();
+      } catch {
+        // ignore
+      }
+    }, 40);
+  }, [fitSessions]);
+
   const connect = useCallback(() => connectTo(), [connectTo]);
+
+  const connectRdp = useCallback(
+    (opts?: { url?: string; connectionId?: string; connectionName?: string }) => {
+      if (sessionHandlesRef.current.size >= MAX_SSH_TABS) {
+        setNotice(`Maximum of ${MAX_SSH_TABS} open sessions. Close a tab first.`);
+        return;
+      }
+
+      const url = String(opts?.url ?? wsUrl).trim();
+      if (!/^https?:\/\//i.test(url)) {
+        setNotice('RDP gateway must be an http:// or https:// page URL');
+        setShowSettings(true);
+        return;
+      }
+
+      const nextConnectionId = opts?.connectionId !== undefined ? opts.connectionId : activeConnectionId;
+      const nextName = (opts?.connectionName || '').trim() || 'RDP';
+      const tabId = `tab_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+
+      sessionHandlesRef.current.set(tabId, {
+        term: null,
+        fit: null,
+        ws: null,
+        gatewaySessionId: null,
+      });
+      setTabs((prev) => [
+        ...prev,
+        {
+          id: tabId,
+          title: nextName,
+          connectionId: nextConnectionId ?? null,
+          status: 'connecting',
+          statusMessage: 'Loading RDP gateway…',
+          kind: 'rdp',
+          rdpUrl: url,
+        },
+      ]);
+      setActiveTabId(tabId);
+      setActiveConnectionId(nextConnectionId ?? null);
+      setWsUrl(url);
+      setShowSettings(false);
+      setNotice(`Connecting RDP “${nextName}”…`);
+      void markLastUsed(nextConnectionId);
+    },
+    [wsUrl, activeConnectionId, markLastUsed]
+  );
 
   const selectTab = useCallback(
     (tabId: string) => {
@@ -980,6 +1154,23 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       setDraftNotes(c.notes || '');
       setDraftColor(normalizeSshColor(c.color));
       setEditingId(c.id);
+      const protocol = normalizeConnectionProtocol(c.protocol);
+      setDraftProtocol(protocol);
+
+      if (protocol === 'rdp') {
+        setWsUrl(c.wsUrl);
+        setShowSettings(!autoConnect);
+        setNotice(autoConnect ? `Connecting to “${c.name}”…` : `Loaded “${c.name}”`);
+        if (autoConnect) {
+          connectRdp({
+            url: c.wsUrl,
+            connectionId: c.id,
+            connectionName: c.name,
+          });
+        }
+        return;
+      }
+
       const auto = parseAutoTargetUrl(c.wsUrl);
       if (auto) {
         setConnectMode('auto');
@@ -1005,7 +1196,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
         });
       }
     },
-    [connectTo]
+    [connectTo, connectRdp]
   );
 
   // Handle open from ssh:// space links (App → pendingOpen)
@@ -1027,6 +1218,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     setSshPort(String(port));
     if (username) setSshUsername(username);
     setDraftName(name);
+    setDraftProtocol('ssh');
     setEditingId(null);
 
     const match = connections.find((c) => {
@@ -1076,7 +1268,21 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
   const saveCurrentConnection = async () => {
     let url = '';
     let name = draftName.trim();
-    if (connectMode === 'auto') {
+
+    if (draftProtocol === 'rdp') {
+      url = wsUrl.trim();
+      if (!/^https?:\/\//i.test(url)) {
+        setNotice('RDP gateway URL must start with https:// or http://');
+        return;
+      }
+      if (!name) {
+        try {
+          name = new URL(url).hostname || 'RDP gateway';
+        } catch {
+          name = 'RDP gateway';
+        }
+      }
+    } else if (connectMode === 'auto') {
       const host = sshHost.trim();
       const username = sshUsername.trim();
       const port = Number.parseInt(sshPort, 10) || 22;
@@ -1097,17 +1303,32 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     const tags = parseTags(draftTags);
     const notes = draftNotes.trim() || undefined;
     const color = normalizeSshColor(draftColor);
+    const protocol = draftProtocol;
 
     setSaving(true);
     try {
       if (useServer) {
         if (editingId) {
-          const updated = await sshConnectionService.update(editingId, { name, wsUrl: url, tags, notes: notes || '', color });
+          const updated = await sshConnectionService.update(editingId, {
+            name,
+            wsUrl: url,
+            tags,
+            notes: notes || '',
+            color,
+            protocol,
+          });
           setConnections((prev) => prev.map((c) => (c.id === editingId ? updated : c)));
           setActiveConnectionId(editingId);
           setNotice(`Updated “${name}”`);
         } else {
-          const created = await sshConnectionService.create({ name, wsUrl: url, tags, notes, color });
+          const created = await sshConnectionService.create({
+            name,
+            wsUrl: url,
+            tags,
+            notes,
+            color,
+            protocol,
+          });
           setConnections((prev) => [created, ...prev]);
           setActiveConnectionId(created.id);
           setEditingId(created.id);
@@ -1121,6 +1342,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                   ...c,
                   name,
                   wsUrl: url,
+                  protocol,
                   tags,
                   notes,
                   color,
@@ -1135,6 +1357,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
           id: newId(),
           name,
           wsUrl: url,
+          protocol,
           tags,
           notes,
           color,
@@ -1159,6 +1382,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     setDraftName('');
     setDraftTags('');
     setDraftNotes('');
+    setDraftProtocol('ssh');
     setDraftColor(SSH_CONNECTION_COLORS[Math.floor(Math.random() * SSH_CONNECTION_COLORS.length)]);
     setShowSettings(true);
     setNotice('New connection — fill URL, name, tags, then Save.');
@@ -1169,10 +1393,11 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       version: 1,
       type: 'linknest-ssh-connections',
       exportedAt: new Date().toISOString(),
-      connections: connections.map(({ id, name, wsUrl: u, tags, notes, color, createdAt, lastUsedAt }) => ({
+      connections: connections.map(({ id, name, wsUrl: u, protocol, tags, notes, color, createdAt, lastUsedAt }) => ({
         id,
         name,
         wsUrl: u,
+        protocol: normalizeConnectionProtocol(protocol),
         tags,
         notes,
         color: normalizeSshColor(color),
@@ -1209,15 +1434,30 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       const incoming: SavedSshConnection[] = [];
       for (const item of list) {
         if (!item || typeof item.wsUrl !== 'string') continue;
-        const url = normalizeWsUrl(String(item.wsUrl));
+        const protocol = normalizeConnectionProtocol(item.protocol);
+        const urlRaw = String(item.wsUrl).trim();
+        const url =
+          protocol === 'rdp'
+            ? urlRaw
+            : normalizeWsUrl(urlRaw);
         if (!url) continue;
+        if (protocol === 'rdp' && !/^https?:\/\//i.test(url)) continue;
         incoming.push({
           id: typeof item.id === 'string' && item.id ? item.id : newId(),
           name:
             typeof item.name === 'string' && item.name.trim()
               ? item.name.trim()
-              : url.replace(/^wss?:\/\//i, '').split('/')[0] || 'SSH host',
+              : protocol === 'rdp'
+                ? (() => {
+                    try {
+                      return new URL(url).hostname || 'RDP gateway';
+                    } catch {
+                      return 'RDP gateway';
+                    }
+                  })()
+                : url.replace(/^wss?:\/\//i, '').split('/')[0] || 'SSH host',
           wsUrl: url,
+          protocol,
           tags: Array.isArray(item.tags) ? parseTags(item.tags.join(',')) : parseTags(String(item.tags || '')),
           notes: typeof item.notes === 'string' && item.notes.trim() ? item.notes.trim() : undefined,
           color: normalizeSshColor(item.color),
@@ -1395,7 +1635,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
             </svg>
           </button>
           <div className="min-w-0">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">SSH Terminal</h3>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">SSH / RDP</h3>
             <p className={`text-[11px] truncate ${statusColor}`}>{statusMessage}</p>
           </div>
         </div>
@@ -1529,7 +1769,10 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                 />
                 <button
                   type="button"
-                  onClick={() => void connect()}
+                  onClick={() => {
+                    if (draftProtocol === 'rdp') connectRdp();
+                    else void connect();
+                  }}
                   disabled={tabs.length >= MAX_SSH_TABS}
                   className="px-2 py-1 text-[10px] font-semibold rounded-md bg-brand-600 hover:bg-brand-700 text-white disabled:opacity-50"
                   title={tabs.length >= MAX_SSH_TABS ? `Maximum ${MAX_SSH_TABS} sessions` : 'Open a new session tab'}
@@ -1608,6 +1851,15 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                           >
                             <div className="flex items-center gap-1.5 min-w-0">
                               <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate">{c.name}</p>
+                              <span
+                                className={`shrink-0 px-1 py-0 rounded text-[9px] font-semibold uppercase tracking-wide ${
+                                  normalizeConnectionProtocol(c.protocol) === 'rdp'
+                                    ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300'
+                                    : 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300'
+                                }`}
+                              >
+                                {normalizeConnectionProtocol(c.protocol) === 'rdp' ? 'RDP' : 'SSH'}
+                              </span>
                               {isLive && (
                                 <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0 rounded-full text-[9px] font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
                                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -1727,26 +1979,52 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                 <div className="flex flex-wrap gap-1 min-w-0">
                   <button
                     type="button"
-                    onClick={() => setConnectMode('auto')}
+                    onClick={() => setDraftProtocol('ssh')}
                     className={`px-2 py-1 text-[11px] rounded-md border ${
-                      connectMode === 'auto'
-                        ? 'bg-brand-600 text-white border-brand-600'
+                      draftProtocol === 'ssh'
+                        ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900'
                         : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
                     }`}
                   >
-                    Easy (host / port)
+                    SSH
                   </button>
                   <button
                     type="button"
-                    onClick={() => setConnectMode('ws')}
+                    onClick={() => setDraftProtocol('rdp')}
                     className={`px-2 py-1 text-[11px] rounded-md border ${
-                      connectMode === 'ws'
-                        ? 'bg-brand-600 text-white border-brand-600'
+                      draftProtocol === 'rdp'
+                        ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900'
                         : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
                     }`}
                   >
-                    Advanced (WebSocket URL)
+                    RDP
                   </button>
+                  {draftProtocol === 'ssh' && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setConnectMode('auto')}
+                        className={`px-2 py-1 text-[11px] rounded-md border ${
+                          connectMode === 'auto'
+                            ? 'bg-brand-600 text-white border-brand-600'
+                            : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        Easy (host / port)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConnectMode('ws')}
+                        className={`px-2 py-1 text-[11px] rounded-md border ${
+                          connectMode === 'ws'
+                            ? 'bg-brand-600 text-white border-brand-600'
+                            : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        Advanced (WebSocket URL)
+                      </button>
+                    </>
+                  )}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button
@@ -1820,7 +2098,25 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                 </div>
               </div>
 
-              {connectMode === 'auto' ? (
+              {draftProtocol === 'rdp' ? (
+                <div className="space-y-2">
+                  <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                    RDP gateway URL
+                    <input
+                      type="url"
+                      value={wsUrl}
+                      onChange={(e) => setWsUrl(e.target.value)}
+                      placeholder="https://guac.example.com/"
+                      className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono"
+                      spellCheck={false}
+                      autoComplete="off"
+                    />
+                  </label>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug">
+                    Embeds your Guacamole / web RDP page in a session tab. Passwords stay in the gateway — {brandName} never stores them.
+                  </p>
+                </div>
+              ) : connectMode === 'auto' ? (
                 <>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300 sm:col-span-2">
@@ -1892,7 +2188,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                     </div>
                     {x11Forward && (
                       <div className="text-[10px] text-slate-600 dark:text-slate-300 space-y-1.5 leading-relaxed">
-                        <p className="font-medium text-slate-700 dark:text-slate-200">GUI setup (LinkNest starts ttyd with <code className="font-mono">ssh -Y</code>):</p>
+                        <p className="font-medium text-slate-700 dark:text-slate-200">GUI setup ({brandName} starts ttyd with <code className="font-mono">ssh -Y</code>):</p>
                         <ol className="list-decimal list-inside space-y-0.5 ml-0.5">
                           <li>
                             Install{' '}
@@ -1971,9 +2267,18 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                 />
               </label>
               <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed">
-                Use <strong>Update</strong> / <strong>Save</strong> on the settings form to keep this connection. Easy mode starts ttyd on this
-                LinkNest server. <strong>Terminal + GUI</strong> forwards X11 apps to Windows (VcXsrv). Passwords are
-                never saved. {useServer ? 'Saved connections sync to your account.' : 'Guest saves stay in this browser.'}
+                {draftProtocol === 'rdp' ? (
+                  <>
+                    Save an https:// Guacamole (or similar) URL, then Connect to embed it. Passwords stay in the gateway.
+                    {useServer ? ' Saved connections sync to your account.' : ' Guest saves stay in this browser.'}
+                  </>
+                ) : (
+                  <>
+                    Use <strong>Update</strong> / <strong>Save</strong> on the settings form to keep this connection. Easy mode starts ttyd on this{' '}
+                    {brandName} server. <strong>Terminal + GUI</strong> forwards X11 apps to Windows (VcXsrv). Passwords are
+                    never saved. {useServer ? 'Saved connections sync to your account.' : 'Guest saves stay in this browser.'}
+                  </>
+                )}
               </p>
             </div>
           )}
@@ -2042,9 +2347,31 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                     </div>
                   );
                 })}
-                <span className="ml-auto px-1.5 text-[10px] text-slate-500 shrink-0">
-                  {tabs.length}/{MAX_SSH_TABS}
-                </span>
+                <div className="ml-auto flex items-center gap-1 shrink-0 pr-0.5">
+                  {(activeTab?.kind || 'ssh') !== 'rdp' && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void copyActiveSelection()}
+                        className="px-1.5 h-6 text-[10px] font-semibold rounded border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+                        title="Selection auto-copies; or click Copy"
+                      >
+                        Copy
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void pasteIntoActive()}
+                        className="px-1.5 h-6 text-[10px] font-semibold rounded border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+                        title="Paste (or right-click in the terminal)"
+                      >
+                        Paste
+                      </button>
+                    </>
+                  )}
+                  <span className="px-1.5 text-[10px] text-slate-500">
+                    {tabs.length}/{MAX_SSH_TABS}
+                  </span>
+                </div>
               </div>
             )}
 
@@ -2102,13 +2429,30 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                         <span className="text-slate-500 shrink-0">{tab.status}</span>
                       </div>
                     )}
-                    <div
-                      ref={(el) => {
-                        if (el) tabHostsRef.current.set(tab.id, el);
-                        else tabHostsRef.current.delete(tab.id);
-                      }}
-                      className="relative flex-1 min-h-0 p-1 overflow-hidden [&_.xterm]:h-full [&_.xterm]:w-full [&_.xterm-viewport]:overflow-auto"
-                    />
+                    {tab.kind === 'rdp' ? (
+                      <div className="relative flex-1 min-h-0 overflow-hidden">
+                        <RdpSessionPane
+                          url={tab.rdpUrl || ''}
+                          title={tab.title}
+                          active={isActive || tileLayout}
+                          onStatus={(s, m) =>
+                            updateTab(tab.id, {
+                              status: s,
+                              statusMessage: m || '',
+                            })
+                          }
+                        />
+                      </div>
+                    ) : (
+                      <XtermZoomSafeHost
+                        className="relative flex-1 min-h-0"
+                        onZoomCompensated={onHostZoomCompensated}
+                        ref={(el) => {
+                          if (el) tabHostsRef.current.set(tab.id, el);
+                          else tabHostsRef.current.delete(tab.id);
+                        }}
+                      />
+                    )}
                   </div>
                 );
               })}
@@ -2131,7 +2475,11 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
               )}
             </div>
 
-            {tabs.length > 0 && (
+            {(() => {
+              const sshTabCount = tabs.filter((t) => (t.kind || 'ssh') !== 'rdp').length;
+              const activeIsRdp = (activeTab?.kind || 'ssh') === 'rdp';
+              if (sshTabCount === 0 || activeIsRdp) return null;
+              return (
               <div className="shrink-0 border-t border-slate-800 bg-slate-900 px-2 py-1.5 flex items-center gap-2">
                 <span className="text-[10px] font-semibold uppercase tracking-wide text-sky-400 shrink-0">
                   All
@@ -2148,7 +2496,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                       broadcastToAll(cmd);
                     }
                   }}
-                  placeholder="Command to all connected terminals… (Enter to send)"
+                  placeholder={`Command to ${sshTabCount} SSH terminal${sshTabCount === 1 ? '' : 's'}… (Enter to send)`}
                   className="flex-1 min-w-0 h-7 px-2 text-xs rounded-md border border-slate-700 bg-slate-950 text-slate-100 placeholder:text-slate-500 font-mono"
                   spellCheck={false}
                   autoComplete="off"
@@ -2162,12 +2510,13 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                   }}
                   disabled={!broadcastCmd.trim()}
                   className="px-2.5 h-7 text-[11px] font-semibold rounded-md bg-sky-600 hover:bg-sky-500 text-white disabled:opacity-40 shrink-0"
-                  title="Send to all connected terminals"
+                  title="Send to all connected SSH terminals"
                 >
                   Send all
                 </button>
               </div>
-            )}
+              );
+            })()}
           </div>
         </div>
       </div>

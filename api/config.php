@@ -112,7 +112,7 @@ define('SYSTEM_TOKEN', 'linknest_secret_token_123'); // Change this for producti
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 78);
+    define('LINKNEST_SCHEMA_VERSION', 79);
 }
 
 /**
@@ -414,6 +414,9 @@ function ensureSshConnectionColorColumn(PDO $db): void {
         $names = array_column($columns, 'name');
         if (!in_array('color', $names, true)) {
             $db->exec("ALTER TABLE user_ssh_connections ADD COLUMN color TEXT DEFAULT '#0ea5e9'");
+        }
+        if (!in_array('protocol', $names, true)) {
+            $db->exec("ALTER TABLE user_ssh_connections ADD COLUMN protocol TEXT DEFAULT 'ssh'");
         }
         $ensured = true;
     } catch (PDOException $e) {
@@ -1796,6 +1799,7 @@ function initDatabase() {
             tags TEXT NOT NULL DEFAULT \'[]\',
             notes TEXT,
             color TEXT DEFAULT \'#0ea5e9\',
+            protocol TEXT DEFAULT \'ssh\',
             created_at INTEGER NOT NULL,
             last_used_at INTEGER,
             updated_at INTEGER NOT NULL,
@@ -1804,6 +1808,12 @@ function initDatabase() {
 
         try {
             $db->exec("ALTER TABLE user_ssh_connections ADD COLUMN color TEXT DEFAULT '#0ea5e9'");
+        } catch (PDOException $e) {
+            // Column already exists
+        }
+
+        try {
+            $db->exec("ALTER TABLE user_ssh_connections ADD COLUMN protocol TEXT DEFAULT 'ssh'");
         } catch (PDOException $e) {
             // Column already exists
         }

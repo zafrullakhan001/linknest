@@ -9,7 +9,11 @@ const API_BASE: string =
   '/api';
 
 // Safety guard so frontend never "spins forever" even if backend/network hangs
-async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string, signal?: AbortSignal): Promise<T> {
+  if (signal?.aborted) {
+    throw new DOMException('Aborted', 'AbortError');
+  }
+
   let timeoutId: number;
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutId = window.setTimeout(() => {
@@ -17,11 +21,17 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
     }, ms);
   });
 
+  const onAbort = () => {
+    window.clearTimeout(timeoutId!);
+  };
+  signal?.addEventListener('abort', onAbort, { once: true });
+
   try {
     const result = await Promise.race([promise, timeoutPromise]);
     return result as T;
   } finally {
     window.clearTimeout(timeoutId!);
+    signal?.removeEventListener('abort', onAbort);
   }
 }
 
@@ -101,16 +111,18 @@ export const linkHealthService = {
   /**
    * Check all links in a tile
    */
-  async checkTileLinks(tileId: string, force: boolean = true): Promise<LinkHealthMap> {
+  async checkTileLinks(tileId: string, force: boolean = true, signal?: AbortSignal): Promise<LinkHealthMap> {
     const response = await withTimeout(
       fetch(`${API_BASE}/linkhealth/check-tile`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ tileId, force })
+        body: JSON.stringify({ tileId, force }),
+        signal
       }),
-      15000, // Allow a bit more time for whole-tile checks
-      'checkTileLinks'
+      12000,
+      'checkTileLinks',
+      signal
     );
     
     if (!response.ok) {

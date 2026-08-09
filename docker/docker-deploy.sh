@@ -27,7 +27,7 @@ fi
 
 # Create necessary directories
 echo "[deploy] Creating necessary directories..."
-mkdir -p data uploads
+mkdir -p data uploads bin
 chmod 755 data uploads
 
 # Create .htaccess for uploads if it doesn't exist
@@ -48,6 +48,16 @@ if [ ! -f uploads/.htaccess ]; then
 EOF
 fi
 
+if [ ! -f novnc.d.ts ]; then
+    echo "[error] novnc.d.ts missing — required for VNC widget frontend build."
+    exit 1
+fi
+
+if [ ! -f bin/ttyd.x86_64 ] && [ ! -f bin/ttyd.aarch64 ]; then
+    echo "[warn] bin/ttyd.x86_64 (or aarch64) missing — Docker build may fail behind SSL inspection."
+    echo "       Prefer: ./redeploy-docker.sh (auto-downloads ttyd)."
+fi
+
 # Stop existing container if running
 echo "[deploy] Stopping existing containers (if any)..."
 docker compose -f docker/docker-compose.yml down 2>/dev/null || true
@@ -56,7 +66,7 @@ docker compose -f docker/docker-compose.yml down 2>/dev/null || true
 echo "[deploy] Building Docker image..."
 docker compose -f docker/docker-compose.yml build
 
-echo "[deploy] Starting containers (HTTP 8090, HTTPS 8443, Mailpit 8025)..."
+echo "[deploy] Starting containers (HTTP 8090, HTTPS 8443, Mailpit 8025, ttyd 18681-18780)..."
 docker compose -f docker/docker-compose.yml up -d
 
 # Wait for container to be ready
@@ -73,6 +83,10 @@ if docker compose -f docker/docker-compose.yml ps | grep -q "Up"; then
     echo "   HTTPS: https://localhost:8443"
     echo "   Mailpit UI: http://localhost:8025"
     echo ""
+    echo "SSH Terminal gateway (Docker):"
+    echo "   ttyd ports: 18681-18780"
+    echo "   X11: host.docker.internal:0.0"
+    echo ""
     echo "Default credentials:"
     echo "   Username: admin"
     echo "   Password: admin123"
@@ -84,6 +98,7 @@ if docker compose -f docker/docker-compose.yml ps | grep -q "Up"; then
     echo "   Stop container:   docker compose -f docker/docker-compose.yml down"
     echo "   Restart:          docker compose -f docker/docker-compose.yml restart"
     echo "   View status:      docker compose -f docker/docker-compose.yml ps"
+    echo "   Full redeploy:    ./redeploy-docker.sh"
     echo ""
 else
     echo "[error] Container failed to start. Check logs with: docker compose -f docker/docker-compose.yml logs"

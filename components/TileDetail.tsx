@@ -690,6 +690,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [linkHealth, setLinkHealth] = useState<LinkHealthMap>({});
     const [checkingHealth, setCheckingHealth] = useState(false);
     const [checkingLinkId, setCheckingLinkId] = useState<string | null>(null);
+    const healthCheckAbortRef = useRef<AbortController | null>(null);
 
     // Mobile header actions menu (view mode)
     const [showHeaderActionsMenu, setShowHeaderActionsMenu] = useState(false);
@@ -829,38 +830,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tile?.id]);
 
-    // Auto-check links when tile is opened
+    // Abort in-flight health checks when leaving this tile (prevents hung UI / blocked navigation)
     useEffect(() => {
-        // Automatically check tile links when component mounts
-        // This ensures analytics data is captured as soon as user opens the tile
-        const autoCheckLinks = async () => {
-            try {
-                // Small delay to allow UI to render first
-                await new Promise(resolve => setTimeout(resolve, 500));
-
-                // Get all sections from the tile
-                const sections = tile.tabs && tile.tabs.length > 0
-                    ? tile.tabs.flatMap(tab => tab.sections)
-                    : tile.sections || [];
-
-                // Check if tile has any links
-                const hasLinks = sections.some(section =>
-                    section.links && section.links.length > 0
-                );
-
-                // Only auto-check if tile has links and we're not already checking
-                if (hasLinks && !checkingHealth) {
-                    handleCheckTileHealth();
-                }
-            } catch (error) {
-                console.debug('Auto link check skipped:', error);
-            }
+        return () => {
+            healthCheckAbortRef.current?.abort();
+            healthCheckAbortRef.current = null;
         };
-
-        autoCheckLinks();
-        // Run only once when component mounts
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [tile.id]);
 
     const styles = COLOR_STYLES[tile.themeColor] || COLOR_STYLES['blue'];
 
@@ -1159,18 +1135,21 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     useEffect(() => {
         let cancelled = false;
         const tileId = tile.id;
+        const abortController = new AbortController();
+        healthCheckAbortRef.current?.abort();
+        healthCheckAbortRef.current = abortController;
 
         const loadAndAutoCheckHealth = async () => {
             try {
                 const health = await linkHealthService.getAllHealth();
-                if (cancelled) return;
+                if (cancelled || abortController.signal.aborted) return;
                 setLinkHealth(health);
             } catch (error) {
                 console.error('Failed to load link health:', error);
             }
 
             // Only auto-check when viewing/exploring the space (not while editing)
-            if (isEditing || cancelled) return;
+            if (isEditing || cancelled || abortController.signal.aborted) return;
 
             const sections = tile.tabs
                 ? tile.tabs.flatMap(tab => tab.sections || [])
@@ -1188,18 +1167,19 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             });
 
             try {
-                const results = await linkHealthService.checkTileLinks(tileId);
-                if (cancelled) return;
+                // force=false: skip links checked in the last 5 minutes (much faster on reopen)
+                const results = await linkHealthService.checkTileLinks(tileId, false, abortController.signal);
+                if (cancelled || abortController.signal.aborted) return;
                 if (results && typeof results === 'object') {
                     setLinkHealth(prev => ({ ...prev, ...results }));
                 }
             } catch (error) {
+                if (abortController.signal.aborted || cancelled) return;
                 console.error('Failed to auto-check tile link health:', error);
-                if (cancelled) return;
                 // Fall back to last stored health so dots are not stuck on "checking"
                 try {
                     const health = await linkHealthService.getAllHealth();
-                    if (!cancelled) setLinkHealth(health);
+                    if (!cancelled && !abortController.signal.aborted) setLinkHealth(health);
                 } catch {
                     setLinkHealth(prev => {
                         const next = { ...prev };
@@ -1212,7 +1192,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     });
                 }
             } finally {
-                if (!cancelled) {
+                if (!cancelled && !abortController.signal.aborted) {
                     setCheckingHealth(false);
                 }
             }
@@ -1221,6 +1201,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         loadAndAutoCheckHealth();
         return () => {
             cancelled = true;
+            abortController.abort();
+            if (healthCheckAbortRef.current === abortController) {
+                healthCheckAbortRef.current = null;
+            }
         };
     }, [tile.id, isEditing]);
 
@@ -3952,9 +3936,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             e.stopPropagation();
         }
 
+        // Cancel any in-flight auto/manual check before starting a fresh forced check
+        healthCheckAbortRef.current?.abort();
+        const abortController = new AbortController();
+        healthCheckAbortRef.current = abortController;
+
         setCheckingHealth(true);
         try {
-            const results = await linkHealthService.checkTileLinks(tile.id);
+            const results = await linkHealthService.checkTileLinks(tile.id, true, abortController.signal);
+            if (abortController.signal.aborted) return;
             if (results && typeof results === 'object') {
                 setLinkHealth(prev => ({ ...prev, ...results }));
 
@@ -3962,8 +3952,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 // This is intentionally fire-and-forget: health check UX must remain fast.
                 void (async () => {
                     try {
+                        if (abortController.signal.aborted) return;
                         const cfg = await performanceAnalyticsService.ensureLocation(undefined, { allowPrompt: true });
-                        if (!cfg.enabled) return;
+                        if (!cfg.enabled || abortController.signal.aborted) return;
 
                         const sections = getAllSections();
                         const allLinks = sections.flatMap(s => (s?.links || []));
@@ -3984,6 +3975,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         const metrics: AnalyticsMetric[] = [];
 
                         for (let i = 0; i < targets.length; i += batchSize) {
+                            if (abortController.signal.aborted) return;
                             const batch = targets.slice(i, i + batchSize);
                             const measured = await Promise.all(
                                 batch.map(async (l) => {
@@ -4018,6 +4010,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             }
                         }
 
+                        if (abortController.signal.aborted) return;
                         // Force send on explicit user action ("Check Links") so it never gets skipped by sampling.
                         await performanceAnalyticsService.sendMetrics(metrics, { force: true });
                     } catch (err) {
@@ -4029,10 +4022,19 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 console.warn('Unexpected results format:', results);
             }
         } catch (error) {
+            if (abortController.signal.aborted) return;
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            // Don't alert on abort/navigation away
+            if (error instanceof DOMException && error.name === 'AbortError') return;
+            if (errorMessage.toLowerCase().includes('abort')) return;
             alert(`Failed to check link health: ${errorMessage}. Please try again.`);
         } finally {
-            setCheckingHealth(false);
+            if (healthCheckAbortRef.current === abortController) {
+                healthCheckAbortRef.current = null;
+            }
+            if (!abortController.signal.aborted) {
+                setCheckingHealth(false);
+            }
         }
     };
 

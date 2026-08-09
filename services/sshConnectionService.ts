@@ -33,10 +33,14 @@ export const SSH_CONNECTION_COLORS = [
 
 export type SshConnectionColor = (typeof SSH_CONNECTION_COLORS)[number] | string;
 
+export type RemoteConnectionProtocol = 'ssh' | 'rdp';
+
 export interface SavedSshConnection {
   id: string;
   name: string;
   wsUrl: string;
+  /** ssh = ttyd/auto; rdp = Guacamole / web RDP page URL */
+  protocol?: RemoteConnectionProtocol;
   tags: string[];
   notes?: string;
   color?: string;
@@ -48,6 +52,10 @@ export function normalizeSshColor(raw: unknown): string {
   const c = String(raw || '').trim().toLowerCase();
   if (/^#[0-9a-f]{6}$/.test(c)) return c;
   return '#0ea5e9';
+}
+
+export function normalizeConnectionProtocol(raw: unknown): RemoteConnectionProtocol {
+  return String(raw || '').trim().toLowerCase() === 'rdp' ? 'rdp' : 'ssh';
 }
 
 function mapRow(row: any): SavedSshConnection {
@@ -67,6 +75,7 @@ function mapRow(row: any): SavedSshConnection {
     id: String(row.id),
     name: String(row.name || ''),
     wsUrl: String(row.wsUrl ?? row.ws_url ?? ''),
+    protocol: normalizeConnectionProtocol(row.protocol),
     tags,
     notes: row.notes != null && String(row.notes) ? String(row.notes) : undefined,
     color: normalizeSshColor(row.color),
@@ -93,6 +102,7 @@ export const sshConnectionService = {
     id?: string;
     name: string;
     wsUrl: string;
+    protocol?: RemoteConnectionProtocol;
     tags?: string[];
     notes?: string;
     color?: string;
@@ -105,6 +115,7 @@ export const sshConnectionService = {
         id: input.id,
         name: input.name,
         wsUrl: input.wsUrl,
+        protocol: normalizeConnectionProtocol(input.protocol),
         tags: input.tags || [],
         notes: input.notes || '',
         color: normalizeSshColor(input.color),
@@ -120,6 +131,7 @@ export const sshConnectionService = {
     patch: {
       name?: string;
       wsUrl?: string;
+      protocol?: RemoteConnectionProtocol;
       tags?: string[];
       notes?: string;
       color?: string;
@@ -128,6 +140,7 @@ export const sshConnectionService = {
   ): Promise<SavedSshConnection> {
     const body: Record<string, unknown> = { ...patch };
     if (patch.color !== undefined) body.color = normalizeSshColor(patch.color);
+    if (patch.protocol !== undefined) body.protocol = normalizeConnectionProtocol(patch.protocol);
     const res = await fetch(`${SSH_BASE}/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -156,6 +169,7 @@ export const sshConnectionService = {
       body: JSON.stringify({
         connections: connections.map((c) => ({
           ...c,
+          protocol: normalizeConnectionProtocol(c.protocol),
           color: normalizeSshColor(c.color),
         })),
       }),
