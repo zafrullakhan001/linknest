@@ -98,6 +98,7 @@ const HeaderImageTilePreview: React.FC<{
   opacity: number;
   offsetX: number;
   offsetY: number;
+  zoom?: number;
   emoji?: string;
   emojiImage?: string;
   showEmoji?: boolean;
@@ -113,6 +114,7 @@ const HeaderImageTilePreview: React.FC<{
   opacity,
   offsetX,
   offsetY,
+  zoom = 100,
   emoji = '📁',
   emojiImage,
   showEmoji = true,
@@ -126,6 +128,7 @@ const HeaderImageTilePreview: React.FC<{
   const ox = Math.max(-300, Math.min(300, offsetX));
   const oy = Math.max(-300, Math.min(300, offsetY));
   const op = Math.max(0, Math.min(100, opacity)) / 100;
+  const z = Math.max(50, Math.min(300, zoom)) / 100;
 
   return (
     <div className="w-full flex flex-col items-center gap-2">
@@ -151,7 +154,7 @@ const HeaderImageTilePreview: React.FC<{
           }`}
           style={{
             opacity: op,
-            transform: `translate(${ox}px, ${oy}px)`,
+            transform: `translate(${ox}px, ${oy}px) scale(${z})`,
           }}
           draggable={false}
         />
@@ -1599,7 +1602,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
           }`}
           style={{
             opacity: Math.max(0, Math.min(100, tile.headerImageOpacity ?? 100)) / 100,
-            transform: `translate(${Math.max(-300, Math.min(300, tile.headerImageOffsetX ?? 0))}px, ${Math.max(-300, Math.min(300, tile.headerImageOffsetY ?? 0))}px)`
+            transform: `translate(${Math.max(-300, Math.min(300, tile.headerImageOffsetX ?? 0))}px, ${Math.max(-300, Math.min(300, tile.headerImageOffsetY ?? 0))}px) scale(${Math.max(50, Math.min(300, tile.headerImageZoom ?? 100)) / 100})`
           }}
           draggable={false}
         />
@@ -2550,6 +2553,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [newHeaderImageOpacity, setNewHeaderImageOpacity] = useState(100);
   const [newHeaderImageOffsetX, setNewHeaderImageOffsetX] = useState(0);
   const [newHeaderImageOffsetY, setNewHeaderImageOffsetY] = useState(0);
+  const [newHeaderImageZoom, setNewHeaderImageZoom] = useState(100);
   const [newHeaderImageFit, setNewHeaderImageFit] = useState<'contain' | 'cover'>('contain');
   const [headerRemoveBg, setHeaderRemoveBg] = useState(false);
   const [headerBgMode, setHeaderBgMode] = useState<'auto' | 'custom'>('auto');
@@ -4345,6 +4349,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       headerImageOpacity: newHeaderImage.trim() ? newHeaderImageOpacity : null,
       headerImageOffsetX: newHeaderImage.trim() ? newHeaderImageOffsetX : null,
       headerImageOffsetY: newHeaderImage.trim() ? newHeaderImageOffsetY : null,
+      headerImageZoom: newHeaderImage.trim() ? newHeaderImageZoom : null,
       headerImageFit: newHeaderImage.trim() ? newHeaderImageFit : null,
       themeColor: newColor,
       group: tileType === 'space' ? (newGroup.trim() || 'General') : (newGroup.trim() || 'General'),
@@ -4417,6 +4422,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setNewHeaderImageOpacity(100);
     setNewHeaderImageOffsetX(0);
     setNewHeaderImageOffsetY(0);
+    setNewHeaderImageZoom(100);
     setNewHeaderImageFit('contain');
     setHeaderRemoveBg(false);
     setHeaderBgMode('auto');
@@ -4867,6 +4873,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setNewHeaderImageOffsetY(
       typeof tile.headerImageOffsetY === 'number' ? Math.max(-300, Math.min(300, tile.headerImageOffsetY)) : 0
     );
+    setNewHeaderImageZoom(
+      typeof tile.headerImageZoom === 'number' ? Math.max(50, Math.min(300, tile.headerImageZoom)) : 100
+    );
     setNewHeaderImageFit(tile.headerImageFit === 'cover' ? 'cover' : 'contain');
     setHeaderRemoveBg(false);
     setHeaderBgMode('auto');
@@ -5127,6 +5136,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       headerImageOpacity: newHeaderImage.trim() ? newHeaderImageOpacity : null,
       headerImageOffsetX: newHeaderImage.trim() ? newHeaderImageOffsetX : null,
       headerImageOffsetY: newHeaderImage.trim() ? newHeaderImageOffsetY : null,
+      headerImageZoom: newHeaderImage.trim() ? newHeaderImageZoom : null,
       headerImageFit: newHeaderImage.trim() ? newHeaderImageFit : null,
       themeColor: newColor,
       group: newGroup.trim() || 'General',
@@ -8908,6 +8918,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             opacity={newHeaderImageOpacity}
                             offsetX={newHeaderImageOffsetX}
                             offsetY={newHeaderImageOffsetY}
+                            zoom={newHeaderImageZoom}
                             emoji={newEmoji}
                             emojiImage={newEmojiImage || undefined}
                             showEmoji={newShowEmoji}
@@ -8932,6 +8943,25 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                               className="flex-1 accent-brand-500"
                             />
                             <span className="w-10 text-right tabular-nums">{newHeaderImageOpacity}%</span>
+                          </label>
+                          <label className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+                            <span className="w-20 shrink-0">Zoom</span>
+                            <input
+                              type="range"
+                              min={50}
+                              max={300}
+                              value={newHeaderImageZoom}
+                              onChange={(e) => setNewHeaderImageZoom(Number(e.target.value))}
+                              className="flex-1 accent-brand-500"
+                            />
+                            <span className="w-12 text-right tabular-nums">{newHeaderImageZoom}%</span>
+                            <button
+                              type="button"
+                              onClick={() => setNewHeaderImageZoom(100)}
+                              className="text-[11px] text-brand-600 dark:text-brand-400 hover:underline"
+                            >
+                              Reset
+                            </button>
                           </label>
                           <label className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
                             <span className="w-20 shrink-0">Position X</span>
@@ -8973,7 +9003,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           </label>
                           <button
                             type="button"
-                            onClick={() => { setNewHeaderImageOffsetX(0); setNewHeaderImageOffsetY(0); }}
+                            onClick={() => { setNewHeaderImageOffsetX(0); setNewHeaderImageOffsetY(0); setNewHeaderImageZoom(100); }}
                             className="text-[11px] text-brand-600 dark:text-brand-400 hover:underline"
                           >
                             Reset position
@@ -9490,7 +9520,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         }`}
                         style={{
                           opacity: newHeaderImageOpacity / 100,
-                          transform: `translate(${newHeaderImageOffsetX}px, ${newHeaderImageOffsetY}px)`
+                          transform: `translate(${newHeaderImageOffsetX}px, ${newHeaderImageOffsetY}px) scale(${Math.max(50, Math.min(300, newHeaderImageZoom)) / 100})`
                         }}
                         draggable={false}
                       />
@@ -11258,6 +11288,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                               opacity={newHeaderImageOpacity}
                               offsetX={newHeaderImageOffsetX}
                               offsetY={newHeaderImageOffsetY}
+                              zoom={newHeaderImageZoom}
                               emoji={newEmoji}
                               emojiImage={newEmojiImage || undefined}
                               showEmoji={newShowEmoji}
@@ -11282,6 +11313,25 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                 className="flex-1 accent-brand-500"
                               />
                               <span className="w-10 text-right tabular-nums">{newHeaderImageOpacity}%</span>
+                            </label>
+                            <label className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+                              <span className="w-20 shrink-0">Zoom</span>
+                              <input
+                                type="range"
+                                min={50}
+                                max={300}
+                                value={newHeaderImageZoom}
+                                onChange={(e) => setNewHeaderImageZoom(Number(e.target.value))}
+                                className="flex-1 accent-brand-500"
+                              />
+                              <span className="w-12 text-right tabular-nums">{newHeaderImageZoom}%</span>
+                              <button
+                                type="button"
+                                onClick={() => setNewHeaderImageZoom(100)}
+                                className="text-[11px] text-brand-600 dark:text-brand-400 hover:underline"
+                              >
+                                Reset
+                              </button>
                             </label>
                             <label className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
                               <span className="w-20 shrink-0">Position X</span>
@@ -11323,7 +11373,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             </label>
                             <button
                               type="button"
-                              onClick={() => { setNewHeaderImageOffsetX(0); setNewHeaderImageOffsetY(0); }}
+                              onClick={() => { setNewHeaderImageOffsetX(0); setNewHeaderImageOffsetY(0); setNewHeaderImageZoom(100); }}
                               className="text-[11px] text-brand-600 dark:text-brand-400 hover:underline"
                             >
                               Reset position

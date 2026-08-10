@@ -47,6 +47,9 @@ const transformTile = (apiTile: any): Tile => {
     headerImageOffsetY: typeof apiTile.headerImageOffsetY === 'number'
       ? Math.max(-300, Math.min(300, apiTile.headerImageOffsetY))
       : undefined,
+    headerImageZoom: typeof apiTile.headerImageZoom === 'number'
+      ? Math.max(50, Math.min(300, apiTile.headerImageZoom))
+      : undefined,
     headerImageFit: apiTile.headerImageFit === 'cover' || apiTile.headerImageFit === 'contain'
       ? apiTile.headerImageFit
       : undefined,

@@ -115,6 +115,8 @@ export interface Tile {
   headerImageOffsetX?: number | null;
   /** Fine vertical offset in pixels (−300…300). Default 0. */
   headerImageOffsetY?: number | null;
+  /** Zoom of the header image (50–300%). Default 100. */
+  headerImageZoom?: number | null;
   /** How the image scales in the header region: contain (center fit) or cover (fill). */
   headerImageFit?: 'contain' | 'cover' | null;
   themeColor: ThemeColor;

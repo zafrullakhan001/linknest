@@ -387,6 +387,7 @@ function ensureTilesHeaderImageColumns(PDO $db): void {
             'show_title' => 'INTEGER DEFAULT 1',
             'show_description' => 'INTEGER DEFAULT 1',
             'header_image_offset_y' => 'INTEGER',
+            'header_image_zoom' => 'INTEGER',
         ];
         foreach ($needed as $col => $type) {
             if (!in_array($col, $names, true)) {
@@ -892,7 +893,8 @@ function initDatabase() {
             $headerStyleCols = [
                 'header_image_opacity' => 'INTEGER',
                 'header_image_offset_x' => 'INTEGER',
-                'header_image_fit' => 'TEXT'
+                'header_image_fit' => 'TEXT',
+                'header_image_zoom' => 'INTEGER'
             ];
             foreach ($headerStyleCols as $columnName => $columnType) {
                 if (!in_array($columnName, $columnNames, true)) {
@@ -945,6 +947,7 @@ function initDatabase() {
                 'show_title' => 'INTEGER DEFAULT 1',
                 'show_description' => 'INTEGER DEFAULT 1',
                 'header_image_offset_y' => 'INTEGER',
+                'header_image_zoom' => 'INTEGER',
             ];
             foreach ($cardVisibilityCols as $columnName => $columnType) {
                 if (!in_array($columnName, $columnNames, true)) {
