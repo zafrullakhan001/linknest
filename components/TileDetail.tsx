@@ -1288,12 +1288,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 title: stripHtmlTags(tile.title || '') || 'QR Codes',
                 subtitle: 'All QR codes on this page',
                 root,
+                brandName: settings.app_name || 'LinkNest',
+                brandLogoUrl: settings.favicon || undefined,
             });
         } catch (err) {
             console.warn('QR print failed:', err);
             window.alert(err instanceof Error ? err.message : 'Failed to print QR codes');
         }
-    }, [tile.title]);
+    }, [settings.app_name, settings.favicon, tile.title]);
 
     const handlePrintSectionQrCodes = useCallback(async (sectionId: string, sectionTitle?: string) => {
         const root = qrPrintRootRef.current?.querySelector(
@@ -1305,12 +1307,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 title: stripHtmlTags(tile.title || '') || 'QR Codes',
                 subtitle: sectionTitle?.trim() || 'Section QR codes',
                 root,
+                brandName: settings.app_name || 'LinkNest',
+                brandLogoUrl: settings.favicon || undefined,
             });
         } catch (err) {
             console.warn('QR section print failed:', err);
             window.alert(err instanceof Error ? err.message : 'Failed to print QR codes');
         }
-    }, [tile.title]);
+    }, [settings.app_name, settings.favicon, tile.title]);
 
     // Handle ESC key to close visibility and scheduling dialogs
     useEffect(() => {

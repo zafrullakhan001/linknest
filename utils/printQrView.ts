@@ -1,5 +1,6 @@
 /**
- * Print QR code grids as they appear on screen (section or full page).
+ * Print QR code grids as they appear on screen (section or full page),
+ * with a branded footer including date/time and page numbers.
  */
 
 function absolutizeSvgImages(root: ParentNode): void {
@@ -71,6 +72,34 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
+function formatPrintDateTime(date = new Date()): string {
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    }).format(date);
+  } catch {
+    return date.toLocaleString();
+  }
+}
+
+function resolveAssetUrl(src?: string): string {
+  const value = (src || '').trim();
+  if (!value) return '';
+  if (value.startsWith('data:') || value.startsWith('blob:') || /^https?:\/\//i.test(value)) {
+    return value;
+  }
+  try {
+    return new URL(value, window.location.href).href;
+  } catch {
+    return value;
+  }
+}
+
 function waitForPrintAssets(doc: Document): Promise<void> {
   const images = [
     ...Array.from(doc.images),
@@ -110,6 +139,60 @@ function waitForPrintAssets(doc: Document): Promise<void> {
   });
 }
 
+function buildFooterInnerHtml(brandName: string, brandLogoUrl: string, printedAt: string, pageLabel: string): string {
+  const brandLogoHtml = brandLogoUrl
+    ? `<img class="footer-logo" src="${escapeHtml(brandLogoUrl)}" alt="" />`
+    : '';
+  return `
+    <div class="footer-brand">
+      ${brandLogoHtml}
+      <span class="footer-brand-text">${escapeHtml(brandName)}</span>
+    </div>
+    <div class="footer-datetime">${escapeHtml(printedAt)}</div>
+    <div class="footer-page">${escapeHtml(pageLabel)}</div>
+  `;
+}
+
+/**
+ * Stamp one absolutely-positioned footer per printed page.
+ * Chromium/Edge ignore CSS @page margin boxes, but honor these per-page footers.
+ */
+function stampPagedFooters(
+  doc: Document,
+  opts: { brandName: string; brandLogoUrl: string; printedAt: string }
+): void {
+  const sheet = doc.querySelector('.sheet') as HTMLElement | null;
+  const host = doc.body;
+  if (!sheet || !host) return;
+
+  doc.querySelectorAll('.print-footer-page').forEach((el) => el.remove());
+
+  // ~A4 content height at 96dpi after ~12mm top / ~22mm bottom margins
+  const pageHeightPx = 980;
+  const footerHeightPx = 52;
+  const totalPages = Math.max(1, Math.ceil(sheet.scrollHeight / pageHeightPx));
+
+  // Ensure the document is tall enough for the last footer to land on the last page
+  const minHeight = totalPages * pageHeightPx;
+  if (sheet.scrollHeight < minHeight) {
+    sheet.style.minHeight = `${minHeight - footerHeightPx}px`;
+  }
+
+  for (let page = 1; page <= totalPages; page += 1) {
+    const footer = doc.createElement('footer');
+    footer.className = 'print-footer print-footer-page';
+    footer.setAttribute('aria-label', `Print footer page ${page}`);
+    footer.style.top = `${page * pageHeightPx - footerHeightPx}px`;
+    footer.innerHTML = buildFooterInnerHtml(
+      opts.brandName,
+      opts.brandLogoUrl,
+      opts.printedAt,
+      `Page ${page} of ${totalPages}`
+    );
+    host.appendChild(footer);
+  }
+}
+
 export type PrintQrViewOptions = {
   /** Page title shown in the print document / browser tab */
   title: string;
@@ -120,6 +203,10 @@ export type PrintQrViewOptions = {
   root: HTMLElement;
   /** Optional subtitle under the main title */
   subtitle?: string;
+  /** Brand / app name for the print footer */
+  brandName?: string;
+  /** Optional brand logo / favicon URL for the print footer */
+  brandLogoUrl?: string;
 };
 
 /**
@@ -127,6 +214,9 @@ export type PrintQrViewOptions = {
  */
 export async function printQrView(options: PrintQrViewOptions): Promise<void> {
   const { title, root, subtitle } = options;
+  const brandName = (options.brandName || 'LinkNest').trim() || 'LinkNest';
+  const brandLogoUrl = resolveAssetUrl(options.brandLogoUrl);
+  const printedAt = formatPrintDateTime();
 
   const sectionEls = root.matches('[data-qr-print-section]')
     ? [root]
@@ -147,7 +237,11 @@ export async function printQrView(options: PrintQrViewOptions): Promise<void> {
   <base href="${escapeHtml(baseHref)}" />
   <title>${escapeHtml(title)}</title>
   <style>
-    @page { margin: 12mm; }
+    @page {
+      size: A4;
+      margin: 12mm 12mm 18mm 12mm;
+    }
+
     * { box-sizing: border-box; }
     html, body {
       margin: 0;
@@ -155,8 +249,11 @@ export async function printQrView(options: PrintQrViewOptions): Promise<void> {
       background: #fff;
       color: #0f172a;
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      position: relative;
     }
-    .sheet { padding: 8px 4px 16px; }
+    .sheet {
+      padding: 8px 4px 56px;
+    }
     .page-title {
       font-size: 20px;
       font-weight: 700;
@@ -209,6 +306,53 @@ export async function printQrView(options: PrintQrViewOptions): Promise<void> {
       margin: 0;
     }
     a { color: inherit; text-decoration: none; }
+
+    .print-footer {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 48px;
+      padding: 10px 4px 0;
+      border-top: 1px solid #cbd5e1;
+      background: #fff;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 8px;
+      font-size: 9pt;
+      color: #64748b;
+      z-index: 1000;
+    }
+    .footer-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      justify-self: start;
+      font-weight: 600;
+      color: #334155;
+      min-width: 0;
+    }
+    .footer-logo {
+      width: 14px;
+      height: 14px;
+      object-fit: contain;
+      flex-shrink: 0;
+    }
+    .footer-brand-text {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .footer-datetime {
+      justify-self: center;
+      white-space: nowrap;
+      text-align: center;
+    }
+    .footer-page {
+      justify-self: end;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
   </style>
 </head>
 <body>
@@ -222,8 +366,9 @@ export async function printQrView(options: PrintQrViewOptions): Promise<void> {
 
   const iframe = document.createElement('iframe');
   iframe.setAttribute('aria-hidden', 'true');
+  // Give the iframe a real A4-ish width so layout/page estimates match print
   iframe.style.cssText =
-    'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
+    'position:fixed;left:-10000px;top:0;width:794px;height:1123px;border:0;visibility:hidden;';
   document.body.appendChild(iframe);
 
   const win = iframe.contentWindow;
@@ -238,6 +383,8 @@ export async function printQrView(options: PrintQrViewOptions): Promise<void> {
   doc.close();
 
   await waitForPrintAssets(doc);
+
+  stampPagedFooters(doc, { brandName, brandLogoUrl, printedAt });
 
   try {
     win.focus();
