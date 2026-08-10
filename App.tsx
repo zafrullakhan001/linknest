@@ -42,6 +42,10 @@ import {
   OPEN_SSH_TERMINAL_EVENT,
   type OpenSshTerminalDetail,
 } from './utils/sshLink';
+import {
+  OPEN_VNC_VIEWER_EVENT,
+  type OpenVncViewerDetail,
+} from './utils/vncLink';
 import { themeService } from './services/themeService';
 import { getMessages, ChatMessage } from './services/chatService';
 import { WidgetQuickAccess } from './components/WidgetQuickAccess';
@@ -241,6 +245,7 @@ const AppContent: React.FC = () => {
     const saved = localStorage.getItem('linknest_show_vnc_viewer_widget');
     return saved !== null ? saved === 'true' : false;
   });
+  const [vncPendingOpen, setVncPendingOpen] = useState<(OpenVncViewerDetail & { requestId: number }) | null>(null);
 
   useEffect(() => {
     localStorage.setItem('linknest_show_vnc_viewer_widget', showVncViewer.toString());
@@ -535,6 +540,38 @@ const AppContent: React.FC = () => {
     window.addEventListener(OPEN_SSH_TERMINAL_EVENT, handleOpenSshTerminal);
     return () => {
       window.removeEventListener(OPEN_SSH_TERMINAL_EVENT, handleOpenSshTerminal);
+    };
+  }, [isMobile, isAuthenticated, isWidgetAllowed]);
+
+  // Open VNC Viewer from vnc:// (or auto-vnc://) space links
+  useEffect(() => {
+    const handleOpenVncViewer = (ev: Event) => {
+      const detail = (ev as CustomEvent<OpenVncViewerDetail>).detail;
+      if (!detail?.host) return;
+
+      if (isMobile) {
+        window.alert('VNC Viewer is available on desktop view.');
+        return;
+      }
+      if (!isWidgetAllowed('vnc-viewer')) {
+        window.alert('VNC Viewer widget is not enabled for your account.');
+        return;
+      }
+      if (!isAuthenticated) {
+        setAuthModalOpen(true);
+        return;
+      }
+
+      setShowVncViewer(true);
+      setVncPendingOpen({
+        ...detail,
+        requestId: Date.now(),
+      });
+    };
+
+    window.addEventListener(OPEN_VNC_VIEWER_EVENT, handleOpenVncViewer);
+    return () => {
+      window.removeEventListener(OPEN_VNC_VIEWER_EVENT, handleOpenVncViewer);
     };
   }, [isMobile, isAuthenticated, isWidgetAllowed]);
 
@@ -1485,7 +1522,11 @@ const AppContent: React.FC = () => {
           )}
           {showVncViewer && isWidgetAllowed('vnc-viewer') && (
             <FloatingVncViewerWidget>
-              <VncViewerWidget onClose={toggleVncViewer} />
+              <VncViewerWidget
+                onClose={toggleVncViewer}
+                pendingOpen={vncPendingOpen}
+                onPendingOpenConsumed={() => setVncPendingOpen(null)}
+              />
             </FloatingVncViewerWidget>
           )}
           {showSshTerminal && isWidgetAllowed('ssh-terminal') && (

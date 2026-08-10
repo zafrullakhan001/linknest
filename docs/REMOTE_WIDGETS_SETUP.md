@@ -26,6 +26,8 @@ Username: domain\user+target.domain\account+TARGETHOST
 
 Or as a space link: `ssh://domain%5Cuser%2Btarget@pam.example.com:4489` (percent-encode `\` and `+` in the username).
 
+**VNC space links:** Add a tile link like `vnc://192.168.1.50:5900` (default port `5900` if omitted). Clicking it opens the VNC Viewer widget and starts Easy mode (websockify) the same way `ssh://` opens the SSH Terminal.
+
 **RDP (same widget):** In Settings choose protocol **RDP**, paste your gateway page URL (for example Apache Guacamole `https://guac.example.com/`), Save, then Connect. The page is embedded in a session tab. Log in with credentials in the gateway UI — LinkNest does not store RDP passwords. If the gateway sends `X-Frame-Options: DENY`, use “Open gateway in new tab” from the error state, or allow framing for your LinkNest origin.
 
 ---

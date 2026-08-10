@@ -4757,7 +4757,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                     }`}
                   />
                 </div>
-                <div className="flex-1 min-h-0 flex items-stretch gap-2 px-2 pt-2.5 pb-1.5">
+                <div className="flex-1 min-h-0 flex items-stretch gap-2 px-2 pt-2.5 pb-1.5 overflow-hidden">
                   <span className="text-[10px] font-semibold uppercase tracking-wide text-sky-400 shrink-0 self-start mt-1.5">
                     All
                   </span>
@@ -4841,7 +4841,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                     autoComplete="off"
                     wrap="soft"
                   />
-                  <div className="grid grid-cols-2 gap-1 shrink-0 self-center content-center">
+                  <div className="grid grid-cols-3 gap-1 shrink-0 self-center content-center max-h-full overflow-hidden">
                     <button
                       type="button"
                       onClick={() => {
@@ -4854,15 +4854,6 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                       title="Send to all included connected SSH terminals"
                     >
                       Send all
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void pasteToAll()}
-                      disabled={includedConnected === 0}
-                      className="px-2.5 h-7 text-[11px] font-semibold rounded-md border border-emerald-700/70 bg-emerald-950/50 hover:bg-emerald-900/60 text-emerald-200 disabled:opacity-40 whitespace-nowrap"
-                      title="Paste clipboard into all included connected SSH terminals"
-                    >
-                      Multi-paste
                     </button>
                     <button
                       type="button"
@@ -4884,6 +4875,15 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                     </button>
                     <button
                       type="button"
+                      onClick={() => void pasteToAll()}
+                      disabled={includedConnected === 0}
+                      className="px-2.5 h-7 text-[11px] font-semibold rounded-md border border-emerald-700/70 bg-emerald-950/50 hover:bg-emerald-900/60 text-emerald-200 disabled:opacity-40 whitespace-nowrap"
+                      title="Paste clipboard into all included connected SSH terminals"
+                    >
+                      Multi-paste
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => eofAll()}
                       disabled={includedConnected === 0}
                       className="px-2.5 h-7 text-[11px] font-semibold rounded-md border border-fuchsia-700/70 bg-fuchsia-950/50 hover:bg-fuchsia-900/60 text-fuchsia-200 disabled:opacity-40 font-mono whitespace-nowrap"
@@ -4902,6 +4902,15 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                     </button>
                     <button
                       type="button"
+                      onClick={() => clearAllTerminals()}
+                      disabled={includedConnected === 0}
+                      className="px-2.5 h-7 text-[11px] font-semibold rounded-md border border-slate-600 bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:opacity-40 font-mono whitespace-nowrap"
+                      title="Run clear on all included connected SSH terminals"
+                    >
+                      Clear
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => arrowUpAll()}
                       disabled={includedConnected === 0}
                       className="px-2.5 h-7 text-[11px] font-semibold rounded-md border border-cyan-700/70 bg-cyan-950/50 hover:bg-cyan-900/60 text-cyan-200 disabled:opacity-40 font-mono whitespace-nowrap"
@@ -4917,15 +4926,6 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                       title="Send ↓ to all included connected SSH terminals (next history)"
                     >
                       ↓
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => clearAllTerminals()}
-                      disabled={includedConnected === 0}
-                      className="px-2.5 h-7 text-[11px] font-semibold rounded-md border border-slate-600 bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:opacity-40 font-mono whitespace-nowrap"
-                      title="Run clear on all included connected SSH terminals"
-                    >
-                      Clear
                     </button>
                   </div>
                 </div>

@@ -5,8 +5,8 @@
 export function getDisplayUrl(url: string, maxLength = 48): string {
   if (!url) return '';
   let host = url;
-  if (/^(ssh|auto):\/\//i.test(url)) {
-    host = url.replace(/^(ssh|auto):\/\//i, '').split('/')[0] || url;
+  if (/^(ssh|auto|vnc|auto-vnc):\/\//i.test(url)) {
+    host = url.replace(/^(ssh|auto|vnc|auto-vnc):\/\//i, '').split('/')[0] || url;
   } else {
     host = url.replace(/^https?:\/\/(www\.)?/i, '').split('/')[0] || url;
   }

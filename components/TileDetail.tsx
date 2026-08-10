@@ -51,6 +51,7 @@ import { TileAnimationSelector, getTileAnimationClass, TileAnimation, getAnimati
 import { AuthSourceBadge } from './AuthSourceBadge';
 import { getDisplayUrl, isHttpOrHttpsUrl, normalizeStoredLinkUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
+import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
 
 type ViewLayoutMode = 'stacked' | 'side-by-side' | 'grid' | 'compact' | 'qr';
 
@@ -1149,7 +1150,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     : (tile.sections || []);
                 const cleaned = { ...health };
                 sectionsForFilter.flatMap(s => s.links || []).forEach(l => {
-                    if (isSshLinkUrl(l.url || '')) delete cleaned[l.id];
+                    if (isSshLinkUrl(l.url || '') || isVncLinkUrl(l.url || '')) delete cleaned[l.id];
                 });
                 setLinkHealth(cleaned);
             } catch (error) {
@@ -1162,16 +1163,16 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             const sections = tile.tabs
                 ? tile.tabs.flatMap(tab => tab.sections || [])
                 : (tile.sections || []);
-            const checkableLinks = sections.flatMap(s => (s.links || [])).filter(l => !isSshLinkUrl(l.url || ''));
+            const checkableLinks = sections.flatMap(s => (s.links || [])).filter(l => !isSshLinkUrl(l.url || '') && !isVncLinkUrl(l.url || ''));
             const linkIds = checkableLinks.map(l => l.id);
             if (!linkIds.length) return;
 
             setCheckingHealth(true);
             setLinkHealth(prev => {
                 const next = { ...prev };
-                // Clear any stale health on SSH links; mark HTTP links as checking
+                // Clear any stale health on SSH/VNC links; mark HTTP links as checking
                 sections.flatMap(s => s.links || []).forEach(l => {
-                    if (isSshLinkUrl(l.url || '')) {
+                    if (isSshLinkUrl(l.url || '') || isVncLinkUrl(l.url || '')) {
                         delete next[l.id];
                     } else if (linkIds.includes(l.id)) {
                         next[l.id] = { ...(next[l.id] || {}), status: 'checking' };
@@ -5453,9 +5454,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                                                         // Render link (itemType === 'link')
                                                         const link = item as Link;
-                                                        const isSsh = isSshLinkUrl(link.url || '');
-                                                        const health = isSsh ? undefined : linkHealth[link.id];
-                                                        const isBroken = !isSsh && health?.status === 'broken';
+                                                        const skipHealth =
+                                                            isSshLinkUrl(link.url || '') || isVncLinkUrl(link.url || '');
+                                                        const health = skipHealth ? undefined : linkHealth[link.id];
+                                                        const isBroken = !skipHealth && health?.status === 'broken';
                                                         const isGridCards = sectionLinkLayout === 'grid';
                                                         const isCompact = sectionLinkLayout === 'compact';
                                                         const isQrView = sectionLinkLayout === 'qr';
@@ -5501,6 +5503,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 className="text-xs font-medium text-brand-600 dark:text-brand-400 hover:underline"
                                                                                 onClick={(e) => {
                                                                                     if (tryHandleSshLinkClick(link.url, e)) return;
+                                                                                    if (tryHandleVncLinkClick(link.url, e)) return;
                                                                                     e.stopPropagation();
                                                                                 }}
                                                                             >
@@ -5560,7 +5563,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             ? 'absolute bottom-full left-1/2 -translate-x-1/2 mb-[5px] z-10'
                                                                             : ''
                                                                     }`}>
-                                                                        {!isSsh && getHealthIndicator(link.id)}
+                                                                        {!skipHealth && getHealthIndicator(link.id)}
                                                                     </div>
 
                                                                     <div className={`linknest-content-link-icon rounded-xl ${styles.iconBg} flex items-center justify-center select-none shadow-sm border border-white/20 ${
@@ -5587,6 +5590,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     }`}
                                                                     onClick={(e) => {
                                                                         if (tryHandleSshLinkClick(link.url, e)) return;
+                                                                        if (tryHandleVncLinkClick(link.url, e)) return;
 
                                                                         // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                                                                         if (e.ctrlKey || e.metaKey) {
@@ -5878,8 +5882,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         </svg>
                                                                     </button>
 
-                                                                    {/* Re-check button (HTTP(S) only — SSH is not HTTP-probed) */}
-                                                                    {!isSsh && (
+                                                                    {/* Re-check button (HTTP(S) only — SSH/VNC are not HTTP-probed) */}
+                                                                    {!skipHealth && (
                                                                     <button
                                                                         onClick={(e) => {
                                                                             e.preventDefault();
@@ -8092,7 +8096,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     type="text"
                                                                                                     value={editLinkState[link.id]?.url || ''}
                                                                                                     onChange={(e) => updateEditLinkState(link.id, 'url', e.target.value)}
-                                                                                                    placeholder="https://…  http://…  or ssh://user@host:22"
+                                                                                                    placeholder="https://…  http://…  ssh://user@host:22  or vnc://host:5900"
                                                                                                     className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-mono"
                                                                                                 />
                                                                                             </div>
@@ -8592,7 +8596,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         type="text"
                                                                                         value={newLinkState[section.id]?.url || ''}
                                                                                         onChange={(e) => updateNewLinkState(section.id, 'url', e.target.value)}
-                                                                                        placeholder="https://…  http://…  or ssh://user@host:22"
+                                                                                        placeholder="https://…  http://…  ssh://user@host:22  or vnc://host:5900"
                                                                                         className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-mono"
                                                                                     />
                                                                                 </div>

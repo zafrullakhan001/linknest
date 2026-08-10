@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useSettings } from '../contexts/SettingsContext';
 import { getDisplayUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick } from '../utils/sshLink';
+import { tryHandleVncLinkClick } from '../utils/vncLink';
 import { linkifyHtml } from '../utils/richTextDisplay';
 
 interface LinkInfoDialogProps {
@@ -456,6 +457,7 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
                     e.preventDefault();
                     e.stopPropagation();
                     if (tryHandleSshLinkClick(linkUrl, e)) return;
+                    if (tryHandleVncLinkClick(linkUrl, e)) return;
                     if (settings.browser_specific_links_enabled === '1' && browser && browser !== 'default') {
                       openLinkInBrowser(linkUrl, browser);
                     } else {

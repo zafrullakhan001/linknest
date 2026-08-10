@@ -12,10 +12,14 @@ import {
   parseAutoVncTargetUrl,
   vncGatewayService,
 } from '../services/vncGatewayService';
+import type { OpenVncViewerDetail } from '../utils/vncLink';
 import { ZoomSafeHost } from './XtermZoomSafeHost';
 
 interface VncViewerWidgetProps {
   onClose?: () => void;
+  /** Request from App (vnc:// click) — requestId changes on every open. */
+  pendingOpen?: (OpenVncViewerDetail & { requestId: number }) | null;
+  onPendingOpenConsumed?: () => void;
 }
 
 type ConnState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -143,7 +147,11 @@ function tileGridStyle(count: number): React.CSSProperties {
   };
 }
 
-export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => {
+export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({
+  onClose,
+  pendingOpen,
+  onPendingOpenConsumed,
+}) => {
   const { isAuthenticated } = useAuth();
   const useServer = Boolean(isAuthenticated);
 
@@ -898,6 +906,62 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
     },
     [connectTo]
   );
+
+  // Handle open from vnc:// space links (App → pendingOpen)
+  useEffect(() => {
+    if (!pendingOpen?.requestId || !pendingOpen.host) return;
+    if (!storageReady) return;
+
+    const req = pendingOpen;
+    onPendingOpenConsumed?.();
+
+    const port = req.port && req.port > 0 ? req.port : 5900;
+    const name =
+      (req.connectionName || '').trim() ||
+      (req.username ? `${req.username}@${req.host}${port !== 5900 ? `:${port}` : ''}` : `${req.host}${port !== 5900 ? `:${port}` : ''}`);
+
+    setConnectMode('auto');
+    setVncHost(req.host);
+    setVncPort(String(port));
+    setDraftName(name);
+    setEditingId(null);
+    setWsUrl(buildAutoVncTargetUrl(req.host, port));
+
+    const match = connections.find((c) => {
+      const a = parseAutoVncTargetUrl(c.wsUrl);
+      if (!a) return false;
+      return a.host.toLowerCase() === req.host.toLowerCase() && a.port === port;
+    });
+
+    const shouldConnect = req.autoConnect !== false;
+    if (match) {
+      applyConnection(match, shouldConnect);
+      return;
+    }
+
+    setActiveConnectionId(null);
+    if (shouldConnect) {
+      setShowSettings(false);
+      setNotice(`Connecting to ${name}…`);
+      void connectTo({
+        mode: 'auto',
+        host: req.host,
+        port,
+        connectionName: name,
+      });
+    } else {
+      setShowSettings(true);
+      setNotice(`Host ${req.host}:${port} loaded — click Connect`);
+    }
+  }, [
+    pendingOpen?.requestId,
+    storageReady,
+    connections,
+    applyConnection,
+    connectTo,
+    onPendingOpenConsumed,
+    pendingOpen,
+  ]);
 
   const saveCurrentConnection = async () => {
     let url = '';

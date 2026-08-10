@@ -32,6 +32,7 @@ import { useMobile } from '../hooks/useMobile';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { getDisplayUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
+import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
 import { MobileTileView } from './MobileTileView';
 import { StagingOverview } from './StagingOverview';
 import { StagingOfflineKit, StagingOfflineKitHandle } from './StagingOfflineKit';
@@ -3410,7 +3411,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       setIsCheckingHealth(true);
 
       const linksToCheck = favoriteLinks
-        .filter(link => typeof link.url === 'string' && !isSshLinkUrl(link.url))
+        .filter(link => typeof link.url === 'string' && !isSshLinkUrl(link.url) && !isVncLinkUrl(link.url))
         .map(link => ({
           id: link.id,
           url: link.url
@@ -3466,7 +3467,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
     setIsCheckingHealth(true);
     const linksToCheck = favoriteLinks
-      .filter(link => typeof link.url === 'string' && !isSshLinkUrl(link.url))
+      .filter(link => typeof link.url === 'string' && !isSshLinkUrl(link.url) && !isVncLinkUrl(link.url))
       .map(link => ({
         id: link.id,
         url: link.url
@@ -7358,6 +7359,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       style={{ animationDelay: `${animationDelay}ms` }}
                       onClick={(e) => {
                         if (tryHandleSshLinkClick(link.url, e)) return;
+                        if (tryHandleVncLinkClick(link.url, e)) return;
 
                         // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                         if (e.ctrlKey || e.metaKey) {
@@ -7831,6 +7833,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       style={{ animationDelay: `${animationDelay}ms` }}
                       onClick={(e) => {
                         if (tryHandleSshLinkClick(link.url, e)) return;
+                        if (tryHandleVncLinkClick(link.url, e)) return;
 
                         // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                         if (e.ctrlKey || e.metaKey) {
@@ -8088,6 +8091,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         style={{ animationDelay: `${animationDelay}ms` }}
                         onClick={(e) => {
                           if (tryHandleSshLinkClick(link.url, e)) return;
+                          if (tryHandleVncLinkClick(link.url, e)) return;
 
                           // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                           if (e.ctrlKey || e.metaKey) {

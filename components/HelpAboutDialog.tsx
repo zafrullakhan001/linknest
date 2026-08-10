@@ -1120,8 +1120,8 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <p className="font-medium text-sky-900 dark:text-sky-100">VNC Viewer — after dependencies</p>
                     <ol className="list-decimal list-inside space-y-1.5 ml-0.5 text-sm">
                       <li>Run a VNC server on the remote machine</li>
-                      <li>Run websockify (or similar) bridging WebSocket → VNC (example listen port <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">6080</code>)</li>
-                      <li>In the widget set URL to <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">ws://localhost:6080/websockify</code>, enter VNC password if asked (session only), Connect</li>
+                      <li><strong>Easy:</strong> in the widget enter host/port (default 5900), or add a space link <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">vnc://host:5900</code> — LinkNest starts websockify</li>
+                      <li><strong>Advanced:</strong> set WebSocket URL (e.g. <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">ws://localhost:6080/websockify</code>), enter VNC password if asked (session only), Connect</li>
                       <li>Save connections with tags; passwords are never saved</li>
                     </ol>
                   </div>

@@ -8,6 +8,7 @@ import { getPublicFavorites, checkLocalStorageAvailability, togglePublicFavorite
 import { getFavoriteLinks, FavoriteLink } from '../services/storageService';
 import { getDisplayUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick } from '../utils/sshLink';
+import { tryHandleVncLinkClick } from '../utils/vncLink';
 import { QRCodeDialog } from './QRCodeDialog';
 import { UpdatesDialog } from './UpdatesDialog';
 
@@ -927,6 +928,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                       type="button"
                       onClick={() => {
                         if (tryHandleSshLinkClick(link.url || '')) return;
+                        if (tryHandleVncLinkClick(link.url || '')) return;
                         if (link.richTextContent) {
                           window.open(link.url, '_blank', 'noopener,noreferrer');
                           return;
