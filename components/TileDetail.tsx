@@ -5081,10 +5081,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     setSectionsSideBySide((prev) => !prev);
                                                 }}
                                                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${sectionsSideBySide
-                                                    ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
-                                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                                                    ? 'bg-orange-500 text-white shadow-sm ring-1 ring-orange-600/40 dark:bg-orange-500 dark:text-white dark:ring-orange-400/50'
+                                                    : 'text-slate-600 dark:text-slate-400 hover:text-orange-600 dark:hover:text-orange-400'
                                                     }`}
-                                                title="Side-by-side sections — toggle on/off with any link view"
+                                                title="Side-by-side sections — sticky toggle (orange when on); works with any link view"
                                                 aria-label="Toggle side-by-side sections"
                                                 aria-pressed={sectionsSideBySide}
                                             >

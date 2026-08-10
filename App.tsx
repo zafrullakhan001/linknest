@@ -834,22 +834,24 @@ const AppContent: React.FC = () => {
     if (detailTile) {
       const updatedDetail = newTiles.find((t) => t.id === detailTile.id);
       if (updatedDetail) {
-        const hasNested =
+        const hasNestedGraph =
           (updatedDetail.tabs?.length ?? 0) > 0 ||
           (updatedDetail.sections?.length ?? 0) > 0 ||
-          !!updatedDetail.htmlContent ||
-          (updatedDetail.messages?.length ?? 0) > 0;
-        if (hasNested) {
+          !!updatedDetail.htmlContent;
+        if (hasNestedGraph) {
           setDetailTile(updatedDetail);
         } else {
-          // Card-level refresh: keep nested detail content
+          // Card-level / message-board refresh: keep nested detail content
           setDetailTile({
             ...detailTile,
             ...updatedDetail,
             tabs: detailTile.tabs,
             sections: detailTile.sections,
             htmlContent: detailTile.htmlContent,
-            messages: detailTile.messages,
+            // Prefer newly saved Message Board when present (including empty clear)
+            messages: Array.isArray(updatedDetail.messages)
+              ? updatedDetail.messages
+              : detailTile.messages,
           });
         }
       }

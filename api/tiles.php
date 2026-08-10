@@ -130,7 +130,8 @@ switch ($method) {
 
 function handleGetTiles() {
     try {
-    // Lightweight home-grid payload: card fields only (no tabs/sections/links/messages/html)
+    // Lightweight home-grid payload: card fields only (no tabs/sections/links/html).
+    // Messages are still included — small payload needed for tile banners + Message Board edits.
     $summaryRaw = isset($_GET['summary']) ? strtolower(trim((string)$_GET['summary'])) : '';
     $summaryMode = in_array($summaryRaw, ['1', 'true', 'yes'], true);
 
@@ -544,6 +545,7 @@ function handleGetTiles() {
     }
 
     // Summary mode: return card fields only (home grid). Detail loads via GET /tiles/{id}.
+    // Messages are included — they are small and required for tile banners + Message Board edits.
     if ($summaryMode) {
         // Optional link counts for card badges (one aggregate query, no nested graph)
         $linkCounts = [];
@@ -562,6 +564,43 @@ function handleGetTiles() {
             }
         }
 
+        $messagesByTile = [];
+        if (!empty($visibleTileIds)) {
+            $placeholders = implode(',', array_fill(0, count($visibleTileIds), '?'));
+            $msgStmt = $db->prepare("SELECT * FROM tile_messages WHERE tile_id IN ($placeholders)");
+            $msgStmt->execute($visibleTileIds);
+            while ($msgRow = $msgStmt->fetch()) {
+                if (!isset($messagesByTile[$msgRow['tile_id']])) {
+                    $messagesByTile[$msgRow['tile_id']] = [];
+                }
+                $cc = null;
+                if (!empty($msgRow['celebration_config'])) {
+                    $dec = json_decode($msgRow['celebration_config'], true);
+                    if (is_array($dec)) {
+                        $cc = $dec;
+                    }
+                }
+                $messagesByTile[$msgRow['tile_id']][] = [
+                    'id' => $msgRow['id'],
+                    'content' => $msgRow['content'],
+                    'type' => $msgRow['type'],
+                    'startDate' => $msgRow['start_date'],
+                    'endDate' => $msgRow['end_date'],
+                    'isActive' => (bool)$msgRow['is_active'],
+                    'priority' => isset($msgRow['priority']) ? (int)$msgRow['priority'] : null,
+                    'textColor' => $msgRow['text_color'] ?? null,
+                    'fontStyle' => $msgRow['font_style'] ?? null,
+                    'displayLocation' => $msgRow['display_location'] ?? 'both',
+                    'animationType' => $msgRow['animation_type'] ?? 'rollover',
+                    'delayBefore' => isset($msgRow['delay_before']) ? (float)$msgRow['delay_before'] : 0,
+                    'celebrationEffect' => $msgRow['celebration_effect'] ?? 'fireworks',
+                    'celebrationConfig' => $cc,
+                    'url' => $msgRow['url'] ?? null,
+                    'urlLabel' => $msgRow['url_label'] ?? null
+                ];
+            }
+        }
+
         foreach ($visibleTileIds as $tileId) {
             if (!isset($tilesById[$tileId])) {
                 continue;
@@ -570,6 +609,7 @@ function handleGetTiles() {
             $tile['linkCount'] = $linkCounts[$tileId] ?? 0;
             $tile['tabs'] = [];
             $tile['sections'] = [];
+            $tile['messages'] = $messagesByTile[$tileId] ?? [];
             $tiles[] = $tile;
         }
 
@@ -5581,7 +5621,42 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
         ]);
 
         if ($preserveNested) {
-            // Metadata-only update: leave tabs, sections, links, messages untouched
+            // Metadata-only update: leave tabs, sections, links untouched.
+            // Message Board edits from the home-grid edit modal still send messages —
+            // apply them here so card-level saves can persist the board without wiping nested content.
+            if (array_key_exists('messages', $data) && is_array($data['messages'])) {
+                $db->prepare('DELETE FROM tile_messages WHERE tile_id = ?')->execute([$tileId]);
+                if (!empty($data['messages'])) {
+                    $msgStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active, priority, text_color, font_style, display_location, animation_type, delay_before, celebration_effect, celebration_config, url, url_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                    foreach ($data['messages'] as $msg) {
+                        if (!is_array($msg)) {
+                            continue;
+                        }
+                        $msgId = $msg['id'] ?? uniqid('msg_', true);
+                        $cc = isset($msg['celebrationConfig']) && is_array($msg['celebrationConfig']) ? json_encode($msg['celebrationConfig']) : null;
+                        $msgStmt->execute([
+                            $msgId,
+                            $tileId,
+                            $msg['content'] ?? '',
+                            $msg['type'] ?? 'info',
+                            $msg['startDate'] ?? null,
+                            $msg['endDate'] ?? null,
+                            isset($msg['isActive']) && $msg['isActive'] ? 1 : 0,
+                            isset($msg['priority']) ? (int)$msg['priority'] : 0,
+                            $msg['textColor'] ?? null,
+                            $msg['fontStyle'] ?? null,
+                            $msg['displayLocation'] ?? 'both',
+                            $msg['animationType'] ?? 'rollover',
+                            isset($msg['delayBefore']) ? (float)$msg['delayBefore'] : 0,
+                            $msg['celebrationEffect'] ?? 'fireworks',
+                            $cc,
+                            $msg['url'] ?? null,
+                            $msg['urlLabel'] ?? null
+                        ]);
+                    }
+                }
+            }
+
             if ($db->inTransaction()) {
                 $db->commit();
             }
