@@ -464,8 +464,12 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
     }
   };
 
+  // Tile created_at is stored as ms (Date.now()); version/archive times often use PHP time() (seconds).
+  const toEpochMs = (timestamp: number): number =>
+    timestamp > 1e12 ? timestamp : timestamp * 1000;
+
   const formatDate = (timestamp: number): string => {
-    const date = new Date(timestamp * 1000);
+    const date = new Date(toEpochMs(timestamp));
     return date.toLocaleString(undefined, {
       year: 'numeric',
       month: 'long',
@@ -477,8 +481,7 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
   };
 
   const formatRelativeTime = (timestamp: number): string => {
-    const now = Math.floor(Date.now() / 1000);
-    const diff = now - timestamp;
+    const diff = Math.floor((Date.now() - toEpochMs(timestamp)) / 1000);
 
     if (diff < 60) return 'just now';
     if (diff < 3600) return `${Math.floor(diff / 60)} minutes ago`;
