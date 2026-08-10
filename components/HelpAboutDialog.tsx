@@ -361,6 +361,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                       <li>All guest features</li>
                       <li>Create, edit, and delete tiles/spaces</li>
                       <li>Manage links, tabs, sections, and rich text (including boxed content)</li>
+                      <li>Preview links on phone, tablet, or watch sizes via the hover phone action</li>
                       <li>Customize tiles with header/emoji images and display options</li>
                       <li>Organize tiles into categories and favorite them</li>
                       <li>Share spaces with other users and accept shared-tile invitations</li>
@@ -371,7 +372,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 border border-emerald-200 dark:border-emerald-800">
                     <p className="font-medium text-emerald-900 dark:text-emerald-100">Guides tab:</p>
                     <p className="text-sm">
-                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (setup, architecture, App Updates, deployment, and more). Start with App Updates or Architecture for the latest admin workflows.
+                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (setup, architecture, App Updates, Remote Widgets / SSH &amp; VNC, deployment, and more). Start with App Updates or Architecture for the latest admin workflows.
                     </p>
                   </div>
                 </div>
@@ -393,6 +394,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <li><strong>Add Links:</strong> Click on your tile to open it, then add links to sections</li>
                     <li><strong>Organize:</strong> Create tabs and sections to organize your links logically</li>
                     <li><strong>Enrich:</strong> Add rich text or boxed content, scheduling, browser preferences, or visibility settings</li>
+                    <li><strong>Test on mobile:</strong> Hover a Quick Link and click the phone icon to preview the URL on phone, tablet, or watch sizes</li>
                     <li><strong>Share:</strong> Use QR codes or Share with a user when you want others to open the space quickly</li>
                   </ol>
                 </div>
@@ -415,7 +417,13 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Link Management</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Add, edit, and organize links with custom icons, notes, tooltips, and rich text content. Set visibility levels, scheduling, and browser preferences for each link.
+                      Add, edit, and organize links with custom icons, notes, tooltips, and rich text content. Set visibility levels, scheduling, and browser preferences for each link. Hover a link for quick actions including copy, QR, and mobile preview.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Mobile Link Preview</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Hover a link and tap the phone icon to preview how the URL looks on phone, tablet, or watch sizes. Switch devices, rotate, zoom, or open a device-sized window for browser DevTools device mode when a site blocks in-app embedding.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -463,7 +471,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">QR Code Sharing</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Share the app URL via a branded QR code from the nav bar (desktop and mobile). Open space QR codes from tile views for quick access on phones and shared displays.
+                      Share the app URL via a branded QR code from the nav bar (desktop and mobile). Open space QR codes from tile views for quick access on phones and shared displays. Long URLs (for example many SharePoint links) intentionally omit the center logo or emoji so the code stays scannable — that is expected, not a missing branding setting.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -523,7 +531,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Floating Widgets</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Clock (timezones), Weather, Calculator, Password Generator, Phonetic Alphabet, Page Zoom, Theme, Notes, Favorites Organizer, Chat, and Snake Game. Toggle from the nav bar or press Ctrl+Shift+Y for Quick Access.
+                      Clock (timezones), Weather, Calculator, Password Generator, Phonetic Alphabet, Page Zoom, Theme, Notes, Favorites Organizer, Chat, Snake Game, <strong>VNC Viewer</strong>, and <strong>SSH Terminal</strong>. Toggle from the nav bar or press Ctrl+Shift+Y. Install required gateways first (ttyd / OpenSSH; VcXsrv for SSH GUI; websockify for VNC) — see Remote Widgets below or Guides → Remote Widgets Setup.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -542,6 +550,18 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">In-app App Updates</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
                       Admins can check GitHub commits/releases, preview changes, apply updates with database backup, and roll back from the App Updates UI (XAMPP/filesystem installs).
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">XAMPP PHP Runtime Upgrade</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      On Windows XAMPP, upgrade the PHP runtime (for example to 8.5.x) with <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">scripts/upgrade-xampp-php.ps1</code>. The script verifies LDAP before swapping. Full steps: <strong>Guides → Upgrade PHP in XAMPP</strong>.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Package for Deployment (Windows)</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Build a XAMPP deploy ZIP with <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">package-for-deployment.bat</code> (fresh DB by default; optional <code className="text-xs">-IncludeDatabase</code>, <code className="text-xs">-ExcludeUploads</code>, <code className="text-xs">-BasePath</code>, <code className="text-xs">-OutputDir</code>, and more). The ZIP includes <code className="text-xs">upgrade-xampp-php.bat</code> + PHP upgrade scripts for the target. Target runs <code className="text-xs">deploy-xampp.bat</code> / <code className="text-xs">update-xampp.bat</code>. See <strong>Guides → Package for Deployment</strong>.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -602,6 +622,44 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
               <section>
                 <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <path d="M8 16.25a.75.75 0 01.75-.75h2.5a.75.75 0 010 1.5h-2.5a.75.75 0 01-.75-.75z" />
+                    <path fillRule="evenodd" d="M4 4a3 3 0 013-3h6a3 3 0 013 3v12a3 3 0 01-3 3H7a3 3 0 01-3-3V4zm4-1.5v.75c0 .414.336.75.75.75h2.5a.75.75 0 00.75-.75V2.5h1A1.5 1.5 0 0114.5 4v12a1.5 1.5 0 01-1.5 1.5H7A1.5 1.5 0 015.5 16V4A1.5 1.5 0 017 2.5h1z" clipRule="evenodd" />
+                  </svg>
+                  Mobile Link Preview (Testing)
+                </h3>
+                <div className="space-y-3 text-slate-700 dark:text-slate-300">
+                  <p>
+                    Test how a link behaves on small screens without leaving {appName}. Open a space, hover a Quick Link, and click the <strong>phone</strong> action button (<em>Preview on mobile</em>).
+                  </p>
+                  <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-brand-900 dark:text-brand-100">How to use it:</p>
+                    <ol className="list-decimal list-inside space-y-1 ml-2 text-sm">
+                      <li>Open a space and hover a link that has a URL</li>
+                      <li>Click the phone icon in the hover action toolbar (next to copy / QR)</li>
+                      <li>Choose a device preset: Responsive, iPhone, Android, Tablet, Watch, or Enterprise (admins can add more under Admin → Device Presets)</li>
+                      <li>Rotate the viewport, adjust zoom, or pick a quick preset chip</li>
+                      <li>Use <strong>In-app</strong> for a framed mockup preview, or <strong>Device emulation</strong> to open a sized popup window</li>
+                    </ol>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-slate-900 dark:text-white">In-app vs Device emulation:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li><strong>In-app:</strong> Loads the URL inside a phone/tablet/watch frame so you can quickly check layout at common sizes</li>
+                      <li><strong>Device emulation:</strong> Opens a popup sized to the selected device; then use browser DevTools device mode (<kbd className="px-1.5 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono">Ctrl</kbd>+<kbd className="px-1.5 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono">Shift</kbd>+<kbd className="px-1.5 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono">M</kbd> / <kbd className="px-1.5 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono">⌘</kbd>+<kbd className="px-1.5 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono">Shift</kbd>+<kbd className="px-1.5 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono">M</kbd>) for a closer mobile test</li>
+                      <li>Sites that block iframe embedding (Google, SharePoint/Microsoft 365, social networks, and hosts in Admin → Iframe Block Domains) show a fallback — switch to Device emulation or open in a new tab</li>
+                    </ul>
+                  </div>
+                  <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
+                    <p className="text-sm text-amber-800 dark:text-amber-200">
+                      <strong>Note:</strong> This is a viewport / layout preview for testing, not a full phone OS emulator. Touch, sensors, and native apps are not simulated.
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
                     <path fillRule="evenodd" d="M4.5 2A1.5 1.5 0 003 3.5v13A1.5 1.5 0 004.5 18h11a1.5 1.5 0 001.5-1.5V7.621a1.5 1.5 0 00-.44-1.06l-4.12-4.122A1.5 1.5 0 0011.378 2H4.5zm5.75 7.75a.75.75 0 00-1.5 0v2.546l-.72-.72a.75.75 0 00-1.06 1.06l2 2a.75.75 0 001.06 0l2-2a.75.75 0 10-1.06-1.06l-.72.72V9.75z" clipRule="evenodd" />
                   </svg>
                   In-app App Updates
@@ -632,6 +690,101 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
               <section>
                 <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <path fillRule="evenodd" d="M4.5 2A1.5 1.5 0 003 3.5v13A1.5 1.5 0 004.5 18h11a1.5 1.5 0 001.5-1.5V7.621a1.5 1.5 0 00-.44-1.06l-4.12-4.122A1.5 1.5 0 0011.378 2H4.5zM10 8a.75.75 0 01.75.75v1.5h1.5a.75.75 0 010 1.5h-1.5v1.5a.75.75 0 01-1.5 0v-1.5h-1.5a.75.75 0 010-1.5h1.5v-1.5A.75.75 0 0110 8z" clipRule="evenodd" />
+                  </svg>
+                  Upgrade PHP in XAMPP
+                </h3>
+                <div className="space-y-3 text-slate-700 dark:text-slate-300">
+                  <p>
+                    Official XAMPP packages may ship an older PHP while {appName} supports newer releases (recommended <strong>PHP 8.5+</strong>, minimum 8.2). Use the PowerShell upgrader to swap only the PHP folder — including an <strong>LDAP hard gate</strong> before the live swap.
+                  </p>
+                  <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-brand-900 dark:text-brand-100">Quick start (elevated PowerShell on Windows):</p>
+                    <pre className="text-xs bg-white dark:bg-slate-800 p-3 rounded overflow-x-auto whitespace-pre-wrap">{`cd C:\\xampp\\htdocs\\linknest
+.\\scripts\\upgrade-xampp-php-run-elevated.ps1 -Version 8.5 -RestartApache`}</pre>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>Downloads the official Thread Safe x64 build and verifies SHA256</li>
+                      <li>Preserves your XAMPP <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">php.ini</code> extensions and paths</li>
+                      <li>Keeps a <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">php-backup-*</code> folder for rollback</li>
+                      <li>Works for future minors when published (omit <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">-Version</code> to take the newest)</li>
+                    </ul>
+                  </div>
+                  <p className="text-sm">
+                    Full steps, remote reuse, and troubleshooting: <strong>Guides → Upgrade PHP in XAMPP</strong>.
+                  </p>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <path fillRule="evenodd" d="M3 3.5A1.5 1.5 0 014.5 2h6.879a1.5 1.5 0 011.06.44l4.122 4.12A1.5 1.5 0 0117 7.622V16.5a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 013 16.5v-13zM13.25 6a.75.75 0 00-.75-.75H11.5a.75.75 0 01-.75-.75V3.5a.75.75 0 00-1.5 0V4.5A2.25 2.25 0 0011.5 6.75h.999A.75.75 0 0013.25 6z" clipRule="evenodd" />
+                  </svg>
+                  Package for Deployment (Windows)
+                </h3>
+                <div className="space-y-3 text-slate-700 dark:text-slate-300">
+                  <p>
+                    Build a self-contained XAMPP deploy ZIP on this PC with <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">package-for-deployment.bat</code> (or <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">package-for-deployment.ps1</code>). Default is a <strong>fresh</strong> package (no live database). On the target: extract → <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">deploy-xampp.bat</code> (new) or <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">update-xampp.bat</code> (keeps <code className="text-xs">data/</code>).
+                  </p>
+                  <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-brand-900 dark:text-brand-100">Quick start:</p>
+                    <pre className="text-xs bg-white dark:bg-slate-800 p-3 rounded overflow-x-auto whitespace-pre-wrap">{`package-for-deployment.bat`}</pre>
+                    <p className="text-sm">Default package includes production <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">dist/</code>, API, SQLite DLL runtime, remote-widget <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">bin/</code> (ttyd + websockify), updater files, and docs. Also emits <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">linknest-update-vX.Y.Z.zip</code> for App Updates.</p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2 overflow-x-auto">
+                    <p className="font-medium text-slate-900 dark:text-white">All options (pass after the .bat name):</p>
+                    <table className="w-full text-sm text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400">
+                          <th className="py-1.5 pr-3 font-medium">Flag</th>
+                          <th className="py-1.5 font-medium">Purpose</th>
+                        </tr>
+                      </thead>
+                      <tbody className="align-top">
+                        <tr className="border-b border-slate-100 dark:border-slate-800">
+                          <td className="py-1.5 pr-3"><code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">-IncludeDatabase</code></td>
+                          <td className="py-1.5">Ship this PC&apos;s live <code className="text-xs">data/linknest.db</code></td>
+                        </tr>
+                        <tr className="border-b border-slate-100 dark:border-slate-800">
+                          <td className="py-1.5 pr-3"><code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">-ExcludeUploads</code></td>
+                          <td className="py-1.5">Skip the <code className="text-xs">uploads/</code> folder</td>
+                        </tr>
+                        <tr className="border-b border-slate-100 dark:border-slate-800">
+                          <td className="py-1.5 pr-3"><code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">-SkipBuild</code></td>
+                          <td className="py-1.5">Reuse existing <code className="text-xs">dist/</code> (not recommended for code changes)</td>
+                        </tr>
+                        <tr className="border-b border-slate-100 dark:border-slate-800">
+                          <td className="py-1.5 pr-3"><code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">-SkipSqliteRuntime</code></td>
+                          <td className="py-1.5">Do not bundle the SQLite DLL for target XAMPP</td>
+                        </tr>
+                        <tr className="border-b border-slate-100 dark:border-slate-800">
+                          <td className="py-1.5 pr-3"><code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">-SkipRemoteRuntime</code></td>
+                          <td className="py-1.5">Do not bundle ttyd / websockify under <code className="text-xs">bin/</code></td>
+                        </tr>
+                        <tr className="border-b border-slate-100 dark:border-slate-800">
+                          <td className="py-1.5 pr-3"><code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">-BasePath &quot;/name&quot;</code></td>
+                          <td className="py-1.5">Frontend base path (default <code className="text-xs">/linknest</code>)</td>
+                        </tr>
+                        <tr>
+                          <td className="py-1.5 pr-3"><code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">-OutputDir &quot;E:\&quot;</code></td>
+                          <td className="py-1.5">Write the ZIP somewhere other than the project root</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <pre className="text-xs bg-white dark:bg-slate-800 p-3 rounded overflow-x-auto whitespace-pre-wrap mt-2">{`package-for-deployment.bat -IncludeDatabase -ExcludeUploads -OutputDir "D:\\zips"
+package-for-deployment.bat -BasePath "/myapp"`}</pre>
+                  </div>
+                  <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
+                    <p className="text-sm text-amber-800 dark:text-amber-200">
+                      <strong>Target needs:</strong> XAMPP (Apache + PHP). For SSH/VNC Easy widgets also install Python 3 and OpenSSH Client. The ZIP includes <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">upgrade-xampp-php.bat</code> for PHP 8.5+. Full walkthrough: <strong>Guides → Package for Deployment (Windows / XAMPP)</strong>.
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
                     <path fillRule="evenodd" d="M3 4.25A2.25 2.25 0 015.25 2h2.5A2.25 2.25 0 0110 4.25v2.5A2.25 2.25 0 017.75 9h-2.5A2.25 2.25 0 013 6.75v-2.5zm0 9A2.25 2.25 0 015.25 11h2.5A2.25 2.25 0 0110 13.25v2.5A2.25 2.25 0 017.75 18h-2.5A2.25 2.25 0 013 15.75v-2.5zm9-9A2.25 2.25 0 0114.25 2h2.5A2.25 2.25 0 0119 4.25v2.5A2.25 2.25 0 0116.75 9h-2.5A2.25 2.25 0 0112 6.75v-2.5zm2.25 9a.75.75 0 00-.75.75v.5c0 .414.336.75.75.75h.5a.75.75 0 00.75-.75v-.5a.75.75 0 00-.75-.75h-.5zM12 13.25a.75.75 0 01.75-.75h.5a.75.75 0 01.75.75v.5a.75.75 0 01-.75.75h-.5a.75.75 0 01-.75-.75v-.5zm4.5 2.25a.75.75 0 00-.75.75v.5c0 .414.336.75.75.75h.5a.75.75 0 00.75-.75v-.5a.75.75 0 00-.75-.75h-.5zM12 16.75a.75.75 0 01.75-.75h.5a.75.75 0 01.75.75v.5a.75.75 0 01-.75.75h-.5a.75.75 0 01-.75-.75v-.5z" clipRule="evenodd" />
                   </svg>
                   QR Codes, Sharing &amp; Visits
@@ -643,6 +796,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                       <li>Tap the QR icon in the navigation bar to share the app URL (guests included)</li>
                       <li>Open space QR codes from tile / mobile views for on-the-go access</li>
                       <li>Branded QR centers use your logo or emoji; admins can tune branding in Settings</li>
+                      <li>Very long links skip the center image on purpose so the QR can still encode and scan reliably (common with SharePoint and similar URLs)</li>
                     </ul>
                   </div>
                   <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
@@ -773,6 +927,66 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                       <li>Configure spaces &amp; links, app tabs, and widgets per role</li>
                       <li>Bulk add, replace, or remove roles for many people or teams at once</li>
                     </ul>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <path fillRule="evenodd" d="M6 3.75A2.75 2.75 0 018.75 1h2.5A2.75 2.75 0 0114 3.75v.443c.572.055 1.14.122 1.706.2C17.053 4.582 18 5.75 18 7.07v3.469c0 1.126-.694 2.191-1.759 2.551A41.44 41.44 0 0110 14c-1.392 0-2.767-.128-4.121-.378-1.065-.36-1.759-1.425-1.759-2.55V7.07c0-1.32.947-2.488 2.294-2.676A41.46 41.46 0 016 4.193V3.75zM8.75 2.5a1.25 1.25 0 00-1.25 1.25v.34A41.81 41.81 0 0110 4c.932 0 1.854.04 2.765.118v-.368a1.25 1.25 0 00-1.25-1.25h-2.5zM10 15.5c.967 0 1.92-.073 2.855-.215a.75.75 0 01.845.835l-.112.84a2.75 2.75 0 01-2.728 2.39H9.14a2.75 2.75 0 01-2.728-2.39l-.112-.84a.75.75 0 01.845-.835c.935.142 1.888.215 2.855.215z" clipRule="evenodd" />
+                  </svg>
+                  Demo Data Scripts (Public / Authenticated / Assigned)
+                </h3>
+                <div className="space-y-3 text-slate-700 dark:text-slate-300">
+                  <p>
+                    Admins can seed presentation data with CLI scripts under <code className="text-sm bg-slate-100 dark:bg-slate-800 px-1 rounded">scripts/</code>.
+                    The colorful script uses gradients; the simple script uses solid theme colors. Both create the same visibility and role layout.
+                  </p>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-slate-900 dark:text-white">Run (CLI only — requires confirmation):</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm font-mono">
+                      <li>php scripts/generate_demo_data.php --yes</li>
+                      <li>php scripts/generate_demo_data_simple.php --yes</li>
+                    </ul>
+                    <p className="text-sm mt-2">These scripts replace existing tiles, links, and monitors. Backup the database first.</p>
+                  </div>
+                  <div className="bg-sky-50 dark:bg-sky-900/20 rounded-lg p-4 space-y-2 border border-sky-200 dark:border-sky-800">
+                    <p className="font-medium text-sky-900 dark:text-sky-100">How demo spaces are split (25 total):</p>
+                    <ul className="list-disc list-inside space-y-2 ml-2 text-sm">
+                      <li>
+                        <strong>Public (~8)</strong> — visibility <em>public</em>. Appear on the <strong>Public</strong> tab for guests and signed-in users.
+                        Examples: Company Dashboard, Analytics Hub, Customer Portal, Documentation, IT Support.
+                      </li>
+                      <li>
+                        <strong>Authenticated (~5)</strong> — visibility <em>authenticated</em>. Appear under <strong>Your Apps → Authenticated</strong> for every signed-in user (not for guests).
+                        Examples: HR Portal, Communication Hub, Project Management, File Sharing, Collaborative Workspaces.
+                      </li>
+                      <li>
+                        <strong>Your Assigned Apps (~12)</strong> — visibility <em>private</em> plus <strong>role tile/link permissions</strong>.
+                        Appear under <strong>Your Apps → Your Assigned Apps</strong> only for users whose role was granted that space.
+                        Examples: Development Tools, CI/CD, Cloud Services, Finance Center, Forms &amp; Requests.
+                      </li>
+                    </ul>
+                  </div>
+                  <div className="bg-violet-50 dark:bg-violet-900/20 rounded-lg p-4 space-y-2 border border-violet-200 dark:border-violet-800">
+                    <p className="font-medium text-violet-900 dark:text-violet-100">Try it with demo users (password: <code className="text-xs bg-white/60 dark:bg-slate-800 px-1 rounded">password</code>):</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li><strong>Guest (signed out)</strong> — Public tab shows the public showcase only.</li>
+                      <li><strong>Any demo user</strong> — Your Apps → Authenticated shows the shared staff spaces.</li>
+                      <li><strong>demo3 (Designer)</strong> — Your Assigned Apps shows design/dev tools (repos, CI/CD, testing, API, forms). Check Admin → Users notes for the org role blurb.</li>
+                      <li><strong>demo2 (Developer)</strong> — Your Assigned Apps shows the full Development + Infrastructure set.</li>
+                      <li><strong>demo9 (Guest role)</strong> — Your Assigned Apps is minimal (Forms only), while Authenticated still shows the shared five.</li>
+                    </ul>
+                    <p className="text-sm mt-2">Demo accounts include admin <strong>Notes</strong> (role and access context) so presenters can see who each user represents.</p>
+                  </div>
+                  <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 border border-emerald-200 dark:border-emerald-800">
+                    <p className="font-medium text-emerald-900 dark:text-emerald-100">Why Assigned spaces are not on Public:</p>
+                    <p className="text-sm">
+                      Role-assigned demo spaces use private visibility so they stay off the Public/guest grid.
+                      Role permissions unlock them in Your Assigned Apps (and when opening a space, only role-granted links are highlighted for that view).
+                      Authenticated spaces stay separate so you can demo “everyone signed in” vs “only my role.”
+                    </p>
                   </div>
                 </div>
               </section>
@@ -921,6 +1135,112 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
 
               <section>
                 <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <polyline points="4 17 10 11 4 5"></polyline>
+                    <line x1="12" y1="19" x2="20" y2="19"></line>
+                  </svg>
+                  Remote Widgets (SSH Terminal &amp; VNC)
+                </h3>
+                <div className="space-y-3 text-slate-700 dark:text-slate-300">
+                  <p className="text-sm">
+                    Browsers cannot open raw SSH (<code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 rounded">host:22</code>) or VNC. Gateways run on the <strong>LinkNest server PC</strong>. Full writable guide: <strong>Guides → Remote Widgets Setup</strong>.
+                  </p>
+
+                  <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 space-y-2 border border-amber-200 dark:border-amber-800">
+                    <p className="font-medium text-amber-900 dark:text-amber-100">Install these before use (Windows LinkNest host)</p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-amber-200 dark:border-amber-700 text-left">
+                            <th className="py-1.5 pr-3 font-semibold text-amber-900 dark:text-amber-100">Dependency</th>
+                            <th className="py-1.5 pr-3 font-semibold text-amber-900 dark:text-amber-100">Needed for</th>
+                            <th className="py-1.5 font-semibold text-amber-900 dark:text-amber-100">How to install</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-amber-100 dark:divide-amber-900/50 text-xs sm:text-sm">
+                          <tr>
+                            <td className="py-2 pr-3 font-medium">ttyd</td>
+                            <td className="py-2 pr-3">SSH Easy mode &amp; Advanced gateway</td>
+                            <td className="py-2">
+                              <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">winget install tsl0922.ttyd --source winget</code>
+                              <span className="block text-[11px] text-amber-800/80 dark:text-amber-200/70 mt-0.5">Or set full path under Admin → Add-ons → SSH Gateway (e.g. <code className="bg-white dark:bg-slate-900 px-1 rounded">bin\ttyd.exe</code>)</span>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="py-2 pr-3 font-medium">OpenSSH Client</td>
+                            <td className="py-2 pr-3">SSH connections from the server</td>
+                            <td className="py-2">
+                              Windows Optional Features → <em>OpenSSH Client</em>
+                              <span className="block text-[11px] text-amber-800/80 dark:text-amber-200/70 mt-0.5">Default <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">C:\Windows\System32\OpenSSH\ssh.exe</code> — change under Admin → Add-ons → SSH Gateway if yours differs</span>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="py-2 pr-3 font-medium">Signed-in LinkNest user</td>
+                            <td className="py-2 pr-3">Easy mode (auto-start ttyd)</td>
+                            <td className="py-2">Log in to LinkNest (guests use Advanced WebSocket URL only)</td>
+                          </tr>
+                          <tr>
+                            <td className="py-2 pr-3 font-medium">VcXsrv (or X410)</td>
+                            <td className="py-2 pr-3">SSH GUI apps on Windows desktop</td>
+                            <td className="py-2">
+                              <a href="https://sourceforge.net/projects/vcxsrv/" target="_blank" rel="noreferrer" className="text-brand-600 dark:text-brand-400 underline">VcXsrv</a>
+                              {' '}→ XLaunch → Multiple windows → Start no client
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="py-2 pr-3 font-medium">Linux: X11Forwarding</td>
+                            <td className="py-2 pr-3">GUI apps from remote host</td>
+                            <td className="py-2">
+                              <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">X11Forwarding yes</code> in sshd_config + restart sshd; optional <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">apt install x11-apps</code>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="py-2 pr-3 font-medium">VNC server + websockify</td>
+                            <td className="py-2 pr-3">VNC Viewer widget</td>
+                            <td className="py-2">VNC on target (e.g. :5900); websockify bridge (e.g. port 6080)</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 border border-emerald-200 dark:border-emerald-800">
+                    <p className="font-medium text-emerald-900 dark:text-emerald-100">SSH Terminal — after dependencies</p>
+                    <ol className="list-decimal list-inside space-y-1.5 ml-0.5 text-sm">
+                      <li>Open the widget from the nav (terminal icon) or <strong>Ctrl+Shift+Y</strong></li>
+                      <li>
+                        <strong>Easy (host / port)</strong> — enter Host, Port (22), Username → <strong>Connect</strong>. LinkNest starts ttyd; type the SSH password in the terminal.
+                        If Connect says ttyd/ssh missing, set paths in <strong>Admin → Add-ons → SSH Gateway</strong>.
+                      </li>
+                      <li>
+                        <strong>Terminal + GUI (X11)</strong> — start VcXsrv first, pick this session type, Connect, then run e.g. <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">xclock</code>. Windows appear on your desktop (not inside the SSH panel).
+                      </li>
+                      <li>
+                        <strong>Advanced</strong> — start ttyd yourself, then paste <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">ws://localhost:7681/ws</code>:
+                        <pre className="mt-1 p-2 text-[11px] font-mono bg-white dark:bg-slate-900 rounded border border-emerald-200 dark:border-emerald-800 overflow-x-auto whitespace-pre-wrap">ttyd -W -p 7681 -w $env:USERPROFILE C:\Windows\System32\OpenSSH\ssh.exe -tt user@host</pre>
+                      </li>
+                      <li>Save connections with name/tags; export/import JSON. Passwords are never stored. Easy/auto sessions stop ttyd on Disconnect.</li>
+                    </ol>
+                  </div>
+
+                  <div className="bg-sky-50 dark:bg-sky-900/20 rounded-lg p-4 space-y-2 border border-sky-200 dark:border-sky-800">
+                    <p className="font-medium text-sky-900 dark:text-sky-100">VNC Viewer — after dependencies</p>
+                    <ol className="list-decimal list-inside space-y-1.5 ml-0.5 text-sm">
+                      <li>Run a VNC server on the remote machine</li>
+                      <li><strong>Easy:</strong> in the widget enter host/port (default 5900), or add a space link <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">vnc://host:5900</code> — LinkNest starts websockify</li>
+                      <li><strong>Advanced:</strong> set WebSocket URL (e.g. <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">ws://localhost:6080/websockify</code>), enter VNC password if asked (session only), Connect</li>
+                      <li>Save connections with tags; passwords are never saved</li>
+                    </ol>
+                  </div>
+
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Prefer LAN or VPN. Do not expose unauthenticated ttyd/websockify to the public internet. Enable widgets per role under Admin → Roles → Widgets (<code className="text-[10px]">ssh-terminal</code>, <code className="text-[10px]">vnc-viewer</code>).
+                  </p>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
                     <path fillRule="evenodd" d="M6 4a1 1 0 011-1h6a1 1 0 011 1v1h1a2 2 0 012 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h1V4zm2 2V4h4v2H8zM5 7a1 1 0 00-1 1v7a1 1 0 001 1h10a1 1 0 001-1V8a1 1 0 00-1-1H5zm3 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" clipRule="evenodd" />
                   </svg>
@@ -995,6 +1315,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <li>Schedule tiles and tabs to appear or expire automatically</li>
                     <li>Set browser preferences per tile or link for testing workflows</li>
                     <li>Hold Ctrl/Cmd while clicking links to override browser settings</li>
+                    <li>Hover a Quick Link and click the phone icon to preview the URL on phone, tablet, or watch sizes (use Device emulation when a site blocks the in-app frame)</li>
                     <li>Share the app or a space via branded QR codes</li>
                     <li>Share a private/authenticated space with another user and manage shares from the Share dialog</li>
                     <li>Block unwanted sharers; review Blocked Users when needed</li>
@@ -1009,6 +1330,8 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <li>Manage roles and assign them to users and groups for streamlined access control (admin only)</li>
                     <li>Track tile changes with version control — view, compare, and restore versions</li>
                     <li>Apply App Updates from the admin bell, with DB backup and rollback (admin, XAMPP installs)</li>
+                    <li>Upgrade XAMPP PHP (e.g. to 8.5) with <code className="text-xs">scripts/upgrade-xampp-php.ps1</code> — see Guides → Upgrade PHP in XAMPP (admin / server ops)</li>
+                    <li>Build a Windows XAMPP deploy ZIP with <code className="text-xs">package-for-deployment.bat</code> (options: <code className="text-xs">-IncludeDatabase</code>, <code className="text-xs">-ExcludeUploads</code>, <code className="text-xs">-BasePath</code>, <code className="text-xs">-OutputDir</code>, …) — Guides → Package for Deployment</li>
                     <li>Configure optional Analytics and Monitorv2 add-ons under Admin → Add-ons</li>
                     <li>Clone {appName} instances for testing or backup purposes (admin only)</li>
                     <li>Run database cleanup to remove orphaned records and optimize performance (admin only)</li>
@@ -1017,6 +1340,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <li>Add seasonal decorations to tiles for holidays and special occasions</li>
                     <li>Toggle floating widgets from the navigation bar or press <strong>Ctrl+Shift+Y</strong> for the Widget Quick Access menu</li>
                     <li>Use the Notes and Chat widgets when signed in; Password Generator and Zoom Control are available from the widgets pill</li>
+                    <li>For SSH/VNC: install required dependencies first (ttyd, OpenSSH Client; VcXsrv for GUI; VNC+websockify for VNC) — see Help → Remote Widgets or Guides → Remote Widgets Setup</li>
                     <li>Monitor system health with URL, keyword, port, and ping checks</li>
                     <li>Set up email notifications with advanced rules and multiple SMTP servers</li>
                     <li>View monitoring history with interactive charts and graphs</li>
@@ -1025,7 +1349,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <li>Use SAML/SSO for enterprise Single Sign-On authentication (admin only)</li>
                     <li>Control tab visibility to show/hide specific tabs application-wide (admin only)</li>
                     <li>Send broadcast messages that scroll across the application (admin only)</li>
-                    <li>Open the <strong>Guides</strong> tab for searchable docs (Architecture, App Updates, deployment, and more)</li>
+                    <li>Open the <strong>Guides</strong> tab for searchable docs (Architecture, App Updates, Package for Deployment, XAMPP PHP upgrade, deployment, and more)</li>
                   </ul>
                 </div>
               </section>
@@ -1135,8 +1459,11 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                 <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3">What&apos;s New in 2.2.0</h3>
                 <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 text-sm text-slate-700 dark:text-slate-300">
                   <ul className="list-disc list-inside space-y-1 ml-2">
+                    <li><strong>Mobile Link Preview:</strong> Phone action on Quick Links opens an in-app device mockup (phone / tablet / watch) or a device-sized window for DevTools testing</li>
                     <li><strong>In-app App Updates:</strong> Check GitHub commits/releases, preview changes, apply with DB backup, and roll back from Admin (XAMPP installs)</li>
-                    <li><strong>Guides tab:</strong> Searchable in-app documentation (Architecture, App Updates, deployment, and more)</li>
+                    <li><strong>XAMPP PHP upgrade:</strong> PowerShell script to move to PHP 8.5+ with LDAP verification — see Guides → Upgrade PHP in XAMPP</li>
+                    <li><strong>Package for Deployment:</strong> <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">package-for-deployment.bat</code> builds a full XAMPP ZIP with SQLite runtime, remote-widget binaries, and optional DB/uploads flags</li>
+                    <li><strong>Guides tab:</strong> Searchable in-app documentation (Architecture, App Updates, Package for Deployment, XAMPP PHP upgrade, Remote Widgets / SSH &amp; VNC, deployment, and more)</li>
                     <li><strong>QR sharing:</strong> Branded QR codes for the app URL and spaces (desktop + mobile)</li>
                     <li><strong>Share spaces:</strong> Share with users, accept/reject notifications, and revoke access</li>
                     <li><strong>Visitor stats:</strong> Hit counts and unique visitors on Space Info</li>
@@ -1162,7 +1489,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                 <p className="text-slate-700 dark:text-slate-300">
                   {appName} helps you create beautiful, organized landing pages for your important links.
                   Organize links into visual tiles, customize their appearance (including header images and boxed rich text), and share them with your team — via roles, space editors, user shares, or QR codes.
-                  With <strong>Access Manager</strong>, <strong>Staging &amp; AI Offline Kit</strong>, <strong>version control</strong>, <strong>in-app App Updates</strong>, browser integration, scheduling, link health monitoring, visitor insights,
+                  With <strong>Access Manager</strong>, <strong>Staging &amp; AI Offline Kit</strong>, <strong>version control</strong>, <strong>mobile link preview</strong> for small-screen testing, <strong>in-app App Updates</strong>, browser integration, scheduling, link health monitoring, visitor insights,
                   style management, system monitoring and optional add-ons, email notifications, floating widgets, SAML/SSO, and 200+ tile animations,
                   {appName} makes managing and sharing links simple, powerful, and elegant.
                 </p>
@@ -1183,7 +1510,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Backend</h4>
                     <ul className="text-sm text-slate-700 dark:text-slate-300 space-y-1">
-                      <li>• PHP 8+</li>
+                      <li>• PHP 8.5+ (8.2+ minimum)</li>
                       <li>• SQLite</li>
                       <li>• RESTful API</li>
                       <li>• Apache/Nginx</li>
@@ -1207,6 +1534,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     'Share Spaces with Users',
                     'Shared Tile Notifications',
                     'QR Code Sharing',
+                    'Mobile Link Preview (Phone / Tablet / Watch)',
                     'Visitor Hit & Unique Stats',
                     'Export/Import',
                     'Dark Mode',
@@ -1228,6 +1556,8 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     'Access Manager',
                     'Staging & AI Offline Kit',
                     'In-app App Updates & Rollback',
+                    'XAMPP PHP Runtime Upgrade Script',
+                    'Package for Deployment (Windows ZIP)',
                     'Help Guides (in-app docs)',
                     'Instance Cloning',
                     'LDAP Authentication',
@@ -1256,6 +1586,8 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     'Favorites Organizer Widget',
                     'Chat Widget',
                     'Snake Game Widget',
+                    'SSH Terminal Widget (ttyd)',
+                    'VNC Viewer Widget (noVNC)',
                     'System Monitoring Dashboard',
                     'URL / Keyword / Port / Ping Monitoring',
                     'Monitorv2 Add-on (PostgreSQL)',

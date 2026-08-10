@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { isEscapeDialogOpen } from '../hooks/useEscapeToClose';
 
 type Point = { x: number; y: number };
 type Size = { width: number; height: number };
@@ -179,6 +180,10 @@ export const FloatingFavOrganizerWidget: React.FC<{
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !e.ctrlKey && !e.shiftKey && !e.metaKey && !e.altKey) {
         const target = e.target as HTMLElement;
+        // Don't close if an Esc-closable dialog is open (e.g. Import to Category)
+        if (isEscapeDialogOpen()) {
+          return;
+        }
         // Don't close if user is typing in an input field
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
           return;

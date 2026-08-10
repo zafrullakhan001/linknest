@@ -110,6 +110,8 @@ if ($path === '/') {
         $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
     }
     require __DIR__ . '/linkhealth.php';
+} elseif (strpos($path, '/framecheck') === 0) {
+    require __DIR__ . '/framecheck.php';
 } elseif (strpos($path, '/styles') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 7); // Remove '/styles'
     require __DIR__ . '/styles.php';
@@ -180,6 +182,42 @@ if ($path === '/') {
 } elseif (strpos($path, '/alarms') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 7); // Remove '/alarms'
     require __DIR__ . '/alarms.php';
+} elseif (strpos($path, '/ssh-connections') === 0) {
+    $remainingPath = substr($path, 16); // Remove '/ssh-connections'
+    if (empty($remainingPath) || $remainingPath === '/') {
+        $_SERVER['PATH_INFO'] = '/';
+    } else {
+        $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
+    }
+    require __DIR__ . '/ssh_connections.php';
+    exit;
+} elseif (strpos($path, '/vnc-connections') === 0) {
+    $remainingPath = substr($path, 16); // Remove '/vnc-connections'
+    if (empty($remainingPath) || $remainingPath === '/') {
+        $_SERVER['PATH_INFO'] = '/';
+    } else {
+        $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
+    }
+    require __DIR__ . '/vnc_connections.php';
+    exit;
+} elseif (strpos($path, '/vnc-gateway') === 0) {
+    $remainingPath = substr($path, 12); // Remove '/vnc-gateway'
+    if (empty($remainingPath) || $remainingPath === '/') {
+        $_SERVER['PATH_INFO'] = '/';
+    } else {
+        $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
+    }
+    require __DIR__ . '/vnc_gateway.php';
+    exit;
+} elseif (strpos($path, '/ssh-gateway') === 0) {
+    $remainingPath = substr($path, 12); // Remove '/ssh-gateway'
+    if (empty($remainingPath) || $remainingPath === '/') {
+        $_SERVER['PATH_INFO'] = '/';
+    } else {
+        $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
+    }
+    require __DIR__ . '/ssh_gateway.php';
+    exit;
 } elseif (strpos($path, '/notes') === 0) {
     error_log("api/index.php: Matched /notes route, path: $path");
     $remainingPath = substr($path, 6); // Remove '/notes'

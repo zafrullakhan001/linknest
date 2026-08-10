@@ -182,7 +182,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
               servers = parsed.map((s: any) => ({
                 name: s.name || s.server || 'LDAP Server',
                 server: s.server || '',
-                login_domain: s.login_domain || s.name || ''
+                login_domain: s.login_domain || ''
               }));
             }
           } catch (e) {
@@ -623,7 +623,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 </span>
               )}
               {samlEnabled && (
-                <span className="px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300 text-[10px] sm:text-xs font-semibold flex items-center gap-1 border border-violet-200/80 dark:border-violet-500/30">
+                <span className="px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300 text-[10px] sm:text-xs font-semibold flex items-center gap-1 border border-sky-200/80 dark:border-sky-500/30">
                   <span aria-hidden>🔐</span>
                   <span className="hidden sm:inline">SAML Active</span>
                   <span className="sm:hidden">SAML</span>
@@ -760,25 +760,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
 
               {/* LDAP Server Selection Dropdown */}
               {((authMethod === 'ldap' || authMethod === 'auto') && ldapEnabled && ldapServers.length >= 1) && (
-                <div className="animate-fadeIn">
-                  <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
+                <div className="animate-fadeIn rounded-xl bg-gradient-to-r from-sky-50 to-teal-50/70 dark:from-sky-950/30 dark:to-teal-950/20 border border-sky-200/80 dark:border-sky-800/40 p-3 sm:p-3.5 shadow-sm shadow-sky-500/5">
+                  <label className="block text-xs sm:text-sm font-semibold text-sky-800 dark:text-sky-200 mb-1.5 sm:mb-2">
                     <span className="mr-1" aria-hidden>🌐</span>LDAP Server / Domain
                   </label>
                   <select
                     value={selectedLdapServerIndex}
                     onChange={(e) => selectLdapServerIndex(parseInt(e.target.value, 10))}
                     disabled={loading}
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 sm:px-4 sm:py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                    className="w-full bg-white/90 dark:bg-slate-900/80 border border-sky-200 dark:border-sky-700/50 rounded-xl px-3 py-2 sm:px-4 sm:py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                     title="Select which LDAP server or domain to authenticate against"
                   >
-                    {ldapServers.map((server, index) => (
-                      <option key={index} value={index}>
-                        {server.name}{server.login_domain ? ` · ${server.login_domain}` : ''}{server.server ? ` (${server.server})` : ''}
-                      </option>
-                    ))}
+                    {ldapServers.map((server, index) => {
+                      const showHost = String(appSettings.ldap_dropdown_show_host ?? '1') !== '0';
+                      const namePart = server.name || `LDAP Server ${index + 1}`;
+                      const domainPart = server.login_domain && server.login_domain !== namePart
+                        ? ` (${server.login_domain})`
+                        : '';
+                      const hostPart = showHost && server.server
+                        ? ` - ${server.server}`
+                        : '';
+                      return (
+                        <option key={index} value={index}>
+                          {namePart}{domainPart}{hostPart}
+                        </option>
+                      );
+                    })}
                   </select>
                   {ldapServers.length > 1 && (
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                    <p className="text-[10px] text-sky-700/80 dark:text-sky-300/70 mt-1.5 flex items-center gap-1">
+                      <span aria-hidden>💡</span>
                       Choose the LDAP server or domain for your account.
                     </p>
                   )}
@@ -789,6 +800,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
               {authMethod !== 'saml' && (
                 <div className="animate-fadeIn">
                   <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
+                    <span className="mr-1" aria-hidden>{(authMethod === 'ldap' || authMethod === 'auto') && ldapEnabled ? '🏢' : '👤'}</span>
                     Username or Email
                   </label>
                   <input
@@ -798,7 +810,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                     required={authMethod !== 'saml'}
                     disabled={loading}
                     autoComplete="username"
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 sm:px-4 sm:py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-400 disabled:opacity-50 disabled:cursor-not-allowed text-sm transition-shadow"
+                    className={`w-full bg-slate-50 dark:bg-slate-900 border rounded-xl px-3 py-2 sm:px-4 sm:py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm transition-shadow ${(authMethod === 'ldap' || authMethod === 'auto') && ldapEnabled ? 'border-sky-200 dark:border-sky-800/50 focus:ring-sky-400 focus:border-sky-400' : 'border-slate-200 dark:border-slate-700 focus:ring-brand-500 focus:border-brand-400'}`}
                     placeholder={ldapEnabled ? "Enter username (LDAP or local account)" : "Enter username (local account)"}
                   />
                 </div>
@@ -806,8 +818,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
 
               {/* SAML Info Message */}
               {authMethod === 'saml' && (
-                <div className="bg-gradient-to-r from-violet-50 to-brand-50 dark:from-violet-900/30 dark:to-brand-900/20 border border-violet-200 dark:border-violet-700/60 rounded-xl p-3 sm:p-3.5 mb-2 sm:mb-3 animate-fadeIn shadow-sm shadow-violet-500/10">
-                  <p className="text-xs sm:text-sm text-violet-800 dark:text-violet-200 text-center font-medium flex items-center justify-center gap-2">
+                <div className="bg-gradient-to-r from-sky-50 to-teal-50/70 dark:from-sky-900/30 dark:to-teal-900/20 border border-sky-200 dark:border-sky-700/60 rounded-xl p-3 sm:p-3.5 mb-2 sm:mb-3 animate-fadeIn shadow-sm shadow-sky-500/10">
+                  <p className="text-xs sm:text-sm text-sky-800 dark:text-sky-200 text-center font-medium flex items-center justify-center gap-2">
                     <span className="text-lg" aria-hidden>🚀</span>
                     <span>Click &quot;Sign In&quot; to be redirected to your organization&apos;s SAML login page.</span>
                   </p>
@@ -866,6 +878,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
             <>
               <div>
                 <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
+                  <span className="mr-1" aria-hidden>🔒</span>
                   Password
                 </label>
                 <SecurePasswordInput
@@ -876,7 +889,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                   minLength={mode === 'register' ? 8 : undefined}
                   autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                   showToggle
-                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 sm:px-4 sm:py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                  className={`w-full bg-slate-50 dark:bg-slate-900 border rounded-xl px-3 py-2 sm:px-4 sm:py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm ${mode === 'login' && (authMethod === 'ldap' || authMethod === 'auto') && ldapEnabled ? 'border-sky-200 dark:border-sky-800/50 focus:ring-sky-400' : 'border-slate-200 dark:border-slate-700 focus:ring-brand-500'}`}
                   placeholder={mode === 'register' ? 'Min 8 chars, 1 upper, 1 number, 1 special' : 'Enter your password'}
                 />
                 {mode === 'register' && <PasswordCriteriaList password={password} />}

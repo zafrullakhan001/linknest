@@ -8,6 +8,7 @@ import { MonitoringTileStyleModal, TileStyle } from './MonitoringTileStyleModal'
 import { userPreferencesService } from '../services/userPreferencesService';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Brush, BarChart, Bar, Cell } from 'recharts';
 import { useAuth } from '../contexts/AuthContext';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 export const MonitoringDashboard: React.FC = () => {
     const { user } = useAuth();
@@ -50,6 +51,7 @@ export const MonitoringDashboard: React.FC = () => {
     });
     const [showSMTPSettings, setShowSMTPSettings] = useState(false);
     const [showCronModal, setShowCronModal] = useState(false);
+    useEscapeToClose(showCronModal, () => setShowCronModal(false));
     const [showTileStyleModal, setShowTileStyleModal] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState<boolean>(() => {
         const saved = localStorage.getItem('linknest_monitor_fullscreen');

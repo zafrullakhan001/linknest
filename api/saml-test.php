@@ -161,7 +161,7 @@ class SamlTestAPI {
                 'test' => 'SAML Enabled',
                 'status' => $enabled ? 'pass' : 'warning',
                 'message' => $enabled ? 'SAML is enabled' : 'SAML is disabled',
-                'icon' => $enabled ? '✓' : '⚠'
+                'icon' => $enabled ? 'âœ“' : 'âš '
             ];
             if (!$enabled) $allPassed = false;
         } catch (Exception $e) {
@@ -170,7 +170,7 @@ class SamlTestAPI {
                 'test' => 'SAML Enabled',
                 'status' => 'fail',
                 'message' => 'Error checking SAML status: ' . $e->getMessage(),
-                'icon' => '✗'
+                'icon' => 'âœ—'
             ];
             $allPassed = false;
         }
@@ -201,7 +201,7 @@ class SamlTestAPI {
                     'test' => 'Required Settings',
                     'status' => 'pass',
                     'message' => 'All required IdP settings configured',
-                    'icon' => '✓'
+                    'icon' => 'âœ“'
                 ];
             } else {
                 $this->logTest('TEST_2_REQUIRED_SETTINGS', 'WARNING', ['missing' => $missing]);
@@ -209,7 +209,7 @@ class SamlTestAPI {
                     'test' => 'Required Settings',
                     'status' => 'warning',
                     'message' => 'Missing: ' . implode(', ', $missing),
-                    'icon' => '⚠'
+                    'icon' => 'âš '
                 ];
                 $allPassed = false;
             }
@@ -219,7 +219,7 @@ class SamlTestAPI {
                 'test' => 'Required Settings',
                 'status' => 'fail',
                 'message' => 'Error checking settings: ' . $e->getMessage(),
-                'icon' => '✗'
+                'icon' => 'âœ—'
             ];
             $allPassed = false;
         }
@@ -242,7 +242,7 @@ class SamlTestAPI {
                     'test' => 'Database Schema',
                     'status' => 'pass',
                     'message' => 'SAML columns exist in users table',
-                    'icon' => '✓'
+                    'icon' => 'âœ“'
                 ];
             } else {
                 $this->logTest('TEST_3_DATABASE_SCHEMA', 'FAIL', [
@@ -252,7 +252,7 @@ class SamlTestAPI {
                     'test' => 'Database Schema',
                     'status' => 'fail',
                     'message' => 'Missing SAML columns - run migration',
-                    'icon' => '✗'
+                    'icon' => 'âœ—'
                 ];
                 $allPassed = false;
             }
@@ -262,7 +262,7 @@ class SamlTestAPI {
                 'test' => 'Database Schema',
                 'status' => 'fail',
                 'message' => 'Database error: ' . $e->getMessage(),
-                'icon' => '✗'
+                'icon' => 'âœ—'
             ];
             $allPassed = false;
         }
@@ -283,7 +283,7 @@ class SamlTestAPI {
                     'test' => 'SAML Library',
                     'status' => 'fail',
                     'message' => 'OneLogin PHP-SAML library not found - run composer install',
-                    'icon' => '✗'
+                    'icon' => 'âœ—'
                 ];
                 $allPassed = false;
             } else {
@@ -292,7 +292,7 @@ class SamlTestAPI {
                     'test' => 'SAML Library',
                     'status' => 'pass',
                     'message' => 'OneLogin PHP-SAML library loaded',
-                    'icon' => '✓'
+                    'icon' => 'âœ“'
                 ];
             }
         } catch (Exception $e) {
@@ -301,7 +301,7 @@ class SamlTestAPI {
                 'test' => 'SAML Library',
                 'status' => 'fail',
                 'message' => 'Error loading library: ' . $e->getMessage(),
-                'icon' => '✗'
+                'icon' => 'âœ—'
             ];
             $allPassed = false;
         }
@@ -417,8 +417,6 @@ class SamlTestAPI {
             $contentType = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
             $totalTime = curl_getinfo($ch, CURLINFO_TOTAL_TIME);
             $error = curl_error($ch);
-            curl_close($ch);
-            
             $endTime = microtime(true);
             $requestDuration = round(($endTime - $startTime) * 1000, 2);
 

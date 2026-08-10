@@ -10,6 +10,7 @@ ini_set('log_errors', 1);
 error_reporting(E_ALL);
 
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/user_notes_helper.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -743,7 +744,7 @@ function handleLogin() {
     // Handle LDAP Success
     if ($ldapSuccess && $ldapUser) {
         // Check if user exists in DB (case-insensitive)
-        $stmt = $db->prepare('SELECT id, username, email, password_hash, is_admin, is_approved, COALESCE(is_disabled, 0) as is_disabled, auth_source, display_name FROM users WHERE LOWER(username) = LOWER(?)');
+        $stmt = $db->prepare('SELECT id, username, email, password_hash, is_admin, is_approved, COALESCE(is_disabled, 0) as is_disabled, auth_source, display_name, notes FROM users WHERE LOWER(username) = LOWER(?)');
         $stmt->execute([$username]);
         $user = $stmt->fetch();
         
@@ -804,7 +805,7 @@ function handleLogin() {
         
         // Check if user is disabled
         if ($user['is_disabled'] && !$user['is_admin']) {
-            sendJSON(['error' => 'Your account has been disabled. Please contact an administrator.'], 403);
+            sendJSON(['error' => 'Your account has been disabled. Please contact your administrator.'], 403);
         }
         
         // Check approval
@@ -863,7 +864,8 @@ function handleLogin() {
                 'is_admin' => (bool)$user['is_admin'],
                 'is_approved' => (bool)$user['is_approved'],
                 'auth_source' => 'ldap',
-                'display_name' => $user['display_name'] ?? null
+                'display_name' => $user['display_name'] ?? null,
+                'notes' => isset($user['notes']) && $user['notes'] !== '' ? (string)$user['notes'] : null
             ]
         ]);
         return;
@@ -878,7 +880,7 @@ function handleLogin() {
         sendJSON(['error' => $errorMessage], 401);
     }
     
-    $stmt = $db->prepare('SELECT id, username, email, password_hash, is_admin, is_approved, is_disabled, auth_source, display_name FROM users WHERE LOWER(username) = LOWER(?) OR email = ?');
+    $stmt = $db->prepare('SELECT id, username, email, password_hash, is_admin, is_approved, is_disabled, auth_source, display_name, notes FROM users WHERE LOWER(username) = LOWER(?) OR email = ?');
     $stmt->execute([$username, $username]);
     $user = $stmt->fetch();
     
@@ -896,7 +898,7 @@ function handleLogin() {
     
     // Check if user is disabled
     if ($user['is_disabled'] && !$user['is_admin']) {
-        sendJSON(['error' => 'Your account has been disabled. Please contact an administrator.'], 403);
+        sendJSON(['error' => 'Your account has been disabled. Please contact your administrator.'], 403);
     }
     
     // Check if user is approved
@@ -955,7 +957,8 @@ function handleLogin() {
             'is_admin' => (bool)$user['is_admin'],
             'is_approved' => (bool)$user['is_approved'],
             'auth_source' => $user['auth_source'] ?? 'local',
-            'display_name' => $user['display_name'] ?? null
+            'display_name' => $user['display_name'] ?? null,
+            'notes' => isset($user['notes']) && $user['notes'] !== '' ? (string)$user['notes'] : null
         ]
     ]);
     } catch (Exception $e) {
@@ -1150,7 +1153,7 @@ function handleGetAllUsers() {
     requireAdmin(); // Only admins can see all users
     
     $db = getDB();
-    $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved, is_disabled, auth_source, created_at FROM users ORDER BY created_at DESC');
+    $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved, is_disabled, auth_source, notes, created_at FROM users ORDER BY created_at DESC');
     $stmt->execute();
     $users = $stmt->fetchAll();
     
@@ -1162,6 +1165,7 @@ function handleGetAllUsers() {
         $user['is_disabled'] = isset($user['is_disabled']) ? (bool)$user['is_disabled'] : false;
         // Default to 'local' if auth_source is not set (for existing users)
         $user['auth_source'] = $user['auth_source'] ?? 'local';
+        $user['notes'] = isset($user['notes']) && $user['notes'] !== '' ? (string)$user['notes'] : null;
     }
     
     sendJSON(['users' => $users]);
@@ -1504,12 +1508,15 @@ function handleUpdateMyProfile() {
     $stmt = $db->prepare('UPDATE users SET display_name = ? WHERE id = ?');
     $stmt->execute([$displayName === '' ? null : $displayName, $user['id']]);
     if ($stmt->rowCount() >= 0) {
-        $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved, auth_source, display_name FROM users WHERE id = ?');
+        $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved, auth_source, display_name, notes FROM users WHERE id = ?');
         $stmt->execute([$user['id']]);
         $updated = $stmt->fetch();
         if ($updated) {
             $updated['is_admin'] = (bool)$updated['is_admin'];
             $updated['is_approved'] = (bool)$updated['is_approved'];
+            $updated['notes'] = isset($updated['notes']) && $updated['notes'] !== '' && $updated['notes'] !== null
+                ? (string)$updated['notes']
+                : null;
         }
         sendJSON(['success' => true, 'message' => 'Profile updated', 'user' => $updated]);
     } else {
@@ -1562,6 +1569,8 @@ function handleUpdateUser($userId) {
     $username = trim($data['username']);
     $email = trim($data['email']);
     $authSource = isset($data['auth_source']) ? trim($data['auth_source']) : 'local';
+    $notes = array_key_exists('notes', $data) ? sanitizeUserNotes($data['notes']) : null;
+    $notesProvided = array_key_exists('notes', $data);
     
     // Validate auth_source
     if (!in_array($authSource, ['local', 'ldap', 'saml'])) {
@@ -1582,7 +1591,7 @@ function handleUpdateUser($userId) {
     $db = getDB();
     
     // Check if user exists
-    $stmt = $db->prepare('SELECT id, username, email FROM users WHERE id = ?');
+    $stmt = $db->prepare('SELECT id, username, email, notes FROM users WHERE id = ?');
     $stmt->execute([$userId]);
     $user = $stmt->fetch();
     
@@ -1603,12 +1612,14 @@ function handleUpdateUser($userId) {
     if ($stmt->fetch()) {
         sendJSON(['error' => 'Email already exists'], 409);
     }
+
+    $finalNotes = $notesProvided ? $notes : ($user['notes'] ?? null);
     
-    // Update username, email, and auth_source
-    $stmt = $db->prepare('UPDATE users SET username = ?, email = ?, auth_source = ? WHERE id = ?');
-    $stmt->execute([$username, $email, $authSource, $userId]);
+    // Update username, email, auth_source, and notes
+    $stmt = $db->prepare('UPDATE users SET username = ?, email = ?, auth_source = ?, notes = ? WHERE id = ?');
+    $stmt->execute([$username, $email, $authSource, $finalNotes, $userId]);
     
-    if ($stmt->rowCount() > 0) {
+    if ($stmt->rowCount() >= 0) {
         sendJSON([
             'success' => true,
             'message' => 'User updated successfully',
@@ -1616,7 +1627,8 @@ function handleUpdateUser($userId) {
                 'id' => $userId,
                 'username' => $username,
                 'email' => $email,
-                'auth_source' => $authSource
+                'auth_source' => $authSource,
+                'notes' => $finalNotes
             ]
         ]);
     } else {
@@ -2770,6 +2782,7 @@ function handleAddLocalUser() {
     $username = trim($data['username'] ?? '');
     $email = trim($data['email'] ?? '');
     $password = $data['password'] ?? '';
+    $notes = sanitizeUserNotes($data['notes'] ?? null);
     
     if (empty($username)) {
         sendJSON(['error' => 'Username is required'], 400);
@@ -2816,9 +2829,9 @@ function handleAddLocalUser() {
     
     // Create user (unapproved by default, as per requirement)
     $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-    $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, uuid, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?)');
+    $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, uuid, notes, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?, ?)');
     
-    if ($stmt->execute([$username, $email, $passwordHash, 'local', generateUuid(), time()])) {
+    if ($stmt->execute([$username, $email, $passwordHash, 'local', generateUuid(), $notes, time()])) {
         $userId = $db->lastInsertId();
         sendJSON([
             'success' => true,
@@ -2828,7 +2841,8 @@ function handleAddLocalUser() {
                 'username' => $username,
                 'email' => $email,
                 'auth_source' => 'local',
-                'is_approved' => false
+                'is_approved' => false,
+                'notes' => $notes
             ]
         ]);
     } else {
@@ -2849,6 +2863,7 @@ function handleAddLdapUser() {
     $email = trim($data['email'] ?? '');
     $dn = trim($data['dn']);
     $displayName = trim($data['displayName'] ?? '');
+    $notes = sanitizeUserNotes($data['notes'] ?? null);
     $requestedServerIndex = array_key_exists('ldap_server_index', $data) ? $data['ldap_server_index'] : null;
     
     if (strlen($username) < 1) {
@@ -2954,9 +2969,9 @@ function handleAddLdapUser() {
         $randomPass = bin2hex(random_bytes(16));
         $passwordHash = password_hash($randomPass, PASSWORD_DEFAULT);
         
-        $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, uuid, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?)');
+        $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, uuid, notes, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?, ?)');
         
-        if ($stmt->execute([$username, $email, $passwordHash, 'ldap', generateUuid(), time()])) {
+        if ($stmt->execute([$username, $email, $passwordHash, 'ldap', generateUuid(), $notes, time()])) {
             $userId = $db->lastInsertId();
             sendJSON([
                 'success' => true,
@@ -2966,7 +2981,8 @@ function handleAddLdapUser() {
                     'username' => $username,
                     'email' => $email,
                     'auth_source' => 'ldap',
-                    'is_approved' => false
+                    'is_approved' => false,
+                    'notes' => $notes
                 ]
             ]);
         } else {
@@ -3021,7 +3037,7 @@ function handleBulkImportLocalUsers() {
             continue;
         }
         
-        // Validate row has at least 3 columns (username, email, password)
+        // Validate row has at least 3 columns (username, email, password); optional 4th = notes
         if (count($row) < 3) {
             continue; // Skip invalid rows
         }
@@ -3029,6 +3045,7 @@ function handleBulkImportLocalUsers() {
         $username = trim($row[0] ?? '');
         $email = trim($row[1] ?? '');
         $password = trim($row[2] ?? '');
+        $notes = sanitizeUserNotes($row[3] ?? null);
         
         // Validate required fields
         if (empty($username) || empty($email) || empty($password)) {
@@ -3054,6 +3071,7 @@ function handleBulkImportLocalUsers() {
             'username' => $username,
             'email' => $email,
             'password' => $password,
+            'notes' => $notes,
             'line' => $lineNumber
         ];
     }
@@ -3075,6 +3093,7 @@ function handleBulkImportLocalUsers() {
         $username = $userData['username'];
         $email = $userData['email'];
         $password = $userData['password'];
+        $notes = $userData['notes'] ?? null;
         $line = $userData['line'];
         
         try {
@@ -3104,9 +3123,9 @@ function handleBulkImportLocalUsers() {
             
             // Create user
             $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-            $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, uuid, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?)');
+            $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, uuid, notes, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?, ?)');
             
-            if ($stmt->execute([$username, $email, $passwordHash, 'local', generateUuid(), time()])) {
+            if ($stmt->execute([$username, $email, $passwordHash, 'local', generateUuid(), $notes, time()])) {
                 $results['success'][] = [
                     'line' => $line,
                     'username' => $username,
@@ -3873,7 +3892,7 @@ function handleStartImpersonation($targetUserId) {
     }
     
     // Check if target user exists
-    $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved FROM users WHERE id = ?');
+    $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved, notes FROM users WHERE id = ?');
     $stmt->execute([$targetUserId]);
     $targetUser = $stmt->fetch();
     
@@ -3901,6 +3920,7 @@ function handleStartImpersonation($targetUserId) {
         'email' => $targetUser['email'],
         'is_admin' => false,
         'is_approved' => (bool)$targetUser['is_approved'],
+        'notes' => isset($targetUser['notes']) && $targetUser['notes'] !== '' ? (string)$targetUser['notes'] : null,
         'impersonating' => true,
         'impersonating_admin_id' => (int)$_SESSION['impersonating_admin_id'],
         'impersonating_admin_username' => $adminUser['username']

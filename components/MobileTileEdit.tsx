@@ -423,8 +423,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                             </button>
                             <button
                                 onClick={onSave}
-                                disabled={editVisibility === 'private' && editAllowedUsers.length === 0}
-                                className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-semibold active:bg-brand-700 touch-manipulation"
+                                className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-semibold active:bg-brand-700 touch-manipulation"
                                 style={{ minHeight: '44px' }}
                             >
                                 Save
@@ -857,7 +856,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                         type="url"
                                                                         value={newLinkState[section.id]?.url || ''}
                                                                         onChange={(e) => updateNewLinkState(section.id, 'url', e.target.value)}
-                                                                        placeholder="https://example.com"
+                                                                        placeholder="https://…  http://…  ssh://user@host:22  or vnc://host:5900"
                                                                         className="w-full bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 font-mono"
                                                                         style={{ minHeight: '44px' }}
                                                                     />
@@ -1092,7 +1091,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                                             type="url"
                                                                                             value={editLinkState[link.id]?.url || ''}
                                                                                             onChange={(e) => updateEditLinkState(link.id, 'url', e.target.value)}
-                                                                                            placeholder="https://example.com"
+                                                                                            placeholder="https://…  http://…  ssh://user@host:22  or vnc://host:5900"
                                                                                             className="w-full bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 font-mono"
                                                                                             style={{ minHeight: '44px' }}
                                                                                         />

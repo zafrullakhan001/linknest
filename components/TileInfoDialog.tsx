@@ -448,11 +448,14 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
         credentials: 'include'
       });
 
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error('Failed to fetch tile information');
+        throw new Error(
+          (data && typeof data.error === 'string' && data.error) ||
+          'Failed to fetch tile information'
+        );
       }
 
-      const data = await response.json();
       setTileInfo(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load tile information');

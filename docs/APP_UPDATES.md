@@ -141,6 +141,6 @@ Env (optional): `GITHUB_TOKEN` / `GH_TOKEN`.
 
 ## Related
 
-- Packager: [`package-for-deployment.ps1`](../package-for-deployment.ps1)
+- Packager: [`package-for-deployment.ps1`](../package-for-deployment.ps1) / [`package-for-deployment.bat`](../package-for-deployment.bat) — full options in [PACKAGE_FOR_DEPLOYMENT.md](PACKAGE_FOR_DEPLOYMENT.md)
 - Publish script: [`../scripts/publish-update-release.ps1`](../scripts/publish-update-release.ps1)
 - Production layout: [`PRODUCTION.md`](PRODUCTION.md)

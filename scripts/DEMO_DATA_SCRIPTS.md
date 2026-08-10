@@ -1,244 +1,91 @@
 # Demo Data Generation Scripts
 
-This directory contains two demo data generation scripts for LinkNest. Both scripts create the same structure of tiles, links, and monitors but differ in their visual styling approach.
+This directory contains two demo data generation scripts for LinkNest. Both create the same structure and **visibility buckets**; they differ only in visual styling (gradients vs solid colors).
+
+Shared helpers: `demo_data_helpers.php` (CLI guard, clear list, visibility map, role assignments, category seeding).
 
 ---
 
-## 📁 Available Scripts
+## Available Scripts
 
-### 1. **generate_demo_data.php** (With Gradient Presets)
+### 1. `generate_demo_data.php` (Colorful / Gradients)
 
-**Purpose:** Creates visually stunning demo data with 25 professional gradient presets.
+Creates demo data with **25 gradient presets** and named theme colors.
 
-**Features:**
-- ✨ Beautiful multi-color gradients (3-color blends)
-- 🎨 25 unique preset styles:
-  - **Metallic:** Gold, Silver, Bronze, Chrome, Copper, Platinum, Rose Gold, Titanium
-  - **Vibrant:** Ocean Blue, Sunset, Purple Dream, Orange Fire, Mint Fresh, Raspberry, Coral Reef, Emerald
-  - **Soft/Pastel:** Cherry Blossom, Lavender, Sky Blue, Peachy, Amber Glow, Rose Pink
-  - **Nature:** Forest, Teal Wave, Turquoise
-  - **Dark/Bold:** Midnight, Navy, Deep Purple
-- 📐 Custom gradient directions (90°, 135°, 180°)
-- ✍️ Optimized text colors for readability
-- 🎯 Rounded corners (16px border radius)
-- 💾 Full gradient configurations stored in database
-
-**Usage:**
 ```bash
-php scripts/generate_demo_data.php
+php scripts/generate_demo_data.php --yes
 ```
 
-**Best For:**
-- YouTube presentations and demos
-- Showcasing the full visual capabilities of LinkNest
-- Creating an impressive, colorful dashboard
-- Professional demonstrations with wow-factor
+### 2. `generate_demo_data_simple.php` (Simple / Solid)
 
-**Also creates:** 10 roles, 10 demo users (demo1–demo10, password: `password`) with roles assigned.
+Same content with **named solid theme colors** and no gradient decorations.
 
----
-
-### 2. **generate_demo_data_simple.php** (Simple/Clean)
-
-**Purpose:** Creates clean demo data with solid colors and no gradient decorations.
-
-**Features:**
-- 🎯 Simple, clean tile appearance
-- 🎨 Uses only theme_color (solid colors)
-- 📊 Professional, minimalist aesthetic
-- ⚡ Faster rendering (no gradient processing)
-- 🧹 No decoration fields populated
-
-**Usage:**
 ```bash
-php scripts/generate_demo_data_simple.php
+php scripts/generate_demo_data_simple.php --yes
 ```
 
-**Best For:**
-- Clean, minimalist presentations
-- Performance testing
-- Corporate/enterprise environments preferring subtle styling
-- Baseline testing without decorations
-- Users who prefer simplicity
-
-**Also creates:** 10 roles, 10 demo users (demo1–demo10, password: `password`) with roles assigned.
+Both require CLI and `--yes` (or `--confirm`). They refuse to run from the web server. They **replace** tiles/links/monitors — backup first. Guest tile cache is cleared after seeding.
 
 ---
 
-## 👥 Demo Roles and Users (Both PHP Scripts)
+## Visibility buckets (how spaces appear)
 
-Both `generate_demo_data.php` and `generate_demo_data_simple.php` create:
+| Bucket | Count | Visibility | Where it appears | Role permissions? |
+|--------|------:|------------|------------------|-------------------|
+| **Public** | 8 | `public` | **Public** tab (guests + everyone) | No |
+| **Authenticated** | 5 | `authenticated` | **Your Apps → Authenticated** (all signed-in users) | No |
+| **Your Assigned Apps** | 12 | `private` + role grants | **Your Apps → Your Assigned Apps** (per role) | Yes |
+
+### Public examples
+Company Dashboard, Analytics Hub, Customer Portal, Scheduling & Calendar, Documentation Center, Training & Learning, Resource Library, IT Support.
+
+### Authenticated examples (every signed-in user)
+HR Portal, Communication Hub, Project Management, File Sharing, Collaborative Workspaces.
+
+### Role-assigned examples (not on Public)
+Finance Center, Development Tools, Code Repositories, CI/CD, Testing, API Management, Cloud/Servers/Databases/Network/Security, Forms & Requests.
+
+**Why assigned spaces use `private`:** so they stay off the Public/guest grid. Role tile/link permissions unlock them in **Your Assigned Apps**. Authenticated spaces stay separate so you can demo “everyone signed in” vs “only my role.”
+
+---
+
+## Demo roles and users
 
 - **10 roles:** Manager, Developer, Designer, Support, Viewer, Editor, HR, Finance, Guest, Auditor  
-  (with short descriptions)
+- **10 users:** `demo1` … `demo10` (`demoN@demo.local` / password **`password`**)
+  - Each user has **notes** describing their organisational role and what to expect in Your Assigned Apps (visible in Admin → Users).
 
-- **10 demo users:** `demo1` … `demo10`  
-  - Emails: `demo1@demo.local` … `demo10@demo.local`  
-  - **Password for all:** `password`  
-  - All users are approved (`is_approved = 1`).  
-  - Each user is assigned one role (demo1→Manager, demo2→Developer, … demo10→Auditor).
+### Example walkthroughs
 
-- **Role-based access (varied tiles; Public tab blocked):**  
-  - Each role has a **different subset of tiles and links** (e.g. Manager: Main + Collaboration; Developer: Development + Infrastructure; Guest: minimal set).  
-  - **All built-in widgets** are assigned to every role.  
-  - **All tabs are allowed except Public:** Your Apps, Favorites, Private, Scheduled, Expired, Archive, Recycle bin, Monitoring, and Monitorv2 Dashboard.
+| Who | What to open | What you should see |
+|-----|--------------|---------------------|
+| Signed out | **Public** | ~8 public showcase spaces |
+| Any `demoN` | **Your Apps → Authenticated** | ~5 shared staff spaces |
+| `demo3` (Designer) | **Your Apps → Your Assigned Apps** | Dev/design set (repos, CI/CD, testing, API, forms, …) |
+| `demo2` (Developer) | **Your Assigned Apps** | Full Development + Infrastructure set |
+| `demo9` (Guest role) | **Your Assigned Apps** | Minimal (Forms); Authenticated still shows the shared five |
 
-Re-running either script will re-use existing demo users and roles, reset demo user passwords to `password`, reassign the roles, and re-apply tile/link/widget/tab permissions.
-
----
-
-## 📊 Data Structure (Both Scripts)
-
-Both scripts generate identical data structure:
-
-### **Tiles: 25**
-Organized into 5 categories (5 tiles each):
-- **Main:** Company Dashboard, Analytics Hub, HR Portal, Finance Center, Customer Portal
-- **Development:** Development Tools, Code Repositories, CI/CD Pipelines, Testing Platforms, API Management
-- **Infrastructure:** Cloud Services, Server Management, Database Administration, Network Infrastructure, Security Center
-- **Collaboration:** Communication Hub, Project Management, File Sharing, Collaborative Workspaces, Scheduling & Calendar
-- **Resources:** Documentation Center, Training & Learning, Resource Library, Forms & Requests, IT Support
-
-### **Links: 67**
-Distributed across tiles with relevant URLs and descriptions
-
-### **Monitors: 10**
-Infrastructure monitoring examples:
-- Main Website (URL)
-- API Gateway (URL with keyword check)
-- Database Server (port)
-- Redis Cache (port)
-- Email Server (ping)
-- Staging Environment (URL)
-- CDN Status (URL)
-- Load Balancer (ping)
-- Monitoring Dashboard (URL with keyword)
-- Backup Server (port)
+App tabs granted to demo roles include Public, Your Apps, Favorites, Private, Scheduled, Expired, Archive, Recycle bin, Monitoring. All built-in widgets are assigned.
 
 ---
 
-## 🔄 Switching Between Styles
+## Data structure
 
-You can easily switch between gradient and simple styles:
+| Item | Count |
+|------|-------|
+| Tiles | 25 (8 public + 5 authenticated + 12 role-assigned) |
+| Links | ~67 |
+| Monitors | 10 |
+| Categories | Main, Development, Infrastructure, Collaboration, Resources |
 
-**To use gradients:**
-```bash
-php scripts/generate_demo_data.php
-```
+Ownership of tiles is spread across `demo1`–`demo10` (maintenance heat map uses `tiles.user_id`).
 
-**To use simple (no gradients):**
-```bash
-php scripts/generate_demo_data_simple.php
-```
-
-Both scripts will:
-1. ⚠️ Clear existing data (tiles, links, monitors, etc.)
-2. ✅ Populate fresh demo data
-3. 📊 Display summary statistics
+`theme_color` uses named `THEME_COLORS` (`blue`, `cyan`, …). Gradient hex values exist only in the colorful preset arrays. Keyword monitors use `type = 'keyword'`.
 
 ---
 
-## ⚠️ Important Notes
+## In-app help
 
-### Data Deletion Warning
-Both scripts **DELETE ALL EXISTING DATA** including:
-- All tiles
-- All links
-- All monitors
-- All arrangements
-- All permissions
-- All related records
+Help & About → **Demo Data Scripts (Public / Authenticated / Assigned)** explains the same buckets and example logins for presenters.
 
-**Always backup your database before running these scripts!**
-
-### Public Tiles
-All generated tiles are marked as:
-- `visibility = "public"`
-- `user_id` = admin user ID (tiles are owned by the admin)
-- Visible to all users automatically
-
-### Arrangements
-Global arrangements are created for all tiles, making them appear in the dashboard for all users.
-
----
-
-## 🎨 Visual Comparison
-
-### With Gradients (generate_demo_data.php)
-```
-┌─────────────────────────────────┐
-│ 📊 Company Dashboard            │
-│ ╔═══════════════════════════╗  │
-│ ║ Ocean Blue Gradient       ║  │
-│ ║ #0077BE → #00A8E8 → #005F8C │
-│ ╚═══════════════════════════╝  │
-└─────────────────────────────────┘
-```
-
-### Simple (generate_demo_data_simple.php)
-```
-┌─────────────────────────────────┐
-│ 📊 Company Dashboard            │
-│ ┌──────────────────────────────┐│
-│ │ Solid Theme Color: #3B82F6  ││
-│ └──────────────────────────────┘│
-└─────────────────────────────────┘
-```
-
----
-
-## 🛠️ Technical Details
-
-### Database Fields Populated
-
-**generate_demo_data.php (with gradients):**
-- `id`, `user_id`, `title`, `description`, `emoji`, `theme_color`
-- `group`, `position`, `created_at`, `visibility`
-- `tile_gradient_enabled` = 1
-- `tile_gradient_colors` (JSON array)
-- `tile_gradient_color_positions` (JSON array)
-- `tile_gradient_direction` (degrees)
-- `tile_gradient_type` = 'linear'
-- `tile_text_color` (contrast-optimized)
-- `tile_border_radius` = 16
-
-**generate_demo_data_simple.php (no gradients):**
-- `id`, `user_id`, `title`, `description`, `emoji`, `theme_color`
-- `group`, `position`, `created_at`, `visibility`
-- All gradient fields remain `NULL` (default)
-
----
-
-## 📝 Customization
-
-Both scripts can be customized by editing:
-1. `$tiles` array - Add/modify tiles
-2. Tab/section definitions - Change organizational structure
-3. Link data - Update URLs and descriptions
-4. Monitor configurations - Add/modify monitoring endpoints
-
-For gradient presets, edit `$decorationPresets` array in `generate_demo_data.php`.
-
----
-
-## 🎯 Recommendation
-
-- **For demos & presentations:** Use `generate_demo_data.php` (with gradients)
-- **For testing & development:** Use `generate_demo_data_simple.php` (simple)
-- **For production seeding:** Modify either script to match your organization's data
-
-### Demo logins (after running either PHP script)
-- **Admin:** Use your existing admin user (e.g. admin / admin123 if default).
-- **Demo users:** demo1 … demo10 with password **password** (e.g. demo1@demo.local / password).
-
----
-
-## 📞 Support
-
-If you encounter any issues:
-1. Check database permissions
-2. Verify PHP version (8.0+)
-3. Ensure SQLite database is writable
-4. Check PHP error logs
-
-Both scripts include error handling and will display helpful error messages if something goes wrong.
+Also see Guides tab for broader product docs.

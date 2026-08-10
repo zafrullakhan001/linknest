@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { isEscapeDialogOpen } from '../hooks/useEscapeToClose';
 
 interface PhoneticEntry {
   letter: string;
@@ -171,6 +172,7 @@ export const PhoneticAlphabet: React.FC<PhoneticAlphabetProps> = ({ onClose }) =
 
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !e.ctrlKey && !e.shiftKey && !e.metaKey && !e.altKey) {
+        if (isEscapeDialogOpen()) return;
         const target = e.target as HTMLElement;
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
           return;

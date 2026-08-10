@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { themeService, ThemeName } from '../services/themeService';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 interface ThemeEditorProps {
   themeName: ThemeName;
@@ -50,6 +51,7 @@ const getDefaultCustomization = (themeName: ThemeName): ThemeCustomization => {
 };
 
 export const ThemeEditor: React.FC<ThemeEditorProps> = ({ themeName, onClose, onSave }) => {
+  useEscapeToClose(true, onClose);
   const [customization, setCustomization] = useState<ThemeCustomization>(() => {
     const stored = localStorage.getItem(`linknest_theme_custom_${themeName}`);
     if (stored) {

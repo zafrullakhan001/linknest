@@ -112,6 +112,14 @@ export interface AppSettings {
   guest_access_enabled?: string; // '0' or '1' - controls whether guests can view spaces
   show_database_path_in_footer?: string; // '0' or '1' - controls whether database path is shown in footer
   disabled_tabs?: string; // JSON array string of disabled app tabs (e.g. ["public","favorites"])
+  /** JSON array of device preview presets (DevicePreset[]) */
+  device_presets?: string;
+  /** JSON array of preset ids for the Device Preview quick-select bar */
+  device_quick_presets?: string;
+  /** JSON string array of URL/host patterns skipped by Check Links */
+  link_check_exceptions?: string;
+  /** JSON string array of hosts that skip in-app mobile preview (iframe blocked) */
+  iframe_block_domains?: string;
 
   // LDAP Settings
   ldap_enabled?: string;
@@ -148,6 +156,8 @@ export interface AppSettings {
   ldap_email_attribute?: string; // custom email attribute
   ldap_display_name_attribute?: string; // custom display name attribute
   ldap_referrals?: string; // '0' or '1'
+  /** '1' = show host:port in LDAP server dropdowns (admin test + login); '0' = name/domain only */
+  ldap_dropdown_show_host?: string;
 
   // Browser-Specific Link Opening Settings
   browser_specific_links_enabled?: string; // '0' or '1' - controls whether browser-specific link opening is enabled
@@ -276,6 +286,10 @@ export const settingsService = {
       guest_access_enabled: data.settings?.guest_access_enabled || '1', // Default to enabled
       show_database_path_in_footer: data.settings?.show_database_path_in_footer || '1', // Default to enabled
       disabled_tabs: data.settings?.disabled_tabs || '[]',
+      device_presets: data.settings?.device_presets || '',
+      device_quick_presets: data.settings?.device_quick_presets || '',
+      link_check_exceptions: data.settings?.link_check_exceptions || '[]',
+      iframe_block_domains: data.settings?.iframe_block_domains || '[]',
 
       // LDAP defaults
       ldap_enabled: data.settings?.ldap_enabled || '0',
@@ -312,6 +326,7 @@ export const settingsService = {
       ldap_email_attribute: data.settings?.ldap_email_attribute || '',
       ldap_display_name_attribute: data.settings?.ldap_display_name_attribute || '',
       ldap_referrals: data.settings?.ldap_referrals || '0',
+      ldap_dropdown_show_host: data.settings?.ldap_dropdown_show_host ?? '1',
       // Browser-specific link opening defaults
       browser_specific_links_enabled: data.settings?.browser_specific_links_enabled || '0',
       browser_extension_id: data.settings?.browser_extension_id || '',
@@ -361,10 +376,44 @@ export const settingsService = {
     }
   },
 
-  async uploadLogo(file: File, settingKey: 'logo_image' | 'header_logo_image' = 'logo_image'): Promise<string> {
+  /**
+   * Upload brand or header logo.
+   * Background removal is done server-side with PHP GD (ext-gd) — no frontend image library.
+   * If removeBackground fails, enable extension=gd in php.ini and restart Apache.
+   */
+  async uploadLogo(
+    file: File | null,
+    settingKeyOrOptions:
+      | 'logo_image'
+      | 'header_logo_image'
+      | {
+          settingKey?: 'logo_image' | 'header_logo_image';
+          removeBackground?: boolean;
+          bgColor?: string;
+          /** Reprocess an existing /uploads/logo_* URL without uploading a new file. */
+          sourceUrl?: string;
+        } = 'logo_image'
+  ): Promise<string> {
+    const options =
+      typeof settingKeyOrOptions === 'string'
+        ? { settingKey: settingKeyOrOptions as 'logo_image' | 'header_logo_image' }
+        : settingKeyOrOptions;
+    const settingKey = options.settingKey || 'logo_image';
+
     const formData = new FormData();
-    formData.append('logo', file);
+    if (file) {
+      formData.append('logo', file);
+    }
     formData.append('setting_key', settingKey);
+    if (options.sourceUrl) {
+      formData.append('source_url', options.sourceUrl);
+    }
+    if (options.removeBackground) {
+      formData.append('remove_background', '1');
+    }
+    if (options.bgColor) {
+      formData.append('bg_color', options.bgColor);
+    }
 
     const response = await fetch(`${API_BASE}/settings/upload-logo`, {
       method: 'POST',
@@ -381,9 +430,32 @@ export const settingsService = {
     return data.url;
   },
 
-  async uploadFavicon(file: File): Promise<string> {
+  /**
+   * Upload favicon (or reprocess existing).
+   * Background removal requires PHP GD (ext-gd) on the server — not a JS library.
+   */
+  async uploadFavicon(
+    file: File | null,
+    options?: {
+      removeBackground?: boolean;
+      bgColor?: string;
+      /** Reprocess an existing /uploads/favicon_* URL without uploading a new file. */
+      sourceUrl?: string;
+    }
+  ): Promise<string> {
     const formData = new FormData();
-    formData.append('favicon', file);
+    if (file) {
+      formData.append('favicon', file);
+    }
+    if (options?.sourceUrl) {
+      formData.append('source_url', options.sourceUrl);
+    }
+    if (options?.removeBackground) {
+      formData.append('remove_background', '1');
+    }
+    if (options?.bgColor) {
+      formData.append('bg_color', options.bgColor);
+    }
 
     const response = await fetch(`${API_BASE}/settings/upload-favicon`, {
       method: 'POST',

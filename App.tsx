@@ -34,6 +34,18 @@ import { FloatingChatWidget } from './components/FloatingChatWidget';
 import { ChatWidget } from './components/ChatWidget';
 import { FloatingSnakeGameWidget } from './components/FloatingSnakeGameWidget';
 import { SnakeGameWidget } from './components/SnakeGameWidget';
+import { FloatingVncViewerWidget } from './components/FloatingVncViewerWidget';
+import { VncViewerWidget } from './components/VncViewerWidget';
+import { FloatingSshTerminalWidget } from './components/FloatingSshTerminalWidget';
+import { SshTerminalWidget } from './components/SshTerminalWidget';
+import {
+  OPEN_SSH_TERMINAL_EVENT,
+  type OpenSshTerminalDetail,
+} from './utils/sshLink';
+import {
+  OPEN_VNC_VIEWER_EVENT,
+  type OpenVncViewerDetail,
+} from './utils/vncLink';
 import { themeService } from './services/themeService';
 import { getMessages, ChatMessage } from './services/chatService';
 import { WidgetQuickAccess } from './components/WidgetQuickAccess';
@@ -228,6 +240,28 @@ const AppContent: React.FC = () => {
     localStorage.setItem('linknest_show_snake_game_widget', showSnakeGame.toString());
   }, [showSnakeGame]);
 
+  // VNC Viewer Widget Visibility State
+  const [showVncViewer, setShowVncViewer] = useState(() => {
+    const saved = localStorage.getItem('linknest_show_vnc_viewer_widget');
+    return saved !== null ? saved === 'true' : false;
+  });
+  const [vncPendingOpen, setVncPendingOpen] = useState<(OpenVncViewerDetail & { requestId: number }) | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem('linknest_show_vnc_viewer_widget', showVncViewer.toString());
+  }, [showVncViewer]);
+
+  // SSH Terminal Widget Visibility State
+  const [showSshTerminal, setShowSshTerminal] = useState(() => {
+    const saved = localStorage.getItem('linknest_show_ssh_terminal_widget');
+    return saved !== null ? saved === 'true' : false;
+  });
+  const [sshPendingOpen, setSshPendingOpen] = useState<(OpenSshTerminalDetail & { requestId: number }) | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem('linknest_show_ssh_terminal_widget', showSshTerminal.toString());
+  }, [showSshTerminal]);
+
   // Chat unread messages state
   const [hasUnreadChatMessages, setHasUnreadChatMessages] = useState(false);
 
@@ -287,27 +321,19 @@ const AppContent: React.FC = () => {
   // Fetch allowed widgets when user logs in or auth state changes
   useEffect(() => {
     const fetchAllowedWidgets = async () => {
-      if (!isAuthenticated || !user) {
-        // For logged out users, allow all non-auth widgets
-        setAllowedWidgetIds(new Set([
-          'clock', 'weather', 'calculator', 'password-generator',
-          'phonetic-alphabet', 'zoom-control', 'theme', 'snake-game'
-        ]));
-        setWidgetsLoading(false);
-        return;
-      }
-
       // Admins get all widgets
-      if (user.is_admin) {
+      if (isAuthenticated && user?.is_admin) {
         setAllowedWidgetIds(new Set([
           'clock', 'weather', 'calculator', 'notes', 'password-generator',
           'phonetic-alphabet', 'zoom-control', 'theme', 'fav-organizer',
-          'chat', 'snake-game'
+          'chat', 'snake-game', 'vnc-viewer', 'ssh-terminal'
         ]));
         setWidgetsLoading(false);
         return;
       }
 
+      // Guests and authenticated non-admins: load from role permissions
+      // (guests use the designated Public/is_guest role via the API)
       try {
         setWidgetsLoading(true);
         const allowedWidgets = await getAllowedWidgets();
@@ -315,7 +341,7 @@ const AppContent: React.FC = () => {
         setAllowedWidgetIds(widgetIds);
       } catch (error) {
         console.error('Failed to fetch allowed widgets:', error);
-        // On error, show no widgets for non-admins (strict security)
+        // On error, show no widgets (strict security)
         setAllowedWidgetIds(new Set());
       } finally {
         setWidgetsLoading(false);
@@ -327,23 +353,20 @@ const AppContent: React.FC = () => {
 
   // Helper function to check if a widget is allowed
   const isWidgetAllowed = useCallback((widgetId: string): boolean => {
-    // If user is not authenticated, allow public widgets
-    if (!isAuthenticated || !user) {
-      // Allow non-auth widgets for logged out users
-      return !['notes', 'chat', 'fav-organizer'].includes(widgetId);
+    // Auth-only widgets are never available to guests
+    if ((!isAuthenticated || !user) && ['notes', 'chat', 'fav-organizer'].includes(widgetId)) {
+      return false;
     }
-    
+
     // Admins can see all widgets
-    if (user.is_admin) return true;
-    
+    if (user?.is_admin) return true;
+
     // During loading, don't show any widgets (prevent flickering)
     if (widgetsLoading) {
       return false;
     }
-    
-    // Check if widget is in allowed list
-    const isAllowed = allowedWidgetIds.has(widgetId);
-    return isAllowed;
+
+    return allowedWidgetIds.has(widgetId);
   }, [isAuthenticated, user, allowedWidgetIds, widgetsLoading]);
 
   // Theme State — keep in sync with index.html bootstrap + auto-switch defaults
@@ -488,6 +511,70 @@ const AppContent: React.FC = () => {
     };
   }, [user]);
 
+  // Open SSH Terminal from ssh:// (or auto://) space links
+  useEffect(() => {
+    const handleOpenSshTerminal = (ev: Event) => {
+      const detail = (ev as CustomEvent<OpenSshTerminalDetail>).detail;
+      if (!detail?.host) return;
+
+      if (isMobile) {
+        window.alert('SSH Terminal is available on desktop view.');
+        return;
+      }
+      if (!isWidgetAllowed('ssh-terminal')) {
+        window.alert('SSH Terminal widget is not enabled for your account.');
+        return;
+      }
+      if (!isAuthenticated) {
+        setAuthModalOpen(true);
+        return;
+      }
+
+      setShowSshTerminal(true);
+      setSshPendingOpen({
+        ...detail,
+        requestId: Date.now(),
+      });
+    };
+
+    window.addEventListener(OPEN_SSH_TERMINAL_EVENT, handleOpenSshTerminal);
+    return () => {
+      window.removeEventListener(OPEN_SSH_TERMINAL_EVENT, handleOpenSshTerminal);
+    };
+  }, [isMobile, isAuthenticated, isWidgetAllowed]);
+
+  // Open VNC Viewer from vnc:// (or auto-vnc://) space links
+  useEffect(() => {
+    const handleOpenVncViewer = (ev: Event) => {
+      const detail = (ev as CustomEvent<OpenVncViewerDetail>).detail;
+      if (!detail?.host) return;
+
+      if (isMobile) {
+        window.alert('VNC Viewer is available on desktop view.');
+        return;
+      }
+      if (!isWidgetAllowed('vnc-viewer')) {
+        window.alert('VNC Viewer widget is not enabled for your account.');
+        return;
+      }
+      if (!isAuthenticated) {
+        setAuthModalOpen(true);
+        return;
+      }
+
+      setShowVncViewer(true);
+      setVncPendingOpen({
+        ...detail,
+        requestId: Date.now(),
+      });
+    };
+
+    window.addEventListener(OPEN_VNC_VIEWER_EVENT, handleOpenVncViewer);
+    return () => {
+      window.removeEventListener(OPEN_VNC_VIEWER_EVENT, handleOpenVncViewer);
+    };
+  }, [isMobile, isAuthenticated, isWidgetAllowed]);
+
   // Listen for page background dialog (admin only)
   useEffect(() => {
     const handleOpenPageBackground = () => {
@@ -572,6 +659,19 @@ const AppContent: React.FC = () => {
 
   const toggleSnakeGame = () => {
     setShowSnakeGame(!showSnakeGame);
+  };
+
+  const toggleVncViewer = () => {
+    setShowVncViewer(!showVncViewer);
+  };
+
+  const toggleSshTerminal = () => {
+    if (showSshTerminal) {
+      // Ask the widget to confirm / kill live sessions before hiding
+      window.dispatchEvent(new CustomEvent('requestCloseSshTerminal'));
+      return;
+    }
+    setShowSshTerminal(true);
   };
 
   const handleTabClick = (tab: string) => {
@@ -875,6 +975,10 @@ const AppContent: React.FC = () => {
             toggleChat={toggleChat}
             showSnakeGame={showSnakeGame}
             toggleSnakeGame={toggleSnakeGame}
+            showVncViewer={showVncViewer}
+            toggleVncViewer={toggleVncViewer}
+            showSshTerminal={showSshTerminal}
+            toggleSshTerminal={toggleSshTerminal}
             hasUnreadChatMessages={hasUnreadChatMessages}
             user={user}
             onLoginClick={() => setAuthModalOpen(true)}
@@ -1116,6 +1220,10 @@ const AppContent: React.FC = () => {
           toggleChat={toggleChat}
           showSnakeGame={showSnakeGame}
           toggleSnakeGame={toggleSnakeGame}
+          showVncViewer={showVncViewer}
+          toggleVncViewer={toggleVncViewer}
+          showSshTerminal={showSshTerminal}
+          toggleSshTerminal={toggleSshTerminal}
           hasUnreadChatMessages={hasUnreadChatMessages}
             user={user}
             onLoginClick={() => setAuthModalOpen(true)}
@@ -1166,7 +1274,7 @@ const AppContent: React.FC = () => {
         <div ref={celebrationContainerRef} className={`absolute inset-0 w-full overflow-hidden pointer-events-none ${styles?.celebrationShowOnForeground ? 'z-[9999]' : 'z-0'}`} aria-hidden>
           <CelebrationEffects containerRef={celebrationContainerRef} styles={styles} />
         </div>
-        <main className={`flex-grow container mx-auto px-4 py-8 max-w-6xl-plus linknest-page-content relative z-10 ${styles?.backgroundRaised ? 'linknest-page-background' : ''} ${!guestAccessEnabled && !isAuthenticated ? 'flex items-center justify-center' : ''}`}>
+        <main className={`flex-grow mx-auto px-4 py-8 w-full linknest-page-content relative z-10 ${route === '#/admin' ? 'max-w-admin' : 'container max-w-6xl-plus'} ${styles?.backgroundRaised ? 'linknest-page-background' : ''} ${!guestAccessEnabled && !isAuthenticated ? 'flex items-center justify-center' : ''}`}>
           <div className="relative min-h-0">
             {content}
           </div>
@@ -1414,6 +1522,24 @@ const AppContent: React.FC = () => {
               <SnakeGameWidget onClose={toggleSnakeGame} />
             </FloatingSnakeGameWidget>
           )}
+          {showVncViewer && isWidgetAllowed('vnc-viewer') && (
+            <FloatingVncViewerWidget>
+              <VncViewerWidget
+                onClose={toggleVncViewer}
+                pendingOpen={vncPendingOpen}
+                onPendingOpenConsumed={() => setVncPendingOpen(null)}
+              />
+            </FloatingVncViewerWidget>
+          )}
+          {showSshTerminal && isWidgetAllowed('ssh-terminal') && (
+            <FloatingSshTerminalWidget>
+              <SshTerminalWidget
+                onClose={() => setShowSshTerminal(false)}
+                pendingOpen={sshPendingOpen}
+                onPendingOpenConsumed={() => setSshPendingOpen(null)}
+              />
+            </FloatingSshTerminalWidget>
+          )}
         </>
       )}
       <AuthModal
@@ -1597,6 +1723,31 @@ const AppContent: React.FC = () => {
                 ),
                 isVisible: showSnakeGame,
                 onToggle: toggleSnakeGame,
+              },
+              {
+                id: 'vnc-viewer',
+                name: 'VNC Viewer',
+                icon: (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                    <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+                    <path d="M8 21h8"></path>
+                    <path d="M12 17v4"></path>
+                  </svg>
+                ),
+                isVisible: showVncViewer,
+                onToggle: toggleVncViewer,
+              },
+              {
+                id: 'ssh-terminal',
+                name: 'SSH Terminal',
+                icon: (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                    <polyline points="4 17 10 11 4 5"></polyline>
+                    <line x1="12" y1="19" x2="20" y2="19"></line>
+                  </svg>
+                ),
+                isVisible: showSshTerminal,
+                onToggle: toggleSshTerminal,
               },
             ].filter(widget => isWidgetAllowed(widget.id))}
           />

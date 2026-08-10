@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { themeService, ThemeName, AVAILABLE_THEMES } from '../services/themeService';
+import { isEscapeDialogOpen } from '../hooks/useEscapeToClose';
 
 interface ThemeWidgetProps {
   onClose?: () => void;
@@ -14,6 +15,7 @@ export const ThemeWidget: React.FC<ThemeWidgetProps> = ({ onClose }) => {
 
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !e.ctrlKey && !e.shiftKey && !e.metaKey && !e.altKey) {
+        if (isEscapeDialogOpen()) return;
         const target = e.target as HTMLElement;
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
           return;

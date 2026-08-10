@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { isEscapeDialogOpen } from '../hooks/useEscapeToClose';
 
 interface SnakeGameWidgetProps {
     onClose?: () => void;
@@ -52,6 +53,7 @@ export const SnakeGameWidget: React.FC<SnakeGameWidgetProps> = ({ onClose }) => 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape' && !e.ctrlKey && !e.shiftKey && !e.metaKey && !e.altKey) {
+                if (isEscapeDialogOpen()) return;
                 const target = e.target as HTMLElement;
                 if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
                     return;

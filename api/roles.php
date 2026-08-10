@@ -18,8 +18,14 @@ switch ($method) {
             handleGetRoleTabs($matches[1]);
         } elseif (preg_match('#^/(\d+)/widgets$#', $path, $matches)) {
             handleGetRoleWidgets($matches[1]);
+        } elseif (preg_match('#^/(\d+)/link-actions$#', $path, $matches)) {
+            handleGetRoleLinkActions($matches[1]);
+        } elseif (preg_match('#^/(\d+)/groups$#', $path, $matches)) {
+            handleGetRoleGroups($matches[1]);
         } elseif ($path === '/current-user/tabs' || $path === '/current-user/tabs/') {
             handleGetCurrentUserTabs();
+        } elseif ($path === '/current-user/link-actions' || $path === '/current-user/link-actions/') {
+            handleGetCurrentUserLinkActions();
         } elseif (preg_match('#^/user/(\d+)$#', $path, $matches)) {
             handleGetUserRoles($matches[1]);
         } elseif (preg_match('#^/users/batch-roles$#', $path)) {
@@ -40,6 +46,8 @@ switch ($method) {
             handleAssignTabsToRole($matches[1]);
         } elseif (preg_match('#^/(\d+)/assign-widgets$#', $path, $matches)) {
             handleAssignWidgetsToRole($matches[1]);
+        } elseif (preg_match('#^/(\d+)/assign-link-actions$#', $path, $matches)) {
+            handleAssignLinkActionsToRole($matches[1]);
         } elseif (preg_match('#^/user/(\d+)/assign$#', $path, $matches)) {
             handleAssignRolesToUser($matches[1]);
         } elseif ($path === '/bulk-assign' || $path === '/bulk-assign/') {
@@ -74,6 +82,8 @@ switch ($method) {
             handleRemoveWidgetFromRole($matches[1], $matches[2]);
         } elseif (preg_match('#^/user/(\d+)/role/(\d+)$#', $path, $matches)) {
             handleRemoveRoleFromUser($matches[1], $matches[2]);
+        } elseif (preg_match('#^/(\d+)/group/(\d+)$#', $path, $matches)) {
+            handleRemoveGroupFromRole($matches[1], $matches[2]);
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -91,14 +101,18 @@ function handleGetRoles() {
         SELECT 
             r.*,
             COUNT(DISTINCT ur.user_id) as user_count,
+            COUNT(DISTINCT gr.group_id) as group_count,
             COUNT(DISTINCT rtp.tile_id) as tile_count,
             COUNT(DISTINCT rlp.link_id) as link_count,
-            COUNT(DISTINCT rwp.widget_id) as widget_count
+            COUNT(DISTINCT rwp.widget_id) as widget_count,
+            COUNT(DISTINCT rlap.action_id) as link_action_count
         FROM roles r
         LEFT JOIN user_roles ur ON r.id = ur.role_id
+        LEFT JOIN group_roles gr ON r.id = gr.role_id
         LEFT JOIN role_tile_permissions rtp ON r.id = rtp.role_id
         LEFT JOIN role_link_permissions rlp ON r.id = rlp.role_id
         LEFT JOIN role_widget_permissions rwp ON r.id = rwp.role_id
+        LEFT JOIN role_link_action_permissions rlap ON r.id = rlap.role_id
         GROUP BY r.id
         ORDER BY r.name
     ');
@@ -109,16 +123,51 @@ function handleGetRoles() {
             'id' => (int)$row['id'],
             'name' => $row['name'],
             'description' => $row['description'],
+            'isGuest' => !empty($row['is_guest']),
             'userCount' => (int)$row['user_count'],
+            'groupCount' => (int)$row['group_count'],
             'tileCount' => (int)$row['tile_count'],
             'linkCount' => (int)$row['link_count'],
             'widgetCount' => (int)$row['widget_count'],
+            'linkActionCount' => (int)$row['link_action_count'],
             'createdAt' => (int)$row['created_at'],
             'updatedAt' => (int)$row['updated_at']
         ];
     }
+
+    $tileTotal = 0;
+    $linkTotal = 0;
+    $widgetTotal = 0;
+    try {
+        $tileTotal = (int)$db->query('SELECT COUNT(*) FROM tiles WHERE deleted_at IS NULL AND archived_at IS NULL')->fetchColumn();
+        $linkTotal = (int)$db->query('
+            SELECT COUNT(*)
+            FROM links l
+            INNER JOIN sections s ON l.section_id = s.id
+            INNER JOIN tiles t ON s.tile_id = t.id
+            WHERE t.deleted_at IS NULL AND t.archived_at IS NULL
+        ')->fetchColumn();
+    } catch (PDOException $e) {
+        error_log('roles totals tile/link counts: ' . $e->getMessage());
+    }
+
+    $builtInWidgetCount = 13; // keep in sync with api/widgets.php built-in list
+    try {
+        $customWidgetCount = (int)$db->query('SELECT COUNT(*) FROM custom_widgets WHERE enabled = 1')->fetchColumn();
+        $widgetTotal = $builtInWidgetCount + $customWidgetCount;
+    } catch (PDOException $e) {
+        $widgetTotal = $builtInWidgetCount;
+    }
     
-    sendJSON($roles);
+    sendJSON([
+        'roles' => $roles,
+        'totals' => [
+            'tiles' => $tileTotal,
+            'links' => $linkTotal,
+            'widgets' => $widgetTotal,
+            'linkActions' => count(getValidLinkActionIds()),
+        ],
+    ]);
 }
 
 function handleGetRole($roleId) {
@@ -155,6 +204,7 @@ function handleGetRole($roleId) {
         'id' => (int)$role['id'],
         'name' => $role['name'],
         'description' => $role['description'],
+        'isGuest' => !empty($role['is_guest']),
         'users' => $users,
         'createdAt' => (int)$role['created_at'],
         'updatedAt' => (int)$role['updated_at']
@@ -271,6 +321,39 @@ function handleGetRoleWidgets($roleId) {
     sendJSON($widgets);
 }
 
+function handleGetRoleLinkActions($roleId) {
+    requireAdmin();
+    $db = getDB();
+
+    $roleCheck = $db->prepare('SELECT id FROM roles WHERE id = ?');
+    $roleCheck->execute([$roleId]);
+    if (!$roleCheck->fetch()) {
+        sendJSON(['error' => 'Role not found'], 404);
+    }
+
+    $stmt = $db->prepare('
+        SELECT
+            rlap.action_id,
+            rlap.can_view,
+            rlap.created_at
+        FROM role_link_action_permissions rlap
+        WHERE rlap.role_id = ?
+        ORDER BY rlap.action_id
+    ');
+    $stmt->execute([$roleId]);
+
+    $actions = [];
+    while ($row = $stmt->fetch()) {
+        $actions[] = [
+            'actionId' => $row['action_id'],
+            'canView' => (bool)$row['can_view'],
+            'createdAt' => (int)$row['created_at']
+        ];
+    }
+
+    sendJSON($actions);
+}
+
 function handleGetUserRoles($userId) {
     requireAdmin();
     $db = getDB();
@@ -370,27 +453,40 @@ function handleCreateRole() {
     
     $name = trim($data['name']);
     $description = isset($data['description']) ? trim($data['description']) : null;
+    $isGuest = !empty($data['isGuest']) || !empty($data['is_guest']);
     
     $db = getDB();
     $currentTime = time();
     
     try {
-        $stmt = $db->prepare('INSERT INTO roles (name, description, created_at, updated_at) VALUES (?, ?, ?, ?)');
-        $stmt->execute([$name, $description, $currentTime, $currentTime]);
+        $db->beginTransaction();
+
+        if ($isGuest) {
+            $db->exec('UPDATE roles SET is_guest = 0, updated_at = ' . (int)$currentTime . ' WHERE is_guest = 1');
+        }
+
+        $stmt = $db->prepare('INSERT INTO roles (name, description, is_guest, created_at, updated_at) VALUES (?, ?, ?, ?, ?)');
+        $stmt->execute([$name, $description, $isGuest ? 1 : 0, $currentTime, $currentTime]);
         
-        $roleId = $db->lastInsertId();
+        $roleId = (int)$db->lastInsertId();
+        seedRoleLinkActionsIfEmpty($db, $roleId);
+        $db->commit();
         
         sendJSON([
             'success' => true,
             'role' => [
-                'id' => (int)$roleId,
+                'id' => $roleId,
                 'name' => $name,
                 'description' => $description,
+                'isGuest' => $isGuest,
                 'createdAt' => $currentTime,
                 'updatedAt' => $currentTime
             ]
         ]);
     } catch (PDOException $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
         if (strpos($e->getMessage(), 'UNIQUE constraint') !== false) {
             sendJSON(['error' => 'A role with this name already exists'], 409);
         }
@@ -423,21 +519,41 @@ function handleUpdateRole($roleId) {
         $updates[] = 'description = ?';
         $params[] = trim($data['description']);
     }
+
+    $isGuestSpecified = array_key_exists('isGuest', $data) || array_key_exists('is_guest', $data);
+    $isGuest = $isGuestSpecified
+        ? (!empty($data['isGuest']) || !empty($data['is_guest']))
+        : null;
     
-    if (empty($updates)) {
+    if (empty($updates) && !$isGuestSpecified) {
         sendJSON(['error' => 'No fields to update'], 400);
     }
     
     $updates[] = 'updated_at = ?';
     $params[] = time();
-    $params[] = $roleId;
     
     try {
+        $db->beginTransaction();
+
+        if ($isGuestSpecified) {
+            if ($isGuest) {
+                $clearStmt = $db->prepare('UPDATE roles SET is_guest = 0, updated_at = ? WHERE is_guest = 1 AND id != ?');
+                $clearStmt->execute([time(), $roleId]);
+            }
+            $updates[] = 'is_guest = ?';
+            $params[] = $isGuest ? 1 : 0;
+        }
+
+        $params[] = $roleId;
         $stmt = $db->prepare('UPDATE roles SET ' . implode(', ', $updates) . ' WHERE id = ?');
         $stmt->execute($params);
+        $db->commit();
         
         sendJSON(['success' => true]);
     } catch (PDOException $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
         if (strpos($e->getMessage(), 'UNIQUE constraint') !== false) {
             sendJSON(['error' => 'A role with this name already exists'], 409);
         }
@@ -598,7 +714,9 @@ function handleAssignWidgetsToRole($roleId) {
         'theme',
         'fav-organizer',
         'chat',
-        'snake-game'
+        'snake-game',
+        'vnc-viewer',
+        'ssh-terminal'
     ];
     
     // Get custom widget IDs from database
@@ -642,6 +760,53 @@ function handleAssignWidgetsToRole($roleId) {
     } catch (PDOException $e) {
         $db->rollBack();
         sendJSON(['error' => 'Failed to assign widgets: ' . $e->getMessage()], 500);
+    }
+}
+
+function handleAssignLinkActionsToRole($roleId) {
+    requireAdmin();
+    $data = getJSONInput();
+
+    if (!isset($data['actionIds']) || !is_array($data['actionIds'])) {
+        sendJSON(['error' => 'actionIds array is required'], 400);
+    }
+
+    $db = getDB();
+
+    $roleCheck = $db->prepare('SELECT id FROM roles WHERE id = ?');
+    $roleCheck->execute([$roleId]);
+    if (!$roleCheck->fetch()) {
+        sendJSON(['error' => 'Role not found'], 404);
+    }
+
+    $validActionIds = getValidLinkActionIds();
+    $currentTime = time();
+    $canView = isset($data['canView']) ? (int)(bool)$data['canView'] : 1;
+
+    $db->beginTransaction();
+    try {
+        $deleteStmt = $db->prepare('DELETE FROM role_link_action_permissions WHERE role_id = ?');
+        $deleteStmt->execute([$roleId]);
+
+        if (!empty($data['actionIds'])) {
+            $stmt = $db->prepare('
+                INSERT INTO role_link_action_permissions (role_id, action_id, can_view, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+            ');
+
+            foreach ($data['actionIds'] as $actionId) {
+                if (!in_array($actionId, $validActionIds, true)) {
+                    continue;
+                }
+                $stmt->execute([$roleId, $actionId, $canView, $currentTime, $currentTime]);
+            }
+        }
+
+        $db->commit();
+        sendJSON(['success' => true]);
+    } catch (PDOException $e) {
+        $db->rollBack();
+        sendJSON(['error' => 'Failed to assign link actions: ' . $e->getMessage()], 500);
     }
 }
 
@@ -894,6 +1059,49 @@ function handleGetCurrentUserTabs() {
     }
 }
 
+function handleGetCurrentUserLinkActions() {
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    try {
+        $user = getAuthenticatedUser();
+        $db = getDB();
+        $validActionIds = getValidLinkActionIds();
+
+        // Admins get all link actions
+        if ($user && !empty($user['is_admin'])) {
+            sendJSON(['actionIds' => $validActionIds]);
+        }
+
+        $roleIds = getUserRoleIds($user ? $user['id'] : null, $db);
+        if (empty($roleIds)) {
+            sendJSON(['actionIds' => []]);
+        }
+
+        $placeholders = implode(',', array_fill(0, count($roleIds), '?'));
+        $stmt = $db->prepare("SELECT DISTINCT action_id FROM role_link_action_permissions WHERE role_id IN ($placeholders) AND can_view = 1");
+        $stmt->execute($roleIds);
+
+        $allowed = [];
+        while ($row = $stmt->fetch()) {
+            $actionId = $row['action_id'];
+            if (in_array($actionId, $validActionIds, true)) {
+                $allowed[] = $actionId;
+            }
+        }
+
+        sendJSON(['actionIds' => array_values(array_unique($allowed))]);
+    } catch (PDOException $e) {
+        error_log('roles/current-user/link-actions: ' . $e->getMessage());
+        // Fail open to all actions if table missing during rollout
+        sendJSON(['actionIds' => getValidLinkActionIds()]);
+    } catch (Throwable $e) {
+        error_log('roles/current-user/link-actions: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to load link action permissions'], 500);
+    }
+}
+
 function handleAssignTabsToRole($roleId) {
     requireAdmin();
     $data = getJSONInput();
@@ -1036,6 +1244,56 @@ function handleRemoveRoleFromUser($userId, $roleId) {
     $stmt = $db->prepare('DELETE FROM user_roles WHERE user_id = ? AND role_id = ?');
     $stmt->execute([$userId, $roleId]);
     
+    sendJSON(['success' => true]);
+}
+
+function handleGetRoleGroups($roleId) {
+    requireAdmin();
+    $db = getDB();
+
+    $roleCheck = $db->prepare('SELECT id FROM roles WHERE id = ?');
+    $roleCheck->execute([$roleId]);
+    if (!$roleCheck->fetch()) {
+        sendJSON(['error' => 'Role not found'], 404);
+    }
+
+    $stmt = $db->prepare('
+        SELECT
+            ug.id,
+            ug.name,
+            ug.description,
+            COUNT(DISTINCT ugm.user_id) as member_count,
+            gr.created_at
+        FROM user_groups ug
+        INNER JOIN group_roles gr ON ug.id = gr.group_id
+        LEFT JOIN user_group_members ugm ON ug.id = ugm.group_id
+        WHERE gr.role_id = ?
+        GROUP BY ug.id, ug.name, ug.description, gr.created_at
+        ORDER BY ug.name
+    ');
+    $stmt->execute([$roleId]);
+
+    $groups = [];
+    while ($row = $stmt->fetch()) {
+        $groups[] = [
+            'id' => (int)$row['id'],
+            'name' => $row['name'],
+            'description' => $row['description'],
+            'memberCount' => (int)$row['member_count'],
+            'assignedAt' => (int)$row['created_at']
+        ];
+    }
+
+    sendJSON($groups);
+}
+
+function handleRemoveGroupFromRole($roleId, $groupId) {
+    requireAdmin();
+    $db = getDB();
+
+    $stmt = $db->prepare('DELETE FROM group_roles WHERE role_id = ? AND group_id = ?');
+    $stmt->execute([$roleId, $groupId]);
+
     sendJSON(['success' => true]);
 }
 

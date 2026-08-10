@@ -38,6 +38,8 @@ COPY land/ ./land/
 COPY public/ ./public/
 COPY App.tsx ./
 COPY types.ts ./
+# Type declarations required by VNC Viewer widget (@novnc/novnc)
+COPY novnc.d.ts ./
 
 # Verify index.html exists and has the entry point
 RUN if [ ! -f index.html ]; then echo "ERROR: index.html not found!" && exit 1; fi && \
@@ -74,20 +76,53 @@ RUN apt-get update && apt-get install -y \
     sqlite3 \
     curl \
     openssl \
+    openssh-client \
+    iproute2 \
     libldap2-dev \
     libzip-dev \
     zlib1g-dev \
     python3 \
+    python3-pip \
     cron \
     tzdata \
     && docker-php-ext-install pdo pdo_sqlite opcache ldap zip \
     && docker-php-ext-enable pdo_sqlite opcache ldap zip \
     && ln -sf /usr/bin/python3 /usr/local/bin/python \
+    # websockify — VNC Viewer Easy-mode gateway (python3 -m websockify)
+    # --trusted-host helps builds behind SSL inspection / MITM antivirus
+    && pip3 install --break-system-packages --no-cache-dir \
+        --trusted-host pypi.org \
+        --trusted-host pypi.python.org \
+        --trusted-host files.pythonhosted.org \
+        websockify \
+    && python3 -c "import websockify" \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Enable Apache modules (including SSL and performance modules)
-RUN a2enmod rewrite headers mime ssl expires deflate cache
+# ttyd — SSH Terminal widget WebSocket gateway
+# Prefer vendored Linux binary (bin/ttyd.x86_64) so builds work behind SSL inspection.
+# Fallback: download from GitHub if the vendored file is missing.
+COPY bin/ ./bin/
+RUN set -eux; \
+    arch="$(uname -m)"; \
+    case "$arch" in \
+      x86_64|amd64) ttyd_src="ttyd.x86_64" ;; \
+      aarch64|arm64) ttyd_src="ttyd.aarch64" ;; \
+      *) echo "Unsupported arch for ttyd: $arch" >&2; exit 1 ;; \
+    esac; \
+    if [ -f "/var/www/html/bin/${ttyd_src}" ]; then \
+      cp "/var/www/html/bin/${ttyd_src}" /usr/local/bin/ttyd; \
+    elif [ -f /var/www/html/bin/ttyd ] && [ ! -f /var/www/html/bin/ttyd.exe ]; then \
+      cp /var/www/html/bin/ttyd /usr/local/bin/ttyd; \
+    else \
+      curl -fsSLk "https://github.com/tsl0922/ttyd/releases/download/1.7.7/${ttyd_src}" -o /usr/local/bin/ttyd; \
+    fi; \
+    chmod 755 /usr/local/bin/ttyd; \
+    /usr/local/bin/ttyd --version; \
+    rm -rf /var/www/html/bin
+
+# Enable Apache modules (including SSL, WebSocket proxy for SSH/VNC gateways)
+RUN a2enmod rewrite headers mime ssl expires deflate cache proxy proxy_http proxy_wstunnel
 
 # Set working directory
 WORKDIR /var/www/html
@@ -163,6 +198,10 @@ RUN chmod +x /usr/local/bin/generate-ssl-cert.sh
 
 # Generate self-signed SSL certificate
 RUN /usr/local/bin/generate-ssl-cert.sh
+# Allow www-data (Apache/PHP) to start ttyd with --ssl using the same certs
+RUN chgrp www-data /etc/apache2/ssl/linknest.key /etc/apache2/ssl/linknest.crt \
+    && chmod 640 /etc/apache2/ssl/linknest.key \
+    && chmod 644 /etc/apache2/ssl/linknest.crt
 
 # Configure Apache for high performance (1000+ concurrent users)
 # Optimize MPM (Multi-Processing Module) settings for production
@@ -186,6 +225,7 @@ RUN echo '<IfModule mpm_prefork_module>' > /etc/apache2/conf-available/mpm-perfo
 # Configure Apache
 COPY docker/apache-config.conf /etc/apache2/sites-available/000-default.conf
 COPY docker/apache-ssl-config.conf /etc/apache2/sites-available/000-default-ssl.conf
+COPY docker/apache-gateway-proxy.conf /etc/apache2/conf-available/linknest-gateway-proxy.conf
 
 # Enable SSL site
 RUN a2ensite 000-default-ssl.conf

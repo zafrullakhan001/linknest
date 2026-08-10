@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { isEscapeDialogOpen } from '../hooks/useEscapeToClose';
 
 // Resolve API base dynamically based on current location
 // This ensures API calls work in both dev mode and runtime mode with any base path
@@ -68,6 +69,7 @@ export const NotesWidget: React.FC<NotesWidgetProps> = ({ onClose }) => {
 
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !e.ctrlKey && !e.shiftKey && !e.metaKey && !e.altKey) {
+        if (isEscapeDialogOpen()) return;
         const target = e.target as HTMLElement;
         // Don't close if user is editing a note
         if (editingNoteId !== null) {

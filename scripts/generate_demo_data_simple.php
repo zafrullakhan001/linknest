@@ -1,58 +1,30 @@
 <?php
 /**
  * Generate Demo Data Script (Simple Version - No Gradients)
- * 
- * This script removes existing tiles, links, and monitors,
- * then populates the database with fictional demo data for YouTube presentations.
- * 
- * This version uses simple solid colors without gradient decorations.
+ *
+ * Removes existing tiles, links, and monitors, then populates fictional
+ * demo data. Uses named solid theme colors without gradient decorations.
+ *
+ * Usage (CLI only):
+ *   php scripts/generate_demo_data_simple.php --yes
  */
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/demo_data_helpers.php';
+demoDataRequireCliConfirmation('generate_demo_data_simple.php');
 
 require_once __DIR__ . '/../api/config.php';
 
 try {
     $db = getDB();
     $db->beginTransaction();
-    
-    // Disable foreign key checks temporarily
+
+    // Disable foreign key checks temporarily while clearing related tables
     $db->exec('PRAGMA foreign_keys = OFF');
-    
-    echo "Clearing existing data...\n";
-    
-    // Delete in correct order to respect foreign keys (even though we disabled them)
-    $tablesToClear = [
-        'monitor_logs',
-        'user_monitor_permissions',
-        'monitors',
-        'user_link_favorites',
-        'user_tile_favorites',
-        'user_tile_permissions',
-        'group_tile_permissions',
-        'rich_text_content',
-        'links',
-        'sections',
-        'tabs',
-        'tile_arrangements',
-        'category_arrangements',
-        'tiles'
-    ];
-    
-    foreach ($tablesToClear as $table) {
-        try {
-            $db->exec("DELETE FROM $table");
-            echo "  Cleared $table\n";
-        } catch (PDOException $e) {
-            echo "  Warning: Could not clear $table: " . $e->getMessage() . "\n";
-        }
-    }
-    
-    // Reset auto-increment for monitors
-    try {
-        $db->exec('DELETE FROM sqlite_sequence WHERE name = "monitors"');
-    } catch (PDOException $e) {
-        // Ignore if table doesn't have sequence
-    }
-    
+
+    demoDataClearTables($db);
+
     echo "\nGenerating demo data...\n";
     
     $currentTime = time();
@@ -117,21 +89,23 @@ try {
     
     echo "Creating demo users (password: password)...\n";
     $userIds = [];
+    $demoNotesByEmail = demoDataUserNotesByEmail();
     $userSelectStmt = $db->prepare('SELECT id FROM users WHERE email = ?');
-    $userInsertStmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, created_at) VALUES (?, ?, ?, 0, 1, ?, ?)');
-    $userUpdateStmt = $db->prepare('UPDATE users SET password_hash = ?, is_approved = 1 WHERE email = ?');
+    $userInsertStmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, notes, created_at) VALUES (?, ?, ?, 0, 1, ?, ?, ?)');
+    $userUpdateStmt = $db->prepare('UPDATE users SET password_hash = ?, is_approved = 1, notes = ? WHERE email = ?');
     foreach ($demoUsers as $u) {
+        $notes = $demoNotesByEmail[$u['email']] ?? null;
         $userSelectStmt->execute([$u['email']]);
         $row = $userSelectStmt->fetch(PDO::FETCH_ASSOC);
         if ($row) {
             $userIds[$u['email']] = (int)$row['id'];
-            $userUpdateStmt->execute([$demoPasswordHash, $u['email']]);
+            $userUpdateStmt->execute([$demoPasswordHash, $notes, $u['email']]);
         } else {
-            $userInsertStmt->execute([$u['username'], $u['email'], $demoPasswordHash, 'local', $currentTime]);
+            $userInsertStmt->execute([$u['username'], $u['email'], $demoPasswordHash, 'local', $notes, $currentTime]);
             $userIds[$u['email']] = (int)$db->lastInsertId();
         }
     }
-    echo "  Users: " . count($userIds) . "\n";
+    echo "  Users: " . count($userIds) . " (with role notes)\n";
     
     echo "Assigning roles to demo users...\n";
     $demoUserIdList = array_values($userIds);
@@ -161,7 +135,7 @@ try {
             'title' => 'Company Dashboard',
             'description' => 'Main operations dashboard for daily activities',
             'emoji' => '📊',
-            'theme_color' => '#3B82F6',
+            'theme_color' => 'blue',
             'group' => 'Main',
             'position' => 0
         ],
@@ -170,7 +144,7 @@ try {
             'title' => 'Analytics Hub',
             'description' => 'Business intelligence and data analytics',
             'emoji' => '📈',
-            'theme_color' => '#06B6D4',
+            'theme_color' => 'cyan',
             'group' => 'Main',
             'position' => 1
         ],
@@ -179,7 +153,7 @@ try {
             'title' => 'HR Portal',
             'description' => 'Human resources and employee management',
             'emoji' => '👥',
-            'theme_color' => '#14B8A6',
+            'theme_color' => 'teal',
             'group' => 'Main',
             'position' => 2
         ],
@@ -188,7 +162,7 @@ try {
             'title' => 'Finance Center',
             'description' => 'Financial management and accounting tools',
             'emoji' => '💰',
-            'theme_color' => '#10B981',
+            'theme_color' => 'emerald',
             'group' => 'Main',
             'position' => 3
         ],
@@ -197,7 +171,7 @@ try {
             'title' => 'Customer Portal',
             'description' => 'Customer service and support center',
             'emoji' => '🎯',
-            'theme_color' => '#F59E0B',
+            'theme_color' => 'amber',
             'group' => 'Main',
             'position' => 4
         ],
@@ -208,7 +182,7 @@ try {
             'title' => 'Development Tools',
             'description' => 'Essential tools for developers',
             'emoji' => '⚙️',
-            'theme_color' => '#10B981',
+            'theme_color' => 'emerald',
             'group' => 'Development',
             'position' => 0
         ],
@@ -217,7 +191,7 @@ try {
             'title' => 'Code Repositories',
             'description' => 'Version control and code management',
             'emoji' => '💻',
-            'theme_color' => '#6366F1',
+            'theme_color' => 'indigo',
             'group' => 'Development',
             'position' => 1
         ],
@@ -226,7 +200,7 @@ try {
             'title' => 'CI/CD Pipelines',
             'description' => 'Continuous integration and deployment',
             'emoji' => '🚀',
-            'theme_color' => '#8B5CF6',
+            'theme_color' => 'violet',
             'group' => 'Development',
             'position' => 2
         ],
@@ -235,7 +209,7 @@ try {
             'title' => 'Testing Platforms',
             'description' => 'Quality assurance and testing tools',
             'emoji' => '🧪',
-            'theme_color' => '#EC4899',
+            'theme_color' => 'pink',
             'group' => 'Development',
             'position' => 3
         ],
@@ -244,7 +218,7 @@ try {
             'title' => 'API Management',
             'description' => 'API gateway and documentation',
             'emoji' => '🔌',
-            'theme_color' => '#EF4444',
+            'theme_color' => 'red',
             'group' => 'Development',
             'position' => 4
         ],
@@ -255,7 +229,7 @@ try {
             'title' => 'Cloud Services',
             'description' => 'Access to cloud platforms and services',
             'emoji' => '☁️',
-            'theme_color' => '#8B5CF6',
+            'theme_color' => 'violet',
             'group' => 'Infrastructure',
             'position' => 0
         ],
@@ -264,7 +238,7 @@ try {
             'title' => 'Server Management',
             'description' => 'Server monitoring and administration',
             'emoji' => '🖥️',
-            'theme_color' => '#06B6D4',
+            'theme_color' => 'cyan',
             'group' => 'Infrastructure',
             'position' => 1
         ],
@@ -273,7 +247,7 @@ try {
             'title' => 'Database Administration',
             'description' => 'Database management and monitoring',
             'emoji' => '🗄️',
-            'theme_color' => '#14B8A6',
+            'theme_color' => 'teal',
             'group' => 'Infrastructure',
             'position' => 2
         ],
@@ -282,7 +256,7 @@ try {
             'title' => 'Network Infrastructure',
             'description' => 'Network monitoring and configuration',
             'emoji' => '🌐',
-            'theme_color' => '#3B82F6',
+            'theme_color' => 'blue',
             'group' => 'Infrastructure',
             'position' => 3
         ],
@@ -291,7 +265,7 @@ try {
             'title' => 'Security Center',
             'description' => 'Security monitoring and threat management',
             'emoji' => '🔒',
-            'theme_color' => '#EF4444',
+            'theme_color' => 'red',
             'group' => 'Infrastructure',
             'position' => 4
         ],
@@ -302,7 +276,7 @@ try {
             'title' => 'Communication Hub',
             'description' => 'Team communication and collaboration tools',
             'emoji' => '💬',
-            'theme_color' => '#EC4899',
+            'theme_color' => 'pink',
             'group' => 'Collaboration',
             'position' => 0
         ],
@@ -311,7 +285,7 @@ try {
             'title' => 'Project Management',
             'description' => 'Project tracking and task management',
             'emoji' => '📋',
-            'theme_color' => '#6366F1',
+            'theme_color' => 'indigo',
             'group' => 'Collaboration',
             'position' => 1
         ],
@@ -320,7 +294,7 @@ try {
             'title' => 'File Sharing',
             'description' => 'Document sharing and cloud storage',
             'emoji' => '📁',
-            'theme_color' => '#10B981',
+            'theme_color' => 'emerald',
             'group' => 'Collaboration',
             'position' => 2
         ],
@@ -329,7 +303,7 @@ try {
             'title' => 'Collaborative Workspaces',
             'description' => 'Virtual whiteboards and brainstorming',
             'emoji' => '🖼️',
-            'theme_color' => '#F59E0B',
+            'theme_color' => 'amber',
             'group' => 'Collaboration',
             'position' => 3
         ],
@@ -338,7 +312,7 @@ try {
             'title' => 'Scheduling & Calendar',
             'description' => 'Team calendars and meeting scheduling',
             'emoji' => '📅',
-            'theme_color' => '#8B5CF6',
+            'theme_color' => 'violet',
             'group' => 'Collaboration',
             'position' => 4
         ],
@@ -349,7 +323,7 @@ try {
             'title' => 'Documentation Center',
             'description' => 'Company wiki and knowledge base',
             'emoji' => '📚',
-            'theme_color' => '#F59E0B',
+            'theme_color' => 'amber',
             'group' => 'Resources',
             'position' => 0
         ],
@@ -358,7 +332,7 @@ try {
             'title' => 'Training & Learning',
             'description' => 'Employee training and learning resources',
             'emoji' => '🎓',
-            'theme_color' => '#06B6D4',
+            'theme_color' => 'cyan',
             'group' => 'Resources',
             'position' => 1
         ],
@@ -367,7 +341,7 @@ try {
             'title' => 'Resource Library',
             'description' => 'Templates, guides, and reference materials',
             'emoji' => '📖',
-            'theme_color' => '#14B8A6',
+            'theme_color' => 'teal',
             'group' => 'Resources',
             'position' => 2
         ],
@@ -376,7 +350,7 @@ try {
             'title' => 'Forms & Requests',
             'description' => 'Company forms and request management',
             'emoji' => '📝',
-            'theme_color' => '#6366F1',
+            'theme_color' => 'indigo',
             'group' => 'Resources',
             'position' => 3
         ],
@@ -385,30 +359,38 @@ try {
             'title' => 'IT Support',
             'description' => 'IT helpdesk and support tickets',
             'emoji' => '🆘',
-            'theme_color' => '#EF4444',
+            'theme_color' => 'red',
             'group' => 'Resources',
             'position' => 4
         ]
     ];
     
     $tileStmt = $db->prepare('
-        INSERT INTO tiles (id, user_id, title, description, emoji, theme_color, "group", position, created_at, visibility)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, "public")
+        INSERT INTO tiles (
+            id, user_id, title, description, emoji, theme_color, "group", position, created_at, visibility,
+            published, source_tab, show_emoji, show_title, show_description
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 1, 1, 1)
     ');
-    
+
     foreach ($tiles as $tile) {
         $tileStmt->execute([
             $tile['id'],
-            $adminUserId,
+            demoDataResolveTileOwnerId($tile['id'], $userIds, (int) $adminUserId),
             $tile['title'],
             $tile['description'],
             $tile['emoji'],
             $tile['theme_color'],
             $tile['group'],
             $tile['position'],
-            $currentTime
+            $currentTime,
+            demoDataResolveTileVisibility($tile['id']),
+            'public',
         ]);
     }
+    echo "  Tile ownership assigned across demo1–demo10 (heat map uses tiles.user_id).\n";
+    $visCounts = demoDataVisibilityCounts();
+    echo "  Visibility buckets: public={$visCounts['public']}, authenticated={$visCounts['authenticated']}, role-assigned(private)={$visCounts['private']}.\n";
     
     // ============================================
     // TABS AND SECTIONS
@@ -447,20 +429,9 @@ try {
         'tile_forms' => ['Forms' => [['id' => 'sec_forms_requests', 'title' => 'Requests'], ['id' => 'sec_forms_approvals', 'title' => 'Approvals'], ['id' => 'sec_forms_surveys', 'title' => 'Surveys']]],
         'tile_support' => ['Support' => [['id' => 'sec_support_tickets', 'title' => 'Tickets'], ['id' => 'sec_support_kb', 'title' => 'Knowledge Base'], ['id' => 'sec_support_chat', 'title' => 'Live Chat']]]
     ];
-    
-    // Create tabs and sections for all tiles
-    $tabSectionMap = [];
-    foreach ($tileStructure as $tileId => $tabs) {
-        foreach ($tabs as $tabTitle => $sections) {
-            $tabId = 'tab_' . $tileId . '_' . strtolower(str_replace(' ', '_', $tabTitle));
-            $db->exec("INSERT INTO tabs (id, tile_id, title, position) VALUES ('$tabId', '$tileId', '$tabTitle', 0)");
-            
-            foreach ($sections as $pos => $sec) {
-                $db->exec("INSERT INTO sections (id, tile_id, tab_id, title, position) VALUES ('{$sec['id']}', '$tileId', '$tabId', '{$sec['title']}', $pos)");
-                $tabSectionMap[$sec['id']] = true;
-            }
-        }
-    }
+
+    // Create tabs and sections for all tiles (prepared statements)
+    $tabSectionMap = demoDataCreateTabsAndSections($db, $tileStructure);
     
     // ============================================
     // LINKS
@@ -468,8 +439,8 @@ try {
     echo "Creating links...\n";
     
     $linkStmt = $db->prepare('
-        INSERT INTO links (id, section_id, label, url, position, health_status)
-        VALUES (?, ?, ?, ?, ?, "unknown")
+        INSERT INTO links (id, section_id, label, url, position, health_status, visibility, published)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1)
     ');
     
     $links = [
@@ -592,7 +563,15 @@ try {
     ];
     
     foreach ($links as $link) {
-        $linkStmt->execute($link);
+        $linkStmt->execute([
+            $link[0],
+            $link[1],
+            $link[2],
+            $link[3],
+            $link[4],
+            'unknown',
+            'public',
+        ]);
     }
     
     // ============================================
@@ -646,7 +625,9 @@ try {
     foreach ($arrangements as $arr) {
         $arrangementStmt->execute($arr);
     }
-    
+
+    demoDataSeedCategoryArrangements($db);
+
     // ============================================
     // MONITORS
     // ============================================
@@ -675,7 +656,7 @@ try {
         ],
         [
             'name' => 'API Gateway',
-            'type' => 'url',
+            'type' => 'keyword',
             'target' => 'https://api.example.com/health',
             'port' => null,
             'keyword' => 'healthy',
@@ -766,7 +747,7 @@ try {
         ],
         [
             'name' => 'Monitoring Dashboard',
-            'type' => 'url',
+            'type' => 'keyword',
             'target' => 'https://monitor.example.com',
             'port' => null,
             'keyword' => 'dashboard',
@@ -813,7 +794,7 @@ try {
     // ============================================
     // ASSIGN TILES, LINKS, WIDGETS TO ROLES (varied per role); ALL TABS EXCEPT PUBLIC
     // ============================================
-    echo "Assigning varied tiles/links and widgets to demo roles (all tabs except Public)...\n";
+    echo "Assigning varied tiles/links and widgets to demo roles...\n";
     $sectionToTile = [];
     foreach ($tileStructure as $tileId => $tabs) {
         foreach ($tabs as $sections) {
@@ -822,19 +803,8 @@ try {
             }
         }
     }
-    $roleTiles = [
-        'Manager'   => ['tile_dashboard', 'tile_analytics', 'tile_hr_portal', 'tile_finance', 'tile_customer_portal', 'tile_communication', 'tile_project_mgmt', 'tile_file_sharing', 'tile_whiteboard', 'tile_calendar'],
-        'Developer' => ['tile_dev_tools', 'tile_code_repos', 'tile_cicd', 'tile_testing', 'tile_api_gateway', 'tile_cloud_services', 'tile_servers', 'tile_databases', 'tile_networking', 'tile_security'],
-        'Designer'  => ['tile_dev_tools', 'tile_code_repos', 'tile_cicd', 'tile_communication', 'tile_project_mgmt', 'tile_file_sharing', 'tile_whiteboard', 'tile_documentation'],
-        'Support'   => ['tile_dashboard', 'tile_customer_portal', 'tile_communication', 'tile_calendar', 'tile_documentation', 'tile_support'],
-        'Viewer'    => ['tile_dashboard', 'tile_analytics', 'tile_hr_portal', 'tile_finance', 'tile_customer_portal', 'tile_documentation', 'tile_training', 'tile_library'],
-        'Editor'    => ['tile_dashboard', 'tile_analytics', 'tile_hr_portal', 'tile_finance', 'tile_customer_portal', 'tile_communication', 'tile_project_mgmt', 'tile_file_sharing', 'tile_whiteboard', 'tile_calendar', 'tile_documentation', 'tile_forms'],
-        'HR'        => ['tile_dashboard', 'tile_analytics', 'tile_hr_portal', 'tile_calendar', 'tile_documentation', 'tile_training'],
-        'Finance'   => ['tile_dashboard', 'tile_analytics', 'tile_finance', 'tile_documentation', 'tile_forms'],
-        'Guest'     => ['tile_dashboard', 'tile_customer_portal', 'tile_documentation', 'tile_support'],
-        'Auditor'   => ['tile_dashboard', 'tile_analytics', 'tile_hr_portal', 'tile_finance', 'tile_customer_portal', 'tile_dev_tools', 'tile_code_repos', 'tile_documentation', 'tile_training', 'tile_library', 'tile_forms', 'tile_support'],
-    ];
-    $allowedTabsForDemoRoles = ['your-apps', 'favorites', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring', 'monitorv2'];
+    $roleTiles = demoDataRoleTileAssignments();
+    $allowedTabsForDemoRoles = demoDataAllowedAppTabs();
     $builtInWidgetIds = [
         'clock', 'weather', 'calculator', 'notes', 'password-generator',
         'phonetic-alphabet', 'zoom-control', 'theme', 'fav-organizer', 'chat', 'snake-game'
@@ -872,28 +842,45 @@ try {
             $rwpStmt->execute([$roleId, $widgetId, $currentTime, $currentTime]);
         }
     }
-    echo "  Varied tile/link sets per role; all tabs except Public; all widgets assigned.\n\n";
+    echo "  Varied tile/link sets per role; app tabs + widgets assigned.\n";
+
+    demoDataAssignUserTilePermissions($db, $roleIds, $userIds, $roleTiles, $demoUsers, $currentTime);
+    echo "\n";
     
     // Re-enable foreign keys
     $db->exec('PRAGMA foreign_keys = ON');
-    
+
     $db->commit();
-    
-    echo "\n✅ Demo data generated successfully!\n";
+
+    // Demo seed rewrites tiles; drop guest summary cache so Public tab refreshes immediately
+    if (function_exists('invalidateGuestTilesListCache')) {
+        invalidateGuestTilesListCache();
+    } elseif (is_file(__DIR__ . '/../api/response_cache.php')) {
+        require_once __DIR__ . '/../api/response_cache.php';
+        if (function_exists('invalidateGuestTilesListCache')) {
+            invalidateGuestTilesListCache();
+        }
+    }
+
+    echo "\nDemo data generated successfully (simple / solid colors)!\n";
     echo "\nSummary:\n";
     echo "  - Roles: 10 (Manager, Developer, Designer, Support, Viewer, Editor, HR, Finance, Guest, Auditor)\n";
-    echo "  - Demo users: 10 (demo1–demo10, password: password)\n";
-    echo "  - Role permissions: varied tile/link sets per role; all tabs except Public; all widgets.\n";
-    echo "  - Tiles: " . count($tiles) . "\n";
+    echo "  - Demo users: 10 (demo1-demo10, password: password)\n";
+    echo "  - Role permissions: varied tile/link sets per role; app tabs + widgets.\n";
+    echo "  - Categories: 5 (global arrangement)\n";
+    echo "  - Tiles: " . count($tiles) . " (public / authenticated / role-assigned buckets)\n";
+    $visCounts = demoDataVisibilityCounts();
+    echo "  - Public (guest): {$visCounts['public']} | Authenticated: {$visCounts['authenticated']} | Your Assigned Apps: {$visCounts['private']}\n";
     echo "  - Links: " . count($links) . "\n";
     echo "  - Monitors: " . count($monitors) . "\n";
+    echo "  - Heat map: demo users own spaces; try demo3 (Designer) on Your Assigned Apps.\n";
     echo "\n";
-    
-} catch (Exception $e) {
-    if ($db->inTransaction()) {
+
+} catch (Throwable $e) {
+    if (isset($db) && $db instanceof PDO && $db->inTransaction()) {
         $db->rollBack();
     }
-    echo "❌ Error: " . $e->getMessage() . "\n";
-    echo "Stack trace:\n" . $e->getTraceAsString() . "\n";
+    fwrite(STDERR, "Error: " . $e->getMessage() . "\n");
+    fwrite(STDERR, "Stack trace:\n" . $e->getTraceAsString() . "\n");
     exit(1);
 }

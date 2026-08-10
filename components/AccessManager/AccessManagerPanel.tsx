@@ -11,11 +11,11 @@ export interface AccessManagerPanelProps {
   editorsWorkspace: React.ReactNode;
 }
 
-const NAV_ITEMS: Array<{ id: AccessSubTab; label: string }> = [
-  { id: 'hub', label: 'Overview' },
-  { id: 'roles', label: 'Roles' },
-  { id: 'groups', label: 'Teams' },
-  { id: 'editors', label: 'Space editors' },
+const NAV_ITEMS: Array<{ id: AccessSubTab; label: string; emoji: string }> = [
+  { id: 'hub', label: 'Overview', emoji: '🧭' },
+  { id: 'roles', label: 'Roles', emoji: '🎭' },
+  { id: 'groups', label: 'Teams', emoji: '👥' },
+  { id: 'editors', label: 'Space editors', emoji: '✏️' },
 ];
 
 export const AccessManagerPanel: React.FC<AccessManagerPanelProps> = ({
@@ -28,7 +28,7 @@ export const AccessManagerPanel: React.FC<AccessManagerPanelProps> = ({
 }) => {
   return (
     <div className="space-y-6">
-      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-1">
+      <div className="bg-white dark:bg-slate-800 border border-sky-200/70 dark:border-sky-800/40 rounded-xl p-1 shadow-sm shadow-sky-500/5">
         <div className="flex flex-wrap gap-1">
           {NAV_ITEMS.map((item) => (
             <button
@@ -37,10 +37,11 @@ export const AccessManagerPanel: React.FC<AccessManagerPanelProps> = ({
               onClick={() => onSubTabChange(item.id)}
               className={`flex-1 min-w-[7rem] px-3 py-2 text-sm font-medium transition-colors rounded-lg ${
                 activeSubTab === item.id
-                  ? 'bg-brand-600 text-white'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                  ? 'bg-sky-600 text-white shadow-sm shadow-sky-500/25'
+                  : 'text-sky-800/80 dark:text-sky-200/80 hover:bg-sky-50 dark:hover:bg-sky-950/40'
               }`}
             >
+              <span aria-hidden className="mr-1">{item.emoji}</span>
               {item.label}
             </button>
           ))}

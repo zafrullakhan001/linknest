@@ -71,15 +71,13 @@ function normalizeImportedLink(raw: unknown): Link | null {
   const url = String(link.url ?? '').trim();
   if (!label && !url) return null;
 
-  let finalUrl = url;
-  if (finalUrl && !/^https?:\/\//i.test(finalUrl) && !finalUrl.startsWith('mailto:') && !finalUrl.startsWith('tel:')) {
-    finalUrl = `https://${finalUrl}`;
-  }
+  let finalUrl = url.trim();
+  // Keep URL exactly as imported (ssh://, http://, bare hosts, etc.) — do not invent https://.
 
   return {
     id: generateId(),
     label: label || url || 'Link',
-    url: finalUrl || 'https://',
+    url: finalUrl,
     icon: typeof link.icon === 'string' ? link.icon : undefined,
     textColor: typeof link.textColor === 'string' ? link.textColor : undefined,
     browser: typeof link.browser === 'string' ? link.browser : undefined,

@@ -9,7 +9,11 @@ const API_BASE: string =
   '/api';
 
 // Safety guard so frontend never "spins forever" even if backend/network hangs
-async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string, signal?: AbortSignal): Promise<T> {
+  if (signal?.aborted) {
+    throw new DOMException('Aborted', 'AbortError');
+  }
+
   let timeoutId: number;
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutId = window.setTimeout(() => {
@@ -17,11 +21,17 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
     }, ms);
   });
 
+  const onAbort = () => {
+    window.clearTimeout(timeoutId!);
+  };
+  signal?.addEventListener('abort', onAbort, { once: true });
+
   try {
     const result = await Promise.race([promise, timeoutPromise]);
     return result as T;
   } finally {
     window.clearTimeout(timeoutId!);
+    signal?.removeEventListener('abort', onAbort);
   }
 }
 
@@ -36,6 +46,19 @@ export interface HealthStats {
 
 export interface LinkHealthMap {
   [linkId: string]: LinkHealth;
+}
+
+/** Apply check-tile results; drop skipped (SSH/etc.) so they never show as Broken. */
+function mergeHealthResults(prev: LinkHealthMap, results: Record<string, any>): LinkHealthMap {
+  const next = { ...prev };
+  for (const [linkId, health] of Object.entries(results || {})) {
+    if (!health || health.skipped || health.status == null) {
+      delete next[linkId];
+      continue;
+    }
+    next[linkId] = health as LinkHealth;
+  }
+  return next;
 }
 
 export const linkHealthService = {
@@ -101,16 +124,18 @@ export const linkHealthService = {
   /**
    * Check all links in a tile
    */
-  async checkTileLinks(tileId: string, force: boolean = true): Promise<LinkHealthMap> {
+  async checkTileLinks(tileId: string, force: boolean = true, signal?: AbortSignal): Promise<LinkHealthMap> {
     const response = await withTimeout(
       fetch(`${API_BASE}/linkhealth/check-tile`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ tileId, force })
+        body: JSON.stringify({ tileId, force }),
+        signal
       }),
-      15000, // Allow a bit more time for whole-tile checks
-      'checkTileLinks'
+      12000,
+      'checkTileLinks',
+      signal
     );
     
     if (!response.ok) {
@@ -119,6 +144,13 @@ export const linkHealthService = {
     
     const data = await response.json();
     return data.results || {};
+  },
+
+  /**
+   * Merge check results into a health map, removing skipped non-HTTP links (SSH, etc.).
+   */
+  mergeResults(prev: LinkHealthMap, results: Record<string, any>): LinkHealthMap {
+    return mergeHealthResults(prev, results);
   },
 
   /**
@@ -144,6 +176,39 @@ export const linkHealthService = {
     }
     
     return await response.json();
+  },
+
+  /**
+   * Probe an arbitrary URL (edit-form preview) — returns RTT + HTTP status
+   */
+  async checkUrl(url: string, signal?: AbortSignal): Promise<{
+    url: string;
+    scheme: 'http' | 'https' | string;
+    health: LinkHealth & { serverLatency?: number };
+  }> {
+    const response = await withTimeout(
+      fetch(`${API_BASE}/linkhealth/check-url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ url }),
+        signal
+      }),
+      10000,
+      'checkUrl'
+    );
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to check URL');
+    }
+
+    const data = await response.json();
+    return {
+      url: data.url,
+      scheme: data.scheme,
+      health: data.health
+    };
   },
 
   /**

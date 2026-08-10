@@ -6,6 +6,7 @@ import { authService, UserListItem } from '../services/authService';
 import { createTile, saveTile } from '../services/storageService';
 import { parseSpaceExportObject, normalizeImportedTiles } from '../services/spaceTransferService';
 import { generateUuid } from '../services/idService';
+import { isEscapeDialogOpen } from '../hooks/useEscapeToClose';
 
 interface ChatWidgetProps {
   tiles: Tile[];
@@ -43,10 +44,26 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !e.ctrlKey && !e.shiftKey && !e.metaKey && !e.altKey) {
         const target = e.target as HTMLElement;
-        // Don't close if modals/dialogs are open
-        if (showTileSelector || showJsonInput || duplicateDialog) {
+        // Close nested dialogs first instead of the whole widget
+        if (duplicateDialog) {
+          e.preventDefault();
+          e.stopPropagation();
+          setDuplicateDialog(null);
           return;
         }
+        if (showTileSelector) {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowTileSelector(false);
+          return;
+        }
+        if (showJsonInput) {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowJsonInput(false);
+          return;
+        }
+        if (isEscapeDialogOpen()) return;
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
           return;
         }
@@ -61,8 +78,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
       window.removeEventListener('keydown', handleEscape, true);
     };
   }, [onClose, showTileSelector, showJsonInput, duplicateDialog]);
-  
-  // Get last seen message ID from localStorage, or initialize to 0
+   // Get last seen message ID from localStorage, or initialize to 0
   const getLastSeenMessageId = (): number => {
     if (!user) return 0;
     const stored = localStorage.getItem(`linknest_last_seen_message_${user.id}`);

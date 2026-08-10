@@ -90,7 +90,9 @@ function handleGetAllAvailableWidgets() {
         ['id' => 'theme', 'label' => 'Theme', 'description' => 'Theme switcher widget', 'isCustom' => false],
         ['id' => 'fav-organizer', 'label' => 'Favorite Organizer', 'description' => 'Organize favorite links', 'isCustom' => false],
         ['id' => 'chat', 'label' => 'Chat', 'description' => 'Chat widget (requires authentication)', 'isCustom' => false],
-        ['id' => 'snake-game', 'label' => 'Snake Game', 'description' => 'Snake game widget', 'isCustom' => false]
+        ['id' => 'snake-game', 'label' => 'Snake Game', 'description' => 'Snake game widget', 'isCustom' => false],
+        ['id' => 'vnc-viewer', 'label' => 'VNC Viewer', 'description' => 'noVNC remote desktop viewer (websockify URL)', 'isCustom' => false],
+        ['id' => 'ssh-terminal', 'label' => 'SSH Terminal', 'description' => 'xterm.js web SSH terminal (ttyd WebSocket URL)', 'isCustom' => false]
     ];
     
     $db = getDB();
@@ -135,7 +137,7 @@ function handleGetAllowedWidgets() {
         return;
     }
     
-    // Get user's role IDs (including from groups)
+    // Get user's role IDs (including from groups). Guests resolve the is_guest role.
     $userRoleIds = getUserRoleIds($user ? $user['id'] : null, $db);
     
     // If user has no roles, return empty array (no widgets allowed)
@@ -153,6 +155,17 @@ function handleGetAllowedWidgets() {
     while ($row = $stmt->fetch()) {
         $allowedWidgetIds[] = $row['widget_id'];
     }
+
+    // Guests must never receive auth-only widgets even if mis-assigned on the guest role
+    if (!$user) {
+        $authOnlyWidgets = ['notes', 'chat', 'fav-organizer'];
+        $allowedWidgetIds = array_values(array_filter(
+            $allowedWidgetIds,
+            function ($widgetId) use ($authOnlyWidgets) {
+                return !in_array($widgetId, $authOnlyWidgets, true);
+            }
+        ));
+    }
     
     // Get all available widgets
     $builtInWidgets = [
@@ -166,7 +179,9 @@ function handleGetAllowedWidgets() {
         ['id' => 'theme', 'label' => 'Theme', 'description' => 'Theme switcher widget', 'isCustom' => false],
         ['id' => 'fav-organizer', 'label' => 'Favorite Organizer', 'description' => 'Organize favorite links', 'isCustom' => false],
         ['id' => 'chat', 'label' => 'Chat', 'description' => 'Chat widget (requires authentication)', 'isCustom' => false],
-        ['id' => 'snake-game', 'label' => 'Snake Game', 'description' => 'Snake game widget', 'isCustom' => false]
+        ['id' => 'snake-game', 'label' => 'Snake Game', 'description' => 'Snake game widget', 'isCustom' => false],
+        ['id' => 'vnc-viewer', 'label' => 'VNC Viewer', 'description' => 'noVNC remote desktop viewer (websockify URL)', 'isCustom' => false],
+        ['id' => 'ssh-terminal', 'label' => 'SSH Terminal', 'description' => 'xterm.js web SSH terminal (ttyd WebSocket URL)', 'isCustom' => false]
     ];
     
     $customWidgets = [];

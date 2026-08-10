@@ -40,7 +40,7 @@ interface AssignSpaceEditorsWizardProps {
   ownerFilter: string;
   onOwnerFilterChange: (value: string) => void;
   categories: string[];
-  owners: string[];
+  owners?: string[];
   error: string;
   loading: boolean;
   onClose: () => void;
@@ -113,6 +113,32 @@ export const AssignSpaceEditorsWizard: React.FC<AssignSpaceEditorsWizardProps> =
       return true;
     });
   }, [tiles, tileSearchTerm, ownerFilter, users, menuFilter, categoryFilter]);
+
+  const ownerOptions = useMemo(() => {
+    const ownedCountByUserId = new Map<number, number>();
+    tiles.forEach((tile) => {
+      const visibility = tile.visibility || 'public';
+      if (visibility !== menuFilter) return;
+      const userIdNum = typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId;
+      if (userIdNum == null || Number.isNaN(userIdNum)) return;
+      ownedCountByUserId.set(userIdNum, (ownedCountByUserId.get(userIdNum) || 0) + 1);
+    });
+
+    const fromUsers = users
+      .map((user) => ({
+        username: user.username,
+        count: ownedCountByUserId.get(user.id) || 0,
+      }))
+      .filter((o) => o.username);
+
+    // Keep any legacy string-only owners prop usernames that aren't in users
+    const known = new Set(fromUsers.map((o) => o.username));
+    const extras = (owners || [])
+      .filter((username) => username && !known.has(username))
+      .map((username) => ({ username, count: 0 }));
+
+    return [...fromUsers, ...extras].sort((a, b) => a.username.localeCompare(b.username));
+  }, [tiles, users, menuFilter, owners]);
 
   const filteredUsers = useMemo(() => {
     const search = userSearchTerm.toLowerCase();
@@ -250,9 +276,9 @@ export const AssignSpaceEditorsWizard: React.FC<AssignSpaceEditorsWizardProps> =
               className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white"
             >
               <option value="">All owners</option>
-              {owners.map((owner) => (
-                <option key={owner} value={owner}>
-                  {owner}
+              {ownerOptions.map((owner) => (
+                <option key={owner.username} value={owner.username}>
+                  {owner.username} ({owner.count})
                 </option>
               ))}
             </select>

@@ -1,0 +1,241 @@
+// User SSH gateway connections stored in the backend DB (authenticated users).
+// Uses cookie-based auth (credentials: 'include') like the rest of the app.
+
+function resolveApiBase(): string {
+  const envBase = (import.meta as any)?.env?.VITE_API_BASE;
+  if (envBase) return envBase;
+
+  if (typeof window !== 'undefined') {
+    const path = window.location.pathname || '';
+    if (path !== '/' && path.length > 1) {
+      const cleanPath = path.replace(/\/[^/]*$/, '').replace(/\/$/, '');
+      if (cleanPath && cleanPath !== '/') {
+        return `${cleanPath}/api`;
+      }
+    }
+  }
+  return '/api';
+}
+
+const API_BASE = resolveApiBase();
+const SSH_BASE = `${API_BASE}/ssh-connections`;
+
+export const SSH_CONNECTION_COLORS = [
+  '#0ea5e9', // sky
+  '#10b981', // emerald
+  '#f59e0b', // amber
+  '#f97316', // orange
+  '#f43f5e', // rose
+  '#8b5cf6', // violet
+  '#06b6d4', // cyan
+  '#64748b', // slate
+] as const;
+
+export type SshConnectionColor = (typeof SSH_CONNECTION_COLORS)[number] | string;
+
+export type RemoteConnectionProtocol = 'ssh' | 'rdp';
+
+/** Per-connection terminal look (theme / font). Shared command-bar settings stay global. */
+export interface SshConnectionAppearance {
+  themePresetId?: string;
+  fontSize?: number;
+  fontFamily?: string;
+  bgColor?: string;
+  fgColor?: string;
+  cursorColor?: string;
+  selectionBg?: string;
+  ansi?: Record<string, string>;
+}
+
+export interface SavedSshConnection {
+  id: string;
+  name: string;
+  wsUrl: string;
+  /** ssh = ttyd/auto; rdp = Guacamole / web RDP page URL */
+  protocol?: RemoteConnectionProtocol;
+  tags: string[];
+  notes?: string;
+  color?: string;
+  appearance?: SshConnectionAppearance;
+  createdAt: number;
+  lastUsedAt?: number;
+}
+
+export function normalizeSshColor(raw: unknown): string {
+  const c = String(raw || '').trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(c)) return c;
+  return '#0ea5e9';
+}
+
+export function normalizeConnectionProtocol(raw: unknown): RemoteConnectionProtocol {
+  return String(raw || '').trim().toLowerCase() === 'rdp' ? 'rdp' : 'ssh';
+}
+
+export function normalizeSshAppearance(raw: unknown): SshConnectionAppearance | undefined {
+  if (raw == null || raw === '') return undefined;
+  let obj: any = raw;
+  if (typeof raw === 'string') {
+    try {
+      obj = JSON.parse(raw);
+    } catch {
+      return undefined;
+    }
+  }
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return undefined;
+
+  const out: SshConnectionAppearance = {};
+  if (typeof obj.themePresetId === 'string' && obj.themePresetId.trim()) {
+    out.themePresetId = obj.themePresetId.trim();
+  }
+  if (Number.isFinite(Number(obj.fontSize))) {
+    out.fontSize = Math.min(24, Math.max(11, Math.round(Number(obj.fontSize))));
+  }
+  if (typeof obj.fontFamily === 'string' && obj.fontFamily.trim()) {
+    out.fontFamily = obj.fontFamily.trim();
+  }
+  for (const key of ['bgColor', 'fgColor', 'cursorColor', 'selectionBg'] as const) {
+    const v = String(obj[key] || '').trim().toLowerCase();
+    if (/^#[0-9a-f]{6}$/.test(v)) out[key] = v;
+  }
+  if (obj.ansi && typeof obj.ansi === 'object' && !Array.isArray(obj.ansi)) {
+    const ansi: Record<string, string> = {};
+    for (const [k, v] of Object.entries(obj.ansi)) {
+      const hex = String(v || '').trim().toLowerCase();
+      if (/^#[0-9a-f]{6}$/.test(hex)) ansi[k] = hex;
+    }
+    if (Object.keys(ansi).length) out.ansi = ansi;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function mapRow(row: any): SavedSshConnection {
+  let tags: string[] = [];
+  if (Array.isArray(row.tags)) {
+    tags = row.tags.map(String);
+  } else if (typeof row.tags === 'string') {
+    try {
+      const parsed = JSON.parse(row.tags);
+      tags = Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      tags = [];
+    }
+  }
+
+  return {
+    id: String(row.id),
+    name: String(row.name || ''),
+    wsUrl: String(row.wsUrl ?? row.ws_url ?? ''),
+    protocol: normalizeConnectionProtocol(row.protocol),
+    tags,
+    notes: row.notes != null && String(row.notes) ? String(row.notes) : undefined,
+    color: normalizeSshColor(row.color),
+    appearance: normalizeSshAppearance(row.appearance),
+    createdAt: typeof row.createdAt === 'number' ? row.createdAt : Number(row.created_at) || Date.now(),
+    lastUsedAt:
+      typeof row.lastUsedAt === 'number'
+        ? row.lastUsedAt
+        : row.last_used_at != null
+          ? Number(row.last_used_at) || undefined
+          : undefined,
+  };
+}
+
+export const sshConnectionService = {
+  async list(): Promise<SavedSshConnection[]> {
+    const res = await fetch(SSH_BASE, { method: 'GET', credentials: 'include' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load SSH connections');
+    const list = Array.isArray(data.connections) ? data.connections : [];
+    return list.map(mapRow);
+  },
+
+  async create(input: {
+    id?: string;
+    name: string;
+    wsUrl: string;
+    protocol?: RemoteConnectionProtocol;
+    tags?: string[];
+    notes?: string;
+    color?: string;
+    appearance?: SshConnectionAppearance;
+  }): Promise<SavedSshConnection> {
+    const appearance = normalizeSshAppearance(input.appearance);
+    const res = await fetch(SSH_BASE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        id: input.id,
+        name: input.name,
+        wsUrl: input.wsUrl,
+        protocol: normalizeConnectionProtocol(input.protocol),
+        tags: input.tags || [],
+        notes: input.notes || '',
+        color: normalizeSshColor(input.color),
+        appearance: appearance || null,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to create SSH connection');
+    return mapRow(data.connection);
+  },
+
+  async update(
+    id: string,
+    patch: {
+      name?: string;
+      wsUrl?: string;
+      protocol?: RemoteConnectionProtocol;
+      tags?: string[];
+      notes?: string;
+      color?: string;
+      appearance?: SshConnectionAppearance | null;
+      lastUsedAt?: number;
+    }
+  ): Promise<SavedSshConnection> {
+    const body: Record<string, unknown> = { ...patch };
+    if (patch.color !== undefined) body.color = normalizeSshColor(patch.color);
+    if (patch.protocol !== undefined) body.protocol = normalizeConnectionProtocol(patch.protocol);
+    if (patch.appearance !== undefined) {
+      body.appearance = patch.appearance === null ? null : normalizeSshAppearance(patch.appearance) || null;
+    }
+    const res = await fetch(`${SSH_BASE}/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to update SSH connection');
+    return mapRow(data.connection);
+  },
+
+  async remove(id: string): Promise<void> {
+    const res = await fetch(`${SSH_BASE}/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error((data as any).error || 'Failed to delete SSH connection');
+  },
+
+  async bulkUpsert(connections: SavedSshConnection[]): Promise<SavedSshConnection[]> {
+    const res = await fetch(`${SSH_BASE}/bulk`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        connections: connections.map((c) => ({
+          ...c,
+          protocol: normalizeConnectionProtocol(c.protocol),
+          color: normalizeSshColor(c.color),
+          appearance: normalizeSshAppearance(c.appearance) || null,
+        })),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to import SSH connections');
+    const list = Array.isArray(data.connections) ? data.connections : [];
+    return list.map(mapRow);
+  },
+};

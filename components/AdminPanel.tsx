@@ -5,11 +5,9 @@ import { settingsService, AppSettings, SEMI_PWA_EXCLUDE_PATHS_DEFAULT } from '..
 import { databaseService } from '../services/databaseService';
 import { useSettings, resolvePageTitle } from '../contexts/SettingsContext';
 import { useAuth } from '../contexts/AuthContext';
-import { getTiles, createTile, saveTile } from '../services/storageService';
-import { bulkImportTiles } from '../services/storageService';
+import { getTiles, createTile, saveTile, deleteTile, bulkImportTiles, getCategoryArrangement } from '../services/storageService';
 import { exportAllCategoriesToFile, parseSpaceExportObject, normalizeImportedTiles } from '../services/spaceTransferService';
 import { Tile, POPULAR_EMOJIS } from '../types';
-import { getCategoryArrangement } from '../services/storageService';
 import { SecurePasswordInput } from './SecurePasswordInput';
 import { PasswordCriteriaList } from './PasswordCriteriaList';
 import { validatePassword } from '../services/passwordValidation';
@@ -17,19 +15,24 @@ import { accessService, TilePermission } from '../services/accessService';
 import { groupTilePermissionsService, GroupTilePermission } from '../services/groupTilePermissionsService';
 import { APP_TABS, getDisabledTabsFromSettings, setToSortedJsonArray, type AppTabId } from '../services/tabVisibilityService';
 import { broadcastService, BroadcastMessage } from '../services/broadcastService';
-import { rolesService, Role } from '../services/rolesService';
+import { rolesService, Role, LINK_ACTION_OPTIONS, RoleAssignmentTotals } from '../services/rolesService';
 import { userGroupsService, UserGroup } from '../services/userGroupsService';
 import SamlConfigModal from './SamlConfigModal';
 import { BulkAssignRolesModal } from './BulkAssignRolesModal';
+import { RoleMembersModal } from './RoleMembersModal';
+import { RoleTeamsModal } from './RoleTeamsModal';
 import { TeamFormWizard } from './TeamFormWizard';
-import { TeamMembersWizard } from './TeamMembersWizard';
-import { TeamRolesWizard } from './TeamRolesWizard';
+import { TeamMembersModal } from './TeamMembersModal';
+import { TeamRolesModal } from './TeamRolesModal';
 import { AssignSpaceEditorsWizard } from './AssignSpaceEditorsWizard';
 import { useMobile } from '../hooks/useMobile';
 import { getCustomWidgets, createWidget, updateWidget, deleteWidget, CustomWidget, CreateWidgetRequest, UpdateWidgetRequest } from '../services/widgetService';
 import { GranularPermissionsModal } from './GranularPermissionsModal';
 import { AddonsManagement } from './AddonsManagement';
 import { UpdatesPanel } from './UpdatesDialog';
+import { DevicePresetsAdmin } from './DevicePresetsAdmin';
+import { LinkCheckExceptionsAdmin } from './LinkCheckExceptionsAdmin';
+import { IframeBlockDomainsAdmin } from './IframeBlockDomainsAdmin';
 import {
   AccessManagerPanel,
   AccessSubTab,
@@ -88,6 +91,9 @@ type AdminNavTabId =
   | 'ldap'
   | 'saml'
   | 'tabVisibility'
+  | 'devicePresets'
+  | 'linkCheckExceptions'
+  | 'iframeBlockDomains'
   | 'access'
   | 'clone'
   | 'browser'
@@ -114,9 +120,12 @@ const ADMIN_NAV_SECTIONS: Array<{
     label: 'Configuration',
     items: [
       { id: 'settings', label: 'Settings', emoji: '⚙️' },
+      { id: 'devicePresets', label: 'Device Presets', emoji: '📱' },
       { id: 'database', label: 'Database', emoji: '🗄️' },
       { id: 'spaces', label: 'Spaces', emoji: '📦' },
       { id: 'tabVisibility', label: 'Enable/Disable Tabs', emoji: '📑' },
+      { id: 'linkCheckExceptions', label: 'Link Check Exceptions', emoji: '🚫' },
+      { id: 'iframeBlockDomains', label: 'Iframe Block Domains', emoji: '🖼️' },
       { id: 'access', label: 'Access Manager', emoji: '🛡️' },
     ],
   },
@@ -149,6 +158,26 @@ const ADMIN_NAV_SECTIONS: Array<{
 ];
 
 const ADMIN_NAV_ITEMS = ADMIN_NAV_SECTIONS.flatMap((section) => section.items);
+
+/** Shared SAML/LDAP-style sky/teal chrome for Admin content pages */
+const ADMIN_SECTION_CARD =
+  'bg-white dark:bg-slate-800 border border-sky-200/70 dark:border-sky-800/40 rounded-xl overflow-hidden shadow-sm shadow-sky-500/5';
+const ADMIN_SECTION_HEADER =
+  'bg-gradient-to-r from-sky-50 via-teal-50/80 to-cyan-50/60 dark:from-sky-950/40 dark:via-teal-950/30 dark:to-cyan-950/20 border-b border-sky-100 dark:border-sky-800/40 px-6 py-5';
+const ADMIN_SECTION_TITLE =
+  'text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2';
+const ADMIN_SECTION_SUBTITLE = 'text-sm text-sky-800/70 dark:text-sky-200/70 mt-0.5';
+const ADMIN_INNER_CARD =
+  'rounded-xl border border-sky-100 dark:border-sky-900/40 bg-gradient-to-br from-sky-50/40 to-white dark:from-sky-950/20 dark:to-slate-800 p-4';
+const ADMIN_FIELD =
+  'w-full bg-slate-50 dark:bg-slate-900/50 border border-sky-200/70 dark:border-sky-800/40 rounded-xl px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400';
+const ADMIN_PRIMARY_BTN =
+  'bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors shadow-sm shadow-sky-500/20';
+const ADMIN_SUBTAB_ACTIVE = 'bg-sky-600 text-white shadow-sm shadow-sky-500/25';
+const ADMIN_SUBTAB_INACTIVE =
+  'text-sky-800/80 dark:text-sky-200/80 hover:bg-sky-50 dark:hover:bg-sky-950/40';
+const ADMIN_TOGGLE_TRACK =
+  'w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-sky-300 dark:peer-focus:ring-sky-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[\'\'] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-sky-600';
 
 /** Common Windows / web-safe fonts for branding (sans, serif, mono, cursive/script, display). */
 const BRANDING_FONT_FAMILIES: { value: string; label: string; group: string }[] = [
@@ -245,11 +274,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const isMobile = useMobile();
   // Initialize activeTab from localStorage or default to 'pending'
   // Migrate legacy 'footer' tab → Settings › Branding
-  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenanceScripts' | 'maintenance' | 'widgets' | 'addons' | 'appUpdates' | 'loadTest'>(() => {
+  const [activeTab, setActiveTab] = useState<AdminNavTabId | 'footer'>(() => {
     const savedTab = localStorage.getItem('adminPanelActiveTab');
     if (savedTab === 'footer') return 'settings';
-    const validTabs: Array<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenanceScripts' | 'maintenance' | 'widgets' | 'addons' | 'appUpdates' | 'loadTest'> = ['pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'saml', 'footer', 'tabVisibility', 'access', 'clone', 'browser', 'broadcast', 'maintenanceScripts', 'maintenance', 'widgets', 'addons', 'appUpdates', 'loadTest'];
-    return (savedTab && validTabs.includes(savedTab as any)) ? savedTab as any : 'pending';
+    const validTabs: Array<AdminNavTabId | 'footer'> = [
+      'pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'saml', 'footer',
+      'tabVisibility', 'devicePresets', 'linkCheckExceptions', 'iframeBlockDomains', 'access', 'clone', 'browser', 'broadcast',
+      'maintenanceScripts', 'maintenance', 'widgets', 'addons', 'appUpdates', 'loadTest',
+    ];
+    return (savedTab && validTabs.includes(savedTab as AdminNavTabId | 'footer'))
+      ? (savedTab as AdminNavTabId | 'footer')
+      : 'pending';
   });
   // Initialize tab layout from localStorage or default to 'horizontal'
   const [tabLayout, setTabLayout] = useState<'horizontal' | 'vertical'>(() => {
@@ -274,12 +309,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [newPassword, setNewPassword] = useState('');
   const [resetConfirmPassword, setResetConfirmPassword] = useState('');
   const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
-  const [editUserModal, setEditUserModal] = useState<{ open: boolean; userId: number | null; username: string; email: string; auth_source: string }>({ open: false, userId: null, username: '', email: '', auth_source: 'local' });
+  const [editUserModal, setEditUserModal] = useState<{ open: boolean; userId: number | null; username: string; email: string; auth_source: string; notes: string }>({ open: false, userId: null, username: '', email: '', auth_source: 'local', notes: '' });
   const [editUsername, setEditUsername] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editAuthSource, setEditAuthSource] = useState<'local' | 'ldap' | 'saml'>('local');
+  const [editNotes, setEditNotes] = useState('');
   const [editUserLoading, setEditUserLoading] = useState(false);
   const [userActionsDialog, setUserActionsDialog] = useState<{ open: boolean; user: AllUser | null }>({ open: false, user: null });
+  const [userActionsNotes, setUserActionsNotes] = useState('');
+  const [userActionsNotesSaving, setUserActionsNotesSaving] = useState(false);
+  const [userActionsNotesError, setUserActionsNotesError] = useState('');
+  const [userActionsNotesSaved, setUserActionsNotesSaved] = useState(false);
   const [ldapUserDetail, setLdapUserDetail] = useState<LdapUserDetail | null>(null);
   const [ldapUserDetailLoading, setLdapUserDetailLoading] = useState(false);
   const [ldapUserDetailError, setLdapUserDetailError] = useState('');
@@ -361,6 +401,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     footer_text: '© 2025 Adventhealth - Designed and developed by AIT Architecture team',
     show_database_path_in_footer: '1',
     disabled_tabs: '[]',
+    device_presets: '',
+    device_quick_presets: '',
     maintenance_enabled: '0',
     maintenance_message: '',
     semi_pwa_enabled: '0',
@@ -382,8 +424,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [adminPasswordLoading, setAdminPasswordLoading] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [logoRemoveBg, setLogoRemoveBg] = useState(false);
+  const [logoBgMode, setLogoBgMode] = useState<'auto' | 'custom'>('auto');
+  const [logoBgColor, setLogoBgColor] = useState('#ffffff');
   const [headerLogoUploading, setHeaderLogoUploading] = useState(false);
   const [headerLogoPreview, setHeaderLogoPreview] = useState<string | null>(null);
+  const [headerLogoRemoveBg, setHeaderLogoRemoveBg] = useState(false);
+  const [headerLogoBgMode, setHeaderLogoBgMode] = useState<'auto' | 'custom'>('auto');
+  const [headerLogoBgColor, setHeaderLogoBgColor] = useState('#ffffff');
   const [faviconUploading, setFaviconUploading] = useState(false);
   const [faviconPreview, setFaviconPreview] = useState<string | null>(null);
   const [faviconRemoveBg, setFaviconRemoveBg] = useState(false);
@@ -417,6 +465,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [spacesImportFile, setSpacesImportFile] = useState<File | null>(null);
   const [spacesBulkImportFile, setSpacesBulkImportFile] = useState<File | null>(null);
   const [spacesImportOverwrite, setSpacesImportOverwrite] = useState(false);
+  const [spacesImportReplaceAll, setSpacesImportReplaceAll] = useState(false);
   const [spacesTiles, setSpacesTiles] = useState<Tile[]>([]);
   const [spacesCategoryOrder, setSpacesCategoryOrder] = useState<string[]>([]);
 
@@ -424,6 +473,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [ldapExporting, setLdapExporting] = useState(false);
   const [ldapImporting, setLdapImporting] = useState(false);
   const [ldapImportFile, setLdapImportFile] = useState<File | null>(null);
+  const [ldapExportIncludePasswords, setLdapExportIncludePasswords] = useState(false);
   const [samlImportFile, setSamlImportFile] = useState<File | null>(null);
   const [samlImporting, setSamlImporting] = useState(false);
 
@@ -497,6 +547,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   // Local user form state
   const [localUsername, setLocalUsername] = useState('');
   const [localEmail, setLocalEmail] = useState('');
+  const [addUserNotes, setAddUserNotes] = useState('');
   const [localPassword, setLocalPassword] = useState('');
   const [localConfirmPassword, setLocalConfirmPassword] = useState('');
 
@@ -817,6 +868,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   });
   const [showRoleConfigureModal, setShowRoleConfigureModal] = useState(false);
   const [roleOverflowMenuId, setRoleOverflowMenuId] = useState<number | null>(null);
+  const [showRoleMembersModal, setShowRoleMembersModal] = useState(false);
+  const [roleMembersRole, setRoleMembersRole] = useState<Role | null>(null);
+  const [showRoleTeamsModal, setShowRoleTeamsModal] = useState(false);
+  const [roleTeamsRole, setRoleTeamsRole] = useState<Role | null>(null);
 
   // User Groups state
   const [userGroups, setUserGroups] = useState<Array<{ id: number; name: string; description: string | null; memberCount: number; roleCount: number; createdAt: number; updatedAt: number }>>([]);
@@ -869,11 +924,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
   // Roles management state
   const [roles, setRoles] = useState<Role[]>([]);
+  const [roleAssignmentTotals, setRoleAssignmentTotals] = useState<RoleAssignmentTotals>({
+    tiles: 0,
+    links: 0,
+    widgets: 0,
+    linkActions: LINK_ACTION_OPTIONS.length,
+  });
   const [rolesLoading, setRolesLoading] = useState(false);
   const [showRoleModal, setShowRoleModal] = useState(false);
   const [showRoleTilesModal, setShowRoleTilesModal] = useState(false);
   const [showRoleTabsModal, setShowRoleTabsModal] = useState(false);
   const [showRoleWidgetsModal, setShowRoleWidgetsModal] = useState(false);
+  const [showRoleLinkActionsModal, setShowRoleLinkActionsModal] = useState(false);
   const [showUserRolesModal, setShowUserRolesModal] = useState(false);
   const [showBulkAssignModal, setShowBulkAssignModal] = useState(false);
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
@@ -895,7 +957,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [expandedBulkRoleTargets, setExpandedBulkRoleTargets] = useState<Set<string>>(new Set());
   const [groupRolesMap, setGroupRolesMap] = useState<Record<number, Array<{ id: number; name: string; description?: string }>>>({});
   const [loadingGroupRoles, setLoadingGroupRoles] = useState<Set<number>>(new Set());
-  const [roleForm, setRoleForm] = useState({ name: '', description: '' });
+  const [roleForm, setRoleForm] = useState({ name: '', description: '', isGuest: false });
   const [allTiles, setAllTiles] = useState<Tile[]>([]);
   const [allLinks, setAllLinks] = useState<Array<{ id: string; label: string; url: string; tileId: string; tileTitle: string }>>([]);
   const [roleTilesLoading, setRoleTilesLoading] = useState(false);
@@ -906,7 +968,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [selectedLinkIds, setSelectedLinkIds] = useState<Set<string>>(new Set());
   const [selectedTabIds, setSelectedTabIds] = useState<Set<string>>(new Set());
   const [selectedWidgetIds, setSelectedWidgetIds] = useState<Set<string>>(new Set());
+  const [selectedLinkActionIds, setSelectedLinkActionIds] = useState<Set<string>>(new Set());
   const [roleWidgetsLoading, setRoleWidgetsLoading] = useState(false);
+  const [roleLinkActionsLoading, setRoleLinkActionsLoading] = useState(false);
   const [availableWidgets, setAvailableWidgets] = useState<Array<{ id: string; label: string; description: string; isCustom?: boolean }>>([]);
   const [widgetsLoading, setWidgetsLoading] = useState(false);
 
@@ -1226,6 +1290,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     if (activeTab === 'maintenance') {
       loadSettings();
     }
+    if (activeTab === 'devicePresets' || activeTab === 'tabVisibility' || activeTab === 'linkCheckExceptions' || activeTab === 'iframeBlockDomains') {
+      loadSettings();
+    }
     if (activeTab === 'widgets') {
       loadCustomWidgets();
     }
@@ -1322,6 +1389,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         // Close modals in priority order (most specific first)
         if (showRoleConfigureModal) {
           setShowRoleConfigureModal(false);
+        } else if (showRoleMembersModal) {
+          setShowRoleMembersModal(false);
+          setRoleMembersRole(null);
+        } else if (showRoleTeamsModal) {
+          setShowRoleTeamsModal(false);
+          setRoleTeamsRole(null);
         } else if (showTileAdminsModal) {
           closeTileAdminsModal();
         } else if (showUserGroupModal) {
@@ -1348,6 +1421,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           setShowRoleWidgetsModal(false);
           setSelectedRole(null);
           setSelectedWidgetIds(new Set());
+        } else if (showRoleLinkActionsModal) {
+          setShowRoleLinkActionsModal(false);
+          setSelectedRole(null);
+          setSelectedLinkActionIds(new Set());
         } else if (showBulkAssignModal) {
           resetBulkAssignModalState();
         } else if (showUserRolesModal) {
@@ -1357,7 +1434,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         } else if (showRoleModal) {
           setShowRoleModal(false);
           setSelectedRole(null);
-          setRoleForm({ name: '', description: '' });
+          setRoleForm({ name: '', description: '', isGuest: false });
         }
       }
     };
@@ -1365,6 +1442,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     // Only attach listener when in Access Manager tab and a modal is open
     if (activeTab === 'access' && (
       showRoleConfigureModal ||
+      showRoleMembersModal ||
+      showRoleTeamsModal ||
       showTileAdminsModal ||
       showUserGroupModal ||
       showGroupMembersModal ||
@@ -1373,6 +1452,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       showRoleTilesModal ||
       showRoleTabsModal ||
       showRoleWidgetsModal ||
+      showRoleLinkActionsModal ||
       showUserRolesModal ||
       showBulkAssignModal
     )) {
@@ -1384,6 +1464,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   }, [
     activeTab,
     showRoleConfigureModal,
+    showRoleMembersModal,
+    showRoleTeamsModal,
     showTileAdminsModal,
     showUserGroupModal,
     showGroupMembersModal,
@@ -1392,6 +1474,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     showRoleTilesModal,
     showRoleTabsModal,
     showRoleWidgetsModal,
+    showRoleLinkActionsModal,
     showUserRolesModal,
     showBulkAssignModal
   ]);
@@ -1870,6 +1953,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }
   };
 
+  const openRoleMembersModal = async (role: Role) => {
+    setRoleMembersRole(role);
+    setShowRoleMembersModal(true);
+    setRoleOverflowMenuId(null);
+    if (allUsers.length === 0) {
+      await loadAllUsers();
+    }
+  };
+
+  const openRoleTeamsModal = async (role: Role) => {
+    setRoleTeamsRole(role);
+    setShowRoleTeamsModal(true);
+    setRoleOverflowMenuId(null);
+    if (userGroups.length === 0 && !userGroupsLoading) {
+      await loadUserGroups();
+    }
+  };
+
   const handleAccessSubTabChange = (tab: AccessSubTab) => {
     setAccessSubTab(tab);
     setRoleOverflowMenuId(null);
@@ -2003,8 +2104,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     try {
       setRolesLoading(true);
       setError('');
-      const rolesList = await rolesService.getAllRoles();
+      const { roles: rolesList, totals } = await rolesService.getAllRoles();
       setRoles(rolesList);
+      setRoleAssignmentTotals(totals);
     } catch (err: any) {
       setError(err.message || 'Failed to load roles');
     } finally {
@@ -2012,9 +2114,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }
   };
 
+  const formatRoleAssignmentRatio = (assigned: number, total: number): string => {
+    const safeTotal = Math.max(0, total || 0);
+    const safeAssigned = Math.max(0, Math.min(assigned || 0, safeTotal || assigned || 0));
+    return `${safeAssigned}/${safeTotal}`;
+  };
+
   const loadAllTilesAndLinks = async (sourceTab?: 'public' | 'staging') => {
     try {
-      const tiles = await getTiles(sourceTab !== undefined ? { sourceTab } : undefined);
+      // Full nested tabs/sections/links required for role assignment UI (not card summary)
+      const tiles = await getTiles({
+        ...(sourceTab !== undefined ? { sourceTab } : {}),
+        summary: false,
+      });
       setAllTiles(tiles);
 
       // Extract all links from tiles
@@ -2030,6 +2142,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 tileId: tile.id,
                 tileTitle: tile.title
               });
+            });
+          });
+          // Legacy tab-level links
+          tab.links?.forEach(link => {
+            linksList.push({
+              id: link.id,
+              label: link.label,
+              url: link.url,
+              tileId: tile.id,
+              tileTitle: tile.title
             });
           });
         });
@@ -2451,13 +2573,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
   // Roles management handlers
   const handleAddRole = () => {
-    setRoleForm({ name: '', description: '' });
+    setRoleForm({ name: '', description: '', isGuest: false });
     setSelectedRole(null);
     setShowRoleModal(true);
   };
 
   const handleEditRole = (role: Role) => {
-    setRoleForm({ name: role.name, description: role.description || '' });
+    setRoleForm({ name: role.name, description: role.description || '', isGuest: !!role.isGuest });
     setSelectedRole(role);
     setShowRoleModal(true);
   };
@@ -2476,7 +2598,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         await rolesService.createRole(roleForm);
       }
       setShowRoleModal(false);
-      setRoleForm({ name: '', description: '' });
+      setRoleForm({ name: '', description: '', isGuest: false });
       setSelectedRole(null);
       await loadRoles();
     } catch (err: any) {
@@ -2805,6 +2927,45 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }
   };
 
+  const handleManageRoleLinkActions = async (role: Role) => {
+    setSelectedRole(role);
+    setRoleLinkActionsLoading(true);
+    setSelectedLinkActionIds(new Set());
+    try {
+      try {
+        const roleActions = await rolesService.getRoleLinkActions(role.id);
+        setSelectedLinkActionIds(new Set(roleActions.map((ra) => ra.actionId)));
+      } catch (err) {
+        // Ignore if none assigned yet
+      }
+      setShowRoleLinkActionsModal(true);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load link actions');
+    } finally {
+      setRoleLinkActionsLoading(false);
+    }
+  };
+
+  const handleAssignLinkActionsToRole = async () => {
+    if (!selectedRole) {
+      setError('No role selected');
+      return;
+    }
+
+    try {
+      setError('');
+      await rolesService.assignLinkActionsToRole(selectedRole.id, {
+        actionIds: Array.from(selectedLinkActionIds),
+        canView: true,
+      });
+      setShowRoleLinkActionsModal(false);
+      setSelectedLinkActionIds(new Set());
+      await loadRoles();
+    } catch (err: any) {
+      setError(err.message || 'Failed to assign link actions');
+    }
+  };
+
   const handleAssignRolesToUser = async () => {
     if (!selectedUserForRoles) return;
 
@@ -3062,61 +3223,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
   const handleManageGroupMembers = async (group: UserGroup) => {
     setSelectedGroupId(group.id);
-    setGroupMembersLoading(true);
-    try {
-      // Ensure users are loaded
-      if (allUsers.length === 0) {
-        await loadAllUsers();
-      }
-      const members = await userGroupsService.getGroupMembers(group.id);
-      setGroupMembers(members);
-      setSelectedUsersToAdd(new Set());
-      setGroupMembersSearchTerm('');
-      setShowGroupMembersModal(true);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load group members');
-    } finally {
-      setGroupMembersLoading(false);
+    setError('');
+    if (allUsers.length === 0) {
+      await loadAllUsers();
     }
+    setShowGroupMembersModal(true);
   };
 
   const handleManageGroupRoles = async (group: UserGroup) => {
     setSelectedGroupId(group.id);
-    setGroupRolesLoading(true);
-    try {
-      // Ensure roles are loaded
-      if (roles.length === 0) {
-        await loadRoles();
-      }
-      const groupRolesList = await userGroupsService.getGroupRoles(group.id);
-      setGroupRoles(groupRolesList);
-      const roleIds = new Set(groupRolesList.map(r => r.id));
-      setSelectedRolesToAssign(roleIds);
-      setInitialGroupRoleIds(new Set(roleIds));
-      setGroupRolesSearchTerm('');
-      setShowGroupRolesModal(true);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load group roles');
-    } finally {
-      setGroupRolesLoading(false);
+    setError('');
+    if (roles.length === 0) {
+      await loadRoles();
     }
+    setShowGroupRolesModal(true);
   };
 
   const closeGroupMembersModal = () => {
     setShowGroupMembersModal(false);
-    setGroupMembers([]);
-    setSelectedUsersToAdd(new Set());
-    setGroupMembersSearchTerm('');
     setSelectedGroupId(null);
     setError('');
   };
 
   const closeGroupRolesModal = () => {
     setShowGroupRolesModal(false);
-    setGroupRoles([]);
-    setSelectedRolesToAssign(new Set());
-    setInitialGroupRoleIds(new Set());
-    setGroupRolesSearchTerm('');
     setSelectedGroupId(null);
     setError('');
   };
@@ -3135,78 +3265,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     setTileAdminModalFilterMenu('public');
     setTileAdminModalFilterCategory('');
     setError('');
-  };
-
-  const handleAddMembersToGroup = async () => {
-    if (!selectedGroupId || selectedUsersToAdd.size === 0) {
-      setError('Please select at least one user to add');
-      return;
-    }
-
-    try {
-      setError('');
-      setAddingMembersLoading(true);
-      await userGroupsService.addMembersToGroup(selectedGroupId, Array.from(selectedUsersToAdd));
-      await loadUserGroups();
-      closeGroupMembersModal();
-    } catch (err: any) {
-      setError(err.message || 'Failed to add members to group');
-    } finally {
-      setAddingMembersLoading(false);
-    }
-  };
-
-  const handleRemoveMembersFromGroupBatch = async (userIds: number[]) => {
-    if (!selectedGroupId || userIds.length === 0) return;
-
-    try {
-      setError('');
-      setRemovingMembersLoading(true);
-      for (const userId of userIds) {
-        await userGroupsService.removeMemberFromGroup(selectedGroupId, userId);
-      }
-      await loadUserGroups();
-      closeGroupMembersModal();
-    } catch (err: any) {
-      setError(err.message || 'Failed to remove members from group');
-    } finally {
-      setRemovingMembersLoading(false);
-    }
-  };
-
-  const handleRemoveMemberFromGroup = async (userId: number) => {
-    if (!selectedGroupId) return;
-
-    if (!confirm('Are you sure you want to remove this member from the group?')) {
-      return;
-    }
-
-    try {
-      setError('');
-      await userGroupsService.removeMemberFromGroup(selectedGroupId, userId);
-      // Reload members
-      const members = await userGroupsService.getGroupMembers(selectedGroupId);
-      setGroupMembers(members);
-      await loadUserGroups(); // Refresh the group list to update member count
-    } catch (err: any) {
-      setError(err.message || 'Failed to remove member from group');
-    }
-  };
-
-  const handleAssignRolesToGroup = async () => {
-    if (!selectedGroupId) return;
-
-    try {
-      setError('');
-      setAssigningRolesLoading(true);
-      await userGroupsService.assignRolesToGroup(selectedGroupId, Array.from(selectedRolesToAssign));
-      await loadUserGroups();
-      closeGroupRolesModal();
-    } catch (err: any) {
-      setError(err.message || 'Failed to assign roles to group');
-    } finally {
-      setAssigningRolesLoading(false);
-    }
   };
 
   const handleAssignSpaceEditorsWizardSubmit = async () => {
@@ -3244,26 +3302,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setError(err.message || 'Failed to assign space editors');
     } finally {
       setAssigningEditorsLoading(false);
-    }
-  };
-
-  const handleRemoveRoleFromGroup = async (roleId: number) => {
-    if (!selectedGroupId) return;
-
-    if (!confirm('Are you sure you want to remove this role from the group?')) {
-      return;
-    }
-
-    try {
-      setError('');
-      await userGroupsService.removeRoleFromGroup(selectedGroupId, roleId);
-      // Reload roles
-      const groupRolesList = await userGroupsService.getGroupRoles(selectedGroupId);
-      setGroupRoles(groupRolesList);
-      setSelectedRolesToAssign(new Set(groupRolesList.map(r => r.id)));
-      await loadUserGroups(); // Refresh the group list to update role count
-    } catch (err: any) {
-      setError(err.message || 'Failed to remove role from group');
     }
   };
 
@@ -3498,21 +3536,54 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     try {
       setEditUserLoading(true);
       setError('');
-      const updatedUser = await authService.updateUser(editUserModal.userId, editUsername, editEmail, editAuthSource);
+      const updatedUser = await authService.updateUser(editUserModal.userId, editUsername, editEmail, editAuthSource, editNotes);
       setAllUsers(prevUsers =>
         prevUsers.map(u =>
-          u.id === editUserModal.userId ? { ...u, username: updatedUser.username, email: updatedUser.email, auth_source: updatedUser.auth_source } : u
+          u.id === editUserModal.userId ? { ...u, username: updatedUser.username, email: updatedUser.email, auth_source: updatedUser.auth_source, notes: updatedUser.notes ?? null } : u
         )
       );
-      setEditUserModal({ open: false, userId: null, username: '', email: '', auth_source: 'local' });
+      setEditUserModal({ open: false, userId: null, username: '', email: '', auth_source: 'local', notes: '' });
       setEditUsername('');
       setEditEmail('');
       setEditAuthSource('local');
+      setEditNotes('');
       alert('User updated successfully!');
     } catch (err: any) {
       setError(err.message || 'Failed to update user');
     } finally {
       setEditUserLoading(false);
+    }
+  };
+
+  const handleSaveUserActionsNotes = async () => {
+    const target = userActionsDialog.user;
+    if (!target) return;
+
+    try {
+      setUserActionsNotesSaving(true);
+      setUserActionsNotesError('');
+      setUserActionsNotesSaved(false);
+      const authSource = (target.auth_source || 'local') as 'local' | 'ldap' | 'saml';
+      const updatedUser = await authService.updateUser(
+        target.id,
+        target.username,
+        target.email,
+        authSource,
+        userActionsNotes
+      );
+      const nextNotes = updatedUser.notes ?? null;
+      setAllUsers(prevUsers =>
+        prevUsers.map(u => (u.id === target.id ? { ...u, notes: nextNotes } : u))
+      );
+      setUserActionsDialog(prev =>
+        prev.user ? { ...prev, user: { ...prev.user, notes: nextNotes } } : prev
+      );
+      setUserActionsNotes(nextNotes || '');
+      setUserActionsNotesSaved(true);
+    } catch (err: any) {
+      setUserActionsNotesError(err.message || 'Failed to save notes');
+    } finally {
+      setUserActionsNotesSaving(false);
     }
   };
 
@@ -3619,12 +3690,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     try {
       setAddUserLoading(true);
       setError('');
-      await authService.addLocalUser(localUsername.trim(), localEmail.trim(), localPassword);
+      await authService.addLocalUser(localUsername.trim(), localEmail.trim(), localPassword, addUserNotes.trim() || null);
       setAddUserModal(false);
       setLocalUsername('');
       setLocalEmail('');
       setLocalPassword('');
       setLocalConfirmPassword('');
+      setAddUserNotes('');
       await loadData();
       alert('Local user created successfully. User is pending admin approval.');
     } catch (err: any) {
@@ -3668,10 +3740,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         userToAdd.email,
         userToAdd.dn,
         userToAdd.displayName,
-        serverIndex
+        serverIndex,
+        addUserNotes.trim() || null
       );
       setAddUserModal(false);
       setBulkImportMode(false);
+      setAddUserNotes('');
       setLdapSearchTerm('');
       setLdapSearchResults([]);
       setLdapSearchPerformed(false);
@@ -3881,28 +3955,97 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   // Handle ESC key to close modals
   useEffect(() => {
     const handleEscKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        if (addUserModal) {
-          setAddUserModal(false);
-          setError('');
-        }
-        if (adminPasswordModal) {
-          setAdminPasswordModal(false);
-          setCurrentPassword('');
-          setAdminNewPassword('');
-          setAdminConfirmPassword('');
-          setError('');
-        }
+      if (event.key !== 'Escape') return;
+
+      if (userActionsDialog.open) {
+        setUserActionsDialog({ open: false, user: null });
+        return;
+      }
+      if (editUserModal.open) {
+        setEditUserModal({ open: false, userId: null, username: '', email: '', auth_source: 'local', notes: '' });
+                    setEditNotes('');
+        setError('');
+        return;
+      }
+      if (resetPasswordModal.open) {
+        setResetPasswordModal({ open: false, userId: null, username: '' });
+        setNewPassword('');
+        setResetConfirmPassword('');
+        setError('');
+        return;
+      }
+      if (showSnapshotMessageModal) {
+        setShowSnapshotMessageModal(false);
+        setSnapshotMessage('');
+        return;
+      }
+      if (showUploadModal) {
+        setShowUploadModal(false);
+        setUploadFile(null);
+        setUploadMessage('');
+        return;
+      }
+      if (showBulkDeleteModal) {
+        setShowBulkDeleteModal(false);
+        return;
+      }
+      if (editCloneModal.open) {
+        setEditCloneModal({ open: false, clone: null });
+        return;
+      }
+      if (showAddWidgetModal) {
+        setShowAddWidgetModal(false);
+        return;
+      }
+      if (loadTestOpenPrompt) {
+        setLoadTestOpenPrompt(false);
+        return;
+      }
+      if (addUserModal) {
+        setAddUserModal(false);
+        setError('');
+        return;
+      }
+      if (adminPasswordModal) {
+        setAdminPasswordModal(false);
+        setCurrentPassword('');
+        setAdminNewPassword('');
+        setAdminConfirmPassword('');
+        setError('');
       }
     };
 
-    if (addUserModal || adminPasswordModal) {
+    if (
+      addUserModal ||
+      adminPasswordModal ||
+      userActionsDialog.open ||
+      editUserModal.open ||
+      resetPasswordModal.open ||
+      showSnapshotMessageModal ||
+      showUploadModal ||
+      showBulkDeleteModal ||
+      editCloneModal.open ||
+      showAddWidgetModal ||
+      loadTestOpenPrompt
+    ) {
       window.addEventListener('keydown', handleEscKey);
       return () => {
         window.removeEventListener('keydown', handleEscKey);
       };
     }
-  }, [addUserModal, adminPasswordModal]);
+  }, [
+    addUserModal,
+    adminPasswordModal,
+    userActionsDialog.open,
+    editUserModal.open,
+    resetPasswordModal.open,
+    showSnapshotMessageModal,
+    showUploadModal,
+    showBulkDeleteModal,
+    editCloneModal.open,
+    showAddWidgetModal,
+    loadTestOpenPrompt,
+  ]);
 
   // Load LDAP directory details only when the section is expanded
   useEffect(() => {
@@ -3956,12 +4099,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     };
   }, [userActionsDialog.open, userActionsDialog.user?.id, userActionsDialog.user?.username, userActionsDialog.user?.auth_source, ldapDirectoryExpanded]);
 
-  // Clear cached LDAP detail when switching users in the dialog
+  // Clear cached LDAP detail and sync notes when switching users in the dialog
   useEffect(() => {
     setLdapUserDetail(null);
     setLdapUserDetailError('');
     setLdapDirectoryExpanded(false);
-  }, [userActionsDialog.user?.id]);
+    if (userActionsDialog.open && userActionsDialog.user) {
+      setUserActionsNotes(userActionsDialog.user.notes || '');
+      setUserActionsNotesError('');
+      setUserActionsNotesSaved(false);
+    } else {
+      setUserActionsNotes('');
+      setUserActionsNotesError('');
+      setUserActionsNotesSaved(false);
+    }
+  }, [userActionsDialog.open, userActionsDialog.user?.id]);
 
   return (
     <div className="space-y-6">
@@ -4272,21 +4424,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             <>
               {/* Pending Users Tab */}
               {activeTab === 'pending' && (
-                pendingUsers.length === 0 ? (
-                  <div className="text-center py-12 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl">
-                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-slate-400">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <p className="text-slate-600 dark:text-slate-400 font-medium">No pending users</p>
-                    <p className="text-slate-500 dark:text-slate-500 text-sm mt-1">All users have been processed</p>
+                <div className="space-y-6">
+                <div className={ADMIN_SECTION_CARD}>
+                  <div className={ADMIN_SECTION_HEADER}>
+                    <h3 className={ADMIN_SECTION_TITLE}>
+                      <span aria-hidden>⏳</span> Pending Users
+                    </h3>
+                    <p className={ADMIN_SECTION_SUBTITLE}>
+                      Review and approve or reject users waiting for access.
+                    </p>
+                  </div>
+                  <div className="p-6">
+                {pendingUsers.length === 0 ? (
+                  <div className="text-center py-12 border-2 border-dashed border-sky-200 dark:border-sky-800/50 rounded-xl bg-sky-50/50 dark:bg-sky-950/20">
+                    <p className="text-3xl mb-2" aria-hidden>✅</p>
+                    <p className="text-sky-900 dark:text-sky-100 font-medium">No pending users</p>
+                    <p className="text-sky-700/70 dark:text-sky-300/70 text-sm mt-1">All users have been processed</p>
                   </div>
                 ) : (
                   <div className="space-y-4">
                     {selectedUserIds.size > 0 && (
-                      <div className="flex items-center justify-between bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-lg px-4 py-3">
-                        <span className="text-sm font-medium text-brand-900 dark:text-brand-100">
+                      <div className="flex items-center justify-between bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800 rounded-xl px-4 py-3">
+                        <span className="text-sm font-medium text-sky-900 dark:text-sky-100">
                           {selectedUserIds.size} user{selectedUserIds.size !== 1 ? 's' : ''} selected
                         </span>
                         <button
@@ -4313,40 +4472,40 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         </button>
                       </div>
                     )}
-                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                    <div className="border border-sky-100 dark:border-sky-900/40 rounded-xl overflow-hidden">
                       <div className="overflow-x-auto">
                         <table className="w-full">
-                          <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                          <thead className="bg-sky-50/80 dark:bg-sky-950/30 border-b border-sky-100 dark:border-sky-800/40">
                             <tr>
                               <th className="px-6 py-3 text-left">
                                 <input
                                   type="checkbox"
                                   checked={pendingUsers.length > 0 && selectedUserIds.size === pendingUsers.length}
                                   onChange={handleSelectAll}
-                                  className="w-4 h-4 text-brand-600 bg-gray-100 border-gray-300 rounded focus:ring-brand-500 focus:ring-2"
+                                  className="w-4 h-4 text-sky-600 bg-gray-100 border-gray-300 rounded focus:ring-sky-500 focus:ring-2"
                                 />
                               </th>
-                              <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">User</th>
-                              <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Email</th>
-                              <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Registered</th>
-                              <th className="px-6 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Actions</th>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-sky-800/80 dark:text-sky-200/80 uppercase tracking-wider">User</th>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-sky-800/80 dark:text-sky-200/80 uppercase tracking-wider">Email</th>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-sky-800/80 dark:text-sky-200/80 uppercase tracking-wider">Registered</th>
+                              <th className="px-6 py-3 text-right text-xs font-semibold text-sky-800/80 dark:text-sky-200/80 uppercase tracking-wider">Actions</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                          <tbody className="divide-y divide-sky-100 dark:divide-sky-900/40">
                             {pendingUsers.map((user) => (
-                              <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/30 transition-colors">
+                              <tr key={user.id} className="hover:bg-sky-50/50 dark:hover:bg-sky-950/20 transition-colors">
                                 <td className="px-6 py-4 whitespace-nowrap">
                                   <input
                                     type="checkbox"
                                     checked={selectedUserIds.has(user.id)}
                                     onChange={() => handleToggleUserSelection(user.id)}
                                     disabled={bulkProcessing || processing === user.id}
-                                    className="w-4 h-4 text-brand-600 bg-gray-100 border-gray-300 rounded focus:ring-brand-500 focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="w-4 h-4 text-sky-600 bg-gray-100 border-gray-300 rounded focus:ring-sky-500 focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed"
                                   />
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap">
                                   <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-500 to-brand-600 flex items-center justify-center text-white font-bold">
+                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-sky-500 to-teal-600 flex items-center justify-center text-white font-bold">
                                       {user.username.charAt(0).toUpperCase()}
                                     </div>
                                     <span className="font-medium text-slate-900 dark:text-white">{user.username}</span>
@@ -4403,12 +4562,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       </div>
                     </div>
                   </div>
-                )
+                )}
+                  </div>
+                </div>
+                </div>
               )}
 
               {/* All Users Tab */}
               {activeTab === 'all' && (
-                <div className="space-y-4">
+                <div className="space-y-6">
+                <div className={ADMIN_SECTION_CARD}>
+                  <div className={ADMIN_SECTION_HEADER}>
+                    <h3 className={ADMIN_SECTION_TITLE}>
+                      <span aria-hidden>👥</span> All Users
+                    </h3>
+                    <p className={ADMIN_SECTION_SUBTITLE}>
+                      Search, manage roles, and control access for registered users.
+                    </p>
+                  </div>
+                  <div className="p-6 space-y-4">
                   <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} gap-4`}>
                     {/* Search Input */}
                     <div className={`${isMobile ? 'w-full' : 'flex-1 max-w-md'}`}>
@@ -4421,7 +4593,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             setAllUsersSearchTerm(e.target.value);
                             setAllUsersPage(1); // Reset to first page when searching
                           }}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 pl-10 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                          className="w-full bg-white dark:bg-slate-900 border border-sky-200/70 dark:border-sky-800/40 rounded-xl px-4 py-2 pl-10 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                         />
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
@@ -4613,12 +4785,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       </button>
                       <button
                         onClick={openAddUserModal}
-                        className={`${isMobile ? 'px-3 py-2 text-xs' : 'px-4 py-2 text-sm'} bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium transition-colors flex items-center gap-2 touch-manipulation`}
+                        className={`${isMobile ? 'px-3 py-2 text-xs' : 'px-4 py-2 text-sm'} ${ADMIN_PRIMARY_BTN} flex items-center gap-2 touch-manipulation`}
                         style={isMobile ? { minHeight: '44px' } : {}}
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                          <path d="M10 5a3 3 0 100 6 3 3 0 000-6zM3.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-3.385-.572zM15.75 6a3 3 0 11-6 0 3 3 0 016 0zm1.423 11.285a1.224 1.224 0 00-.569-1.175 5.964 5.964 0 00-1.576-.19 5.964 5.964 0 00-2.383.676.224.224 0 00-.12.219c0 .288.09.567.26.804a5.96 5.96 0 013.5 2.377 5.96 5.96 0 003.5-2.377c.17-.237.26-.516.26-.804a.225.225 0 00-.12-.219z" />
-                        </svg>
+                        <span aria-hidden>➕</span>
                         Add User
                       </button>
                     </div>
@@ -4626,12 +4796,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                   {/* Desktop Table View */}
                   {!isMobile && (
-                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                    <div className="border border-sky-100 dark:border-sky-900/40 rounded-xl overflow-hidden">
                       <div className="overflow-x-auto">
                         <table className="w-full">
-                          <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                          <thead className="bg-sky-50/80 dark:bg-sky-950/30 border-b border-sky-100 dark:border-sky-800/40">
                             <tr>
-                              <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-sky-800/80 dark:text-sky-200/80 uppercase tracking-wider">
                                 <input
                                   type="checkbox"
                                   checked={(() => {
@@ -4726,6 +4896,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                         </div>
                                         <div className="flex-1 min-w-0">
                                           <span className="font-medium text-slate-900 dark:text-white block">{user.username}</span>
+                                          {user.notes && (
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2" title={user.notes}>
+                                              {user.notes}
+                                            </p>
+                                          )}
                                           <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                                             {user.is_admin && (
                                               <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-xs font-semibold whitespace-nowrap">
@@ -4816,10 +4991,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                         {!user.is_admin && (
                                           <button
                                             onClick={() => {
-                                              setEditUserModal({ open: true, userId: user.id, username: user.username, email: user.email, auth_source: user.auth_source || 'local' });
+                                              setEditUserModal({ open: true, userId: user.id, username: user.username, email: user.email, auth_source: user.auth_source || 'local', notes: user.notes || '' });
                                               setEditUsername(user.username);
                                               setEditEmail(user.email);
                                               setEditAuthSource((user.auth_source || 'local') as 'local' | 'ldap' | 'saml');
+                                              setEditNotes(user.notes || '');
                                             }}
                                             disabled={processing === user.id}
                                             className="px-2.5 py-1.5 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
@@ -5020,10 +5196,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 {!user.is_admin && (
                                   <button
                                     onClick={() => {
-                                      setEditUserModal({ open: true, userId: user.id, username: user.username, email: user.email, auth_source: user.auth_source || 'local' });
+                                      setEditUserModal({ open: true, userId: user.id, username: user.username, email: user.email, auth_source: user.auth_source || 'local', notes: user.notes || '' });
                                       setEditUsername(user.username);
                                       setEditEmail(user.email);
                                       setEditAuthSource((user.auth_source || 'local') as 'local' | 'ldap' | 'saml');
+                                      setEditNotes(user.notes || '');
                                     }}
                                     disabled={processing === user.id}
                                     className="flex-1 min-w-[100px] px-3 py-2 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1.5 touch-manipulation"
@@ -5152,8 +5329,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       key={pageNum}
                                       onClick={() => setAllUsersPage(pageNum)}
                                       className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors touch-manipulation ${allUsersPage === pageNum
-                                        ? 'bg-brand-600 text-white'
-                                        : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                        ? 'bg-sky-600 text-white shadow-sm shadow-sky-500/20'
+                                        : 'bg-white dark:bg-slate-800 border border-sky-200/70 dark:border-sky-800/40 text-slate-700 dark:text-slate-300 hover:bg-sky-50 dark:hover:bg-sky-950/40'
                                         }`}
                                       style={{ minHeight: '44px', minWidth: '44px' }}
                                     >
@@ -5177,23 +5354,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       </div>
                     );
                   })()}
+                  </div>
+                </div>
                 </div>
               )}
 
               {/* Database Tab */}
               {activeTab === 'database' && (
                 <div className="space-y-6">
-                  <div className={`bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl ${isMobile ? 'p-4' : 'p-6'}`}>
-                    <h3 className={`${isMobile ? 'text-base' : 'text-lg'} font-bold text-slate-900 dark:text-white mb-4`}>Database Export & Import</h3>
-                    <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400 mb-6`}>
-                      Export your database as a JSON file for backup or import it to restore data on a new instance.
-                    </p>
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}>
+                        <span aria-hidden>🗄️</span> Database Export & Import
+                      </h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Export your database as a JSON file for backup or import it to restore data on a new instance.
+                      </p>
+                    </div>
+                    <div className={isMobile ? 'p-4' : 'p-6'}>
 
                     <div className="grid grid-cols-1 gap-6">
                       {/* Export Section */}
-                      <div className="space-y-4">
+                      <div className={`${ADMIN_INNER_CARD} space-y-4`}>
                         <div>
-                          <h4 className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold text-slate-900 dark:text-white mb-2`}>Export Database</h4>
+                          <h4 className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold text-slate-900 dark:text-white mb-2 flex items-center gap-1.5`}>
+                            <span aria-hidden>⬇️</span> Export Database
+                          </h4>
                           <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400 mb-4`}>
                             Download all database data (users, tiles, tabs, sections, links, settings, arrangements, rich text content, favorites, permissions, style profiles, and user preferences) as a JSON file.
                           </p>
@@ -5236,9 +5422,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       </div>
 
                       {/* Import Section */}
-                      <div className="space-y-4">
+                      <div className={`${ADMIN_INNER_CARD} space-y-4`}>
                         <div>
-                          <h4 className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold text-slate-900 dark:text-white mb-2`}>Import Database</h4>
+                          <h4 className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold text-slate-900 dark:text-white mb-2 flex items-center gap-1.5`}>
+                            <span aria-hidden>⬆️</span> Import Database
+                          </h4>
                           <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400 mb-4`}>
                             Import a previously exported JSON file. This will replace all existing data.
                           </p>
@@ -5257,7 +5445,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     setError('');
                                   }
                                 }}
-                                className={`w-full ${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400 file:mr-4 ${isMobile ? 'file:py-3 file:px-3' : 'file:py-2 file:px-4'} file:rounded-lg file:border-0 ${isMobile ? 'file:text-xs' : 'file:text-sm'} file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-900/30 dark:file:text-brand-300 cursor-pointer touch-manipulation`}
+                                className={`w-full ${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400 file:mr-4 ${isMobile ? 'file:py-3 file:px-3' : 'file:py-2 file:px-4'} file:rounded-lg file:border-0 ${isMobile ? 'file:text-xs' : 'file:text-sm'} file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100 dark:file:bg-sky-900/30 dark:file:text-sky-300 cursor-pointer touch-manipulation`}
                                 style={isMobile ? { minHeight: '44px' } : {}}
                               />
                               {importFile && (
@@ -5939,6 +6127,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         </div>
                       )}
                     </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -5946,19 +6135,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               {/* Spaces Tab */}
               {activeTab === 'spaces' && (
                 <div className="space-y-6">
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Spaces Export & Import</h3>
-                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
-                      Export your spaces to JSON or CSV format, or import spaces from previously exported files or CSV spreadsheets.
-                      JSON format includes all features: rich text content, tabs, scheduling, visibility settings, browser preferences, icons, and more.
-                      CSV format is simplified and includes only basic link information.
-                    </p>
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}>
+                        <span aria-hidden>📦</span> Spaces Export & Import
+                      </h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Export spaces to JSON or CSV, or import from previously exported files. JSON keeps full space data; CSV is simplified links only.
+                      </p>
+                    </div>
+                    <div className="p-6">
 
                     <div className="grid grid-cols-1 gap-6">
                       {/* Export Section */}
-                      <div className="space-y-4">
+                      <div className={`${ADMIN_INNER_CARD} space-y-4`}>
                         <div>
-                          <h4 className="text-base font-semibold text-slate-900 dark:text-white mb-2">Export Spaces</h4>
+                          <h4 className="text-base font-semibold text-slate-900 dark:text-white mb-2 flex items-center gap-1.5">
+                            <span aria-hidden>⬇️</span> Export Spaces
+                          </h4>
                           <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                             Export all spaces to JSON or CSV format for backup or sharing.
                             JSON format preserves all data including rich text content, tabs, scheduling, visibility, browser settings, and more.
@@ -6113,23 +6307,45 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       </div>
 
                       {/* Import Section */}
-                      <div className="space-y-4">
+                      <div className={`${ADMIN_INNER_CARD} space-y-4`}>
                         <div>
-                          <h4 className="text-base font-semibold text-slate-900 dark:text-white mb-2">Import Spaces</h4>
+                          <h4 className="text-base font-semibold text-slate-900 dark:text-white mb-2 flex items-center gap-1.5">
+                            <span aria-hidden>⬆️</span> Import Spaces
+                          </h4>
                           <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                             Import spaces from exported JSON files or CSV spreadsheets.
                           </p>
-                          <label className="flex items-center gap-2 mb-4 cursor-pointer">
+                          <label className="flex items-center gap-2 mb-2 cursor-pointer">
                             <input
                               type="checkbox"
                               checked={spacesImportOverwrite}
-                              onChange={(e) => setSpacesImportOverwrite(e.target.checked)}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                setSpacesImportOverwrite(checked);
+                                if (checked) setSpacesImportReplaceAll(false);
+                              }}
                               className="rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500"
                             />
                             <span className="text-sm text-slate-700 dark:text-slate-300">Overwrite existing tiles</span>
                           </label>
                           <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
                             When enabled, spaces with the same title and category as an existing tile will be updated instead of creating duplicates.
+                          </p>
+                          <label className="flex items-center gap-2 mb-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={spacesImportReplaceAll}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                setSpacesImportReplaceAll(checked);
+                                if (checked) setSpacesImportOverwrite(false);
+                              }}
+                              className="rounded border-slate-300 dark:border-slate-600 text-red-600 focus:ring-red-500"
+                            />
+                            <span className="text-sm text-slate-700 dark:text-slate-300">Delete all existing spaces, then import only from this file</span>
+                          </label>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+                            When enabled, all current public spaces are moved to the recycle bin before importing. Only the spaces from the uploaded file will remain. Staging spaces are not affected.
                           </p>
                           <div className="space-y-3">
                             {/* JSON Import - Supports Single Space, Category, or All Categories */}
@@ -6194,9 +6410,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     }
 
                                     const currentTiles = await getTiles();
-                                    const maxPosition = currentTiles.length
-                                      ? Math.max(...currentTiles.map((t) => (t as Tile & { position?: number }).position ?? 0))
-                                      : -1;
+
+                                    if (spacesImportReplaceAll) {
+                                      const confirmReplace = confirm(
+                                        `⚠️ This will delete all ${currentTiles.length} existing public space(s) (moved to recycle bin), then import ${newTiles.length} space(s) from the file.\n\nStaging spaces are not affected. Continue?`
+                                      );
+                                      if (!confirmReplace) {
+                                        return;
+                                      }
+                                    }
+
+                                    let deleted = 0;
+                                    if (spacesImportReplaceAll && currentTiles.length > 0) {
+                                      for (const tile of currentTiles) {
+                                        try {
+                                          await deleteTile(tile.id);
+                                          deleted++;
+                                        } catch (err: any) {
+                                          console.error('Failed to delete tile before replace import:', tile.title, err);
+                                        }
+                                      }
+                                    }
+
+                                    const maxPosition = spacesImportReplaceAll
+                                      ? -1
+                                      : (currentTiles.length
+                                        ? Math.max(...currentTiles.map((t) => (t as Tile & { position?: number }).position ?? 0))
+                                        : -1);
                                     let nextPosition = maxPosition + 1;
                                     let imported = 0;
                                     let updated = 0;
@@ -6204,7 +6444,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                                     for (const tile of newTiles) {
                                       try {
-                                        if (spacesImportOverwrite) {
+                                        if (!spacesImportReplaceAll && spacesImportOverwrite) {
                                           const existing = currentTiles.find(
                                             (t) => t.title === tile.title && (t.group || 'General') === (tile.group || 'General')
                                           );
@@ -6232,6 +6472,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       success: imported > 0 || updated > 0,
                                       created: imported,
                                       updated,
+                                      deleted,
                                       errors: errors.length,
                                       createdTiles: newTiles.slice(0, imported + updated).map(t => ({ id: t.id, title: t.title })),
                                       errorMessages: errors
@@ -6241,7 +6482,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                                     if (result.success) {
                                       let message = '';
-                                      if (result.updated > 0 && result.created > 0) {
+                                      if (spacesImportReplaceAll) {
+                                        message = `Replaced spaces: deleted ${result.deleted} existing space(s) and imported ${result.created} space(s) from ${importType}.`;
+                                      } else if (result.updated > 0 && result.created > 0) {
                                         message = `Successfully imported ${result.created} new space(s) and updated ${result.updated} existing space(s) from ${importType}.`;
                                       } else if (result.updated > 0) {
                                         message = `Successfully updated ${result.updated} space(s) from ${importType}.`;
@@ -6319,13 +6562,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     return;
                                   }
 
+                                  if (spacesImportReplaceAll) {
+                                    const confirmReplace = confirm(
+                                      `⚠️ This will delete all existing public spaces (moved to recycle bin), then import only the spaces from the CSV file.\n\nStaging spaces are not affected. Continue?`
+                                    );
+                                    if (!confirmReplace) {
+                                      return;
+                                    }
+                                  }
+
                                   try {
                                     setSpacesBulkImporting(true);
                                     setError('');
-                                    const result = await bulkImportTiles(spacesBulkImportFile);
+                                    const result = await bulkImportTiles(spacesBulkImportFile, {
+                                      replaceAll: spacesImportReplaceAll,
+                                    });
 
                                     if (result.success) {
-                                      let message = `Successfully imported ${result.created} tile(s).`;
+                                      let message = spacesImportReplaceAll
+                                        ? `Replaced spaces: deleted ${result.deleted ?? 0} existing space(s) and imported ${result.created} tile(s).`
+                                        : `Successfully imported ${result.created} tile(s).`;
                                       if (result.errors > 0) {
                                         message += `\n\n${result.errors} error(s) occurred:`;
                                         result.errorMessages.forEach((msg, idx) => {
@@ -6371,19 +6627,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       </div>
                     </div>
 
-                    <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                    <div className="mt-6 rounded-xl border border-sky-200/70 dark:border-sky-800/40 bg-gradient-to-r from-sky-50/80 to-teal-50/50 dark:from-sky-950/30 dark:to-teal-950/20 p-4">
                       <div className="flex gap-3">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5">
-                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
-                        </svg>
+                        <span className="text-xl flex-shrink-0" aria-hidden>💡</span>
                         <div>
-                          <p className="text-sm font-semibold text-blue-800 dark:text-blue-300 mb-1">Import/Export Notes</p>
-                          <ul className="text-xs text-blue-700 dark:text-blue-400 space-y-1 list-disc list-inside">
+                          <p className="text-sm font-semibold text-sky-900 dark:text-sky-100 mb-1">Import/Export Notes</p>
+                          <ul className="text-xs text-sky-800/80 dark:text-sky-200/80 space-y-1 list-disc list-inside">
                             <li><strong>JSON Import:</strong> Supports single space exports, category exports, or all categories exports</li>
                             <li><strong>JSON Export:</strong> Preserves all space data including categories, arrangements, tabs, rich text content, scheduling, visibility settings, browser preferences, icons, and more</li>
                             <li><strong>CSV Export:</strong> Creates a simplified spreadsheet-friendly format for bulk editing. <strong>Note:</strong> CSV format does not include rich text content, tabs, scheduling, or advanced features - use JSON for complete data preservation</li>
                             <li><strong>CSV Import:</strong> Requires specific column format - download template for reference. Only basic link information is imported</li>
-                            <li>Importing spaces adds them to your existing collection (does not replace existing spaces)</li>
+                            <li>By default, importing spaces adds them to your existing collection. Use <strong>Overwrite existing tiles</strong> to update matches, or <strong>Delete all existing spaces…</strong> to replace everything with the file contents (existing spaces go to the recycle bin; staging is untouched)</li>
                             <li><strong>JSON format supports:</strong> All link properties (visibility, notes, tooltips, icons, text colors, browser settings), rich text content with formatting, tabs with scheduling, section and tab text colors, tile-level browser preferences, and visibility controls</li>
                             <li>Category imports preserve the category name from the export file</li>
                             <li>Rich text content, tabs, and all advanced features are preserved in JSON exports and can be imported back</li>
@@ -6392,6 +6646,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         </div>
                       </div>
                     </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -6399,40 +6654,49 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               {/* LDAP Tab */}
               {activeTab === 'ldap' && (
                 <div className="space-y-6">
-                  <div className={`bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl ${isMobile ? 'p-4' : 'p-6'}`}>
-                    <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} ${isMobile ? 'gap-4' : ''} mb-6`}>
-                      <div className={isMobile ? 'w-full' : ''}>
-                        <h3 className={`${isMobile ? 'text-base' : 'text-lg'} font-bold text-slate-900 dark:text-white`}>LDAP Configuration</h3>
-                        <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400`}>
-                          Configure LDAP integration for user authentication.
-                        </p>
-                      </div>
-                      <div className={`flex items-center ${isMobile ? 'w-full justify-between' : 'gap-3'}`}>
-                        <label className={`relative inline-flex items-center cursor-pointer touch-manipulation ${isMobile ? 'flex-1' : ''}`}>
-                          <input
-                            type="checkbox"
-                            className="sr-only peer"
-                            checked={settings.ldap_enabled === '1'}
-                            onChange={(e) => setSettings({ ...settings, ldap_enabled: e.target.checked ? '1' : '0' })}
-                          />
-                          {isMobile ? (
-                            // Mobile: Larger toggle with better touch target
-                            <div className="w-14 h-8 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-brand-300 dark:peer-focus:ring-brand-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-7 after:w-7 after:transition-all dark:border-gray-600 peer-checked:bg-brand-600"></div>
-                          ) : (
-                            // Desktop: Original size
-                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-brand-300 dark:peer-focus:ring-brand-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-brand-600"></div>
-                          )}
-                          <span className={`${isMobile ? 'ml-3 text-sm' : 'ml-3 text-sm'} font-medium text-slate-900 dark:text-slate-300`}>Enable LDAP</span>
-                        </label>
+                  <div className={`bg-white dark:bg-slate-800 border border-sky-200/70 dark:border-sky-800/40 rounded-xl overflow-hidden shadow-sm shadow-sky-500/5 ${isMobile ? '' : ''}`}>
+                    <div className={`bg-gradient-to-r from-sky-50 via-teal-50/80 to-cyan-50/60 dark:from-sky-950/40 dark:via-teal-950/30 dark:to-cyan-950/20 border-b border-sky-100 dark:border-sky-800/40 ${isMobile ? 'p-4' : 'px-6 py-5'}`}>
+                      <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} ${isMobile ? 'gap-4' : ''}`}>
+                        <div className={isMobile ? 'w-full' : ''}>
+                          <h3 className={`${isMobile ? 'text-base' : 'text-lg'} font-bold text-slate-900 dark:text-white flex items-center gap-2`}>
+                            <span aria-hidden>🏢</span> LDAP Configuration
+                          </h3>
+                          <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-sky-800/70 dark:text-sky-200/70 mt-0.5`}>
+                            Configure LDAP / Active Directory for enterprise sign-in.
+                          </p>
+                        </div>
+                        <div className={`flex items-center ${isMobile ? 'w-full justify-between' : 'gap-3'} bg-white/70 dark:bg-slate-900/40 border border-sky-200/60 dark:border-sky-700/40 rounded-xl px-3 py-2`}>
+                          <label className={`relative inline-flex items-center cursor-pointer touch-manipulation ${isMobile ? 'flex-1' : ''}`}>
+                            <input
+                              type="checkbox"
+                              className="sr-only peer"
+                              checked={settings.ldap_enabled === '1'}
+                              onChange={(e) => setSettings({ ...settings, ldap_enabled: e.target.checked ? '1' : '0' })}
+                            />
+                            {isMobile ? (
+                              // Mobile: Larger toggle with better touch target
+                              <div className="w-14 h-8 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-sky-300 dark:peer-focus:ring-sky-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-7 after:w-7 after:transition-all dark:border-gray-600 peer-checked:bg-sky-600"></div>
+                            ) : (
+                              // Desktop: Original size
+                              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-sky-300 dark:peer-focus:ring-sky-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-sky-600"></div>
+                            )}
+                            <span className={`${isMobile ? 'ml-3 text-sm' : 'ml-3 text-sm'} font-medium text-slate-900 dark:text-slate-300`}>
+                              <span className="mr-1" aria-hidden>🔐</span>Enable LDAP
+                            </span>
+                          </label>
+                        </div>
                       </div>
                     </div>
 
+                    <div className={isMobile ? 'p-4' : 'p-6'}>
                     {/* LDAP Servers Management */}
                     {settings.ldap_enabled === '1' && (
-                      <div className="mb-6 mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
-                        <div className="flex items-center justify-between mb-4">
+                      <div className="mb-6">
+                        <div className="flex items-center justify-between mb-4 gap-3">
                           <div>
-                            <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-slate-900 dark:text-white`}>LDAP Servers</h4>
+                            <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-slate-900 dark:text-white flex items-center gap-1.5`}>
+                              <span aria-hidden>🌐</span> LDAP Servers
+                            </h4>
                             <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-slate-500 dark:text-slate-400 mt-1`}>
                               Configure multiple LDAP servers. Users will select their server from a dropdown during login.
                             </p>
@@ -6473,36 +6737,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               setEditingServerIndex(ldapServers.length);
                               setShowServerForm(true);
                             }}
-                            className={`${isMobile ? 'px-3 py-2 text-xs' : 'px-3 py-1.5 text-xs'} bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium transition-colors flex items-center gap-1.5 touch-manipulation`}
+                            className={`${isMobile ? 'px-3 py-2 text-xs' : 'px-3 py-1.5 text-xs'} bg-sky-600 hover:bg-sky-500 text-white rounded-lg font-medium transition-colors flex items-center gap-1.5 touch-manipulation shadow-sm shadow-sky-500/20`}
                             style={isMobile ? { minHeight: '44px' } : {}}
                           >
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                              <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
-                            </svg>
+                            <span aria-hidden>➕</span>
                             Add Server
                           </button>
                         </div>
 
                         {/* Servers List */}
                         {ldapServers.length === 0 ? (
-                          <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4 text-center">
-                            <p className="text-sm text-slate-600 dark:text-slate-400">No LDAP servers configured. Click "Add Server" to get started.</p>
+                          <div className="bg-sky-50/80 dark:bg-sky-950/20 border border-dashed border-sky-200 dark:border-sky-800/50 rounded-xl p-5 text-center">
+                            <p className="text-2xl mb-2" aria-hidden>📡</p>
+                            <p className="text-sm text-sky-800 dark:text-sky-200">No LDAP servers configured yet.</p>
+                            <p className="text-xs text-sky-600/80 dark:text-sky-400 mt-1">Click &quot;Add Server&quot; to get started.</p>
                           </div>
                         ) : (
                           <div className="space-y-3">
                             {ldapServers.map((server, index) => (
                               <div
                                 key={index}
-                                className={`bg-slate-50 dark:bg-slate-900/50 border-2 rounded-lg p-4 transition-all ${editingServerIndex === index
-                                  ? 'border-brand-500 dark:border-brand-400'
-                                  : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                                className={`bg-gradient-to-br from-sky-50/60 to-white dark:from-sky-950/20 dark:to-slate-900/50 border-2 rounded-xl p-4 transition-all ${editingServerIndex === index
+                                  ? 'border-sky-400 dark:border-sky-500 shadow-md shadow-sky-500/10'
+                                  : 'border-sky-100 dark:border-slate-700 hover:border-sky-300 dark:hover:border-sky-700'
                                   }`}
                               >
                                 {editingServerIndex === index ? (
                                   <div className="space-y-6 max-h-[80vh] overflow-y-auto pr-2">
                                     {/* Basic Information */}
-                                    <div>
-                                      <h5 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Basic Information</h5>
+                                    <div className="rounded-xl bg-sky-50/50 dark:bg-sky-950/20 border border-sky-100 dark:border-sky-900/40 p-4">
+                                      <h5 className="text-sm font-semibold text-sky-900 dark:text-sky-100 mb-3 border-b border-sky-200/70 dark:border-sky-800/50 pb-2 flex items-center gap-1.5">
+                                        <span aria-hidden>🏷️</span> Basic Information
+                                      </h5>
                                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
                                           <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Server Name *</label>
@@ -6537,8 +6803,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     </div>
 
                                     {/* Connection Settings */}
-                                    <div>
-                                      <h5 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Connection</h5>
+                                    <div className="rounded-xl bg-teal-50/50 dark:bg-teal-950/20 border border-teal-100 dark:border-teal-900/40 p-4">
+                                      <h5 className="text-sm font-semibold text-teal-900 dark:text-teal-100 mb-3 border-b border-teal-200/70 dark:border-teal-800/50 pb-2 flex items-center gap-1.5">
+                                        <span aria-hidden>🔌</span> Connection
+                                      </h5>
                                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
                                           <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Server Host *</label>
@@ -6618,8 +6886,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     </div>
 
                                     {/* Service Account (Bind) */}
-                                    <div>
-                                      <h5 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Service Account (Bind)</h5>
+                                    <div className="rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/40 p-4">
+                                      <h5 className="text-sm font-semibold text-amber-900 dark:text-amber-100 mb-3 border-b border-amber-200/70 dark:border-amber-800/50 pb-2 flex items-center gap-1.5">
+                                        <span aria-hidden>🔑</span> Service Account (Bind)
+                                      </h5>
                                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
                                           <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Bind DN</label>
@@ -6664,8 +6934,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     </div>
 
                                     {/* User Schema */}
-                                    <div>
-                                      <h5 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">User Schema</h5>
+                                    <div className="rounded-xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/40 p-4">
+                                      <h5 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-3 border-b border-blue-200/70 dark:border-blue-800/50 pb-2 flex items-center gap-1.5">
+                                        <span aria-hidden>👤</span> User Schema
+                                      </h5>
                                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
                                           <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Base DN</label>
@@ -6715,8 +6987,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     </div>
 
                                     {/* Group Membership */}
-                                    <div>
-                                      <h5 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Group Membership</h5>
+                                    <div className="rounded-xl bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/40 p-4">
+                                      <h5 className="text-sm font-semibold text-indigo-900 dark:text-indigo-100 mb-3 border-b border-indigo-200/70 dark:border-indigo-800/50 pb-2 flex items-center gap-1.5">
+                                        <span aria-hidden>👥</span> Group Membership
+                                      </h5>
                                       <div className="space-y-4">
                                         <div className="space-y-2">
                                           <label className="flex items-center gap-2 cursor-pointer">
@@ -6814,8 +7088,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     </div>
 
                                     {/* Advanced Options */}
-                                    <div>
-                                      <h5 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Advanced Options</h5>
+                                    <div className="rounded-xl bg-slate-50/80 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 p-4">
+                                      <h5 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-3 border-b border-slate-200 dark:border-slate-700 pb-2 flex items-center gap-1.5">
+                                        <span aria-hidden>⚙️</span> Advanced Options
+                                      </h5>
                                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
                                           <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Search Scope</label>
@@ -6997,9 +7273,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                           setEditingServerIndex(null);
                                           setShowServerForm(false);
                                         }}
-                                        className="px-4 py-2 text-sm bg-brand-600 hover:bg-brand-500 text-white rounded-lg transition-colors"
+                                        className="px-4 py-2 text-sm bg-sky-600 hover:bg-sky-500 text-white rounded-lg transition-colors flex items-center gap-1.5"
                                       >
-                                        Save Server
+                                        <span aria-hidden>💾</span> Save Server
                                       </button>
                                     </div>
                                   </div>
@@ -7007,11 +7283,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   <div className="flex items-center justify-between">
                                     <div className="flex-1 min-w-0">
                                       <div className="flex items-center gap-2 mb-1">
+                                        <span className="text-base flex-shrink-0" aria-hidden>🖥️</span>
                                         <h5 className="text-sm font-semibold text-slate-900 dark:text-white truncate">
                                           {server.name || `Server ${index + 1}`}
                                         </h5>
                                         {server.login_domain && (
-                                          <span className="text-xs px-2 py-0.5 bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 rounded">
+                                          <span className="text-xs px-2 py-0.5 bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 rounded">
                                             {server.login_domain}
                                           </span>
                                         )}
@@ -7050,6 +7327,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     </div>
                                     <div className="flex items-center gap-2 ml-4">
                                       <button
+                                        type="button"
                                         onClick={() => {
                                           setEditingServerIndex(index);
                                           setShowServerForm(true);
@@ -7062,6 +7340,51 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                         </svg>
                                       </button>
                                       <button
+                                        type="button"
+                                        onClick={() => {
+                                          const baseName = (server.name || `Server ${index + 1}`).replace(/\s*\(copy(?:\s+\d+)?\)\s*$/i, '').trim() || 'LDAP Server';
+                                          const existingNames = new Set(ldapServers.map((s) => (s.name || '').toLowerCase()));
+                                          let cloneName = `${baseName} (copy)`;
+                                          let n = 2;
+                                          while (existingNames.has(cloneName.toLowerCase())) {
+                                            cloneName = `${baseName} (copy ${n})`;
+                                            n += 1;
+                                          }
+                                          const baseDomain = (server.login_domain || '').replace(/\s*\(copy(?:\s+\d+)?\)\s*$/i, '').trim();
+                                          let cloneDomain = baseDomain;
+                                          if (baseDomain) {
+                                            const existingDomains = new Set(
+                                              ldapServers.map((s) => (s.login_domain || '').toLowerCase()).filter(Boolean)
+                                            );
+                                            cloneDomain = `${baseDomain} (copy)`;
+                                            let d = 2;
+                                            while (existingDomains.has(cloneDomain.toLowerCase())) {
+                                              cloneDomain = `${baseDomain} (copy ${d})`;
+                                              d += 1;
+                                            }
+                                          }
+                                          const clonedServer = {
+                                            ...server,
+                                            name: cloneName,
+                                            login_domain: cloneDomain,
+                                            // Copy bind password so the clone is usable immediately after Save
+                                            bind_password: server.bind_password || '',
+                                          };
+                                          const updated = [...ldapServers, clonedServer];
+                                          setLdapServers(updated);
+                                          setEditingServerIndex(updated.length - 1);
+                                          setShowServerForm(true);
+                                        }}
+                                        className="p-2 text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                                        title="Clone server"
+                                      >
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                          <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
+                                          <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.439A1.5 1.5 0 008.378 6H4.5z" />
+                                        </svg>
+                                      </button>
+                                      <button
+                                        type="button"
                                         onClick={() => {
                                           if (confirm(`Are you sure you want to remove "${server.name || `Server ${index + 1}`}"?`)) {
                                             const updated = ldapServers.filter((_, i) => i !== index);
@@ -7459,31 +7782,87 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                     {/* Test Connection — only when at least one server is configured */}
                     {ldapServers.length > 0 && (
-                    <div className={`${isMobile ? 'mt-6' : 'mt-8'} ${isMobile ? 'pt-6' : 'pt-6'} border-t border-slate-200 dark:border-slate-700`}>
-                      <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-slate-900 dark:text-white mb-4`}>Test Connection</h4>
+                    <div className={`${isMobile ? 'mt-6' : 'mt-8'} ${isMobile ? 'pt-6' : 'pt-6'} border-t border-sky-100 dark:border-sky-900/40`}>
+                      <div className="rounded-xl bg-gradient-to-r from-emerald-50/80 to-teal-50/60 dark:from-emerald-950/25 dark:to-teal-950/20 border border-emerald-100 dark:border-emerald-900/40 p-4 mb-4">
+                        <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-emerald-900 dark:text-emerald-100 flex items-center gap-1.5`}>
+                          <span aria-hidden>🧪</span> Test Connection
+                        </h4>
+                        <p className="text-[10px] sm:text-xs text-emerald-700/80 dark:text-emerald-300/70 mt-1">
+                          Verify bind credentials and directory reachability before going live.
+                        </p>
+                      </div>
 
                       {/* Server Selection Dropdown */}
                       {ldapServers.length > 1 && (
                         <div className="mb-4">
-                          <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>Select LDAP Server to Test</label>
+                          <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                            <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300`}>Select LDAP Server to Test</label>
+                            <label className="inline-flex items-center gap-2 cursor-pointer touch-manipulation">
+                              <input
+                                type="checkbox"
+                                className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                                checked={settings.ldap_dropdown_show_host !== '0'}
+                                onChange={async (e) => {
+                                  const value = e.target.checked ? '1' : '0';
+                                  setSettings({ ...settings, ldap_dropdown_show_host: value });
+                                  try {
+                                    await settingsService.updateSettings({ ldap_dropdown_show_host: value });
+                                    await refreshSettings();
+                                  } catch (err: any) {
+                                    setError(err.message || 'Failed to update dropdown display setting');
+                                  }
+                                }}
+                              />
+                              <span className="text-[10px] sm:text-xs text-slate-600 dark:text-slate-400">Show host and port</span>
+                            </label>
+                          </div>
                           <select
                             value={selectedTestServerIndex}
                             onChange={(e) => setSelectedTestServerIndex(parseInt(e.target.value))}
                             className={`w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg ${isMobile ? 'px-3 py-2.5 text-sm' : 'px-3 py-2 text-sm'} touch-manipulation`}
                             style={isMobile ? { minHeight: '44px' } : {}}
                           >
-                            {ldapServers.map((server, index) => (
-                              <option key={index} value={index}>
-                                {server.name} {server.login_domain ? `(${server.login_domain})` : ''} - {server.server}:{server.port}
-                              </option>
-                            ))}
+                            {ldapServers.map((server, index) => {
+                              const namePart = `${server.name || `Server ${index + 1}`}${server.login_domain ? ` (${server.login_domain})` : ''}`;
+                              const hostPart = settings.ldap_dropdown_show_host !== '0' && server.server
+                                ? ` - ${server.server}:${server.port || '389'}`
+                                : '';
+                              return (
+                                <option key={index} value={index}>
+                                  {namePart}{hostPart}
+                                </option>
+                              );
+                            })}
                           </select>
                         </div>
                       )}
                       {ldapServers.length === 1 && (
-                        <p className={`${isMobile ? 'text-xs' : 'text-xs'} text-slate-600 dark:text-slate-400 mb-3`}>
-                          Testing server: {ldapServers[0]?.name || 'LDAP Server'}
-                        </p>
+                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                          <p className={`${isMobile ? 'text-xs' : 'text-xs'} text-slate-600 dark:text-slate-400`}>
+                            Testing server: {ldapServers[0]?.name || 'LDAP Server'}
+                            {settings.ldap_dropdown_show_host !== '0' && ldapServers[0]?.server
+                              ? ` (${ldapServers[0].server}:${ldapServers[0].port || '389'})`
+                              : ''}
+                          </p>
+                          <label className="inline-flex items-center gap-2 cursor-pointer touch-manipulation">
+                            <input
+                              type="checkbox"
+                              className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                              checked={settings.ldap_dropdown_show_host !== '0'}
+                              onChange={async (e) => {
+                                const value = e.target.checked ? '1' : '0';
+                                setSettings({ ...settings, ldap_dropdown_show_host: value });
+                                try {
+                                  await settingsService.updateSettings({ ldap_dropdown_show_host: value });
+                                  await refreshSettings();
+                                } catch (err: any) {
+                                  setError(err.message || 'Failed to update dropdown display setting');
+                                }
+                              }}
+                            />
+                            <span className="text-[10px] sm:text-xs text-slate-600 dark:text-slate-400">Show host and port</span>
+                          </label>
+                        </div>
                       )}
 
                       <form
@@ -7654,7 +8033,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         <button
                           type="submit"
                           disabled={ldapTestLoading}
-                          className={`${isMobile ? 'w-full px-4 py-3 text-sm' : 'px-4 py-2 text-sm'} bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2 whitespace-nowrap touch-manipulation`}
+                          className={`${isMobile ? 'w-full px-4 py-3 text-sm' : 'px-4 py-2 text-sm'} bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2 whitespace-nowrap touch-manipulation shadow-sm shadow-emerald-500/20`}
                           style={isMobile ? { minHeight: '44px' } : {}}
                         >
                           {ldapTestLoading ? (
@@ -7663,9 +8042,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
                           ) : (
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clipRule="evenodd" />
-                            </svg>
+                            <span aria-hidden>🧪</span>
                           )}
                           Test Connection
                         </button>
@@ -7677,13 +8054,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800'
                           }`}>
                           {ldapTestResult.success ? (
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 flex-shrink-0 mt-0.5">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
-                            </svg>
+                            <span className="text-lg leading-none flex-shrink-0" aria-hidden>✅</span>
                           ) : (
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 flex-shrink-0 mt-0.5">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
-                            </svg>
+                            <span className="text-lg leading-none flex-shrink-0" aria-hidden>❌</span>
                           )}
                           <div>
                             <p className="font-semibold">{ldapTestResult.success ? 'Connection Successful' : 'Connection Failed'}</p>
@@ -7695,8 +8068,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     )}
 
                     {/* Export & Import LDAP Settings */}
-                    <div className={`${isMobile ? 'mt-6' : 'mt-8'} ${isMobile ? 'pt-6' : 'pt-6'} border-t border-slate-200 dark:border-slate-700`}>
-                      <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-slate-900 dark:text-white mb-4`}>Export & Import LDAP Settings</h4>
+                    <div className={`${isMobile ? 'mt-6' : 'mt-8'} ${isMobile ? 'pt-6' : 'pt-6'} border-t border-sky-100 dark:border-sky-900/40`}>
+                      <div className="rounded-xl bg-gradient-to-r from-violet-50/70 to-sky-50/60 dark:from-violet-950/25 dark:to-sky-950/20 border border-violet-100 dark:border-violet-900/40 p-4 mb-4">
+                        <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-violet-900 dark:text-violet-100 flex items-center gap-1.5`}>
+                          <span aria-hidden>📦</span> Export & Import LDAP Settings
+                        </h4>
+                        <p className="text-[10px] sm:text-xs text-violet-700/80 dark:text-violet-300/70 mt-1">
+                          Back up or restore your LDAP configuration as a JSON file.
+                        </p>
+                      </div>
+
+                      <label className={`inline-flex items-start gap-2 mb-3 cursor-pointer touch-manipulation ${isMobile ? 'w-full' : ''}`}>
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                          checked={ldapExportIncludePasswords}
+                          onChange={(e) => setLdapExportIncludePasswords(e.target.checked)}
+                        />
+                        <span className={`${isMobile ? 'text-xs' : 'text-xs'} text-slate-600 dark:text-slate-400`}>
+                          Include bind passwords in export (encrypted only — never plaintext). Import decrypts them with this instance’s key.
+                        </span>
+                      </label>
 
                       <div className={`flex ${isMobile ? 'flex-col' : 'flex-wrap'} gap-3 items-start`}>
                         <button
@@ -7730,21 +8122,71 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                         {/* Export Section */}
                         <button
+                          type="button"
                           onClick={async () => {
                             try {
                               setLdapExporting(true);
                               setError('');
 
+                              const looksEncryptedPassword = (pw: string): boolean => {
+                                const parts = pw.split('.');
+                                if (parts.length !== 3) return false;
+                                return parts.every((p) => p.length > 0 && !/\s/.test(p));
+                              };
+                              const isMaskedPassword = (pw: string) => /^[\*\u2022\u00B7\u25CF\u25E6•·]+$/.test(pw || '');
+
+                              const encryptForExport = async (password: string): Promise<string> => {
+                                const trimmed = String(password || '').trim();
+                                if (!trimmed || isMaskedPassword(trimmed)) return '';
+                                if (looksEncryptedPassword(trimmed)) return trimmed;
+                                return await settingsService.encryptPassword(trimmed);
+                              };
+
+                              if (ldapExportIncludePasswords) {
+                                const ok = confirm(
+                                  'Export will include encrypted LDAP bind passwords.\n\n' +
+                                  'They can only be decrypted by a LinkNest instance using the same encryption key. ' +
+                                  'Do not share this file. Continue?'
+                                );
+                                if (!ok) {
+                                  return;
+                                }
+                              }
+
                               // Prefer multi-server JSON; only include non-empty flat keys to avoid stale leftovers.
-                              // Never export bind passwords (multi-server or legacy flat).
-                              const ldapSettings: Partial<AppSettings> & { ldap_servers?: string } = {};
+                              // ldap_servers is a nested array (not a stringified JSON blob) so the file pretty-prints cleanly.
+                              const ldapSettings: Record<string, unknown> = {};
+
                               if (ldapServers.length > 0) {
                                 ldapSettings.ldap_enabled = settings.ldap_enabled || '1';
-                                const serversForExport = ldapServers.map((server) => {
-                                  const { bind_password: _omitBindPassword, ...rest } = server;
-                                  return rest;
-                                });
-                                ldapSettings.ldap_servers = JSON.stringify(serversForExport);
+                                if (settings.ldap_dropdown_show_host !== undefined) {
+                                  ldapSettings.ldap_dropdown_show_host = settings.ldap_dropdown_show_host;
+                                }
+
+                                let includedPasswordCount = 0;
+                                const serversForExport: Array<Record<string, unknown>> = [];
+                                for (const server of ldapServers) {
+                                  const { bind_password: rawPassword, ...rest } = server;
+                                  if (ldapExportIncludePasswords) {
+                                    const encrypted = await encryptForExport(rawPassword || '');
+                                    if (encrypted) includedPasswordCount += 1;
+                                    serversForExport.push({ ...rest, bind_password: encrypted });
+                                  } else {
+                                    serversForExport.push({ ...rest });
+                                  }
+                                }
+                                ldapSettings.ldap_servers = serversForExport;
+                                if (ldapExportIncludePasswords) {
+                                  ldapSettings.ldap_passwords_format = 'encrypted';
+                                  // Mirror first server password for legacy flat-key importers
+                                  const firstPw = String(serversForExport[0]?.bind_password || '');
+                                  if (firstPw) {
+                                    ldapSettings.ldap_bind_password = firstPw;
+                                  }
+                                  if (includedPasswordCount === 0) {
+                                    alert('No bind passwords were available to encrypt. Exporting configuration without passwords.');
+                                  }
+                                }
                               } else {
                                 const ldapKeys = [
                                   'ldap_enabled', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
@@ -7755,15 +8197,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   'ldap_require_group_membership', 'ldap_required_groups', 'ldap_denied_groups', 'ldap_timeout', 'ldap_tls',
                                   'ldap_search_scope', 'ldap_user_dn_template', 'ldap_nested_groups', 'ldap_case_sensitive',
                                   'ldap_ssl_verify', 'ldap_connection_retry', 'ldap_retry_delay', 'ldap_email_attribute',
-                                  'ldap_display_name_attribute', 'ldap_referrals'
+                                  'ldap_display_name_attribute', 'ldap_referrals', 'ldap_dropdown_show_host'
                                 ] as const;
 
                                 ldapKeys.forEach((key) => {
                                   const val = settings[key as keyof AppSettings];
                                   if (val !== undefined && String(val).trim() !== '') {
-                                    (ldapSettings as any)[key] = val;
+                                    ldapSettings[key] = val;
                                   }
                                 });
+
+                                if (ldapExportIncludePasswords) {
+                                  const encrypted = await encryptForExport(settings.ldap_bind_password || '');
+                                  if (encrypted) {
+                                    ldapSettings.ldap_bind_password = encrypted;
+                                    ldapSettings.ldap_passwords_format = 'encrypted';
+                                  } else {
+                                    alert('No bind password was available to encrypt. Exporting configuration without a password.');
+                                  }
+                                }
                               }
 
                               // Create JSON blob
@@ -7780,7 +8232,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               document.body.removeChild(a);
                               URL.revokeObjectURL(url);
 
-                              alert('LDAP settings exported successfully!');
+                              alert(
+                                ldapExportIncludePasswords
+                                  ? 'LDAP settings exported with encrypted bind passwords.'
+                                  : 'LDAP settings exported successfully (passwords omitted).'
+                              );
                             } catch (err: any) {
                               setError(err.message || 'Failed to export LDAP settings');
                             } finally {
@@ -7826,6 +8282,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             style={isMobile ? { minHeight: '44px' } : {}}
                           />
                           <button
+                            type="button"
                             onClick={async () => {
                               if (!ldapImportFile) {
                                 setError('Please select a JSON file to import');
@@ -7845,13 +8302,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 const importedSettings = JSON.parse(fileContent);
 
                                 // Validate that it's an object
-                                if (typeof importedSettings !== 'object' || importedSettings === null) {
+                                if (typeof importedSettings !== 'object' || importedSettings === null || Array.isArray(importedSettings)) {
                                   throw new Error('Invalid JSON format');
                                 }
 
-                                // Filter only valid LDAP keys
+                                // Filter only valid LDAP keys (include ldap_servers — export uses this for multi-server)
                                 const validLdapKeys = [
-                                  'ldap_enabled', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
+                                  'ldap_enabled', 'ldap_servers', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
                                   'ldap_login_domain', 'ldap_bind_dn', 'ldap_bind_password',
                                   'ldap_user_search_base', 'ldap_user_filter', 'ldap_user_attributes',
                                   'ldap_group_search_base', 'ldap_group_filter', 'ldap_group_attributes',
@@ -7859,29 +8316,147 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   'ldap_require_group_membership', 'ldap_required_groups', 'ldap_denied_groups', 'ldap_timeout', 'ldap_tls',
                                   'ldap_search_scope', 'ldap_user_dn_template', 'ldap_nested_groups', 'ldap_case_sensitive',
                                   'ldap_ssl_verify', 'ldap_connection_retry', 'ldap_retry_delay', 'ldap_email_attribute',
-                                  'ldap_display_name_attribute', 'ldap_referrals'
-                                ];
+                                  'ldap_display_name_attribute', 'ldap_referrals', 'ldap_dropdown_show_host'
+                                ] as const;
 
                                 const filteredSettings: Partial<AppSettings> = {};
-                                validLdapKeys.forEach(key => {
+                                validLdapKeys.forEach((key) => {
                                   if (importedSettings[key] !== undefined) {
-                                    filteredSettings[key as keyof AppSettings] = importedSettings[key];
+                                    (filteredSettings as any)[key] = importedSettings[key];
                                   }
                                 });
 
-                                // Decrypt password if it's encrypted (handles both encrypted and plain text for backward compatibility)
-                                if (filteredSettings.ldap_bind_password && filteredSettings.ldap_bind_password.trim() !== '') {
-                                  try {
-                                    // Try to decrypt - decryptPassword handles plain text passwords too
-                                    filteredSettings.ldap_bind_password = await settingsService.decryptPassword(filteredSettings.ldap_bind_password);
-                                  } catch (decryptErr: any) {
-                                    // If decryption fails, it might be plain text (old export format)
-                                    // Keep it as is - the backend will handle it
-                                    console.warn('Password decryption failed, assuming plain text:', decryptErr.message);
+                                const looksEncryptedPassword = (pw: string): boolean => {
+                                  const parts = pw.split('.');
+                                  if (parts.length !== 3) return false;
+                                  return parts.every((p) => p.length > 0 && !/\s/.test(p));
+                                };
+                                const isMaskedPassword = (pw: string) => /^[\*\u2022\u00B7\u25CF\u25E6•·]+$/.test(pw || '');
+
+                                // Resolve import passwords safely:
+                                // - encrypted (this instance key) → decrypt to plaintext, backend re-encrypts on save
+                                // - encrypted (wrong key) → drop password and warn (never store foreign ciphertext)
+                                // - plaintext (legacy export) → keep as plaintext for backend encrypt
+                                let passwordDecryptFailures = 0;
+                                let passwordsImported = 0;
+                                const resolveImportPassword = async (password: string): Promise<string> => {
+                                  const trimmed = String(password || '').trim();
+                                  if (!trimmed || isMaskedPassword(trimmed)) return '';
+                                  if (looksEncryptedPassword(trimmed)) {
+                                    try {
+                                      const plain = await settingsService.decryptPassword(trimmed);
+                                      if (!plain) {
+                                        passwordDecryptFailures += 1;
+                                        return '';
+                                      }
+                                      passwordsImported += 1;
+                                      return plain;
+                                    } catch {
+                                      passwordDecryptFailures += 1;
+                                      return '';
+                                    }
+                                  }
+                                  passwordsImported += 1;
+                                  return trimmed;
+                                };
+
+                                // Normalize ldap_servers (array or JSON string) and resolve per-server bind passwords
+                                let importedServers: any[] | null = null;
+                                if (filteredSettings.ldap_servers !== undefined) {
+                                  const rawServers = filteredSettings.ldap_servers as unknown;
+                                  if (Array.isArray(rawServers)) {
+                                    importedServers = rawServers;
+                                  } else if (typeof rawServers === 'string' && rawServers.trim() !== '') {
+                                    try {
+                                      const parsed = JSON.parse(rawServers);
+                                      if (!Array.isArray(parsed)) {
+                                        throw new Error('ldap_servers must be a JSON array');
+                                      }
+                                      importedServers = parsed;
+                                    } catch {
+                                      throw new Error('Invalid ldap_servers JSON in import file');
+                                    }
+                                  } else {
+                                    importedServers = [];
+                                  }
+
+                                  for (let i = 0; i < importedServers.length; i++) {
+                                    const server = importedServers[i];
+                                    if (!server || typeof server !== 'object') continue;
+                                    if (typeof server.bind_password === 'string' && server.bind_password.trim() !== '') {
+                                      server.bind_password = await resolveImportPassword(server.bind_password);
+                                    } else {
+                                      server.bind_password = '';
+                                    }
+                                  }
+                                  filteredSettings.ldap_servers = JSON.stringify(importedServers);
+                                } else if (
+                                  typeof filteredSettings.ldap_server === 'string' &&
+                                  filteredSettings.ldap_server.trim() !== ''
+                                ) {
+                                  // Legacy flat-key export → convert to ldap_servers so UI/DB stay consistent
+                                  if (filteredSettings.ldap_bind_password && String(filteredSettings.ldap_bind_password).trim() !== '') {
+                                    filteredSettings.ldap_bind_password = await resolveImportPassword(String(filteredSettings.ldap_bind_password));
+                                  }
+                                  importedServers = [{
+                                    name: filteredSettings.ldap_login_domain || filteredSettings.ldap_server || 'LDAP Server',
+                                    server: filteredSettings.ldap_server || '',
+                                    port: filteredSettings.ldap_port || '389',
+                                    protocol: filteredSettings.ldap_protocol || 'ldap',
+                                    tls: filteredSettings.ldap_tls || '0',
+                                    timeout: filteredSettings.ldap_timeout || '30',
+                                    bind_dn: filteredSettings.ldap_bind_dn || '',
+                                    bind_password: filteredSettings.ldap_bind_password || '',
+                                    user_search_base: filteredSettings.ldap_user_search_base || '',
+                                    user_filter: filteredSettings.ldap_user_filter || '(sAMAccountName={username})',
+                                    user_attributes: filteredSettings.ldap_user_attributes || 'sAMAccountName,mail,displayName',
+                                    group_search_base: filteredSettings.ldap_group_search_base || '',
+                                    group_filter: filteredSettings.ldap_group_filter || '(objectClass=group)',
+                                    group_attributes: filteredSettings.ldap_group_attributes || 'cn,distinguishedName,member',
+                                    require_group_membership: filteredSettings.ldap_require_group_membership || '0',
+                                    required_groups: filteredSettings.ldap_required_groups || '',
+                                    denied_groups: (filteredSettings as any).ldap_denied_groups || '',
+                                    search_scope: filteredSettings.ldap_search_scope || 'sub',
+                                    user_dn_template: filteredSettings.ldap_user_dn_template || '',
+                                    nested_groups: filteredSettings.ldap_nested_groups || '0',
+                                    case_sensitive: filteredSettings.ldap_case_sensitive || '0',
+                                    ssl_verify: filteredSettings.ldap_ssl_verify || '1',
+                                    connection_retry: filteredSettings.ldap_connection_retry || '3',
+                                    retry_delay: filteredSettings.ldap_retry_delay || '1',
+                                    email_attribute: filteredSettings.ldap_email_attribute || '',
+                                    display_name_attribute: filteredSettings.ldap_display_name_attribute || '',
+                                    referrals: filteredSettings.ldap_referrals || '0',
+                                    login_domain: filteredSettings.ldap_login_domain || '',
+                                  }];
+                                  filteredSettings.ldap_servers = JSON.stringify(importedServers);
+                                }
+
+                                if (filteredSettings.ldap_bind_password && String(filteredSettings.ldap_bind_password).trim() !== '') {
+                                  // Only resolve flat key if we did not already fold it into ldap_servers above
+                                  if (importedServers === null) {
+                                    filteredSettings.ldap_bind_password = await resolveImportPassword(String(filteredSettings.ldap_bind_password));
+                                  } else {
+                                    // Avoid double-counting / overwriting mirrored empty after server import
+                                    delete filteredSettings.ldap_bind_password;
                                   }
                                 }
 
-                                // Update settings
+                                if (Object.keys(filteredSettings).length === 0) {
+                                  throw new Error('No LDAP settings found in the import file');
+                                }
+
+                                // Never import ldap_servers as [] unless the file explicitly had an empty list —
+                                // an accidental empty save would purge all LDAP rows on the server.
+                                if (filteredSettings.ldap_servers === '[]' && importedServers !== null && importedServers.length === 0) {
+                                  const proceedEmpty = confirm(
+                                    'The import file has no LDAP servers. Continuing will clear all LDAP server configuration. Continue?'
+                                  );
+                                  if (!proceedEmpty) {
+                                    return;
+                                  }
+                                }
+
+                                // Update settings (ldap_servers path mirrors legacy flat keys server-side)
                                 await settingsService.updateSettings(filteredSettings);
 
                                 // Reload settings to reflect changes
@@ -7889,7 +8464,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 await refreshSettings();
 
                                 setLdapImportFile(null);
-                                alert('LDAP settings imported successfully!');
+                                const serverCount = importedServers?.length ?? 0;
+                                let message = serverCount > 0
+                                  ? `LDAP settings imported successfully (${serverCount} server${serverCount === 1 ? '' : 's'}).`
+                                  : 'LDAP settings imported successfully!';
+                                if (passwordsImported > 0) {
+                                  message += ` Restored ${passwordsImported} bind password${passwordsImported === 1 ? '' : 's'}.`;
+                                } else if (!(importedSettings as any).ldap_passwords_format && !(importedSettings as any).ldap_bind_password) {
+                                  message += ' Re-enter bind passwords if they were omitted from the export.';
+                                }
+                                if (passwordDecryptFailures > 0) {
+                                  message += ` ${passwordDecryptFailures} encrypted password${passwordDecryptFailures === 1 ? '' : 's'} could not be decrypted (different encryption key?) — re-enter ${passwordDecryptFailures === 1 ? 'it' : 'them'} and Save.`;
+                                }
+                                alert(message);
                               } catch (err: any) {
                                 setError(err.message || 'Failed to import LDAP settings. Please check the file format.');
                               } finally {
@@ -7925,6 +8512,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     {/* Save Button */}
                     <div className={`mt-6 flex ${isMobile ? 'justify-stretch' : 'justify-end'}`}>
                       <button
+                        type="button"
                         onClick={async () => {
                           try {
                             setSettingsSaving(true);
@@ -7940,11 +8528,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 }
                                 return { ...s, bind_dn: String(s.bind_dn || '').trim(), bind_password: pw };
                               });
+                              // Spread settings for ldap_enabled etc., but never send a stale empty
+                              // ldap_bind_password — it is written AFTER ldap_servers in JSON key order
+                              // and would overwrite the encrypted password mirrored from ldap_servers.
+                              const { ldap_bind_password: _omitFlatBindPassword, ldap_servers: _omitOldServers, ...restSettings } = settings;
                               settingsToSave = {
-                                ...settings,
+                                ...restSettings,
                                 ldap_servers: JSON.stringify(serversForSave),
                               };
                             } else {
+                              if (!confirm('No LDAP servers are configured. Saving will remove all LDAP server settings from the database and disable LDAP. Continue?')) {
+                                return;
+                              }
                               // Do NOT send leftover flat ldap_* fields — they would re-insert after purge
                               settingsToSave = {
                                 ldap_servers: '[]',
@@ -7967,7 +8562,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           }
                         }}
                         disabled={settingsSaving}
-                        className={`${isMobile ? 'w-full px-4 py-3 text-sm' : 'px-6 py-2.5 text-sm'} bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white rounded-lg font-semibold transition-colors flex items-center justify-center gap-2 touch-manipulation`}
+                        className={`${isMobile ? 'w-full px-4 py-3 text-sm' : 'px-6 py-2.5 text-sm'} bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white rounded-lg font-semibold transition-colors flex items-center justify-center gap-2 touch-manipulation shadow-sm shadow-sky-500/20`}
                         style={isMobile ? { minHeight: '44px' } : {}}
                       >
                         {settingsSaving ? (
@@ -7980,13 +8575,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           </>
                         ) : (
                           <>
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                              <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-                            </svg>
+                            <span aria-hidden>💾</span>
                             Save Settings
                           </>
                         )}
                       </button>
+                    </div>
                     </div>
                   </div>
                 </div>
@@ -7995,66 +8589,71 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               {/* SAML Tab */}
               {activeTab === 'saml' && (
                 <div className="space-y-6">
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-center justify-between mb-6">
-                      <div>
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">SAML 2.0 Configuration</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                          Configure SAML 2.0 single sign-on for enterprise authentication.
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <label className="relative inline-flex items-center cursor-pointer">
-                          <input
-                            type="checkbox"
-                            className="sr-only peer"
-                            checked={settings.saml_enabled === '1'}
-                            onChange={async (e) => {
-                              const newValue = e.target.checked ? '1' : '0';
-                              setSettings({ ...settings, saml_enabled: newValue });
+                  <div className="bg-white dark:bg-slate-800 border border-sky-200/70 dark:border-sky-800/40 rounded-xl overflow-hidden shadow-sm shadow-sky-500/5">
+                    <div className="bg-gradient-to-r from-sky-50 via-teal-50/80 to-cyan-50/60 dark:from-sky-950/40 dark:via-teal-950/30 dark:to-cyan-950/20 border-b border-sky-100 dark:border-sky-800/40 px-6 py-5">
+                      <div className="flex items-center justify-between gap-4 flex-wrap">
+                        <div>
+                          <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                            <span aria-hidden>🔐</span> SAML 2.0 Configuration
+                          </h3>
+                          <p className="text-sm text-sky-800/70 dark:text-sky-200/70 mt-0.5">
+                            Configure SAML 2.0 single sign-on for enterprise authentication.
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-3 bg-white/70 dark:bg-slate-900/40 border border-sky-200/60 dark:border-sky-700/40 rounded-xl px-3 py-2">
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              className="sr-only peer"
+                              checked={settings.saml_enabled === '1'}
+                              onChange={async (e) => {
+                                const newValue = e.target.checked ? '1' : '0';
+                                setSettings({ ...settings, saml_enabled: newValue });
 
-                              // Auto-save the setting
-                              try {
-                                setSettingsSaving(true);
-                                await settingsService.updateSettings({ saml_enabled: newValue });
-                                await loadSettings();
-                                await refreshSettings();
-                              } catch (err: any) {
-                                setError(err.message || 'Failed to save SAML setting');
-                                // Revert on error
-                                setSettings({ ...settings, saml_enabled: settings.saml_enabled });
-                              } finally {
-                                setSettingsSaving(false);
-                              }
-                            }}
-                            disabled={settingsSaving}
-                          />
-                          <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-brand-300 dark:peer-focus:ring-brand-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-brand-600 peer-disabled:opacity-50"></div>
-                          <span className="ml-3 text-sm font-medium text-slate-900 dark:text-slate-300">Enable SAML</span>
-                        </label>
+                                // Auto-save the setting
+                                try {
+                                  setSettingsSaving(true);
+                                  await settingsService.updateSettings({ saml_enabled: newValue });
+                                  await loadSettings();
+                                  await refreshSettings();
+                                } catch (err: any) {
+                                  setError(err.message || 'Failed to save SAML setting');
+                                  // Revert on error
+                                  setSettings({ ...settings, saml_enabled: settings.saml_enabled });
+                                } finally {
+                                  setSettingsSaving(false);
+                                }
+                              }}
+                              disabled={settingsSaving}
+                            />
+                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-sky-300 dark:peer-focus:ring-sky-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-sky-600 peer-disabled:opacity-50"></div>
+                            <span className="ml-3 text-sm font-medium text-slate-900 dark:text-slate-300">
+                              <span className="mr-1" aria-hidden>🔑</span>Enable SAML
+                            </span>
+                          </label>
+                        </div>
                       </div>
                     </div>
 
-                    <div className="rounded-xl border border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-900/20 p-4 mb-6">
+                    <div className="p-6">
+                    <div className="rounded-xl border border-sky-200 dark:border-sky-800 bg-gradient-to-r from-sky-50 to-teal-50/70 dark:from-sky-950/30 dark:to-teal-950/20 p-4 mb-6">
                       <div className="flex items-start gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-brand-100 dark:bg-brand-800 text-brand-700 dark:text-brand-200 flex items-center justify-center shrink-0">
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                          </svg>
+                        <div className="w-10 h-10 rounded-lg bg-sky-100 dark:bg-sky-900/50 text-sky-700 dark:text-sky-200 flex items-center justify-center shrink-0 text-xl" aria-hidden>
+                          🚀
                         </div>
                         <div className="flex-1 min-w-0">
-                          <h4 className="text-sm font-semibold text-brand-900 dark:text-brand-100 mb-1">SAML 2.0 Single Sign-On</h4>
-                          <p className="text-sm text-brand-800/80 dark:text-brand-200/80 mb-3">
+                          <h4 className="text-sm font-semibold text-sky-900 dark:text-sky-100 mb-1 flex items-center gap-1.5">
+                            <span aria-hidden>🔐</span> SAML 2.0 Single Sign-On
+                          </h4>
+                          <p className="text-sm text-sky-800/80 dark:text-sky-200/80 mb-3">
                             Configure enterprise SAML 2.0 authentication to allow users to sign in using their organization&apos;s identity provider (IdP).
                             Supports Azure AD, Okta, Auth0, and other SAML 2.0 compliant providers.
                           </p>
                           <button
                             onClick={() => setSamlConfigModalOpen(true)}
-                            className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold rounded-xl transition-colors"
+                            className="inline-flex items-center gap-2 px-4 py-2.5 bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm shadow-sky-500/20"
                           >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                            </svg>
+                            <span aria-hidden>⚙️</span>
                             <span>Open SAML Configuration</span>
                           </button>
                         </div>
@@ -8062,23 +8661,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-                        <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Status Indicators</h4>
+                      <div className="bg-gradient-to-br from-emerald-50/70 to-white dark:from-emerald-950/20 dark:to-slate-900/50 border border-emerald-100 dark:border-emerald-900/40 rounded-xl p-4">
+                        <h4 className="text-sm font-semibold text-emerald-900 dark:text-emerald-100 mb-2 flex items-center gap-1.5">
+                          <span aria-hidden>📡</span> Status Indicators
+                        </h4>
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
-                            <span className="text-xs text-slate-600 dark:text-slate-400">SAML Enabled</span>
+                            <span className="text-xs text-slate-600 dark:text-slate-400">🔐 SAML Enabled</span>
                             <span className={`text-xs px-2 py-1 rounded ${settings.saml_enabled === '1' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}`}>
                               {settings.saml_enabled === '1' ? 'Active' : 'Inactive'}
                             </span>
                           </div>
                           <div className="flex items-center justify-between">
-                            <span className="text-xs text-slate-600 dark:text-slate-400">Local Auth</span>
+                            <span className="text-xs text-slate-600 dark:text-slate-400">👤 Local Auth</span>
                             <span className={`text-xs px-2 py-1 rounded ${settings.local_auth_enabled === '1' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}`}>
                               {settings.local_auth_enabled === '1' ? 'Active' : 'Inactive'}
                             </span>
                           </div>
                           <div className="flex items-center justify-between">
-                            <span className="text-xs text-slate-600 dark:text-slate-400">LDAP</span>
+                            <span className="text-xs text-slate-600 dark:text-slate-400">🏢 LDAP</span>
                             <span className={`text-xs px-2 py-1 rounded ${settings.ldap_enabled === '1' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}`}>
                               {settings.ldap_enabled === '1' ? 'Active' : 'Inactive'}
                             </span>
@@ -8086,19 +8687,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         </div>
                       </div>
 
-                      <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-                        <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Quick Actions</h4>
+                      <div className="bg-gradient-to-br from-sky-50/70 to-white dark:from-sky-950/20 dark:to-slate-900/50 border border-sky-100 dark:border-sky-900/40 rounded-xl p-4">
+                        <h4 className="text-sm font-semibold text-sky-900 dark:text-sky-100 mb-2 flex items-center gap-1.5">
+                          <span aria-hidden>⚡</span> Quick Actions
+                        </h4>
                         <div className="space-y-2">
                           <a
                             href={`${resolveApiBase().replace('/api', '')}/api/saml?action=metadata`}
                             target="_blank"
                             rel="noreferrer"
-                            className="block w-full text-left px-3 py-2 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                            className="block w-full text-left px-3 py-2 text-xs bg-white dark:bg-slate-800 border border-sky-200 dark:border-sky-800/50 rounded-lg hover:bg-sky-50 dark:hover:bg-sky-950/30 transition-colors"
                           >
                             <div className="flex items-center space-x-2">
-                              <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                              </svg>
+                              <span aria-hidden>📄</span>
                               <span>View SP Metadata XML</span>
                             </div>
                           </a>
@@ -8107,20 +8708,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     </div>
 
                     {/* SAML Bulk Import Section */}
-                    <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
-                      <h4 className="text-md font-semibold text-slate-900 dark:text-white mb-4">Bulk Import SAML Users</h4>
-                      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
-                        <p className="text-sm text-blue-800 dark:text-blue-300">
-                          <strong>Bulk Import SAML Users</strong>
-                        </p>
-                        <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
+                    <div className="mt-6 pt-6 border-t border-sky-100 dark:border-sky-900/40">
+                      <div className="rounded-xl bg-gradient-to-r from-blue-50/80 to-sky-50/60 dark:from-blue-950/25 dark:to-sky-950/20 border border-blue-100 dark:border-blue-900/40 p-4 mb-4">
+                        <h4 className="text-md font-semibold text-blue-900 dark:text-blue-100 flex items-center gap-1.5">
+                          <span aria-hidden>📦</span> Bulk Import SAML Users
+                        </h4>
+                        <p className="text-xs text-blue-700/80 dark:text-blue-300/70 mt-1">
                           Upload a CSV file with columns: username, email, saml_nameid, displayName. The header row is optional and will be automatically skipped.
                         </p>
                       </div>
                       <div>
                         <div className="flex items-center justify-between mb-2">
                           <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                            Upload CSV File
+                            <span className="mr-1" aria-hidden>📎</span>Upload CSV File
                           </label>
                           <button
                             onClick={() => {
@@ -8136,12 +8736,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               document.body.removeChild(a);
                               window.URL.revokeObjectURL(url);
                             }}
-                            className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                            className="text-xs text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1"
                           >
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                              <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z" />
-                              <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
-                            </svg>
+                            <span aria-hidden>⬇️</span>
                             Download Template
                           </button>
                         </div>
@@ -8155,7 +8752,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               setError('');
                             }
                           }}
-                          className="w-full text-sm text-slate-600 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-900/30 dark:file:text-brand-300 cursor-pointer"
+                          className="w-full text-sm text-slate-600 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100 dark:file:bg-sky-900/30 dark:file:text-sky-300 cursor-pointer"
                         />
                         {samlImportFile && (
                           <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
@@ -8167,9 +8764,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         <button
                           onClick={handleBulkImportSaml}
                           disabled={samlImporting || !samlImportFile}
-                          className="w-full px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                          className="w-full px-4 py-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors shadow-sm shadow-sky-500/20"
                         >
-                          {samlImporting ? 'Importing...' : 'Import SAML Users'}
+                          {samlImporting ? 'Importing...' : '📥 Import SAML Users'}
                         </button>
                       </div>
                       {bulkImportResults && (
@@ -8177,7 +8774,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
                           : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
                           }`}>
-                          <p className="text-sm font-medium mb-2">
+                          <p className="text-sm font-medium mb-2 flex items-start gap-1.5">
+                            <span aria-hidden>{bulkImportResults.summary?.errors > 0 ? '⚠️' : '✅'}</span>
                             {bulkImportResults.message}
                           </p>
                           {bulkImportResults.summary && (
@@ -8194,8 +8792,69 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         </div>
                       )}
                     </div>
+                    </div>
                   </div>
                 </div>
+              )}
+
+              {/* Device Presets Tab */}
+              {activeTab === 'devicePresets' && (
+                settingsLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
+                  </div>
+                ) : (
+                  <DevicePresetsAdmin
+                    settings={settings}
+                    onSettingsChange={(partial) => setSettings((prev) => ({ ...prev, ...partial }))}
+                    onRefresh={async () => {
+                      await refreshSettings();
+                      await loadSettings();
+                    }}
+                    isMobile={isMobile}
+                    setError={setError}
+                  />
+                )
+              )}
+
+              {/* Link Check Exceptions Tab */}
+              {activeTab === 'linkCheckExceptions' && (
+                settingsLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
+                  </div>
+                ) : (
+                  <LinkCheckExceptionsAdmin
+                    settings={settings}
+                    onSettingsChange={(partial) => setSettings((prev) => ({ ...prev, ...partial }))}
+                    onRefresh={async () => {
+                      await refreshSettings();
+                      await loadSettings();
+                    }}
+                    isMobile={isMobile}
+                    setError={setError}
+                  />
+                )
+              )}
+
+              {/* Iframe Block Domains Tab */}
+              {activeTab === 'iframeBlockDomains' && (
+                settingsLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
+                  </div>
+                ) : (
+                  <IframeBlockDomainsAdmin
+                    settings={settings}
+                    onSettingsChange={(partial) => setSettings((prev) => ({ ...prev, ...partial }))}
+                    onRefresh={async () => {
+                      await refreshSettings();
+                      await loadSettings();
+                    }}
+                    isMobile={isMobile}
+                    setError={setError}
+                  />
+                )
               )}
 
               {/* Enable/Disable Tabs Tab */}
@@ -8203,41 +8862,44 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 <div className="space-y-6">
                   {settingsLoading ? (
                     <div className="flex items-center justify-center py-12">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
                     </div>
                   ) : (
-                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Enable/Disable Tabs</h3>
-                          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                            Control which app tabs are visible to users (including admins). Disabled tabs will be hidden and blocked from switching.
-                          </p>
-                          <p className="text-xs text-slate-500 dark:text-slate-500 mt-2">
-                            Tip: If you disable all tabs for a user type (e.g., guests), theyâ€™ll see a friendly â€œfeature disabledâ€ message.
-                          </p>
+                    <div className={ADMIN_SECTION_CARD}>
+                      <div className={ADMIN_SECTION_HEADER}>
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>📑</span> Enable/Disable Tabs</h3>
+                            <p className={ADMIN_SECTION_SUBTITLE}>
+                              Control which app tabs are visible to users (including admins). Disabled tabs will be hidden and blocked from switching.
+                            </p>
+                            <p className="text-xs text-sky-800/60 dark:text-sky-200/60 mt-2">
+                              Tip: If you disable all tabs for a user type (e.g., guests), they'll see a friendly "feature disabled" message.
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => setSettings(prev => ({ ...prev, disabled_tabs: '[]' }))}
+                            className="px-3 py-2 text-sm font-medium bg-white/70 dark:bg-slate-900/40 border border-sky-200/60 dark:border-sky-700/40 hover:bg-sky-50 dark:hover:bg-sky-950/40 text-slate-700 dark:text-slate-200 rounded-lg transition-colors"
+                            title="Enable all tabs"
+                            type="button"
+                          >
+                            Reset
+                          </button>
                         </div>
-                        <button
-                          onClick={() => setSettings(prev => ({ ...prev, disabled_tabs: '[]' }))}
-                          className="px-3 py-2 text-sm font-medium bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg transition-colors"
-                          title="Enable all tabs"
-                          type="button"
-                        >
-                          Reset
-                        </button>
                       </div>
 
-                      <div className="mt-6 space-y-3">
+                      <div className="p-6">
+                      <div className="space-y-3">
                         {APP_TABS.map(tab => {
                           const isDisabled = disabledTabs.has(tab.id);
                           return (
                             <label
                               key={tab.id}
-                              className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 hover:bg-slate-100 dark:hover:bg-slate-900/50 transition-colors cursor-pointer"
+                              className="flex items-start gap-3 p-3 rounded-lg border border-sky-200/70 dark:border-sky-800/40 bg-sky-50/40 dark:bg-sky-950/20 hover:bg-sky-50 dark:hover:bg-sky-950/40 transition-colors cursor-pointer"
                             >
                               <input
                                 type="checkbox"
-                                className="mt-1 h-4 w-4 accent-brand-600"
+                                className="mt-1 h-4 w-4 accent-sky-600"
                                 checked={!isDisabled}
                                 onChange={(e) => setTabDisabled(tab.id, !e.target.checked)}
                               />
@@ -8286,11 +8948,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             }
                           }}
                           disabled={settingsSaving}
-                          className="px-6 py-2.5 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold transition-colors"
+                          className={`px-6 py-2.5 ${ADMIN_PRIMARY_BTN}`}
                           type="button"
                         >
-                          {settingsSaving ? 'Saving...' : 'Save'}
+                          {settingsSaving ? 'Saving...' : '💾 Save'}
                         </button>
+                      </div>
                       </div>
                     </div>
                   )}
@@ -8301,32 +8964,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               {activeTab === 'clone' && (
                 <div className="space-y-6">
                   {/* Clone Form */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Clone Instance</h3>
-                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
-                      Clone the current LinkNest setup to a new folder. This will create a complete copy of the application with all necessary files.
-                    </p>
+                  <div className="bg-white dark:bg-slate-800 border border-sky-200/70 dark:border-sky-800/40 rounded-xl overflow-hidden shadow-sm shadow-sky-500/5">
+                    <div className="bg-gradient-to-r from-sky-50 via-teal-50/80 to-cyan-50/60 dark:from-sky-950/40 dark:via-teal-950/30 dark:to-cyan-950/20 border-b border-sky-100 dark:border-sky-800/40 px-6 py-5">
+                      <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <span aria-hidden>🧬</span> Clone Instance
+                      </h3>
+                      <p className="text-sm text-sky-800/70 dark:text-sky-200/70 mt-0.5">
+                        Clone the current LinkNest setup to a new folder with all necessary files.
+                      </p>
+                    </div>
 
-                    <div className="space-y-4">
+                    <div className="p-6 space-y-4">
+                      <div className="rounded-xl bg-sky-50/50 dark:bg-sky-950/20 border border-sky-100 dark:border-sky-900/40 p-4 space-y-4">
                       <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          New Folder Name <span className="text-red-500">*</span>
+                          <span className="mr-1" aria-hidden>📁</span>New Folder Name <span className="text-red-500">*</span>
                         </label>
                         <input
                           type="text"
                           value={cloneFolderName}
                           onChange={(e) => setCloneFolderName(e.target.value)}
                           placeholder="e.g., myspaces"
-                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                          className="w-full bg-white dark:bg-slate-900/50 border border-sky-200 dark:border-sky-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                         />
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        <p className="text-xs text-sky-700/70 dark:text-sky-300/70 mt-1">
                           Name of the new folder to create (no path separators or special characters)
                         </p>
                       </div>
 
                       <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Source Folder
+                          <span className="mr-1" aria-hidden>📦</span>Source Folder
                         </label>
                         <div className="flex gap-2">
                           <input
@@ -8334,7 +9002,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             value={cloneSourcePath}
                             onChange={(e) => setCloneSourcePath(e.target.value)}
                             placeholder="e.g., C:\xampp\htdocs\linknest"
-                            className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                            className="flex-1 bg-white dark:bg-slate-900/50 border border-sky-200 dark:border-sky-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                           />
                           <input
                             type="file"
@@ -8368,20 +9036,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 picker.click();
                               }
                             }}
-                            className="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+                            className="px-4 py-2 bg-sky-100 dark:bg-sky-900/40 hover:bg-sky-200 dark:hover:bg-sky-800/50 text-sky-800 dark:text-sky-200 rounded-lg text-sm font-medium transition-colors whitespace-nowrap border border-sky-200 dark:border-sky-700"
                             title="Browse for source folder (Chrome/Edge - limited by browser security)"
                           >
-                            Browse
+                            📂 Browse
                           </button>
                         </div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        <p className="text-xs text-sky-700/70 dark:text-sky-300/70 mt-1">
                           Source directory to clone from (defaults to current app directory)
                         </p>
                       </div>
 
                       <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Target Folder
+                          <span className="mr-1" aria-hidden>🎯</span>Target Folder
                         </label>
                         <div className="flex gap-2">
                           <input
@@ -8389,7 +9057,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             value={cloneTargetPath}
                             onChange={(e) => setCloneTargetPath(e.target.value)}
                             placeholder="e.g., C:\projects"
-                            className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                            className="flex-1 bg-white dark:bg-slate-900/50 border border-sky-200 dark:border-sky-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                           />
                           <input
                             type="file"
@@ -8419,44 +9087,48 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 picker.click();
                               }
                             }}
-                            className="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+                            className="px-4 py-2 bg-sky-100 dark:bg-sky-900/40 hover:bg-sky-200 dark:hover:bg-sky-800/50 text-sky-800 dark:text-sky-200 rounded-lg text-sm font-medium transition-colors whitespace-nowrap border border-sky-200 dark:border-sky-700"
                             title="Browse for target folder (Chrome/Edge - limited by browser security)"
                           >
-                            Browse
+                            📂 Browse
                           </button>
                         </div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        <p className="text-xs text-sky-700/70 dark:text-sky-300/70 mt-1">
                           Target directory where the new folder will be created (defaults to parent of source)
                         </p>
                       </div>
 
                       <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Instance URL <span className="text-red-500">*</span>
+                          <span className="mr-1" aria-hidden>🔗</span>Instance URL <span className="text-red-500">*</span>
                         </label>
                         <input
                           type="url"
                           value={cloneUrl}
                           onChange={(e) => setCloneUrl(e.target.value)}
                           placeholder="e.g., https://myspaces.example.com or http://localhost/myspaces"
-                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                          className="w-full bg-white dark:bg-slate-900/50 border border-sky-200 dark:border-sky-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                         />
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                          Full URL where the cloned instance will be accessible (include protocol and path, e.g., https://myspaces.example.com or http://localhost/myspaces)
+                        <p className="text-xs text-sky-700/70 dark:text-sky-300/70 mt-1">
+                          Full URL where the cloned instance will be accessible (include protocol and path)
                         </p>
                       </div>
+                      </div>
 
-                      <div className="space-y-3">
+                      <div className="rounded-xl bg-teal-50/50 dark:bg-teal-950/20 border border-teal-100 dark:border-teal-900/40 p-4 space-y-3">
+                        <h4 className="text-sm font-semibold text-teal-900 dark:text-teal-100 flex items-center gap-1.5">
+                          <span aria-hidden>⚙️</span> Copy Options
+                        </h4>
                         <label className="flex items-center gap-3 cursor-pointer">
                           <input
                             type="checkbox"
                             checked={cloneCopyAssets}
                             onChange={(e) => setCloneCopyAssets(e.target.checked)}
-                            className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
+                            className="w-4 h-4 text-sky-600 border-slate-300 dark:border-slate-600 rounded focus:ring-sky-500 focus:ring-2"
                           />
                           <div>
-                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Copy Assets</span>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300"><span className="mr-1" aria-hidden>🖼️</span>Copy Assets</span>
+                            <p className="text-xs text-teal-700/70 dark:text-teal-300/70">
                               Copy logos and favicon from uploads folder
                             </p>
                           </div>
@@ -8467,11 +9139,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             type="checkbox"
                             checked={cloneCopyDatabase}
                             onChange={(e) => setCloneCopyDatabase(e.target.checked)}
-                            className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
+                            className="w-4 h-4 text-sky-600 border-slate-300 dark:border-slate-600 rounded focus:ring-sky-500 focus:ring-2"
                           />
                           <div>
-                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Copy Database</span>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300"><span className="mr-1" aria-hidden>🗄️</span>Copy Database</span>
+                            <p className="text-xs text-teal-700/70 dark:text-teal-300/70">
                               Copy database file from data folder (LDAP passwords will be encrypted automatically)
                             </p>
                           </div>
@@ -8480,9 +9152,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                       {/* Progress Bar - show as soon as a clone is started */}
                       {currentCloneId && cloneStatus !== 'complete' && cloneStatus !== 'error' && (
-                        <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                        <div className="pt-4 border-t border-sky-100 dark:border-sky-900/40">
                           <div className="mb-2 flex justify-between items-center">
-                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                            <span className="text-sm font-medium text-sky-800 dark:text-sky-200 flex items-center gap-1.5">
+                              <span aria-hidden>⏳</span>
                               {cloneStatus === 'validating' ? 'Validating...' :
                                 cloneStatus === 'creating' ? 'Creating directory...' :
                                   cloneStatus === 'copying' ? 'Copying files...' :
@@ -8494,11 +9167,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                               cloneStatus === 'pending' ? 'Starting...' :
                                                 cloneStatus ? String(cloneStatus) : 'Starting...'}
                             </span>
-                            <span className="text-sm text-slate-600 dark:text-slate-400">{cloneProgress}%</span>
+                            <span className="text-sm text-sky-700 dark:text-sky-300">{cloneProgress}%</span>
                           </div>
-                          <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2.5">
+                          <div className="w-full bg-sky-100 dark:bg-sky-900/40 rounded-full h-2.5">
                             <div
-                              className="bg-brand-600 h-2.5 rounded-full transition-all duration-300"
+                              className="bg-sky-600 h-2.5 rounded-full transition-all duration-300"
                               style={{ width: `${Math.max(0, cloneProgress)}%` }}
                             ></div>
                           </div>
@@ -8507,37 +9180,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                       {/* Completion Message */}
                       {currentCloneId && (cloneStatus === 'complete' || cloneStatus === 'error') && (
-                        <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
-                          <div className={`p-3 rounded-lg ${cloneStatus === 'complete'
-                            ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+                        <div className="pt-4 border-t border-sky-100 dark:border-sky-900/40">
+                          <div className={`p-3 rounded-lg flex items-start gap-2 ${cloneStatus === 'complete'
+                            ? 'bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800'
                             : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
                             }`}>
-                            <div className="flex items-center gap-2">
-                              {cloneStatus === 'complete' ? (
-                                <>
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-green-600 dark:text-green-400">
-                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
-                                  </svg>
-                                  <span className="text-sm font-medium text-green-700 dark:text-green-400">Clone completed successfully!</span>
-                                </>
-                              ) : (
-                                <>
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-red-600 dark:text-red-400">
-                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
-                                  </svg>
-                                  <span className="text-sm font-medium text-red-700 dark:text-red-400">Clone failed</span>
-                                </>
-                              )}
-                            </div>
+                            {cloneStatus === 'complete' ? (
+                              <>
+                                <span className="text-lg" aria-hidden>✅</span>
+                                <span className="text-sm font-medium text-emerald-700 dark:text-emerald-400">Clone completed successfully!</span>
+                              </>
+                            ) : (
+                              <>
+                                <span className="text-lg" aria-hidden>❌</span>
+                                <span className="text-sm font-medium text-red-700 dark:text-red-400">Clone failed</span>
+                              </>
+                            )}
                           </div>
                         </div>
                       )}
 
                       {/* Logs Display */}
                       {cloneLogs.length > 0 && (
-                        <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
-                          <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Logs</h4>
-                          <div className="bg-slate-900 text-green-400 font-mono text-xs p-3 rounded-lg max-h-60 overflow-y-auto">
+                        <div className="pt-4 border-t border-sky-100 dark:border-sky-900/40">
+                          <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2 flex items-center gap-1.5">
+                            <span aria-hidden>📜</span> Logs
+                          </h4>
+                          <div className="bg-slate-900 text-green-400 font-mono text-xs p-3 rounded-lg max-h-60 overflow-y-auto border border-sky-800/40">
                             {cloneLogs.map((log, idx) => (
                               <div key={idx} className="mb-1">
                                 <span className="text-slate-500">[{log.time}]</span> {log.message}
@@ -8578,8 +9247,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               }
                             }}
                             disabled={prechecksLoading}
-                            className="flex-1 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 dark:text-slate-300 px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                            className="flex-1 bg-teal-100 dark:bg-teal-900/40 hover:bg-teal-200 dark:hover:bg-teal-800/50 disabled:opacity-50 disabled:cursor-not-allowed text-teal-800 dark:text-teal-200 px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors border border-teal-200 dark:border-teal-700 flex items-center justify-center gap-1.5"
                           >
+                            <span aria-hidden>🧪</span>
                             {prechecksLoading ? 'Running Prechecks...' : 'Run Prechecks'}
                           </button>
                           <button
@@ -8643,8 +9313,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               }
                             }}
                             disabled={cloneLoading || !cloneFolderName.trim() || !cloneUrl.trim() || (currentCloneId !== null)}
-                            className="flex-1 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                            className="flex-1 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-sm shadow-sky-500/20 flex items-center justify-center gap-1.5"
                           >
+                            <span aria-hidden>🚀</span>
                             {cloneLoading ? 'Starting Clone Process...' : (currentCloneId ? 'Clone in Progress...' : 'Start Clone')}
                           </button>
                         </div>
@@ -8652,17 +9323,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                       {/* Prechecks Results */}
                       {showPrechecks && prechecksResults && (
-                        <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
-                          <div className="flex justify-between items-center mb-4">
-                            <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Prechecks Results</h4>
+                        <div className="pt-4 border-t border-sky-100 dark:border-sky-900/40">
+                          <div className="rounded-xl bg-gradient-to-r from-cyan-50/80 to-teal-50/60 dark:from-cyan-950/25 dark:to-teal-950/20 border border-cyan-100 dark:border-cyan-900/40 p-4 mb-4">
+                          <div className="flex justify-between items-center">
+                            <h4 className="text-sm font-semibold text-cyan-900 dark:text-cyan-100 flex items-center gap-1.5">
+                              <span aria-hidden>🧪</span> Prechecks Results
+                            </h4>
                             <button
                               onClick={() => setShowPrechecks(false)}
-                              className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                              className="text-cyan-500 hover:text-cyan-700 dark:text-cyan-400 dark:hover:text-cyan-200"
                             >
                               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
                                 <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
                               </svg>
                             </button>
+                          </div>
                           </div>
 
                           <div className={`p-4 rounded-lg mb-4 ${prechecksResults.allGood
@@ -8739,9 +9414,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
 
                   {/* Clones List */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
-                      <h3 className="text-lg font-bold text-slate-900 dark:text-white">Cloned Instances</h3>
+                  <div className="bg-white dark:bg-slate-800 border border-sky-200/70 dark:border-sky-800/40 rounded-xl overflow-hidden shadow-sm shadow-sky-500/5">
+                    <div className="bg-gradient-to-r from-sky-50 via-teal-50/70 to-cyan-50/50 dark:from-sky-950/40 dark:via-teal-950/30 dark:to-cyan-950/20 border-b border-sky-100 dark:border-sky-800/40 px-6 py-4">
+                    <div className="flex flex-wrap justify-between items-center gap-3">
+                      <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <span aria-hidden>🗂️</span> Cloned Instances
+                      </h3>
                       <div className="flex items-center gap-2">
                         {selectedCloneIds.size > 0 && (
                           <button
@@ -8749,9 +9427,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             disabled={bulkDeleteClonesLoading || clonesLoading}
                             className="px-3 py-1.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5"
                           >
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                              <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
-                            </svg>
+                            <span aria-hidden>🗑️</span>
                             {bulkDeleteClonesLoading
                               ? 'Deleting...'
                               : `Delete Selected (${selectedCloneIds.size})`}
@@ -8760,15 +9436,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         <button
                           onClick={loadClonesList}
                           disabled={clonesLoading || bulkDeleteClonesLoading}
-                          className="px-3 py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                          className="px-3 py-1.5 bg-sky-100 dark:bg-sky-900/40 hover:bg-sky-200 dark:hover:bg-sky-800/50 text-sky-800 dark:text-sky-200 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 border border-sky-200 dark:border-sky-700 flex items-center gap-1.5"
                         >
+                          <span aria-hidden>🔄</span>
                           {clonesLoading ? 'Loading...' : 'Refresh'}
                         </button>
                       </div>
                     </div>
+                    </div>
 
+                    <div className="p-6">
                     {clonesList.length === 0 ? (
-                      <div className="text-center py-8 text-slate-500 dark:text-slate-400">
+                      <div className="text-center py-8 rounded-xl bg-sky-50/60 dark:bg-sky-950/20 border border-dashed border-sky-200 dark:border-sky-800/50 text-sky-700 dark:text-sky-300">
+                        <p className="text-2xl mb-2" aria-hidden>📭</p>
                         <p>No clones created yet.</p>
                       </div>
                     ) : (
@@ -9015,6 +9695,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         </table>
                       </div>
                     )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -9023,13 +9704,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               {editCloneModal.open && editCloneModal.clone && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
                   <div className="absolute inset-0 bg-slate-900/20 dark:bg-slate-900/40" onClick={() => setEditCloneModal({ open: false, clone: null })}></div>
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-2xl p-6 relative shadow-2xl max-h-[90vh] overflow-y-auto">
-                    <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Edit Clone</h3>
+                  <div className="bg-white dark:bg-slate-800 border border-sky-200/70 dark:border-sky-800/40 rounded-2xl w-full max-w-2xl overflow-hidden relative shadow-2xl max-h-[90vh] flex flex-col shadow-sky-500/10">
+                    <div className="bg-gradient-to-r from-sky-50 via-teal-50/80 to-cyan-50/60 dark:from-sky-950/40 dark:via-teal-950/30 dark:to-cyan-950/20 border-b border-sky-100 dark:border-sky-800/40 px-6 py-4">
+                      <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <span aria-hidden>✏️</span> Edit Clone
+                      </h3>
+                    </div>
 
-                    <div className="space-y-4">
+                    <div className="p-6 space-y-4 overflow-y-auto">
                       <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Folder Name <span className="text-red-500">*</span>
+                          <span className="mr-1" aria-hidden>📁</span>Folder Name <span className="text-red-500">*</span>
                         </label>
                         <input
                           type="text"
@@ -9038,13 +9723,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             ...editCloneModal,
                             clone: { ...editCloneModal.clone!, folderName: e.target.value }
                           })}
-                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                          className="w-full bg-white dark:bg-slate-900/50 border border-sky-200 dark:border-sky-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                         />
                       </div>
 
                       <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Source Path
+                          <span className="mr-1" aria-hidden>📦</span>Source Path
                         </label>
                         <input
                           type="text"
@@ -9053,13 +9738,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             ...editCloneModal,
                             clone: { ...editCloneModal.clone!, sourcePath: e.target.value }
                           })}
-                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                          className="w-full bg-white dark:bg-slate-900/50 border border-sky-200 dark:border-sky-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                         />
                       </div>
 
                       <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Target Path
+                          <span className="mr-1" aria-hidden>🎯</span>Target Path
                         </label>
                         <input
                           type="text"
@@ -9068,13 +9753,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             ...editCloneModal,
                             clone: { ...editCloneModal.clone!, targetPath: e.target.value }
                           })}
-                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                          className="w-full bg-white dark:bg-slate-900/50 border border-sky-200 dark:border-sky-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                         />
                       </div>
 
                       <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Instance URL
+                          <span className="mr-1" aria-hidden>🔗</span>Instance URL
                         </label>
                         <input
                           type="url"
@@ -9084,14 +9769,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             clone: { ...editCloneModal.clone!, url: e.target.value }
                           })}
                           placeholder="e.g., https://myspaces.example.com or http://localhost/myspaces"
-                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                          className="w-full bg-white dark:bg-slate-900/50 border border-sky-200 dark:border-sky-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                         />
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        <p className="text-xs text-sky-700/70 dark:text-sky-300/70 mt-1">
                           Full URL where the cloned instance will be accessible
                         </p>
                       </div>
 
-                      <div className="space-y-3">
+                      <div className="rounded-xl bg-teal-50/50 dark:bg-teal-950/20 border border-teal-100 dark:border-teal-900/40 p-3 space-y-3">
                         <label className="flex items-center gap-3 cursor-pointer">
                           <input
                             type="checkbox"
@@ -9100,9 +9785,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               ...editCloneModal,
                               clone: { ...editCloneModal.clone!, copyAssets: e.target.checked }
                             })}
-                            className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
+                            className="w-4 h-4 text-sky-600 border-slate-300 dark:border-slate-600 rounded focus:ring-sky-500 focus:ring-2"
                           />
-                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Copy Assets</span>
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300"><span className="mr-1" aria-hidden>🖼️</span>Copy Assets</span>
                         </label>
 
                         <label className="flex items-center gap-3 cursor-pointer">
@@ -9113,22 +9798,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               ...editCloneModal,
                               clone: { ...editCloneModal.clone!, copyDatabase: e.target.checked }
                             })}
-                            className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
+                            className="w-4 h-4 text-sky-600 border-slate-300 dark:border-slate-600 rounded focus:ring-sky-500 focus:ring-2"
                           />
-                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Copy Database</span>
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300"><span className="mr-1" aria-hidden>🗄️</span>Copy Database</span>
                         </label>
                       </div>
 
                       {error && (
-                        <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 text-sm">
-                          {error}
+                        <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 text-sm flex items-start gap-2">
+                          <span aria-hidden>⚠️</span>
+                          <span>{error}</span>
                         </div>
                       )}
+                    </div>
 
-                      <div className="flex justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                      <div className="flex justify-end gap-3 px-6 py-4 border-t border-sky-100 dark:border-sky-900/40 bg-gradient-to-r from-sky-50/80 to-teal-50/50 dark:from-sky-950/30 dark:to-teal-950/20">
                         <button
                           onClick={() => setEditCloneModal({ open: false, clone: null })}
-                          className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium"
+                          className="px-4 py-2 text-sky-700 dark:text-sky-300 hover:text-sky-900 dark:hover:text-white transition-colors font-medium"
                         >
                           Cancel
                         </button>
@@ -9172,12 +9859,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             }
                           }}
                           disabled={editCloneLoading || !editCloneModal.clone.folderName.trim()}
-                          className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
+                          className="px-4 py-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors shadow-sm shadow-sky-500/20 flex items-center gap-1.5"
                         >
+                          <span aria-hidden>💾</span>
                           {editCloneLoading ? 'Saving...' : 'Save Changes'}
                         </button>
                       </div>
-                    </div>
                   </div>
                 </div>
               )}
@@ -9191,7 +9878,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     rolesCount: roles.length,
                     teamsCount: userGroups.length,
                     configuredRolesCount: roles.filter(
-                      (r) => (r.tileCount || 0) + (r.linkCount || 0) + (r.widgetCount || 0) > 0
+                      (r) => (r.tileCount || 0) + (r.linkCount || 0) + (r.widgetCount || 0) + (r.linkActionCount || 0) > 0
                     ).length,
                     hasAssignments: roles.some((r) => (r.userCount || 0) > 0) || userGroups.some((g) => (g.roleCount || 0) > 0),
                     hasSpaceEditors:
@@ -9205,12 +9892,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     onAssignEditors: () => { void handleManageTileAdmins(); },
                   }}
                   rolesWorkspace={
-                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-4">
+                    <div className={ADMIN_SECTION_CARD}>
+                      <div className={ADMIN_SECTION_HEADER}>
+                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
                         <div>
-                          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Roles</h3>
-                          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                          <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🎭</span> Roles</h3>
+                          <p className={ADMIN_SECTION_SUBTITLE}>
                             Roles control visibility. They do not grant edit rights. Configure what each role can see, then assign it to people or teams.
+                            The role marked for guests controls which widgets and link action buttons appear for users who are not logged in — use Configure to adjust them.
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-2 shrink-0">
@@ -9218,21 +9907,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             type="button"
                             onClick={() => { void openAssignAccessModal(); }}
                             className="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-100 rounded-lg text-sm font-medium transition-colors"
+                            title="Assign roles to many people or teams at once"
                           >
-                            Assign access
+                            Bulk assign
                           </button>
                           <button
                             type="button"
                             onClick={handleAddRole}
-                            className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                            className={`px-4 py-2 ${ADMIN_PRIMARY_BTN} flex items-center gap-2`}
                           >
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                              <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
-                            </svg>
+                            <span aria-hidden>➕</span>
                             Create role
                           </button>
                         </div>
                       </div>
+                      </div>
+                      <div className="p-6">
 
                       {rolesLoading ? (
                         <div className="flex items-center justify-center py-12">
@@ -9252,7 +9942,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           <button
                             type="button"
                             onClick={handleAddRole}
-                            className="mt-4 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium"
+                            className={`mt-4 px-4 py-2 ${ADMIN_PRIMARY_BTN}`}
                           >
                             Create role
                           </button>
@@ -9265,9 +9955,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Role</th>
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Description</th>
                                 <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">People</th>
+                                <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Teams</th>
                                 <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Spaces</th>
                                 <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Links</th>
                                 <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Widgets</th>
+                                <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Link actions</th>
                                 <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Actions</th>
                               </tr>
                             </thead>
@@ -9275,33 +9967,112 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               {roles.map((role) => (
                                 <tr key={role.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/50">
                                   <td className="px-4 py-4 whitespace-nowrap">
-                                    <div className="text-sm font-medium text-slate-900 dark:text-white">{role.name}</div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleEditRole(role)}
+                                      className="text-sm font-medium text-slate-900 dark:text-white hover:text-brand-600 dark:hover:text-brand-400 text-left transition-colors inline-flex items-center gap-2"
+                                      title="Edit role name and description"
+                                    >
+                                      {role.name}
+                                      {role.isGuest && (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">
+                                          Guests
+                                        </span>
+                                      )}
+                                    </button>
                                   </td>
                                   <td className="px-4 py-4">
-                                    <div className="text-sm text-slate-600 dark:text-slate-400">{role.description || '—'}</div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleEditRole(role)}
+                                      className="text-sm text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 text-left transition-colors max-w-xs"
+                                      title="Edit role name and description"
+                                    >
+                                      {role.description || '—'}
+                                    </button>
                                   </td>
                                   <td className="px-4 py-4 whitespace-nowrap text-center">
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
+                                    <button
+                                      type="button"
+                                      onClick={() => { void openRoleMembersModal(role); }}
+                                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 hover:bg-brand-100 dark:hover:bg-brand-900/50 transition-colors"
+                                      title="View people and add users to this role"
+                                    >
                                       {role.userCount || 0}
-                                    </span>
+                                    </button>
                                   </td>
                                   <td className="px-4 py-4 whitespace-nowrap text-center">
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
-                                      {role.tileCount || 0}
-                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => { void openRoleTeamsModal(role); }}
+                                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 hover:bg-brand-100 dark:hover:bg-brand-900/50 transition-colors"
+                                      title="View teams and assign this role to teams"
+                                    >
+                                      {role.groupCount || 0}
+                                    </button>
                                   </td>
                                   <td className="px-4 py-4 whitespace-nowrap text-center">
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
-                                      {role.linkCount || 0}
-                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setRoleOverflowMenuId(null);
+                                        void handleManageRoleTiles(role);
+                                      }}
+                                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 hover:bg-brand-100 dark:hover:bg-brand-900/50 transition-colors"
+                                      title={`Configure spaces & links for this role (${role.tileCount || 0} of ${roleAssignmentTotals.tiles} spaces)`}
+                                    >
+                                      {formatRoleAssignmentRatio(role.tileCount || 0, roleAssignmentTotals.tiles)}
+                                    </button>
                                   </td>
                                   <td className="px-4 py-4 whitespace-nowrap text-center">
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
-                                      {role.widgetCount || 0}
-                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setRoleOverflowMenuId(null);
+                                        void handleManageRoleTiles(role);
+                                      }}
+                                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 hover:bg-brand-100 dark:hover:bg-brand-900/50 transition-colors"
+                                      title={`Configure links (and spaces) for this role (${role.linkCount || 0} of ${roleAssignmentTotals.links} links)`}
+                                    >
+                                      {formatRoleAssignmentRatio(role.linkCount || 0, roleAssignmentTotals.links)}
+                                    </button>
+                                  </td>
+                                  <td className="px-4 py-4 whitespace-nowrap text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setRoleOverflowMenuId(null);
+                                        void handleManageRoleWidgets(role);
+                                      }}
+                                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 hover:bg-brand-100 dark:hover:bg-brand-900/50 transition-colors"
+                                      title={`Configure widgets for this role (${role.widgetCount || 0} of ${roleAssignmentTotals.widgets} widgets)`}
+                                    >
+                                      {formatRoleAssignmentRatio(role.widgetCount || 0, roleAssignmentTotals.widgets)}
+                                    </button>
+                                  </td>
+                                  <td className="px-4 py-4 whitespace-nowrap text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setRoleOverflowMenuId(null);
+                                        void handleManageRoleLinkActions(role);
+                                      }}
+                                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 hover:bg-brand-100 dark:hover:bg-brand-900/50 transition-colors"
+                                      title={`Configure link actions for this role (${role.linkActionCount || 0} of ${roleAssignmentTotals.linkActions} actions)`}
+                                    >
+                                      {formatRoleAssignmentRatio(role.linkActionCount || 0, roleAssignmentTotals.linkActions)}
+                                    </button>
                                   </td>
                                   <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
                                     <div className="flex justify-end items-center gap-2 flex-wrap">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleEditRole(role)}
+                                        className="px-2.5 py-1 rounded-md text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                                        title="Edit role name and description"
+                                      >
+                                        Edit
+                                      </button>
                                       <button
                                         type="button"
                                         onClick={() => {
@@ -9312,16 +10083,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                         className="px-2.5 py-1 rounded-md text-brand-700 dark:text-brand-300 bg-brand-50 dark:bg-brand-500/15 hover:bg-brand-100 dark:hover:bg-brand-500/25 transition-colors"
                                       >
                                         Configure
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setRoleOverflowMenuId(null);
-                                          void openAssignAccessModal(role.id);
-                                        }}
-                                        className="px-2.5 py-1 rounded-md text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
-                                      >
-                                        Who has access
                                       </button>
                                       <div className="relative">
                                         <button
@@ -9335,7 +10096,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                           </svg>
                                         </button>
                                         {roleOverflowMenuId === role.id && (
-                                          <div className="absolute right-0 mt-1 w-36 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-20 py-1">
+                                          <div className="absolute right-0 bottom-full mb-1 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-30 py-1">
                                             <button
                                               type="button"
                                               onClick={() => {
@@ -9344,7 +10105,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                               }}
                                               className="w-full text-left px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
                                             >
-                                              Edit name
+                                              Edit name &amp; description
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setRoleOverflowMenuId(null);
+                                                void openRoleMembersModal(role);
+                                              }}
+                                              className="w-full text-left px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+                                            >
+                                              Manage people
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setRoleOverflowMenuId(null);
+                                                void openRoleTeamsModal(role);
+                                              }}
+                                              className="w-full text-left px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+                                            >
+                                              Manage teams
                                             </button>
                                             <button
                                               type="button"
@@ -9370,21 +10151,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       <p className="text-xs text-slate-500 dark:text-slate-500 mt-4">
                         Tip: you can also assign roles to a single person from the All Users tab.
                       </p>
+                      </div>
                     </div>
                   }
                   teamsWorkspace={
-                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                      <div className="flex justify-between items-center mb-4 gap-4 flex-wrap">
+                    <div className={ADMIN_SECTION_CARD}>
+                      <div className={ADMIN_SECTION_HEADER}>
+                      <div className="flex justify-between items-center gap-4 flex-wrap">
                         <div>
-                          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Teams</h3>
-                          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                          <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>👥</span> Teams</h3>
+                          <p className={ADMIN_SECTION_SUBTITLE}>
                             Members inherit every role attached to the team. Use teams when a whole department should share the same visibility.
                           </p>
                         </div>
                         <button
                           type="button"
                           onClick={handleAddUserGroup}
-                          className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                          className={`px-4 py-2 ${ADMIN_PRIMARY_BTN} flex items-center gap-2`}
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                             <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
@@ -9392,6 +10175,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           Create team
                         </button>
                       </div>
+                      </div>
+                      <div className="p-6">
 
                       {userGroupsLoading ? (
                         <div className="flex items-center justify-center py-12">
@@ -9411,7 +10196,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           <button
                             type="button"
                             onClick={handleAddUserGroup}
-                            className="mt-4 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium"
+                            className={`mt-4 px-4 py-2 ${ADMIN_PRIMARY_BTN}`}
                           >
                             Create team
                           </button>
@@ -9443,14 +10228,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     <div className="text-sm text-slate-600 dark:text-slate-400">{group.description || '—'}</div>
                                   </td>
                                   <td className="px-6 py-4 whitespace-nowrap text-center">
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
+                                    <button
+                                      type="button"
+                                      onClick={() => { void handleManageGroupMembers(group); }}
+                                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 hover:bg-brand-100 dark:hover:bg-brand-900/50 transition-colors"
+                                      title="Manage team members"
+                                    >
                                       {group.memberCount || 0}
-                                    </span>
+                                    </button>
                                   </td>
                                   <td className="px-6 py-4 whitespace-nowrap text-center">
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
+                                    <button
+                                      type="button"
+                                      onClick={() => { void handleManageGroupRoles(group); }}
+                                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 hover:bg-brand-100 dark:hover:bg-brand-900/50 transition-colors"
+                                      title="Manage team roles"
+                                    >
                                       {group.roleCount || 0}
-                                    </span>
+                                    </button>
                                   </td>
                                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                     <div className="flex justify-end gap-2 flex-wrap">
@@ -9490,20 +10285,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           </table>
                         </div>
                       )}
+                      </div>
                     </div>
                   }
                   editorsWorkspace={
-<div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                      <div className="flex justify-between items-center mb-4">
+<div className={ADMIN_SECTION_CARD}>
+                      <div className={ADMIN_SECTION_HEADER}>
+                      <div className="flex justify-between items-center gap-4 flex-wrap">
                         <div>
-                          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Space editors</h3>
-                          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                          <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>✏️</span> Space editors</h3>
+                          <p className={ADMIN_SECTION_SUBTITLE}>
                             Editors can change content on assigned spaces. Defaults allow add/edit links; deletes and sensitive settings stay restricted unless you open Fine-tune permissions.
                           </p>
                         </div>
                         <button
                           onClick={handleManageTileAdmins}
-                          className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                          className={`px-4 py-2 ${ADMIN_PRIMARY_BTN} flex items-center gap-2`}
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                             <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
@@ -9511,6 +10308,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           Assign editors
                         </button>
                       </div>
+                      </div>
+                      <div className="p-6">
 
                       {/* Search and Filters */}
                       <div className="mb-4 space-y-3">
@@ -9521,7 +10320,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             placeholder="Search spaces by name or description..."
                             value={tileAdminsTabSearchTerm}
                             onChange={(e) => setTileAdminsTabSearchTerm(e.target.value)}
-                            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                           />
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
@@ -9558,19 +10357,36 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             <select
                               value={tileAdminsFilterUsername}
                               onChange={(e) => setTileAdminsFilterUsername(e.target.value)}
-                              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                             >
                               <option value="">All Owners</option>
                               {(() => {
-                                // Get all approved users from the database
+                                const ownedCountByUserId = new Map<number, number>();
+                                allTiles.forEach((tile) => {
+                                  const visibility = tile.visibility || 'public';
+                                  if (visibility !== tileAdminsFilterMenu) return;
+                                  const userIdNum =
+                                    typeof tile.userId === 'string'
+                                      ? parseInt(tile.userId, 10)
+                                      : tile.userId;
+                                  if (userIdNum == null || Number.isNaN(userIdNum)) return;
+                                  ownedCountByUserId.set(
+                                    userIdNum,
+                                    (ownedCountByUserId.get(userIdNum) || 0) + 1
+                                  );
+                                });
+
                                 return allUsers
-                                  .filter(user => user.is_approved)
+                                  .filter((user) => user.is_approved)
                                   .sort((a, b) => a.username.localeCompare(b.username))
-                                  .map(user => (
-                                    <option key={user.id} value={user.username}>
-                                      {user.username}
-                                    </option>
-                                  ));
+                                  .map((user) => {
+                                    const ownedCount = ownedCountByUserId.get(user.id) || 0;
+                                    return (
+                                      <option key={user.id} value={user.username}>
+                                        {user.username} ({ownedCount})
+                                      </option>
+                                    );
+                                  });
                               })()}
                             </select>
                           </div>
@@ -9583,7 +10399,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             <select
                               value={tileAdminsFilterMenu}
                               onChange={(e) => setTileAdminsFilterMenu(e.target.value as 'public' | 'private')}
-                              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                             >
                               <option value="public">Public</option>
                               <option value="private">Private</option>
@@ -9598,7 +10414,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             <select
                               value={tileAdminsFilterCategory}
                               onChange={(e) => setTileAdminsFilterCategory(e.target.value)}
-                              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                             >
                               <option value="">All Categories</option>
                               {(() => {
@@ -9803,9 +10619,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                                             ? 'text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300'
                                                             : 'text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300'
                                                             }`}
-                                                          title={isOwner ? "View owner permissions (read-only)" : "Fine-tune permissions"}
+                                                          title={isOwner ? (user?.is_admin ? 'Fine-tune owner permissions / transfer ownership' : 'View owner permissions (read-only)') : 'Fine-tune permissions'}
                                                         >
-                                                          <span className="hidden sm:inline">{isOwner ? 'View' : 'Fine-tune'}</span>
+                                                          <span className="hidden sm:inline">{isOwner ? (user?.is_admin ? 'Manage' : 'View') : 'Fine-tune'}</span>
                                                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 sm:hidden">
                                                             <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
                                                           </svg>
@@ -9858,6 +10674,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           </div>
                         )}
                       </div>
+                      </div>
                     </div>
                   }
                 />
@@ -9868,15 +10685,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 <div className="space-y-6">
                   {settingsLoading ? (
                     <div className="flex items-center justify-center py-12">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
                     </div>
                   ) : (
                     <>
-                      <div className="bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl flex flex-wrap gap-1">
+                      <div className="bg-white dark:bg-slate-800 border border-sky-200/70 dark:border-sky-800/40 p-1 rounded-xl flex flex-wrap gap-1 shadow-sm shadow-sky-500/5">
                         {([
-                          { id: 'branding' as const, label: 'Branding' },
-                          { id: 'hero' as const, label: 'Hero' },
-                          { id: 'access' as const, label: 'Access' },
+                          { id: 'branding' as const, label: 'Branding', emoji: '🎨' },
+                          { id: 'hero' as const, label: 'Hero', emoji: '🦸' },
+                          { id: 'access' as const, label: 'Access', emoji: '🔓' },
                         ]).map((item) => (
                           <button
                             key={item.id}
@@ -9884,18 +10701,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             onClick={() => setSettingsSubTab(item.id)}
                             className={`flex-1 min-w-[7rem] px-3 py-2 text-sm font-medium transition-colors rounded-lg ${
                               settingsSubTab === item.id
-                                ? 'bg-brand-600 text-white'
-                                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                                ? ADMIN_SUBTAB_ACTIVE
+                                : ADMIN_SUBTAB_INACTIVE
                             }`}
                           >
-                            {item.label}
+                            <span aria-hidden className="mr-1">{item.emoji}</span>{item.label}
                           </button>
                         ))}
                       </div>
 
                       {settingsSubTab === 'branding' && (
-                        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                          <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Branding</h3>
+                        <div className={ADMIN_SECTION_CARD}>
+                          <div className={ADMIN_SECTION_HEADER}>
+                            <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🎨</span> Branding</h3>
+                            <p className={ADMIN_SECTION_SUBTITLE}>Customize the application name, logo, and brand appearance.</p>
+                          </div>
+                          <div className="p-6">
                           <div className="space-y-3">
                             <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3 bg-slate-50/50 dark:bg-slate-900/20">
                               <label className="block text-sm font-semibold text-slate-900 dark:text-white">
@@ -9905,7 +10726,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 type="text"
                                 value={settings.app_name}
                                 onChange={(e) => updateBranding({ app_name: e.target.value })}
-                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                                 placeholder={settings.app_name || "LinkNest"}
                               />
                               <details className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 group">
@@ -9927,7 +10748,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     step={1}
                                     value={parseInt(settings.app_name_font_size || '20', 10) || 20}
                                     onChange={(e) => updateBranding({ app_name_font_size: e.target.value })}
-                                    className="w-full accent-brand-600"
+                                    className="w-full accent-sky-600"
                                   />
                                 </div>
                                 <div>
@@ -10001,11 +10822,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 </div>
                                 <div>
                                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Letter Spacing: {settings.app_name_letter_spacing || '0'}em</label>
-                                  <input type="range" min={-0.05} max={0.2} step={0.01} value={parseFloat(settings.app_name_letter_spacing || '0') || 0} onChange={(e) => updateBranding({ app_name_letter_spacing: e.target.value })} className="w-full accent-brand-600" />
+                                  <input type="range" min={-0.05} max={0.2} step={0.01} value={parseFloat(settings.app_name_letter_spacing || '0') || 0} onChange={(e) => updateBranding({ app_name_letter_spacing: e.target.value })} className="w-full accent-sky-600" />
                                 </div>
                                 <div>
                                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Line Height: {settings.app_name_line_height || '1.25'}</label>
-                                  <input type="range" min={1} max={2} step={0.05} value={parseFloat(settings.app_name_line_height || '1.25') || 1.25} onChange={(e) => updateBranding({ app_name_line_height: e.target.value })} className="w-full accent-brand-600" />
+                                  <input type="range" min={1} max={2} step={0.05} value={parseFloat(settings.app_name_line_height || '1.25') || 1.25} onChange={(e) => updateBranding({ app_name_line_height: e.target.value })} className="w-full accent-sky-600" />
                                 </div>
                                 </div>
                               </details>
@@ -10019,7 +10840,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 type="text"
                                 value={settings.app_subheading || ''}
                                 onChange={(e) => updateBranding({ app_subheading: e.target.value })}
-                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                                 placeholder="Your landing page for links"
                               />
                               <p className="text-xs text-slate-500 dark:text-slate-400">Shown under the app name in the navigation bar — changes preview live</p>
@@ -10042,7 +10863,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     step={1}
                                     value={parseInt(settings.app_subheading_font_size || '12', 10) || 12}
                                     onChange={(e) => updateBranding({ app_subheading_font_size: e.target.value })}
-                                    className="w-full accent-brand-600"
+                                    className="w-full accent-sky-600"
                                   />
                                 </div>
                                 <div>
@@ -10103,11 +10924,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 </div>
                                 <div>
                                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Letter Spacing: {settings.app_subheading_letter_spacing || '0'}em</label>
-                                  <input type="range" min={-0.05} max={0.2} step={0.01} value={parseFloat(settings.app_subheading_letter_spacing || '0') || 0} onChange={(e) => updateBranding({ app_subheading_letter_spacing: e.target.value })} className="w-full accent-brand-600" />
+                                  <input type="range" min={-0.05} max={0.2} step={0.01} value={parseFloat(settings.app_subheading_letter_spacing || '0') || 0} onChange={(e) => updateBranding({ app_subheading_letter_spacing: e.target.value })} className="w-full accent-sky-600" />
                                 </div>
                                 <div>
                                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Line Height: {settings.app_subheading_line_height || '1.3'}</label>
-                                  <input type="range" min={1} max={2} step={0.05} value={parseFloat(settings.app_subheading_line_height || '1.3') || 1.3} onChange={(e) => updateBranding({ app_subheading_line_height: e.target.value })} className="w-full accent-brand-600" />
+                                  <input type="range" min={1} max={2} step={0.05} value={parseFloat(settings.app_subheading_line_height || '1.3') || 1.3} onChange={(e) => updateBranding({ app_subheading_line_height: e.target.value })} className="w-full accent-sky-600" />
                                 </div>
                                 </div>
                               </details>
@@ -10132,7 +10953,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     setLogoPreview(null);
                                   }}
                                   className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${settings.logo_type === 'icon'
-                                    ? 'bg-brand-600 text-white'
+                                    ? 'bg-sky-600 text-white'
                                     : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
                                     }`}
                                 >
@@ -10146,7 +10967,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     }
                                   }}
                                   className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${settings.logo_type === 'image'
-                                    ? 'bg-brand-600 text-white'
+                                    ? 'bg-sky-600 text-white'
                                     : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
                                     }`}
                                 >
@@ -10164,7 +10985,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   type="text"
                                   value={settings.logo_icon}
                                   onChange={(e) => updateBranding({ logo_icon: e.target.value })}
-                                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-2xl text-center focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-2xl text-center focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                                   placeholder="🔗"
                                   maxLength={2}
                                 />
@@ -10180,7 +11001,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     step={1}
                                     value={parseInt(settings.logo_size || '32', 10) || 32}
                                     onChange={(e) => updateBranding({ logo_size: e.target.value })}
-                                    className="w-full accent-brand-600"
+                                    className="w-full accent-sky-600"
                                   />
                                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                                     Display size of the brand icon in the navigation bar (live preview)
@@ -10197,18 +11018,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   {(logoPreview || settings.logo_image) && (
                                     <div className="mb-3 p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg">
                                       <div className="flex items-center gap-3">
-                                        <img
-                                          src={logoPreview || settings.logo_image}
-                                          alt="Logo preview"
-                                          className="w-16 h-16 object-contain rounded border border-slate-200 dark:border-slate-700"
-                                          onError={(e) => {
-                                            (e.target as HTMLImageElement).style.display = 'none';
+                                        <div
+                                          className="w-16 h-16 rounded border border-slate-200 dark:border-slate-700 p-1 flex items-center justify-center overflow-hidden"
+                                          style={{
+                                            backgroundImage:
+                                              'linear-gradient(45deg, #d4d4d8 25%, transparent 25%), linear-gradient(-45deg, #d4d4d8 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #d4d4d8 75%), linear-gradient(-45deg, transparent 75%, #d4d4d8 75%)',
+                                            backgroundSize: '10px 10px',
+                                            backgroundPosition: '0 0, 0 5px, 5px -5px, -5px 0',
+                                            backgroundColor: '#f4f4f5',
                                           }}
-                                        />
+                                          title="Checkerboard shows transparency"
+                                        >
+                                          <img
+                                            src={logoPreview || settings.logo_image}
+                                            alt="Logo preview"
+                                            className="max-w-full max-h-full object-contain"
+                                            onError={(e) => {
+                                              (e.target as HTMLImageElement).style.display = 'none';
+                                            }}
+                                          />
+                                        </div>
                                         <div className="flex-1">
                                           <p className="text-xs text-slate-600 dark:text-slate-400">Current logo preview</p>
                                           {settings.logo_image && (
                                             <button
+                                              type="button"
                                               onClick={() => {
                                                 updateBranding({ logo_image: '' });
                                                 setLogoPreview(null);
@@ -10246,7 +11080,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                           try {
                                             setLogoUploading(true);
                                             setError('');
-                                            const url = await settingsService.uploadLogo(file);
+                                            // Background removal runs on PHP GD (ext-gd) via /settings/upload-logo
+                                            const url = await settingsService.uploadLogo(file, {
+                                              settingKey: 'logo_image',
+                                              removeBackground: logoRemoveBg,
+                                              bgColor: logoRemoveBg && logoBgMode === 'custom' ? logoBgColor : undefined,
+                                            });
                                             updateBranding({ logo_image: url });
                                             setLogoPreview(null);
                                             URL.revokeObjectURL(objectUrl);
@@ -10269,13 +11108,89 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                         </svg>
-                                        Uploading...
+                                        {logoRemoveBg ? 'Removing background & uploading...' : 'Uploading...'}
                                       </div>
                                     )}
                                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                                       JPEG, PNG, GIF, SVG, WebP — auto-converted to PNG (max 512×512). SVG kept as-is. Max 10MB.
                                     </p>
                                   </div>
+
+                                  <div className="flex flex-wrap items-center gap-3 mb-3">
+                                    <label className="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={logoRemoveBg}
+                                        onChange={(e) => setLogoRemoveBg(e.target.checked)}
+                                        className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                                      />
+                                      Remove background
+                                    </label>
+                                    {logoRemoveBg ? (
+                                      <>
+                                        <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                                          <input
+                                            type="radio"
+                                            name="logoBgMode"
+                                            checked={logoBgMode === 'auto'}
+                                            onChange={() => setLogoBgMode('auto')}
+                                          />
+                                          Auto (corners)
+                                        </label>
+                                        <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                                          <input
+                                            type="radio"
+                                            name="logoBgMode"
+                                            checked={logoBgMode === 'custom'}
+                                            onChange={() => setLogoBgMode('custom')}
+                                          />
+                                          Pick color
+                                        </label>
+                                        {logoBgMode === 'custom' ? (
+                                          <input
+                                            type="color"
+                                            value={logoBgColor}
+                                            onChange={(e) => setLogoBgColor(e.target.value)}
+                                            className="w-7 h-7 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent"
+                                            title="Background color to remove"
+                                          />
+                                        ) : null}
+                                      </>
+                                    ) : null}
+                                    {settings.logo_image && logoRemoveBg && /\/uploads\/logo_/i.test(settings.logo_image) ? (
+                                      <button
+                                        type="button"
+                                        disabled={logoUploading}
+                                        onClick={async () => {
+                                          setLogoUploading(true);
+                                          setError('');
+                                          try {
+                                            // Server-side PHP GD chroma-key (ext-gd required)
+                                            const url = await settingsService.uploadLogo(null, {
+                                              settingKey: 'logo_image',
+                                              sourceUrl: settings.logo_image,
+                                              removeBackground: true,
+                                              bgColor: logoBgMode === 'custom' ? logoBgColor : undefined,
+                                            });
+                                            updateBranding({ logo_image: url });
+                                            setLogoPreview(null);
+                                          } catch (err: any) {
+                                            setError(err.message || 'Failed to remove logo background');
+                                          } finally {
+                                            setLogoUploading(false);
+                                          }
+                                        }}
+                                        className="text-xs font-medium px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
+                                      >
+                                        Apply to current logo
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                  {logoRemoveBg ? (
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 -mt-2 mb-3">
+                                      Strips a solid background (white, etc.) to transparent via PHP GD (ext-gd). Works on raster uploads; SVG is not supported. If removal fails, enable <code className="text-[10px]">extension=gd</code> in php.ini and restart Apache.
+                                    </p>
+                                  ) : null}
 
                                   <div>
                                     <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
@@ -10288,7 +11203,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                         updateBranding({ logo_image: e.target.value });
                                         setLogoPreview(e.target.value || null);
                                       }}
-                                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                                       placeholder="https://example.com/logo.png"
                                     />
                                   </div>
@@ -10304,7 +11219,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       step={1}
                                       value={parseInt(settings.logo_size || '32', 10) || 32}
                                       onChange={(e) => updateBranding({ logo_size: e.target.value })}
-                                      className="w-full accent-brand-600"
+                                      className="w-full accent-sky-600"
                                     />
                                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                                       Display height of the brand logo in the navigation bar (live preview)
@@ -10323,18 +11238,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               {(headerLogoPreview || settings.header_logo_image) && (
                                 <div className="mb-3 p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg">
                                   <div className="flex items-center gap-3">
-                                    <img
-                                      src={headerLogoPreview || settings.header_logo_image}
-                                      alt="Header logo preview"
-                                      className="w-16 h-16 object-contain rounded border border-slate-200 dark:border-slate-700"
-                                      onError={(e) => {
-                                        (e.target as HTMLImageElement).style.display = 'none';
+                                    <div
+                                      className="w-16 h-16 rounded border border-slate-200 dark:border-slate-700 p-1 flex items-center justify-center overflow-hidden"
+                                      style={{
+                                        backgroundImage:
+                                          'linear-gradient(45deg, #d4d4d8 25%, transparent 25%), linear-gradient(-45deg, #d4d4d8 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #d4d4d8 75%), linear-gradient(-45deg, transparent 75%, #d4d4d8 75%)',
+                                        backgroundSize: '10px 10px',
+                                        backgroundPosition: '0 0, 0 5px, 5px -5px, -5px 0',
+                                        backgroundColor: '#f4f4f5',
                                       }}
-                                    />
+                                      title="Checkerboard shows transparency"
+                                    >
+                                      <img
+                                        src={headerLogoPreview || settings.header_logo_image}
+                                        alt="Header logo preview"
+                                        className="max-w-full max-h-full object-contain"
+                                        onError={(e) => {
+                                          (e.target as HTMLImageElement).style.display = 'none';
+                                        }}
+                                      />
+                                    </div>
                                     <div className="flex-1">
                                       <p className="text-xs text-slate-600 dark:text-slate-400">Current header logo preview</p>
                                       {settings.header_logo_image && (
                                         <button
+                                          type="button"
                                           onClick={() => {
                                             updateBranding({ header_logo_image: '' });
                                             setHeaderLogoPreview(null);
@@ -10372,7 +11300,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       try {
                                         setHeaderLogoUploading(true);
                                         setError('');
-                                        const url = await settingsService.uploadLogo(file, 'header_logo_image');
+                                        // Background removal runs on PHP GD (ext-gd) via /settings/upload-logo
+                                        const url = await settingsService.uploadLogo(file, {
+                                          settingKey: 'header_logo_image',
+                                          removeBackground: headerLogoRemoveBg,
+                                          bgColor: headerLogoRemoveBg && headerLogoBgMode === 'custom' ? headerLogoBgColor : undefined,
+                                        });
                                         updateBranding({ header_logo_image: url });
                                         setHeaderLogoPreview(null);
                                         URL.revokeObjectURL(objectUrl);
@@ -10395,13 +11328,89 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                     </svg>
-                                    Uploading...
+                                    {headerLogoRemoveBg ? 'Removing background & uploading...' : 'Uploading...'}
                                   </div>
                                 )}
                                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                                   JPEG, PNG, GIF, SVG, WebP — auto-converted to PNG (max 512×512). SVG kept as-is. Max 10MB.
                                 </p>
                               </div>
+
+                              <div className="flex flex-wrap items-center gap-3 mb-3">
+                                <label className="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={headerLogoRemoveBg}
+                                    onChange={(e) => setHeaderLogoRemoveBg(e.target.checked)}
+                                    className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                                  />
+                                  Remove background
+                                </label>
+                                {headerLogoRemoveBg ? (
+                                  <>
+                                    <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                                      <input
+                                        type="radio"
+                                        name="headerLogoBgMode"
+                                        checked={headerLogoBgMode === 'auto'}
+                                        onChange={() => setHeaderLogoBgMode('auto')}
+                                      />
+                                      Auto (corners)
+                                    </label>
+                                    <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                                      <input
+                                        type="radio"
+                                        name="headerLogoBgMode"
+                                        checked={headerLogoBgMode === 'custom'}
+                                        onChange={() => setHeaderLogoBgMode('custom')}
+                                      />
+                                      Pick color
+                                    </label>
+                                    {headerLogoBgMode === 'custom' ? (
+                                      <input
+                                        type="color"
+                                        value={headerLogoBgColor}
+                                        onChange={(e) => setHeaderLogoBgColor(e.target.value)}
+                                        className="w-7 h-7 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent"
+                                        title="Background color to remove"
+                                      />
+                                    ) : null}
+                                  </>
+                                ) : null}
+                                {settings.header_logo_image && headerLogoRemoveBg && /\/uploads\/logo_/i.test(settings.header_logo_image) ? (
+                                  <button
+                                    type="button"
+                                    disabled={headerLogoUploading}
+                                    onClick={async () => {
+                                      setHeaderLogoUploading(true);
+                                      setError('');
+                                      try {
+                                        // Server-side PHP GD chroma-key (ext-gd required)
+                                        const url = await settingsService.uploadLogo(null, {
+                                          settingKey: 'header_logo_image',
+                                          sourceUrl: settings.header_logo_image,
+                                          removeBackground: true,
+                                          bgColor: headerLogoBgMode === 'custom' ? headerLogoBgColor : undefined,
+                                        });
+                                        updateBranding({ header_logo_image: url });
+                                        setHeaderLogoPreview(null);
+                                      } catch (err: any) {
+                                        setError(err.message || 'Failed to remove header logo background');
+                                      } finally {
+                                        setHeaderLogoUploading(false);
+                                      }
+                                    }}
+                                    className="text-xs font-medium px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
+                                  >
+                                    Apply to current header logo
+                                  </button>
+                                ) : null}
+                              </div>
+                              {headerLogoRemoveBg ? (
+                                <p className="text-xs text-slate-500 dark:text-slate-400 -mt-2 mb-3">
+                                  Strips a solid background (white, etc.) to transparent via PHP GD (ext-gd). Works on raster uploads; SVG is not supported. If removal fails, enable <code className="text-[10px]">extension=gd</code> in php.ini and restart Apache.
+                                </p>
+                              ) : null}
 
                               <div>
                                 <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
@@ -10414,7 +11423,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     updateBranding({ header_logo_image: e.target.value });
                                     setHeaderLogoPreview(e.target.value || null);
                                   }}
-                                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                                   placeholder="https://example.com/company-logo.png"
                                 />
                               </div>
@@ -10430,7 +11439,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   step={1}
                                   value={parseInt(settings.header_logo_size || '40', 10) || 40}
                                   onChange={(e) => updateBranding({ header_logo_size: e.target.value })}
-                                  className="w-full accent-brand-600"
+                                  className="w-full accent-sky-600"
                                 />
                                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                                   Display height of the company logo on the far left of the navigation bar (live preview)
@@ -10456,7 +11465,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 type="text"
                                 value={settings.page_title}
                                 onChange={(e) => updateBranding({ page_title: e.target.value })}
-                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                                 placeholder={settings.page_title || settings.app_name || "LinkNest"}
                               />
                             </div>
@@ -10469,7 +11478,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 type="text"
                                 value={settings.page_title_pattern || '{page_title}'}
                                 onChange={(e) => updateBranding({ page_title_pattern: e.target.value })}
-                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                                 placeholder="{page_title}"
                               />
                               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -10512,7 +11521,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 ))}
                                 <div className="sm:col-span-2">
                                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Gradient Angle: {settings.nav_gradient_angle || '90'}°</label>
-                                  <input type="range" min={0} max={360} step={1} value={parseInt(settings.nav_gradient_angle || '90', 10) || 90} onChange={(e) => updateBranding({ nav_gradient_angle: e.target.value })} className="w-full accent-brand-600" />
+                                  <input type="range" min={0} max={360} step={1} value={parseInt(settings.nav_gradient_angle || '90', 10) || 90} onChange={(e) => updateBranding({ nav_gradient_angle: e.target.value })} className="w-full accent-sky-600" />
                                 </div>
                               </div>
                               </div>
@@ -10733,7 +11742,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               </div>
                               {faviconRemoveBg ? (
                                 <p className="text-xs text-slate-500 dark:text-slate-400 -mt-2">
-                                  Strips a solid background (white, etc.) to transparent. Works on raster uploads; SVG is not supported.
+                                  Strips a solid background (white, etc.) to transparent via PHP GD (ext-gd). Works on raster uploads; SVG is not supported. If removal fails, enable <code className="text-[10px]">extension=gd</code> in php.ini and restart Apache.
                                 </p>
                               ) : null}
 
@@ -10748,7 +11757,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     setSettings({ ...settings, favicon: e.target.value });
                                     setFaviconPreview(e.target.value || null);
                                   }}
-                                  className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                  className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                                   placeholder="https://example.com/favicon.ico"
                                 />
                               </div>
@@ -10765,6 +11774,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               <div className="px-4 pb-4 space-y-4 border-t border-slate-200 dark:border-slate-700 pt-4">
                                 <p className="text-xs text-slate-600 dark:text-slate-400">
                                   Choose what appears in the center of link QR codes for branding. Save Settings to apply.
+                                  Long URLs automatically omit the center mark so the QR stays scannable — that is expected behavior, not a branding failure.
                                 </p>
 
                                 <div>
@@ -10776,7 +11786,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       type="button"
                                       onClick={() => setSettings({ ...settings, qr_branding_mode: 'favicon' })}
                                       className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${(settings.qr_branding_mode || 'favicon') === 'favicon'
-                                        ? 'bg-brand-600 text-white'
+                                        ? 'bg-sky-600 text-white'
                                         : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
                                         }`}
                                     >
@@ -10786,7 +11796,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       type="button"
                                       onClick={() => setSettings({ ...settings, qr_branding_mode: 'emoji' })}
                                       className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${settings.qr_branding_mode === 'emoji'
-                                        ? 'bg-brand-600 text-white'
+                                        ? 'bg-sky-600 text-white'
                                         : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
                                         }`}
                                     >
@@ -10885,7 +11895,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 <textarea
                                   value={settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team'}
                                   onChange={(e) => setSettings({ ...settings, footer_text: e.target.value })}
-                                  className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                  className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                                   placeholder="© 2025 Adventhealth - Designed and developed by AIT Architecture team"
                                   rows={3}
                                 />
@@ -10921,17 +11931,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 }
                               }}
                               disabled={settingsSaving}
-                              className="w-full bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                              className={`w-full px-4 py-2.5 ${ADMIN_PRIMARY_BTN}`}
                             >
                               {settingsSaving ? 'Saving...' : 'Save Settings'}
                             </button>
+                          </div>
                           </div>
                         </div>
                       )}
 
                       {settingsSubTab === 'hero' && (
-                        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                          <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Hero</h3>
+                        <div className={ADMIN_SECTION_CARD}>
+                          <div className={ADMIN_SECTION_HEADER}>
+                            <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🦸</span> Hero</h3>
+                            <p className={ADMIN_SECTION_SUBTITLE}>Configure the home page hero message and visuals.</p>
+                          </div>
+                          <div className="p-6">
+                        <div className="space-y-4">
                           <div className="space-y-3">
                             <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3 bg-slate-50/50 dark:bg-slate-900/20">
                               <label className="block text-sm font-semibold text-slate-900 dark:text-white">
@@ -10941,7 +11957,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 type="text"
                                 value={settings.spaces_title}
                                 onChange={(e) => updateBranding({ spaces_title: e.target.value })}
-                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                                 placeholder="My Spaces"
                               />
                               <details className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 group">
@@ -10963,7 +11979,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     step={1}
                                     value={parseInt(settings.hero_title_font_size || '36', 10) || 36}
                                     onChange={(e) => updateBranding({ hero_title_font_size: e.target.value })}
-                                    className="w-full accent-brand-600"
+                                    className="w-full accent-sky-600"
                                   />
                                 </div>
                                 <div>
@@ -11037,11 +12053,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 </div>
                                 <div>
                                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Letter Spacing: {settings.hero_title_letter_spacing || '0'}em</label>
-                                  <input type="range" min={-0.05} max={0.2} step={0.01} value={parseFloat(settings.hero_title_letter_spacing || '0') || 0} onChange={(e) => updateBranding({ hero_title_letter_spacing: e.target.value })} className="w-full accent-brand-600" />
+                                  <input type="range" min={-0.05} max={0.2} step={0.01} value={parseFloat(settings.hero_title_letter_spacing || '0') || 0} onChange={(e) => updateBranding({ hero_title_letter_spacing: e.target.value })} className="w-full accent-sky-600" />
                                 </div>
                                 <div>
                                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Line Height: {settings.hero_title_line_height || '1.2'}</label>
-                                  <input type="range" min={1} max={2} step={0.05} value={parseFloat(settings.hero_title_line_height || '1.2') || 1.2} onChange={(e) => updateBranding({ hero_title_line_height: e.target.value })} className="w-full accent-brand-600" />
+                                  <input type="range" min={1} max={2} step={0.05} value={parseFloat(settings.hero_title_line_height || '1.2') || 1.2} onChange={(e) => updateBranding({ hero_title_line_height: e.target.value })} className="w-full accent-sky-600" />
                                 </div>
                                 </div>
                               </details>
@@ -11055,7 +12071,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 type="text"
                                 value={settings.spaces_subtitle || ''}
                                 onChange={(e) => updateBranding({ spaces_subtitle: e.target.value })}
-                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                                 placeholder="Organize and share your important links"
                               />
                               <p className="text-xs text-slate-500 dark:text-slate-400">Shown under the spaces page title in the hero section</p>
@@ -11078,7 +12094,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     step={1}
                                     value={parseInt(settings.hero_subtitle_font_size || '16', 10) || 16}
                                     onChange={(e) => updateBranding({ hero_subtitle_font_size: e.target.value })}
-                                    className="w-full accent-brand-600"
+                                    className="w-full accent-sky-600"
                                   />
                                 </div>
                                 <div>
@@ -11139,11 +12155,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 </div>
                                 <div>
                                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Letter Spacing: {settings.hero_subtitle_letter_spacing || '0'}em</label>
-                                  <input type="range" min={-0.05} max={0.2} step={0.01} value={parseFloat(settings.hero_subtitle_letter_spacing || '0') || 0} onChange={(e) => updateBranding({ hero_subtitle_letter_spacing: e.target.value })} className="w-full accent-brand-600" />
+                                  <input type="range" min={-0.05} max={0.2} step={0.01} value={parseFloat(settings.hero_subtitle_letter_spacing || '0') || 0} onChange={(e) => updateBranding({ hero_subtitle_letter_spacing: e.target.value })} className="w-full accent-sky-600" />
                                 </div>
                                 <div>
                                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Line Height: {settings.hero_subtitle_line_height || '1.4'}</label>
-                                  <input type="range" min={1} max={2} step={0.05} value={parseFloat(settings.hero_subtitle_line_height || '1.4') || 1.4} onChange={(e) => updateBranding({ hero_subtitle_line_height: e.target.value })} className="w-full accent-brand-600" />
+                                  <input type="range" min={1} max={2} step={0.05} value={parseFloat(settings.hero_subtitle_line_height || '1.4') || 1.4} onChange={(e) => updateBranding({ hero_subtitle_line_height: e.target.value })} className="w-full accent-sky-600" />
                                 </div>
                                 </div>
                               </details>
@@ -11157,7 +12173,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 type="text"
                                 value={settings.hero_icon || ''}
                                 onChange={(e) => updateBranding({ hero_icon: e.target.value })}
-                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-2xl text-center focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-2xl text-center focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                                 placeholder="🚀"
                                 maxLength={4}
                               />
@@ -11220,11 +12236,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   ))}
                                   <div>
                                     <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Background Angle: {settings.hero_bg_angle || '135'}°</label>
-                                    <input type="range" min={0} max={360} step={1} value={parseInt(settings.hero_bg_angle || '135', 10) || 135} onChange={(e) => updateBranding({ hero_bg_angle: e.target.value })} className="w-full accent-brand-600" />
+                                    <input type="range" min={0} max={360} step={1} value={parseInt(settings.hero_bg_angle || '135', 10) || 135} onChange={(e) => updateBranding({ hero_bg_angle: e.target.value })} className="w-full accent-sky-600" />
                                   </div>
                                   <div>
                                     <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Overlay Opacity: {settings.hero_overlay_opacity || '0'}%</label>
-                                    <input type="range" min={0} max={40} step={1} value={parseInt(settings.hero_overlay_opacity || '0', 10) || 0} onChange={(e) => updateBranding({ hero_overlay_opacity: e.target.value })} className="w-full accent-brand-600" />
+                                    <input type="range" min={0} max={40} step={1} value={parseInt(settings.hero_overlay_opacity || '0', 10) || 0} onChange={(e) => updateBranding({ hero_overlay_opacity: e.target.value })} className="w-full accent-sky-600" />
                                   </div>
                                 </div>
                               </div>
@@ -11246,17 +12262,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 }
                               }}
                               disabled={settingsSaving}
-                              className="w-full bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                              className={`w-full px-4 py-2.5 ${ADMIN_PRIMARY_BTN}`}
                             >
                               {settingsSaving ? 'Saving...' : 'Save Settings'}
                             </button>
+                          </div>
+                          </div>
                           </div>
                         </div>
                       )}
 
                       {settingsSubTab === 'access' && (
-                        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                          <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Access</h3>
+                        <div className={ADMIN_SECTION_CARD}>
+                          <div className={ADMIN_SECTION_HEADER}>
+                            <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🔓</span> Guest Access</h3>
+                            <p className={ADMIN_SECTION_SUBTITLE}>Control what guests can see and do without signing in.</p>
+                          </div>
+                          <div className="p-6">
                           <div className="space-y-4">
                             <div>
                               <label className="flex items-center justify-between cursor-pointer">
@@ -11278,7 +12300,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       });
                                     }}
                                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${(settings.guest_access_enabled === '1' || settings.guest_access_enabled === undefined)
-                                      ? 'bg-brand-600'
+                                      ? 'bg-sky-600'
                                       : 'bg-slate-300 dark:bg-slate-600'
                                       }`}
                                   >
@@ -11323,7 +12345,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     }}
                                     disabled={settingsSaving}
                                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.show_database_path_in_footer === '1'
-                                      ? 'bg-brand-600'
+                                      ? 'bg-sky-600'
                                       : 'bg-slate-300 dark:bg-slate-600'
                                       }`}
                                   >
@@ -11354,10 +12376,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 }
                               }}
                               disabled={settingsSaving}
-                              className="w-full bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                              className={`w-full px-4 py-2.5 ${ADMIN_PRIMARY_BTN}`}
                             >
                               {settingsSaving ? 'Saving...' : 'Save Settings'}
                             </button>
+                          </div>
                           </div>
                         </div>
                       )}
@@ -11369,12 +12392,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               {/* Browser Extension Integration Tab */}
               {activeTab === 'browser' && (
                 <div className="space-y-6">
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="mb-6">
-                      <div className="flex items-start justify-between gap-4 mb-2">
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <div className="flex items-start justify-between gap-4">
                         <div className="flex-1">
-                          <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">🚀 Browser Extension Integration</h3>
-                          <p className="text-sm text-slate-600 dark:text-slate-400">
+                          <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🌐</span> Browser Extension Integration</h3>
+                          <p className={ADMIN_SECTION_SUBTITLE}>
                             Configure and test browser-specific link opening using Browser Launcher Pro extension.
                           </p>
                         </div>
@@ -11395,7 +12418,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             }
                           }}
                           disabled={settingsSaving}
-                          className="px-6 py-2.5 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 whitespace-nowrap"
+                          className={`px-6 py-2.5 ${ADMIN_PRIMARY_BTN} flex items-center gap-2 whitespace-nowrap`}
                         >
                           {settingsSaving ? (
                             <>
@@ -11407,19 +12430,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             </>
                           ) : (
                             <>
-                              <svg className="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                              </svg>
+                              <span aria-hidden>💾</span>
                               Save Settings
                             </>
                           )}
                         </button>
                       </div>
                     </div>
-
+                    <div className="p-6">
                     {/* Configuration Section */}
-                    <div className="mb-8 pb-8 border-b border-slate-200 dark:border-slate-700">
-                      <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Configuration</h4>
+                    <div className="mb-8 pb-8 border-b border-sky-100 dark:border-sky-900/40">
+                      <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-1.5"><span aria-hidden>⚙️</span> Configuration</h4>
 
                       <div className="space-y-4">
                         <div className="space-y-2">
@@ -11428,7 +12449,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               type="checkbox"
                               checked={settings.browser_specific_links_enabled === '1'}
                               onChange={(e) => setSettings({ ...settings, browser_specific_links_enabled: e.target.checked ? '1' : '0' })}
-                              className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                              className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
                             />
                             <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Enable Browser-Specific Link Opening</span>
                           </label>
@@ -11447,7 +12468,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   setSettings({ ...settings, browser_extension_id: value });
                                 }
                               }}
-                              className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                              className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                               placeholder="ifllnbjkoabnnbcodbocddplnhmbobim"
                               maxLength={32}
                             />
@@ -11464,7 +12485,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                     {/* Extension Status */}
                     <div className="mb-6">
-                      <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Extension Status</h4>
+                      <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4"><span aria-hidden>📡</span> Extension Status</h4>
                       <div id="extension-status-browser" className="p-4 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
                         <div className="flex items-center gap-2">
                           <svg className="animate-spin h-4 w-4 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -11615,7 +12636,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               });
                             }
                           }}
-                          className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors"
+                          className={`px-4 py-2 ${ADMIN_PRIMARY_BTN}`}
                         >
                           Open GitHub in Chrome
                         </button>
@@ -11636,7 +12657,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               });
                             }
                           }}
-                          className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors"
+                          className={`px-4 py-2 ${ADMIN_PRIMARY_BTN}`}
                         >
                           Open Microsoft in Edge
                         </button>
@@ -11845,7 +12866,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               type="url"
                               value={testUrl}
                               onChange={(e) => setTestUrl(e.target.value)}
-                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                               placeholder="https://example.com"
                             />
                           </div>
@@ -11854,7 +12875,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             <select
                               value={testBrowser}
                               onChange={(e) => setTestBrowser(e.target.value)}
-                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                             >
                               {detectedBrowsers.length > 0 ? (
                                 <>
@@ -11897,7 +12918,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 }
                               });
                             }}
-                            className="w-full px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors"
+                            className={`w-full px-4 py-2 ${ADMIN_PRIMARY_BTN}`}
                           >
                             Open Link in Browser
                           </button>
@@ -11977,7 +12998,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           }
                         }}
                         disabled={settingsSaving}
-                        className="px-6 py-2.5 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
+                        className={`px-6 py-2.5 ${ADMIN_PRIMARY_BTN} flex items-center gap-2`}
                       >
                         {settingsSaving ? (
                           <>
@@ -11999,6 +13020,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     </div>
                   </div>
                 </div>
+                  </div>
               )}
 
               {/* Broadcast Message Tab */}
@@ -12006,111 +13028,141 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 <div className="space-y-6">
                   {broadcastLoading ? (
                     <div className="flex items-center justify-center py-12">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
                     </div>
                   ) : (
-                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                      <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Broadcast Message Settings</h3>
-                      <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
-                        Create and manage site-wide broadcast messages that appear at the top of all pages. Messages scroll from right to left with customizable speed. Users can hover to pause the message or click to read the full content in a popup.
-                      </p>
+                    <div className="bg-white dark:bg-slate-800 border border-sky-200/70 dark:border-sky-800/40 rounded-xl overflow-hidden shadow-sm shadow-sky-500/5">
+                      <div className="bg-gradient-to-r from-sky-50 via-teal-50/80 to-cyan-50/60 dark:from-sky-950/40 dark:via-teal-950/30 dark:to-cyan-950/20 border-b border-sky-100 dark:border-sky-800/40 px-6 py-5">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                          <span aria-hidden>📢</span> Broadcast Message Settings
+                        </h3>
+                        <p className="text-sm text-sky-800/70 dark:text-sky-200/70 mt-0.5">
+                          Create and manage site-wide scrolling banners that appear at the top of every page.
+                        </p>
+                      </div>
 
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                            Message Text
+                      <div className="p-6 space-y-5">
+                        <div className="rounded-xl bg-sky-50/50 dark:bg-sky-950/20 border border-sky-100 dark:border-sky-900/40 p-4">
+                          <label className="block text-sm font-semibold text-sky-900 dark:text-sky-100 mb-2 flex items-center gap-1.5">
+                            <span aria-hidden>💬</span> Message *
                           </label>
                           <textarea
                             value={broadcastMessage}
                             onChange={(e) => setBroadcastMessage(e.target.value)}
-                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                            className="w-full bg-white dark:bg-slate-900/50 border border-sky-200 dark:border-sky-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                             placeholder="Enter your broadcast message here..."
                             rows={3}
                           />
-                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                            This message will be displayed in a scrolling banner at the top of all pages.
+                          <p className="text-xs text-sky-700/70 dark:text-sky-300/70 mt-1.5 flex items-center gap-1">
+                            <span aria-hidden>💡</span>
+                            Shown in a scrolling banner. Users can hover to pause or click for the full message.
                           </p>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="rounded-xl bg-teal-50/50 dark:bg-teal-950/20 border border-teal-100 dark:border-teal-900/40 p-4">
+                          <h4 className="text-sm font-semibold text-teal-900 dark:text-teal-100 mb-3 flex items-center gap-1.5">
+                            <span aria-hidden>🎨</span> Appearance
+                          </h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                <span className="mr-1" aria-hidden>🔤</span>Font Family
+                              </label>
+                              <select
+                                value={broadcastFontFamily}
+                                onChange={(e) => setBroadcastFontFamily(e.target.value)}
+                                className="w-full bg-white dark:bg-slate-900/50 border border-teal-200 dark:border-teal-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-400/50 focus:border-teal-400"
+                              >
+                                <option value="Arial, sans-serif">Arial</option>
+                                <option value="'Times New Roman', serif">Times New Roman</option>
+                                <option value="'Courier New', monospace">Courier New</option>
+                                <option value="Georgia, serif">Georgia</option>
+                                <option value="Verdana, sans-serif">Verdana</option>
+                                <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                <span className="mr-1" aria-hidden>📏</span>Font Size
+                              </label>
+                              <select
+                                value={broadcastFontSize}
+                                onChange={(e) => setBroadcastFontSize(e.target.value)}
+                                className="w-full bg-white dark:bg-slate-900/50 border border-teal-200 dark:border-teal-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-400/50 focus:border-teal-400"
+                              >
+                                <option value="12px">12px</option>
+                                <option value="14px">14px</option>
+                                <option value="16px">16px</option>
+                                <option value="18px">18px</option>
+                                <option value="20px">20px</option>
+                                <option value="24px">24px</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="mt-4">
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                              <span className="mr-1" aria-hidden>🌈</span>Color
+                            </label>
+                            <div className="flex gap-4 items-center">
+                              <input
+                                type="color"
+                                value={broadcastColor}
+                                onChange={(e) => setBroadcastColor(e.target.value)}
+                                className="w-16 h-10 border border-teal-200 dark:border-teal-800/50 rounded-lg cursor-pointer"
+                              />
+                              <input
+                                type="text"
+                                value={broadcastColor}
+                                onChange={(e) => setBroadcastColor(e.target.value)}
+                                className="flex-1 bg-white dark:bg-slate-900/50 border border-teal-200 dark:border-teal-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-400/50 focus:border-teal-400 font-mono"
+                                placeholder="#ff0000"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl bg-cyan-50/50 dark:bg-cyan-950/20 border border-cyan-100 dark:border-cyan-900/40 p-4 space-y-4">
+                          <h4 className="text-sm font-semibold text-cyan-900 dark:text-cyan-100 flex items-center gap-1.5">
+                            <span aria-hidden>⏱️</span> Timing
+                          </h4>
                           <div>
                             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Font Family
+                              <span className="mr-1" aria-hidden>🏃</span>Scroll Speed (seconds)
                             </label>
-                            <select
-                              value={broadcastFontFamily}
-                              onChange={(e) => setBroadcastFontFamily(e.target.value)}
-                              className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                            >
-                              <option value="Arial, sans-serif">Arial</option>
-                              <option value="'Times New Roman', serif">Times New Roman</option>
-                              <option value="'Courier New', monospace">Courier New</option>
-                              <option value="Georgia, serif">Georgia</option>
-                              <option value="Verdana, sans-serif">Verdana</option>
-                              <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
-                            </select>
+                            <input
+                              type="number"
+                              min="5"
+                              max="120"
+                              step="1"
+                              value={broadcastScrollSpeed}
+                              onChange={(e) => setBroadcastScrollSpeed(Number(e.target.value))}
+                              className="w-full bg-white dark:bg-slate-900/50 border border-cyan-200 dark:border-cyan-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:border-cyan-400"
+                              placeholder="30"
+                            />
+                            <p className="text-xs text-cyan-700/70 dark:text-cyan-300/70 mt-1">
+                              Lower = faster, higher = slower. Recommended: 20–40 seconds.
+                            </p>
                           </div>
 
                           <div>
                             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Font Size
+                              <span className="mr-1" aria-hidden>📅</span>Expiration Date/Time (Optional)
                             </label>
-                            <select
-                              value={broadcastFontSize}
-                              onChange={(e) => setBroadcastFontSize(e.target.value)}
-                              className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                            >
-                              <option value="12px">12px</option>
-                              <option value="14px">14px</option>
-                              <option value="16px">16px</option>
-                              <option value="18px">18px</option>
-                              <option value="20px">20px</option>
-                              <option value="24px">24px</option>
-                            </select>
+                            <input
+                              type="datetime-local"
+                              value={broadcastExpiresAt}
+                              onChange={(e) => setBroadcastExpiresAt(e.target.value)}
+                              className="w-full bg-white dark:bg-slate-900/50 border border-cyan-200 dark:border-cyan-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-400/50 focus:border-cyan-400"
+                            />
+                            <p className="text-xs text-cyan-700/70 dark:text-cyan-300/70 mt-1">
+                              Leave empty for no expiration. The banner stops after this date/time.
+                            </p>
                           </div>
                         </div>
 
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                            Color
-                          </label>
-                          <div className="flex gap-4 items-center">
-                            <input
-                              type="color"
-                              value={broadcastColor}
-                              onChange={(e) => setBroadcastColor(e.target.value)}
-                              className="w-16 h-10 border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer"
-                            />
-                            <input
-                              type="text"
-                              value={broadcastColor}
-                              onChange={(e) => setBroadcastColor(e.target.value)}
-                              className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 font-mono"
-                              placeholder="#ff0000"
-                            />
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                            Scroll Speed (seconds)
-                          </label>
-                          <input
-                            type="number"
-                            min="5"
-                            max="120"
-                            step="1"
-                            value={broadcastScrollSpeed}
-                            onChange={(e) => setBroadcastScrollSpeed(Number(e.target.value))}
-                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                            placeholder="30"
-                          />
-                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                            Time in seconds for the message to scroll across the screen. Lower = faster, higher = slower. Recommended: 20-40 seconds.
-                          </p>
-                        </div>
-
-                        <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                        <div className="flex gap-3 pt-2">
                           <button
                             onClick={async () => {
                               if (!broadcastMessage.trim()) {
@@ -12143,7 +13195,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   });
                                   alert('Broadcast message created successfully!');
                                 }
-                                // Reload current broadcast
                                 const updated = await broadcastService.getBroadcast();
                                 setCurrentBroadcast(updated);
                               } catch (err: any) {
@@ -12153,8 +13204,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               }
                             }}
                             disabled={broadcastLoading || !broadcastMessage.trim()}
-                            className="flex-1 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                            className="flex-1 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-sm shadow-sky-500/20 flex items-center justify-center gap-1.5"
                           >
+                            <span aria-hidden>{currentBroadcast ? '💾' : '✨'}</span>
                             {broadcastLoading ? 'Saving...' : currentBroadcast ? 'Update Message' : 'Create Message'}
                           </button>
                           {currentBroadcast && (
@@ -12181,32 +13233,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 }
                               }}
                               disabled={broadcastLoading}
-                              className="px-4 py-2.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold transition-colors"
+                              className="px-4 py-2.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5"
                             >
+                              <span aria-hidden>🗑️</span>
                               Delete
                             </button>
                           )}
                         </div>
 
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                            Expiration Date/Time (Optional)
-                          </label>
-                          <input
-                            type="datetime-local"
-                            value={broadcastExpiresAt}
-                            onChange={(e) => setBroadcastExpiresAt(e.target.value)}
-                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                          />
-                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                            Leave empty for no expiration. The message will automatically stop displaying after this date/time.
-                          </p>
-                        </div>
-
                         {currentBroadcast && (
-                          <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
-                            <div className="flex items-center justify-between mb-4">
-                              <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Current Active Message</h4>
+                          <div className="rounded-xl bg-gradient-to-r from-emerald-50/80 to-teal-50/60 dark:from-emerald-950/25 dark:to-teal-950/20 border border-emerald-100 dark:border-emerald-900/40 p-4">
+                            <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+                              <h4 className="text-sm font-semibold text-emerald-900 dark:text-emerald-100 flex items-center gap-1.5">
+                                <span aria-hidden>✅</span> Current Active Message
+                              </h4>
                               <button
                                 onClick={async () => {
                                   if (!confirm('Are you sure you want to delete the current broadcast message?')) {
@@ -12229,19 +13269,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     setBroadcastLoading(false);
                                   }
                                 }}
-                                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm font-medium transition-colors"
+                                className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
                               >
+                                <span aria-hidden>🗑️</span>
                                 Delete Current Message
                               </button>
                             </div>
-                            <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                            <div className="bg-white/80 dark:bg-slate-900/50 border border-emerald-200/70 dark:border-emerald-800/40 rounded-lg p-4">
                               <p className="text-sm text-slate-700 dark:text-slate-300 mb-2" style={{ fontFamily: currentBroadcast.fontFamily, fontSize: currentBroadcast.fontSize, color: currentBroadcast.color }}>
                                 {currentBroadcast.message}
                               </p>
-                              <p className="text-xs text-slate-500 dark:text-slate-400">
-                                Created: {new Date(currentBroadcast.createdAt * 1000).toLocaleString()}
+                              <p className="text-xs text-emerald-700/70 dark:text-emerald-300/70 flex flex-wrap gap-x-2">
+                                <span>📅 Created: {new Date(currentBroadcast.createdAt * 1000).toLocaleString()}</span>
                                 {currentBroadcast.expiresAt && (
-                                  <> | Expires: {new Date(currentBroadcast.expiresAt * 1000).toLocaleString()}</>
+                                  <span>⏳ Expires: {new Date(currentBroadcast.expiresAt * 1000).toLocaleString()}</span>
                                 )}
                               </p>
                             </div>
@@ -12252,25 +13293,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   )}
                 </div>
               )}
-
               {/* Maintenance Scripts Tab - DB cleanup, duplicates, invisible, optimize, vacuum, health, SQLite RAM, system specs */}
               {activeTab === 'maintenanceScripts' && (
                 <div className="space-y-6 mt-6">
                   {/* Database Cleanup Section */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className="flex-shrink-0 w-10 h-10 bg-orange-500 rounded-lg flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
-                          <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Database Cleanup</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                          Check for and remove orphaned records from the database. Orphaned records occur when tiles are deleted but related data (permissions, links, sections, tabs) remain.
-                        </p>
-                      </div>
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🧰</span> Database Cleanup</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Check for and remove orphaned records left after tiles are deleted.
+                      </p>
                     </div>
+                    <div className="p-6">
 
                     {cleanupResults && (
                       <div className={`mb-6 p-4 rounded-lg border ${cleanupResults.success
@@ -12374,7 +13408,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           }
                         }}
                         disabled={cleanupChecking || cleanupCleaning}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors"
+                        className={`flex items-center gap-2 px-4 py-2.5 ${ADMIN_PRIMARY_BTN}`}
                       >
                         {cleanupChecking ? (
                           <>
@@ -12476,21 +13510,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
 
                   {/* Duplicate Tiles Cleanup Section */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className="flex-shrink-0 w-10 h-10 bg-purple-500 rounded-lg flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
-                          <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
-                          <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.439A1.5 1.5 0 008.378 6H4.5z" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Duplicate Tiles Cleanup</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                          Find and remove duplicate tiles with the same name and category. This tool will automatically keep the tile with content and remove empty duplicates.
-                        </p>
-                      </div>
                     </div>
+
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🧰</span> Duplicate Tiles Cleanup</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Find and remove duplicate tiles with the same name and category. This tool will automatically keep the tile with content and remove empty duplicates.
+                      </p>
+                    </div>
+                    <div className="p-6">
 
                     {dupTilesResults && (
                       <div className={`mb-6 p-4 rounded-lg border ${dupTilesResults.success
@@ -12621,7 +13650,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           }
                         }}
                         disabled={dupTilesFinding || dupTilesCleaning || dupTilesAggressiveCleaning}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors"
+                        className={`flex items-center gap-2 px-4 py-2.5 ${ADMIN_PRIMARY_BTN}`}
                       >
                         {dupTilesFinding ? (
                           <>
@@ -12821,21 +13850,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
 
                   {/* Invisible Tiles Diagnosis Section */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className="flex-shrink-0 w-10 h-10 bg-teal-500 rounded-lg flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
-                          <path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" />
-                          <path fillRule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Invisible Tiles Diagnosis</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                          Find tiles that exist in the database but are invisible to users. These "ghost" tiles show up in admin panels but don't appear in user dashboards.
-                        </p>
-                      </div>
                     </div>
+
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🩺</span> Invisible Tiles Diagnosis</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Find tiles that exist in the database but are invisible to users. These "ghost" tiles show up in admin panels but don't appear in user dashboards.
+                      </p>
+                    </div>
+                    <div className="p-6">
 
                     {invisibleTilesResults && (
                       <div className={`mb-6 p-4 rounded-lg border ${invisibleTilesResults.success
@@ -12961,7 +13985,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           }
                         }}
                         disabled={invisibleTilesDiagnosing || invisibleTilesRemoving}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors"
+                        className={`flex items-center gap-2 px-4 py-2.5 ${ADMIN_PRIMARY_BTN}`}
                       >
                         {invisibleTilesDiagnosing ? (
                           <>
@@ -13064,20 +14088,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
 
                   {/* Optimize Database Section */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className="flex-shrink-0 w-10 h-10 bg-indigo-500 rounded-lg flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
-                          <path fillRule="evenodd" d="M4.5 2A2.5 2.5 0 002 4.5v3.879a2.5 2.5 0 00.732 1.767l7.5 7.5a2.5 2.5 0 003.536 0l3.878-3.878a2.5 2.5 0 000-3.536l-7.5-7.5A2.5 2.5 0 008.38 2H4.5zM5 6a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Optimize Database</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                          Create or update indexes and apply PRAGMA settings to improve query performance. Safe to run periodically.
-                        </p>
-                      </div>
                     </div>
+
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>⚡</span> Optimize Database</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Create or update indexes and apply PRAGMA settings to improve query performance. Safe to run periodically.
+                      </p>
+                    </div>
+                    <div className="p-6">
                     {optimizeDbResult && (
                       <div className={`mb-6 p-4 rounded-lg border ${optimizeDbResult.success ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
                         {optimizeDbResult.success ? (
@@ -13141,20 +14161,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
 
                   {/* Vacuum Database Section */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className="flex-shrink-0 w-10 h-10 bg-cyan-500 rounded-lg flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
-                          <path d="M15.98 1.804a1 1 0 00-1.96 0l-.24 1.192a1 1 0 01-.784.785l-1.192.238a1 1 0 000 1.962l1.192.238a1 1 0 01.785.785l.238 1.192a1 1 0 001.962 0l.238-1.192a1 1 0 01.785-.785l1.192-.238a1 1 0 000-1.962l-1.192-.238a1 1 0 01-.785-.785l-.238-1.192zM6.949 5.684a1 1 0 00-1.898 0l-.683 2.051a1 1 0 01-.633.633l-2.051.683a1 1 0 000 1.898l2.051.684a1 1 0 01.633.632l.683 2.051a1 1 0 001.898 0l.683-2.051a1 1 0 01.633-.633l2.051-.683a1 1 0 000-1.898l-2.051-.683a1 1 0 01-.633-.633L6.95 5.684z" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Vacuum Database</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                          Reclaim disk space and defragment the database file. Run after large deletions or cleanup operations.
-                        </p>
-                      </div>
                     </div>
+
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>⚡</span> Vacuum Database</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Reclaim disk space and defragment the database file. Run after large deletions or cleanup operations.
+                      </p>
+                    </div>
+                    <div className="p-6">
                     {vacuumDbResult && (
                       <div className={`mb-6 p-4 rounded-lg border ${vacuumDbResult.success ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
                         {vacuumDbResult.success ? (
@@ -13262,20 +14278,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
 
                   {/* Database Health Report */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className="flex-shrink-0 w-10 h-10 bg-emerald-500 rounded-lg flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Database Health Report</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                          Run a full health check: integrity, size, table row counts, and recommendations. One-click insight into your database.
-                        </p>
-                      </div>
                     </div>
+
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🧰</span> Database Health Report</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Run a full health check: integrity, size, table row counts, and recommendations. One-click insight into your database.
+                      </p>
+                    </div>
+                    <div className="p-6">
                     {healthResult && (
                       <div className={`mb-6 p-4 rounded-lg border ${healthResult.success ? (healthResult.health_status === 'good' ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800') : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
                         {healthResult.success ? (
@@ -13340,20 +14352,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
 
                   {/* SQLite RAM / Performance Health Check */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className="flex-shrink-0 w-10 h-10 bg-violet-500 rounded-lg flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
-                          <path d="M4.632 3.533A2 2 0 016.577 2h6.846a2 2 0 011.945 1.533l1.976 8.234A3.498 3.498 0 0017 11.5a3.5 3.5 0 01-3.5 3.5h-7A3.5 3.5 0 013 11.5c0-.864.312-1.654.832-2.268L4.632 3.533zM11.25 15.5a.75.75 0 00-1.5 0v.25a.75.75 0 001.5 0v-.25zm3.75-1.5a.75.75 0 01.75.75v.25a.75.75 0 01-1.5 0v-.25a.75.75 0 01.75-.75zm-9 0a.75.75 0 01.75.75v.25a.75.75 0 01-1.5 0v-.25a.75.75 0 01.75-.75z" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">SQLite RAM / Performance Check</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                          Verify SQLite version, page cache, mmap, WAL, and whether the database fits in memory for fast reads (commits still go to disk).
-                        </p>
-                      </div>
                     </div>
+
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🔬</span> SQLite RAM / Performance Check</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Verify SQLite version, page cache, mmap, WAL, and whether the database fits in memory for fast reads (commits still go to disk).
+                      </p>
+                    </div>
+                    <div className="p-6">
                     {sqliteRamResult && (
                       <div className={`mb-6 p-4 rounded-lg border ${
                         sqliteRamResult.success && sqliteRamResult.verdict?.ram_fast_reads
@@ -13470,20 +14478,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
 
                   {/* System Specs / Target Host Parity */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className="flex-shrink-0 w-10 h-10 bg-indigo-500 rounded-lg flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
-                          <path fillRule="evenodd" d="M4.25 2A2.25 2.25 0 002 4.25v11.5A2.25 2.25 0 004.25 18h11.5A2.25 2.25 0 0018 15.75V4.25A2.25 2.25 0 0015.75 2H4.25zM6 6.75A.75.75 0 016.75 6h6.5a.75.75 0 010 1.5h-6.5A.75.75 0 016 6.75zM6.75 9a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zM6 12.75a.75.75 0 01.75-.75h3.5a.75.75 0 010 1.5h-3.5a.75.75 0 01-.75-.75z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">System Specs Check</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                          Validate PHP, SQLite 3.53+, WAL/mmap/cache, writable dirs, and response cache against this known-good host so a target server can match the same specs.
-                        </p>
-                      </div>
                     </div>
+
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🔬</span> System Specs Check</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Validate PHP, SQLite 3.53+, WAL/mmap/cache, writable dirs, and response cache against this known-good host so a target server can match the same specs.
+                      </p>
+                    </div>
+                    <div className="p-6">
                     {systemSpecsResult && (
                       <div className={`mb-6 p-4 rounded-lg border ${
                         systemSpecsResult.success && systemSpecsResult.verdict?.ready_for_target_parity
@@ -13606,20 +14610,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
 
                   {/* PHP OPcache Status */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className="flex-shrink-0 w-10 h-10 bg-cyan-500 rounded-lg flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
-                          <path fillRule="evenodd" d="M4.5 2A1.5 1.5 0 003 3.5v13A1.5 1.5 0 004.5 18h11a1.5 1.5 0 001.5-1.5V7.621a1.5 1.5 0 00-.44-1.06l-4.12-4.122A1.5 1.5 0 0011.378 2H4.5zm2.25 8.5a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zm0 3a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">PHP OPcache Status</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                          View OPcache cache hits, misses, hit rate, memory usage, and configuration. Helps monitor PHP bytecode cache health.
-                        </p>
-                      </div>
                     </div>
+
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>✨</span> PHP OPcache Status</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        View OPcache cache hits, misses, hit rate, memory usage, and configuration. Helps monitor PHP bytecode cache health.
+                      </p>
+                    </div>
+                    <div className="p-6">
                     {opcacheResult && opcacheResult.success && opcacheResult.active && opcacheResult.statistics && (
                       <div className="mb-6 p-4 rounded-lg border bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700">
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
@@ -13693,20 +14693,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
 
                   {/* Tile & Link Statistics */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className="flex-shrink-0 w-10 h-10 bg-violet-500 rounded-lg flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
-                          <path d="M15.5 2A1.5 1.5 0 0014 3.5v13a1.5 1.5 0 001.5 1.5h1a1.5 1.5 0 001.5-1.5v-13A1.5 1.5 0 0016.5 2h-1zM9.5 6A1.5 1.5 0 008 7.5v9A1.5 1.5 0 009.5 18h1a1.5 1.5 0 001.5-1.5v-9A1.5 1.5 0 0010.5 6h-1zM3.5 10A1.5 1.5 0 002 11.5v5A1.5 1.5 0 003.5 18h1A1.5 1.5 0 006 16.5v-5A1.5 1.5 0 004.5 10h-1z" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Tile & Link Statistics</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                          See at a glance: total tiles, links, sections, tabs, users, and top categories. Filter by user or refresh for all.
-                        </p>
-                      </div>
                     </div>
+
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🧰</span> Tile & Link Statistics</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        See at a glance: total tiles, links, sections, tabs, users, and top categories. Filter by user or refresh for all.
+                      </p>
+                    </div>
+                    <div className="p-6">
                     <div className="mb-4 flex flex-wrap items-center gap-3">
                       <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Filter by user</label>
                       <select
@@ -13894,20 +14890,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
 
                   {/* Duplicate URLs Report */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className="flex-shrink-0 w-10 h-10 bg-rose-500 rounded-lg flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
-                          <path fillRule="evenodd" d="M4.5 2A2.5 2.5 0 002 4.5v3.879a2.5 2.5 0 00.732 1.767l7.5 7.5a2.5 2.5 0 003.536 0l3.878-3.878a2.5 2.5 0 000-3.536l-7.5-7.5A2.5 2.5 0 008.38 2H4.5zM8 6a.75.75 0 100-1.5.75.75 0 000 1.5z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Duplicate URLs Report</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                          Find links that share the same URL across your tiles. Helps spot redundant bookmarks and clean up. Read-only report.
-                        </p>
-                      </div>
                     </div>
+
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🧰</span> Duplicate URLs Report</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Find links that share the same URL across your tiles. Helps spot redundant bookmarks and clean up. Read-only report.
+                      </p>
+                    </div>
+                    <div className="p-6">
                     {dupUrlsResult && dupUrlsResult.success && (
                       <div className="mb-6 p-4 rounded-lg border bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700">
                         <div className="flex items-center gap-2 mb-3">
@@ -13976,19 +14968,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     </div>
                   </div>
                 </div>
+                </div>
               )}
 
               {/* Maintenance Tab - mode toggle only */}
               {activeTab === 'maintenance' && (
                 <div className="space-y-6 mt-6">
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Maintenance Mode</h3>
-                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
-                      Enable maintenance mode to restrict access to the application. Only administrators will be able to log in during maintenance mode.
-                    </p>
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🚧</span> Maintenance Mode</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Restrict access so only administrators can log in during maintenance.
+                      </p>
+                    </div>
+                    <div className="p-6">
 
                     <div className="space-y-6">
-                      <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg">
+                      <div className="flex items-center justify-between p-4 bg-sky-50/50 dark:bg-sky-950/20 border border-sky-100 dark:border-sky-900/40 rounded-xl">
                         <div className="flex-1">
                           <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-1">Maintenance Mode</h4>
                           <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -14021,7 +15017,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           }}
                           disabled={settingsSaving}
                           className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${(settings?.maintenance_enabled === '1' || settings?.maintenance_enabled === 'true')
-                            ? 'bg-brand-600'
+                            ? 'bg-sky-600'
                             : 'bg-slate-300 dark:bg-slate-600'
                             } ${settingsSaving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                           type="button"
@@ -14040,7 +15036,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         <textarea
                           value={maintenanceMessage}
                           onChange={(e) => setMaintenanceMessage(e.target.value)}
-                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                           placeholder="Enter a message to display to users during maintenance mode..."
                           rows={6}
                         />
@@ -14071,17 +15067,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             }
                           }}
                           disabled={settingsSaving}
-                          className="flex-1 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                          className={`flex-1 px-4 py-2.5 ${ADMIN_PRIMARY_BTN}`}
                         >
                           {settingsSaving ? 'Saving...' : 'Save Settings'}
                         </button>
                       </div>
                     </div>
+                    </div>
                   </div>
 
                   {/* Semi-PWA / Aggressive cache */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Semi-PWA (Aggressive cache)</h3>
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>📱</span> Semi-PWA (Aggressive cache)</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Serve app and API responses from the browser cache to reduce server load. Hard refresh fetches fresh data.
+                      </p>
+                    </div>
+                    <div className="p-6">
                     <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                       When enabled, the app and API responses are served from the browser cache. This reduces database and server load. Users see cached data until they perform a <strong>hard refresh</strong> (Ctrl+F5 / Cmd+Shift+R), which fetches fresh data and updates the cache.
                     </p>
@@ -14241,6 +15244,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     </div>
                   </div>
                 </div>
+                  </div>
               )}
 
               {/* Custom Widgets Tab */}
@@ -14253,15 +15257,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   )}
 
                   {/* Documentation Section */}
-                  <div className="bg-gradient-to-r from-brand-50 to-purple-50 dark:from-brand-900/20 dark:to-purple-900/20 border border-brand-200 dark:border-brand-800 rounded-xl p-6">
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🧩</span> Widget Development Guide</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>Learn how to create and integrate custom widgets into LinkNest.</p>
+                    </div>
+                    <div className="p-6">
                     <div className="flex items-start gap-4">
-                      <div className="flex-shrink-0 w-10 h-10 bg-brand-500 rounded-lg flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-6 h-6 text-white">
-                          <path d="M10.75 16.82A7.462 7.462 0 0115 15.5c.71 0 1.396.098 2.046.282A.75.75 0 0018 15.06v-11a.75.75 0 00-.546-.721A9.006 9.006 0 0015 3a8.963 8.963 0 00-4.25 1.065V16.82zM9.25 4.065A8.963 8.963 0 005 3c-.85 0-1.673.118-2.454.339A.75.75 0 002 4.06v11a.75.75 0 00.954.721A7.506 7.506 0 015 15.5c1.579 0 3.042.487 4.25 1.32V4.065z" />
-                        </svg>
+                      <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-sky-100 dark:bg-sky-900/50 text-sky-700 dark:text-sky-200 flex items-center justify-center text-xl" aria-hidden>
+                        📚
                       </div>
                       <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Widget Development Guide</h3>
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Quick reference</h3>
                         <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                           Learn how to create and integrate custom widgets into LinkNest. Follow the step-by-step guide to build your own widgets.
                         </p>
@@ -14309,7 +15316,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                               href={`${resolveDocsBase()}/docs/CUSTOM_WIDGETS_DEVELOPMENT.md`}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors"
+                              className={`inline-flex items-center gap-2 px-4 py-2 ${ADMIN_PRIMARY_BTN}`}
                             >
                               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                                 <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.5h-8.5a.75.75 0 000 1.5h8.5v8.5a.75.75 0 001.5 0v-8.5h8.5a.75.75 0 000-1.5h-8.5v-8.5z" />
@@ -14336,11 +15343,12 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     </div>
                   </div>
 
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-center justify-between mb-6">
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                    <div className="flex items-center justify-between gap-4 flex-wrap">
                       <div>
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Custom Widgets</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
+                        <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🧩</span> Custom Widgets</h3>
+                        <p className={ADMIN_SECTION_SUBTITLE}>
                           Manage custom widgets that can be assigned to roles. After creating a widget here, integrate it into App.tsx following the documentation above.
                         </p>
                       </div>
@@ -14361,14 +15369,14 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                           setError('');
                           setWidgetSuccessMessage('');
                         }}
-                        className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                        className={`px-4 py-2 ${ADMIN_PRIMARY_BTN} flex items-center gap-2`}
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                          <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
-                        </svg>
+                        <span aria-hidden>➕</span>
                         Add Widget
                       </button>
                     </div>
+                    </div>
+                    <div className="p-6">
 
                     {customWidgetsLoading ? (
                       <div className="flex items-center justify-center py-12">
@@ -14395,7 +15403,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                             });
                             setShowAddWidgetModal(true);
                           }}
-                          className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors"
+                          className={`px-4 py-2 ${ADMIN_PRIMARY_BTN}`}
                         >
                           Create Your First Widget
                         </button>
@@ -14465,8 +15473,10 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                         ))}
                       </div>
                     )}
+                    </div>
                   </div>
                 </div>
+                  </div>
               )}
 
               {/* Add-ons Tab */}
@@ -14478,13 +15488,17 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
 
               {activeTab === 'appUpdates' && (
                 <div className="mt-6 space-y-4">
-                  <div>
-                    <h2 className="text-xl font-semibold text-slate-900 dark:text-white">App Updates</h2>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                      Check GitHub Releases and apply updates in place (git checkout + rebuild, or download update ZIP).
-                    </p>
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🔔</span> App Updates</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Check GitHub Releases and apply updates in place (git checkout + rebuild, or download update ZIP).
+                      </p>
+                    </div>
+                    <div className="p-6">
+                      <UpdatesPanel />
+                    </div>
                   </div>
-                  <UpdatesPanel />
                 </div>
               )}
 
@@ -14492,7 +15506,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                 <div className="space-y-6 mt-6">
                   {loadTestOpenPrompt && loadTestMeta?.available !== false && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" role="dialog" aria-modal="true" aria-labelledby="load-test-open-title">
-                      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-700">
+                      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full p-6 border border-sky-200/70 dark:border-sky-800/40 shadow-sky-500/10">
                         <h3 id="load-test-open-title" className="text-lg font-bold text-slate-900 dark:text-white">
                           Open load test report?
                         </h3>
@@ -14524,13 +15538,14 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     </div>
                   )}
 
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                       <div>
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                          {(loadTestMeta?.appName || settings.app_name || 'Application')} Load Test Report
+                        <h3 className={ADMIN_SECTION_TITLE}>
+                          <span aria-hidden>📈</span> {(loadTestMeta?.appName || settings.app_name || 'Application')} Load Test Report
                         </h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1 max-w-3xl">
+                        <p className={ADMIN_SECTION_SUBTITLE}>
                           View the latest concurrent-user load test results for this application, including when the test was run and how to run it again.
                         </p>
                       </div>
@@ -14555,6 +15570,8 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                         </button>
                       </div>
                     </div>
+                    </div>
+                    <div className="p-6">
 
                     {loadTestMetaError && (
                       <div className="mt-4 p-3 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 text-sm text-red-800 dark:text-red-200">
@@ -14563,13 +15580,13 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     )}
 
                     <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-                      <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4">
+                      <div className="rounded-lg border border-sky-100 dark:border-sky-900/40 bg-sky-50/40 dark:bg-sky-950/20 p-4">
                         <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Test run date</div>
                         <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
                           {loadTestMeta?.testedAtDisplay || (loadTestMetaLoading ? 'Loading…' : 'Not available yet')}
                         </div>
                       </div>
-                      <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4">
+                      <div className="rounded-lg border border-sky-100 dark:border-sky-900/40 bg-sky-50/40 dark:bg-sky-950/20 p-4">
                         <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Report status</div>
                         <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
                           {loadTestMeta?.available
@@ -14577,23 +15594,24 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                             : 'No report generated'}
                         </div>
                       </div>
-                      <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4">
+                      <div className="rounded-lg border border-sky-100 dark:border-sky-900/40 bg-sky-50/40 dark:bg-sky-950/20 p-4">
                         <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Peak concurrent users</div>
                         <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
                           {loadTestMeta?.vus ?? '—'}
                         </div>
                       </div>
-                      <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4">
+                      <div className="rounded-lg border border-sky-100 dark:border-sky-900/40 bg-sky-50/40 dark:bg-sky-950/20 p-4">
                         <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Overall p95</div>
                         <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
                           {loadTestMeta?.p95 != null ? `${Math.round(loadTestMeta.p95).toLocaleString()} ms` : '—'}
                         </div>
                       </div>
                     </div>
+                    </div>
                   </div>
 
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <h4 className="text-base font-bold text-slate-900 dark:text-white mb-2">Run this load test again</h4>
+                  <div className={`${ADMIN_INNER_CARD}`}>
+                    <h4 className="text-base font-bold text-slate-900 dark:text-white mb-2"><span aria-hidden>🧪</span> Run this load test again</h4>
                     <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                       Use these steps on the server that hosts {(loadTestMeta?.appName || settings.app_name || 'the application')}.
                     </p>
@@ -14758,7 +15776,7 @@ node .\\load-tests\\generate-report.js`}
                         <strong>Bulk Import Local Users</strong>
                       </p>
                       <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
-                        Upload a CSV file with columns: username, email, password. The header row is optional and will be automatically skipped.
+                        Upload a CSV file with columns: username, email, password, notes (optional). The header row is optional and will be automatically skipped.
                       </p>
                     </div>
                     <div>
@@ -14769,7 +15787,7 @@ node .\\load-tests\\generate-report.js`}
                         <button
                           onClick={() => {
                             // Download CSV template
-                            const csvContent = 'username,email,password\njohn.doe,john.doe@localhost,SecurePassword123\njane.smith,jane.smith@localhost,SecurePassword456\nadmin.user,admin.user@localhost,SecurePassword789';
+                            const csvContent = 'username,email,password,notes\njohn.doe,john.doe@localhost,SecurePassword123!,Team lead for Ops — needs Finance and infrastructure spaces\njane.smith,jane.smith@localhost,SecurePassword456!,Designer on product team\nadmin.user,admin.user@localhost,SecurePassword789!,Temporary local admin for staging reviews';
                             const blob = new Blob([csvContent], { type: 'text/csv' });
                             const url = window.URL.createObjectURL(blob);
                             const a = document.createElement('a');
@@ -15195,6 +16213,22 @@ node .\\load-tests\\generate-report.js`}
                       </p>
                     )}
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Notes <span className="font-normal text-slate-500 dark:text-slate-400">(optional)</span>
+                    </label>
+                    <textarea
+                      value={addUserNotes}
+                      onChange={(e) => setAddUserNotes(e.target.value)}
+                      rows={3}
+                      maxLength={2000}
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 resize-y"
+                      placeholder="Short description of this person — role, team, or why they need access"
+                    />
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Helps admins understand who this user is (shown in the users list and Edit User).
+                    </p>
+                  </div>
                 </div>
               ) : addUserType === 'saml' ? (
                 <div className="space-y-4">
@@ -15203,7 +16237,7 @@ node .\\load-tests\\generate-report.js`}
                       <strong>SAML User Management</strong>
                     </p>
                     <p className="text-xs text-purple-700 dark:text-purple-400 mt-1">
-                      SAML users are typically created automatically when they sign in via SSO. Use the "Bulk Import" option above to manually import SAML users from a CSV file.
+                      SAML users are typically created automatically when they sign in via SSO. Use the "Bulk Import" option above to manually import SAML users from a CSV file. After a user exists, open <strong>Edit User</strong> to add notes describing their role, team, or access needs.
                     </p>
                   </div>
                 </div>
@@ -15306,6 +16340,23 @@ node .\\load-tests\\generate-report.js`}
                       <div className="text-xs text-slate-600 dark:text-slate-400">{selectedLdapUser.email || 'Email will be generated on add'}</div>
                     </div>
                   )}
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Notes <span className="font-normal text-slate-500 dark:text-slate-400">(optional)</span>
+                    </label>
+                    <textarea
+                      value={addUserNotes}
+                      onChange={(e) => setAddUserNotes(e.target.value)}
+                      rows={3}
+                      maxLength={2000}
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 resize-y"
+                      placeholder="Short description of this person — role, team, or why they need access"
+                    />
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Helps admins understand who this user is (shown in the users list and Edit User).
+                    </p>
+                  </div>
                 </div>
               )}
 
@@ -15467,7 +16518,8 @@ node .\\load-tests\\generate-report.js`}
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">Edit User</h2>
                 <button
                   onClick={() => {
-                    setEditUserModal({ open: false, userId: null, username: '', email: '', auth_source: 'local' });
+                    setEditUserModal({ open: false, userId: null, username: '', email: '', auth_source: 'local', notes: '' });
+                    setEditNotes('');
                     setEditUsername('');
                     setEditEmail('');
                     setEditAuthSource('local');
@@ -15533,6 +16585,20 @@ node .\\load-tests\\generate-report.js`}
                 </p>
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Notes <span className="font-normal text-slate-500 dark:text-slate-400">(optional)</span>
+                </label>
+                <textarea
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  rows={3}
+                  maxLength={2000}
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 resize-y"
+                  placeholder="Short description of this person — role, team, or why they need access"
+                />
+              </div>
+
               {editUserModal.userId === user?.id && editAuthSource === 'local' && (
                 <div className="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-3">
                   <div>
@@ -15544,7 +16610,8 @@ node .\\load-tests\\generate-report.js`}
                   <button
                     type="button"
                     onClick={() => {
-                      setEditUserModal({ open: false, userId: null, username: '', email: '', auth_source: 'local' });
+                      setEditUserModal({ open: false, userId: null, username: '', email: '', auth_source: 'local', notes: '' });
+                    setEditNotes('');
                       setEditUsername('');
                       setEditEmail('');
                       setEditAuthSource('local');
@@ -15561,7 +16628,8 @@ node .\\load-tests\\generate-report.js`}
               <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
                 <button
                   onClick={() => {
-                    setEditUserModal({ open: false, userId: null, username: '', email: '', auth_source: 'local' });
+                    setEditUserModal({ open: false, userId: null, username: '', email: '', auth_source: 'local', notes: '' });
+                    setEditNotes('');
                     setEditUsername('');
                     setEditEmail('');
                     setEditAuthSource('local');
@@ -15715,7 +16783,7 @@ node .\\load-tests\\generate-report.js`}
                 <button
                   onClick={() => {
                     setShowRoleModal(false);
-                    setRoleForm({ name: '', description: '' });
+                    setRoleForm({ name: '', description: '', isGuest: false });
                     setSelectedRole(null);
                     setError('');
                   }}
@@ -15761,11 +16829,28 @@ node .\\load-tests\\generate-report.js`}
                 />
               </div>
 
+              <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={roleForm.isGuest}
+                  onChange={(e) => setRoleForm({ ...roleForm, isGuest: e.target.checked })}
+                  className="mt-0.5 rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                />
+                <span>
+                  <span className="block text-sm font-medium text-slate-800 dark:text-slate-200">
+                    Apply to guests (not logged in)
+                  </span>
+                  <span className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Only one role can have this. Its widget permissions control what visitors see before they log in.
+                  </span>
+                </span>
+              </label>
+
               <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
                 <button
                   onClick={() => {
                     setShowRoleModal(false);
-                    setRoleForm({ name: '', description: '' });
+                    setRoleForm({ name: '', description: '', isGuest: false });
                     setSelectedRole(null);
                     setError('');
                   }}
@@ -15807,39 +16892,145 @@ node .\\load-tests\\generate-report.js`}
       />
 
       {/* Group Members Modal */}
-      <TeamMembersWizard
-        isOpen={showGroupMembersModal && !!selectedGroupId}
-        teamName={userGroups.find((g) => g.id === selectedGroupId)?.name}
-        members={groupMembers}
-        membersLoading={groupMembersLoading}
-        allUsers={allUsers}
-        selectedUserIds={selectedUsersToAdd}
-        onSelectedUserIdsChange={setSelectedUsersToAdd}
-        searchTerm={groupMembersSearchTerm}
-        onSearchTermChange={setGroupMembersSearchTerm}
-        error={error}
-        loading={addingMembersLoading || removingMembersLoading}
+      <TeamMembersModal
+        isOpen={showGroupMembersModal}
+        team={userGroups.find((g) => g.id === selectedGroupId) ?? null}
+        allUsers={allUsers.map((u) => ({ id: u.id, username: u.username, email: u.email || '' }))}
         onClose={closeGroupMembersModal}
-        onAddMembers={handleAddMembersToGroup}
-        onRemoveMembers={handleRemoveMembersFromGroupBatch}
+        onChanged={async () => {
+          await loadUserGroups();
+        }}
       />
 
       {/* Group Roles Modal */}
-      <TeamRolesWizard
-        isOpen={showGroupRolesModal && !!selectedGroupId}
-        teamName={userGroups.find((g) => g.id === selectedGroupId)?.name}
-        roles={roles}
-        rolesLoading={groupRolesLoading || rolesLoading}
-        selectedRoleIds={selectedRolesToAssign}
-        onSelectedRoleIdsChange={setSelectedRolesToAssign}
-        initialRoleIds={initialGroupRoleIds}
-        searchTerm={groupRolesSearchTerm}
-        onSearchTermChange={setGroupRolesSearchTerm}
-        error={error}
-        loading={assigningRolesLoading}
+      <TeamRolesModal
+        isOpen={showGroupRolesModal}
+        team={userGroups.find((g) => g.id === selectedGroupId) ?? null}
+        allRoles={roles}
         onClose={closeGroupRolesModal}
-        onSave={handleAssignRolesToGroup}
+        onChanged={async () => {
+          await Promise.all([loadUserGroups(), loadRoles()]);
+        }}
       />
+
+      {/* Role Configure Hub Modal */}
+      {showRoleConfigureModal && selectedRole && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-lg w-full overflow-hidden border border-slate-200 dark:border-slate-700">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                    Configure role
+                  </h2>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                    {selectedRole.name} — choose what this role can see
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRoleConfigureModal(false);
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                  aria-label="Close"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-3">
+              <button
+                type="button"
+                onClick={() => {
+                  const role = selectedRole;
+                  setShowRoleConfigureModal(false);
+                  handleEditRole(role);
+                }}
+                className="w-full text-left px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-brand-300 dark:hover:border-brand-600 hover:bg-brand-50/60 dark:hover:bg-brand-900/20 transition-colors"
+              >
+                <div className="font-semibold text-slate-900 dark:text-white">Name &amp; description</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Update this role’s display name and description
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const role = selectedRole;
+                  setShowRoleConfigureModal(false);
+                  void handleManageRoleTiles(role);
+                }}
+                className="w-full text-left px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-brand-300 dark:hover:border-brand-600 hover:bg-brand-50/60 dark:hover:bg-brand-900/20 transition-colors"
+              >
+                <div className="font-semibold text-slate-900 dark:text-white">Spaces &amp; links</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Choose which spaces and links people with this role can view
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const role = selectedRole;
+                  setShowRoleConfigureModal(false);
+                  void handleManageRoleTabs(role);
+                }}
+                className="w-full text-left px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-brand-300 dark:hover:border-brand-600 hover:bg-brand-50/60 dark:hover:bg-brand-900/20 transition-colors"
+              >
+                <div className="font-semibold text-slate-900 dark:text-white">App tabs</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Control which app navigation tabs this role can access
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const role = selectedRole;
+                  setShowRoleConfigureModal(false);
+                  void handleManageRoleWidgets(role);
+                }}
+                className="w-full text-left px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-brand-300 dark:hover:border-brand-600 hover:bg-brand-50/60 dark:hover:bg-brand-900/20 transition-colors"
+              >
+                <div className="font-semibold text-slate-900 dark:text-white">Widgets</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Choose which floating widgets this role can use
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const role = selectedRole;
+                  setShowRoleConfigureModal(false);
+                  void handleManageRoleLinkActions(role);
+                }}
+                className="w-full text-left px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-brand-300 dark:hover:border-brand-600 hover:bg-brand-50/60 dark:hover:bg-brand-900/20 transition-colors"
+              >
+                <div className="font-semibold text-slate-900 dark:text-white">Link actions</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Control which link hover buttons this role can use (notes, favorite, QR, mobile, and more)
+                </div>
+              </button>
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowRoleConfigureModal(false)}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Role Tiles Modal */}
       {showRoleTilesModal && selectedRole && (
@@ -16417,6 +17608,130 @@ node .\\load-tests\\generate-report.js`}
         </div>
       )}
 
+      {/* Role Link Actions Modal */}
+      {showRoleLinkActionsModal && selectedRole && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                  Link actions for: {selectedRole.name}
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowRoleLinkActionsModal(false);
+                    setSelectedLinkActionIds(new Set());
+                    setError('');
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {error && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
+              {roleLinkActionsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    Select link hover action buttons that users with this role can access.
+                    {selectedRole.isGuest
+                      ? ' This role is marked for guests, so these choices control the action bar for users who are not logged in.'
+                      : ''}
+                  </p>
+
+                  <div className="space-y-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30 p-4">
+                    {LINK_ACTION_OPTIONS.map((action) => (
+                      <label
+                        key={action.id}
+                        className="flex items-start gap-3 p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50 rounded-lg cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedLinkActionIds.has(action.id)}
+                          onChange={(e) => {
+                            const next = new Set(selectedLinkActionIds);
+                            if (e.target.checked) {
+                              next.add(action.id);
+                            } else {
+                              next.delete(action.id);
+                            }
+                            setSelectedLinkActionIds(next);
+                          }}
+                          className="mt-1 h-4 w-4 text-brand-600 focus:ring-brand-500 border-slate-300 rounded"
+                        />
+                        <div className="flex-1">
+                          <div className="text-sm font-medium text-slate-900 dark:text-white">
+                            {action.label}
+                          </div>
+                          <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                            {action.description}
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-700">
+                    <div className="text-sm text-slate-600 dark:text-slate-400">
+                      {selectedLinkActionIds.size} action{selectedLinkActionIds.size !== 1 ? 's' : ''} selected
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const allIds = LINK_ACTION_OPTIONS.map((a) => a.id);
+                        if (selectedLinkActionIds.size === allIds.length) {
+                          setSelectedLinkActionIds(new Set());
+                        } else {
+                          setSelectedLinkActionIds(new Set(allIds));
+                        }
+                      }}
+                      className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
+                    >
+                      {selectedLinkActionIds.size === LINK_ACTION_OPTIONS.length ? 'Deselect All' : 'Select All'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="flex gap-3 p-6 border-t border-slate-200 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRoleLinkActionsModal(false);
+                  setSelectedLinkActionIds(new Set());
+                  setError('');
+                }}
+                className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleAssignLinkActionsToRole}
+                disabled={roleLinkActionsLoading}
+                className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                Assign {selectedLinkActionIds.size > 0 ? `${selectedLinkActionIds.size} ` : ''}Action{selectedLinkActionIds.size !== 1 ? 's' : ''}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Role Tabs Modal */}
       {showRoleTabsModal && selectedRole && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -16665,6 +17980,37 @@ node .\\load-tests\\generate-report.js`}
           </div>
         </div>
       )}
+
+      <RoleMembersModal
+        isOpen={showRoleMembersModal}
+        role={roleMembersRole}
+        allUsers={allUsers.map((u) => ({ id: u.id, username: u.username, email: u.email || '' }))}
+        onClose={() => {
+          setShowRoleMembersModal(false);
+          setRoleMembersRole(null);
+        }}
+        onChanged={async () => {
+          await loadRoles();
+        }}
+      />
+
+      <RoleTeamsModal
+        isOpen={showRoleTeamsModal}
+        role={roleTeamsRole}
+        allTeams={userGroups.map((g) => ({
+          id: g.id,
+          name: g.name,
+          description: g.description,
+          memberCount: g.memberCount || 0,
+        }))}
+        onClose={() => {
+          setShowRoleTeamsModal(false);
+          setRoleTeamsRole(null);
+        }}
+        onChanged={async () => {
+          await Promise.all([loadRoles(), loadUserGroups()]);
+        }}
+      />
 
       {/* Bulk Assign Roles Modal */}
       <BulkAssignRolesModal
@@ -16962,6 +18308,44 @@ node .\\load-tests\\generate-report.js`}
             await loadPermissions();
           }
         }}
+        onTransferOwnership={async (newOwnerUserId, keepPreviousOwnerAsEditor) => {
+          if (!selectedPermissionForEdit) return;
+          const tileId = selectedPermissionForEdit.tileId;
+          await accessService.transferOwnership(tileId, newOwnerUserId, keepPreviousOwnerAsEditor);
+          setAllTiles(prev => prev.map(t =>
+            t.id === tileId ? { ...t, userId: newOwnerUserId } : t
+          ));
+          const tilePerms = await accessService.getTilePermissions(tileId);
+          const admins = tilePerms.permissions
+            .filter(perm => perm.canEdit)
+            .map(perm => ({
+              userId: perm.userId,
+              tileId,
+              canView: perm.canView,
+              canEdit: perm.canEdit,
+              canDelete: perm.canDelete,
+              canAddLinks: perm.canAddLinks,
+              canAddSections: perm.canAddSections,
+              canAddTabs: perm.canAddTabs,
+              canEditLinks: perm.canEditLinks,
+              canDeleteLinks: perm.canDeleteLinks,
+              canDeleteSections: perm.canDeleteSections,
+              canDeleteTabs: perm.canDeleteTabs,
+              canChangeVisibility: perm.canChangeVisibility,
+              canChangeBrowser: perm.canChangeBrowser,
+              canCloneTile: perm.canCloneTile,
+              canViewTileInfo: perm.canViewTileInfo,
+              createdAt: perm.createdAt,
+              updatedAt: perm.updatedAt,
+              username: perm.username,
+              email: perm.email,
+              tileTitle: allTiles.find(t => t.id === tileId)?.title || tileId
+            }));
+          setTileAdminsMap(prev => ({ ...prev, [tileId]: admins }));
+          await loadPermissions();
+          setShowGranularPermissionsModal(false);
+          setSelectedPermissionForEdit(null);
+        }}
         userName={selectedPermissionForEdit?.username || selectedPermissionForEdit?.email}
         tileTitle={selectedPermissionForEdit?.tileTitle || allTiles.find(t => t.id === selectedPermissionForEdit?.tileId)?.title}
         isOwner={(() => {
@@ -16972,6 +18356,8 @@ node .\\load-tests\\generate-report.js`}
           return userIdNum === selectedPermissionForEdit.userId;
         })()}
         tileOwnerId={allTiles.find(t => t.id === selectedPermissionForEdit?.tileId)?.userId}
+        isSystemAdmin={!!user?.is_admin}
+        availableUsers={allUsers.map(u => ({ id: u.id, username: u.username, email: u.email }))}
       />
 
       {/* User Actions Dialog */}
@@ -17159,6 +18545,49 @@ node .\\load-tests\\generate-report.js`}
                   )}
                 </div>
               )}
+
+              {/* Admin notes — editable in this dialog */}
+              <div className="rounded-xl border border-slate-200 dark:border-[#333] bg-slate-50/80 dark:bg-[#252525] p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-sm font-semibold text-slate-900 dark:text-white">
+                    Notes <span className="font-normal text-slate-500 dark:text-slate-400">(optional)</span>
+                  </label>
+                  {userActionsNotesSaved && !userActionsNotesError && (
+                    <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">Saved</span>
+                  )}
+                </div>
+                <textarea
+                  value={userActionsNotes}
+                  onChange={(e) => {
+                    setUserActionsNotes(e.target.value);
+                    setUserActionsNotesSaved(false);
+                    setUserActionsNotesError('');
+                  }}
+                  rows={3}
+                  maxLength={2000}
+                  className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 resize-y"
+                  placeholder="Short description of this person — role, team, or why they need access"
+                />
+                {userActionsNotesError && (
+                  <p className="text-xs text-red-600 dark:text-red-400">{userActionsNotesError}</p>
+                )}
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Visible to the user in their profile menu.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleSaveUserActionsNotes}
+                    disabled={
+                      userActionsNotesSaving ||
+                      userActionsNotes === (userActionsDialog.user.notes || '')
+                    }
+                    className="px-3 py-1.5 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors"
+                  >
+                    {userActionsNotesSaving ? 'Saving…' : 'Save Notes'}
+                  </button>
+                </div>
+              </div>
 
               <div className="space-y-2">
                 {/* Promote/Demote */}

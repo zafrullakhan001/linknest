@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { broadcastService, BroadcastMessage } from '../services/broadcastService';
 import { useMobile } from '../hooks/useMobile';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { BroadcastHistoryDialog } from './BroadcastHistoryDialog';
 
 const BROADCAST_DISMISS_KEY = 'linknest_broadcast_dismissed';
@@ -118,6 +119,8 @@ export const BroadcastBanner: React.FC = () => {
   const handleMessageClick = () => {
     setShowModal(true);
   };
+
+  useEscapeToClose(showModal, () => setShowModal(false));
 
   if (loading || !broadcast || dismissed) {
     return null;

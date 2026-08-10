@@ -8,6 +8,10 @@ services:
     ports:
       - "8090:80" # HTTP
       - "8443:443" # HTTPS
+      # ttyd SSH Terminal gateway (separate from host XAMPP 17681–18680)
+      - "18681-18780:18681-18780"
+      # websockify VNC Viewer gateway (separate from host XAMPP 19000–19999)
+      - "18881-18980:18881-18980"
     # No volume mounts - container is fully isolated with its own database and files
     # Timezone: set TZ in environment (default America/New_York). Do not bind-mount
     # /etc/localtime or /etc/timezone — those paths break on Windows Docker Desktop.
@@ -29,6 +33,18 @@ services:
       - LINKNEST_EMAIL_LIMIT=50
       # Disable duplicate suppression by default (send every transition)
       - LINKNEST_EMAIL_DEDUPE_WINDOW_SECONDS=0
+      # SSH Terminal ttyd listen range (must match published ports + apache-gateway-proxy.conf)
+      - SSH_GATEWAY_PORT_MIN=18681
+      - SSH_GATEWAY_PORT_MAX=18780
+      # VNC Viewer websockify listen range (must match published ports + apache-gateway-proxy.conf)
+      - VNC_GATEWAY_PORT_MIN=18881
+      - VNC_GATEWAY_PORT_MAX=18980
+      # SSH GUI (X11): point at VcXsrv on the Windows/macOS Docker host — not container localhost
+      - LINKNEST_DOCKER=1
+      - DISPLAY=host.docker.internal:0.0
+      - SSH_GATEWAY_X11_DISPLAY=host.docker.internal:0.0
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - mailpit
     restart: unless-stopped

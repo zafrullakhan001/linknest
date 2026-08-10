@@ -13,18 +13,33 @@
     in-app updater. Ships api/updater*.php, utils/, docs/APP_UPDATES.md, and
     scripts/publish-update-release.ps1.
 
+    PHP runtime upgrade (Windows XAMPP): ships scripts/upgrade-xampp-php.ps1,
+    scripts/upgrade-xampp-php-run-elevated.ps1, docs/XAMPP_PHP_UPGRADE.md, and a
+    root upgrade-xampp-php.bat launcher so the target can move to PHP 8.5+ (LDAP-gated).
+
+    Remote Windows deploy (SMB + elevated schtasks): ships
+    scripts/deploy-remote-xampp.ps1, scripts/harden-xampp-target.ps1,
+    deploy-remote-xampp.bat, and docs/OFFICE_WIN2022_DEPLOY.md. Optional packager
+    switches -RemoteHost / -RemoteUser / -RemoteMode push the new ZIP automatically.
+
     Default: FRESH install package (no live SQLite DB). The target PC creates
     a new database on first launch. Use -IncludeDatabase to mirror this PC's DB.
 
-    SQLite: ships runtime/sqlite/ (libsqlite3.dll 3.53.4) plus install-sqlite-xampp.bat.
-    deploy/update scripts install that DLL into the target XAMPP PHP folder so
-    performance pragmas in api/config.php (WAL, mmap, cache, worker threads) take effect.
+    SQLite: ships runtime/sqlite/ (libsqlite3.dll 3.53.4) plus install-sqlite-xampp.bat
+    and scripts/install-sqlite-xampp.ps1. Deploy enables extension=sqlite3 / pdo_sqlite in
+    php.ini (fixes "Class SQLite3 not found" on minimal XAMPP) and upgrades libsqlite3.dll
+    so performance pragmas in api/config.php (WAL, mmap, cache, worker threads) take effect.
 
     Specs: api/system_specs_check.php (Admin -> Maintenance Scripts -> System Specs Check)
     validates that the target matches this packager host (PHP/SQLite/dirs/cache).
 
     Showcase: bundles load-tests/ including results/report.html + last-summary.json from
     this host so the target can open the performance report for reference.
+
+    Remote widgets: bundles bin/ (ttyd.exe / ttyd.x86_64, run-websockify*, vendored
+    websockify under bin/python-packages) so SSH Easy + VNC Easy work on the target
+    after Python 3 is installed. Runs scripts/install-websockify.ps1 when packages
+    are missing (unless -SkipRemoteRuntime).
 .PARAMETER SkipBuild
     Skip the npm build step (use existing dist/). Not recommended when shipping code changes.
 .PARAMETER IncludeDatabase
@@ -33,35 +48,76 @@
     Do not include the uploads/ directory in the package.
 .PARAMETER SkipSqliteRuntime
     Do not bundle/download SQLite 3.53.4 DLL for XAMPP (not recommended).
+.PARAMETER SkipRemoteRuntime
+    Do not vendor/bundle bin/ ttyd + websockify (SSH/VNC Easy gateways will need manual install on target).
 .PARAMETER OutputDir
     Where to save the final ZIP. Defaults to the project root.
 .PARAMETER BasePath
     Vite base path baked into the frontend. Default: /linknest
+.PARAMETER RemoteHost
+    After packaging, push the ZIP to this Windows host via SMB + scheduled task.
+.PARAMETER RemoteUser
+    Remote Windows admin user (default Administrator). Password prompted if -RemotePassword omitted.
+.PARAMETER RemotePassword
+    Optional plain-text password for -RemoteHost (prefer omit + prompt).
+.PARAMETER RemoteMode
+    Fresh or Update when -RemoteHost is set. Default Fresh.
+.PARAMETER IncludeXamppRuntime
+    With -RemoteHost: also mirror local Apache+PHP to the remote (empty XAMPP hosts).
+.PARAMETER RemoteShare
+    Admin share for remote copy (default C$).
+.PARAMETER SkipRemoteDeploy
+    Ignore -RemoteHost (package only).
+.PARAMETER AppOnly
+    Lean application ZIP only: dist/api/vendor + deploy/update helpers.
+    Skips SQLite DLL runtime, ttyd/websockify bin/, PHP upgrade tools, remote-push
+    helpers, load-test showcase, and source-specs snapshot. Use for simple
+    extract-and-run updates when the target XAMPP/PHP/SQLite is already ready.
 .EXAMPLE
     .\package-for-deployment.ps1
     .\package-for-deployment.ps1 -IncludeDatabase
     .\package-for-deployment.ps1 -BasePath "/myapp"
     .\package-for-deployment.ps1 -OutputDir "E:\"
     .\package-for-deployment.ps1 -SkipSqliteRuntime
+    .\package-for-deployment.ps1 -SkipRemoteRuntime
+    .\package-for-deployment.ps1 -AppOnly
+    .\package-for-deployment.ps1 -AppOnly -IncludeDatabase -BasePath "/link2"
+    .\package-for-deployment.ps1 -RemoteHost 192.168.0.197 -RemoteUser administrator -RemoteMode Fresh
+    .\package-for-deployment.ps1 -IncludeDatabase -RemoteHost 192.168.0.197 -IncludeXamppRuntime
 #>
 param(
     [switch]$SkipBuild,
     [switch]$IncludeDatabase,
     [switch]$ExcludeUploads,
     [switch]$SkipSqliteRuntime,
+    [switch]$SkipRemoteRuntime,
+    [switch]$AppOnly,
     [string]$OutputDir = "",
-    [string]$BasePath = "/linknest"
+    [string]$BasePath = "/linknest",
+    [string]$RemoteHost = "",
+    [string]$RemoteUser = "Administrator",
+    [string]$RemotePassword = "",
+    [ValidateSet("Fresh", "Update")][string]$RemoteMode = "Fresh",
+    [switch]$IncludeXamppRuntime,
+    [string]$RemoteShare = "C$",
+    [switch]$SkipRemoteDeploy
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+# -AppOnly implies the lean skips (target already has PHP/SQLite/ttyd as needed)
+if ($AppOnly) {
+    $SkipSqliteRuntime = $true
+    $SkipRemoteRuntime = $true
+}
 
 # ---------------------------------------------------------------------------
 #  Paths
 # ---------------------------------------------------------------------------
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-$PackageName = "linknest-deploy-$Timestamp"
+$PackageName = if ($AppOnly) { "linknest-app-$Timestamp" } else { "linknest-deploy-$Timestamp" }
 $TempDir = Join-Path $env:TEMP $PackageName
 $BuildId = $Timestamp
 
@@ -75,6 +131,11 @@ $SourceSpecsSnapshot = $null
 $SourceSpecsReady = $false
 $LoadTestReportBundled = $false
 $LoadTestReportRel = $null
+$RemoteRuntimeBundled = $false
+$TtydWinBundled = $false
+$TtydLinuxBundled = $false
+$WebsockifyBundled = $false
+$WebsockifyLauncherBundled = $false
 
 # Normalize base path: /linknest (no trailing slash)
 $BasePath = "/" + ($BasePath.Trim().Trim("/").Replace("\", "/"))
@@ -127,19 +188,41 @@ function Copy-TreeReliable {
         [string[]]$ExcludeFiles = @()
     )
     Ensure-Dir $Destination
-    $roboArgs = @($Source, $Destination, "/E", "/NFL", "/NDL", "/NJH", "/NJS", "/nc", "/ns", "/np")
+    # Quote every arg so names with spaces (e.g. "data - Copy") are not split.
+    # Start-Process -ArgumentList is unreliable for that; call robocopy directly.
+    $roboArgs = @(
+        $Source,
+        $Destination,
+        "/E", "/NFL", "/NDL", "/NJH", "/NJS", "/nc", "/ns", "/np"
+    )
     if ($ExcludeDirs.Count -gt 0) {
         $roboArgs += "/XD"
-        $roboArgs += $ExcludeDirs
+        foreach ($xd in $ExcludeDirs) {
+            if ($null -ne $xd -and "$xd".Trim() -ne "") {
+                $roboArgs += "$xd"
+            }
+        }
     }
     if ($ExcludeFiles.Count -gt 0) {
         $roboArgs += "/XF"
-        $roboArgs += $ExcludeFiles
+        foreach ($xf in $ExcludeFiles) {
+            if ($null -ne $xf -and "$xf".Trim() -ne "") {
+                $roboArgs += "$xf"
+            }
+        }
     }
-    $proc = Start-Process -FilePath "robocopy.exe" -ArgumentList $roboArgs -Wait -PassThru -NoNewWindow
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & robocopy.exe @roboArgs | Out-Null
+        $exitCode = [int]$LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $prevEap
+    }
     # Robocopy: 0-7 = success / no-op; >= 8 = failure
-    if ($proc.ExitCode -ge 8) {
-        throw "robocopy failed for '$Source' -> '$Destination' (exit $($proc.ExitCode))"
+    if ($exitCode -ge 8) {
+        throw "robocopy failed for '$Source' -> '$Destination' (exit $exitCode)"
     }
     $fileCount = @(Get-ChildItem -LiteralPath $Destination -Recurse -File -ErrorAction SilentlyContinue).Count
     if ($fileCount -lt 1) {
@@ -190,12 +273,15 @@ try {
 Write-Host "  Project Root : $ProjectRoot" -ForegroundColor Gray
 Write-Host "  Package Name : $PackageName" -ForegroundColor Gray
 Write-Host "  App Version  : $pkgVersion" -ForegroundColor Gray
+Write-Host "  Mode         : $(if ($AppOnly) { 'APP-ONLY (lean ZIP, no SQLite/ttyd/PHP-upgrade extras)' } else { 'FULL deploy package' })" -ForegroundColor Gray
 Write-Host "  Base Path    : $(if ($BasePath) { $BasePath } else { '/' })" -ForegroundColor Gray
 Write-Host "  Build ID     : $BuildId" -ForegroundColor Gray
 Write-Host "  Database     : $(if ($IncludeDatabase) { 'INCLUDE live DB from this PC' } else { 'FRESH (no live DB - recommended)' })" -ForegroundColor Gray
 Write-Host "  Uploads      : $(if ($ExcludeUploads) { 'excluded' } else { 'included' })" -ForegroundColor Gray
 Write-Host "  SQLite DLL   : $(if ($SkipSqliteRuntime) { 'SKIPPED' } else { "bundle $SqliteTargetVersion for target XAMPP" })" -ForegroundColor Gray
-Write-Host "  Load report  : load-tests/results/report.html (if present)" -ForegroundColor Gray
+Write-Host "  Remote bin/  : $(if ($SkipRemoteRuntime) { 'SKIPPED' } else { 'ttyd + websockify for SSH/VNC Easy' })" -ForegroundColor Gray
+Write-Host "  Remote push  : $(if ($RemoteHost -and -not $SkipRemoteDeploy) { "$RemoteMode -> $RemoteHost (user=$RemoteUser)" } else { 'off (package only)' })" -ForegroundColor Gray
+Write-Host "  Load report  : $(if ($AppOnly) { 'skipped (-AppOnly)' } else { 'load-tests/results/report.html (if present)' })" -ForegroundColor Gray
 Write-Host "  Output ZIP   : $ZipOutput"   -ForegroundColor Gray
 Write-Host ""
 
@@ -232,6 +318,11 @@ if ($phpVer) {
 # ---------------------------------------------------------------------------
 #  0b. Capture source-host system specs (known-good baseline for target)
 # ---------------------------------------------------------------------------
+if ($AppOnly) {
+    Write-Header "0b / Source System Specs Snapshot"
+    Write-Warn "Skipping SOURCE_SPECS snapshot (-AppOnly lean package)"
+}
+else {
 Write-Header "0b / Source System Specs Snapshot"
 
 $specsScript = Join-Path $ProjectRoot "api\system_specs_check.php"
@@ -289,6 +380,7 @@ if ($phpVer) {
 else {
     Write-Warn "Skipped live specs snapshot (php unavailable)"
 }
+} # end if (-not $AppOnly) specs snapshot
 
 # ---------------------------------------------------------------------------
 #  1. Build frontend (always clean unless SkipBuild)
@@ -411,11 +503,12 @@ $DirsToInclude = @(
     "src",
     "analytics",
     "monitorv2",
-    "docker",
-    "land",
     "vendor",   # OneLogin php-saml (+ xmlseclibs) required for SAML 2.0
-    "load-tests"  # k6 harness + showcase report (results/report.html)
+    "land"      # Required by index.html (browser-launcher-integration.js) for vite builds
 )
+if (-not $AppOnly) {
+    $DirsToInclude += @("docker", "load-tests")
+}
 
 $FilesToInclude = @(
     "index.html",
@@ -506,32 +599,36 @@ foreach ($file in $FilesToInclude) {
 Write-OK ("{0} root files copied ({1} skipped)" -f $copiedFiles, $skippedFiles)
 
 # Confirm showcase load-test report was copied (results/ is gitignored locally but must ship)
-Write-Step "Checking load-test showcase report..."
-$ltReportSrc = Join-Path $ProjectRoot "load-tests\results\report.html"
-$ltReportDst = Join-Path $TempDir "load-tests\results\report.html"
-$ltSummarySrc = Join-Path $ProjectRoot "load-tests\results\last-summary.json"
-if (Test-Path $ltReportSrc) {
-    if (-not (Test-Path $ltReportDst)) {
-        Ensure-Dir (Join-Path $TempDir "load-tests\results")
-        Copy-Item -Path $ltReportSrc -Destination $ltReportDst -Force
-        if (Test-Path $ltSummarySrc) {
-            Copy-Item -Path $ltSummarySrc -Destination (Join-Path $TempDir "load-tests\results\last-summary.json") -Force
-        }
-        foreach ($extra in @("meta.json", "smoke-summary.json")) {
-            $es = Join-Path $ProjectRoot "load-tests\results\$extra"
-            if (Test-Path $es) {
-                Copy-Item -Path $es -Destination (Join-Path $TempDir "load-tests\results\$extra") -Force
+if ($AppOnly) {
+    Write-Warn "AppOnly: skipping load-test showcase report"
+} else {
+    Write-Step "Checking load-test showcase report..."
+    $ltReportSrc = Join-Path $ProjectRoot "load-tests\results\report.html"
+    $ltReportDst = Join-Path $TempDir "load-tests\results\report.html"
+    $ltSummarySrc = Join-Path $ProjectRoot "load-tests\results\last-summary.json"
+    if (Test-Path $ltReportSrc) {
+        if (-not (Test-Path $ltReportDst)) {
+            Ensure-Dir (Join-Path $TempDir "load-tests\results")
+            Copy-Item -Path $ltReportSrc -Destination $ltReportDst -Force
+            if (Test-Path $ltSummarySrc) {
+                Copy-Item -Path $ltSummarySrc -Destination (Join-Path $TempDir "load-tests\results\last-summary.json") -Force
+            }
+            foreach ($extra in @("meta.json", "smoke-summary.json")) {
+                $es = Join-Path $ProjectRoot "load-tests\results\$extra"
+                if (Test-Path $es) {
+                    Copy-Item -Path $es -Destination (Join-Path $TempDir "load-tests\results\$extra") -Force
+                }
             }
         }
+        $LoadTestReportBundled = $true
+        $LoadTestReportRel = "load-tests/results/report.html"
+        $reportKB = [math]::Round((Get-Item $ltReportDst).Length / 1KB, 1)
+        Write-OK ("Load-test report bundled ({0} KB) - open on target for showcase" -f $reportKB)
     }
-    $LoadTestReportBundled = $true
-    $LoadTestReportRel = "load-tests/results/report.html"
-    $reportKB = [math]::Round((Get-Item $ltReportDst).Length / 1KB, 1)
-    Write-OK ("Load-test report bundled ({0} KB) - open on target for showcase" -f $reportKB)
-}
-else {
-    Write-Warn "load-tests/results/report.html not found on this PC - package will ship harness without showcase report"
-    Write-Warn "Generate first: .\\load-tests\\run.ps1 then node load-tests/generate-report.js"
+    else {
+        Write-Warn "load-tests/results/report.html not found on this PC - package will ship harness without showcase report"
+        Write-Warn "Generate first: .\\load-tests\\run.ps1 then node load-tests/generate-report.js"
+    }
 }
 
 # Strip machine-local / secret configs that must NEVER ship
@@ -750,6 +847,7 @@ else {
             "Build ID: $BuildId"
             ''
             'Install on target with install-sqlite-xampp.bat (also run by deploy/update scripts).'
+            'Enables extension=sqlite3 + extension=pdo_sqlite in php.ini (fixes "Class SQLite3 not found").'
             'Replaces %XAMPP%\php\libsqlite3.dll so PHP PDO/SQLite3 use this version.'
             'LinkNest api/config.php then applies WAL, mmap 256MB, 32MB cache, 4 worker threads.'
         ) -join [Environment]::NewLine
@@ -804,9 +902,317 @@ if (Test-Path $scriptsSrc) {
     else {
         Write-Warn "scripts/publish-update-release.ps1 missing (re-check scripts/ on packager host)"
     }
+    $installWs = Join-Path $scriptsDst "install-websockify.ps1"
+    if (-not $AppOnly) {
+        if (Test-Path $installWs) {
+            Write-OK "scripts/install-websockify.ps1 present"
+        }
+        else {
+            Write-Warn "scripts/install-websockify.ps1 missing (target can still pip-install websockify manually)"
+        }
+    }
+    $hardenPs1 = Join-Path $scriptsDst "harden-xampp-target.ps1"
+    if (Test-Path $hardenPs1) {
+        $hardenRaw = Get-Content -LiteralPath $hardenPs1 -Raw -ErrorAction SilentlyContinue
+        if ($null -eq $hardenRaw) { $hardenRaw = "" }
+        # Guard: old harden required api/config.php and ran migrations during deploy.
+        $hasDirectSqlite = $hardenRaw.Contains("direct SQLite, no migrations")
+        $hasLegacySetSetting = $hardenRaw.Contains("setSetting('ssh_gateway_ttyd_path'")
+        $hasLegacyRequire = $hardenRaw.Contains("api/config.php") -and $hasLegacySetSetting
+        if ($hasDirectSqlite -and -not $hasLegacySetSetting) {
+            Write-OK "scripts/harden-xampp-target.ps1 present (direct SQLite gateway paths, no deploy migrations)"
+        }
+        elseif ($hasLegacyRequire) {
+            Write-Err "scripts/harden-xampp-target.ps1 is outdated: it loads api/config.php to save ttyd paths (runs DB migrations during deploy)."
+            Write-Err "Update scripts/harden-xampp-target.ps1 to the direct-SQLite version, then re-run packaging."
+            Read-Host "Press Enter to exit"
+            exit 1
+        }
+        else {
+            Write-OK "scripts/harden-xampp-target.ps1 present"
+        }
+    }
+    else {
+        Write-Err "scripts/harden-xampp-target.ps1 missing (required by deploy-xampp.bat / update-xampp.bat)"
+        Read-Host "Press Enter to exit"
+        exit 1
+    }
+    if (-not $AppOnly) {
+        $phpUpgradePs1 = Join-Path $scriptsDst "upgrade-xampp-php.ps1"
+        $phpUpgradeElevated = Join-Path $scriptsDst "upgrade-xampp-php-run-elevated.ps1"
+        if ((Test-Path $phpUpgradePs1) -and (Test-Path $phpUpgradeElevated)) {
+            Write-OK "scripts/upgrade-xampp-php.ps1 + upgrade-xampp-php-run-elevated.ps1 present"
+        }
+        else {
+            Write-Warn "PHP upgrade scripts missing under scripts/ (expected upgrade-xampp-php.ps1 + upgrade-xampp-php-run-elevated.ps1)"
+        }
+        $sqliteInstallPs1 = Join-Path $scriptsDst "install-sqlite-xampp.ps1"
+        if (Test-Path $sqliteInstallPs1) {
+            Write-OK "scripts/install-sqlite-xampp.ps1 present"
+        }
+        else {
+            Write-Warn "scripts/install-sqlite-xampp.ps1 missing (deploy will not enable sqlite3 in php.ini)"
+        }
+        $remoteDeployPs1 = Join-Path $scriptsDst "deploy-remote-xampp.ps1"
+        $ensureTtydPs1 = Join-Path $scriptsDst "ensure-ttyd-runtime.ps1"
+        if (Test-Path $remoteDeployPs1) {
+            Write-OK "scripts/deploy-remote-xampp.ps1 present"
+        }
+        else {
+            Write-Warn "scripts/deploy-remote-xampp.ps1 missing (remote SMB deploy launcher incomplete)"
+        }
+        if (Test-Path $ensureTtydPs1) {
+            Write-OK "scripts/ensure-ttyd-runtime.ps1 present"
+        }
+        else {
+            Write-Warn "scripts/ensure-ttyd-runtime.ps1 missing (packager may not auto-download ttyd)"
+        }
+    }
+    else {
+        # Lean package: drop host-upgrade / remote-widget tooling from scripts/
+        $pruneScripts = @(
+            "upgrade-xampp-php.ps1",
+            "upgrade-xampp-php-run-elevated.ps1",
+            "install-sqlite-xampp.ps1",
+            "ensure-ttyd-runtime.ps1",
+            "deploy-remote-xampp.ps1",
+            "install-websockify.ps1",
+            "fix-apache-php-curl.ps1",
+            "fix-apache-php-curl-run-elevated.ps1"
+        )
+        foreach ($rel in $pruneScripts) {
+            $p = Join-Path $scriptsDst $rel
+            if (Test-Path $p) {
+                Remove-Item $p -Force -ErrorAction SilentlyContinue
+            }
+        }
+        Write-OK "AppOnly: pruned SQLite/ttyd/PHP-upgrade helper scripts from package"
+
+        $docsDst = Join-Path $TempDir "docs"
+        if (Test-Path $docsDst) {
+            $pruneDocs = @(
+                "XAMPP_PHP_UPGRADE.md",
+                "OFFICE_WIN2022_DEPLOY.md",
+                "REMOTE_WIDGETS_SETUP.md"
+            )
+            foreach ($rel in $pruneDocs) {
+                $p = Join-Path $docsDst $rel
+                if (Test-Path $p) {
+                    Remove-Item $p -Force -ErrorAction SilentlyContinue
+                }
+            }
+            Write-OK "AppOnly: pruned PHP-upgrade / remote-deploy / widgets docs"
+        }
+    }
 }
 else {
     Write-Warn "scripts/ not found, skipping"
+}
+
+# ---------------------------------------------------------------------------
+#  7a. Bundle remote-widget runtime (bin/: ttyd + websockify)
+# ---------------------------------------------------------------------------
+Write-Header "7a / Remote Widget Runtime (bin/)"
+
+$binSrc = Join-Path $ProjectRoot "bin"
+$binDst = Join-Path $TempDir "bin"
+
+if ($SkipRemoteRuntime) {
+    Write-Warn $(if ($AppOnly) { "AppOnly: skipping bin/ttyd + websockify" } else { "Skipping remote widget runtime (-SkipRemoteRuntime)" })
+    Ensure-Dir $binDst
+    Ensure-Dir (Join-Path $binDst "python-packages")
+    $skipMsg = if ($AppOnly) {
+        "App-only package: ttyd/websockify not included. Target must already have SSH/VNC gateways if those widgets are used."
+    } else {
+        "Remote runtime (ttyd/websockify) was not packaged. Install on target per docs/REMOTE_WIDGETS_SETUP.md."
+    }
+    Set-Content -Path (Join-Path $binDst "SKIPPED.txt") -Value $skipMsg -Encoding ASCII
+}
+else {
+    Ensure-Dir $binSrc
+    Ensure-Dir (Join-Path $binSrc "python-packages")
+
+    # Auto-vendor ttyd Windows + Linux binaries (required for SSH Easy)
+    $ensureTtyd = Join-Path $ProjectRoot "scripts\ensure-ttyd-runtime.ps1"
+    if (Test-Path $ensureTtyd) {
+        Write-Step "Ensuring bin/ttyd.exe + bin/ttyd.x86_64 (download if missing)..."
+        try {
+            & $ensureTtyd -ProjectRoot $ProjectRoot -FailIfMissing
+            Write-OK "ttyd runtime ensured"
+        }
+        catch {
+            Write-Err ("ttyd ensure failed: {0}" -f $_.Exception.Message)
+            Write-Err "SSH Easy requires bin/ttyd.exe. Re-run with network access or place the binary manually."
+            Read-Host "Press Enter to exit"
+            exit 1
+        }
+    }
+    else {
+        Write-Warn "scripts/ensure-ttyd-runtime.ps1 missing - relying on existing bin/ttyd*"
+    }
+
+    # Vendor websockify into bin/python-packages if missing (needs Python on packager host)
+    $wsMarker = Join-Path $binSrc "python-packages\websockify"
+    $wsPy = Join-Path $binSrc "python-packages\websockify\__main__.py"
+    $wsInstalled = (Test-Path $wsMarker) -or (Test-Path $wsPy)
+    if (-not $wsInstalled) {
+        $installScript = Join-Path $ProjectRoot "scripts\install-websockify.ps1"
+        Write-Step "websockify not found under bin/python-packages - attempting install..."
+        $pythonOk = $false
+        try {
+            $pyVer = & python --version 2>&1
+            if ($LASTEXITCODE -eq 0 -or "$pyVer" -match "Python") { $pythonOk = $true }
+        } catch { }
+        if (-not $pythonOk) {
+            try {
+                $pyVer = & py -3 --version 2>&1
+                if ("$pyVer" -match "Python") { $pythonOk = $true }
+            } catch { }
+        }
+        if ($pythonOk -and (Test-Path $installScript)) {
+            try {
+                & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installScript
+                $wsInstalled = (Test-Path $wsMarker) -or (Test-Path $wsPy)
+                if ($wsInstalled) {
+                    Write-OK "websockify vendored into bin/python-packages"
+                }
+                else {
+                    Write-Warn "install-websockify.ps1 finished but websockify still missing"
+                }
+            }
+            catch {
+                Write-Warn ("websockify install failed: {0}" -f $_.Exception.Message)
+            }
+        }
+        else {
+            Write-Warn "Python 3 or scripts/install-websockify.ps1 unavailable - package will ship without vendored websockify"
+            Write-Warn "On target: powershell -File scripts/install-websockify.ps1"
+        }
+    }
+    else {
+        Write-OK "websockify already present under bin/python-packages"
+    }
+
+    # Ensure launcher stubs exist even if packager host never created them
+    $runCmdSrc = Join-Path $binSrc "run-websockify.cmd"
+    $runShSrc = Join-Path $binSrc "run-websockify"
+    if (-not (Test-Path $runCmdSrc)) {
+        $runCmdBody = @'
+@echo off
+REM LinkNest VNC gateway launcher — runs vendored websockify via system Python.
+setlocal
+set "ROOT=%~dp0.."
+set "PACKAGES=%~dp0python-packages"
+set "PYTHONPATH=%PACKAGES%;%PYTHONPATH%"
+
+if defined VNC_GATEWAY_PYTHON (
+  "%VNC_GATEWAY_PYTHON%" -m websockify %*
+  exit /b %ERRORLEVEL%
+)
+
+if exist "C:\Program Files\Python312\python.exe" (
+  "C:\Program Files\Python312\python.exe" -m websockify %*
+  exit /b %ERRORLEVEL%
+)
+if exist "C:\Program Files\Python311\python.exe" (
+  "C:\Program Files\Python311\python.exe" -m websockify %*
+  exit /b %ERRORLEVEL%
+)
+where python >nul 2>&1 && (
+  python -m websockify %*
+  exit /b %ERRORLEVEL%
+)
+where py >nul 2>&1 && (
+  py -3 -m websockify %*
+  exit /b %ERRORLEVEL%
+)
+
+echo websockify launcher: Python not found. Install Python 3 and run: python -m pip install --target="%PACKAGES%" websockify 1>&2
+exit /b 1
+'@
+        Set-Content -Path $runCmdSrc -Value $runCmdBody -Encoding ASCII
+        Write-OK "Created bin/run-websockify.cmd"
+    }
+    if (-not (Test-Path $runShSrc)) {
+        $runShBody = @'
+#!/usr/bin/env bash
+# LinkNest VNC gateway launcher — runs vendored websockify via system Python.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PACKAGES="$(cd "$(dirname "$0")" && pwd)/python-packages"
+export PYTHONPATH="${PACKAGES}${PYTHONPATH:+:$PYTHONPATH}"
+if [[ -n "${VNC_GATEWAY_PYTHON:-}" ]]; then
+  exec "$VNC_GATEWAY_PYTHON" -m websockify "$@"
+fi
+if command -v python3 >/dev/null 2>&1; then
+  exec python3 -m websockify "$@"
+fi
+if command -v python >/dev/null 2>&1; then
+  exec python -m websockify "$@"
+fi
+echo "websockify launcher: Python not found. Install Python 3 and: pip install --target=\"$PACKAGES\" websockify" >&2
+exit 1
+'@
+        Set-Content -Path $runShSrc -Value $runShBody -Encoding UTF8
+        Write-OK "Created bin/run-websockify"
+    }
+
+    Write-Step "Copying bin/ (ttyd, websockify launchers, python-packages)..."
+    $copiedBin = Copy-TreeReliable -Source $binSrc -Destination $binDst `
+        -ExcludeDirs @("__pycache__", ".git", "node_modules") `
+        -ExcludeFiles @("*.pyc", "*.pyo")
+    Write-OK ("bin/ copied ({0} files)" -f $copiedBin)
+
+    $TtydWinBundled = Test-Path (Join-Path $binDst "ttyd.exe")
+    $TtydLinuxBundled = (Test-Path (Join-Path $binDst "ttyd.x86_64")) -or (Test-Path (Join-Path $binDst "ttyd"))
+    $WebsockifyLauncherBundled = (Test-Path (Join-Path $binDst "run-websockify.cmd")) -or (Test-Path (Join-Path $binDst "run-websockify"))
+    $WebsockifyBundled = (Test-Path (Join-Path $binDst "python-packages\websockify")) -or `
+        (Test-Path (Join-Path $binDst "python-packages\websockify\__main__.py"))
+
+    if ($TtydWinBundled) { Write-OK "bin/ttyd.exe bundled (SSH Easy on Windows)" }
+    else {
+        Write-Err "bin/ttyd.exe missing after ensure step - aborting package"
+        Read-Host "Press Enter to exit"
+        exit 1
+    }
+
+    if ($TtydLinuxBundled) { Write-OK "bin/ttyd (Linux) bundled" }
+    else { Write-Warn "bin/ttyd.x86_64 missing (needed for Linux/Docker SSH Easy)" }
+
+    if ($WebsockifyLauncherBundled) { Write-OK "bin/run-websockify* launcher bundled" }
+    else { Write-Warn "bin/run-websockify* missing" }
+
+    if ($WebsockifyBundled) {
+        $wsFiles = @(Get-ChildItem (Join-Path $binDst "python-packages") -Recurse -File -ErrorAction SilentlyContinue)
+        $wsMB = [math]::Round((($wsFiles | Measure-Object Length -Sum).Sum / 1MB), 2)
+        Write-OK ("bin/python-packages websockify bundled ({0} files, {1} MB)" -f $wsFiles.Count, $wsMB)
+    }
+    else {
+        Write-Warn "bin/python-packages/websockify missing - VNC Easy needs scripts/install-websockify.ps1 on target"
+    }
+
+    $RemoteRuntimeBundled = $TtydWinBundled -or $TtydLinuxBundled -or $WebsockifyBundled -or $WebsockifyLauncherBundled
+
+    $remoteReadme = @(
+        "LinkNest remote widget runtime (SSH Terminal + VNC Viewer Easy modes)"
+        "Packaged: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+        "Build ID: $BuildId"
+        ""
+        "Included:"
+        "  ttyd.exe (Windows)     : $(if ($TtydWinBundled) { 'YES' } else { 'NO' })"
+        "  ttyd Linux binary     : $(if ($TtydLinuxBundled) { 'YES' } else { 'NO' })"
+        "  run-websockify*       : $(if ($WebsockifyLauncherBundled) { 'YES' } else { 'NO' })"
+        "  python-packages/websockify : $(if ($WebsockifyBundled) { 'YES' } else { 'NO' })"
+        ""
+        "Target requirements:"
+        "  - SSH Easy: OpenSSH Client (Windows Optional Features)"
+        "  - VNC Easy: Python 3 on PATH (uses vendored websockify above)"
+        "  - See docs/REMOTE_WIDGETS_SETUP.md"
+        ""
+        "If websockify is missing after deploy:"
+        "  powershell -File scripts/install-websockify.ps1"
+    ) -join [Environment]::NewLine
+    Set-Content -Path (Join-Path $binDst "README.txt") -Value $remoteReadme -Encoding ASCII
+    Write-OK "bin/README.txt written"
 }
 
 # ---------------------------------------------------------------------------
@@ -879,6 +1285,38 @@ $buildInfo = [ordered]@{
     }
     loadTestReport = $loadTestReportInfo
     sourceSpecsReady = [bool]$SourceSpecsReady
+    remoteWidgets = @{
+        bundled = [bool]$RemoteRuntimeBundled
+        ttydWindows = [bool]$TtydWinBundled
+        ttydLinux = [bool]$TtydLinuxBundled
+        websockifyPackages = [bool]$WebsockifyBundled
+        websockifyLauncher = [bool]$WebsockifyLauncherBundled
+        docs = 'docs/REMOTE_WIDGETS_SETUP.md'
+        installScript = 'scripts/install-websockify.ps1'
+        binReadme = 'bin/README.txt'
+        targetNeeds = @(
+            'OpenSSH Client (SSH Easy)',
+            'Python 3 on PATH (VNC Easy uses bin/python-packages)'
+        )
+        adminUi = 'Admin -> Add-ons -> SSH Gateway / VNC Gateway'
+    }
+    packageMode = $(if ($AppOnly) { 'app-only' } else { 'full' })
+    phpUpgrade = $(if ($AppOnly) {
+        @{
+            enabled = $false
+            note = 'Omitted from -AppOnly package; upgrade PHP on the target separately if needed.'
+        }
+    } else {
+        @{
+            enabled = $true
+            launcher = 'upgrade-xampp-php.bat'
+            script = 'scripts/upgrade-xampp-php.ps1'
+            elevatedLauncher = 'scripts/upgrade-xampp-php-run-elevated.ps1'
+            docs = 'docs/XAMPP_PHP_UPGRADE.md'
+            recommended = 'PHP 8.5+ Thread Safe x64 (LDAP hard-gated)'
+            note = 'Run elevated on target when Apache2.4 is a Windows service. Backs up C:\xampp\php to php-backup-*'
+        }
+    })
     indexAsset  = $indexAsset
     indexSha12  = $indexHash
     jsAssetCount = $assetJs.Count
@@ -916,6 +1354,15 @@ if ($null -ne $SourceSpecsSnapshot) {
                     'api/updater_apply_cli.php'
                 )
             }
+            phpUpgrade = @{
+                launcher = 'upgrade-xampp-php.bat'
+                scripts = @(
+                    'scripts/upgrade-xampp-php.ps1',
+                    'scripts/upgrade-xampp-php-run-elevated.ps1'
+                )
+                docs = 'docs/XAMPP_PHP_UPGRADE.md'
+                recommended = 'PHP 8.5+ Thread Safe x64'
+            }
         }
         Set-Content -Path (Join-Path $TempDir "TARGET_REQUIREMENTS.json") -Value ($targetOnly | ConvertTo-Json -Depth 8) -Encoding UTF8
         Write-OK "SOURCE_SPECS.json + TARGET_REQUIREMENTS.json written"
@@ -946,8 +1393,134 @@ Write-OK ".env written for target base path (no secrets copied from this PC)"
 Write-Header "8 / Generating Deployment Files"
 
 $basePathForBat = if ($BasePath) { $BasePath.TrimStart("/") } else { "linknest" }
+$hardenBlock = if ($AppOnly) {
+    @(
+        "echo.",
+        "echo  App-only package: skipping XAMPP php.ini / Apache harden ^(target PHP left as-is^)."
+    ) -join "`r`n"
+} else {
+    @(
+        "echo.",
+        "echo  Hardening XAMPP target ^(tmp/ACLs/curl/sqlite/OPcache + ttyd path; no DB migrations^)...",
+        "if exist `"%INSTALL_DIR%\scripts\harden-xampp-target.ps1`" (",
+        "    powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%INSTALL_DIR%\scripts\harden-xampp-target.ps1`" -XamppRoot `"%XAMPP_ROOT%`" -InstallDir `"%INSTALL_DIR%`" -RestartApache",
+        ") else if exist `"%PKG_DIR%\scripts\harden-xampp-target.ps1`" (",
+        "    powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%PKG_DIR%\scripts\harden-xampp-target.ps1`" -XamppRoot `"%XAMPP_ROOT%`" -InstallDir `"%INSTALL_DIR%`" -RestartApache",
+        ") else (",
+        "    echo  [!!] harden-xampp-target.ps1 missing - create %XAMPP_ROOT%\tmp manually if sessions fail",
+        ")"
+    ) -join "`r`n"
+}
+
+$hardenBlockUpdate = if ($AppOnly) {
+    @(
+        "echo.",
+        "echo  App-only package: skipping XAMPP php.ini / Apache harden ^(target PHP left as-is^)."
+    ) -join "`r`n"
+} else {
+    @(
+        "echo.",
+        "echo  Hardening XAMPP target ^(tmp/ACLs/curl/sqlite/OPcache + ttyd path; no DB migrations^)...",
+        "if exist `"%INSTALL_DIR%\scripts\harden-xampp-target.ps1`" (",
+        "    powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%INSTALL_DIR%\scripts\harden-xampp-target.ps1`" -XamppRoot `"%XAMPP_ROOT%`" -InstallDir `"%INSTALL_DIR%`" -RestartApache",
+        ") else if exist `"%PKG_DIR%\scripts\harden-xampp-target.ps1`" (",
+        "    powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%PKG_DIR%\scripts\harden-xampp-target.ps1`" -XamppRoot `"%XAMPP_ROOT%`" -InstallDir `"%INSTALL_DIR%`" -RestartApache",
+        ") else (",
+        "    echo  [!!] harden-xampp-target.ps1 missing",
+        ")"
+    ) -join "`r`n"
+}
+
 $dbModeNote = if ($IncludeDatabase) { "includes live DB from packager PC" } else { "FRESH database on first launch" }
-$sqliteShipNote = if ($SqliteRuntimeBundled) { "SQLite $SqliteVersionShipped bundled for XAMPP PHP" } else { "SQLite runtime not bundled" }
+$sqliteShipNote = if ($SqliteRuntimeBundled) {
+    "SQLite $SqliteVersionShipped bundled for XAMPP PHP"
+} elseif ($AppOnly) {
+    "App-only package (uses existing XAMPP SQLite)"
+} else {
+    "SQLite runtime not bundled"
+}
+$sqliteSkipMsg = if ($AppOnly) {
+    "echo  [OK] App-only package - leaving target XAMPP SQLite as-is"
+} else {
+    "echo  [!!] install-sqlite-xampp.bat missing - skip SQLite DLL upgrade"
+}
+$sqliteInstallBlock = if ($AppOnly) {
+    @(
+        "echo.",
+        "echo  App-only package: skipping SQLite DLL upgrade ^(uses existing PHP SQLite^)."
+    ) -join "`r`n"
+} else {
+    @(
+        "echo.",
+        "echo  Upgrading XAMPP PHP SQLite to __SQLITE_TARGET__ (recommended)...",
+        "if exist `"%PKG_DIR%\install-sqlite-xampp.bat`" (",
+        "    call `"%PKG_DIR%\install-sqlite-xampp.bat`" `"%XAMPP_ROOT%`" quiet",
+        "    if errorlevel 1 (",
+        "        echo.",
+        "        echo  [XX] SQLite install failed - LinkNest will not work until SQLite3 is enabled.",
+        "        echo  Fix: run install-sqlite-xampp.bat as Administrator from the ZIP folder.",
+        "        echo  Or edit %XAMPP_ROOT%\php\php.ini and uncomment:",
+        "        echo    extension=pdo_sqlite",
+        "        echo    extension=sqlite3",
+        "        echo  Then restart Apache.",
+        "        echo.",
+        "    )",
+        ") else (",
+        "    $sqliteSkipMsg",
+        ")"
+    ) -join "`r`n"
+}
+$sqliteInstallBlockUpdate = if ($AppOnly) {
+    @(
+        "echo.",
+        "echo  App-only package: skipping SQLite DLL upgrade ^(uses existing PHP SQLite^)."
+    ) -join "`r`n"
+} else {
+    @(
+        "echo.",
+        "echo  Upgrading XAMPP PHP SQLite to __SQLITE_TARGET__ ...",
+        "if exist `"%PKG_DIR%\install-sqlite-xampp.bat`" (",
+        "    call `"%PKG_DIR%\install-sqlite-xampp.bat`" `"%XAMPP_ROOT%`" quiet",
+        "    if errorlevel 1 (",
+        "        echo.",
+        "        echo  [XX] SQLite install failed - LinkNest will not work until SQLite3 is enabled.",
+        "        echo  Fix: run install-sqlite-xampp.bat as Administrator from the ZIP folder.",
+        "        echo  Or edit %XAMPP_ROOT%\php\php.ini and uncomment:",
+        "        echo    extension=pdo_sqlite",
+        "        echo    extension=sqlite3",
+        "        echo  Then restart Apache.",
+        "        echo.",
+        "    )",
+        ") else (",
+        "    $sqliteSkipMsg",
+        ")"
+    ) -join "`r`n"
+}
+$postDeployTips = if ($AppOnly) {
+    @(
+        "echo  8. Docs: docs\APP_UPDATES.md"
+    ) -join "`r`n"
+} else {
+    @(
+        "echo  9. Showcase: open load-tests\results\report.html in a browser ^(packager host load-test report^)",
+        "echo  10. Optional PHP 8.5+: run upgrade-xampp-php.bat ^(elevated^) - see docs\XAMPP_PHP_UPGRADE.md",
+        "echo  11. Remote Windows push next time: deploy-remote-xampp.bat -ComputerName HOST -ZipPath ^<zip^>",
+        "echo  12. Office guide: docs\OFFICE_WIN2022_DEPLOY.md"
+    ) -join "`r`n"
+}
+$postUpdateTips = if ($AppOnly) {
+    @(
+        "echo  Tip: restart Apache from XAMPP Control Panel if the UI looks stale.",
+        "echo  App-only package: PHP / SQLite / ttyd on the target were not changed by this ZIP."
+    ) -join "`r`n"
+} else {
+    @(
+        "echo  Tip: restart Apache if PHP still serves oddly stale code.",
+        "echo  Confirm SQLite: `"%XAMPP_ROOT%\php\php.exe`" -r `"echo SQLite3::version()['versionString'];`"",
+        "echo  Then: Admin -^> Maintenance Scripts -^> System Specs Check",
+        "echo  Remote push helper: deploy-remote-xampp.bat  ^|  docs\OFFICE_WIN2022_DEPLOY.md"
+    ) -join "`r`n"
+}
 
 # -- install-sqlite-xampp.bat (upgrade target XAMPP PHP SQLite DLL) ---------
 $installSqliteBat = @'
@@ -955,7 +1528,9 @@ $installSqliteBat = @'
 setlocal enabledelayedexpansion
 REM ==========================================================
 REM  LinkNest - Install SQLite __SQLITE_TARGET__ into XAMPP PHP
-REM  Replaces php\libsqlite3.dll (backed up first). Needs Admin.
+REM  1) Enables extension=sqlite3 + pdo_sqlite in php.ini
+REM  2) Replaces php\libsqlite3.dll (backed up first)
+REM  Needs Admin. Calls scripts\install-sqlite-xampp.ps1
 REM ==========================================================
 echo.
 echo  =============================================
@@ -967,7 +1542,7 @@ echo.
 
 net session >nul 2>&1
 if errorlevel 1 (
-    echo  Administrator rights required to replace PHP SQLite DLL.
+    echo  Administrator rights required to update php.ini / replace PHP SQLite DLL.
     echo  Re-launching elevated...
     powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -ArgumentList '%*' -Verb RunAs -Wait"
     exit /b %ERRORLEVEL%
@@ -975,14 +1550,19 @@ if errorlevel 1 (
 
 set "PKG_DIR=%~dp0"
 if "%PKG_DIR:~-1%"=="\" set "PKG_DIR=%PKG_DIR:~0,-1%"
+set "PS1=%PKG_DIR%\scripts\install-sqlite-xampp.ps1"
 set "SRC_DLL=%PKG_DIR%\runtime\sqlite\libsqlite3.dll"
 if not exist "%SRC_DLL%" set "SRC_DLL=%PKG_DIR%\runtime\sqlite\sqlite3.dll"
 
-if /i "%~2"=="quiet" set "LINKNEST_SQLITE_QUIET=1"
+set "LINKNEST_SQLITE_QUIET="
+set "XAMPP_ROOT="
 if /i "%~1"=="quiet" (
     set "LINKNEST_SQLITE_QUIET=1"
     set "XAMPP_ROOT=C:\xampp"
+) else if not "%~1"=="" (
+    set "XAMPP_ROOT=%~1"
 )
+if /i "%~2"=="quiet" set "LINKNEST_SQLITE_QUIET=1"
 
 if not exist "%SRC_DLL%" (
     echo  ERROR: runtime\sqlite\libsqlite3.dll not found in this package.
@@ -991,7 +1571,13 @@ if not exist "%SRC_DLL%" (
     exit /b 1
 )
 
-if /i not "%~1"=="quiet" if not "%~1"=="" set "XAMPP_ROOT=%~1"
+if not exist "%PS1%" (
+    echo  ERROR: scripts\install-sqlite-xampp.ps1 missing from this package.
+    echo  Re-run package-for-deployment.bat on the source PC.
+    pause
+    exit /b 1
+)
+
 if "%XAMPP_ROOT%"=="" (
     set "XAMPP_ROOT=C:\xampp"
     set /p "XAMPP_ROOT=XAMPP install path (press Enter for C:\xampp): "
@@ -1007,51 +1593,34 @@ if not exist "%PHP_DIR%\php.exe" (
 
 echo  XAMPP PHP : %PHP_DIR%
 echo  Source DLL: %SRC_DLL%
+echo  Script    : %PS1%
 echo.
 
 echo  Current SQLite (before):
-"%PHP_DIR%\php.exe" -r "echo '  PHP SQLite: '.SQLite3::version()['versionString'].PHP_EOL;" 2>nul
+"%PHP_DIR%\php.exe" -m 2>nul | findstr /i /c:"sqlite3" /c:"pdo_sqlite"
+if errorlevel 1 echo   [!!] sqlite3 / pdo_sqlite NOT in php -m  (will enable in php.ini)
 echo.
 
-echo  Stopping Apache so the DLL can be replaced...
-net stop Apache2.4 >nul 2>&1
-taskkill /F /IM httpd.exe >nul 2>&1
-timeout /t 2 /nobreak >nul
-
-set "DEST=%PHP_DIR%\libsqlite3.dll"
-set "DEST2=%PHP_DIR%\windowsXamppPhp\libsqlite3.dll"
-set "BACKUP=%PHP_DIR%\libsqlite3.dll.bak-before-linknest"
-
-if exist "%DEST%" (
-    if not exist "%BACKUP%" copy /Y "%DEST%" "%BACKUP%" >nul
-    echo  [OK] Backup: %BACKUP%
-)
-
-copy /Y "%SRC_DLL%" "%DEST%" >nul
-if errorlevel 1 (
-    echo  ERROR: Could not write %DEST%
-    net start Apache2.4 >nul 2>&1
-    pause
-    exit /b 1
-)
-echo  [OK] Installed %DEST%
-
-if exist "%PHP_DIR%\windowsXamppPhp" (
-    copy /Y "%SRC_DLL%" "%DEST2%" >nul 2>&1
-    copy /Y "%SRC_DLL%" "%PHP_DIR%\sqlite3.dll" >nul 2>&1
-    echo  [OK] Also updated windowsXamppPhp copy / sqlite3.dll
+if "%LINKNEST_SQLITE_QUIET%"=="1" (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS1%" -XamppRoot "%XAMPP_ROOT%" -SourceDll "%SRC_DLL%" -PackageDir "%PKG_DIR%" -Quiet
 ) else (
-    copy /Y "%SRC_DLL%" "%PHP_DIR%\sqlite3.dll" >nul 2>&1
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS1%" -XamppRoot "%XAMPP_ROOT%" -SourceDll "%SRC_DLL%" -PackageDir "%PKG_DIR%"
+)
+set "RC=%ERRORLEVEL%"
+
+if not "%RC%"=="0" (
+    echo.
+    echo  [XX] SQLite install/repair failed ^(exit %RC%^).
+    echo  Common fix on minimal XAMPP: enable these in %PHP_DIR%\php.ini
+    echo    extension=pdo_sqlite
+    echo    extension=sqlite3
+    echo  Or run upgrade-xampp-php.bat ^(elevated^) - see docs\XAMPP_PHP_UPGRADE.md
+    echo.
+    if "%LINKNEST_SQLITE_QUIET%"=="1" exit /b %RC%
+    pause
+    exit /b %RC%
 )
 
-echo  Starting Apache...
-net start Apache2.4 >nul 2>&1
-
-echo.
-echo  SQLite after upgrade:
-"%PHP_DIR%\php.exe" -r "echo '  PHP SQLite: '.SQLite3::version()['versionString'].PHP_EOL; $p=new PDO('sqlite::memory:'); echo '  PDO SQLite: '.$p->query('select sqlite_version()')->fetchColumn().PHP_EOL;" 2>nul
-echo.
-echo  LinkNest performance pragmas (WAL / mmap / cache / threads) apply on next API request.
 echo.
 if "%LINKNEST_SQLITE_QUIET%"=="1" exit /b 0
 pause
@@ -1191,12 +1760,9 @@ if /i NOT "%SUBFOLDER%"=="__BASE_PATH_FOR_BAT__" (
 )
 
 echo.
-echo  Upgrading XAMPP PHP SQLite to __SQLITE_TARGET__ (recommended)...
-if exist "%PKG_DIR%\install-sqlite-xampp.bat" (
-    call "%PKG_DIR%\install-sqlite-xampp.bat" "%XAMPP_ROOT%" quiet
-) else (
-    echo  [!!] install-sqlite-xampp.bat missing - skip SQLite DLL upgrade
-)
+__SQLITE_INSTALL_BLOCK__
+
+__HARDEN_BLOCK__
 
 echo.
 echo  =============================================
@@ -1210,15 +1776,24 @@ echo  3. Open: http://localhost/%SUBFOLDER%
 echo  4. Hard refresh once ^(Ctrl+F5^) if you still see an old UI
 echo  5. Confirm build: http://localhost/%SUBFOLDER%/BUILD_INFO.json
 echo  6. Default login: admin / admin123 - change it immediately
-echo  7. Confirm SQLite: "%XAMPP_ROOT%\php\php.exe" -r "echo SQLite3::version()['versionString'];"
-echo  8. Admin -^> Maintenance Scripts -^> System Specs Check ^(must match SOURCE_SPECS.json / TARGET_REQUIREMENTS.json^)
-echo  9. Showcase: open load-tests\results\report.html in a browser ^(packager host load-test report^)
+__POST_DEPLOY_CORE__
+__POST_DEPLOY_TIPS__
 echo.
 echo  Tip: run verify-install.bat from the extracted ZIP if anything looks wrong.
 echo.
 pause
 '@
-$deployBat = $deployBat.Replace('__BUILD_ID__', $BuildId).Replace('__PKG_VERSION__', $pkgVersion).Replace('__DB_MODE_NOTE__', $dbModeNote).Replace('__SQLITE_SHIP_NOTE__', $sqliteShipNote).Replace('__BASE_PATH_FOR_BAT__', $basePathForBat).Replace('__SQLITE_TARGET__', $SqliteTargetVersion)
+$postDeployCore = if ($AppOnly) {
+    @(
+        "echo  7. App-only: existing PHP/SQLite on this host are unchanged"
+    ) -join "`r`n"
+} else {
+    @(
+        "echo  7. Confirm SQLite: `"%XAMPP_ROOT%\php\php.exe`" -r `"echo SQLite3::version()['versionString'];`"",
+        "echo  8. Admin -^> Maintenance Scripts -^> System Specs Check ^(must match SOURCE_SPECS.json / TARGET_REQUIREMENTS.json^)"
+    ) -join "`r`n"
+}
+$deployBat = $deployBat.Replace('__BUILD_ID__', $BuildId).Replace('__PKG_VERSION__', $pkgVersion).Replace('__DB_MODE_NOTE__', $dbModeNote).Replace('__SQLITE_SHIP_NOTE__', $sqliteShipNote).Replace('__BASE_PATH_FOR_BAT__', $basePathForBat).Replace('__SQLITE_TARGET__', $SqliteTargetVersion).Replace('__SQLITE_INSTALL_BLOCK__', $sqliteInstallBlock).Replace('__HARDEN_BLOCK__', $hardenBlock).Replace('__POST_DEPLOY_CORE__', $postDeployCore).Replace('__POST_DEPLOY_TIPS__', $postDeployTips)
 
 # -- update-xampp.bat (KEEP data/uploads - recommended for upgrades) -------
 $updateBat = @'
@@ -1291,6 +1866,8 @@ if exist "%INSTALL_DIR%\uploads" (
 echo  Wiping old dist/ so stale hashed assets cannot remain ...
 if exist "%INSTALL_DIR%\dist" rd /s /q "%INSTALL_DIR%\dist"
 if exist "%INSTALL_DIR%\vendor" rd /s /q "%INSTALL_DIR%\vendor"
+if exist "%INSTALL_DIR%\bin" rd /s /q "%INSTALL_DIR%\bin"
+if exist "%INSTALL_DIR%\runtime" rd /s /q "%INSTALL_DIR%\runtime"
 
 echo  Copying updated application files (excluding deploy helpers)...
 xcopy "%PKG_DIR%\*" "%INSTALL_DIR%\" /E /I /Y /Q >nul
@@ -1322,12 +1899,9 @@ echo VITE_API_BASE=/%SUBFOLDER%/api
 if not exist "%INSTALL_DIR%\logs" mkdir "%INSTALL_DIR%\logs"
 
 echo.
-echo  Upgrading XAMPP PHP SQLite to __SQLITE_TARGET__ ...
-if exist "%PKG_DIR%\install-sqlite-xampp.bat" (
-    call "%PKG_DIR%\install-sqlite-xampp.bat" "%XAMPP_ROOT%" quiet
-) else (
-    echo  [!!] install-sqlite-xampp.bat missing - skip SQLite DLL upgrade
-)
+__SQLITE_INSTALL_BLOCK__
+
+__HARDEN_BLOCK__
 
 echo.
 echo  =============================================
@@ -1341,17 +1915,40 @@ echo.
 echo  If Semi-PWA is enabled, do ONE hard refresh (Ctrl+F5)
 echo  so the service worker picks up the new cache version.
 echo.
-echo  Tip: restart Apache if PHP still serves oddly stale code.
-echo  Confirm SQLite: "%XAMPP_ROOT%\php\php.exe" -r "echo SQLite3::version()['versionString'];"
-echo  Then: Admin -^> Maintenance Scripts -^> System Specs Check
+__POST_UPDATE_TIPS__
 echo.
 pause
 '@
-$updateBat = $updateBat.Replace('__BUILD_ID__', $BuildId).Replace('__PKG_VERSION__', $pkgVersion).Replace('__SQLITE_SHIP_NOTE__', $sqliteShipNote).Replace('__BASE_PATH_FOR_BAT__', $basePathForBat).Replace('__SQLITE_TARGET__', $SqliteTargetVersion)
+$updateBat = $updateBat.Replace('__BUILD_ID__', $BuildId).Replace('__PKG_VERSION__', $pkgVersion).Replace('__SQLITE_SHIP_NOTE__', $sqliteShipNote).Replace('__BASE_PATH_FOR_BAT__', $basePathForBat).Replace('__SQLITE_TARGET__', $SqliteTargetVersion).Replace('__SQLITE_INSTALL_BLOCK__', $sqliteInstallBlockUpdate).Replace('__HARDEN_BLOCK__', $hardenBlockUpdate).Replace('__POST_UPDATE_TIPS__', $postUpdateTips)
 
 # -- verify-install.bat (quick health check against an install OR this ZIP) -
 $verifySqliteChecks = if ($SqliteRuntimeBundled) {
-    "    `"runtime\sqlite\libsqlite3.dll`"`r`n    `"install-sqlite-xampp.bat`""
+    "    `"runtime\sqlite\libsqlite3.dll`"`r`n    `"install-sqlite-xampp.bat`"`r`n    `"scripts\install-sqlite-xampp.ps1`""
+} else {
+    ''
+}
+$verifyRemoteChecks = if (-not $SkipRemoteRuntime) {
+    @(
+        '    "bin\run-websockify.cmd"',
+        '    "bin\run-websockify"',
+        '    "docs\REMOTE_WIDGETS_SETUP.md"',
+        '    "scripts\install-websockify.ps1"',
+        '    "api\vnc_gateway.php"',
+        '    "api\ssh_gateway.php"'
+    ) -join "`r`n"
+} else {
+    ''
+}
+$verifyExtraChecks = if (-not $AppOnly) {
+    @(
+        '    "docs\XAMPP_PHP_UPGRADE.md"',
+        '    "docs\OFFICE_WIN2022_DEPLOY.md"',
+        '    "scripts\upgrade-xampp-php.ps1"',
+        '    "scripts\upgrade-xampp-php-run-elevated.ps1"',
+        '    "scripts\deploy-remote-xampp.ps1"',
+        '    "upgrade-xampp-php.bat"',
+        '    "deploy-remote-xampp.bat"'
+    ) -join "`r`n"
 } else {
     ''
 }
@@ -1393,9 +1990,12 @@ for %%F in (
     "utils\releaseNotesMarkdown.ts"
     "docs\APP_UPDATES.md"
     "scripts\publish-update-release.ps1"
+    "scripts\harden-xampp-target.ps1"
     "components\UpdatesDialog.tsx"
     "services\updaterService.ts"
+__VERIFY_EXTRA_CHECKS__
 __VERIFY_SQLITE_CHECKS__
+__VERIFY_REMOTE_CHECKS__
 ) do (
     if exist "!TARGET!\%%~F" (
         echo  [OK] %%~F
@@ -1415,16 +2015,19 @@ if exist "!TARGET!\TARGET_REQUIREMENTS.json" (
     echo  [OK] TARGET_REQUIREMENTS.json
 )
 
-if exist "!TARGET!\load-tests\results\report.html" (
-    echo  [OK] load-tests\results\report.html ^(showcase report^)
-) else (
-    echo  [!!] load-tests\results\report.html missing ^(showcase report not packaged^)
-)
+__VERIFY_OPTIONAL_BLOCK__
 
 if exist "!TARGET!\runtime\sqlite\SQLITE_VERSION.txt" (
     echo.
     echo  --- SQLite runtime ---
     type "!TARGET!\runtime\sqlite\SQLITE_VERSION.txt"
+    echo.
+)
+
+if exist "!TARGET!\bin\README.txt" (
+    echo.
+    echo  --- Remote widget runtime ---
+    type "!TARGET!\bin\README.txt"
     echo.
 )
 
@@ -1445,7 +2048,42 @@ if "!FAIL!"=="1" (
     exit /b 0
 )
 '@
-$verifyBat = $verifyBat.Replace('__BUILD_ID__', $BuildId).Replace('__VERIFY_SQLITE_CHECKS__', $verifySqliteChecks)
+$verifyOptionalBlock = if ($AppOnly) {
+    @(
+        'echo  [OK] App-only package: SQLite runtime / ttyd / PHP-upgrade extras intentionally omitted'
+    ) -join "`r`n"
+} else {
+    @(
+        'if exist "!TARGET!\load-tests\results\report.html" (',
+        '    echo  [OK] load-tests\results\report.html ^(showcase report^)',
+        ') else (',
+        '    echo  [!!] load-tests\results\report.html missing ^(showcase report not packaged^)',
+        ')',
+        '',
+        'if exist "!TARGET!\bin\ttyd.exe" (',
+        '    echo  [OK] bin\ttyd.exe ^(SSH Easy Windows^)',
+        ') else (',
+        '    echo  [XX] bin\ttyd.exe MISSING ^(required for SSH Easy — re-run package-for-deployment.bat^)',
+        '    set "FAIL=1"',
+        ')',
+        'if exist "!TARGET!\scripts\ensure-ttyd-runtime.ps1" (',
+        '    echo  [OK] scripts\ensure-ttyd-runtime.ps1',
+        ') else (',
+        '    echo  [!!] scripts\ensure-ttyd-runtime.ps1 missing',
+        ')',
+        '',
+        'if exist "!TARGET!\bin\python-packages\websockify" (',
+        '    echo  [OK] bin\python-packages\websockify ^(VNC Easy^)',
+        ') else (',
+        '    if exist "!TARGET!\bin\python-packages\websockify\__main__.py" (',
+        '        echo  [OK] bin\python-packages\websockify ^(VNC Easy^)',
+        '    ) else (',
+        '        echo  [!!] websockify not vendored - run scripts\install-websockify.ps1 on target',
+        '    )',
+        ')'
+    ) -join "`r`n"
+}
+$verifyBat = $verifyBat.Replace('__BUILD_ID__', $BuildId).Replace('__VERIFY_SQLITE_CHECKS__', $verifySqliteChecks).Replace('__VERIFY_REMOTE_CHECKS__', $verifyRemoteChecks).Replace('__VERIFY_EXTRA_CHECKS__', $verifyExtraChecks).Replace('__VERIFY_OPTIONAL_BLOCK__', $verifyOptionalBlock)
 
 # -- deploy-xampp.sh (Linux/macOS) ------------------------------------------
 $deploySh = @'
@@ -1562,10 +2200,41 @@ SQLite  : __SQLITE_SHIP_NOTE__
 11. **In-app updates (optional):** Admin → Tools → App Updates (or the nav bell).
     Save a GitHub PAT (``repo`` scope) for private repos. Track branch defaults to ``main``.
     See ``docs/APP_UPDATES.md``. PHP needs **curl** + **zip** extensions enabled.
+12. **Remote widgets (SSH / VNC Easy):** Install **Python 3** + **OpenSSH Client** on the
+    target PC. This ZIP already includes ``bin/ttyd.exe`` and vendored websockify under
+    ``bin/python-packages`` when packaged with remote runtime. See ``docs/REMOTE_WIDGETS_SETUP.md``.
+    If websockify is missing: ``powershell -File scripts/install-websockify.ps1``.
+13. **Upgrade PHP (recommended 8.5+):** double-click ``upgrade-xampp-php.bat`` (elevated /
+    UAC) or run ``scripts\upgrade-xampp-php.ps1 -Version 8.5 -RestartApache``. LDAP is
+    hard-gated before swap. See ``docs/XAMPP_PHP_UPGRADE.md``.
+14. **Harden step:** ``deploy-xampp.bat`` / ``update-xampp.bat`` now call
+    ``scripts/harden-xampp-target.ps1`` (creates ``%XAMPP%\tmp``, ACLs, enables curl/sqlite,
+    PHP 8.5 OPcache/JIT defaults, ICU copy for intl).
+15. **Remote Windows host (from your packager PC):**
+    ``deploy-remote-xampp.bat -ComputerName 192.168.0.197 -ZipPath .\linknest-deploy-....zip``
+    or package with ``-RemoteHost`` to push automatically. Uses SMB admin share + elevated
+    scheduled task (no WinRM TrustedHosts required). See ``docs/OFFICE_WIN2022_DEPLOY.md``.
 
 Optional: run ``verify-install.bat`` to confirm required files (including ``runtime/sqlite/``,
-``api/system_specs_check.php``, and ``api/updater*.php``) are present.
+``api/system_specs_check.php``, ``api/updater*.php``, PHP upgrade scripts, harden/remote deploy
+scripts, and ``bin/`` remote runtime) are present.
 Optional: run ``install-sqlite-xampp.bat`` alone if you skipped it during deploy.
+
+---
+
+## Remote widgets (SSH Terminal + VNC Viewer)
+
+| Piece | Purpose |
+|-------|---------|
+| ``bin/ttyd.exe`` / ``bin/ttyd.x86_64`` | SSH Easy gateway binary |
+| ``bin/run-websockify.cmd`` / ``bin/run-websockify`` | Launches vendored websockify |
+| ``bin/python-packages/`` | Vendored websockify for VNC Easy |
+| ``api/ssh_gateway.php`` / ``api/vnc_gateway.php`` | Start/stop local gateways |
+| ``docs/REMOTE_WIDGETS_SETUP.md`` | Full setup guide |
+| ``scripts/install-websockify.ps1`` | Re-vendor websockify on the target |
+
+Target still needs **Python 3** (VNC Easy) and **OpenSSH Client** (SSH Easy).
+Admin → Add-ons → SSH Gateway / VNC Gateway if paths differ on that machine.
 
 ---
 
@@ -1580,6 +2249,27 @@ Optional: run ``install-sqlite-xampp.bat`` alone if you skipped it during deploy
 | Nav bell / Admin → App Updates | Admin UI |
 
 Requires PHP extensions: ``curl``, ``zip`` (and ``openssl`` for encrypted token storage).
+
+---
+
+## Upgrade PHP in XAMPP (ships with this package)
+
+Official XAMPP often ships an older PHP. This ZIP includes a Thread Safe upgrader for Windows:
+
+| Piece | Purpose |
+|-------|---------|
+| ``upgrade-xampp-php.bat`` | Root launcher (UAC / elevated) — defaults to PHP 8.5 + Apache restart |
+| ``scripts/upgrade-xampp-php.ps1`` | Download latest TS x64 from releases.json, LDAP hard gate, backup, swap |
+| ``scripts/upgrade-xampp-php-run-elevated.ps1`` | Elevated wrapper used by the .bat |
+| ``docs/XAMPP_PHP_UPGRADE.md`` | Full operator guide |
+
+``````
+upgrade-xampp-php.bat
+REM or:
+powershell -ExecutionPolicy Bypass -File scripts\upgrade-xampp-php.ps1 -Version 8.5 -RestartApache
+``````
+
+Keeps a ``C:\xampp\php-backup-*`` folder for rollback. Requires VC++ 2015–2022 x64 redistributable.
 
 ---
 
@@ -1614,7 +2304,7 @@ HTML report from the packager host (when available):
 | Piece | What it does |
 |-------|----------------|
 | ``runtime/sqlite/libsqlite3.dll`` | Official Windows x64 SQLite **__SQLITE_TARGET__** for XAMPP PHP |
-| ``install-sqlite-xampp.bat`` | Replaces ``%XAMPP%\php\libsqlite3.dll`` (backs up the old one) |
+| ``install-sqlite-xampp.bat`` / ``scripts/install-sqlite-xampp.ps1`` | Enables ``extension=sqlite3`` + ``pdo_sqlite`` in ``php.ini``, de-dupes openssl, replaces ``%XAMPP%\php\libsqlite3.dll`` |
 | ``api/config.php`` | Applies WAL, mmap 256MB, 32MB cache, 4 worker threads, temp in memory |
 
 After install, confirm on the target PC:
@@ -1656,15 +2346,106 @@ Password : admin123
 | API 404 | Enable AllowOverride All + mod_rewrite in Apache |
 | SAML library missing | Package must include ``vendor/`` - re-run packager on source PC |
 | Permission errors | Ensure ``data/``, ``uploads/``, ``logs/`` are writable by Apache |
+| ``Class SQLite3 not found`` / Fatal error in deploy log | Remote ``php.ini`` has ``extension=sqlite3`` commented out. Re-run ``install-sqlite-xampp.bat`` (Admin) — it now enables the extension. Or manually uncomment ``extension=sqlite3`` and ``extension=pdo_sqlite`` then restart Apache |
+| ``Module openssl is already loaded`` | Duplicate ``extension=openssl`` lines; the installer de-dupes them. Or remove extras in ``php.ini`` |
+| ``The service name is invalid`` / ``net stop Apache2.4`` | Normal when XAMPP is not installed as a Windows service. Newer installer ignores that and stops ``httpd`` / uses XAMPP Control Panel start. Re-run ``install-sqlite-xampp.bat`` |
 | Old SQLite (3.39.x) | Run ``install-sqlite-xampp.bat`` as Administrator; restart Apache |
 | DLL locked / copy failed | Stop Apache in XAMPP Control Panel, re-run install-sqlite-xampp.bat |
+| ``php_sqlite3.dll`` missing under ``php\ext`` | Incomplete XAMPP PHP — run ``upgrade-xampp-php.bat`` elevated |
 | Specs Check failing | Open Admin → System Specs Check; follow each advice line; compare ``TARGET_REQUIREMENTS.json`` |
+| SSH Easy: ttyd missing | Confirm ``bin/ttyd.exe`` shipped; or winget install + Admin → SSH Gateway path |
+| VNC Easy: websockify missing | Run ``scripts/install-websockify.ps1``; install Python 3; see ``docs/REMOTE_WIDGETS_SETUP.md`` |
+| Need PHP 8.5+ / LDAP | Run ``upgrade-xampp-php.bat`` elevated; see ``docs/XAMPP_PHP_UPGRADE.md`` |
 '@
 $readmeMd = $readmeMd.Replace('__CREATED_AT__', $createdAt).Replace('__PACKAGE_NAME__', $PackageName).Replace('__BUILD_ID__', $BuildId).Replace('__PKG_VERSION__', $pkgVersion).Replace('__DB_MODE_NOTE__', $dbModeNote).Replace('__SQLITE_SHIP_NOTE__', $sqliteShipNote).Replace('__SQLITE_TARGET__', $SqliteTargetVersion).Replace('__BASE_PATH_FOR_BAT__', $basePathForBat).Replace('__BASE_PATH_DISPLAY__', $(if ($BasePath) { $BasePath } else { "/" }))
+
+# -- upgrade-xampp-php.bat (root launcher for target PHP runtime upgrade) ---
+$upgradePhpBat = @'
+@echo off
+REM ============================================================
+REM  LinkNest - Upgrade XAMPP PHP (Thread Safe x64)
+REM  Ships with the deployment package. Run elevated / approve UAC.
+REM  Default: PHP 8.5 latest patch + restart Apache.
+REM  Docs: docs\XAMPP_PHP_UPGRADE.md
+REM ============================================================
+set "PKG=%~dp0"
+cd /d "%PKG%"
+
+if not exist "%PKG%scripts\upgrade-xampp-php-run-elevated.ps1" (
+    echo  [XX] Missing scripts\upgrade-xampp-php-run-elevated.ps1
+    pause
+    exit /b 1
+)
+if not exist "%PKG%scripts\upgrade-xampp-php.ps1" (
+    echo  [XX] Missing scripts\upgrade-xampp-php.ps1
+    pause
+    exit /b 1
+)
+
+echo.
+echo  Upgrading XAMPP PHP via scripts\upgrade-xampp-php-run-elevated.ps1
+echo  Default: -Version 8.5 -RestartApache
+echo  Extra args are forwarded: %*
+echo.
+
+if "%~1"=="" (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PKG%scripts\upgrade-xampp-php-run-elevated.ps1" -Version 8.5 -RestartApache
+) else (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PKG%scripts\upgrade-xampp-php-run-elevated.ps1" %*
+)
+set "ERR=%ERRORLEVEL%"
+if %ERR% NEQ 0 (
+    echo.
+    echo  *** PHP upgrade failed. See messages above / docs\XAMPP_PHP_UPGRADE.md ***
+    echo.
+    pause
+    exit /b %ERR%
+)
+echo.
+echo  Done. Confirm: C:\xampp\php\php.exe -v
+echo.
+pause
+exit /b 0
+'@
 
 Set-Content -Path (Join-Path $TempDir "deploy-xampp.bat") -Value $deployBat -Encoding ASCII
 Set-Content -Path (Join-Path $TempDir "update-xampp.bat") -Value $updateBat -Encoding ASCII
 Set-Content -Path (Join-Path $TempDir "verify-install.bat") -Value $verifyBat -Encoding ASCII
+
+if (-not $AppOnly) {
+    Set-Content -Path (Join-Path $TempDir "upgrade-xampp-php.bat") -Value $upgradePhpBat -Encoding ASCII
+    Write-OK "upgrade-xampp-php.bat written (target PHP 8.5+ upgrader)"
+
+    # Root remote-deploy launcher (same as repo deploy-remote-xampp.bat)
+    $deployRemoteBat = @'
+@echo off
+REM LinkNest remote Windows/XAMPP deploy (SMB + elevated schtasks)
+REM Docs: docs\OFFICE_WIN2022_DEPLOY.md
+set "PKG=%~dp0"
+cd /d "%PKG%"
+if not exist "%PKG%scripts\deploy-remote-xampp.ps1" (
+    echo  [XX] Missing scripts\deploy-remote-xampp.ps1
+    pause
+    exit /b 1
+)
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PKG%scripts\deploy-remote-xampp.ps1" %*
+set "ERR=%ERRORLEVEL%"
+if %ERR% NEQ 0 (
+    echo.
+    echo  *** Remote deploy FAILED ***
+    echo.
+    pause
+    exit /b %ERR%
+)
+exit /b 0
+'@
+    Set-Content -Path (Join-Path $TempDir "deploy-remote-xampp.bat") -Value $deployRemoteBat -Encoding ASCII
+    Write-OK "deploy-remote-xampp.bat written (SMB remote push)"
+}
+else {
+    Write-Warn "AppOnly: omitted upgrade-xampp-php.bat and deploy-remote-xampp.bat"
+}
+
 if ($SqliteRuntimeBundled) {
     Set-Content -Path (Join-Path $TempDir "install-sqlite-xampp.bat") -Value $installSqliteBat -Encoding ASCII
 }
@@ -1710,15 +2491,30 @@ $requiredInPackage = @(
     "utils\urlDisplay.ts",
     "docs\APP_UPDATES.md",
     "scripts\publish-update-release.ps1",
+    "scripts\harden-xampp-target.ps1",
     "components\UpdatesDialog.tsx",
-    "services\updaterService.ts"
+    "services\updaterService.ts",
+    "land\browser-launcher-integration.js"
 )
+
+if (-not $AppOnly) {
+    $requiredInPackage += @(
+        "docs\XAMPP_PHP_UPGRADE.md",
+        "docs\OFFICE_WIN2022_DEPLOY.md",
+        "scripts\upgrade-xampp-php.ps1",
+        "scripts\upgrade-xampp-php-run-elevated.ps1",
+        "scripts\deploy-remote-xampp.ps1",
+        "upgrade-xampp-php.bat",
+        "deploy-remote-xampp.bat"
+    )
+}
 
 if ($SqliteRuntimeBundled) {
     $requiredInPackage += @(
         "runtime\sqlite\libsqlite3.dll",
         "runtime\sqlite\SQLITE_VERSION.txt",
-        "install-sqlite-xampp.bat"
+        "install-sqlite-xampp.bat",
+        "scripts\install-sqlite-xampp.ps1"
     )
 }
 
@@ -1727,6 +2523,30 @@ if ($LoadTestReportBundled) {
         "load-tests\results\report.html",
         "load-tests\results\last-summary.json"
     )
+}
+
+if (-not $SkipRemoteRuntime) {
+    $requiredInPackage += @(
+        "bin\run-websockify.cmd",
+        "bin\run-websockify",
+        "bin\ttyd.exe",
+        "docs\REMOTE_WIDGETS_SETUP.md",
+        "scripts\install-websockify.ps1",
+        "scripts\ensure-ttyd-runtime.ps1",
+        "api\vnc_gateway.php",
+        "api\ssh_gateway.php"
+    )
+    # Prefer at least one Linux ttyd binary; warn-only if missing (Docker path)
+    if (-not $TtydWinBundled -and -not $TtydLinuxBundled) {
+        Write-Warn "No ttyd binary in staging bin/ - SSH Easy will need manual ttyd install on target"
+    }
+    if ($WebsockifyBundled) {
+        # Directory marker is enough; __main__.py path varies by pip layout
+        $requiredInPackage += @("bin\python-packages")
+    }
+    else {
+        Write-Warn "websockify not in staging - VNC Easy needs install-websockify.ps1 on target"
+    }
 }
 
 $integrityFailed = $false
@@ -1810,17 +2630,42 @@ try {
         "utils/releaseNotesMarkdown.ts",
         "docs/APP_UPDATES.md",
         "scripts/publish-update-release.ps1",
+        "scripts/harden-xampp-target.ps1",
+        "land/browser-launcher-integration.js",
         ".htaccess"
     )
+    if (-not $AppOnly) {
+        $mustHaveInZip += @(
+            "docs/XAMPP_PHP_UPGRADE.md",
+            "docs/OFFICE_WIN2022_DEPLOY.md",
+            "scripts/upgrade-xampp-php.ps1",
+            "scripts/upgrade-xampp-php-run-elevated.ps1",
+            "scripts/deploy-remote-xampp.ps1",
+            "upgrade-xampp-php.bat",
+            "deploy-remote-xampp.bat"
+        )
+    }
     if ($SqliteRuntimeBundled) {
         $mustHaveInZip += @(
             "runtime/sqlite/libsqlite3.dll",
-            "install-sqlite-xampp.bat"
+            "install-sqlite-xampp.bat",
+            "scripts/install-sqlite-xampp.ps1"
         )
     }
     if ($LoadTestReportBundled) {
         $mustHaveInZip += @(
             "load-tests/results/report.html"
+        )
+    }
+    if (-not $SkipRemoteRuntime) {
+        $mustHaveInZip += @(
+            "bin/run-websockify.cmd",
+            "bin/ttyd.exe",
+            "docs/REMOTE_WIDGETS_SETUP.md",
+            "scripts/install-websockify.ps1",
+            "scripts/ensure-ttyd-runtime.ps1",
+            "api/vnc_gateway.php",
+            "api/ssh_gateway.php"
         )
     }
     $zipBad = $false
@@ -1838,6 +2683,25 @@ try {
     else {
         Write-OK ("ZIP vendor/ entries: {0}" -f $vendorCount)
     }
+    if (-not $SkipRemoteRuntime) {
+        $binCount = @($names | Where-Object { $_ -like "bin/*" }).Count
+        $wsInZip = @($names | Where-Object { $_ -like "bin/python-packages/websockify*" }).Count
+        Write-OK ("ZIP bin/ entries: {0}" -f $binCount)
+        if ($WebsockifyBundled -and $wsInZip -lt 1) {
+            Write-Err "ZIP missing bin/python-packages/websockify*"
+            $zipBad = $true
+        }
+        elseif ($WebsockifyBundled) {
+            Write-OK ("ZIP websockify entries: {0}" -f $wsInZip)
+        }
+        $ttydInZip = ($names -contains "bin/ttyd.exe") -or ($names -contains "bin/ttyd.x86_64") -or ($names -contains "bin/ttyd")
+        if ($ttydInZip) {
+            Write-OK "ZIP includes ttyd binary"
+        }
+        else {
+            Write-Warn "ZIP has no ttyd binary (SSH Easy needs install on target)"
+        }
+    }
     if ($zipBad) {
         $zipCheck.Dispose()
         Remove-Item $ZipOutput -Force -ErrorAction SilentlyContinue
@@ -1847,6 +2711,41 @@ try {
 }
 finally {
     $zipCheck.Dispose()
+}
+
+# ---------------------------------------------------------------------------
+#  9b. Optional remote push (-RemoteHost)
+# ---------------------------------------------------------------------------
+if ($RemoteHost -and -not $SkipRemoteDeploy) {
+    Write-Header "9b / Remote Deploy -> $RemoteHost"
+    $remotePs1 = Join-Path $ProjectRoot "scripts\deploy-remote-xampp.ps1"
+    if (-not (Test-Path $remotePs1)) {
+        Write-Err "scripts/deploy-remote-xampp.ps1 missing - cannot push remotely"
+    }
+    else {
+        Write-Step "Invoking deploy-remote-xampp.ps1 ($RemoteMode)..."
+        $remoteArgs = @{
+            ComputerName = $RemoteHost
+            UserName     = $RemoteUser
+            ZipPath      = $ZipOutput
+            Mode         = $RemoteMode
+            Share        = $RemoteShare
+        }
+        if ($RemotePassword -ne "") {
+            $remoteArgs["Password"] = $RemotePassword
+        }
+        if ($IncludeXamppRuntime) {
+            $remoteArgs["IncludeXamppRuntime"] = $true
+        }
+        try {
+            & $remotePs1 @remoteArgs
+            Write-OK "Remote deploy finished for $RemoteHost"
+        }
+        catch {
+            Write-Err ("Remote deploy failed: {0}" -f $_.Exception.Message)
+            Write-Warn "ZIP is still available locally: $ZipOutput"
+        }
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -1869,10 +2768,22 @@ Write-Host "  Size    : $zipMB MB"  -ForegroundColor Green
 Write-Host "  BuildId : $BuildId" -ForegroundColor Green
 Write-Host "  Version : $pkgVersion" -ForegroundColor Green
 Write-Host "  DB mode : $(if ($IncludeDatabase) { 'includes live DB' } else { 'FRESH (no live DB)' })" -ForegroundColor Green
+Write-Host "  Mode    : $(if ($AppOnly) { 'APP-ONLY (lean application ZIP)' } else { 'FULL deploy package' })" -ForegroundColor Green
 Write-Host "  SQLite  : $(if ($SqliteRuntimeBundled) { "bundled $SqliteVersionShipped + install-sqlite-xampp.bat" } else { 'not bundled' })" -ForegroundColor Green
+Write-Host "  Remote  : $(if ($SkipRemoteRuntime) { 'skipped' } elseif ($RemoteRuntimeBundled) { "bin/ ttyd=$(if ($TtydWinBundled -or $TtydLinuxBundled) {'yes'} else {'no'}) websockify=$(if ($WebsockifyBundled) {'yes'} else {'no'})" } else { 'partial/missing' })" -ForegroundColor Green
 Write-Host "  Specs   : $(if ($SourceSpecsReady) { 'SOURCE_SPECS.json (ready_for_target_parity=true)' } elseif ($null -ne $SourceSpecsSnapshot) { 'SOURCE_SPECS.json (warnings on source host)' } else { 'no live snapshot' })" -ForegroundColor Green
 Write-Host "  Report  : $(if ($LoadTestReportBundled) { 'load-tests/results/report.html (showcase)' } else { 'not bundled' })" -ForegroundColor Green
 Write-Host "  Updater : api/updater*.php + docs/APP_UPDATES.md + publish-update-release.ps1" -ForegroundColor Green
+if (-not $AppOnly) {
+    Write-Host "  PHP upg : upgrade-xampp-php.bat + scripts/upgrade-xampp-php*.ps1 + docs/XAMPP_PHP_UPGRADE.md" -ForegroundColor Green
+}
+Write-Host "  Harden  : $(if ($AppOnly) { 'skipped (-AppOnly; target PHP left as-is)' } else { 'scripts/harden-xampp-target.ps1 (tmp/ACL/curl/OPcache; called by deploy/update)' })" -ForegroundColor Green
+if (-not $AppOnly) {
+    Write-Host "  Push    : deploy-remote-xampp.bat + scripts/deploy-remote-xampp.ps1 + docs/OFFICE_WIN2022_DEPLOY.md" -ForegroundColor Green
+}
+if ($RemoteHost -and -not $SkipRemoteDeploy) {
+    Write-Host "  Pushed  : $RemoteMode -> $RemoteHost" -ForegroundColor Green
+}
 if ($gitCommitSha) {
     Write-Host ("  Commit  : {0}" -f $gitCommitSha) -ForegroundColor Green
 }
@@ -1882,15 +2793,27 @@ Write-Host "  ON THE TARGET MACHINE:" -ForegroundColor Yellow
 Write-Host "  1. Extract the ZIP" -ForegroundColor Yellow
 Write-Host "  2. Fresh install : run deploy-xampp.bat" -ForegroundColor Yellow
 Write-Host "  3. Upgrade       : run update-xampp.bat (keeps data/)" -ForegroundColor Yellow
-Write-Host "  4. Approve UAC   : installs SQLite $SqliteTargetVersion into XAMPP PHP" -ForegroundColor Yellow
-Write-Host "  5. Optional check: run verify-install.bat" -ForegroundColor Yellow
-Write-Host "  6. Open BUILD_INFO.json and confirm buildId above" -ForegroundColor Yellow
-Write-Host "  7. Ctrl+F5 once if old UI remains (service worker)" -ForegroundColor Yellow
-Write-Host "  8. Admin -> Maintenance Scripts -> System Specs Check (match SOURCE_SPECS.json)" -ForegroundColor Yellow
-Write-Host "  9. Admin -> App Updates: set GitHub PAT, track branch, Check for updates" -ForegroundColor Yellow
-Write-Host "  10. Docs: docs/APP_UPDATES.md" -ForegroundColor Yellow
-if ($LoadTestReportBundled) {
-    Write-Host "  11. Showcase report: open load-tests\results\report.html in a browser" -ForegroundColor Yellow
+if ($AppOnly) {
+    Write-Host "  4. Target PHP/SQLite/ttyd are left as-is (app-only package)" -ForegroundColor Yellow
+    Write-Host "  5. Optional check: run verify-install.bat" -ForegroundColor Yellow
+    Write-Host "  6. Open BUILD_INFO.json and confirm buildId above" -ForegroundColor Yellow
+    Write-Host "  7. Ctrl+F5 once if old UI remains (service worker)" -ForegroundColor Yellow
+    Write-Host "  8. Docs: docs/APP_UPDATES.md" -ForegroundColor Yellow
+} else {
+    Write-Host "  4. Approve UAC   : installs SQLite $SqliteTargetVersion into XAMPP PHP" -ForegroundColor Yellow
+    Write-Host "  5. Optional check: run verify-install.bat" -ForegroundColor Yellow
+    Write-Host "  6. Open BUILD_INFO.json and confirm buildId above" -ForegroundColor Yellow
+    Write-Host "  7. Ctrl+F5 once if old UI remains (service worker)" -ForegroundColor Yellow
+    Write-Host "  8. Admin -> Maintenance Scripts -> System Specs Check (match SOURCE_SPECS.json)" -ForegroundColor Yellow
+    Write-Host "  9. Admin -> App Updates: set GitHub PAT, track branch, Check for updates" -ForegroundColor Yellow
+    Write-Host "  10. Docs: docs/APP_UPDATES.md" -ForegroundColor Yellow
+    Write-Host "  11. Remote widgets: install Python 3 + OpenSSH; see docs/REMOTE_WIDGETS_SETUP.md" -ForegroundColor Yellow
+    Write-Host "  12. PHP 8.5+: run upgrade-xampp-php.bat (elevated) - docs/XAMPP_PHP_UPGRADE.md" -ForegroundColor Yellow
+    Write-Host "  13. Remote push from this PC: deploy-remote-xampp.bat -ComputerName HOST -ZipPath <zip>" -ForegroundColor Yellow
+    Write-Host "  14. Office/Win2022 guide: docs/OFFICE_WIN2022_DEPLOY.md" -ForegroundColor Yellow
+    if ($LoadTestReportBundled) {
+        Write-Host "  15. Showcase report: open load-tests\results\report.html in a browser" -ForegroundColor Yellow
+    }
 }
 Write-Host ""
 

@@ -152,7 +152,6 @@ function fetchUrlSilent(string $url, int $timeoutSeconds = 4): ?string {
             CURLOPT_USERAGENT => 'LinkNest-Analytics/1.0',
         ]);
         $response = curl_exec($ch);
-        curl_close($ch);
         return is_string($response) ? $response : null;
     }
     $ctx = stream_context_create([

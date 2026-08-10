@@ -119,6 +119,363 @@ function normalizeLogoUrl($url) {
     return $normalized;
 }
 
+/**
+ * Normalize / validate link-check exception patterns (URLs / hosts skipped by health checks).
+ * @return string JSON array string (never empty object — uses "[]")
+ */
+function normalizeLinkCheckExceptionsSetting($value) {
+    $maxItems = 2000;
+    $maxLen = 2048;
+
+    $decoded = null;
+    if (is_array($value)) {
+        $decoded = $value;
+    } elseif (is_string($value)) {
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return '[]';
+        }
+        if ($trimmed[0] === '[') {
+            $decoded = json_decode($trimmed, true);
+            if (!is_array($decoded)) {
+                sendJSON(['error' => 'link_check_exceptions must be a JSON array'], 400);
+            }
+        } else {
+            // Allow newline / comma separated bulk paste via API too
+            $decoded = preg_split('/[\n\r,;]+/', $trimmed) ?: [];
+        }
+    } else {
+        return '[]';
+    }
+
+    if (count($decoded) > $maxItems) {
+        sendJSON(['error' => "link_check_exceptions supports at most {$maxItems} entries"], 400);
+    }
+
+    $out = [];
+    $seen = [];
+    foreach ($decoded as $item) {
+        $raw = '';
+        if (is_string($item)) {
+            $raw = $item;
+        } elseif (is_array($item) && isset($item['pattern'])) {
+            $raw = (string)$item['pattern'];
+        } else {
+            continue;
+        }
+        $pattern = normalizeLinkCheckExceptionPattern($raw, $maxLen);
+        if ($pattern === null || isset($seen[$pattern])) {
+            continue;
+        }
+        $seen[$pattern] = true;
+        $out[] = $pattern;
+    }
+
+    return json_encode(array_values($out), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+}
+
+/**
+ * Normalize host patterns that skip in-app mobile preview (iframe block list).
+ * @return string JSON array string
+ */
+function normalizeIframeBlockDomainsSetting($value) {
+    $maxItems = 500;
+    $maxLen = 253;
+
+    $decoded = null;
+    if (is_array($value)) {
+        $decoded = $value;
+    } elseif (is_string($value)) {
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return '[]';
+        }
+        if ($trimmed[0] === '[') {
+            $decoded = json_decode($trimmed, true);
+            if (!is_array($decoded)) {
+                sendJSON(['error' => 'iframe_block_domains must be a JSON array'], 400);
+            }
+        } else {
+            $decoded = preg_split('/[\n\r,;]+/', $trimmed) ?: [];
+        }
+    } else {
+        return '[]';
+    }
+
+    if (count($decoded) > $maxItems) {
+        sendJSON(['error' => "iframe_block_domains supports at most {$maxItems} entries"], 400);
+    }
+
+    $out = [];
+    $seen = [];
+    foreach ($decoded as $item) {
+        $raw = '';
+        if (is_string($item)) {
+            $raw = $item;
+        } elseif (is_array($item) && isset($item['pattern'])) {
+            $raw = (string)$item['pattern'];
+        } elseif (is_array($item) && isset($item['domain'])) {
+            $raw = (string)$item['domain'];
+        } else {
+            continue;
+        }
+        $pattern = normalizeIframeBlockDomainPattern($raw, $maxLen);
+        if ($pattern === null || isset($seen[$pattern])) {
+            continue;
+        }
+        $seen[$pattern] = true;
+        $out[] = $pattern;
+    }
+
+    return json_encode(array_values($out), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+}
+
+/**
+ * @return string|null
+ */
+function normalizeIframeBlockDomainPattern($raw, $maxLen = 253) {
+    $value = trim((string)$raw);
+    if ($value === '') {
+        return null;
+    }
+    if (
+        (str_starts_with($value, '"') && str_ends_with($value, '"')) ||
+        (str_starts_with($value, "'") && str_ends_with($value, "'"))
+    ) {
+        $value = trim(substr($value, 1, -1));
+    }
+    if ($value === '') {
+        return null;
+    }
+    $hashPos = strpos($value, '#');
+    if ($hashPos !== false) {
+        $value = trim(substr($value, 0, $hashPos));
+    }
+    if ($value === '') {
+        return null;
+    }
+
+    // Extract hostname from pasted URLs
+    $hadScheme = (bool)preg_match('#^[a-z][a-z0-9+.-]*:#i', $value);
+    if ($hadScheme || strpos($value, '/') !== false || strpos($value, ':') !== false) {
+        $withScheme = $hadScheme ? $value : ('https://' . $value);
+        $parts = @parse_url($withScheme);
+        if (is_array($parts) && !empty($parts['host'])) {
+            $value = (string)$parts['host'];
+        }
+    }
+
+    $value = strtolower(rtrim(ltrim($value, '.'), '.'));
+    if ($value === '') {
+        return null;
+    }
+    if (strlen($value) > $maxLen) {
+        $value = substr($value, 0, $maxLen);
+    }
+
+    if (strpos($value, '*') !== false) {
+        if (!preg_match('/^(\*\.)?[a-z0-9.*-]+$/i', $value)) {
+            return null;
+        }
+        return $value;
+    }
+
+    if (!preg_match('/^[a-z0-9.-]+$/i', $value) || strpos($value, '..') !== false) {
+        return null;
+    }
+    return $value;
+}
+
+/**
+ * @return string|null
+ */
+function normalizeLinkCheckExceptionPattern($raw, $maxLen = 2048) {
+    $value = trim((string)$raw);
+    if ($value === '') {
+        return null;
+    }
+    if (
+        (str_starts_with($value, '"') && str_ends_with($value, '"')) ||
+        (str_starts_with($value, "'") && str_ends_with($value, "'"))
+    ) {
+        $value = trim(substr($value, 1, -1));
+    }
+    if ($value === '') {
+        return null;
+    }
+    $hashPos = strpos($value, '#');
+    if ($hashPos !== false) {
+        $value = trim(substr($value, 0, $hashPos));
+    }
+    if ($value === '') {
+        return null;
+    }
+    if (strlen($value) > $maxLen) {
+        $value = substr($value, 0, $maxLen);
+    }
+
+    // Host-only / wildcard host
+    if (!preg_match('#^[a-z][a-z0-9+.-]*:#i', $value) && strpos($value, '/') === false && strpos($value, ' ') === false) {
+        return rtrim(strtolower($value), '.');
+    }
+
+    $hadScheme = (bool)preg_match('#^[a-z][a-z0-9+.-]*:#i', $value);
+    $withScheme = $hadScheme ? $value : ('https://' . $value);
+    $parts = @parse_url($withScheme);
+    if (!is_array($parts) || empty($parts['host'])) {
+        return rtrim(strtolower($value), '/');
+    }
+
+    $host = strtolower((string)$parts['host']);
+    $path = isset($parts['path']) ? (string)$parts['path'] : '';
+    if ($path === '/') {
+        $path = '';
+    } elseif ($path !== '' && str_ends_with($path, '/')) {
+        $path = rtrim($path, '/');
+    }
+    $query = isset($parts['query']) && $parts['query'] !== '' ? ('?' . $parts['query']) : '';
+
+    if (!$hadScheme) {
+        return $host . $path . $query;
+    }
+    $scheme = strtolower((string)($parts['scheme'] ?? 'https'));
+    return $scheme . '://' . $host . $path . $query;
+}
+
+/**
+ * Normalize / validate device preview presets JSON for settings storage.
+ * Empty input stores "" so the app falls back to built-in defaults.
+ * @return string JSON array string or empty string
+ */
+function normalizeDevicePresetsSetting($value) {
+    $allowedGroups = ['Responsive', 'iPhone', 'Android', 'Tablet', 'Watch', 'Enterprise'];
+    $allowedVariants = [
+        'iphone-island', 'iphone-notch', 'iphone-legacy', 'android', 'android-tablet', 'ipad',
+        'watch-square', 'watch-round', 'zebra-handheld', 'zebra-tc73', 'zebra-tc58', 'zebra-tc52ax',
+        'zebra-et60', 'zebra-et51', 'zebra-mc3300', 'zebra-mc9300',
+    ];
+    $maxPresets = 200;
+    $minDim = 120;
+    $maxDim = 4096;
+
+    $decoded = null;
+    if (is_array($value)) {
+        $decoded = $value;
+    } elseif (is_string($value)) {
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return '';
+        }
+        $decoded = json_decode($trimmed, true);
+        if (!is_array($decoded)) {
+            sendJSON(['error' => 'device_presets must be a JSON array'], 400);
+        }
+    } else {
+        return '';
+    }
+
+    if (count($decoded) > $maxPresets) {
+        sendJSON(['error' => "device_presets supports at most {$maxPresets} devices"], 400);
+    }
+
+    $out = [];
+    $seen = [];
+    foreach ($decoded as $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+        $id = strtolower(trim((string)($item['id'] ?? '')));
+        $id = preg_replace('/[^a-z0-9]+/', '-', $id);
+        $id = trim($id, '-');
+        if ($id === '' || isset($seen[$id])) {
+            continue;
+        }
+        $label = trim((string)($item['label'] ?? ''));
+        if ($label === '') {
+            continue;
+        }
+        if (function_exists('mb_substr')) {
+            $label = mb_substr($label, 0, 120);
+        } else {
+            $label = substr($label, 0, 120);
+        }
+        $group = (string)($item['group'] ?? '');
+        $variant = (string)($item['variant'] ?? '');
+        if (!in_array($group, $allowedGroups, true) || !in_array($variant, $allowedVariants, true)) {
+            continue;
+        }
+        $width = (int)round((float)($item['width'] ?? 0));
+        $height = (int)round((float)($item['height'] ?? 0));
+        if ($width < $minDim) {
+            $width = $minDim;
+        }
+        if ($width > $maxDim) {
+            $width = $maxDim;
+        }
+        if ($height < $minDim) {
+            $height = $minDim;
+        }
+        if ($height > $maxDim) {
+            $height = $maxDim;
+        }
+        $seen[$id] = true;
+        $out[] = [
+            'id' => $id,
+            'label' => $label,
+            'width' => $width,
+            'height' => $height,
+            'variant' => $variant,
+            'group' => $group,
+        ];
+    }
+
+    if (count($decoded) > 0 && count($out) === 0) {
+        sendJSON(['error' => 'device_presets contained no valid devices'], 400);
+    }
+
+    return $out === [] ? '' : json_encode($out, JSON_UNESCAPED_UNICODE);
+}
+
+/**
+ * Normalize quick-select preset id list. Empty stores "".
+ * @return string JSON array string or empty string
+ */
+function normalizeDeviceQuickPresetsSetting($value) {
+    $decoded = null;
+    if (is_array($value)) {
+        $decoded = $value;
+    } elseif (is_string($value)) {
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return '';
+        }
+        $decoded = json_decode($trimmed, true);
+        if (!is_array($decoded)) {
+            sendJSON(['error' => 'device_quick_presets must be a JSON array'], 400);
+        }
+    } else {
+        return '';
+    }
+
+    $out = [];
+    $seen = [];
+    foreach ($decoded as $item) {
+        $id = strtolower(trim((string)$item));
+        $id = preg_replace('/[^a-z0-9]+/', '-', $id);
+        $id = trim($id, '-');
+        if ($id === '' || isset($seen[$id])) {
+            continue;
+        }
+        $seen[$id] = true;
+        $out[] = $id;
+        if (count($out) >= 40) {
+            break;
+        }
+    }
+
+    return $out === [] ? '' : json_encode($out, JSON_UNESCAPED_UNICODE);
+}
+
 function handleGetSettings() {
     // Settings are public (for display), but only admins can update
     if (session_status() === PHP_SESSION_NONE) {
@@ -276,6 +633,63 @@ function handleGetSettings() {
 
 function handleUploadLogo() {
     requireAdmin(); // Only admins can upload
+
+    // Optional target setting key (brand logo vs header/company logo)
+    $settingKey = $_POST['setting_key'] ?? 'logo_image';
+    if (!in_array($settingKey, ['logo_image', 'header_logo_image'], true)) {
+        $settingKey = 'logo_image';
+    }
+
+    // Background removal uses PHP GD (ext-gd) via processUploadedBrandImage / image_helpers.php.
+    // No Composer package required. If this fails, enable extension=gd in php.ini.
+    $removeBackground = !empty($_POST['remove_background']) && (
+        $_POST['remove_background'] === '1' ||
+        $_POST['remove_background'] === 'true' ||
+        $_POST['remove_background'] === true
+    );
+    $bgColor = isset($_POST['bg_color']) ? trim((string)$_POST['bg_color']) : '';
+    if ($bgColor === '') {
+        $bgColor = null;
+    }
+
+    // Reprocess an existing uploaded logo (no new file) — e.g. strip background
+    $sourceUrl = isset($_POST['source_url']) ? trim((string)$_POST['source_url']) : '';
+    if ($sourceUrl !== '' && (!isset($_FILES['logo']) || $_FILES['logo']['error'] === UPLOAD_ERR_NO_FILE)) {
+        $filename = basename(parse_url($sourceUrl, PHP_URL_PATH) ?: $sourceUrl);
+        if (!preg_match('/^[a-zA-Z0-9._-]+$/', $filename) || strpos($filename, 'logo_') !== 0) {
+            sendJSON(['error' => 'Invalid source logo'], 400);
+        }
+        $filepath = __DIR__ . '/../uploads/' . $filename;
+        if (!is_file($filepath)) {
+            sendJSON(['error' => 'Source logo not found'], 404);
+        }
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mimeType = finfo_file($finfo, $filepath);
+        finfo_close($finfo);
+        $result = processUploadedBrandImage(
+            $filepath,
+            $filename,
+            $mimeType ?: 'image/png',
+            'logo',
+            $removeBackground,
+            $bgColor
+        );
+        $url = '/uploads/' . $result['filename'];
+        $db = getDB();
+        $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
+        $stmt->execute([$settingKey, $url, time()]);
+        $normalizedUrl = normalizeLogoUrl($url);
+        sendJSON([
+            'success' => true,
+            'url' => $normalizedUrl,
+            'converted' => !empty($result['converted']),
+            'width' => $result['width'] ?? null,
+            'height' => $result['height'] ?? null,
+            'message' => $removeBackground
+                ? 'Logo background removed and converted to PNG (max 512×512)'
+                : 'Logo reprocessed to PNG (max 512×512)'
+        ]);
+    }
     
     // Check if file was uploaded
     if (!isset($_FILES['logo']) || $_FILES['logo']['error'] !== UPLOAD_ERR_OK) {
@@ -300,14 +714,15 @@ function handleUploadLogo() {
         sendJSON(['error' => 'File size too large. Maximum size: 10MB'], 400);
     }
     
-    $result = processUploadedBrandImage($file['tmp_name'], $file['name'], $mimeType, 'logo');
+    $result = processUploadedBrandImage(
+        $file['tmp_name'],
+        $file['name'],
+        $mimeType,
+        'logo',
+        $removeBackground,
+        $bgColor
+    );
     $url = '/uploads/' . $result['filename'];
-
-    // Optional target setting key (brand logo vs header/company logo)
-    $settingKey = $_POST['setting_key'] ?? 'logo_image';
-    if (!in_array($settingKey, ['logo_image', 'header_logo_image'], true)) {
-        $settingKey = 'logo_image';
-    }
     
     // Update settings with the new logo URL (stored without prefix)
     $db = getDB();
@@ -316,6 +731,13 @@ function handleUploadLogo() {
     
     // Return normalized URL for current environment
     $normalizedUrl = normalizeLogoUrl($url);
+
+    $message = 'Logo uploaded successfully';
+    if (!empty($result['converted'])) {
+        $message = $removeBackground
+            ? 'Logo uploaded, background removed, and converted to PNG (max 512×512)'
+            : 'Logo uploaded and auto-converted to PNG (max 512×512)';
+    }
     
     sendJSON([
         'success' => true,
@@ -323,9 +745,7 @@ function handleUploadLogo() {
         'converted' => $result['converted'],
         'width' => $result['width'] ?? null,
         'height' => $result['height'] ?? null,
-        'message' => $result['converted']
-            ? 'Logo uploaded and auto-converted to PNG (max 512×512)'
-            : 'Logo uploaded successfully'
+        'message' => $message
     ]);
 }
 
@@ -483,6 +903,9 @@ function handleUpdateSettings() {
                 'guest_access_enabled',
                 'show_database_path_in_footer',
                 'disabled_tabs',
+                'device_presets', 'device_quick_presets',
+                'link_check_exceptions',
+                'iframe_block_domains',
                 'maintenance_enabled', 'maintenance_message', 'semi_pwa_enabled', 'semi_pwa_include_paths', 'semi_pwa_exclude_paths',
                 'ldap_enabled', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
                 'ldap_login_domain', 'ldap_servers',
@@ -493,7 +916,7 @@ function handleUpdateSettings() {
                 'ldap_require_group_membership', 'ldap_required_groups', 'ldap_denied_groups', 'ldap_timeout', 'ldap_tls',
                 'ldap_search_scope', 'ldap_user_dn_template', 'ldap_nested_groups', 'ldap_case_sensitive',
                 'ldap_ssl_verify', 'ldap_connection_retry', 'ldap_retry_delay', 'ldap_email_attribute',
-                'ldap_display_name_attribute', 'ldap_referrals',
+                'ldap_display_name_attribute', 'ldap_referrals', 'ldap_dropdown_show_host',
                 'access_control_enabled', 'access_control_mode', 'access_control_allow_anonymous', 'access_control_audit_logging',
                 'browser_specific_links_enabled', 'browser_extension_id',
                 'saml_enabled', 'local_auth_enabled', 'sp_entity_id', 'sp_assertion_consumer_service',
@@ -693,11 +1116,12 @@ function handleUpdateSettings() {
                 $value = $trimmedEmoji !== '' ? $trimmedEmoji : '❤️';
             }
             
-            // Handle LDAP bind password - encrypt if provided; leave blank clears only when intentionally empty
+            // Handle LDAP bind password - encrypt if provided; blank = keep existing (UI: "leave blank to keep")
             if ($key === 'ldap_bind_password') {
                 $trimmedValue = is_string($value) ? trim($value) : '';
                 if ($value === null || $trimmedValue === '') {
-                    $value = '';
+                    // Do not overwrite a password mirrored from ldap_servers (or a previously saved one)
+                    continue;
                 } elseif (isMaskedPasswordPlaceholder($trimmedValue)) {
                     sendJSON(['error' => 'LDAP bind password looks masked (asterisks). Re-enter the real password and save again.'], 400);
                 } elseif (!isLikelyEncryptedPassword($trimmedValue)) {
@@ -800,6 +1224,22 @@ function handleUpdateSettings() {
                 }
 
                 $value = json_encode(array_values(array_keys($normalized)));
+            }
+
+            if ($key === 'device_presets') {
+                $value = normalizeDevicePresetsSetting($value);
+            }
+
+            if ($key === 'device_quick_presets') {
+                $value = normalizeDeviceQuickPresetsSetting($value);
+            }
+
+            if ($key === 'link_check_exceptions') {
+                $value = normalizeLinkCheckExceptionsSetting($value);
+            }
+
+            if ($key === 'iframe_block_domains') {
+                $value = normalizeIframeBlockDomainsSetting($value);
             }
             
             // Store setting in database

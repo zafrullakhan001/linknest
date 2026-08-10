@@ -385,8 +385,35 @@ function handleGetTiles() {
                 // Check if user is the creator of the tile
                 $isCreator = isset($row['user_id']) && (int)$row['user_id'] === (int)$user['id'];
                 
-                if ($isCreator) {
-                    // Creators have full access to their own tiles
+                if ($isCreator && isset($tilePermissions[$row['id']])) {
+                    // Owner with explicit admin-set permissions — respect them
+                    $permission = $tilePermissions[$row['id']];
+                    $canView = (bool)$permission['can_view'];
+                    $canEdit = (bool)$permission['can_edit'];
+                    $canDelete = (bool)$permission['can_delete'];
+                    if ($canEdit) {
+                        $granularPerms = getTileAdminPermissions($user['id'], $row['id'], $db);
+                        if ($granularPerms) {
+                            $granularPermissions = $granularPerms;
+                        } elseif (isset($permission['can_add_links'])) {
+                            $granularPermissions = [
+                                'canAddLinks' => (bool)($permission['can_add_links'] ?? true),
+                                'canAddSections' => (bool)($permission['can_add_sections'] ?? true),
+                                'canAddTabs' => (bool)($permission['can_add_tabs'] ?? true),
+                                'canEditLinks' => (bool)($permission['can_edit_links'] ?? true),
+                                'canDeleteLinks' => (bool)($permission['can_delete_links'] ?? false),
+                                'canDeleteSections' => (bool)($permission['can_delete_sections'] ?? false),
+                                'canDeleteTabs' => (bool)($permission['can_delete_tabs'] ?? false),
+                                'canChangeVisibility' => (bool)($permission['can_change_visibility'] ?? false),
+                                'canChangeBrowser' => (bool)($permission['can_change_browser'] ?? false),
+                                'canCloneTile' => (bool)($permission['can_clone_tile'] ?? false),
+                                'canViewTileInfo' => (bool)($permission['can_view_tile_info'] ?? true),
+                                'canEditTile' => (bool)($permission['can_edit_tile'] ?? true)
+                            ];
+                        }
+                    }
+                } elseif ($isCreator) {
+                    // Creators without an explicit permission row have full access
                     $canView = true;
                     $canEdit = true;
                     $canDelete = true;
@@ -781,7 +808,7 @@ function handleGetTiles() {
                             $section = [
                                 'id' => $sectionRow['id'],
                                 'title' => $sectionRow['title'],
-                                'textColor' => isset($sectionRow['text_color']) ? $sectionRow['text_color'] : null,
+                                'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
                                 'visibleFrom' => $sectionRow['visible_from'] ?? null,
                                 'expiresAt' => $sectionRow['expires_at'] ?? null,
                                 'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
@@ -845,7 +872,7 @@ function handleGetTiles() {
                                     ];
                                     
                                     // Include health data if available
-                                    if (isset($linkRow['health_status'])) {
+                                    if (isset($linkRow['health_status']) && !isNonHttpLinkHealthUrl($linkRow['url'] ?? '')) {
                                         $link['health'] = [
                                             'status' => $linkRow['health_status'] ?? 'unknown',
                                             'httpCode' => $linkRow['health_http_code'] ? (int)$linkRow['health_http_code'] : null,
@@ -893,6 +920,7 @@ function handleGetTiles() {
                     $section = [
                         'id' => $sectionRow['id'],
                         'title' => $sectionRow['title'],
+                        'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
                         'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
                         'visibility' => $sectionRow['visibility'] ?? 'public',
                         'published' => isContentPublished($sectionRow),
@@ -949,7 +977,7 @@ function handleGetTiles() {
                                 'position' => (int)($linkRow['position'] ?? 0)
                             ];
                             
-                            if (isset($linkRow['health_status'])) {
+                            if (isset($linkRow['health_status']) && !isNonHttpLinkHealthUrl($linkRow['url'] ?? '')) {
                                 $link['health'] = [
                                     'status' => $linkRow['health_status'] ?? 'unknown',
                                     'httpCode' => $linkRow['health_http_code'] ? (int)$linkRow['health_http_code'] : null,
@@ -1041,10 +1069,18 @@ function handleGetTile($tileId) {
         sendJSON(['error' => 'Tile not found'], 404);
     }
 
-    // Staging tiles are visible only to admins
+    // Role assignment (Your Apps → Your Assigned Apps) must be checked before the staging gate
+    $hasRoleAccess = false;
+    if ($user && !empty($user['id']) && empty($user['is_admin'])) {
+        $hasRoleAccess = canUserViewTileByRole($user['id'], $tileId, $db);
+    }
+
+    // Staging tiles: admins always; non-admins only when explicitly role-assigned
     $rowSourceTab = isset($row['source_tab']) ? trim($row['source_tab']) : 'public';
     if ($rowSourceTab === 'staging' && (!$user || empty($user['is_admin']))) {
-        sendJSON(['error' => 'Tile not found'], 404);
+        if (!$hasRoleAccess) {
+            sendJSON(['error' => 'Tile not found'], 404);
+        }
     }
 
     // Unpublished tiles are admin-only
@@ -1052,10 +1088,16 @@ function handleGetTile($tileId) {
         sendJSON(['error' => 'Tile not found'], 404);
     }
     
-    // Filter tiles based on visibility
+    // Filter tiles based on visibility (must match handleGetTiles for Assigned Apps)
     $tileVisibility = $row['visibility'] ?? 'public';
     $tileAllowedUsers = $row['allowed_users'] ? json_decode($row['allowed_users'], true) : [];
+    if (!is_array($tileAllowedUsers)) {
+        $tileAllowedUsers = [];
+    }
     $tileAllowedGroups = $row['allowed_groups'] ? json_decode($row['allowed_groups'], true) : [];
+    if (!is_array($tileAllowedGroups)) {
+        $tileAllowedGroups = [];
+    }
     
     // Get user's group IDs if user is logged in
     $userGroupIds = [];
@@ -1067,32 +1109,25 @@ function handleGetTile($tileId) {
         }
     }
     
-    // Check if tile should be visible to current user
-    // Admin users can see all tiles regardless of visibility
-    $isTileVisible = false;
-    if ($user && $user['is_admin']) {
-        $isTileVisible = true; // Admins see everything
-    } elseif ($tileVisibility === 'public') {
-        $isTileVisible = true; // Public tiles visible to everyone
-    } elseif ($tileVisibility === 'authenticated' && $user) {
-        $isTileVisible = true; // Authenticated tiles visible to logged-in users
-    } elseif ($tileVisibility === 'private' && $user) {
-        // Private tiles visible only to specific users or groups
-        $isTileVisible = in_array($user['id'], $tileAllowedUsers);
-        
-        // Also check if user is in any allowed groups
-        if (!$isTileVisible && !empty($tileAllowedGroups) && !empty($userGroupIds)) {
-            $isTileVisible = !empty(array_intersect($userGroupIds, $tileAllowedGroups));
+    $isTileVisible = canUserSeeByVisibility($user, $row, $userGroupIds);
+
+    // Owner can always open their own private tile
+    if (!$isTileVisible && $user && isset($row['user_id']) && (int)$row['user_id'] === (int)$user['id']) {
+        $isTileVisible = true;
+    }
+
+    // Accepted share invitations
+    if (!$isTileVisible && $user) {
+        $sharedCheck = $db->prepare('SELECT id, sharer_user_id FROM tile_share_invitations WHERE tile_id = ? AND receiver_user_id = ? AND status = ?');
+        $sharedCheck->execute([$row['id'], $user['id'], 'accepted']);
+        if ($sharedCheck->fetch()) {
+            $isTileVisible = true;
         }
-        // Also include tiles shared with user and accepted (via tile_share_invitations)
-        if (!$isTileVisible) {
-            $sharedCheck = $db->prepare('SELECT id, sharer_user_id FROM tile_share_invitations WHERE tile_id = ? AND receiver_user_id = ? AND status = ?');
-            $sharedCheck->execute([$row['id'], $user['id'], 'accepted']);
-            $sharedRow = $sharedCheck->fetch();
-            if ($sharedRow) {
-                $isTileVisible = true;
-            }
-        }
+    }
+
+    // Role-based tile access (private + role_tile_permissions → Your Assigned Apps)
+    if (!$isTileVisible && $hasRoleAccess) {
+        $isTileVisible = true;
     }
     
     if (!$isTileVisible) {
@@ -1123,10 +1158,19 @@ function handleGetTile($tileId) {
             $isCreator = isset($row['user_id']) && (int)$row['user_id'] === (int)$user['id'];
             
             if ($isCreator) {
-                // Creators have full access to their own tiles
-                $canView = true;
-                $canEdit = true;
-                $canDelete = true;
+                // Prefer explicit permission row when a system admin has fine-tuned the owner
+                $permStmt = $db->prepare('SELECT can_view, can_edit, can_delete FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
+                $permStmt->execute([$user['id'], $row['id']]);
+                $permission = $permStmt->fetch();
+                if ($permission) {
+                    $canView = (bool)$permission['can_view'];
+                    $canEdit = (bool)$permission['can_edit'];
+                    $canDelete = (bool)$permission['can_delete'];
+                } else {
+                    $canView = true;
+                    $canEdit = true;
+                    $canDelete = true;
+                }
             } else {
                 // Check for explicit permissions
                 $permStmt = $db->prepare('SELECT can_view, can_edit, can_delete FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
@@ -1182,6 +1226,7 @@ function handleGetTile($tileId) {
         'canView' => $canView,
         'canEdit' => $canEdit,
         'canDelete' => $canDelete,
+        'hasRoleAccess' => $hasRoleAccess,
         'visibleFrom' => $row['visible_from'] ?? null,
         'expiresAt' => $row['expires_at'] ?? null,
         'tileBackgroundColor' => !empty($row['tile_background_color']) ? $row['tile_background_color'] : null,
@@ -1299,6 +1344,7 @@ function handleGetTile($tileId) {
             $section = [
                 'id' => $sectionRow['id'],
                 'title' => $sectionRow['title'],
+                'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
                 'visibleFrom' => $sectionRow['visible_from'] ?? null,
                 'expiresAt' => $sectionRow['expires_at'] ?? null,
                 'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
@@ -1369,7 +1415,7 @@ function handleGetTile($tileId) {
                 ];
                 
                 // Include health data if available
-                if (isset($linkRow['health_status'])) {
+                if (isset($linkRow['health_status']) && !isNonHttpLinkHealthUrl($linkRow['url'] ?? '')) {
                     $link['health'] = [
                         'status' => $linkRow['health_status'] ?? 'unknown',
                         'httpCode' => $linkRow['health_http_code'] ? (int)$linkRow['health_http_code'] : null,
@@ -1423,6 +1469,8 @@ function handleGetTile($tileId) {
                 $section = [
                     'id' => $sectionRow['id'],
                     'title' => $sectionRow['title'],
+                    'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
+                    'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
                     'visibility' => $sectionRow['visibility'] ?? 'public',
                     'allowedUsers' => (isset($sectionRow['allowed_users']) && $sectionRow['allowed_users'] ? json_decode($sectionRow['allowed_users'], true) : null) ?? [],
                     'allowedGroups' => (isset($sectionRow['allowed_groups']) && $sectionRow['allowed_groups'] ? json_decode($sectionRow['allowed_groups'], true) : null) ?? [],
@@ -1484,7 +1532,7 @@ function handleGetTile($tileId) {
                         'position' => (int)($linkRow['position'] ?? 0)
                     ];
 
-                    if (isset($linkRow['health_status'])) {
+                    if (isset($linkRow['health_status']) && !isNonHttpLinkHealthUrl($linkRow['url'] ?? '')) {
                         $link['health'] = [
                             'status' => $linkRow['health_status'] ?? 'unknown',
                             'httpCode' => $linkRow['health_http_code'] ? (int)$linkRow['health_http_code'] : null,
@@ -3166,10 +3214,15 @@ function handleBulkImport() {
     $created = [];
     $errors = [];
     $currentTime = time();
+    $deletedCount = 0;
+
+    // Optional: soft-delete all existing public spaces before importing (replace-all mode)
+    $replaceAllRaw = $_POST['replace_all'] ?? '';
+    $replaceAll = $replaceAllRaw === '1' || $replaceAllRaw === 'true' || $replaceAllRaw === 'on';
     
-    // Get current max position to append new tiles
-    $maxPositionStmt = $db->prepare('SELECT MAX(position) as max_pos FROM tiles');
-    $maxPositionStmt->execute();
+    // Get current max position to append new tiles (reset to 0 when replacing all)
+    $maxPositionStmt = $db->prepare('SELECT MAX(position) as max_pos FROM tiles WHERE deleted_at IS NULL AND archived_at IS NULL AND (source_tab IS NULL OR source_tab = ? OR source_tab = \'\')');
+    $maxPositionStmt->execute(['public']);
     $maxPosRow = $maxPositionStmt->fetch();
     $nextPosition = ($maxPosRow && $maxPosRow['max_pos'] !== null) ? (int)$maxPosRow['max_pos'] + 1 : 0;
     
@@ -3225,6 +3278,17 @@ function handleBulkImport() {
     $db->beginTransaction();
     
     try {
+        if ($replaceAll) {
+            $softDeleteStmt = $db->prepare(
+                'UPDATE tiles SET deleted_at = ?, archived_at = NULL
+                 WHERE deleted_at IS NULL AND archived_at IS NULL
+                 AND (source_tab IS NULL OR source_tab = ? OR source_tab = \'\')'
+            );
+            $softDeleteStmt->execute([$currentTime, 'public']);
+            $deletedCount = $softDeleteStmt->rowCount();
+            $nextPosition = 0;
+        }
+
         foreach ($tilesMap as $tileKey => $tileData) {
             try {
                 // Generate unique tile ID
@@ -3313,6 +3377,7 @@ function handleBulkImport() {
         sendJSON([
             'success' => true,
             'created' => count($created),
+            'deleted' => $deletedCount,
             'errors' => count($errors),
             'createdTiles' => $created,
             'errorMessages' => $errors
@@ -3988,9 +4053,9 @@ function handleGetFavoriteLinks() {
                 }
             }
             
-            // Parse health data if available
+            // Parse health data if available (skip ssh://, vnc://, etc.)
             $health = null;
-            if ($row['health_status']) {
+            if ($row['health_status'] && !isNonHttpLinkHealthUrl($row['url'] ?? '')) {
                 $health = [
                     'status' => $row['health_status'],
                     'httpCode' => $row['health_http_code'] ?? null,
@@ -4160,7 +4225,7 @@ function handleGetRecycleBin() {
                 $section = [
                     'id' => $sectionRow['id'],
                     'title' => $sectionRow['title'],
-                    'textColor' => isset($sectionRow['text_color']) ? $sectionRow['text_color'] : null,
+                    'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
                     'visibleFrom' => $sectionRow['visible_from'] ?? null,
                     'expiresAt' => $sectionRow['expires_at'] ?? null,
                     'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
@@ -4195,7 +4260,7 @@ function handleGetRecycleBin() {
                     ];
                     
                     // Include health data if available
-                    if (isset($linkRow['health_status'])) {
+                    if (isset($linkRow['health_status']) && !isNonHttpLinkHealthUrl($linkRow['url'] ?? '')) {
                         $link['health'] = [
                             'status' => $linkRow['health_status'] ?? 'unknown',
                             'httpCode' => $linkRow['health_http_code'] ? (int)$linkRow['health_http_code'] : null,
@@ -4535,6 +4600,7 @@ function handleGetArchive() {
                     $section = [
                         'id' => $sectionRow['id'],
                         'title' => $sectionRow['title'],
+                        'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
                         'visibleFrom' => $sectionRow['visible_from'] ?? null,
                         'expiresAt' => $sectionRow['expires_at'] ?? null,
                         'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
@@ -4565,7 +4631,7 @@ function handleGetArchive() {
                             'animation' => $linkRow['animation'] ?? null,
                         ];
                         
-                        if (isset($linkRow['health_status'])) {
+                        if (isset($linkRow['health_status']) && !isNonHttpLinkHealthUrl($linkRow['url'] ?? '')) {
                             $link['health'] = [
                                 'status' => $linkRow['health_status'] ?? 'unknown',
                                 'httpCode' => $linkRow['health_http_code'] ? (int)$linkRow['health_http_code'] : null,
@@ -5043,7 +5109,7 @@ function getTileForVersion($tileId, $db) {
             $section = [
                 'id' => $sectionRow['id'],
                 'title' => $sectionRow['title'],
-                'textColor' => isset($sectionRow['text_color']) ? $sectionRow['text_color'] : null,
+                    'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
                 'visibleFrom' => $sectionRow['visible_from'] ?? null,
                 'expiresAt' => $sectionRow['expires_at'] ?? null,
                 'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
@@ -5825,6 +5891,24 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
             $data['tabs'] = mergeUnpublishedContentForSave($data['tabs'] ?? [], $currentTileData['tabs']);
         }
 
+        // Preserve role assignments across delete/recreate; grant new links the same role access
+        $oldLinkIdsForRoles = collectLinkIdsFromTileData($currentTileData);
+        $rolesForNewLinks = [];
+        $tileRoleStmt = $db->prepare('SELECT DISTINCT role_id FROM role_tile_permissions WHERE tile_id = ? AND can_view = 1');
+        $tileRoleStmt->execute([$tileId]);
+        while ($row = $tileRoleStmt->fetch(PDO::FETCH_ASSOC)) {
+            $rolesForNewLinks[] = (int)$row['role_id'];
+        }
+        if (empty($rolesForNewLinks) && !empty($oldLinkIdsForRoles)) {
+            $placeholders = implode(',', array_fill(0, count($oldLinkIdsForRoles), '?'));
+            $linkRoleStmt = $db->prepare("SELECT DISTINCT role_id FROM role_link_permissions WHERE link_id IN ($placeholders) AND can_view = 1");
+            $linkRoleStmt->execute($oldLinkIdsForRoles);
+            while ($row = $linkRoleStmt->fetch(PDO::FETCH_ASSOC)) {
+                $rolesForNewLinks[] = (int)$row['role_id'];
+            }
+            $rolesForNewLinks = array_values(array_unique($rolesForNewLinks));
+        }
+
         $db->prepare('DELETE FROM rich_text_content WHERE section_id IN (SELECT id FROM sections WHERE tile_id = ?)')->execute([$tileId]);
         $db->prepare('DELETE FROM links WHERE section_id IN (SELECT id FROM sections WHERE tile_id = ?)')->execute([$tileId]);
         $db->prepare('DELETE FROM sections WHERE tile_id = ?')->execute([$tileId]);
@@ -5832,6 +5916,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
         $db->prepare('DELETE FROM tile_messages WHERE tile_id = ?')->execute([$tileId]);
     
         // Insert new tabs, sections, and links
+        $savedLinkIdsForRoles = [];
         if (isset($data['tabs']) && is_array($data['tabs'])) {
             foreach ($data['tabs'] as $tabIndex => $tab) {
                 $tabId = $tab['id'] ?? uniqid('tab_', true);
@@ -5884,6 +5969,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                         if (isset($section['links']) && is_array($section['links'])) {
                             foreach ($section['links'] as $link) {
                                 $linkId = $link['id'] ?? uniqid('link_', true);
+                                $savedLinkIdsForRoles[] = (string)$linkId;
                                 $visibility = $link['visibility'] ?? 'public';
                                 $allowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) ? json_encode($link['allowedUsers']) : null;
                                 $allowedGroups = isset($link['allowedGroups']) && is_array($link['allowedGroups']) ? json_encode($link['allowedGroups']) : null;
@@ -5949,6 +6035,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                     foreach ($section['links'] as $link) {
                         if (!isset($link['label']) || !isset($link['url'])) continue;
                         $linkId = $link['id'] ?? uniqid('link_', true);
+                        $savedLinkIdsForRoles[] = (string)$linkId;
                         $visibility = $link['visibility'] ?? 'public';
                         $allowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) ? json_encode($link['allowedUsers']) : null;
                         $allowedGroups = isset($link['allowedGroups']) && is_array($link['allowedGroups']) ? json_encode($link['allowedGroups']) : null;
@@ -5981,6 +6068,9 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                 }
             }
         }
+
+        // New/cloned links need role_link_permissions or they vanish from Your Assigned Apps after save
+        grantRoleLinkAccessForNewLinks($db, $tileId, $oldLinkIdsForRoles, $savedLinkIdsForRoles, $rolesForNewLinks);
         
         // Messages
         if (isset($data['messages']) && is_array($data['messages'])) {
@@ -6723,6 +6813,8 @@ function handleGetTileInfo($tileId) {
             t.visibility,
             t.source_tab,
             t.allowed_users,
+            t.allowed_groups,
+            t.published,
             u.username as owner_username,
             u.email as owner_email,
             u.uuid as owner_uuid,
@@ -6737,20 +6829,46 @@ function handleGetTileInfo($tileId) {
     if (!$row) {
         sendJSON(['error' => 'Tile not found'], 404);
     }
+
+    // Unpublished tiles are admin-only (same as tile list / get)
+    if (!canUserSeePublishedContent($user, $row)) {
+        sendJSON(['error' => 'Tile not found'], 404);
+    }
     
-    // Check visibility
+    // Check visibility — must match handleGetTiles so users who can see a tile
+    // (groups, roles, shares, ownership) can also open Tile Information.
     $tileVisibility = $row['visibility'] ?? 'public';
-    $tileAllowedUsers = $row['allowed_users'] ? json_decode($row['allowed_users'], true) : [];
     
-    $isTileVisible = false;
-    if ($user && $user['is_admin']) {
+    $userGroupIds = [];
+    if ($user) {
+        $groupStmt = $db->prepare('SELECT group_id FROM user_group_members WHERE user_id = ?');
+        $groupStmt->execute([$user['id']]);
+        while ($group = $groupStmt->fetch()) {
+            $userGroupIds[] = (int)$group['group_id'];
+        }
+    }
+    
+    $isTileVisible = canUserSeeByVisibility($user, $row, $userGroupIds);
+
+    // Owner can always view their own private tile info
+    if (!$isTileVisible && $user && isset($row['user_id']) && (int)$row['user_id'] === (int)$user['id']) {
         $isTileVisible = true;
-    } elseif ($tileVisibility === 'public') {
-        $isTileVisible = true;
-    } elseif ($tileVisibility === 'authenticated' && $user) {
-        $isTileVisible = true;
-    } elseif ($tileVisibility === 'private' && $user) {
-        $isTileVisible = in_array($user['id'], $tileAllowedUsers);
+    }
+
+    // Accepted share invitations (same as tile list / get)
+    if (!$isTileVisible && $user) {
+        $sharedCheck = $db->prepare('SELECT id FROM tile_share_invitations WHERE tile_id = ? AND receiver_user_id = ? AND status = ?');
+        $sharedCheck->execute([$tileId, $user['id'], 'accepted']);
+        if ($sharedCheck->fetch()) {
+            $isTileVisible = true;
+        }
+    }
+
+    // Role-based tile access (e.g. Your Apps / role_tile_permissions)
+    if (!$isTileVisible && $user && !empty($user['id']) && empty($user['is_admin'])) {
+        if (canUserViewTileByRole($user['id'], $tileId, $db)) {
+            $isTileVisible = true;
+        }
     }
     
     if (!$isTileVisible) {
@@ -6758,7 +6876,7 @@ function handleGetTileInfo($tileId) {
     }
     
     // Check granular permission for viewing tile info.
-    // Allow: public tiles, creator, admin, or anyone who can see the tile (e.g. allowed_users for private).
+    // Allow: public tiles, creator, admin, or anyone who can see the tile (e.g. allowed_users/groups/roles).
     // Deny only when user is a tile admin and can_view_tile_info is explicitly false.
     if ($user && !$user['is_admin'] && $tileVisibility !== 'public') {
         $isCreator = isset($row['user_id']) && (int)$row['user_id'] === (int)$user['id'];

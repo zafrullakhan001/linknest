@@ -28,7 +28,7 @@ class ServerLinkChecker {
         if ($this->serverPublicIp !== null) {
             return $this->serverPublicIp ?: null;
         }
-        // 1) Optional override from app settings (Settings → Performance Analytics)
+        // 1) Optional override from app settings (Settings â†’ Performance Analytics)
         try {
             $stmt = $this->db->prepare("SELECT value FROM settings WHERE key = 'performance_analytics_server_public_ip' LIMIT 1");
             $stmt->execute();
@@ -96,7 +96,6 @@ class ServerLinkChecker {
             $response = curl_exec($ch);
             $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
             $err = curl_error($ch);
-            curl_close($ch);
             if ($code !== 200 || $response === false || $response === '') {
                 continue;
             }
@@ -178,8 +177,6 @@ class ServerLinkChecker {
             $response = curl_exec($ch);
             $info = curl_getinfo($ch);
             $error = curl_error($ch);
-            curl_close($ch);
-            
             if ($info['http_code'] > 0) {
                 $result['success'] = true;
                 $result['http_status'] = $info['http_code'];

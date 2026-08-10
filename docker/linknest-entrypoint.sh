@@ -55,6 +55,52 @@ if [ ! -d "$BACKUPS_DIR" ]; then
     echo "[ENTRYPOINT] Created backups directory: $BACKUPS_DIR"
 fi
 
+# SSH gateway runtime dir (ttyd session state + logs)
+SSH_GW_DIR="/var/www/html/data/ssh_gateway"
+mkdir -p "$SSH_GW_DIR"
+chown www-data:www-data "$SSH_GW_DIR"
+chmod 755 "$SSH_GW_DIR"
+
+# VNC gateway runtime dir (websockify session state + logs)
+VNC_GW_DIR="/var/www/html/data/vnc_gateway"
+mkdir -p "$VNC_GW_DIR"
+chown www-data:www-data "$VNC_GW_DIR"
+chmod 755 "$VNC_GW_DIR"
+
+# If this container's DB was copied from Windows XAMPP, clear stale Windows exe paths
+# so Linux auto-detect (/usr/local/bin/ttyd, /usr/bin/ssh, python3 + websockify) can work.
+if [ -f "${DB_PATH}" ] && command -v sqlite3 >/dev/null 2>&1; then
+  echo "[ENTRYPOINT] Normalizing SSH/VNC gateway paths for Linux/Docker..."
+  sqlite3 "${DB_PATH}" "UPDATE settings SET value='' WHERE key='ssh_gateway_ttyd_path' AND (lower(value) LIKE '%.exe' OR value LIKE '%\\%' OR value GLOB '[A-Za-z]:*');" 2>/dev/null || true
+  sqlite3 "${DB_PATH}" "UPDATE settings SET value='' WHERE key='ssh_gateway_ssh_path' AND (lower(value) LIKE '%.exe' OR value LIKE '%\\%' OR value GLOB '[A-Za-z]:*');" 2>/dev/null || true
+  sqlite3 "${DB_PATH}" "UPDATE settings SET value='' WHERE key='vnc_gateway_python_path' AND (lower(value) LIKE '%.exe' OR value LIKE '%\\%' OR value GLOB '[A-Za-z]:*');" 2>/dev/null || true
+  sqlite3 "${DB_PATH}" "UPDATE settings SET value='' WHERE key='vnc_gateway_websockify_path' AND (lower(value) LIKE '%.cmd' OR lower(value) LIKE '%.exe' OR value LIKE '%\\%' OR value GLOB '[A-Za-z]:*');" 2>/dev/null || true
+  # Loopback DISPLAY is wrong inside Docker — use host.docker.internal for VcXsrv on the host
+  X11_DISPLAY_DOCKER="${SSH_GATEWAY_X11_DISPLAY:-host.docker.internal:0.0}"
+  sqlite3 "${DB_PATH}" "UPDATE settings SET value='${X11_DISPLAY_DOCKER}' WHERE key='ssh_gateway_x11_display' AND (value='' OR value LIKE '127.0.0.1%' OR lower(value) LIKE 'localhost%' OR value LIKE '::1%');" 2>/dev/null || true
+  # Ensure the setting exists even if never configured on Windows
+  HAS_X11="$(sqlite3 "${DB_PATH}" "SELECT COUNT(1) FROM settings WHERE key='ssh_gateway_x11_display';" 2>/dev/null || echo 0)"
+  if [ "${HAS_X11}" = "0" ]; then
+    NOW="$(date +%s)"
+    sqlite3 "${DB_PATH}" "INSERT INTO settings (key, value, updated_at) VALUES ('ssh_gateway_x11_display', '${X11_DISPLAY_DOCKER}', ${NOW});" 2>/dev/null || true
+  fi
+  echo "[ENTRYPOINT] SSH X11 DISPLAY for Docker: ${X11_DISPLAY_DOCKER}"
+fi
+
+if command -v ttyd >/dev/null 2>&1; then
+  echo "[ENTRYPOINT] ttyd available: $(command -v ttyd) ($(ttyd --version 2>&1 | head -n1))"
+else
+  echo "[ENTRYPOINT] WARNING: ttyd not found — SSH Terminal Easy mode will not work"
+fi
+if command -v ssh >/dev/null 2>&1; then
+  echo "[ENTRYPOINT] OpenSSH client available: $(command -v ssh)"
+fi
+if python3 -c "import websockify" >/dev/null 2>&1; then
+  echo "[ENTRYPOINT] websockify available (python3 -m websockify); VNC ports ${VNC_GATEWAY_PORT_MIN:-18881}-${VNC_GATEWAY_PORT_MAX:-18980}"
+else
+  echo "[ENTRYPOINT] WARNING: websockify not found — VNC Viewer Easy mode will not work"
+fi
+
 # Start cron daemon for scheduled tasks (database backups at 2:00 AM and 3:00 AM daily)
 echo "[ENTRYPOINT] Starting cron daemon for scheduled backups..."
 # Start cron in the background

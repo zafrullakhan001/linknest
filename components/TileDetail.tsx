@@ -14,6 +14,7 @@ import {
 import { cloneTile, getTiles, saveTile, toggleLinkFavorite, createTempVersion, updateTilePageAnimation, recordTileVisit } from '../services/storageService';
 import { removeSharedTile } from '../services/tileShareService';
 import { useSettings } from '../contexts/SettingsContext';
+import { isEscapeDialogOpen, useEscapeToClose } from '../hooks/useEscapeToClose';
 import { RichTextEditor } from './RichTextEditor';
 import { RichTextContentItem } from './RichTextContentItem';
 import { RichTextBoxedView } from './RichTextBoxedView';
@@ -32,14 +33,27 @@ import type { BoxAlign } from './RichTextBoxedView';
 import { RichTextContent } from '../types';
 import { isPublicLinkFavorite, togglePublicLinkFavorite } from '../services/publicFavoritesService';
 import { LinkInfoDialog } from './LinkInfoDialog';
+import { LinkNotesDialog } from './LinkNotesDialog';
 import { QRCodeDialog } from './QRCodeDialog';
+import { MobilePreviewDialog } from './MobilePreviewDialog';
 import { BrandedQRCode } from './BrandedQRCode';
 import { MobileTileEdit } from './MobileTileEdit';
 import { useMobile } from '../hooks/useMobile';
+import {
+    HierarchyViewSwitcher,
+    TileHierarchyViews,
+    readHierarchyViewPreference,
+    writeHierarchyViewPreference,
+    type HierarchyViewMode,
+} from './TileHierarchyViews';
 import { VersionDiffViewer } from './VersionDiffViewer';
 import { TileAnimationSelector, getTileAnimationClass, TileAnimation, getAnimationOption, resolveLinkAnimation } from './TileAnimationSelector';
 import { AuthSourceBadge } from './AuthSourceBadge';
-import { getDisplayUrl } from '../utils/urlDisplay';
+import { getDisplayUrl, isHttpOrHttpsUrl, normalizeStoredLinkUrl } from '../utils/urlDisplay';
+import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
+import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
+import { printQrView } from '../utils/printQrView';
+import { rolesService, LINK_ACTION_IDS, type LinkActionId } from '../services/rolesService';
 
 type ViewLayoutMode = 'stacked' | 'side-by-side' | 'grid' | 'compact' | 'qr';
 
@@ -258,6 +272,240 @@ const EmojiPickerTabs: React.FC<{
     );
 };
 
+const LINK_EDIT_SECTION_ACCENTS = {
+    sky: {
+        border: 'border-sky-200 dark:border-sky-800/50',
+        header: 'bg-sky-50 dark:bg-sky-950/35 hover:bg-sky-100/90 dark:hover:bg-sky-900/40',
+        emoji: 'bg-sky-100 dark:bg-sky-900/50',
+        title: 'text-sky-900 dark:text-sky-100',
+        body: 'border-sky-100 dark:border-sky-900/40 bg-white/80 dark:bg-slate-900/40',
+    },
+    amber: {
+        border: 'border-amber-200 dark:border-amber-800/50',
+        header: 'bg-amber-50 dark:bg-amber-950/35 hover:bg-amber-100/90 dark:hover:bg-amber-900/40',
+        emoji: 'bg-amber-100 dark:bg-amber-900/50',
+        title: 'text-amber-900 dark:text-amber-100',
+        body: 'border-amber-100 dark:border-amber-900/40 bg-white/80 dark:bg-slate-900/40',
+    },
+    violet: {
+        border: 'border-violet-200 dark:border-violet-800/50',
+        header: 'bg-violet-50 dark:bg-violet-950/35 hover:bg-violet-100/90 dark:hover:bg-violet-900/40',
+        emoji: 'bg-violet-100 dark:bg-violet-900/50',
+        title: 'text-violet-900 dark:text-violet-100',
+        body: 'border-violet-100 dark:border-violet-900/40 bg-white/80 dark:bg-slate-900/40',
+    },
+    slate: {
+        border: 'border-slate-200 dark:border-slate-700',
+        header: 'bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800',
+        emoji: 'bg-slate-200/80 dark:bg-slate-700',
+        title: 'text-slate-800 dark:text-slate-100',
+        body: 'border-slate-100 dark:border-slate-700/80 bg-white/80 dark:bg-slate-900/40',
+    },
+} as const;
+
+type LinkEditSectionAccent = keyof typeof LINK_EDIT_SECTION_ACCENTS;
+
+const LinkEditSection: React.FC<{
+    emoji: string;
+    title: string;
+    subtitle?: string;
+    accent?: LinkEditSectionAccent;
+    defaultOpen?: boolean;
+    badge?: React.ReactNode;
+    children: React.ReactNode;
+}> = ({ emoji, title, subtitle, accent = 'slate', defaultOpen = false, badge, children }) => {
+    const [open, setOpen] = useState(defaultOpen);
+    const styles = LINK_EDIT_SECTION_ACCENTS[accent];
+
+    return (
+        <div className={`rounded-xl border-2 overflow-hidden shadow-sm ${styles.border}`}>
+            <button
+                type="button"
+                aria-expanded={open}
+                onClick={() => setOpen((v) => !v)}
+                className={`w-full flex items-center gap-3 px-3.5 py-3 text-left transition-colors ${styles.header}`}
+            >
+                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-lg ${styles.emoji}`} aria-hidden>
+                    {emoji}
+                </span>
+                <span className="min-w-0 flex-1">
+                    <span className={`block text-sm font-semibold ${styles.title}`}>{title}</span>
+                    {subtitle && (
+                        <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">{subtitle}</span>
+                    )}
+                </span>
+                {badge}
+                <svg
+                    className={`w-4 h-4 shrink-0 text-slate-400 transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    aria-hidden
+                >
+                    <path
+                        fillRule="evenodd"
+                        d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"
+                        clipRule="evenodd"
+                    />
+                </svg>
+            </button>
+            {open && (
+                <div className={`px-3.5 py-3.5 space-y-3 border-t ${styles.body}`}>
+                    {children}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const isProbableUrl = (value: string): boolean => {
+    // Only probe URLs that already include http(s):// — never invent a scheme.
+    const trimmed = (value || '').trim();
+    if (!trimmed || trimmed.length < 8) return false;
+    if (!isHttpOrHttpsUrl(trimmed)) return false;
+    try {
+        const parsed = new URL(trimmed);
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+        return false;
+    }
+};
+
+const formatProbeLatency = (ms?: number | null): string => {
+    if (ms === undefined || ms === null) return '';
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(1)}s`;
+};
+
+const UrlProbeBadges: React.FC<{ url: string }> = ({ url }) => {
+    const [phase, setPhase] = useState<'idle' | 'checking' | 'done' | 'error'>('idle');
+    const [scheme, setScheme] = useState<string>('');
+    const [httpCode, setHttpCode] = useState<number | null>(null);
+    const [latency, setLatency] = useState<number | null>(null);
+    const [healthStatus, setHealthStatus] = useState<string>('');
+    const [error, setError] = useState<string>('');
+    const abortRef = useRef<AbortController | null>(null);
+    const requestIdRef = useRef(0);
+
+    useEffect(() => {
+        const trimmed = (url || '').trim();
+        abortRef.current?.abort();
+        abortRef.current = null;
+
+        if (!isProbableUrl(trimmed)) {
+            setPhase('idle');
+            setScheme('');
+            setHttpCode(null);
+            setLatency(null);
+            setHealthStatus('');
+            setError('');
+            return;
+        }
+
+        const detectedScheme = /^http:\/\//i.test(trimmed)
+            ? 'http'
+            : /^https:\/\//i.test(trimmed)
+                ? 'https'
+                : '';
+        if (!detectedScheme) {
+            setPhase('idle');
+            return;
+        }
+        setScheme(detectedScheme);
+        setPhase('checking');
+        setError('');
+
+        const requestId = ++requestIdRef.current;
+        const timer = window.setTimeout(async () => {
+            const controller = new AbortController();
+            abortRef.current = controller;
+            const started = performance.now();
+            try {
+                const result = await linkHealthService.checkUrl(trimmed, controller.signal);
+                if (requestId !== requestIdRef.current) return;
+                const roundTrip = Math.round(performance.now() - started);
+                setScheme(result.scheme || detectedScheme);
+                setHttpCode(result.health.httpCode ?? null);
+                setLatency(result.health.serverLatency ?? roundTrip);
+                setHealthStatus(result.health.status || '');
+                setError(result.health.error || '');
+                setPhase('done');
+            } catch (err: any) {
+                if (controller.signal.aborted || requestId !== requestIdRef.current) return;
+                if (err?.name === 'AbortError') return;
+                setHttpCode(null);
+                setLatency(Math.round(performance.now() - started));
+                setHealthStatus('broken');
+                setError(err?.message || 'Check failed');
+                setPhase('error');
+            }
+        }, 650);
+
+        return () => {
+            window.clearTimeout(timer);
+            abortRef.current?.abort();
+        };
+    }, [url]);
+
+    if (phase === 'idle') return null;
+
+    const codeColor =
+        httpCode && httpCode >= 200 && httpCode < 300
+            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700'
+            : httpCode && httpCode >= 300 && httpCode < 400
+                ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 border-amber-200 dark:border-amber-700'
+                : httpCode
+                    ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200 border-rose-200 dark:border-rose-700'
+                    : healthStatus === 'timeout'
+                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 border-amber-200 dark:border-amber-700'
+                        : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-600';
+
+    const latencyColor =
+        latency !== null && latency < 300
+            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700'
+            : latency !== null && latency < 1000
+                ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 border-amber-200 dark:border-amber-700'
+                : 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200 border-rose-200 dark:border-rose-700';
+
+    const schemeUpper = (scheme || 'https').toUpperCase();
+    const statusLabel =
+        phase === 'checking'
+            ? 'Checking…'
+            : httpCode
+                ? String(httpCode)
+                : healthStatus === 'timeout'
+                    ? 'Timeout'
+                    : error
+                        ? 'Error'
+                        : '—';
+
+    return (
+        <div className="flex flex-wrap items-center gap-1.5" title={error || undefined}>
+            {phase === 'checking' ? (
+                <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border bg-sky-100 text-sky-800 dark:bg-sky-900/50 dark:text-sky-200 border-sky-200 dark:border-sky-700 animate-pulse">
+                    <span aria-hidden>⏳</span> Checking…
+                </span>
+            ) : (
+                <>
+                    <span
+                        className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${latencyColor}`}
+                        title="Round-trip time (server probe latency)"
+                    >
+                        <span aria-hidden>⚡</span>
+                        RTT {formatProbeLatency(latency) || '—'}
+                    </span>
+                    <span
+                        className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${codeColor}`}
+                        title={`${schemeUpper} status code${error ? `: ${error}` : ''}`}
+                    >
+                        <span aria-hidden>{scheme === 'http' ? '🔓' : '🔒'}</span>
+                        {schemeUpper} {statusLabel}
+                    </span>
+                </>
+            )}
+        </div>
+    );
+};
+
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
 export const TileDetail: React.FC<TileDetailProps> = ({
@@ -272,9 +520,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [isEditing, setIsEditing] = useState(false);
     const autoSavingRef = useRef(false);
     const tempVersionCreatedRef = useRef<{ tileId: string | null; active: boolean }>({ tileId: null, active: false });
-    const sectionLinksJsonInputRef = useRef<HTMLInputElement>(null);
+    const sectionLinksImportInputRef = useRef<HTMLInputElement>(null);
     const tabJsonInputRef = useRef<HTMLInputElement>(null);
-    const pendingSectionJsonImportRef = useRef<{ tabId: string; sectionId: string } | null>(null);
+    const pendingSectionImportRef = useRef<{ tabId: string; sectionId: string } | null>(null);
     const pendingTabJsonImportAfterRef = useRef<string | null>(null);
 
     // Edit State
@@ -284,6 +532,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editingIntro, setEditingIntro] = useState(false);
     const [expandedTabs, setExpandedTabs] = useState<Set<string>>(new Set());
     const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+    const [hierarchyView, setHierarchyView] = useState<HierarchyViewMode>(() => readHierarchyViewPreference());
+
+    const changeHierarchyView = (mode: HierarchyViewMode) => {
+        setHierarchyView(mode);
+        writeHierarchyViewPreference(mode);
+        if (mode !== 'cards' && editTabs.length > 0) {
+            setExpandedTabs(new Set(editTabs.map(t => t.id)));
+        }
+    };
     const [editEmoji, setEditEmoji] = useState(tile.emoji);
     const [editColor, setEditColor] = useState<ThemeColor>(tile.themeColor);
     const [editVisibility, setEditVisibility] = useState<TileVisibility>(tile.visibility || 'public');
@@ -407,6 +664,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             return 'side-by-side';
         }
     });
+    /**
+     * Independent of link view mode (stacked/grid/compact/qr/columns).
+     * When true, section cards sit in a multi-column grid; can stay ON while other views are selected.
+     */
+    const [sectionsSideBySide, setSectionsSideBySide] = useState(() => {
+        try {
+            const saved = localStorage.getItem('linknest_sections_side_by_side');
+            if (saved === '1' || saved === 'true') return true;
+            if (saved === '0' || saved === 'false') return false;
+            // Migrate: previous exclusive "side-by-side" view meant sections were side-by-side
+            const layout = localStorage.getItem('linknest_view_layout');
+            return layout === null || layout === 'side-by-side';
+        } catch {
+            return true;
+        }
+    });
     const [sectionLinkLayouts, setSectionLinkLayouts] = useState<Record<string, ViewLayoutMode>>(() =>
         loadSectionLinkLayouts(tile.id)
     );
@@ -436,15 +709,16 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [linkHealth, setLinkHealth] = useState<LinkHealthMap>({});
     const [checkingHealth, setCheckingHealth] = useState(false);
     const [checkingLinkId, setCheckingLinkId] = useState<string | null>(null);
+    const healthCheckAbortRef = useRef<AbortController | null>(null);
 
     // Mobile header actions menu (view mode)
     const [showHeaderActionsMenu, setShowHeaderActionsMenu] = useState(false);
     const [mobilePageAnimOpen, setMobilePageAnimOpen] = useState(false);
     const headerActionsMenuRef = useRef<HTMLDivElement>(null);
+    const qrPrintRootRef = useRef<HTMLDivElement>(null);
 
     // CSV Import State
-    const [csvImportFile, setCsvImportFile] = useState<Record<string, File | null>>({});
-    const [importingCsv, setImportingCsv] = useState<Record<string, boolean>>({});
+    const [importingSectionLinks, setImportingSectionLinks] = useState<Record<string, boolean>>({});
 
     // Add Link Form Visibility State
     const [showAddLinkForm, setShowAddLinkForm] = useState<Record<string, boolean>>({});
@@ -472,9 +746,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [linkSearchTerm, setLinkSearchTerm] = useState('');
     const [hoveredLinkId, setHoveredLinkId] = useState<string | null>(null);
     const [notesDialogState, setNotesDialogState] = useState<{ linkId: string; notes: string; linkLabel: string } | null>(null);
-    const [notesCopied, setNotesCopied] = useState(false);
     const [linkInfoDialog, setLinkInfoDialog] = useState<{ link: Link } | null>(null);
     const [qrDialogState, setQrDialogState] = useState<{ url: string; label: string } | null>(null);
+    const [mobilePreviewState, setMobilePreviewState] = useState<{ url: string; label: string } | null>(null);
+    const [allowedLinkActions, setAllowedLinkActions] = useState<Set<string>>(
+        () => new Set(LINK_ACTION_IDS)
+    );
 
     // Version Control State
     const [showVersions, setShowVersions] = useState(false);
@@ -521,23 +798,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     } | null>(null);
 
 
-    // Handle ESC key to close notes dialog
-    useEffect(() => {
-        if (!notesDialogState) return;
-
-        const handleEscKey = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
-                setNotesDialogState(null);
-                setNotesCopied(false);
-            }
-        };
-
-        document.addEventListener('keydown', handleEscKey);
-        return () => {
-            document.removeEventListener('keydown', handleEscKey);
-        };
-    }, [notesDialogState]);
     const [notesPresetFormState, setNotesPresetFormState] = useState<{ linkId: string } | null>(null);
+    useEscapeToClose(!!notesPresetFormState, () => setNotesPresetFormState(null));
     const [notesPresetForm, setNotesPresetForm] = useState({
         ownerInfo: '',
         supportTeamInfo: '',
@@ -591,38 +853,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tile?.id]);
 
-    // Auto-check links when tile is opened
+    // Abort in-flight health checks when leaving this tile (prevents hung UI / blocked navigation)
     useEffect(() => {
-        // Automatically check tile links when component mounts
-        // This ensures analytics data is captured as soon as user opens the tile
-        const autoCheckLinks = async () => {
-            try {
-                // Small delay to allow UI to render first
-                await new Promise(resolve => setTimeout(resolve, 500));
-
-                // Get all sections from the tile
-                const sections = tile.tabs && tile.tabs.length > 0
-                    ? tile.tabs.flatMap(tab => tab.sections)
-                    : tile.sections || [];
-
-                // Check if tile has any links
-                const hasLinks = sections.some(section =>
-                    section.links && section.links.length > 0
-                );
-
-                // Only auto-check if tile has links and we're not already checking
-                if (hasLinks && !checkingHealth) {
-                    handleCheckTileHealth();
-                }
-            } catch (error) {
-                console.debug('Auto link check skipped:', error);
-            }
+        return () => {
+            healthCheckAbortRef.current?.abort();
+            healthCheckAbortRef.current = null;
         };
-
-        autoCheckLinks();
-        // Run only once when component mounts
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [tile.id]);
 
     const styles = COLOR_STYLES[tile.themeColor] || COLOR_STYLES['blue'];
 
@@ -846,12 +1083,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             setEditSections(clonedSections);
         }
 
-        // Load health status from tile data
+        // Load health status from tile data (skip ssh:// / vnc:// — not HTTP-probed)
         const healthMap: LinkHealthMap = {};
         const sectionsToCheck = tile.tabs ? tile.tabs.flatMap(tab => tab.sections) : (tile.sections || []);
         sectionsToCheck.forEach(section => {
             section.links?.forEach(link => {
-                if (link.health) {
+                if (link.health && !isSshLinkUrl(link.url || '') && !isVncLinkUrl(link.url || '')) {
                     healthMap[link.id] = link.health;
                 }
             });
@@ -866,6 +1103,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             setIsEditing(true);
         }
     }, [isEditing]);
+
+    // Tree/Compact: expand all tabs once when entering those views with none expanded
+    useEffect(() => {
+        if (!isEditing || hierarchyView === 'cards' || editTabs.length === 0) return;
+        setExpandedTabs(prev => {
+            if (prev.size > 0) return prev;
+            return new Set(editTabs.map(t => t.id));
+        });
+    }, [isEditing, hierarchyView, editTabs.length]);
 
     // Refresh editTabs when entering edit mode to ensure we have the latest data
     // AND create a temp version snapshot once per edit session
@@ -912,47 +1158,65 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     useEffect(() => {
         let cancelled = false;
         const tileId = tile.id;
+        const abortController = new AbortController();
+        healthCheckAbortRef.current?.abort();
+        healthCheckAbortRef.current = abortController;
 
         const loadAndAutoCheckHealth = async () => {
             try {
                 const health = await linkHealthService.getAllHealth();
-                if (cancelled) return;
-                setLinkHealth(health);
+                if (cancelled || abortController.signal.aborted) return;
+                // Drop any stored health for SSH / non-HTTP links in this tile
+                const sectionsForFilter = tile.tabs
+                    ? tile.tabs.flatMap(tab => tab.sections || [])
+                    : (tile.sections || []);
+                const cleaned = { ...health };
+                sectionsForFilter.flatMap(s => s.links || []).forEach(l => {
+                    if (isSshLinkUrl(l.url || '') || isVncLinkUrl(l.url || '')) delete cleaned[l.id];
+                });
+                setLinkHealth(cleaned);
             } catch (error) {
                 console.error('Failed to load link health:', error);
             }
 
             // Only auto-check when viewing/exploring the space (not while editing)
-            if (isEditing || cancelled) return;
+            if (isEditing || cancelled || abortController.signal.aborted) return;
 
             const sections = tile.tabs
                 ? tile.tabs.flatMap(tab => tab.sections || [])
                 : (tile.sections || []);
-            const linkIds = sections.flatMap(s => (s.links || []).map(l => l.id));
+            const checkableLinks = sections.flatMap(s => (s.links || [])).filter(l => !isSshLinkUrl(l.url || '') && !isVncLinkUrl(l.url || ''));
+            const linkIds = checkableLinks.map(l => l.id);
             if (!linkIds.length) return;
 
             setCheckingHealth(true);
             setLinkHealth(prev => {
                 const next = { ...prev };
-                linkIds.forEach(id => {
-                    next[id] = { ...(next[id] || {}), status: 'checking' };
+                // Clear any stale health on SSH/VNC links; mark HTTP links as checking
+                sections.flatMap(s => s.links || []).forEach(l => {
+                    if (isSshLinkUrl(l.url || '') || isVncLinkUrl(l.url || '')) {
+                        delete next[l.id];
+                    } else if (linkIds.includes(l.id)) {
+                        next[l.id] = { ...(next[l.id] || {}), status: 'checking' };
+                    }
                 });
                 return next;
             });
 
             try {
-                const results = await linkHealthService.checkTileLinks(tileId);
-                if (cancelled) return;
+                // force=false: skip links checked in the last 5 minutes (much faster on reopen)
+                const results = await linkHealthService.checkTileLinks(tileId, false, abortController.signal);
+                if (cancelled || abortController.signal.aborted) return;
                 if (results && typeof results === 'object') {
-                    setLinkHealth(prev => ({ ...prev, ...results }));
+                    setLinkHealth(prev => linkHealthService.mergeResults(prev, results));
                 }
             } catch (error) {
+                if (abortController.signal.aborted || cancelled) return;
                 console.error('Failed to auto-check tile link health:', error);
-                if (cancelled) return;
                 // Fall back to last stored health so dots are not stuck on "checking"
                 try {
                     const health = await linkHealthService.getAllHealth();
-                    if (!cancelled) setLinkHealth(health);
+                    if (!cancelled && !abortController.signal.aborted) setLinkHealth(health);
                 } catch {
                     setLinkHealth(prev => {
                         const next = { ...prev };
@@ -965,7 +1229,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     });
                 }
             } finally {
-                if (!cancelled) {
+                if (!cancelled && !abortController.signal.aborted) {
                     setCheckingHealth(false);
                 }
             }
@@ -974,6 +1238,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         loadAndAutoCheckHealth();
         return () => {
             cancelled = true;
+            abortController.abort();
+            if (healthCheckAbortRef.current === abortController) {
+                healthCheckAbortRef.current = null;
+            }
         };
     }, [tile.id, isEditing]);
 
@@ -985,6 +1253,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             console.error('Failed to save view layout preference:', error);
         }
     }, [viewLayout]);
+
+    useEffect(() => {
+        try {
+            localStorage.setItem('linknest_sections_side_by_side', sectionsSideBySide ? '1' : '0');
+        } catch (error) {
+            console.error('Failed to save sections side-by-side preference:', error);
+        }
+    }, [sectionsSideBySide]);
 
     useEffect(() => {
         try {
@@ -1010,17 +1286,59 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
     const getSectionLinkLayout = (section: { id: string; forceStackedView?: boolean }): ViewLayoutMode => {
         if (section.forceStackedView) return 'stacked';
-        if (syncSectionViews) return viewLayout;
-        return sectionLinkLayouts[section.id] || viewLayout;
+        const layout = syncSectionViews ? viewLayout : (sectionLinkLayouts[section.id] || viewLayout);
+        if (layout === 'qr' && !isLinkActionAllowed('qr')) {
+            return 'side-by-side';
+        }
+        return layout;
     };
 
     const setSectionLinkLayout = (sectionId: string, layout: ViewLayoutMode) => {
         // Choosing a per-section layout turns off global sync so overrides can stick.
+        if (layout === 'qr' && !isLinkActionAllowed('qr')) {
+            return;
+        }
         if (syncSectionViews) {
             setSyncSectionViews(false);
         }
         setSectionLinkLayouts(prev => ({ ...prev, [sectionId]: layout }));
     };
+
+    const handlePrintAllQrCodes = useCallback(async () => {
+        const root = qrPrintRootRef.current;
+        if (!root) return;
+        try {
+            await printQrView({
+                title: stripHtmlTags(tile.title || '') || 'QR Codes',
+                subtitle: 'All QR codes on this page',
+                root,
+                brandName: settings.app_name || 'LinkNest',
+                brandLogoUrl: settings.favicon || undefined,
+            });
+        } catch (err) {
+            console.warn('QR print failed:', err);
+            window.alert(err instanceof Error ? err.message : 'Failed to print QR codes');
+        }
+    }, [settings.app_name, settings.favicon, tile.title]);
+
+    const handlePrintSectionQrCodes = useCallback(async (sectionId: string, sectionTitle?: string) => {
+        const root = qrPrintRootRef.current?.querySelector(
+            `[data-qr-print-section="${CSS.escape(sectionId)}"]`
+        ) as HTMLElement | null;
+        if (!root) return;
+        try {
+            await printQrView({
+                title: stripHtmlTags(tile.title || '') || 'QR Codes',
+                subtitle: sectionTitle?.trim() || 'Section QR codes',
+                root,
+                brandName: settings.app_name || 'LinkNest',
+                brandLogoUrl: settings.favicon || undefined,
+            });
+        } catch (err) {
+            console.warn('QR section print failed:', err);
+            window.alert(err instanceof Error ? err.message : 'Failed to print QR codes');
+        }
+    }, [settings.app_name, settings.favicon, tile.title]);
 
     // Handle ESC key to close visibility and scheduling dialogs
     useEffect(() => {
@@ -1047,6 +1365,46 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             return () => document.removeEventListener('keydown', handleEscKey);
         }
     }, [visibilityDialogTab, visibilityDialogSection, schedulingDialogTab, schedulingDialogSection, schedulingDialogLink, schedulingDialogRichText]);
+
+    // Load Access Manager link action allowlist (guest-aware via Public role)
+    useEffect(() => {
+        let cancelled = false;
+        const loadAllowedLinkActions = async () => {
+            if (user?.is_admin) {
+                if (!cancelled) {
+                    setAllowedLinkActions(new Set(LINK_ACTION_IDS));
+                }
+                return;
+            }
+            try {
+                const actionIds = await rolesService.getAllowedLinkActions();
+                if (!cancelled) {
+                    setAllowedLinkActions(new Set(actionIds));
+                }
+            } catch (error) {
+                console.error('Failed to load link action permissions:', error);
+                if (!cancelled) {
+                    setAllowedLinkActions(new Set(LINK_ACTION_IDS));
+                }
+            }
+        };
+        void loadAllowedLinkActions();
+        return () => {
+            cancelled = true;
+        };
+    }, [isAuthenticated, user?.id, user?.is_admin]);
+
+    const isLinkActionAllowed = useCallback((actionId: LinkActionId): boolean => {
+        if (user?.is_admin) return true;
+        return allowedLinkActions.has(actionId);
+    }, [allowedLinkActions, user?.is_admin]);
+
+    // If QR view permission is revoked, leave QR layout so content stays usable
+    useEffect(() => {
+        if (viewLayout === 'qr' && !isLinkActionAllowed('qr')) {
+            setViewLayout('side-by-side');
+        }
+    }, [viewLayout, isLinkActionAllowed]);
 
     // Load users list when editing and authenticated
     useEffect(() => {
@@ -1123,23 +1481,76 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     }, [settings.browser_specific_links_enabled]);
 
-    // Close browser menu on ESC key
+    const goBackToDashboard = useCallback(() => {
+        window.location.hash = '#/';
+    }, []);
+
+    // Escape: close menus/overlays first; otherwise go back (same as header Back button)
     useEffect(() => {
         const handleEscape = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
+            if (e.key !== 'Escape' && e.key !== 'Esc') return;
+            if (e.ctrlKey || e.shiftKey || e.metaKey || e.altKey) return;
+            // Dialogs that register via useEscapeToClose (and similar) handle Escape themselves
+            if (isEscapeDialogOpen()) return;
+            // Local dialogs with their own Escape handlers
+            if (notesDialogState || linkInfoDialog || qrDialogState || mobilePreviewState || notesPresetFormState || diffViewerOpen) return;
+            if (
+                visibilityDialogTab ||
+                visibilityDialogSection ||
+                schedulingDialogTab ||
+                schedulingDialogSection ||
+                schedulingDialogLink ||
+                schedulingDialogRichText
+            ) {
+                return;
+            }
+
+            const anyBrowserMenuOpen = Object.values(showBrowserMenu).some(Boolean);
+            if (anyBrowserMenuOpen) {
                 setShowBrowserMenu({});
                 setSaveBrowserForLink({});
                 setSelectedBrowserForLink({});
-                if (mobilePageAnimOpen) {
-                    setMobilePageAnimOpen(false);
-                    return;
-                }
-                setShowHeaderActionsMenu(false);
+                e.preventDefault();
+                return;
             }
+            if (mobilePageAnimOpen) {
+                setMobilePageAnimOpen(false);
+                e.preventDefault();
+                return;
+            }
+            if (showHeaderActionsMenu) {
+                setShowHeaderActionsMenu(false);
+                e.preventDefault();
+                return;
+            }
+
+            // Don't navigate away while editing (Cancel uses a confirm dialog)
+            if (isEditing) return;
+
+            e.preventDefault();
+            goBackToDashboard();
         };
         document.addEventListener('keydown', handleEscape);
         return () => document.removeEventListener('keydown', handleEscape);
-    }, [mobilePageAnimOpen]);
+    }, [
+        mobilePageAnimOpen,
+        showHeaderActionsMenu,
+        showBrowserMenu,
+        notesDialogState,
+        linkInfoDialog,
+        qrDialogState,
+        mobilePreviewState,
+        notesPresetFormState,
+        diffViewerOpen,
+        visibilityDialogTab,
+        visibilityDialogSection,
+        schedulingDialogTab,
+        schedulingDialogSection,
+        schedulingDialogLink,
+        schedulingDialogRichText,
+        isEditing,
+        goBackToDashboard,
+    ]);
 
     // Close header actions menu when leaving mobile
     useEffect(() => {
@@ -1996,6 +2407,46 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setEditTabs(editTabs.map(t => t.id === tabId ? { ...t, textColor: normalizedColor } : t));
     };
 
+    const handleUpdateSectionColor = (tabId: string, sectionId: string, textColor: string) => {
+        const normalizedColor = textColor && textColor.trim() ? textColor : undefined;
+        setEditTabs(editTabs.map(t => {
+            if (t.id !== tabId) return t;
+            return {
+                ...t,
+                sections: t.sections.map(s =>
+                    s.id === sectionId ? { ...s, textColor: normalizedColor } : s
+                )
+            };
+        }));
+    };
+
+    const handleToggleForceStacked = (tabId: string, sectionId: string, value: boolean) => {
+        setEditTabs(editTabs.map(t => {
+            if (t.id !== tabId) return t;
+            return {
+                ...t,
+                sections: t.sections.map(s =>
+                    s.id === sectionId ? { ...s, forceStackedView: value } : s
+                )
+            };
+        }));
+    };
+
+    const expandTabAndSection = (tabId: string, sectionId: string) => {
+        setExpandedTabs(prev => new Set(prev).add(tabId));
+        setExpandedSections(prev => new Set(prev).add(sectionId));
+    };
+
+    /** Open Cards editor for a deep form without overwriting the saved view preference. */
+    const openCardsForEditing = (anchorId?: string) => {
+        setHierarchyView('cards');
+        if (anchorId) {
+            window.setTimeout(() => {
+                document.getElementById(anchorId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 80);
+        }
+    };
+
     const handleMoveTab = (tabId: string, direction: 'up' | 'down') => {
         const index = editTabs.findIndex(t => t.id === tabId);
         if (index === -1) return;
@@ -2498,7 +2949,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         const newLink: Link = {
             id: generateId(),
             label: state.label,
-            url: state.url.startsWith('http') ? state.url : `https://${state.url}`,
+            url: normalizeStoredLinkUrl(state.url),
             icon: state.icon?.trim() || undefined,
             textColor: state.textColor?.trim() || undefined,
             visibility: state.visibility || 'public',
@@ -2509,7 +2960,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
             browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
             richTextContent: state.richTextContent?.trim() || undefined,
-            animation: linkAnimationForSave(state.animation)
+            animation: linkAnimationForSave(state.animation),
+            // Role-assigned spaces: mark new links as role-visible so Your Apps keeps them after save
+            hasRoleAccess: tile.hasRoleAccess === true || undefined,
         };
 
         if (editTabs.length > 0) {
@@ -2587,174 +3040,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     };
 
-    // CSV Import Function
-    const handleImportLinksFromCSV = async (tabId: string, sectionId: string) => {
-        const file = csvImportFile[sectionId];
-        if (!file) {
-            alert('Please select a CSV file first');
-            return;
-        }
-
-        setImportingCsv(prev => ({ ...prev, [sectionId]: true }));
-
-        try {
-            const text = await file.text();
-            const lines = text.split('\n').filter(line => line.trim());
-
-            if (lines.length < 2) {
-                alert('CSV file must have at least a header row and one data row');
-                setImportingCsv(prev => ({ ...prev, [sectionId]: false }));
-                return;
-            }
-
-            // Parse header row
-            const headerLine = lines[0];
-            const headers = headerLine.split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
-
-            // Find column indices
-            const labelIndex = headers.findIndex(h =>
-                h === 'link name' || h === 'linkname' || h === 'name' || h === 'label' || h === 'title'
-            );
-            const urlIndex = headers.findIndex(h =>
-                h === 'link' || h === 'url' || h === 'link url' || h === 'linkurl' || h === 'href'
-            );
-
-            if (labelIndex === -1 || urlIndex === -1) {
-                alert('CSV file must contain "Link Name" and "Link" columns');
-                setImportingCsv(prev => ({ ...prev, [sectionId]: false }));
-                return;
-            }
-
-            // Parse data rows
-            const newLinks: Link[] = [];
-            let importedCount = 0;
-            let skippedCount = 0;
-
-            for (let i = 1; i < lines.length; i++) {
-                const line = lines[i].trim();
-                if (!line) continue;
-
-                // Handle CSV parsing with quoted fields
-                const values: string[] = [];
-                let current = '';
-                let inQuotes = false;
-
-                for (let j = 0; j < line.length; j++) {
-                    const char = line[j];
-                    if (char === '"') {
-                        // Handle escaped quotes
-                        if (j + 1 < line.length && line[j + 1] === '"' && inQuotes) {
-                            current += '"';
-                            j++; // Skip next quote
-                        } else {
-                            inQuotes = !inQuotes;
-                        }
-                    } else if (char === ',' && !inQuotes) {
-                        values.push(current.trim());
-                        current = '';
-                    } else {
-                        current += char;
-                    }
-                }
-                // Add the last field
-                values.push(current.trim());
-
-                // Ensure we have enough columns
-                if (values.length <= Math.max(labelIndex, urlIndex)) {
-                    skippedCount++;
-                    continue;
-                }
-
-                const label = values[labelIndex]?.trim().replace(/^["']|["']$/g, '') || '';
-                const url = values[urlIndex]?.trim().replace(/^["']|["']$/g, '') || '';
-
-                if (label && url) {
-                    const newLink: Link = {
-                        id: generateId(),
-                        label: label,
-                        url: url.startsWith('http://') || url.startsWith('https://') ? url : `https://${url}`,
-                        visibility: 'public',
-                        notes: undefined,
-                        tooltip: undefined
-                    };
-                    newLinks.push(newLink);
-                    importedCount++;
-                } else {
-                    skippedCount++;
-                }
-            }
-
-            if (newLinks.length === 0) {
-                alert('No valid links found in CSV file');
-                setImportingCsv(prev => ({ ...prev, [sectionId]: false }));
-                return;
-            }
-
-            // Add links to section
-            if (editTabs.length > 0) {
-                // New structure with tabs
-                setEditTabs(editTabs.map(tab => {
-                    if (tab.id === tabId) {
-                        return {
-                            ...tab,
-                            sections: tab.sections.map(s => {
-                                if (s.id === sectionId) {
-                                    return { ...s, links: [...s.links, ...newLinks], richTextContent: s.richTextContent || [] };
-                                }
-                                return s;
-                            })
-                        };
-                    }
-                    return tab;
-                }));
-            } else {
-                // Backward compatibility: sections without tabs
-                setEditSections(editSections.map(s => {
-                    if (s.id === sectionId) {
-                        return { ...s, links: [...s.links, ...newLinks], richTextContent: s.richTextContent || [] };
-                    }
-                    return s;
-                }));
-            }
-
-            // Clear file input
-            setCsvImportFile(prev => ({ ...prev, [sectionId]: null }));
-
-            alert(`Successfully imported ${importedCount} link(s)${skippedCount > 0 ? ` (${skippedCount} row(s) skipped)` : ''}`);
-        } catch (error) {
-            console.error('CSV import error:', error);
-            alert('Failed to import CSV file: ' + (error instanceof Error ? error.message : 'Unknown error'));
-        } finally {
-            setImportingCsv(prev => ({ ...prev, [sectionId]: false }));
-        }
-    };
-
-    const openSectionLinksJsonImport = (tabId: string, sectionId: string) => {
-        pendingSectionJsonImportRef.current = { tabId, sectionId };
-        sectionLinksJsonInputRef.current?.click();
-    };
-
-    const handleSectionLinksJsonFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        e.target.value = '';
-        const pending = pendingSectionJsonImportRef.current;
-        pendingSectionJsonImportRef.current = null;
-        if (!file || !pending) return;
-        try {
-            const text = await file.text();
-            const data = JSON.parse(text);
-            const newLinks = parseSectionLinksExport(data);
-            if (newLinks.length === 0) {
-                alert('No links found in this file.');
-                return;
-            }
+    const appendLinksToSection = (tabId: string, sectionId: string, newLinks: Link[]) => {
+        if (editTabs.length > 0) {
             setEditTabs(prev =>
                 prev.map(tab => {
-                    if (tab.id !== pending.tabId) return tab;
+                    if (tab.id !== tabId) return tab;
                     return {
                         ...tab,
                         sections: tab.sections.map(s => {
-                            if (s.id !== pending.sectionId) return s;
+                            if (s.id !== sectionId) return s;
                             const linkPos = (s.links || []).map(l => l.position ?? 0);
                             const rtPos = (s.richTextContent || []).map(r => r.position ?? 0);
                             const maxPosition = Math.max(...linkPos, ...rtPos, -1);
@@ -2771,10 +3065,134 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     };
                 })
             );
-            alert(`Imported ${newLinks.length} link(s) from JSON.`);
+        } else {
+            setEditSections(prev =>
+                prev.map(s => {
+                    if (s.id !== sectionId) return s;
+                    return { ...s, links: [...s.links, ...newLinks], richTextContent: s.richTextContent || [] };
+                })
+            );
+        }
+    };
+
+    const importLinksFromCsvFile = async (file: File): Promise<Link[]> => {
+        const text = await file.text();
+        const lines = text.split('\n').filter(line => line.trim());
+
+        if (lines.length < 2) {
+            throw new Error('CSV file must have at least a header row and one data row');
+        }
+
+        const headerLine = lines[0];
+        const headers = headerLine.split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
+
+        const labelIndex = headers.findIndex(h =>
+            h === 'link name' || h === 'linkname' || h === 'name' || h === 'label' || h === 'title'
+        );
+        const urlIndex = headers.findIndex(h =>
+            h === 'link' || h === 'url' || h === 'link url' || h === 'linkurl' || h === 'href'
+        );
+
+        if (labelIndex === -1 || urlIndex === -1) {
+            throw new Error('CSV file must contain "Link Name" and "Link" (or URL) columns');
+        }
+
+        const newLinks: Link[] = [];
+        let skippedCount = 0;
+
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue;
+
+            const values: string[] = [];
+            let current = '';
+            let inQuotes = false;
+
+            for (let j = 0; j < line.length; j++) {
+                const char = line[j];
+                if (char === '"') {
+                    if (j + 1 < line.length && line[j + 1] === '"' && inQuotes) {
+                        current += '"';
+                        j++;
+                    } else {
+                        inQuotes = !inQuotes;
+                    }
+                } else if (char === ',' && !inQuotes) {
+                    values.push(current.trim());
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            values.push(current.trim());
+
+            if (values.length <= Math.max(labelIndex, urlIndex)) {
+                skippedCount++;
+                continue;
+            }
+
+            const label = values[labelIndex]?.trim().replace(/^["']|["']$/g, '') || '';
+            const url = values[urlIndex]?.trim().replace(/^["']|["']$/g, '') || '';
+
+            if (label && url) {
+                newLinks.push({
+                    id: generateId(),
+                    label,
+                    url: normalizeStoredLinkUrl(url),
+                    visibility: 'public',
+                    notes: undefined,
+                    tooltip: undefined
+                });
+            } else {
+                skippedCount++;
+            }
+        }
+
+        if (newLinks.length === 0) {
+            throw new Error('No valid links found in CSV file');
+        }
+
+        return newLinks;
+    };
+
+    const openSectionLinksImport = (tabId: string, sectionId: string) => {
+        pendingSectionImportRef.current = { tabId, sectionId };
+        sectionLinksImportInputRef.current?.click();
+    };
+
+    const handleSectionLinksImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        const pending = pendingSectionImportRef.current;
+        pendingSectionImportRef.current = null;
+        if (!file || !pending) return;
+
+        const ext = file.name.split('.').pop()?.toLowerCase() || '';
+        setImportingSectionLinks(prev => ({ ...prev, [pending.sectionId]: true }));
+
+        try {
+            if (ext === 'json') {
+                const text = await file.text();
+                const data = JSON.parse(text);
+                const newLinks = parseSectionLinksExport(data);
+                if (newLinks.length === 0) {
+                    alert('No links found in this file.');
+                    return;
+                }
+                appendLinksToSection(pending.tabId, pending.sectionId, newLinks);
+                alert(`Imported ${newLinks.length} link(s) from JSON.`);
+            } else if (ext === 'csv') {
+                const newLinks = await importLinksFromCsvFile(file);
+                appendLinksToSection(pending.tabId, pending.sectionId, newLinks);
+                alert(`Successfully imported ${newLinks.length} link(s) from CSV.`);
+            } else {
+                alert('Unsupported file type. Please choose a .json or .csv file.');
+            }
         } catch (err) {
             console.error(err);
-            alert(err instanceof Error ? err.message : 'Failed to import links JSON.');
+            alert(err instanceof Error ? err.message : 'Failed to import links.');
+        } finally {
+            setImportingSectionLinks(prev => ({ ...prev, [pending.sectionId]: false }));
         }
     };
 
@@ -2865,7 +3283,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     ? {
                                         ...l,
                                         label: state.label,
-                                        url: state.url.startsWith('http') ? state.url : `https://${state.url}`,
+                                        url: normalizeStoredLinkUrl(state.url),
                                         icon: state.icon?.trim() || undefined,
                                         textColor: state.textColor?.trim() || undefined,
                                         visibility: state.visibility || 'public',
@@ -2897,7 +3315,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             ? {
                                 ...l,
                                 label: state.label,
-                                url: state.url.startsWith('http') ? state.url : `https://${state.url}`,
+                                url: normalizeStoredLinkUrl(state.url),
                                 visibility: state.visibility || 'public',
                                 published: state.published !== false,
                                 allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
@@ -3351,7 +3769,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                     const linkToClone = items[sourceIndex] as Link;
 
-                    // Clone the link with a new ID
+                    // Clone the link with a new ID (inherit role visibility so Assigned Apps keeps showing it after save)
                     const clonedLink: Link = {
                         id: generateId(),
                         label: `${linkToClone.label} (Copy)`,
@@ -3360,10 +3778,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         textColor: linkToClone.textColor,
                         visibility: linkToClone.visibility,
                         allowedUsers: linkToClone.allowedUsers ? [...linkToClone.allowedUsers] : undefined,
+                        allowedGroups: linkToClone.allowedGroups ? [...linkToClone.allowedGroups] : undefined,
                         notes: linkToClone.notes,
                         tooltip: linkToClone.tooltip,
                         health: linkToClone.health,
-                        browser: linkToClone.browser
+                        browser: linkToClone.browser,
+                        hasRoleAccess: linkToClone.hasRoleAccess === true,
+                        published: linkToClone.published,
+                        animation: linkToClone.animation,
+                        richTextContent: linkToClone.richTextContent,
                     };
 
                     // Insert cloned link after the original in the sorted list
@@ -3640,18 +4063,25 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             e.stopPropagation();
         }
 
+        // Cancel any in-flight auto/manual check before starting a fresh forced check
+        healthCheckAbortRef.current?.abort();
+        const abortController = new AbortController();
+        healthCheckAbortRef.current = abortController;
+
         setCheckingHealth(true);
         try {
-            const results = await linkHealthService.checkTileLinks(tile.id);
+            const results = await linkHealthService.checkTileLinks(tile.id, true, abortController.signal);
+            if (abortController.signal.aborted) return;
             if (results && typeof results === 'object') {
-                setLinkHealth(prev => ({ ...prev, ...results }));
+                setLinkHealth(prev => linkHealthService.mergeResults(prev, results));
 
                 // Best-effort: also record per-URL client/server latency into Performance Analytics (if enabled).
                 // This is intentionally fire-and-forget: health check UX must remain fast.
                 void (async () => {
                     try {
+                        if (abortController.signal.aborted) return;
                         const cfg = await performanceAnalyticsService.ensureLocation(undefined, { allowPrompt: true });
-                        if (!cfg.enabled) return;
+                        if (!cfg.enabled || abortController.signal.aborted) return;
 
                         const sections = getAllSections();
                         const allLinks = sections.flatMap(s => (s?.links || []));
@@ -3672,6 +4102,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         const metrics: AnalyticsMetric[] = [];
 
                         for (let i = 0; i < targets.length; i += batchSize) {
+                            if (abortController.signal.aborted) return;
                             const batch = targets.slice(i, i + batchSize);
                             const measured = await Promise.all(
                                 batch.map(async (l) => {
@@ -3706,6 +4137,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             }
                         }
 
+                        if (abortController.signal.aborted) return;
                         // Force send on explicit user action ("Check Links") so it never gets skipped by sampling.
                         await performanceAnalyticsService.sendMetrics(metrics, { force: true });
                     } catch (err) {
@@ -3717,10 +4149,19 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 console.warn('Unexpected results format:', results);
             }
         } catch (error) {
+            if (abortController.signal.aborted) return;
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            // Don't alert on abort/navigation away
+            if (error instanceof DOMException && error.name === 'AbortError') return;
+            if (errorMessage.toLowerCase().includes('abort')) return;
             alert(`Failed to check link health: ${errorMessage}. Please try again.`);
         } finally {
-            setCheckingHealth(false);
+            if (healthCheckAbortRef.current === abortController) {
+                healthCheckAbortRef.current = null;
+            }
+            if (!abortController.signal.aborted) {
+                setCheckingHealth(false);
+            }
         }
     };
 
@@ -3733,6 +4174,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
         try {
             const health = await linkHealthService.checkLink(linkId);
+            if (!health || (health as any).skipped) {
+                setLinkHealth(prev => {
+                    const next = { ...prev };
+                    delete next[linkId];
+                    return next;
+                });
+                return;
+            }
             setLinkHealth(prev => ({ ...prev, [linkId]: health }));
         } catch (error) {
             console.error('Failed to check link:', error);
@@ -3998,7 +4447,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         if (!isEditing) {
             // Only apply role-based filtering if we came from "Your Apps" tab
             // BUT for 'authenticated' tiles (which are now in Your Apps), we show full content
-            const shouldApplyRoleFiltering = sourceTab === 'your-apps' && tile.visibility !== 'authenticated';
+            // Tile admins/editors must see every link they manage (including newly added ones)
+            const shouldApplyRoleFiltering =
+                sourceTab === 'your-apps' &&
+                tile.visibility !== 'authenticated' &&
+                tile.canEdit !== true &&
+                !user?.is_admin;
 
             sectionsToFilter = sectionsToFilter
                 .filter(section => isContentVisible(section) && canViewerSeeByVisibility(section))
@@ -4566,9 +5020,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                                 {/* Back stays visible on all screen sizes */}
                                 <button
-                                    onClick={() => window.location.hash = '#/'}
+                                    onClick={goBackToDashboard}
                                     className="p-2 rounded-lg bg-white/20 hover:bg-white/30 text-white border border-white/20 transition-all backdrop-blur-sm flex items-center justify-center"
-                                    title="Back to Dashboard"
+                                    title="Back to Dashboard (Esc)"
+                                    aria-label="Back to Dashboard"
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
                                         <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clipRule="evenodd" />
@@ -4605,13 +5060,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         <span className="text-xs font-medium text-slate-500 dark:text-slate-400">View:</span>
                                         <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
                                             <button
+                                                type="button"
                                                 onClick={() => setViewLayout('stacked')}
                                                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${viewLayout === 'stacked'
                                                     ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
                                                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                                                     }`}
-                                                title="Stacked view - sections appear vertically"
-                                                aria-label="Stacked view"
+                                                title="Stacked list — links appear vertically (combine with side-by-side sections)"
+                                                aria-label="Stacked list view"
                                                 aria-pressed={viewLayout === 'stacked'}
                                             >
                                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
@@ -4619,20 +5075,25 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 </svg>
                                             </button>
                                             <button
-                                                onClick={() => setViewLayout('side-by-side')}
-                                                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${viewLayout === 'side-by-side'
-                                                    ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
-                                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                                                type="button"
+                                                onClick={() => {
+                                                    // Independent toggle: keep stacked/grid/compact/qr (or columns) link mode as-is
+                                                    setSectionsSideBySide((prev) => !prev);
+                                                }}
+                                                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${sectionsSideBySide
+                                                    ? 'bg-orange-500 text-white shadow-sm ring-1 ring-orange-600/40 dark:bg-orange-500 dark:text-white dark:ring-orange-400/50'
+                                                    : 'text-slate-600 dark:text-slate-400 hover:text-orange-600 dark:hover:text-orange-400'
                                                     }`}
-                                                title="Side-by-side view - sections appear horizontally"
-                                                aria-label="Side-by-side view"
-                                                aria-pressed={viewLayout === 'side-by-side'}
+                                                title="Side-by-side sections — sticky toggle (orange when on); works with any link view"
+                                                aria-label="Toggle side-by-side sections"
+                                                aria-pressed={sectionsSideBySide}
                                             >
                                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                                                     <path d="M2 4.5A2.5 2.5 0 014.5 2h3A2.5 2.5 0 0110 4.5v11A2.5 2.5 0 017.5 18h-3A2.5 2.5 0 012 15.5v-11zM10.5 2A2.5 2.5 0 0013 4.5v11a2.5 2.5 0 01-2.5 2.5H13a2.5 2.5 0 002.5-2.5v-11A2.5 2.5 0 0013 2h-.5z" />
                                                 </svg>
                                             </button>
                                             <button
+                                                type="button"
                                                 onClick={() => setViewLayout('grid')}
                                                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${viewLayout === 'grid'
                                                     ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
@@ -4647,6 +5108,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 </svg>
                                             </button>
                                             <button
+                                                type="button"
                                                 onClick={() => setViewLayout('compact')}
                                                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${viewLayout === 'compact'
                                                     ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
@@ -4660,7 +5122,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zM2 10a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10zm0 5.25a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
                                                 </svg>
                                             </button>
+                                            {isLinkActionAllowed('qr') && (
                                             <button
+                                                type="button"
                                                 onClick={() => {
                                                     // QR needs full-width section cards — sync top view so section icons match content
                                                     setSyncSectionViews(true);
@@ -4678,7 +5142,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     <path fillRule="evenodd" d="M3 3.5A1.5 1.5 0 014.5 2h3A1.5 1.5 0 019 3.5v3A1.5 1.5 0 017.5 8h-3A1.5 1.5 0 013 6.5v-3zM4.5 3.5v3h3v-3h-3zM11 3.5A1.5 1.5 0 0112.5 2h3A1.5 1.5 0 0117 3.5v3A1.5 1.5 0 0115.5 8h-3A1.5 1.5 0 0111 6.5v-3zm1.5 0v3h3v-3h-3zM3 12.5A1.5 1.5 0 014.5 11h3A1.5 1.5 0 019 12.5v3A1.5 1.5 0 017.5 17h-3A1.5 1.5 0 013 15.5v-3zm1.5 0v3h3v-3h-3zM12.5 11a.75.75 0 01.75-.75h1a.75.75 0 01.75.75v1a.75.75 0 01-.75.75h-1a.75.75 0 01-.75-.75v-1zM11 14.25a.75.75 0 01.75-.75H13a.75.75 0 010 1.5h-1.25a.75.75 0 01-.75-.75zM14.25 14a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5h-1.5zM11 16.75a.75.75 0 01.75-.75h3.5a.75.75 0 010 1.5h-3.5a.75.75 0 01-.75-.75zM15.5 11.75a.75.75 0 01.75-.75H17a.75.75 0 010 1.5h-.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
                                                 </svg>
                                             </button>
+                                            )}
                                         </div>
+                                        {viewLayout === 'qr' && isLinkActionAllowed('qr') && (
+                                            <button
+                                                type="button"
+                                                onClick={() => void handlePrintAllQrCodes()}
+                                                className="inline-flex items-center justify-center p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 hover:border-brand-300 dark:hover:border-brand-600 transition-colors"
+                                                title="Print all QR codes on this page"
+                                                aria-label="Print all QR codes"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor" className="w-4 h-4" aria-hidden>
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0H6.34m11.318 0h1.152c.95 0 1.745-.695 1.885-1.63l.583-4.083A1.876 1.876 0 0019.25 9.75H4.75a1.875 1.875 0 00-1.863 2.114l.583 4.083c.14.935.935 1.63 1.885 1.63H6.34" />
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 9.75V6A2.25 2.25 0 0110.5 3.75h3A2.25 2.25 0 0115.75 6v3.75" />
+                                                </svg>
+                                            </button>
+                                        )}
                                         <button
                                             type="button"
                                             onClick={() => setSyncSectionViews((prev) => !prev)}
@@ -4854,7 +5333,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         const isActive = selectedTabId === tab.id;
                                         const tabSections = tab.sections || [];
                                         // Only apply role-based filtering if source is "Your Apps" tab
-                                        const shouldApplyRoleFiltering = sourceTab === 'your-apps';
+                                        // Tile editors see all links (including newly added ones not yet role-filtered in UI)
+                                        const shouldApplyRoleFiltering =
+                                            sourceTab === 'your-apps' &&
+                                            tile.canEdit !== true &&
+                                            !user?.is_admin;
                                         // Count links, filtering by role access if needed
                                         const tabLinksCount = tabSections.reduce((acc, s) => {
                                             const links = s.links || [];
@@ -4904,8 +5387,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             </div>
                         ) : (
                             <div
-                                className={viewLayout === 'side-by-side' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' : 'space-y-8'}
-                                data-sections-layout={viewLayout}
+                                ref={qrPrintRootRef}
+                                className={sectionsSideBySide ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' : 'space-y-8'}
+                                data-sections-layout={sectionsSideBySide ? 'side-by-side' : 'stacked'}
+                                data-view-layout={viewLayout}
+                                data-qr-print-all=""
                             >
                                 {filteredSections.map((section, sectionIndex) => {
                                     // Per-section link layout: saved preference > forceStackedView > global view
@@ -4928,6 +5414,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             key={section.id}
                                             style={{ animationDelay: isQrLayout ? undefined : `${sectionIndex * 120}ms` }}
                                             data-view-layout={sectionLinkLayout}
+                                            data-qr-print-section={isQrLayout ? section.id : undefined}
+                                            data-qr-print-title={isQrLayout ? (section.title || '') : undefined}
                                             className={`linknest-content-section bg-white/80 dark:bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-200/80 dark:border-slate-700/50 shadow-sm relative ${
                                                 isQrLayout
                                                     ? 'p-4 overflow-hidden col-span-full'
@@ -5025,6 +5513,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zM2 10a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10zm0 5.25a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
                                                             </svg>
                                                         </button>
+                                                        {isLinkActionAllowed('qr') && (
                                                         <button
                                                             type="button"
                                                             onClick={() => setSectionLinkLayout(section.id, 'qr')}
@@ -5040,6 +5529,25 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 <path fillRule="evenodd" d="M3 3.5A1.5 1.5 0 014.5 2h3A1.5 1.5 0 019 3.5v3A1.5 1.5 0 017.5 8h-3A1.5 1.5 0 013 6.5v-3zM4.5 3.5v3h3v-3h-3zM11 3.5A1.5 1.5 0 0112.5 2h3A1.5 1.5 0 0117 3.5v3A1.5 1.5 0 0115.5 8h-3A1.5 1.5 0 0111 6.5v-3zm1.5 0v3h3v-3h-3zM3 12.5A1.5 1.5 0 014.5 11h3A1.5 1.5 0 019 12.5v3A1.5 1.5 0 017.5 17h-3A1.5 1.5 0 013 15.5v-3zm1.5 0v3h3v-3h-3zM12.5 11a.75.75 0 01.75-.75h1a.75.75 0 01.75.75v1a.75.75 0 01-.75.75h-1a.75.75 0 01-.75-.75v-1zM11 14.25a.75.75 0 01.75-.75H13a.75.75 0 010 1.5h-1.25a.75.75 0 01-.75-.75zM14.25 14a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5h-1.5zM11 16.75a.75.75 0 01.75-.75h3.5a.75.75 0 010 1.5h-3.5a.75.75 0 01-.75-.75zM15.5 11.75a.75.75 0 01.75-.75H17a.75.75 0 010 1.5h-.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
                                                             </svg>
                                                         </button>
+                                                        )}
+                                                        {isQrLayout && isLinkActionAllowed('qr') && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.preventDefault();
+                                                                    e.stopPropagation();
+                                                                    void handlePrintSectionQrCodes(section.id, section.title);
+                                                                }}
+                                                                className="p-1.5 rounded-md text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-white dark:hover:bg-slate-700 transition-all"
+                                                                title="Print this section's QR codes"
+                                                                aria-label="Print section QR codes"
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0H6.34m11.318 0h1.152c.95 0 1.745-.695 1.885-1.63l.583-4.083A1.876 1.876 0 0019.25 9.75H4.75a1.875 1.875 0 00-1.863 2.114l.583 4.083c.14.935.935 1.63 1.885 1.63H6.34" />
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 9.75V6A2.25 2.25 0 0110.5 3.75h3A2.25 2.25 0 0115.75 6v3.75" />
+                                                                </svg>
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 )}
                                             </div>
@@ -5107,25 +5615,49 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                                                         // Render link (itemType === 'link')
                                                         const link = item as Link;
-                                                        const health = linkHealth[link.id];
-                                                        const isBroken = health?.status === 'broken';
+                                                        const skipHealth =
+                                                            isSshLinkUrl(link.url || '') || isVncLinkUrl(link.url || '');
+                                                        const health = skipHealth ? undefined : linkHealth[link.id];
+                                                        const isBroken = !skipHealth && health?.status === 'broken';
                                                         const isGridCards = sectionLinkLayout === 'grid';
                                                         const isCompact = sectionLinkLayout === 'compact';
                                                         const isQrView = sectionLinkLayout === 'qr';
+                                                        const showNotesAction = isLinkActionAllowed('notes') && !!(link.notes && link.notes.trim());
+                                                        const showFavoriteAction = isLinkActionAllowed('favorite');
+                                                        const showHealthAction = isLinkActionAllowed('health') && !skipHealth;
+                                                        const showCopyAction = isLinkActionAllowed('copy');
+                                                        const showMobileAction = isLinkActionAllowed('mobile') && !!link.url;
+                                                        const showQrAction = isLinkActionAllowed('qr');
+                                                        const showBrowserAction =
+                                                            isLinkActionAllowed('browser') &&
+                                                            settings.browser_specific_links_enabled === '1' &&
+                                                            isAuthenticated &&
+                                                            tile.canChangeBrowser === true &&
+                                                            typeof window !== 'undefined' &&
+                                                            !!(window as any).BrowserLauncher;
+                                                        const showLinkActionBar =
+                                                            showNotesAction ||
+                                                            showFavoriteAction ||
+                                                            showHealthAction ||
+                                                            showCopyAction ||
+                                                            showMobileAction ||
+                                                            showQrAction ||
+                                                            showBrowserAction;
 
                                                         if (isQrView) {
+                                                            const plainQrLabel = stripHtmlTags(link.label || '');
                                                             return (
                                                                 <div
                                                                     key={link.id}
                                                                     className="linknest-qr-card flex flex-col items-center text-center gap-3 p-4 rounded-2xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 shadow-sm w-full min-w-0 max-w-full overflow-hidden"
                                                                     style={{ opacity: 1, position: 'relative', zIndex: 0 }}
-                                                                    title={link.tooltip || link.label}
+                                                                    title={link.tooltip || plainQrLabel}
                                                                 >
                                                                     <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm w-full flex justify-center max-w-[280px]">
                                                                         <BrandedQRCode
                                                                             value={link.url || ''}
                                                                             size={isMobile ? 220 : 200}
-                                                                            title={`QR code for ${link.label}`}
+                                                                            title={`QR code for ${plainQrLabel}`}
                                                                             className="w-full flex justify-center [&_svg]:max-w-full [&_svg]:h-auto"
                                                                         />
                                                                     </div>
@@ -5134,9 +5666,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             {link.icon ? (
                                                                                 <span className="text-base leading-none shrink-0" aria-hidden>{link.icon}</span>
                                                                             ) : null}
-                                                                            <p className="font-semibold text-sm sm:text-base text-slate-900 dark:text-white truncate" title={link.label}>
-                                                                                {link.label}
-                                                                            </p>
+                                                                            <p
+                                                                                className="font-semibold text-sm sm:text-base text-slate-900 dark:text-white truncate"
+                                                                                title={plainQrLabel}
+                                                                                dangerouslySetInnerHTML={{ __html: link.label || '' }}
+                                                                            />
                                                                         </div>
                                                                         <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-mono truncate" title={link.url}>
                                                                             {getDisplayUrl(link.url)}
@@ -5149,7 +5683,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 target="_blank"
                                                                                 rel="noopener noreferrer"
                                                                                 className="text-xs font-medium text-brand-600 dark:text-brand-400 hover:underline"
-                                                                                onClick={(e) => e.stopPropagation()}
+                                                                                onClick={(e) => {
+                                                                                    if (tryHandleSshLinkClick(link.url, e)) return;
+                                                                                    if (tryHandleVncLinkClick(link.url, e)) return;
+                                                                                    e.stopPropagation();
+                                                                                }}
                                                                             >
                                                                                 Open link
                                                                             </a>
@@ -5207,7 +5745,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             ? 'absolute bottom-full left-1/2 -translate-x-1/2 mb-[5px] z-10'
                                                                             : ''
                                                                     }`}>
-                                                                        {getHealthIndicator(link.id)}
+                                                                        {!skipHealth && getHealthIndicator(link.id)}
                                                                     </div>
 
                                                                     <div className={`linknest-content-link-icon rounded-xl ${styles.iconBg} flex items-center justify-center select-none shadow-sm border border-white/20 ${
@@ -5233,6 +5771,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 : 'flex-1 pr-32'
                                                                     }`}
                                                                     onClick={(e) => {
+                                                                        if (tryHandleSshLinkClick(link.url, e)) return;
+                                                                        if (tryHandleVncLinkClick(link.url, e)) return;
+
                                                                         // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                                                                         if (e.ctrlKey || e.metaKey) {
                                                                             // Explicitly open in new tab and focus it using window.open
@@ -5467,23 +6008,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     document.body
                                                                 )}
 
+                                                                {showLinkActionBar && (
                                                                 <div className={`absolute flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all duration-200 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm p-0.5 rounded-lg border border-slate-200/50 dark:border-slate-700/50 z-20 pointer-events-none group-hover:pointer-events-auto ${
                                                                     isGridCards || isCompact ? 'top-1 right-1' : 'top-1.5 right-1.5'
                                                                 }`}>
                                                                     {/* Notes info button - only show if link has notes */}
-                                                                    {link.notes && link.notes.trim() && (
+                                                                    {showNotesAction && (
                                                                         <button
                                                                             onClick={(e) => {
                                                                                 e.preventDefault();
                                                                                 e.stopPropagation();
-                                                                                // Strip HTML from label for dialog display
-                                                                                const tempDiv = document.createElement('div');
-                                                                                tempDiv.innerHTML = link.label || '';
-                                                                                const plainLabel = tempDiv.textContent || tempDiv.innerText || link.label;
                                                                                 setNotesDialogState({
                                                                                     linkId: link.id,
                                                                                     notes: link.notes || '',
-                                                                                    linkLabel: plainLabel
+                                                                                    linkLabel: link.label || ''
                                                                                 });
                                                                             }}
                                                                             className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-all"
@@ -5495,6 +6033,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         </button>
                                                                     )}
                                                                     {/* Favorite button - available for all users */}
+                                                                    {showFavoriteAction && (
                                                                     <button
                                                                         onClick={(e) => {
                                                                             e.preventDefault();
@@ -5526,8 +6065,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
                                                                         </svg>
                                                                     </button>
+                                                                    )}
 
-                                                                    {/* Re-check button */}
+                                                                    {/* Re-check button (HTTP(S) only — SSH/VNC are not HTTP-probed) */}
+                                                                    {showHealthAction && (
                                                                     <button
                                                                         onClick={(e) => {
                                                                             e.preventDefault();
@@ -5549,8 +6090,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             </svg>
                                                                         )}
                                                                     </button>
+                                                                    )}
 
                                                                     {/* Copy button */}
+                                                                    {showCopyAction && (
                                                                     <button
                                                                         onClick={(e) => handleCopy(e, link.url, link.id)}
                                                                         className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all relative"
@@ -5567,8 +6110,34 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             </svg>
                                                                         )}
                                                                     </button>
+                                                                    )}
+
+                                                                    {/* Mobile / tablet preview button */}
+                                                                    {showMobileAction ? (
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.preventDefault();
+                                                                                e.stopPropagation();
+                                                                                const tempDiv = document.createElement('div');
+                                                                                tempDiv.innerHTML = link.label || '';
+                                                                                const plainLabel = tempDiv.textContent || tempDiv.innerText || link.label || link.url;
+                                                                                setMobilePreviewState({
+                                                                                    url: link.url,
+                                                                                    label: plainLabel
+                                                                                });
+                                                                            }}
+                                                                            className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all"
+                                                                            title="Preview on mobile"
+                                                                        >
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                                                <path d="M8 16.25a.75.75 0 01.75-.75h2.5a.75.75 0 010 1.5h-2.5a.75.75 0 01-.75-.75z" />
+                                                                                <path fillRule="evenodd" d="M4 4a3 3 0 013-3h6a3 3 0 013 3v12a3 3 0 01-3 3H7a3 3 0 01-3-3V4zm4-1.5v.75c0 .414.336.75.75.75h2.5a.75.75 0 00.75-.75V2.5h1A1.5 1.5 0 0114.5 4v12a1.5 1.5 0 01-1.5 1.5H7A1.5 1.5 0 015.5 16V4A1.5 1.5 0 017 2.5h1z" clipRule="evenodd" />
+                                                                            </svg>
+                                                                        </button>
+                                                                    ) : null}
 
                                                                     {/* QR code button */}
+                                                                    {showQrAction && (
                                                                     <button
                                                                         onClick={(e) => {
                                                                             e.preventDefault();
@@ -5588,9 +6157,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             <path fillRule="evenodd" d="M3 4a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm2 1v1h1V5H5zm8-2a1 1 0 00-1 1v3a1 1 0 001 1h3a1 1 0 001-1V4a1 1 0 00-1-1h-3zm1 2v1h1V5h-1zM3 13a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3zm2 1v1h1v-1H5zm5-1a1 1 0 011-1h.01a1 1 0 110 2H11a1 1 0 01-1-1zm3 0a1 1 0 011-1h.01a1 1 0 110 2H14a1 1 0 01-1-1zm-3 3a1 1 0 011-1h.01a1 1 0 110 2H11a1 1 0 01-1-1zm3 0a1 1 0 011-1h.01a1 1 0 110 2H14a1 1 0 01-1-1zm3-3a1 1 0 011-1h.01a1 1 0 110 2H17a1 1 0 01-1-1zm0 3a1 1 0 011-1h.01a1 1 0 110 2H17a1 1 0 01-1-1z" clipRule="evenodd" />
                                                                         </svg>
                                                                     </button>
+                                                                    )}
 
                                                                     {/* Browser selection button - only show when extension is enabled, user is authenticated, and has canChangeBrowser */}
-                                                                    {settings.browser_specific_links_enabled === '1' && isAuthenticated && tile.canChangeBrowser === true && typeof window !== 'undefined' && (window as any).BrowserLauncher && (
+                                                                    {showBrowserAction && (
                                                                         <button
                                                                             onClick={(e) => {
                                                                                 e.preventDefault();
@@ -5638,6 +6208,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         </button>
                                                                     )}
                                                                 </div>
+                                                                )}
                                                             </div>
                                                         );
                                                     });
@@ -5652,93 +6223,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 </div>
 
                 {/* Notes Dialog */}
-                {notesDialogState && (
-                    <>
-                        {typeof document !== 'undefined' && createPortal(
-                            <div
-                                className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-                                onClick={() => setNotesDialogState(null)}
-                            >
-                                <div
-                                    className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 max-w-2xl w-full max-h-[80vh] flex flex-col"
-                                    onClick={(e) => e.stopPropagation()}
-                                >
-                                    {/* Dialog Header */}
-                                    <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
-                                        <div>
-                                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Link Notes</h3>
-                                            <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{notesDialogState.linkLabel}</p>
-                                        </div>
-                                        <button
-                                            onClick={() => setNotesDialogState(null)}
-                                            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                            </svg>
-                                        </button>
-                                    </div>
-
-                                    {/* Dialog Content */}
-                                    <div className="px-6 py-4 flex-1 overflow-y-auto">
-                                        <div className="text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words">
-                                            {notesDialogState.notes}
-                                        </div>
-                                    </div>
-
-                                    {/* Dialog Footer */}
-                                    <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-3">
-                                        <button
-                                            onClick={async (e) => {
-                                                e.preventDefault();
-                                                e.stopPropagation();
-                                                try {
-                                                    await navigator.clipboard.writeText(notesDialogState.notes);
-                                                    // Show feedback
-                                                    setNotesCopied(true);
-                                                    setTimeout(() => {
-                                                        setNotesCopied(false);
-                                                    }, 2000);
-                                                } catch (err) {
-                                                    console.error('Failed to copy:', err);
-                                                    alert('Failed to copy to clipboard');
-                                                }
-                                            }}
-                                            className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
-                                        >
-                                            {notesCopied ? (
-                                                <>
-                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                        <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-                                                    </svg>
-                                                    Copied!
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                        <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
-                                                        <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
-                                                    </svg>
-                                                    Copy Notes
-                                                </>
-                                            )}
-                                        </button>
-                                        <button
-                                            onClick={() => {
-                                                setNotesDialogState(null);
-                                                setNotesCopied(false);
-                                            }}
-                                            className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg font-medium transition-colors"
-                                        >
-                                            Close
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>,
-                            document.body
-                        )}
-                    </>
-                )}
+                <LinkNotesDialog
+                    isOpen={!!notesDialogState}
+                    onClose={() => setNotesDialogState(null)}
+                    linkLabel={notesDialogState?.linkLabel || ''}
+                    notes={notesDialogState?.notes || ''}
+                />
 
                 {/* Link Info Dialog */}
                 {linkInfoDialog && (
@@ -5759,6 +6249,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     onClose={() => setQrDialogState(null)}
                     url={qrDialogState?.url || ''}
                     label={qrDialogState?.label || ''}
+                />
+
+                {/* Mobile / tablet preview dialog */}
+                <MobilePreviewDialog
+                    isOpen={!!mobilePreviewState}
+                    onClose={() => setMobilePreviewState(null)}
+                    url={mobilePreviewState?.url || ''}
+                    label={mobilePreviewState?.label || ''}
                 />
             </>
         );
@@ -5843,19 +6341,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     onClick={() => {
                                         console.log('=== SAVE BUTTON CLICKED ===');
                                         console.log('Current editTabs count:', editTabs.length);
-                                        console.log('Button disabled?', editVisibility === 'private' && editAllowedUsers.length === 0 && editAllowedGroups.length === 0);
                                         console.log('editVisibility:', editVisibility);
                                         console.log('editAllowedUsers.length:', editAllowedUsers.length);
                                         console.log('editAllowedGroups.length:', editAllowedGroups.length);
-                                        if (editVisibility === 'private' && editAllowedUsers.length === 0 && editAllowedGroups.length === 0) {
-                                            alert('Please select at least one user or group for private visibility before saving.');
-                                            return;
-                                        }
                                         handleSaveChanges();
                                     }}
-                                    disabled={editVisibility === 'private' && editAllowedUsers.length === 0 && editAllowedGroups.length === 0}
-                                    className="bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded-lg font-semibold transition-all shadow-md hover:shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 flex items-center gap-2 flex-1 sm:flex-none"
-                                    title={editVisibility === 'private' && editAllowedUsers.length === 0 && editAllowedGroups.length === 0 ? 'Please select users or groups for private visibility' : 'Save all changes'}
+                                    className="bg-brand-600 hover:bg-brand-500 text-white px-6 py-2.5 rounded-lg font-semibold transition-all shadow-md hover:shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 flex items-center gap-2 flex-1 sm:flex-none"
+                                    title="Save all changes"
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -6374,11 +6866,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                                             {editVisibility === 'private' && editAllowedUsers.length === 0 && editAllowedGroups.length === 0 && (
                                                 <div className="p-4 bg-amber-50 dark:bg-amber-900/20">
-                                                    <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
-                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                    <p className="text-xs text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 flex-shrink-0 mt-0.5">
                                                             <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
                                                         </svg>
-                                                        Please select at least one user or group for private spaces
+                                                        <span>No users or groups selected. Access can still come from role assignments (Your Assigned Apps), tile admins, or the space owner.</span>
                                                     </p>
                                                 </div>
                                             )}
@@ -6792,24 +7284,27 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                         {/* RIGHT COLUMN: Tab and Section Manager */}
                         <div className="lg:col-span-2 space-y-6">
-                            <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-700">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-lg bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center">
+                            <div className="flex items-center justify-between gap-3 pb-4 border-b border-slate-200 dark:border-slate-700 flex-wrap">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <div className="w-10 h-10 rounded-lg bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center shrink-0">
                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
                                         </svg>
                                     </div>
-                                    <h3 className="text-lg font-bold text-slate-800 dark:text-white">Manage Tabs & Sections</h3>
+                                    <h3 className="text-lg font-bold text-slate-800 dark:text-white truncate">Manage Tabs & Sections</h3>
                                 </div>
-                                <button
-                                    onClick={handleAddTab}
-                                    className="bg-brand-600 hover:bg-brand-500 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 flex items-center gap-2"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                                    </svg>
-                                    Add Tab
-                                </button>
+                                <div className="flex items-center gap-2 flex-wrap justify-end">
+                                    <HierarchyViewSwitcher value={hierarchyView} onChange={changeHierarchyView} />
+                                    <button
+                                        onClick={handleAddTab}
+                                        className="bg-brand-600 hover:bg-brand-500 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 flex items-center gap-2"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                        </svg>
+                                        Add Tab
+                                    </button>
+                                </div>
                             </div>
 
                             {/* Link Search Box */}
@@ -6904,12 +7399,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                             <div className="space-y-6">
                                 <input
-                                    ref={sectionLinksJsonInputRef}
+                                    ref={sectionLinksImportInputRef}
                                     type="file"
-                                    accept=".json,application/json"
+                                    accept=".json,.csv,application/json,text/csv"
                                     className="hidden"
                                     aria-hidden={true}
-                                    onChange={handleSectionLinksJsonFile}
+                                    onChange={handleSectionLinksImportFile}
                                 />
                                 <input
                                     ref={tabJsonInputRef}
@@ -6921,6 +7416,68 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 />
                                 {/* Render tabs if available, otherwise fall back to sections (backward compatibility) */}
                                 {editTabs.length > 0 ? (
+                                    hierarchyView !== 'cards' ? (
+                                        <div className="space-y-3">
+                                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                                                {hierarchyView === 'tree' ? 'Tree' : 'Compact'} view — use the ⋯ menu for actions. Opening Edit / Add switches to Cards for the full form (your preferred view stays saved).
+                                            </p>
+                                            <TileHierarchyViews
+                                                mode={hierarchyView}
+                                                tabs={editTabs}
+                                                expandedTabs={expandedTabs}
+                                                expandedSections={expandedSections}
+                                                selectedLinkIds={selectedLinkIds}
+                                                linkSearchTerm={linkSearchTerm}
+                                                canDeleteTabs={tile.canDeleteTabs !== false && (tile.canDeleteTabs !== undefined || !!tile.canEdit)}
+                                                onToggleTab={toggleTab}
+                                                onToggleSection={toggleSection}
+                                                onAddSection={handleAddSection}
+                                                onRemoveTab={handleRemoveTab}
+                                                onRemoveSection={handleRemoveSection}
+                                                onCloneTab={handleCloneTab}
+                                                onCloneSection={handleCloneSection}
+                                                onCloneLink={handleCloneLink}
+                                                onRemoveLink={handleRemoveLinkFromSection}
+                                                onMoveTab={handleMoveTab}
+                                                onMoveSection={handleMoveSection}
+                                                onMoveItem={handleMoveItem}
+                                                onUpdateTabColor={handleUpdateTabColor}
+                                                onUpdateSectionColor={handleUpdateSectionColor}
+                                                onToggleForceStacked={handleToggleForceStacked}
+                                                onImportTab={openTabJsonImport}
+                                                onImportSection={openSectionLinksImport}
+                                                onScheduleTab={(tabId) => setSchedulingDialogTab(tabId)}
+                                                onScheduleSection={(tabId, sectionId) => setSchedulingDialogSection({ tabId, sectionId })}
+                                                onScheduleLink={(tabId, sectionId, linkId) => setSchedulingDialogLink({ tabId, sectionId, linkId })}
+                                                onVisibilityTab={(tabId) => setVisibilityDialogTab(tabId)}
+                                                onVisibilitySection={(tabId, sectionId) => setVisibilityDialogSection({ tabId, sectionId })}
+                                                onEditLink={(tabId, sectionId, link) => {
+                                                    expandTabAndSection(tabId, sectionId);
+                                                    handleStartEditLink(link);
+                                                    openCardsForEditing(`link-${link.id}`);
+                                                }}
+                                                onEditRichText={(tabId, sectionId, richTextId) => {
+                                                    expandTabAndSection(tabId, sectionId);
+                                                    setEditingRichTextId(prev => ({ ...prev, [sectionId]: richTextId }));
+                                                    openCardsForEditing(`link-${richTextId}`);
+                                                }}
+                                                onDeleteRichText={handleDeleteRichText}
+                                                onCloneRichText={handleCloneRichText}
+                                                onAddLink={(tabId, sectionId) => {
+                                                    expandTabAndSection(tabId, sectionId);
+                                                    setShowAddLinkForm(prev => ({ ...prev, [sectionId]: true }));
+                                                    openCardsForEditing(`tab-${tabId}`);
+                                                }}
+                                                onAddRichText={(tabId, sectionId) => {
+                                                    expandTabAndSection(tabId, sectionId);
+                                                    setShowAddRichTextForm(prev => ({ ...prev, [sectionId]: true }));
+                                                    openCardsForEditing(`tab-${tabId}`);
+                                                }}
+                                                onToggleLinkSelection={toggleLinkSelection}
+                                                onToggleFavorite={handleToggleLinkFavorite}
+                                            />
+                                        </div>
+                                    ) : (
                                     editTabs.map((tab, tabIndex) => {
                                         // Generate a color for visual identification based on tab index
                                         const tabColorIndex = tabIndex % 6;
@@ -7028,9 +7585,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     </button>
                                                     <button
                                                         type="button"
-                                                        onClick={() => exportTabToFile(tab)}
+                                                        onClick={() => openTabJsonImport(tab.id)}
                                                         className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2"
-                                                        title="Export tab as JSON (all sections, links, and rich text)"
+                                                        title="Import tab from JSON (inserts after this tab)"
                                                     >
                                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
                                                             <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
@@ -7038,9 +7595,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     </button>
                                                     <button
                                                         type="button"
-                                                        onClick={() => openTabJsonImport(tab.id)}
+                                                        onClick={() => exportTabToFile(tab)}
                                                         className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2"
-                                                        title="Import tab from JSON (inserts after this tab)"
+                                                        title="Export tab as JSON (all sections, links, and rich text)"
                                                     >
                                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
                                                             <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
@@ -7309,82 +7866,32 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     </div>
                                                                     <button
                                                                         type="button"
+                                                                        onClick={() => openSectionLinksImport(tab.id, section.id)}
+                                                                        disabled={!!importingSectionLinks[section.id]}
+                                                                        className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2 shrink-0 disabled:opacity-50"
+                                                                        title="Import links from JSON or CSV (detected by file extension)"
+                                                                    >
+                                                                        {importingSectionLinks[section.id] ? (
+                                                                            <svg className="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                                            </svg>
+                                                                        ) : (
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                                                                            </svg>
+                                                                        )}
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
                                                                         onClick={() => exportSectionLinksToFile(section)}
                                                                         className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2 shrink-0"
                                                                         title="Export links in this section as JSON"
                                                                     >
                                                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                                                                        </svg>
-                                                                    </button>
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => openSectionLinksJsonImport(tab.id, section.id)}
-                                                                        className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2 shrink-0"
-                                                                        title="Import links from JSON (LinkNest section links export)"
-                                                                    >
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
                                                                             <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
                                                                         </svg>
                                                                     </button>
-                                                                    {/* CSV Import */}
-                                                                    <div className="flex items-center gap-1">
-                                                                        <label className="cursor-pointer">
-                                                                            <input
-                                                                                type="file"
-                                                                                accept=".csv,text/csv"
-                                                                                className="hidden"
-                                                                                onChange={(e) => {
-                                                                                    const file = e.target.files?.[0] || null;
-                                                                                    setCsvImportFile(prev => ({ ...prev, [section.id]: file }));
-                                                                                }}
-                                                                            />
-                                                                            <span className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2" title="Import links from CSV (requires 'Link Name' and 'Link' columns)">
-                                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-                                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                                                                                </svg>
-                                                                            </span>
-                                                                        </label>
-                                                                        {csvImportFile[section.id] && (
-                                                                            <div className="flex items-center gap-1">
-                                                                                <span className="text-xs text-slate-500 dark:text-slate-400 max-w-[100px] truncate" title={csvImportFile[section.id]?.name}>
-                                                                                    {csvImportFile[section.id]?.name}
-                                                                                </span>
-                                                                                <button
-                                                                                    onClick={() => handleImportLinksFromCSV(tab.id, section.id)}
-                                                                                    disabled={importingCsv[section.id]}
-                                                                                    className="bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-2 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1"
-                                                                                    title="Import CSV"
-                                                                                >
-                                                                                    {importingCsv[section.id] ? (
-                                                                                        <>
-                                                                                            <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                                                                            </svg>
-                                                                                            Importing...
-                                                                                        </>
-                                                                                    ) : (
-                                                                                        <>
-                                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3">
-                                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                                                                                            </svg>
-                                                                                            Import
-                                                                                        </>
-                                                                                    )}
-                                                                                </button>
-                                                                                <button
-                                                                                    onClick={() => setCsvImportFile(prev => ({ ...prev, [section.id]: null }))}
-                                                                                    className="text-slate-400 hover:text-red-500 p-1"
-                                                                                    title="Clear file"
-                                                                                >
-                                                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                                                                        <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                                                                                    </svg>
-                                                                                </button>
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
                                                                     <button
                                                                         onClick={() => handleCloneSection(tab.id, section.id)}
                                                                         className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2"
@@ -7519,110 +8026,89 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 const isHovered = hoveredLinkId === link.id;
 
                                                                                 return editingLinkId === link.id ? (
-                                                                                    // Edit Mode
-                                                                                    <div key={link.id} className="bg-white dark:bg-slate-800 border-2 border-brand-500 dark:border-brand-500/50 rounded-xl p-4 shadow-lg space-y-3">
-                                                                                        {/* Link Label & URL */}
-                                                                                        <div className="space-y-3">
-                                                                                            <div>
-                                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Link Label (Rich Text)</label>
-                                                                                                <RichTextEditor
-                                                                                                    value={editLinkState[link.id]?.label || ''}
-                                                                                                    onChange={(value) => updateEditLinkState(link.id, 'label', value)}
-                                                                                                    placeholder="Enter link name with formatting..."
-                                                                                                />
-                                                                                            </div>
-                                                                                            <div>
-                                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">URL</label>
-                                                                                                <input
-                                                                                                    type="text"
-                                                                                                    value={editLinkState[link.id]?.url || ''}
-                                                                                                    onChange={(e) => updateEditLinkState(link.id, 'url', e.target.value)}
-                                                                                                    placeholder="https://example.com"
-                                                                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-mono"
-                                                                                                />
-                                                                                            </div>
-                                                                                        </div>
-
-                                                                                        {/* Emoji Selection */}
-                                                                                        <div className="relative">
-                                                                                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Emoji</label>
-                                                                                            <div className="flex gap-2 items-center">
-                                                                                                <button
-                                                                                                    type="button"
-                                                                                                    onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: !prev[link.id] }))}
-                                                                                                    className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg hover:border-brand-400 dark:hover:border-brand-500 hover:shadow-md transition-all focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
-                                                                                                    title="Select emoji"
-                                                                                                >
-                                                                                                    <span className="text-xl">
-                                                                                                        {editLinkState[link.id]?.icon || '😀'}
-                                                                                                    </span>
-                                                                                                </button>
-                                                                                                <input
-                                                                                                    type="text"
-                                                                                                    value={editLinkState[link.id]?.icon || ''}
-                                                                                                    onChange={(e) => updateEditLinkState(link.id, 'icon', e.target.value)}
-                                                                                                    placeholder="Or type emoji..."
-                                                                                                    className="flex-1 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                                                                                                />
-                                                                                            </div>
-                                                                                            {showLinkEmojiPicker[link.id] && (
-                                                                                                <>
-                                                                                                    <div className="fixed inset-0 z-[9998]" onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: false }))}></div>
-                                                                                                    <div className="fixed z-[9999] bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl w-96 max-h-[500px] flex flex-col overflow-hidden" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
-                                                                                                        <EmojiPickerTabs linkId={link.id} editLinkState={editLinkState[link.id]} updateEditLinkState={updateEditLinkState} setShowLinkEmojiPicker={setShowLinkEmojiPicker} />
-                                                                                                    </div>
-                                                                                                </>
-                                                                                            )}
-                                                                                        </div>
-
-                                                                                        {/* Text Color & Visibility - Side by Side */}
-                                                                                        <div className="grid grid-cols-2 gap-3">
-                                                                                            <div>
-                                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Text Color</label>
-                                                                                                <div className="flex gap-2 items-center">
-                                                                                                    <input
-                                                                                                        type="color"
-                                                                                                        value={editLinkState[link.id]?.textColor && editLinkState[link.id]!.textColor.trim() ? editLinkState[link.id]!.textColor : '#000000'}
-                                                                                                        onChange={(e) => updateEditLinkState(link.id, 'textColor', e.target.value)}
-                                                                                                        className="w-12 h-12 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer hover:border-brand-400 dark:hover:border-brand-500 transition-all"
-                                                                                                        title="Select text color"
-                                                                                                    />
-                                                                                                    <div className="flex-1 flex gap-1.5">
-                                                                                                        <input
-                                                                                                            type="text"
-                                                                                                            value={editLinkState[link.id]?.textColor || ''}
-                                                                                                            onChange={(e) => updateEditLinkState(link.id, 'textColor', e.target.value)}
-                                                                                                            placeholder="#000000"
-                                                                                                            className="flex-1 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-xs text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-mono"
-                                                                                                        />
-                                                                                                        <button
-                                                                                                            type="button"
-                                                                                                            onClick={() => updateEditLinkState(link.id, 'textColor', '')}
-                                                                                                            className="px-2.5 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg transition-colors text-xs font-medium"
-                                                                                                            title="Clear color"
-                                                                                                        >
-                                                                                                            Clear
-                                                                                                        </button>
-                                                                                                    </div>
+                                                                                    // Edit Mode — organized & collapsible
+                                                                                    <div key={link.id} className="bg-gradient-to-br from-white via-slate-50 to-brand-50/40 dark:from-slate-800 dark:via-slate-800 dark:to-slate-900 border-2 border-brand-500 dark:border-brand-500/50 rounded-xl p-4 shadow-lg space-y-3">
+                                                                                        <div className="flex items-center justify-between gap-2 pb-1">
+                                                                                            <div className="flex items-center gap-2 min-w-0">
+                                                                                                <span className="text-xl shrink-0" aria-hidden>✏️</span>
+                                                                                                <div className="min-w-0">
+                                                                                                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">Edit Link</h4>
+                                                                                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                                                                                                        Organize access, content, and display options below
+                                                                                                    </p>
                                                                                                 </div>
                                                                                             </div>
-                                                                                            <div>
-                                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Visibility</label>
+                                                                                        </div>
+
+                                                                                        {/* Access row — Publish + Visibility always on top */}
+                                                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                                                            {user?.is_admin && (
+                                                                                                <div className={`flex items-center justify-between gap-3 p-3.5 rounded-xl border-2 ${
+                                                                                                    (editLinkState[link.id]?.published !== false)
+                                                                                                        ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/40'
+                                                                                                        : 'border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-900/60'
+                                                                                                }`}>
+                                                                                                    <div className="flex items-center gap-2.5 min-w-0">
+                                                                                                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/80 dark:bg-slate-800 text-lg shadow-sm" aria-hidden>
+                                                                                                            {(editLinkState[link.id]?.published !== false) ? '🚀' : '⏸️'}
+                                                                                                        </span>
+                                                                                                        <div className="min-w-0">
+                                                                                                            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Publish</div>
+                                                                                                            <div className={`text-sm font-semibold ${
+                                                                                                                (editLinkState[link.id]?.published !== false)
+                                                                                                                    ? 'text-emerald-700 dark:text-emerald-300'
+                                                                                                                    : 'text-slate-600 dark:text-slate-300'
+                                                                                                            }`}>
+                                                                                                                {(editLinkState[link.id]?.published !== false) ? 'Published' : 'Unpublished'}
+                                                                                                            </div>
+                                                                                                        </div>
+                                                                                                    </div>
+                                                                                                    <button
+                                                                                                        type="button"
+                                                                                                        role="switch"
+                                                                                                        aria-checked={editLinkState[link.id]?.published !== false}
+                                                                                                        onClick={() => updateEditLinkState(link.id, 'published', editLinkState[link.id]?.published === false)}
+                                                                                                        className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${(editLinkState[link.id]?.published !== false) ? 'bg-emerald-500' : 'bg-slate-400 dark:bg-slate-600'}`}
+                                                                                                    >
+                                                                                                        <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${(editLinkState[link.id]?.published !== false) ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                                                                    </button>
+                                                                                                </div>
+                                                                                            )}
+                                                                                            <div className={`p-3.5 rounded-xl border-2 ${
+                                                                                                editLinkState[link.id]?.visibility === 'private'
+                                                                                                    ? 'border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/30'
+                                                                                                    : editLinkState[link.id]?.visibility === 'authenticated'
+                                                                                                        ? 'border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30'
+                                                                                                        : 'border-sky-300 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/30'
+                                                                                            } ${!user?.is_admin ? 'sm:col-span-2' : ''}`}>
+                                                                                                <div className="flex items-center gap-2.5 mb-2">
+                                                                                                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/80 dark:bg-slate-800 text-lg shadow-sm" aria-hidden>
+                                                                                                        {editLinkState[link.id]?.visibility === 'private' ? '🔒' : editLinkState[link.id]?.visibility === 'authenticated' ? '👤' : '🌍'}
+                                                                                                    </span>
+                                                                                                    <div>
+                                                                                                        <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Visibility</div>
+                                                                                                        <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">Who can see this link</div>
+                                                                                                    </div>
+                                                                                                </div>
                                                                                                 <select
                                                                                                     value={editLinkState[link.id]?.visibility || 'public'}
                                                                                                     onChange={(e) => updateEditLinkState(link.id, 'visibility', e.target.value as LinkVisibility)}
-                                                                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-medium"
+                                                                                                    className="w-full bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-medium"
                                                                                                 >
-                                                                                                    {user?.is_admin && <option value="public">Public (visible to everyone)</option>}
-                                                                                                    {user?.is_admin && <option value="authenticated">Authenticated (logged-in users only)</option>}
-                                                                                                    <option value="private">Private (specific users only)</option>
+                                                                                                    {user?.is_admin && <option value="public">🌍 Public (visible to everyone)</option>}
+                                                                                                    {user?.is_admin && <option value="authenticated">👤 Authenticated (logged-in users only)</option>}
+                                                                                                    <option value="private">🔒 Private (specific users only)</option>
                                                                                                 </select>
                                                                                             </div>
                                                                                         </div>
 
-                                                                                        {/* User and Group Selector for Private Visibility */}
+                                                                                        {/* Private access pickers */}
                                                                                         {editLinkState[link.id]?.visibility === 'private' && (
-                                                                                            <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border-2 border-slate-200 dark:border-slate-700 space-y-3">
+                                                                                            <div className="p-3.5 bg-rose-50/80 dark:bg-rose-950/20 rounded-xl border-2 border-rose-200 dark:border-rose-800/60 space-y-3">
+                                                                                                <div className="flex items-center gap-2 text-sm font-semibold text-rose-800 dark:text-rose-200">
+                                                                                                    <span aria-hidden>👥</span>
+                                                                                                    Allowed users & groups
+                                                                                                </div>
                                                                                                 <div>
                                                                                                     <div className="flex items-center justify-between mb-2">
                                                                                                         <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Select Users</label>
@@ -7775,28 +8261,111 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                             </div>
                                                                                         )}
 
-                                                                                        {user?.is_admin && (
-                                                                                            <div className="flex items-center justify-between gap-3 p-3 rounded-lg border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+                                                                                        {/* Basics */}
+                                                                                        <LinkEditSection
+                                                                                            emoji="🔗"
+                                                                                            title="Basics"
+                                                                                            subtitle="Label, URL, emoji & color"
+                                                                                            accent="sky"
+                                                                                            defaultOpen
+                                                                                        >
+                                                                                            <div>
+                                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Link Label (Rich Text)</label>
+                                                                                                <RichTextEditor
+                                                                                                    value={editLinkState[link.id]?.label || ''}
+                                                                                                    onChange={(value) => updateEditLinkState(link.id, 'label', value)}
+                                                                                                    placeholder="Enter link name with formatting..."
+                                                                                                />
+                                                                                            </div>
+                                                                                            <div>
+                                                                                                <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+                                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">URL</label>
+                                                                                                    <UrlProbeBadges url={editLinkState[link.id]?.url || ''} />
+                                                                                                </div>
+                                                                                                <input
+                                                                                                    type="text"
+                                                                                                    value={editLinkState[link.id]?.url || ''}
+                                                                                                    onChange={(e) => updateEditLinkState(link.id, 'url', e.target.value)}
+                                                                                                    placeholder="https://…  http://…  ssh://user@host:22  or vnc://host:5900"
+                                                                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-mono"
+                                                                                                />
+                                                                                            </div>
+                                                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                                                                <div className="relative">
+                                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Emoji</label>
+                                                                                                    <div className="flex gap-2 items-center">
+                                                                                                        <button
+                                                                                                            type="button"
+                                                                                                            onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: !prev[link.id] }))}
+                                                                                                            className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg hover:border-brand-400 dark:hover:border-brand-500 hover:shadow-md transition-all focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
+                                                                                                            title="Select emoji"
+                                                                                                        >
+                                                                                                            <span className="text-xl">
+                                                                                                                {editLinkState[link.id]?.icon || '😀'}
+                                                                                                            </span>
+                                                                                                        </button>
+                                                                                                        <input
+                                                                                                            type="text"
+                                                                                                            value={editLinkState[link.id]?.icon || ''}
+                                                                                                            onChange={(e) => updateEditLinkState(link.id, 'icon', e.target.value)}
+                                                                                                            placeholder="Or type emoji..."
+                                                                                                            className="flex-1 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
+                                                                                                        />
+                                                                                                    </div>
+                                                                                                    {showLinkEmojiPicker[link.id] && (
+                                                                                                        <>
+                                                                                                            <div className="fixed inset-0 z-[9998]" onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: false }))}></div>
+                                                                                                            <div className="fixed z-[9999] bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl w-96 max-h-[500px] flex flex-col overflow-hidden" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
+                                                                                                                <EmojiPickerTabs linkId={link.id} editLinkState={editLinkState[link.id]} updateEditLinkState={updateEditLinkState} setShowLinkEmojiPicker={setShowLinkEmojiPicker} />
+                                                                                                            </div>
+                                                                                                        </>
+                                                                                                    )}
+                                                                                                </div>
                                                                                                 <div>
-                                                                                                    <div className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Publish Status</div>
-                                                                                                    <div className="text-sm font-medium text-slate-800 dark:text-slate-200">
-                                                                                                        {(editLinkState[link.id]?.published !== false) ? 'Published' : 'Unpublished'}
+                                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Text Color</label>
+                                                                                                    <div className="flex gap-2 items-center">
+                                                                                                        <input
+                                                                                                            type="color"
+                                                                                                            value={editLinkState[link.id]?.textColor && editLinkState[link.id]!.textColor.trim() ? editLinkState[link.id]!.textColor : '#000000'}
+                                                                                                            onChange={(e) => updateEditLinkState(link.id, 'textColor', e.target.value)}
+                                                                                                            className="w-12 h-12 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer hover:border-brand-400 dark:hover:border-brand-500 transition-all"
+                                                                                                            title="Select text color"
+                                                                                                        />
+                                                                                                        <div className="flex-1 flex gap-1.5">
+                                                                                                            <input
+                                                                                                                type="text"
+                                                                                                                value={editLinkState[link.id]?.textColor || ''}
+                                                                                                                onChange={(e) => updateEditLinkState(link.id, 'textColor', e.target.value)}
+                                                                                                                placeholder="#000000"
+                                                                                                                className="flex-1 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-xs text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-mono"
+                                                                                                            />
+                                                                                                            <button
+                                                                                                                type="button"
+                                                                                                                onClick={() => updateEditLinkState(link.id, 'textColor', '')}
+                                                                                                                className="px-2.5 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg transition-colors text-xs font-medium"
+                                                                                                                title="Clear color"
+                                                                                                            >
+                                                                                                                Clear
+                                                                                                            </button>
+                                                                                                        </div>
                                                                                                     </div>
                                                                                                 </div>
-                                                                                                <button
-                                                                                                    type="button"
-                                                                                                    role="switch"
-                                                                                                    aria-checked={editLinkState[link.id]?.published !== false}
-                                                                                                    onClick={() => updateEditLinkState(link.id, 'published', editLinkState[link.id]?.published === false)}
-                                                                                                    className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${(editLinkState[link.id]?.published !== false) ? 'bg-emerald-500' : 'bg-slate-400 dark:bg-slate-600'}`}
-                                                                                                >
-                                                                                                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${(editLinkState[link.id]?.published !== false) ? 'translate-x-6' : 'translate-x-1'}`} />
-                                                                                                </button>
                                                                                             </div>
-                                                                                        )}
+                                                                                        </LinkEditSection>
 
-                                                                                        {/* Notes & Tooltip - Side by Side */}
-                                                                                        <div className="grid grid-cols-2 gap-3">
+                                                                                        {/* Notes & Tooltip */}
+                                                                                        <LinkEditSection
+                                                                                            emoji="📝"
+                                                                                            title="Notes & Tooltip"
+                                                                                            subtitle="Owner info, support details, hover text"
+                                                                                            accent="amber"
+                                                                                            defaultOpen={!!(editLinkState[link.id]?.notes || editLinkState[link.id]?.tooltip || link.notes || link.tooltip)}
+                                                                                            badge={
+                                                                                                (editLinkState[link.id]?.notes || link.notes) ? (
+                                                                                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-200/80 dark:bg-amber-800/50 text-amber-800 dark:text-amber-200 font-medium shrink-0">Has notes</span>
+                                                                                                ) : undefined
+                                                                                            }
+                                                                                        >
                                                                                             <div>
                                                                                                 <div className="flex items-center justify-between mb-1.5">
                                                                                                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Notes</label>
@@ -7818,8 +8387,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     value={editLinkState[link.id]?.notes || ''}
                                                                                                     onChange={(e) => updateEditLinkState(link.id, 'notes', e.target.value)}
                                                                                                     placeholder="Add notes... or use Preset Form button above"
-                                                                                                    rows={2}
-                                                                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all resize-none"
+                                                                                                    rows={12}
+                                                                                                    className="w-full min-h-[280px] bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm leading-relaxed text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all resize-y font-mono"
                                                                                                 />
                                                                                             </div>
                                                                                             <div>
@@ -7832,14 +8401,25 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
                                                                                                 />
                                                                                             </div>
-                                                                                        </div>
+                                                                                        </LinkEditSection>
 
-                                                                                        {/* Rich Text Content */}
-                                                                                        <div>
-                                                                                            <div className="flex items-center justify-between mb-1.5">
-                                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                                                                                                    Information Content (Rich Text)
-                                                                                                </label>
+                                                                                        {/* Information Content */}
+                                                                                        <LinkEditSection
+                                                                                            emoji="📄"
+                                                                                            title="Information Content"
+                                                                                            subtitle="Rich text dialog instead of opening the URL"
+                                                                                            accent="violet"
+                                                                                            defaultOpen={!!(editLinkState[link.id]?.richTextContent || link.richTextContent)}
+                                                                                            badge={
+                                                                                                (editLinkState[link.id]?.richTextContent || link.richTextContent) ? (
+                                                                                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-200/80 dark:bg-violet-800/50 text-violet-800 dark:text-violet-200 font-medium shrink-0">Has content</span>
+                                                                                                ) : undefined
+                                                                                            }
+                                                                                        >
+                                                                                            <div className="flex items-center justify-between gap-2">
+                                                                                                <p className="text-xs text-slate-500 dark:text-slate-400">
+                                                                                                    If provided, clicking this link opens a rich text dialog instead of navigating to the URL.
+                                                                                                </p>
                                                                                                 <button
                                                                                                     type="button"
                                                                                                     onClick={() => {
@@ -7866,14 +8446,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                             }
                                                                                                         });
                                                                                                     }}
-                                                                                                    className="px-3 py-1 text-xs bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition-colors"
+                                                                                                    className="px-3 py-1 text-xs bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition-colors shrink-0"
                                                                                                 >
                                                                                                     Demo Fill
                                                                                                 </button>
                                                                                             </div>
-                                                                                            <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-                                                                                                If provided, clicking this link will open a rich text dialog instead of navigating to the URL. Leave empty to open the URL normally.
-                                                                                            </p>
                                                                                             <RichTextEditor
                                                                                                 value={editLinkState[link.id]?.richTextContent || ''}
                                                                                                 onChange={(html) => {
@@ -7902,73 +8479,78 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                 placeholder="Enter rich text content that will be displayed in a dialog when the link is clicked..."
                                                                                                 className="min-h-[200px]"
                                                                                             />
-                                                                                        </div>
+                                                                                        </LinkEditSection>
 
-                                                                                        {/* Browser Selection - Only show if feature is enabled and user has canChangeBrowser */}
-                                                                                        {settings.browser_specific_links_enabled === '1' && (user?.is_admin || tile.canChangeBrowser === true) && (
+                                                                                        {/* Advanced */}
+                                                                                        <LinkEditSection
+                                                                                            emoji="⚙️"
+                                                                                            title="Advanced"
+                                                                                            subtitle="Browser target & entrance animation"
+                                                                                            accent="slate"
+                                                                                            defaultOpen={false}
+                                                                                        >
+                                                                                            {settings.browser_specific_links_enabled === '1' && (user?.is_admin || tile.canChangeBrowser === true) && (
+                                                                                                <div>
+                                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Open link in</label>
+                                                                                                    <select
+                                                                                                        value={editLinkState[link.id]?.browser || 'default'}
+                                                                                                        onChange={(e) => updateEditLinkState(link.id, 'browser', e.target.value)}
+                                                                                                        className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
+                                                                                                    >
+                                                                                                        <option value="default">Default Browser</option>
+                                                                                                        {availableBrowsers.length > 0 ? (
+                                                                                                            availableBrowsers.map((browserId) => {
+                                                                                                                const displayName = browserId
+                                                                                                                    .replace(/-/g, ' ')
+                                                                                                                    .replace(/\b\w/g, (l) => l.toUpperCase())
+                                                                                                                    .replace('Wsl', '(WSL)')
+                                                                                                                    .replace('Stable', 'Stable')
+                                                                                                                    .replace('Beta', 'Beta')
+                                                                                                                    .replace('Dev', 'Dev');
+                                                                                                                return (
+                                                                                                                    <option key={browserId} value={browserId}>
+                                                                                                                        {displayName}
+                                                                                                                    </option>
+                                                                                                                );
+                                                                                                            })
+                                                                                                        ) : (
+                                                                                                            <>
+                                                                                                                <option value="chrome-stable">Chrome Stable</option>
+                                                                                                                <option value="chrome-beta">Chrome Beta</option>
+                                                                                                                <option value="chrome-dev">Chrome Dev</option>
+                                                                                                                <option value="edge-stable">Edge Stable</option>
+                                                                                                                <option value="edge-beta">Edge Beta</option>
+                                                                                                                <option value="edge-dev">Edge Dev</option>
+                                                                                                                <option value="firefox">Firefox (WSL)</option>
+                                                                                                            </>
+                                                                                                        )}
+                                                                                                    </select>
+                                                                                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                                                                                                        Select which browser should open this link. Requires browser extension to be installed.
+                                                                                                    </p>
+                                                                                                </div>
+                                                                                            )}
                                                                                             <div>
-                                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Open link in</label>
-                                                                                                <select
-                                                                                                    value={editLinkState[link.id]?.browser || 'default'}
-                                                                                                    onChange={(e) => updateEditLinkState(link.id, 'browser', e.target.value)}
-                                                                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                                                                                                >
-                                                                                                    <option value="default">Default Browser</option>
-                                                                                                    {availableBrowsers.length > 0 ? (
-                                                                                                        availableBrowsers.map((browserId) => {
-                                                                                                            // Format browser ID for display
-                                                                                                            const displayName = browserId
-                                                                                                                .replace(/-/g, ' ')
-                                                                                                                .replace(/\b\w/g, (l) => l.toUpperCase())
-                                                                                                                .replace('Wsl', '(WSL)')
-                                                                                                                .replace('Stable', 'Stable')
-                                                                                                                .replace('Beta', 'Beta')
-                                                                                                                .replace('Dev', 'Dev');
-                                                                                                            return (
-                                                                                                                <option key={browserId} value={browserId}>
-                                                                                                                    {displayName}
-                                                                                                                </option>
-                                                                                                            );
-                                                                                                        })
-                                                                                                    ) : (
-                                                                                                        <>
-                                                                                                            <option value="chrome-stable">Chrome Stable</option>
-                                                                                                            <option value="chrome-beta">Chrome Beta</option>
-                                                                                                            <option value="chrome-dev">Chrome Dev</option>
-                                                                                                            <option value="edge-stable">Edge Stable</option>
-                                                                                                            <option value="edge-beta">Edge Beta</option>
-                                                                                                            <option value="edge-dev">Edge Dev</option>
-                                                                                                            <option value="firefox">Firefox (WSL)</option>
-                                                                                                        </>
-                                                                                                    )}
-                                                                                                </select>
-                                                                                                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
-                                                                                                    Select which browser should open this link. Requires browser extension to be installed.
-                                                                                                </p>
+                                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
+                                                                                                    Entrance Animation
+                                                                                                </label>
+                                                                                                <div className="flex items-center gap-3">
+                                                                                                    <TileAnimationSelector
+                                                                                                        persistGlobal={false}
+                                                                                                        animationsOnly
+                                                                                                        includeInherit
+                                                                                                        value={linkAnimationForEdit(editLinkState[link.id]?.animation)}
+                                                                                                        onAnimationChange={(animation) => updateEditLinkState(link.id, 'animation', animation)}
+                                                                                                        scopeLabel="Link Animation"
+                                                                                                        scopeHint="Overrides space Links Animation when not Inherit"
+                                                                                                        buttonTitle="Choose entrance animation for this link (or inherit space default)"
+                                                                                                    />
+                                                                                                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                                                                                                        {getAnimationOption(linkAnimationForEdit(editLinkState[link.id]?.animation)).name}
+                                                                                                    </span>
+                                                                                                </div>
                                                                                             </div>
-                                                                                        )}
-
-                                                                                        {/* Link entrance animation */}
-                                                                                        <div>
-                                                                                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-                                                                                                Entrance Animation
-                                                                                            </label>
-                                                                                            <div className="flex items-center gap-3">
-                                                                                                <TileAnimationSelector
-                                                                                                    persistGlobal={false}
-                                                                                                    animationsOnly
-                                                                                                    includeInherit
-                                                                                                    value={linkAnimationForEdit(editLinkState[link.id]?.animation)}
-                                                                                                    onAnimationChange={(animation) => updateEditLinkState(link.id, 'animation', animation)}
-                                                                                                    scopeLabel="Link Animation"
-                                                                                                    scopeHint="Overrides space Links Animation when not Inherit"
-                                                                                                    buttonTitle="Choose entrance animation for this link (or inherit space default)"
-                                                                                                />
-                                                                                                <span className="text-xs text-slate-500 dark:text-slate-400">
-                                                                                                    {getAnimationOption(linkAnimationForEdit(editLinkState[link.id]?.animation)).name}
-                                                                                                </span>
-                                                                                            </div>
-                                                                                        </div>
+                                                                                        </LinkEditSection>
 
                                                                                         {/* Action Buttons */}
                                                                                         <div className="flex gap-2 justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
@@ -8196,12 +8778,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     />
                                                                                 </div>
                                                                                 <div>
-                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">URL</label>
+                                                                                    <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+                                                                                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">URL</label>
+                                                                                        <UrlProbeBadges url={newLinkState[section.id]?.url || ''} />
+                                                                                    </div>
                                                                                     <input
                                                                                         type="text"
                                                                                         value={newLinkState[section.id]?.url || ''}
                                                                                         onChange={(e) => updateNewLinkState(section.id, 'url', e.target.value)}
-                                                                                        placeholder="https://example.com"
+                                                                                        placeholder="https://…  http://…  ssh://user@host:22  or vnc://host:5900"
                                                                                         className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-mono"
                                                                                     />
                                                                                 </div>
@@ -8439,28 +9024,28 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 </div>
                                                                             )}
 
-                                                                            {/* Notes & Tooltip - Side by Side */}
-                                                                            <div className="grid grid-cols-2 gap-3">
-                                                                                <div>
-                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Notes</label>
-                                                                                    <textarea
-                                                                                        value={newLinkState[section.id]?.notes || ''}
-                                                                                        onChange={(e) => updateNewLinkState(section.id, 'notes', e.target.value)}
-                                                                                        placeholder="Add notes..."
-                                                                                        rows={2}
-                                                                                        className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all resize-none"
-                                                                                    />
-                                                                                </div>
-                                                                                <div>
-                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Hover Tooltip</label>
-                                                                                    <input
-                                                                                        type="text"
-                                                                                        value={newLinkState[section.id]?.tooltip || ''}
-                                                                                        onChange={(e) => updateNewLinkState(section.id, 'tooltip', e.target.value)}
-                                                                                        placeholder="Text shown on hover..."
-                                                                                        className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                                                                                    />
-                                                                                </div>
+                                                                            {/* Notes - full width for readability */}
+                                                                            <div>
+                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Notes</label>
+                                                                                <textarea
+                                                                                    value={newLinkState[section.id]?.notes || ''}
+                                                                                    onChange={(e) => updateNewLinkState(section.id, 'notes', e.target.value)}
+                                                                                    placeholder="Add notes..."
+                                                                                    rows={12}
+                                                                                    className="w-full min-h-[280px] bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm leading-relaxed text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all resize-y font-mono"
+                                                                                />
+                                                                            </div>
+
+                                                                            {/* Hover Tooltip */}
+                                                                            <div>
+                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Hover Tooltip</label>
+                                                                                <input
+                                                                                    type="text"
+                                                                                    value={newLinkState[section.id]?.tooltip || ''}
+                                                                                    onChange={(e) => updateNewLinkState(section.id, 'tooltip', e.target.value)}
+                                                                                    placeholder="Text shown on hover..."
+                                                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
+                                                                                />
                                                                             </div>
 
                                                                             {/* Rich Text Content */}
@@ -8696,6 +9281,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             </div>
                                         );
                                     })
+                                    )
                                 ) : (
                                     // Backward compatibility: Render sections without tabs
                                     editSections.map((section, index) => {

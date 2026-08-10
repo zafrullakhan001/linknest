@@ -308,7 +308,7 @@ function updaterPushHistorySnapshot(string $label = '', ?array $extra = null): a
     }
     $entries = updaterReadHistory();
     $last = $entries[count($entries) - 1] ?? null;
-    // Same SHA, no new DB snapshot → skip duplicate
+    // Same SHA, no new DB snapshot â†’ skip duplicate
     if (
         is_array($last)
         && !empty($last['gitCommit'])
@@ -351,7 +351,7 @@ function updaterHistoryFindById(string $id): ?array {
     return null;
 }
 
-/** @deprecated Prefer updaterHistoryFindById — kept for older CLI */
+/** @deprecated Prefer updaterHistoryFindById â€” kept for older CLI */
 function updaterHistoryPop(): ?array {
     $entries = updaterReadHistory();
     if (empty($entries)) {
@@ -404,7 +404,7 @@ function updaterFormatGithubHttpError(int $status, string $body, string $repo): 
             . '(fine-grained: Contents + Metadata read; classic: repo scope).';
     }
     if ($status === 401) {
-        return 'GitHub authentication failed (401). The saved token is invalid or expired — generate a new PAT and save it again.';
+        return 'GitHub authentication failed (401). The saved token is invalid or expired â€” generate a new PAT and save it again.';
     }
     if ($status === 403) {
         return 'GitHub access denied (403) for "' . $repo . '". '
@@ -592,7 +592,6 @@ function updaterHttpJson(string $url, bool $forceDownload = false): array {
     $body = curl_exec($ch);
     $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $err = curl_error($ch);
-    curl_close($ch);
     if ($body === false) {
         throw new RuntimeException('GitHub request failed: ' . ($err ?: 'unknown error'));
     }
@@ -637,7 +636,6 @@ function updaterDownloadFile(string $url, string $destPath): void {
     $ok = curl_exec($ch);
     $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $err = curl_error($ch);
-    curl_close($ch);
     fclose($fp);
     if ($ok === false || $status < 200 || $status >= 300) {
         @unlink($destPath);
@@ -956,7 +954,7 @@ function updaterFetchCommitsAhead(bool $force = false): array {
     }
 
     $commits = updaterMergeCommitLists($remoteCommits, $localCommits);
-    // Newest first — git log is already newest-first; GitHub compare may differ
+    // Newest first â€” git log is already newest-first; GitHub compare may differ
     usort($commits, static function ($a, $b) {
         $da = strtotime((string)($a['date'] ?? '')) ?: 0;
         $db = strtotime((string)($b['date'] ?? '')) ?: 0;
@@ -1487,7 +1485,6 @@ function updaterDownloadZipball(string $url, string $destPath): void {
     $ok = curl_exec($ch);
     $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $err = curl_error($ch);
-    curl_close($ch);
     fclose($fp);
     if ($ok === false || $status < 200 || $status >= 300) {
         @unlink($destPath);
@@ -1787,7 +1784,7 @@ function updaterBuildPreview(?string $tag, ?string $sha): array {
             $needsRebuild = true;
         }
     }
-    // Always rebuild in git mode after checkout when node is available — ETA should reflect that
+    // Always rebuild in git mode after checkout when node is available â€” ETA should reflect that
     if ($caps['mode'] === 'git' && $caps['nodeAvailable']) {
         $needsRebuild = true;
     }
@@ -2092,7 +2089,7 @@ function updaterSettleCompletedJob(): void {
         ]);
         return;
     }
-    // Errors older than 30 minutes → idle
+    // Errors older than 30 minutes â†’ idle
     $updated = (int)($job['updatedAt'] ?? 0);
     if ($updated > 0 && (time() - $updated) > 1800) {
         updaterWriteJob([

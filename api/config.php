@@ -2,7 +2,8 @@
 // Disable error display, log errors instead
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
-error_reporting(E_ALL);
+// PHP 8.5+: keep runtime clean; deprecations (e.g. curl_close) must not surface as API failures.
+error_reporting(E_ALL & ~E_DEPRECATED & ~E_STRICT);
 
 // Set timezone to match system time
 // On Windows, ALWAYS use the Windows system timezone to match the system clock
@@ -83,6 +84,10 @@ if (!ob_get_level()) {
 
 // Set custom error handler to prevent HTML output
 set_error_handler(function($errno, $errstr, $errfile, $errline) {
+    // Ignore deprecations/strict notices (PHP 8.5 curl_close etc.) — do not escalate to failures
+    if ($errno === E_DEPRECATED || $errno === E_USER_DEPRECATED || $errno === E_STRICT) {
+        return true;
+    }
     // Log the error but don't output it
     error_log("PHP Error [$errno]: $errstr in $errfile on line $errline");
     // Return false to let PHP handle it normally (but display_errors is off, so it won't output)
@@ -112,7 +117,7 @@ define('SYSTEM_TOKEN', 'linknest_secret_token_123'); // Change this for producti
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 74);
+    define('LINKNEST_SCHEMA_VERSION', 82);
 }
 
 /**
@@ -404,6 +409,34 @@ function ensureTilesHeaderImageColumns(PDO $db): void {
     }
 }
 
+/** Ensure SSH connection color column exists (identification strip in SSH Terminal). */
+function ensureSshConnectionColorColumn(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $exists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='user_ssh_connections'")->fetchColumn();
+        if (!$exists) {
+            return;
+        }
+        $columns = $db->query('PRAGMA table_info(user_ssh_connections)')->fetchAll(PDO::FETCH_ASSOC);
+        $names = array_column($columns, 'name');
+        if (!in_array('color', $names, true)) {
+            $db->exec("ALTER TABLE user_ssh_connections ADD COLUMN color TEXT DEFAULT '#0ea5e9'");
+        }
+        if (!in_array('protocol', $names, true)) {
+            $db->exec("ALTER TABLE user_ssh_connections ADD COLUMN protocol TEXT DEFAULT 'ssh'");
+        }
+        if (!in_array('appearance', $names, true)) {
+            $db->exec('ALTER TABLE user_ssh_connections ADD COLUMN appearance TEXT');
+        }
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureSshConnectionColorColumn warning: ' . $e->getMessage());
+    }
+}
+
 // Initialize database
 function initDatabase() {
     $initLock = null;
@@ -425,6 +458,9 @@ function initDatabase() {
         }
         if ($currentVersion >= (int)LINKNEST_SCHEMA_VERSION) {
             ensureTilesHeaderImageColumns($db);
+            ensureSshConnectionColorColumn($db);
+            ensurePublicGuestRole($db);
+            ensureRoleLinkActionDefaults($db);
             return $db;
         }
 
@@ -439,6 +475,9 @@ function initDatabase() {
         }
         if ($currentVersion >= (int)LINKNEST_SCHEMA_VERSION) {
             ensureTilesHeaderImageColumns($db);
+            ensureSshConnectionColorColumn($db);
+            ensurePublicGuestRole($db);
+            ensureRoleLinkActionDefaults($db);
             releaseDatabaseInitLock($initLock);
             $initLock = null;
             return $db;
@@ -503,6 +542,11 @@ function initDatabase() {
         }
         try {
             $db->exec('ALTER TABLE users ADD COLUMN uuid TEXT');
+        } catch (PDOException $e) {
+            // Column already exists, ignore
+        }
+        try {
+            $db->exec('ALTER TABLE users ADD COLUMN notes TEXT');
         } catch (PDOException $e) {
             // Column already exists, ignore
         }
@@ -1782,6 +1826,70 @@ function initDatabase() {
             // ignore if index creation fails
         }
 
+        // Saved SSH terminal gateway connections (ttyd WebSocket URLs) per user
+        $db->exec('CREATE TABLE IF NOT EXISTS user_ssh_connections (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            ws_url TEXT NOT NULL,
+            tags TEXT NOT NULL DEFAULT \'[]\',
+            notes TEXT,
+            color TEXT DEFAULT \'#0ea5e9\',
+            protocol TEXT DEFAULT \'ssh\',
+            appearance TEXT,
+            created_at INTEGER NOT NULL,
+            last_used_at INTEGER,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )');
+
+        try {
+            $db->exec("ALTER TABLE user_ssh_connections ADD COLUMN color TEXT DEFAULT '#0ea5e9'");
+        } catch (PDOException $e) {
+            // Column already exists
+        }
+
+        try {
+            $db->exec("ALTER TABLE user_ssh_connections ADD COLUMN protocol TEXT DEFAULT 'ssh'");
+        } catch (PDOException $e) {
+            // Column already exists
+        }
+
+        try {
+            $db->exec('ALTER TABLE user_ssh_connections ADD COLUMN appearance TEXT');
+        } catch (PDOException $e) {
+            // Column already exists
+        }
+
+        try {
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_user_ssh_connections_user_id ON user_ssh_connections(user_id)');
+        } catch (PDOException $e) {
+            // ignore if index creation fails
+        }
+
+        // Saved VNC viewer websockify connections per user (no passwords)
+        $db->exec('CREATE TABLE IF NOT EXISTS user_vnc_connections (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            ws_url TEXT NOT NULL,
+            tags TEXT NOT NULL DEFAULT \'[]\',
+            notes TEXT,
+            color TEXT DEFAULT \'#0ea5e9\',
+            view_only INTEGER NOT NULL DEFAULT 0,
+            scale_viewport INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            last_used_at INTEGER,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )');
+
+        try {
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_user_vnc_connections_user_id ON user_vnc_connections(user_id)');
+        } catch (PDOException $e) {
+            // ignore if index creation fails
+        }
+
         // Create user_notes table for storing user notes with tabs/categories
         $db->exec('CREATE TABLE IF NOT EXISTS user_notes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2364,9 +2472,18 @@ function initDatabase() {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE NOT NULL,
             description TEXT,
+            is_guest INTEGER DEFAULT 0,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         )');
+
+        // Guest/public role flag (widgets for unauthenticated users)
+        try {
+            $db->exec('ALTER TABLE roles ADD COLUMN is_guest INTEGER DEFAULT 0');
+        } catch (PDOException $e) {
+            // Column already exists, ignore
+        }
+        ensurePublicGuestRole($db);
         
         // Create user_roles table for assigning multiple roles to users
         $db->exec('CREATE TABLE IF NOT EXISTS user_roles (
@@ -2421,6 +2538,17 @@ function initDatabase() {
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             PRIMARY KEY (role_id, widget_id),
+            FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+        )');
+
+        // Role-based link hover action bar permissions (notes, favorite, health, copy, mobile, qr, browser)
+        $db->exec('CREATE TABLE IF NOT EXISTS role_link_action_permissions (
+            role_id INTEGER NOT NULL,
+            action_id TEXT NOT NULL,
+            can_view INTEGER DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (role_id, action_id),
             FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
         )');
         
@@ -2506,6 +2634,9 @@ function initDatabase() {
         
         // Create indexes for optimal performance
         createDatabaseIndexes($db);
+
+        // Seed default link-action allowlists for existing roles (backward-compatible UX)
+        ensureRoleLinkActionDefaults($db);
 
         // Stamp schema version so subsequent connections take the fast path
         $db->exec('PRAGMA user_version = ' . (int)LINKNEST_SCHEMA_VERSION);
@@ -2598,6 +2729,8 @@ function createDatabaseIndexes($db) {
             $db->exec('CREATE INDEX IF NOT EXISTS idx_role_tab_permissions_tab_id ON role_tab_permissions(tab_id)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_role_widget_permissions_role_id ON role_widget_permissions(role_id)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_role_widget_permissions_widget_id ON role_widget_permissions(widget_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_role_link_action_permissions_role_id ON role_link_action_permissions(role_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_role_link_action_permissions_action_id ON role_link_action_permissions(action_id)');
             
             // User tile permissions indexes for faster lookups
             $db->exec('CREATE INDEX IF NOT EXISTS idx_user_tile_permissions_user_id ON user_tile_permissions(user_id)');
@@ -2721,7 +2854,7 @@ function getAuthenticatedUser() {
             $userId = $_SESSION['impersonating_user_id'];
         }
 
-        $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved, auth_source, display_name FROM users WHERE id = ?');
+        $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved, auth_source, display_name, notes FROM users WHERE id = ?');
         $stmt->execute([$userId]);
         $user = $stmt->fetch();
 
@@ -2730,6 +2863,9 @@ function getAuthenticatedUser() {
             $user['is_admin'] = (bool)$user['is_admin'];
             $user['is_approved'] = (bool)$user['is_approved'];
             $user['auth_source'] = $user['auth_source'] ?? 'local';
+            $user['notes'] = isset($user['notes']) && $user['notes'] !== '' && $user['notes'] !== null
+                ? (string)$user['notes']
+                : null;
 
             // Ensure username is in session (fix for analytics)
             if (empty($_SESSION['username']) && !empty($user['username'])) {
@@ -2833,6 +2969,24 @@ function canUserSeePublishedContent($user, $rowOrValue): bool {
 }
 
 /**
+ * URLs that cannot be HTTP-probed (ssh://, vnc://, etc.). Shared by link health + tiles.
+ */
+function isNonHttpLinkHealthUrl($url): bool {
+    $url = trim((string)$url);
+    if ($url === '') {
+        return true;
+    }
+    if (preg_match('#^(ssh|auto|auto-vnc|rdp|vnc|sftp|ftp|file|mailto|tel)://#i', $url)) {
+        return true;
+    }
+    // Bare user@host:port (sometimes pasted without ssh://)
+    if (preg_match('#^[^\\s/@]+@[^\\s/@]+:\\d+$#', $url)) {
+        return true;
+    }
+    return false;
+}
+
+/**
  * Check whether the current user may see content by visibility / ACL.
  * Accepts DB rows (snake_case) or already-mapped arrays (camelCase).
  * Does not apply role-based link overrides — callers handle those separately.
@@ -2904,34 +3058,170 @@ function canUserEditTile($userId, $tileId, $db) {
     if ($user && $user['is_admin']) {
         return true;
     }
+
+    // Explicit permission rows win (including for owners when a system admin restricted them)
+    $stmt = $db->prepare('SELECT can_edit FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
+    $stmt->execute([$userId, $tileId]);
+    $permission = $stmt->fetch();
+    if ($permission !== false) {
+        return (bool)$permission['can_edit'];
+    }
     
-    // Check if user is the creator of the tile
+    // Check if user is the creator of the tile (no explicit row = full owner access)
     $tileStmt = $db->prepare('SELECT user_id FROM tiles WHERE id = ?');
     $tileStmt->execute([$tileId]);
     $tile = $tileStmt->fetch();
     
     if ($tile && isset($tile['user_id']) && (int)$tile['user_id'] === (int)$userId) {
-        return true; // User is the creator, allow edit
+        return true;
     }
     
-    // Check if user has explicit edit permission
-    $stmt = $db->prepare('SELECT can_edit FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
-    $stmt->execute([$userId, $tileId]);
-    $permission = $stmt->fetch();
-    
-    // If no explicit permission exists, default to true (allow edit)
-    // This handles the case where permission tables exist but aren't being used
-    if ($permission === false) {
-        return true; // No permission record = allow edit (backward compatibility)
-    }
-    
-    return (bool)$permission['can_edit'];
+    // If no explicit permission exists, default to true (backward compatibility)
+    return true;
 }
 
-// Helper function to get user's role IDs (including roles from groups)
+/**
+ * Role id marked for unauthenticated (guest) users, or null if none.
+ */
+function getGuestRoleId($db) {
+    try {
+        $stmt = $db->query('SELECT id FROM roles WHERE is_guest = 1 LIMIT 1');
+        $row = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : false;
+        return $row ? (int)$row['id'] : null;
+    } catch (PDOException $e) {
+        return null;
+    }
+}
+
+/**
+ * Ensure a Public guest role exists with default widget permissions for anonymous users.
+ * Safe to call multiple times.
+ */
+function ensurePublicGuestRole($db): void {
+    try {
+        $cols = $db->query('PRAGMA table_info(roles)')->fetchAll(PDO::FETCH_ASSOC);
+        $colNames = array_column($cols, 'name');
+        if (!in_array('is_guest', $colNames, true)) {
+            return;
+        }
+
+        $guestId = getGuestRoleId($db);
+        $now = time();
+
+        if ($guestId === null) {
+            $existingPublic = $db->query("SELECT id FROM roles WHERE lower(name) = 'public' LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+            if ($existingPublic) {
+                $guestId = (int)$existingPublic['id'];
+                $db->prepare('UPDATE roles SET is_guest = 1, updated_at = ? WHERE id = ?')->execute([$now, $guestId]);
+            } else {
+                $stmt = $db->prepare('INSERT INTO roles (name, description, is_guest, created_at, updated_at) VALUES (?, ?, 1, ?, ?)');
+                $stmt->execute([
+                    'Public',
+                    'Widgets and visibility for users who are not logged in',
+                    $now,
+                    $now,
+                ]);
+                $guestId = (int)$db->lastInsertId();
+            }
+        }
+
+        if (!$guestId) {
+            return;
+        }
+
+        $countStmt = $db->prepare('SELECT COUNT(*) FROM role_widget_permissions WHERE role_id = ?');
+        $countStmt->execute([$guestId]);
+        if ((int)$countStmt->fetchColumn() > 0) {
+            return;
+        }
+
+        $defaultWidgets = [
+            'clock',
+            'weather',
+            'calculator',
+            'password-generator',
+            'phonetic-alphabet',
+            'zoom-control',
+            'theme',
+            'snake-game',
+            'vnc-viewer',
+            'ssh-terminal',
+        ];
+        $insert = $db->prepare('
+            INSERT OR IGNORE INTO role_widget_permissions (role_id, widget_id, can_view, created_at, updated_at)
+            VALUES (?, ?, 1, ?, ?)
+        ');
+        foreach ($defaultWidgets as $widgetId) {
+            $insert->execute([$guestId, $widgetId, $now, $now]);
+        }
+    } catch (PDOException $e) {
+        error_log('ensurePublicGuestRole failed: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Valid link hover action bar IDs controllable via Access Manager roles.
+ */
+function getValidLinkActionIds(): array {
+    return ['notes', 'favorite', 'health', 'copy', 'mobile', 'qr', 'browser'];
+}
+
+/**
+ * Seed all link actions for a single role when it has none yet (backward-compatible defaults).
+ */
+function seedRoleLinkActionsIfEmpty($db, int $roleId): void {
+    $now = time();
+    $countStmt = $db->prepare('SELECT COUNT(*) FROM role_link_action_permissions WHERE role_id = ?');
+    $countStmt->execute([$roleId]);
+    if ((int)$countStmt->fetchColumn() > 0) {
+        return;
+    }
+
+    $insert = $db->prepare('
+        INSERT OR IGNORE INTO role_link_action_permissions (role_id, action_id, can_view, created_at, updated_at)
+        VALUES (?, ?, 1, ?, ?)
+    ');
+    foreach (getValidLinkActionIds() as $actionId) {
+        $insert->execute([$roleId, $actionId, $now, $now]);
+    }
+}
+
+/**
+ * Ensure role_link_action_permissions exists and every role has a default allowlist.
+ * Safe to call multiple times.
+ */
+function ensureRoleLinkActionDefaults($db): void {
+    try {
+        $db->exec('CREATE TABLE IF NOT EXISTS role_link_action_permissions (
+            role_id INTEGER NOT NULL,
+            action_id TEXT NOT NULL,
+            can_view INTEGER DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (role_id, action_id),
+            FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+        )');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_role_link_action_permissions_role_id ON role_link_action_permissions(role_id)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_role_link_action_permissions_action_id ON role_link_action_permissions(action_id)');
+
+        $rolesStmt = $db->query('SELECT id FROM roles');
+        if (!$rolesStmt) {
+            return;
+        }
+        while ($row = $rolesStmt->fetch(PDO::FETCH_ASSOC)) {
+            seedRoleLinkActionsIfEmpty($db, (int)$row['id']);
+        }
+    } catch (PDOException $e) {
+        error_log('ensureRoleLinkActionDefaults failed: ' . $e->getMessage());
+    }
+}
+
+// Helper function to get user's role IDs (including roles from groups).
+// When $userId is null, returns the designated guest/public role (if any).
 function getUserRoleIds($userId, $db) {
     if (!$userId) {
-        return [];
+        $guestRoleId = getGuestRoleId($db);
+        return $guestRoleId !== null ? [$guestRoleId] : [];
     }
     
     $roleIds = [];
@@ -3021,48 +3311,48 @@ function getTileAdminPermissions($userId, $tileId, $db) {
 // Helper function to check if user is tile admin with specific permission
 // This respects tile admin restrictions even if user has role-based permissions
 function canTileAdminPerformAction($userId, $tileId, $action, $db) {
-    // Admins and tile creators bypass all restrictions
+    // System admins bypass all restrictions
     $user = getAuthenticatedUser();
     if ($user && $user['is_admin']) {
         return true;
     }
+
+    // Explicit tile-admin permission rows win — including for space owners when
+    // a system admin has fine-tuned their permissions.
+    $perms = getTileAdminPermissions($userId, $tileId, $db);
+    if ($perms !== null) {
+        $actionMap = [
+            'add_link' => 'canAddLinks',
+            'add_section' => 'canAddSections',
+            'add_tab' => 'canAddTabs',
+            'edit_link' => 'canEditLinks',
+            'delete_link' => 'canDeleteLinks',
+            'delete_section' => 'canDeleteSections',
+            'delete_tab' => 'canDeleteTabs',
+            'change_visibility' => 'canChangeVisibility',
+            'change_browser' => 'canChangeBrowser',
+            'clone_tile' => 'canCloneTile',
+            'view_tile_info' => 'canViewTileInfo',
+            'edit_tile' => 'canEditTile'
+        ];
+
+        if (!isset($actionMap[$action])) {
+            return null;
+        }
+
+        return $perms[$actionMap[$action]];
+    }
     
-    // Check if user is the creator
+    // Creator with no explicit permission row has full access
     $tileStmt = $db->prepare('SELECT user_id FROM tiles WHERE id = ?');
     $tileStmt->execute([$tileId]);
     $tile = $tileStmt->fetch();
     if ($tile && isset($tile['user_id']) && (int)$tile['user_id'] === (int)$userId) {
-        return true; // Creator has full access
+        return true;
     }
-    
-    // Get tile admin permissions
-    $perms = getTileAdminPermissions($userId, $tileId, $db);
-    if ($perms === null) {
-        // Not a tile admin, check role-based permissions or default behavior
-        return null; // Let caller decide based on other permissions
-    }
-    
-    // Map action names to permission fields
-    $actionMap = [
-        'add_link' => 'canAddLinks',
-        'add_section' => 'canAddSections',
-        'add_tab' => 'canAddTabs',
-        'edit_link' => 'canEditLinks',
-        'delete_link' => 'canDeleteLinks',
-        'delete_section' => 'canDeleteSections',
-        'delete_tab' => 'canDeleteTabs',
-        'change_visibility' => 'canChangeVisibility',
-        'change_browser' => 'canChangeBrowser',
-        'clone_tile' => 'canCloneTile',
-        'view_tile_info' => 'canViewTileInfo',
-        'edit_tile' => 'canEditTile'
-    ];
-    
-    if (!isset($actionMap[$action])) {
-        return null; // Unknown action
-    }
-    
-    return $perms[$actionMap[$action]];
+
+    // Not a tile admin — let caller decide based on other permissions
+    return null;
 }
 
 // Helper function to check if user can view a link based on roles
@@ -3082,6 +3372,97 @@ function canUserViewLinkByRole($userId, $linkId, $db) {
     $stmt->execute($params);
     
     return (int)$stmt->fetchColumn() > 0;
+}
+
+/**
+ * Collect all link IDs from a tile data structure (tabs/sections or legacy sections).
+ */
+function collectLinkIdsFromTileData(?array $tileData): array {
+    if (!$tileData || !is_array($tileData)) {
+        return [];
+    }
+    $ids = [];
+    foreach ($tileData['tabs'] ?? [] as $tab) {
+        foreach ($tab['sections'] ?? [] as $section) {
+            foreach ($section['links'] ?? [] as $link) {
+                if (!empty($link['id'])) {
+                    $ids[] = (string)$link['id'];
+                }
+            }
+        }
+        foreach ($tab['links'] ?? [] as $link) {
+            if (!empty($link['id'])) {
+                $ids[] = (string)$link['id'];
+            }
+        }
+    }
+    foreach ($tileData['sections'] ?? [] as $section) {
+        foreach ($section['links'] ?? [] as $link) {
+            if (!empty($link['id'])) {
+                $ids[] = (string)$link['id'];
+            }
+        }
+    }
+    return array_values(array_unique($ids));
+}
+
+/**
+ * After a tile save recreates links, grant role_link_permissions for newly added links
+ * so they remain visible in Your Assigned Apps (same roles that already access the tile/links).
+ *
+ * @param array $roleIdsForNewLinks Optional precomputed role IDs (preferred; collect before link delete)
+ */
+function grantRoleLinkAccessForNewLinks($db, $tileId, array $oldLinkIds, array $newLinkIds, array $roleIdsForNewLinks = []): void {
+    $newOnly = array_values(array_diff($newLinkIds, $oldLinkIds));
+    if (empty($newOnly)) {
+        return;
+    }
+
+    $roleIds = array_values(array_unique(array_map('intval', $roleIdsForNewLinks)));
+
+    // Prefer roles that already have tile-level access
+    if (empty($roleIds)) {
+        $tileRoleStmt = $db->prepare('SELECT DISTINCT role_id FROM role_tile_permissions WHERE tile_id = ? AND can_view = 1');
+        $tileRoleStmt->execute([$tileId]);
+        while ($row = $tileRoleStmt->fetch(PDO::FETCH_ASSOC)) {
+            $roleIds[] = (int)$row['role_id'];
+        }
+    }
+
+    // Fallback: roles that already had any link on this tile before the save
+    if (empty($roleIds) && !empty($oldLinkIds)) {
+        $placeholders = implode(',', array_fill(0, count($oldLinkIds), '?'));
+        $linkRoleStmt = $db->prepare("SELECT DISTINCT role_id FROM role_link_permissions WHERE link_id IN ($placeholders) AND can_view = 1");
+        $linkRoleStmt->execute($oldLinkIds);
+        while ($row = $linkRoleStmt->fetch(PDO::FETCH_ASSOC)) {
+            $roleIds[] = (int)$row['role_id'];
+        }
+        $roleIds = array_values(array_unique($roleIds));
+    }
+
+    if (empty($roleIds)) {
+        return;
+    }
+
+    $now = time();
+    $insertStmt = $db->prepare('
+        INSERT OR IGNORE INTO role_link_permissions (role_id, link_id, can_view, created_at, updated_at)
+        VALUES (?, ?, 1, ?, ?)
+    ');
+    foreach ($newOnly as $linkId) {
+        foreach ($roleIds as $roleId) {
+            $insertStmt->execute([$roleId, $linkId, $now, $now]);
+        }
+    }
+
+    // Also ensure those roles keep tile-level access (needed for Assigned Apps listing)
+    $tileInsert = $db->prepare('
+        INSERT OR IGNORE INTO role_tile_permissions (role_id, tile_id, can_view, created_at, updated_at)
+        VALUES (?, ?, 1, ?, ?)
+    ');
+    foreach ($roleIds as $roleId) {
+        $tileInsert->execute([$roleId, $tileId, $now, $now]);
+    }
 }
 
 // Helper function to check if user can view a tab based on roles
@@ -4034,4 +4415,15 @@ function getSetting(string $key, $default = null) {
     } catch (Exception $e) {
         return $default;
     }
+}
+
+/**
+ * Persist a setting value (string). Creates or updates the row.
+ */
+function setSetting(string $key, string $value): void {
+    $db = getDB();
+    $now = time();
+    $stmt = $db->prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at');
+    $stmt->execute([$key, $value, $now]);
 }

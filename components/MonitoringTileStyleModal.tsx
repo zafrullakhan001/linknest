@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FaTimes, FaPalette, FaDownload, FaUpload } from 'react-icons/fa';
 import { userPreferencesService } from '../services/userPreferencesService';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 export interface TileStyle {
     // UP State
@@ -80,6 +81,8 @@ export const MonitoringTileStyleModal: React.FC<MonitoringTileStyleModalProps> =
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    useEscapeToClose(isOpen, onClose);
 
     useEffect(() => {
         if (isOpen) {

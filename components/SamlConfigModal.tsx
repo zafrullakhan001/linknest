@@ -11,29 +11,30 @@ interface SamlConfigModalProps {
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 const TABS = [
-  { id: 'authentication', label: 'Authentication' },
-  { id: 'service-provider', label: 'Service Provider' },
-  { id: 'identity-provider', label: 'Identity Provider' },
-  { id: 'attribute-mapping', label: 'Attributes' },
-  { id: 'test', label: 'Test & Validate' },
-  { id: 'advanced', label: 'Advanced' },
+  { id: 'authentication', label: 'Authentication', emoji: '🔐' },
+  { id: 'service-provider', label: 'Service Provider', emoji: '🏠' },
+  { id: 'identity-provider', label: 'Identity Provider', emoji: '🏛️' },
+  { id: 'attribute-mapping', label: 'Attributes', emoji: '🗺️' },
+  { id: 'test', label: 'Test & Validate', emoji: '🧪' },
+  { id: 'advanced', label: 'Advanced', emoji: '⚙️' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
 
 const fieldClassName =
-  'w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500';
+  'w-full bg-slate-50 dark:bg-slate-900/50 border border-sky-200/70 dark:border-sky-800/40 rounded-xl px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400';
 
 const labelClassName = 'block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2';
 const helpClassName = 'text-xs text-slate-500 dark:text-slate-400 mt-1';
-const cardClassName = 'rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4';
+const cardClassName =
+  'rounded-xl border border-sky-100 dark:border-sky-900/40 bg-gradient-to-br from-sky-50/40 to-white dark:from-sky-950/20 dark:to-slate-800 p-4';
 const infoBoxClassName =
-  'rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/40 px-4 py-3 text-sm text-slate-600 dark:text-slate-300';
+  'rounded-xl border border-sky-200/70 dark:border-sky-800/40 bg-gradient-to-r from-sky-50/80 to-teal-50/50 dark:from-sky-950/30 dark:to-teal-950/20 px-4 py-3 text-sm text-sky-900/80 dark:text-sky-200/80';
 const brandInfoBoxClassName =
-  'rounded-xl border border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-900/20 px-4 py-3 text-sm text-brand-900 dark:text-brand-100';
+  'rounded-xl border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-900/20 px-4 py-3 text-sm text-sky-900 dark:text-sky-100';
 
 const toggleTrackClassName =
-  'w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-brand-300 dark:peer-focus:ring-brand-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[\'\'] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-brand-600';
+  'w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-sky-300 dark:peer-focus:ring-sky-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[\'\'] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-sky-600';
 
 const DEFAULT_SETTINGS: Partial<AppSettings> = {
   saml_enabled: '0',
@@ -355,12 +356,13 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
   const renderServiceProviderTab = () => (
     <div className="space-y-5">
       <div className={infoBoxClassName}>
+        <span className="mr-1.5" aria-hidden>🏠</span>
         Configure your application&apos;s SAML service provider metadata. These URLs must be registered with your Identity Provider.
       </div>
 
-      <div className="grid grid-cols-1 gap-4">
+      <div className="grid grid-cols-1 gap-4 rounded-xl bg-sky-50/40 dark:bg-sky-950/15 border border-sky-100 dark:border-sky-900/40 p-4">
         <div>
-          <label className={labelClassName}>Entity ID (SP Issuer)</label>
+          <label className={labelClassName}><span className="mr-1" aria-hidden>🆔</span>Entity ID (SP Issuer)</label>
           <input
             type="text"
             className={fieldClassName}
@@ -372,7 +374,7 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
         </div>
 
         <div>
-          <label className={labelClassName}>Assertion Consumer Service (ACS) URL</label>
+          <label className={labelClassName}><span className="mr-1" aria-hidden>📥</span>Assertion Consumer Service (ACS) URL</label>
           <input
             type="text"
             className={fieldClassName}
@@ -384,7 +386,7 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
         </div>
 
         <div>
-          <label className={labelClassName}>Single Logout Service (SLO) URL</label>
+          <label className={labelClassName}><span className="mr-1" aria-hidden>🚪</span>Single Logout Service (SLO) URL</label>
           <input
             type="text"
             className={fieldClassName}
@@ -396,7 +398,7 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
         </div>
 
         <div>
-          <label className={labelClassName}>Application Site URL</label>
+          <label className={labelClassName}><span className="mr-1" aria-hidden>🌐</span>Application Site URL</label>
           <input
             type="text"
             className={fieldClassName}
@@ -409,8 +411,8 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
       </div>
 
       <div className={brandInfoBoxClassName}>
-        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1">
-          SP Metadata
+        <div className="text-xs font-semibold uppercase tracking-wide text-sky-600 dark:text-sky-300 mb-1 flex items-center gap-1.5">
+          <span aria-hidden>📄</span> SP Metadata
         </div>
         <p className="text-sm mb-3">
           Provide this metadata XML to your Identity Provider administrator.
@@ -419,11 +421,9 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
           href={`${API_BASE}/saml?action=metadata`}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-brand-600 hover:bg-brand-500 text-white transition-colors"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-sky-600 hover:bg-sky-500 text-white transition-colors shadow-sm shadow-sky-500/20"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-          </svg>
+          <span aria-hidden>🔗</span>
           View SP Metadata XML
         </a>
       </div>
@@ -433,13 +433,14 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
   const renderIdentityProviderTab = () => (
     <div className="space-y-5">
       <div className={infoBoxClassName}>
+        <span className="mr-1.5" aria-hidden>🏛️</span>
         Obtain these values from your IdP administrator or IdP metadata XML (Azure AD, Okta, Auth0, etc.)
       </div>
 
-      <div className="grid grid-cols-1 gap-4">
+      <div className="grid grid-cols-1 gap-4 rounded-xl bg-teal-50/40 dark:bg-teal-950/15 border border-teal-100 dark:border-teal-900/40 p-4">
         <div>
           <label className={labelClassName}>
-            IdP Entity ID <span className="text-red-500">*</span>
+            <span className="mr-1" aria-hidden>🆔</span>IdP Entity ID <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
@@ -453,7 +454,7 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
 
         <div>
           <label className={labelClassName}>
-            Single Sign-On (SSO) URL <span className="text-red-500">*</span>
+            <span className="mr-1" aria-hidden>🔑</span>Single Sign-On (SSO) URL <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
@@ -466,7 +467,7 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
         </div>
 
         <div>
-          <label className={labelClassName}>Single Logout (SLO) URL</label>
+          <label className={labelClassName}><span className="mr-1" aria-hidden>🚪</span>Single Logout (SLO) URL</label>
           <input
             type="text"
             className={fieldClassName}
@@ -479,7 +480,7 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
 
         <div>
           <label className={labelClassName}>
-            X.509 Certificate <span className="text-red-500">*</span>
+            <span className="mr-1" aria-hidden>📜</span>X.509 Certificate <span className="text-red-500">*</span>
           </label>
           <textarea
             className={`${fieldClassName} font-mono text-xs`}
@@ -497,6 +498,7 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
   const renderAuthenticationTab = () => (
     <div className="space-y-5">
       <div className={infoBoxClassName}>
+        <span className="mr-1.5" aria-hidden>🔐</span>
         Control which authentication methods are enabled for your application. Users will see enabled options on the login page.
       </div>
 
@@ -506,10 +508,8 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
           'Enterprise single sign-on',
           settings.saml_enabled === '1',
           (checked) => setSettings((s) => ({ ...s, saml_enabled: checked ? '1' : '0' })),
-          'bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-200',
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-          </svg>
+          'bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-200',
+          <span className="text-lg" aria-hidden>🔐</span>
         )}
 
         {renderToggleRow(
@@ -517,10 +517,8 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
           'Username and password login',
           settings.local_auth_enabled === '1',
           (checked) => setSettings((s) => ({ ...s, local_auth_enabled: checked ? '1' : '0' })),
-          'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200',
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-          </svg>
+          'bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-200',
+          <span className="text-lg" aria-hidden>👤</span>
         )}
       </div>
     </div>
@@ -529,13 +527,14 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
   const renderAttributeMappingTab = () => (
     <div className="space-y-5">
       <div className={infoBoxClassName}>
+        <span className="mr-1.5" aria-hidden>🗺️</span>
         Map SAML assertion attributes to user fields. Use exact attribute names from your IdP (case-sensitive).
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 rounded-xl bg-blue-50/40 dark:bg-blue-950/15 border border-blue-100 dark:border-blue-900/40 p-4">
         <div>
           <label className={labelClassName}>
-            Username Attribute <span className="text-red-500">*</span>
+            <span className="mr-1" aria-hidden>👤</span>Username Attribute <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
@@ -549,7 +548,7 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
 
         <div>
           <label className={labelClassName}>
-            Email Attribute <span className="text-red-500">*</span>
+            <span className="mr-1" aria-hidden>✉️</span>Email Attribute <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
@@ -562,7 +561,7 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
         </div>
 
         <div>
-          <label className={labelClassName}>Display Name Attribute</label>
+          <label className={labelClassName}><span className="mr-1" aria-hidden>🏷️</span>Display Name Attribute</label>
           <input
             type="text"
             className={fieldClassName}
@@ -575,7 +574,7 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
       </div>
 
       <div>
-        <label className={labelClassName}>NameID Format</label>
+        <label className={labelClassName}><span className="mr-1" aria-hidden>📋</span>NameID Format</label>
         <select
           className={fieldClassName}
           value={settings.nameid_format || 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress'}
@@ -594,12 +593,13 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
   const renderTestTab = () => (
     <div className="space-y-5">
       <div className={infoBoxClassName}>
+        <span className="mr-1.5" aria-hidden>🧪</span>
         Verify your SAML configuration is correct and working. Run tests before going live.
       </div>
 
       {testStatus.text && (
         <div
-          className={`px-4 py-3 rounded-xl border text-sm ${
+          className={`px-4 py-3 rounded-xl border text-sm flex items-start gap-2 ${
             testStatus.type === 'success'
               ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-700 dark:text-green-400'
               : testStatus.type === 'warning'
@@ -607,36 +607,39 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
                 : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-400'
           }`}
         >
-          {testStatus.text}
+          <span aria-hidden>{testStatus.type === 'success' ? '✅' : testStatus.type === 'warning' ? '⚠️' : '❌'}</span>
+          <span>{testStatus.text}</span>
         </div>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <WizardNavButton onClick={runTests} disabled={testing}>
-          {testing ? 'Testing…' : 'Run All Tests'}
+          {testing ? 'Testing…' : '🧪 Run All Tests'}
         </WizardNavButton>
 
         <WizardNavButton variant="secondary" onClick={testMetadata} disabled={testing}>
-          Test Metadata
+          📄 Test Metadata
         </WizardNavButton>
 
         <WizardNavButton variant="secondary" onClick={testIdpConnectivity} disabled={testing}>
-          Test IdP Connectivity
+          🏛️ Test IdP Connectivity
         </WizardNavButton>
 
         <a
           href={`${API_BASE}/saml?action=metadata`}
           target="_blank"
           rel="noreferrer"
-          className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 text-center"
+          className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800 text-sky-800 dark:text-sky-200 hover:bg-sky-100 dark:hover:bg-sky-900/40 text-center"
         >
-          View Metadata XML
+          🔗 View Metadata XML
         </a>
       </div>
 
       {testResults.length > 0 && (
         <div className={cardClassName}>
-          <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Test Results</h4>
+          <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-1.5">
+            <span aria-hidden>📊</span> Test Results
+          </h4>
           <div className="space-y-2">
             {testResults.map((result, index) => (
               <div
@@ -691,24 +694,24 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
       )}
 
       <div className={infoBoxClassName}>
-        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
-          Testing tips
+        <div className="text-xs font-semibold uppercase tracking-wide text-sky-600 dark:text-sky-300 mb-2 flex items-center gap-1.5">
+          <span aria-hidden>💡</span> Testing tips
         </div>
         <ul className="space-y-1 text-sm">
           <li>
-            <strong className="font-semibold text-slate-800 dark:text-slate-200">Run All Tests</strong> — validates
+            <strong className="font-semibold text-sky-900 dark:text-sky-100">Run All Tests</strong> — validates
             configuration, database, and library
           </li>
           <li>
-            <strong className="font-semibold text-slate-800 dark:text-slate-200">Test Metadata</strong> — verifies SP
+            <strong className="font-semibold text-sky-900 dark:text-sky-100">Test Metadata</strong> — verifies SP
             metadata XML generation
           </li>
           <li>
-            <strong className="font-semibold text-slate-800 dark:text-slate-200">Test IdP Connectivity</strong> — checks
+            <strong className="font-semibold text-sky-900 dark:text-sky-100">Test IdP Connectivity</strong> — checks
             if IdP URL is reachable
           </li>
           <li>
-            <strong className="font-semibold text-slate-800 dark:text-slate-200">View Metadata XML</strong> — opens your
+            <strong className="font-semibold text-sky-900 dark:text-sky-100">View Metadata XML</strong> — opens your
             metadata in a new tab to share with the IdP admin
           </li>
         </ul>
@@ -719,6 +722,7 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
   const renderAdvancedTab = () => (
     <div className="space-y-5">
       <div className={infoBoxClassName}>
+        <span className="mr-1.5" aria-hidden>⚙️</span>
         Security and provisioning options. Use caution when modifying these settings.
       </div>
 
@@ -729,9 +733,7 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
           settings.strict === '1',
           (checked) => setSettings((s) => ({ ...s, strict: checked ? '1' : '0' })),
           'bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300',
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-          </svg>
+          <span className="text-lg" aria-hidden>🛡️</span>
         )}
 
         {renderToggleRow(
@@ -740,9 +742,7 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
           settings.debug === '1',
           (checked) => setSettings((s) => ({ ...s, debug: checked ? '1' : '0' })),
           'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300',
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
+          <span className="text-lg" aria-hidden>🐛</span>
         )}
 
         <div className="md:col-span-2">
@@ -752,41 +752,43 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
             settings.auto_provision === '1',
             (checked) => setSettings((s) => ({ ...s, auto_provision: checked ? '1' : '0' })),
             'bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300',
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-            </svg>
+            <span className="text-lg" aria-hidden>✨</span>
           )}
         </div>
       </div>
     </div>
   );
 
-  const activeTabLabel = TABS.find((tab) => tab.id === activeTab)?.label || 'Configuration';
+  const activeTabMeta = TABS.find((tab) => tab.id === activeTab);
+  const activeTabLabel = activeTabMeta?.label || 'Configuration';
+  const activeTabEmoji = activeTabMeta?.emoji || '🔐';
 
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[10010] p-4">
-      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200 dark:border-slate-700">
-        {/* Header — Access Manager shell */}
-        <div className="px-6 pt-5 pb-4 border-b border-slate-200 dark:border-slate-700">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-sky-200/70 dark:border-sky-800/40 shadow-sky-500/10">
+        {/* Header */}
+        <div className="px-6 pt-5 pb-4 border-b border-sky-100 dark:border-sky-900/40 bg-gradient-to-r from-sky-50 via-teal-50/80 to-cyan-50/60 dark:from-sky-950/40 dark:via-teal-950/30 dark:to-cyan-950/20">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white">SAML 2.0 Configuration</h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Manage enterprise single sign-on settings · {activeTabLabel}
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span aria-hidden>🔐</span> SAML 2.0 Configuration
+              </h2>
+              <p className="text-sm text-sky-800/70 dark:text-sky-200/70 mt-1">
+                Manage enterprise single sign-on settings · {activeTabEmoji} {activeTabLabel}
               </p>
             </div>
             <div className="flex items-center flex-wrap justify-end gap-2 shrink-0">
               <WizardNavButton variant="secondary" onClick={exportConfiguration}>
-                Export
+                📦 Export
               </WizardNavButton>
 
               <label
                 htmlFor="saml-import-file"
-                className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors cursor-pointer bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+                className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors cursor-pointer bg-white/80 dark:bg-slate-800/80 border border-sky-200 dark:border-sky-700 text-sky-800 dark:text-sky-200 hover:bg-sky-50 dark:hover:bg-sky-950/40"
               >
-                Import
+                📥 Import
               </label>
               <input
                 id="saml-import-file"
@@ -810,13 +812,13 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
                   }
                 }}
               >
-                Reset
+                ♻️ Reset
               </WizardNavButton>
 
               <button
                 type="button"
                 onClick={onClose}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors shrink-0"
+                className="text-sky-400 hover:text-sky-700 dark:hover:text-sky-200 transition-colors shrink-0"
                 aria-label="Close"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -826,8 +828,8 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
             </div>
           </div>
 
-          {/* Tabs — Access Manager segmented control */}
-          <div className="mt-5 bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 rounded-xl p-1">
+          {/* Tabs */}
+          <div className="mt-5 bg-white/70 dark:bg-slate-900/40 border border-sky-200/70 dark:border-sky-800/40 rounded-xl p-1">
             <div className="flex flex-wrap gap-1">
               {TABS.map((tab) => (
                 <button
@@ -836,10 +838,11 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
                   onClick={() => setActiveTab(tab.id)}
                   className={`flex-1 min-w-[7rem] px-3 py-2 text-sm font-medium transition-colors rounded-lg ${
                     activeTab === tab.id
-                      ? 'bg-brand-600 text-white'
-                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                      ? 'bg-sky-600 text-white shadow-sm shadow-sky-500/25'
+                      : 'text-sky-800/70 dark:text-sky-200/70 hover:bg-sky-100/80 dark:hover:bg-sky-900/40'
                   }`}
                 >
+                  <span className="mr-1" aria-hidden>{tab.emoji}</span>
                   {tab.label}
                 </button>
               ))}
@@ -852,23 +855,26 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
           {loading ? (
             <div className="flex items-center justify-center py-16">
               <div className="flex flex-col items-center gap-3">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
-                <span className="text-sm text-slate-600 dark:text-slate-400">Loading configuration…</span>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
+                <span className="text-sm text-sky-700 dark:text-sky-300">Loading configuration…</span>
               </div>
             </div>
           ) : (
             <>
               {message.text && (
                 <div
-                  className={`px-4 py-3 rounded-lg border text-sm ${
+                  className={`px-4 py-3 rounded-lg border text-sm flex items-start gap-2 ${
                     message.type === 'success'
                       ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-700 dark:text-green-400'
                       : message.type === 'info'
-                        ? 'bg-brand-50 dark:bg-brand-900/20 border-brand-200 dark:border-brand-800 text-brand-800 dark:text-brand-200'
+                        ? 'bg-sky-50 dark:bg-sky-900/20 border-sky-200 dark:border-sky-800 text-sky-800 dark:text-sky-200'
                         : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-400'
                   }`}
                 >
-                  {message.text}
+                  <span aria-hidden>
+                    {message.type === 'success' ? '✅' : message.type === 'info' ? '💡' : '⚠️'}
+                  </span>
+                  <span>{message.text}</span>
                 </div>
               )}
 
@@ -882,13 +888,13 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
           )}
         </div>
 
-        {/* Footer — Access Manager shell */}
-        <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between gap-3 bg-slate-50/80 dark:bg-slate-900/40">
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-sky-100 dark:border-sky-900/40 flex items-center justify-between gap-3 bg-gradient-to-r from-sky-50/80 to-teal-50/60 dark:from-sky-950/30 dark:to-teal-950/20">
           <WizardNavButton variant="ghost" onClick={onClose}>
             Cancel
           </WizardNavButton>
           <WizardNavButton onClick={save} disabled={saving || loading}>
-            {saving ? 'Saving…' : 'Save Configuration'}
+            {saving ? 'Saving…' : '💾 Save Configuration'}
           </WizardNavButton>
         </div>
       </div>

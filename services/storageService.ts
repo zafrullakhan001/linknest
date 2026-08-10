@@ -84,6 +84,7 @@ const transformTile = (apiTile: any): Tile => {
     canView: apiTile.canView !== undefined ? apiTile.canView : true, // Default to true if not set
     canEdit: apiTile.canEdit !== undefined ? apiTile.canEdit : false, // Default to false if not set
     canDelete: apiTile.canDelete !== undefined ? apiTile.canDelete : false, // Default to false if not set
+    hasRoleAccess: apiTile.hasRoleAccess === true || apiTile.has_role_access === true || apiTile.hasRoleAccess === 1,
     deletedAt: apiTile.deletedAt || undefined, // Include deletedAt if present (for recycle bin)
     archivedAt: apiTile.archivedAt || undefined, // Include archivedAt if present (for archive)
     visibleFrom: apiTile.visibleFrom || undefined,
@@ -482,16 +483,23 @@ export const getCategoryArrangement = async (): Promise<Array<{ categoryName: st
   }
 };
 
-export const bulkImportTiles = async (file: File): Promise<{
+export const bulkImportTiles = async (
+  file: File,
+  options?: { replaceAll?: boolean }
+): Promise<{
   success: boolean;
   created: number;
   errors: number;
+  deleted?: number;
   createdTiles: Array<{ id: string; title: string }>;
   errorMessages: string[];
 }> => {
   try {
     const formData = new FormData();
     formData.append('file', file);
+    if (options?.replaceAll) {
+      formData.append('replace_all', '1');
+    }
 
     const response = await fetch(`${API_BASE}/tiles/bulk-import`, {
       method: 'POST',

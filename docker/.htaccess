@@ -31,6 +31,12 @@ Options -Indexes +FollowSymLinks
 <IfModule mod_rewrite.c>
     RewriteEngine On
     
+    # Allow SSH/VNC gateway WebSocket proxy paths (handled in VirtualHost)
+    RewriteCond %{REQUEST_URI} ^/_ln_sshgw/
+    RewriteRule . - [L]
+    RewriteCond %{REQUEST_URI} ^/_ln_vncgw/
+    RewriteRule . - [L]
+
     # FIRST: Allow direct access to dist/ directory and its files (including assets)
     RewriteCond %{REQUEST_URI} ^/dist/
     RewriteRule . - [L]
@@ -104,6 +110,8 @@ Options -Indexes +FollowSymLinks
     RewriteCond %{DOCUMENT_ROOT}/dist/index.html -f
     RewriteCond %{REQUEST_URI} !^/api
     RewriteCond %{REQUEST_URI} !^/dist
+    RewriteCond %{REQUEST_URI} !^/_ln_sshgw/
+    RewriteCond %{REQUEST_URI} !^/_ln_vncgw/
     RewriteCond %{REQUEST_URI} !^/?$
     RewriteCond %{REQUEST_URI} !\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$
     RewriteCond %{REQUEST_FILENAME} !-f

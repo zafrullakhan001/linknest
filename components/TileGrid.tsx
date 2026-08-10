@@ -27,8 +27,12 @@ import { getDisabledTabsFromSettings } from '../services/tabVisibilityService';
 import { rolesService } from '../services/rolesService';
 import { FaTimes } from 'react-icons/fa';
 import { LinkInfoDialog } from './LinkInfoDialog';
+import { LinkNotesDialog } from './LinkNotesDialog';
 import { useMobile } from '../hooks/useMobile';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { getDisplayUrl } from '../utils/urlDisplay';
+import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
+import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
 import { MobileTileView } from './MobileTileView';
 import { StagingOverview } from './StagingOverview';
 import { StagingOfflineKit, StagingOfflineKitHandle } from './StagingOfflineKit';
@@ -385,6 +389,7 @@ const CategoryVisibilityDialog: React.FC<CategoryVisibilityDialogProps> = ({
   onClose,
   onSave
 }) => {
+  useEscapeToClose(true, onClose);
   const [tileVisibility, setTileVisibility] = useState<Record<string, { visibility: TileVisibility; allowedUsers: number[] }>>(() => {
     const initial: Record<string, { visibility: TileVisibility; allowedUsers: number[] }> = {};
     tiles.forEach(tile => {
@@ -1184,6 +1189,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
     ? (tile.sharedWithMeSharer?.username ?? ownerLookup?.[tile.userId] ?? null)
     : null;
   const [showCategoryDialog, setShowCategoryDialog] = useState(false);
+  useEscapeToClose(showCategoryDialog, () => setShowCategoryDialog(false));
   const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
   const [fireworksTrigger, setFireworksTrigger] = useState(0);
   const [confettiTrigger, setConfettiTrigger] = useState(0);
@@ -2362,7 +2368,6 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [tileInfoDialog, setTileInfoDialog] = useState<{ tile?: Tile; categoryInfo?: { categoryName: string; tiles: Tile[] } } | null>(null);
   const [shareTileDialog, setShareTileDialog] = useState<Tile | null>(null);
   const [favNotesDialogState, setFavNotesDialogState] = useState<{ linkId: string; notes: string; linkLabel: string } | null>(null);
-  const [favNotesCopied, setFavNotesCopied] = useState(false);
   const [stagingTiles, setStagingTiles] = useState<Tile[]>([]);
   const [stagingTilesLoading, setStagingTilesLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>(() => {
@@ -3531,16 +3536,24 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     const checkHealth = async () => {
       setIsCheckingHealth(true);
 
-      const linksToCheck = favoriteLinks.map(link => ({
-        id: link.id,
-        url: link.url
-      }));
+      const linksToCheck = favoriteLinks
+        .filter(link => typeof link.url === 'string' && !isSshLinkUrl(link.url) && !isVncLinkUrl(link.url))
+        .map(link => ({
+          id: link.id,
+          url: link.url
+        }));
+
+      if (linksToCheck.length === 0) {
+        setIsCheckingHealth(false);
+        return;
+      }
 
       try {
         const results = await favoriteLinkHealthService.checkMultipleLinks(
           linksToCheck,
           (linkId, result) => {
-            // Update results progressively as each link is checked
+            // Update results progressively as each link is checked (skip ssh:// / vnc://)
+            if (result.skipped || !result.health) return;
             setLinkHealthResults(prev => {
               const newMap = new Map(prev);
               newMap.set(linkId, result);
@@ -3580,15 +3593,23 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     if (favoriteLinks.length === 0 || isCheckingHealth) return;
 
     setIsCheckingHealth(true);
-    const linksToCheck = favoriteLinks.map(link => ({
-      id: link.id,
-      url: link.url
-    }));
+    const linksToCheck = favoriteLinks
+      .filter(link => typeof link.url === 'string' && !isSshLinkUrl(link.url) && !isVncLinkUrl(link.url))
+      .map(link => ({
+        id: link.id,
+        url: link.url
+      }));
+
+    if (linksToCheck.length === 0) {
+      setIsCheckingHealth(false);
+      return;
+    }
 
     try {
       await favoriteLinkHealthService.checkMultipleLinks(
         linksToCheck,
         (linkId, result) => {
+          if (result.skipped || !result.health) return;
           setLinkHealthResults(prev => {
             const newMap = new Map(prev);
             newMap.set(linkId, result);
@@ -3959,7 +3980,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             tabs: filteredTabs && filteredTabs.length > 0 ? filteredTabs : []
           };
         }).filter(tile =>
+          // Keep authenticated tiles and role-assigned tiles even in summary mode
+          // (home grid loads without nested tabs/links; detail loads on open).
           tile.visibility === 'authenticated' ||
+          !!tile.hasRoleAccess ||
           (tile.tabs && tile.tabs.length > 0 && tile.tabs.some(tab =>
             (tab.sections && tab.sections.length > 0) ||
             (tab.links && tab.links.length > 0)
@@ -3968,8 +3992,14 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
         // Apply sub-filter for 'Your Apps' tab
         if (yourAppsFilter === 'assigned') {
-          // Show tiles that are explicitly assigned via roles (not just generically 'authenticated')
-          filteredTiles = filteredTiles.filter(t => t.visibility !== 'authenticated');
+          // Explicit role/group assignment (tile-level or link-level), including authenticated spaces
+          filteredTiles = filteredTiles.filter(t =>
+            !!t.hasRoleAccess ||
+            !!t.tabs?.some(tab =>
+              tab.sections?.some(section => section.links?.some(link => link.hasRoleAccess)) ||
+              tab.links?.some(link => link.hasRoleAccess)
+            )
+          );
         } else {
           // Default: Authenticated — spaces that require sign-in for all logged-in users
           filteredTiles = filteredTiles.filter(t => t.visibility === 'authenticated');
@@ -4668,18 +4698,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     }
   }, [isEditModalOpen]);
 
-  // ESC key closes the favorite link notes dialog
-  useEffect(() => {
-    if (!favNotesDialogState) return;
-    const handleFavNotesEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setFavNotesDialogState(null);
-        setFavNotesCopied(false);
-      }
-    };
-    window.addEventListener('keydown', handleFavNotesEsc);
-    return () => window.removeEventListener('keydown', handleFavNotesEsc);
-  }, [favNotesDialogState]);
+  // ESC key closes the category schedule dialog
+  useEscapeToClose(!!editingCategorySchedule, () => {
+    setEditingCategorySchedule(null);
+    setCategoryVisibleFrom('');
+    setCategoryExpiresAt('');
+  });
 
   const handleDeleteTile = async (e: React.MouseEvent, id: string) => {
     e.preventDefault();
@@ -5660,13 +5684,14 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     const rows: string[][] = [];
 
     favoriteLinks.forEach(link => {
+      if (isSshLinkUrl(link.url) || isVncLinkUrl(link.url)) return;
       const healthResult = linkHealthResults.get(link.id);
-      const status = healthResult?.health.status || 'unknown';
-      const httpCode = healthResult?.health.httpCode || '';
+      const status = healthResult?.health?.status || 'unknown';
+      const httpCode = healthResult?.health?.httpCode || '';
       const localLatency = healthResult?.latency || 0;
       const serverLatency = healthResult?.serverLatency || 0;
       const totalLatency = localLatency; // Local latency already includes server processing time
-      const lastChecked = healthResult?.health.checkedAt
+      const lastChecked = healthResult?.health?.checkedAt
         ? new Date(healthResult.health.checkedAt).toLocaleString()
         : 'Never';
 
@@ -7493,11 +7518,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                   const animationDelay = (linkIndex * 50);
                   const tileAnimatedClass = animationClass ? 'linknest-tile-animated' : '';
 
-                  // Get health check result for this link
-                  const healthResult = linkHealthResults.get(link.id);
-                  const healthStatus = healthResult?.health.status || 'unknown';
+                  // Get health check result for this link (ssh:// / vnc:// are never probed)
+                  const skipHealth = isSshLinkUrl(link.url) || isVncLinkUrl(link.url);
+                  const healthResult = skipHealth ? undefined : linkHealthResults.get(link.id);
+                  const healthStatus = healthResult?.health?.status || 'unknown';
                   const latency = healthResult?.latency;
-                  const httpCode = healthResult?.health.httpCode;
+                  const httpCode = healthResult?.health?.httpCode;
 
                   return (
                     <div
@@ -7505,6 +7531,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} ${tileAnimatedClass} overflow-hidden`}
                       style={{ animationDelay: `${animationDelay}ms` }}
                       onClick={(e) => {
+                        if (tryHandleSshLinkClick(link.url, e)) return;
+                        if (tryHandleVncLinkClick(link.url, e)) return;
+
                         // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                         if (e.ctrlKey || e.metaKey) {
                           e.preventDefault();
@@ -7613,7 +7642,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              setFavNotesDialogState({ linkId: link.id, notes: link.notes || '', linkLabel: stripHtml(link.label || '') });
+                              setFavNotesDialogState({ linkId: link.id, notes: link.notes || '', linkLabel: link.label || '' });
                             }}
                             className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-all"
                             title="View notes"
@@ -7976,6 +8005,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-brand-300 dark:hover:border-brand-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} ${tileAnimatedClass}`}
                       style={{ animationDelay: `${animationDelay}ms` }}
                       onClick={(e) => {
+                        if (tryHandleSshLinkClick(link.url, e)) return;
+                        if (tryHandleVncLinkClick(link.url, e)) return;
+
                         // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                         if (e.ctrlKey || e.metaKey) {
                           e.preventDefault();
@@ -8009,8 +8041,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         window.open(link.url, '_blank');
                       }}
                     >
-                      {/* Health Status Indicator */}
-                      {link.health && (
+                      {/* Health Status Indicator (HTTP(S) only — skip ssh:// / vnc://) */}
+                      {link.health && !isSshLinkUrl(link.url) && !isVncLinkUrl(link.url) && (
                         <div className="shrink-0">
                           <div
                             className={`w-2 h-2 rounded-full ${linkHealthService.getHealthColor(link.health.status)}`}
@@ -8219,11 +8251,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                     const animationDelay = (linkIndex * 50);
                     const tileAnimatedClass = animationClass ? 'linknest-tile-animated' : '';
 
-                    // Get health check result for this link
-                    const healthResult = linkHealthResults.get(link.id);
-                    const healthStatus = healthResult?.health.status || 'unknown';
+                    // Get health check result for this link (ssh:// / vnc:// are never probed)
+                    const skipHealth = isSshLinkUrl(link.url) || isVncLinkUrl(link.url);
+                    const healthResult = skipHealth ? undefined : linkHealthResults.get(link.id);
+                    const healthStatus = healthResult?.health?.status || 'unknown';
                     const latency = healthResult?.latency;
-                    const httpCode = healthResult?.health.httpCode;
+                    const httpCode = healthResult?.health?.httpCode;
 
                     return (
                       <div
@@ -8231,6 +8264,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} ${tileAnimatedClass} overflow-hidden`}
                         style={{ animationDelay: `${animationDelay}ms` }}
                         onClick={(e) => {
+                          if (tryHandleSshLinkClick(link.url, e)) return;
+                          if (tryHandleVncLinkClick(link.url, e)) return;
+
                           // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                           if (e.ctrlKey || e.metaKey) {
                             e.preventDefault();
@@ -8337,10 +8373,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                const tempDiv = document.createElement('div');
-                                tempDiv.innerHTML = link.label || '';
-                                const plainLabel = tempDiv.textContent || tempDiv.innerText || link.label || '';
-                                setFavNotesDialogState({ linkId: link.id, notes: link.notes || '', linkLabel: plainLabel });
+                                setFavNotesDialogState({ linkId: link.id, notes: link.notes || '', linkLabel: link.label || '' });
                               }}
                               className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-all"
                               title="View notes"
@@ -12601,7 +12634,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         <LinkInfoDialog
           isOpen={!!linkInfoDialog}
           onClose={() => setLinkInfoDialog(null)}
-          linkLabel={stripHtml(linkInfoDialog.link.label)}
+          linkLabel={linkInfoDialog.link.label}
           linkIcon={linkInfoDialog.link.icon}
           richTextContent={linkInfoDialog.link.richTextContent || ''}
           linkUrl={linkInfoDialog.link.url}
@@ -12610,78 +12643,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       )}
 
       {/* Favorite Link Notes Dialog */}
-      {favNotesDialogState && typeof document !== 'undefined' && createPortal(
-        <div
-          className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-          onClick={() => { setFavNotesDialogState(null); setFavNotesCopied(false); }}
-        >
-          <div
-            className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 max-w-2xl w-full max-h-[80vh] flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Link Notes</h3>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{favNotesDialogState.linkLabel}</p>
-              </div>
-              <button
-                onClick={() => { setFavNotesDialogState(null); setFavNotesCopied(false); }}
-                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="px-6 py-4 flex-1 overflow-y-auto">
-              <div className="text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words">
-                {favNotesDialogState.notes}
-              </div>
-            </div>
-            <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-3">
-              <button
-                onClick={async (e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  try {
-                    await navigator.clipboard.writeText(favNotesDialogState.notes);
-                    setFavNotesCopied(true);
-                    setTimeout(() => setFavNotesCopied(false), 2000);
-                  } catch (err) {
-                    console.error('Failed to copy:', err);
-                    alert('Failed to copy to clipboard');
-                  }
-                }}
-                className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
-              >
-                {favNotesCopied ? (
-                  <>
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                      <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-                    </svg>
-                    Copied!
-                  </>
-                ) : (
-                  <>
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                      <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
-                      <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
-                    </svg>
-                    Copy Notes
-                  </>
-                )}
-              </button>
-              <button
-                onClick={() => { setFavNotesDialogState(null); setFavNotesCopied(false); }}
-                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg font-medium transition-colors"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+      <LinkNotesDialog
+        isOpen={!!favNotesDialogState}
+        onClose={() => setFavNotesDialogState(null)}
+        linkLabel={favNotesDialogState?.linkLabel || ''}
+        notes={favNotesDialogState?.notes || ''}
+      />
 
       {/* Tile/Category Info Dialog */}
       {shareTileDialog && (

@@ -213,6 +213,36 @@ export const accessService = {
       throw new Error(data.error || 'Failed to delete permission');
     }
   },
+
+  async removePermission(userId: number, tileId: string): Promise<void> {
+    return this.deletePermission(userId, tileId);
+  },
+
+  async transferOwnership(
+    tileId: string,
+    newOwnerUserId: number,
+    keepPreviousOwnerAsEditor: boolean = true
+  ): Promise<{
+    success: boolean;
+    tileId: string;
+    previousOwnerUserId: number | null;
+    newOwnerUserId: number;
+    newOwnerUsername: string;
+    keepPreviousOwnerAsEditor: boolean;
+  }> {
+    const response = await fetch(`${API_BASE}/access/transfer-ownership`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ tileId, newOwnerUserId, keepPreviousOwnerAsEditor }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error((data && data.error) || 'Failed to transfer ownership');
+    }
+    return data;
+  },
 };
 
 

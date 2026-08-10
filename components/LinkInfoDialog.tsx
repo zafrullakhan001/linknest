@@ -1,7 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSettings } from '../contexts/SettingsContext';
 import { getDisplayUrl } from '../utils/urlDisplay';
+import { tryHandleSshLinkClick } from '../utils/sshLink';
+import { tryHandleVncLinkClick } from '../utils/vncLink';
+import { linkifyHtml } from '../utils/richTextDisplay';
 
 interface LinkInfoDialogProps {
   isOpen: boolean;
@@ -10,477 +13,494 @@ interface LinkInfoDialogProps {
   linkIcon?: string;
   richTextContent: string;
   linkUrl?: string;
-  browser?: string; // Browser to open link in (e.g., 'chrome-stable', 'edge-stable', 'default')
+  browser?: string;
 }
 
-// Function to format/beautify HTML (same as RichTextEditor)
-const formatHTML = (html: string): string => {
-  if (!html || !html.trim()) return '';
-  
+const SECTION_EMOJIS: Array<{ match: RegExp; emoji: string }> = [
+  { match: /owner\s+information/i, emoji: '👤' },
+  { match: /support\s+team/i, emoji: '🛟' },
+  { match: /service\s*now\s+group/i, emoji: '🎫' },
+  { match: /contact\s+information/i, emoji: '📇' },
+  { match: /service\s*now\s+ticket/i, emoji: '🧾' },
+  { match: /go[- ]?live/i, emoji: '🚀' },
+  { match: /major\s+upgrade/i, emoji: '⬆️' },
+  { match: /manager\s+information/i, emoji: '👔' },
+];
+
+function stripHtmlTags(content: string): string {
+  if (!content) return '';
+  if (typeof document === 'undefined') return content.replace(/<[^>]*>/g, '');
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = content;
+  return tempDiv.textContent || tempDiv.innerText || '';
+}
+
+function getSectionEmoji(text: string): string | null {
+  for (const entry of SECTION_EMOJIS) {
+    if (entry.match.test(text)) return entry.emoji;
+  }
+  return null;
+}
+
+/** Inject section emojis into rich HTML headings / bold labels without changing stored content. */
+function enhanceRichTextWithEmojis(html: string): string {
+  if (!html || typeof document === 'undefined') return html || '';
+
   try {
-    // Use a temporary div to parse and format HTML
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = html;
-    
-    const formatElement = (element: Element | Node, indent: number = 0): string => {
-      const indentStr = '  '.repeat(indent);
-      let result = '';
-      
-      if (element.nodeType === Node.TEXT_NODE) {
-        const text = element.textContent;
-        if (text) {
-          const trimmed = text.trim();
-          if (trimmed) {
-            // Preserve line breaks in text nodes
-            const lines = text.split('\n');
-            const nonEmptyLines = lines.filter(line => line.trim());
-            if (nonEmptyLines.length > 0) {
-              result += indentStr + trimmed + '\n';
-            }
-          }
-        }
-      } else if (element.nodeType === Node.ELEMENT_NODE) {
-        const el = element as Element;
-        const tagName = el.tagName.toLowerCase();
-        
-        // Get attributes and format them nicely
-        const attrs: string[] = [];
-        for (let i = 0; i < el.attributes.length; i++) {
-          const attr = el.attributes[i];
-          attrs.push(`${attr.name}="${attr.value.replace(/"/g, '&quot;')}"`);
-        }
-        const attrStr = attrs.length > 0 ? ' ' + attrs.join(' ') : '';
-        
-        // Self-closing tags
-        const selfClosing = ['br', 'hr', 'img', 'input', 'meta', 'link', 'area', 'base', 'col', 'embed', 'source', 'track', 'wbr'];
-        
-        if (selfClosing.includes(tagName)) {
-          result += `${indentStr}<${tagName}${attrStr} />\n`;
-        } else {
-          const children = Array.from(el.childNodes);
-          const hasTextChildren = children.some(child => 
-            child.nodeType === Node.TEXT_NODE && child.textContent?.trim()
-          );
-          const hasElementChildren = children.some(child => 
-            child.nodeType === Node.ELEMENT_NODE
-          );
-          
-          if (hasElementChildren || (hasTextChildren && children.length > 1)) {
-            // Has children - format with indentation
-            result += `${indentStr}<${tagName}${attrStr}>\n`;
-            children.forEach(child => {
-              result += formatElement(child, indent + 1);
-            });
-            result += `${indentStr}</${tagName}>\n`;
-          } else if (hasTextChildren && children.length === 1) {
-            // Single text child - inline format
-            const textContent = children[0].textContent?.trim() || '';
-            if (textContent.length < 80) {
-              // Short text - keep on one line
-              result += `${indentStr}<${tagName}${attrStr}>${textContent}</${tagName}>\n`;
-            } else {
-              // Long text - break into multiple lines
-              result += `${indentStr}<${tagName}${attrStr}>\n`;
-              result += '  '.repeat(indent + 1) + textContent + '\n';
-              result += `${indentStr}</${tagName}>\n`;
-            }
-          } else {
-            // No children - self-closing format
-            result += `${indentStr}<${tagName}${attrStr}></${tagName}>\n`;
-          }
-        }
-      }
-      
-      return result;
-    };
-    
-    let formatted = '';
-    const childNodes = Array.from(tempDiv.childNodes);
-    
-    if (childNodes.length === 0) {
-      return html;
-    }
-    
-    childNodes.forEach(node => {
-      formatted += formatElement(node, 0);
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(`<div id="__info_root">${html}</div>`, 'text/html');
+    const root = doc.getElementById('__info_root');
+    if (!root) return html;
+
+    const candidates = root.querySelectorAll('h1, h2, h3, h4, h5, h6, strong, b, p');
+    candidates.forEach((el) => {
+      const text = (el.textContent || '').trim();
+      if (!text || text.length > 80) return;
+      const emoji = getSectionEmoji(text.replace(/:\s*$/, ''));
+      if (!emoji) return;
+      // Avoid double-injecting
+      if ((el.textContent || '').trimStart().startsWith(emoji)) return;
+      // Only decorate clear section labels (short lines / trailing colon)
+      const isHeading = /^H[1-6]$/i.test(el.tagName);
+      const isBoldLabel = /^(STRONG|B)$/i.test(el.tagName) && /information|go-live|upgrade/i.test(text);
+      const isShortPara = el.tagName === 'P' && /:\s*$/.test(text) && getSectionEmoji(text.replace(/:\s*$/, ''));
+      if (!isHeading && !isBoldLabel && !isShortPara) return;
+
+      el.insertBefore(doc.createTextNode(`${emoji} `), el.firstChild);
     });
-    
-    return formatted.trim() || html;
-  } catch (e) {
-    // If formatting fails, return original HTML
-    console.warn('HTML formatting failed:', e);
+
+    return root.innerHTML;
+  } catch {
     return html;
   }
-};
+}
 
-export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({ 
-  isOpen, 
-  onClose, 
-  linkLabel, 
+export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
+  isOpen,
+  onClose,
+  linkLabel,
   linkIcon,
   richTextContent,
   linkUrl,
-  browser 
+  browser,
 }) => {
   const { settings } = useSettings();
-  const [showCodeView, setShowCodeView] = useState(false);
-  const [codeViewValue, setCodeViewValue] = useState('');
-  const [copied, setCopied] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
+  const positionRef = useRef({ x: 0, y: 0 });
+  const sizeRef = useRef({ width: 0, height: 0 });
 
-  // Helper function to format browser name for display
+  const plainLabel = useMemo(() => stripHtmlTags(linkLabel || ''), [linkLabel]);
+  const displayHtml = useMemo(
+    () => enhanceRichTextWithEmojis(linkifyHtml(richTextContent || '')),
+    [richTextContent]
+  );
+
   const formatBrowserName = (browserId: string | null | undefined): string => {
     if (!browserId || browserId === 'default') return '';
     return browserId
       .replace(/-/g, ' ')
       .replace(/\b\w/g, (l) => l.toUpperCase())
-      .replace('Wsl', '(WSL)')
-      .replace('Stable', 'Stable')
-      .replace('Beta', 'Beta')
-      .replace('Dev', 'Dev');
+      .replace('Wsl', '(WSL)');
   };
 
-  // Normalize browser ID (same logic as TileDetail)
   const normalizeBrowserId = (browserId: string): string => {
     if (!browserId) return browserId;
-
     const normalized = browserId.toLowerCase().trim();
-
-    // Only handle short aliases that need mapping
     const shortAliases: Record<string, string> = {
-      'edge': 'edge-stable-local',
-      'chrome': 'chrome-stable-local'
+      edge: 'edge-stable-local',
+      chrome: 'chrome-stable-local',
     };
-
-    if (shortAliases[normalized]) {
-      return shortAliases[normalized];
-    }
-
-    // Return as-is - let the extension's normalizeBrowserId handle all WSL/local mapping
-    return browserId;
+    return shortAliases[normalized] || browserId;
   };
 
-  // Function to open link in a specific browser
   const openLinkInBrowser = (url: string, browserId: string) => {
     if (typeof window !== 'undefined' && (window as any).BrowserLauncher) {
       const BrowserLauncher = (window as any).BrowserLauncher;
-
-      // Configure extension ID if provided
       if (settings.browser_extension_id) {
         BrowserLauncher.setExtensionId(settings.browser_extension_id);
       }
-
-      // Normalize browser ID before opening
       const normalizedBrowserId = normalizeBrowserId(browserId);
-      console.log('Opening link in browser:', url, 'browserId:', browserId, 'normalized:', normalizedBrowserId);
-
-      // Open link in specified browser
       BrowserLauncher.open(url, normalizedBrowserId, { fallback: true }, (response: any) => {
-        if (response && response.success !== false) {
-          console.log('Link opened successfully in browser:', normalizedBrowserId);
-        } else {
-          // Fallback to default behavior if extension fails
-          console.warn('Browser extension failed, falling back to default:', response?.error);
+        if (!(response && response.success !== false)) {
           window.open(url, '_blank', 'noopener,noreferrer');
         }
-      }).catch((error: any) => {
-        // Fallback to default behavior on error
-        console.warn('Browser extension error, falling back to default:', error);
+      }).catch(() => {
         window.open(url, '_blank', 'noopener,noreferrer');
       });
     } else {
-      // Fallback to default behavior if BrowserLauncher is not available
-      console.warn('BrowserLauncher not available, using default browser');
       window.open(url, '_blank', 'noopener,noreferrer');
     }
   };
 
   useEffect(() => {
-    if (showCodeView && richTextContent) {
-      const formatted = formatHTML(richTextContent);
-      setCodeViewValue(formatted);
-    }
-  }, [showCodeView, richTextContent]);
+    if (!isOpen) return;
+    const width = Math.min(720, window.innerWidth - 32);
+    const height = Math.min(640, window.innerHeight - 32);
+    const nextSize = { width, height };
+    const nextPos = {
+      x: Math.max(16, (window.innerWidth - width) / 2),
+      y: Math.max(16, (window.innerHeight - height) / 2),
+    };
+    setSize(nextSize);
+    setPosition(nextPos);
+    sizeRef.current = nextSize;
+    positionRef.current = nextPos;
+  }, [isOpen]);
 
-  // ESC key closes the dialog
+  useEffect(() => {
+    if (!isDragging && !isResizing) {
+      positionRef.current = position;
+      sizeRef.current = size;
+    }
+  }, [position, size, isDragging, isResizing]);
+
   useEffect(() => {
     if (!isOpen) return;
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' || e.key === 'Esc') {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
     };
-    window.addEventListener('keydown', handleEsc);
-    return () => window.removeEventListener('keydown', handleEsc);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
+  const handleDragStart = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('a')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+    dragStartRef.current = {
+      x: e.clientX - positionRef.current.x,
+      y: e.clientY - positionRef.current.y,
+    };
+  };
+
+  const handleDrag = useCallback((e: MouseEvent) => {
+    if (!dialogRef.current) return;
+    const maxX = window.innerWidth - Math.min(sizeRef.current.width, window.innerWidth);
+    const maxY = window.innerHeight - 48;
+    const newX = Math.max(0, Math.min(e.clientX - dragStartRef.current.x, maxX));
+    const newY = Math.max(0, Math.min(e.clientY - dragStartRef.current.y, maxY));
+    positionRef.current = { x: newX, y: newY };
+    dialogRef.current.style.left = `${newX}px`;
+    dialogRef.current.style.top = `${newY}px`;
+  }, []);
+
+  const handleDragEnd = useCallback(() => {
+    setPosition(positionRef.current);
+    setIsDragging(false);
+  }, []);
+
+  const handleResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!dialogRef.current) return;
+    setIsResizing(true);
+    const rect = dialogRef.current.getBoundingClientRect();
+    resizeStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      width: rect.width,
+      height: rect.height,
+    };
+  };
+
+  const handleResize = useCallback((e: MouseEvent) => {
+    if (!dialogRef.current) return;
+    const minWidth = 400;
+    const minHeight = 320;
+    const maxWidth = window.innerWidth - positionRef.current.x - 8;
+    const maxHeight = window.innerHeight - positionRef.current.y - 8;
+    const newWidth = Math.max(
+      minWidth,
+      Math.min(resizeStartRef.current.width + (e.clientX - resizeStartRef.current.x), maxWidth)
+    );
+    const newHeight = Math.max(
+      minHeight,
+      Math.min(resizeStartRef.current.height + (e.clientY - resizeStartRef.current.y), maxHeight)
+    );
+    sizeRef.current = { width: newWidth, height: newHeight };
+    dialogRef.current.style.width = `${newWidth}px`;
+    dialogRef.current.style.height = `${newHeight}px`;
+  }, []);
+
+  const handleResizeEnd = useCallback(() => {
+    setSize(sizeRef.current);
+    setIsResizing(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isDragging && !isResizing) return;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = isDragging ? 'move' : 'nwse-resize';
+    document.addEventListener('mousemove', isDragging ? handleDrag : handleResize);
+    document.addEventListener('mouseup', isDragging ? handleDragEnd : handleResizeEnd);
+    return () => {
+      document.removeEventListener('mousemove', isDragging ? handleDrag : handleResize);
+      document.removeEventListener('mouseup', isDragging ? handleDragEnd : handleResizeEnd);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+  }, [isDragging, isResizing, handleDrag, handleResize, handleDragEnd, handleResizeEnd]);
+
+  if (!isOpen || typeof document === 'undefined' || size.width === 0) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
-      <div 
-        className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col"
+    <div className="fixed inset-0 z-[99999]" role="presentation">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} aria-hidden />
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="link-info-dialog-title"
+        className={`absolute flex flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-2xl ${
+          isDragging || isResizing ? 'will-change-transform' : 'animate-in fade-in zoom-in-95 duration-150'
+        }`}
+        style={{
+          left: position.x,
+          top: position.y,
+          width: size.width,
+          height: size.height,
+          transition: isDragging || isResizing ? 'none' : undefined,
+        }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
-          <div className="flex items-center gap-3">
-            {linkIcon && (
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center text-2xl">
-                {linkIcon}
+        {/* Header — drag handle */}
+        <div
+          className={`shrink-0 cursor-move select-none px-5 py-3.5 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 ${
+            isDragging ? 'cursor-grabbing' : ''
+          }`}
+          onMouseDown={handleDragStart}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex items-start gap-3">
+              <div className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-lg shrink-0">
+                {linkIcon || 'ℹ️'}
               </div>
-            )}
-            {!linkIcon && (
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center text-white text-xl font-bold">
-                ℹ️
+              <div className="min-w-0">
+                <h2
+                  id="link-info-dialog-title"
+                  className="text-base font-semibold text-slate-900 dark:text-white truncate"
+                  title={plainLabel}
+                  dangerouslySetInnerHTML={{ __html: linkLabel || '' }}
+                />
+                {linkUrl && (
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5 truncate" title={linkUrl}>
+                    {getDisplayUrl(linkUrl)}
+                  </p>
+                )}
               </div>
-            )}
-            <div className="min-w-0 overflow-hidden">
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-white truncate">{linkLabel}</h2>
-              {linkUrl && (
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5 truncate" title={linkUrl}>
-                  {getDisplayUrl(linkUrl)}
-                </p>
-              )}
             </div>
-          </div>
-          <div className="flex items-center gap-2">
             <button
-              onClick={() => {
-                setShowCodeView(!showCodeView);
-                if (!showCodeView && richTextContent) {
-                  const formatted = formatHTML(richTextContent);
-                  setCodeViewValue(formatted);
-                }
-              }}
-              className="px-3 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-1.5"
-              title={showCodeView ? "View Visual" : "View HTML Code"}
-            >
-              {showCodeView ? (
-                <>
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  Visual
-                </>
-              ) : (
-                <>
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
-                  </svg>
-                  Code
-                </>
-              )}
-            </button>
-            <button
+              type="button"
               onClick={onClose}
-              className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 transition-colors"
+              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors shrink-0"
+              title="Close"
               aria-label="Close"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           </div>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto relative">
-          {showCodeView ? (
-            <div className="relative h-full">
-              <textarea
-                value={codeViewValue}
-                onChange={(e) => setCodeViewValue(e.target.value)}
-                className="w-full h-full p-4 bg-slate-900 dark:bg-slate-950 text-green-400 font-mono text-sm border-0 focus:outline-none resize-none"
-                style={{ minHeight: '400px' }}
-                spellCheck={false}
-              />
-              <div className="absolute top-4 right-4 flex gap-2">
-                <button
-                  onClick={() => {
-                    const formatted = formatHTML(codeViewValue);
-                    setCodeViewValue(formatted);
-                  }}
-                  className="px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium transition-colors"
-                  title="Format HTML"
-                >
-                  Format
-                </button>
-                <button
-                  onClick={async () => {
-                    try {
-                      if (navigator.clipboard && navigator.clipboard.writeText) {
-                        await navigator.clipboard.writeText(codeViewValue);
-                        setCopied(true);
-                        setTimeout(() => setCopied(false), 2000);
-                      } else {
-                        throw new Error('Clipboard API not available');
-                      }
-                    } catch (err) {
-                      console.error('Failed to copy:', err);
-                      // Fallback method
-                      try {
-                        const textArea = document.createElement('textarea');
-                        textArea.value = codeViewValue;
-                        textArea.style.position = 'fixed';
-                        textArea.style.left = '-999999px';
-                        textArea.style.top = '-999999px';
-                        document.body.appendChild(textArea);
-                        textArea.focus();
-                        textArea.select();
-                        
-                        try {
-                          const successful = document.execCommand('copy');
-                          if (successful) {
-                            setCopied(true);
-                            setTimeout(() => setCopied(false), 2000);
-                          } else {
-                            throw new Error('execCommand copy failed');
-                          }
-                        } finally {
-                          document.body.removeChild(textArea);
-                        }
-                      } catch (fallbackErr) {
-                        console.error('Fallback copy also failed:', fallbackErr);
-                        alert('Failed to copy to clipboard. Please select and copy manually (Ctrl+C or Cmd+C).');
-                      }
-                    }
-                  }}
-                  className="px-3 py-1.5 text-xs bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium transition-colors flex items-center gap-1.5 shadow-lg"
-                  title="Copy HTML Code"
-                >
-                  {copied ? (
-                    <>
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                        <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-                      </svg>
-                      Copied!
-                    </>
-                  ) : (
-                    <>
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                        <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
-                        <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
-                      </svg>
-                      Copy HTML
-                    </>
-                  )}
-                </button>
-              </div>
-              <div className="absolute bottom-2 left-2 text-xs text-slate-400 dark:text-slate-500 bg-slate-800/80 dark:bg-slate-900/80 px-2 py-1 rounded">
-                HTML Code View - View or copy to clipboard
-              </div>
-            </div>
-          ) : (
-            <div 
-              className="rich-text-viewer bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
-              dangerouslySetInnerHTML={{ __html: richTextContent }}
-              style={{
-                wordBreak: 'break-word',
-                whiteSpace: 'pre-wrap',
-              }}
+        <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-slate-900/50 px-5 py-4">
+          {displayHtml ? (
+            <div
+              className="link-info-viewer text-sm text-slate-700 dark:text-slate-200"
+              dangerouslySetInnerHTML={{ __html: displayHtml }}
             />
+          ) : (
+            <div className="h-full min-h-[120px] flex items-center justify-center text-sm text-slate-400">
+              No information available for this link.
+            </div>
           )}
           <style>{`
-            .rich-text-viewer h1 { font-size: 2em; font-weight: bold; margin: 0.67em 0; }
-            .rich-text-viewer h2 { font-size: 1.5em; font-weight: bold; margin: 0.75em 0; }
-            .rich-text-viewer h3 { font-size: 1.17em; font-weight: bold; margin: 0.83em 0; }
-            .rich-text-viewer h4 { font-size: 1em; font-weight: bold; margin: 1.12em 0; }
-            .rich-text-viewer h5 { font-size: 0.83em; font-weight: bold; margin: 1.5em 0; }
-            .rich-text-viewer h6 { font-size: 0.75em; font-weight: bold; margin: 1.67em 0; }
-            .rich-text-viewer img { max-width: 100%; height: auto; display: block; margin: 0.5em 0; }
-            .rich-text-viewer ul, .rich-text-viewer ol { margin: 1em 0; padding-left: 2em; }
-            .rich-text-viewer ul { list-style-type: disc; }
-            .rich-text-viewer ol { list-style-type: decimal; }
-            .rich-text-viewer li { margin: 0.25em 0; }
-            .rich-text-viewer table { 
-              width: 100%; 
-              border-collapse: collapse; 
-              margin: 1em 0; 
-              border: 1px solid #cbd5e1;
+            .link-info-viewer {
+              word-break: break-word;
+              white-space: pre-wrap;
+              line-height: 1.55;
             }
-            .rich-text-viewer table th, 
-            .rich-text-viewer table td { 
-              border: 1px solid #cbd5e1; 
-              padding: 0.5em 1em; 
-              text-align: left;
+            .link-info-viewer h1,
+            .link-info-viewer h2,
+            .link-info-viewer h3,
+            .link-info-viewer h4,
+            .link-info-viewer h5,
+            .link-info-viewer h6 {
+              color: #0f172a;
+              font-weight: 600;
+              margin: 0.85em 0 0.4em;
+              line-height: 1.35;
             }
-            .rich-text-viewer table th { 
-              background-color: #f1f5f9; 
+            .dark .link-info-viewer h1,
+            .dark .link-info-viewer h2,
+            .dark .link-info-viewer h3,
+            .dark .link-info-viewer h4,
+            .dark .link-info-viewer h5,
+            .dark .link-info-viewer h6 {
+              color: #f1f5f9;
+            }
+            .link-info-viewer h1 { font-size: 1.25rem; }
+            .link-info-viewer h2 { font-size: 1.125rem; }
+            .link-info-viewer h3 { font-size: 1rem; }
+            .link-info-viewer p { margin: 0.35em 0; }
+            .link-info-viewer strong,
+            .link-info-viewer b {
+              color: #1e293b;
               font-weight: 600;
             }
-            .rich-text-viewer blockquote { 
-              border-left: 4px solid #4f46e5; 
-              padding-left: 1em; 
-              margin: 1em 0; 
-              font-style: italic; 
+            .dark .link-info-viewer strong,
+            .dark .link-info-viewer b {
+              color: #e2e8f0;
+            }
+            .link-info-viewer a {
+              color: #2563eb;
+              text-decoration: underline;
+              text-underline-offset: 2px;
+            }
+            .dark .link-info-viewer a {
+              color: #60a5fa;
+            }
+            .link-info-viewer ul,
+            .link-info-viewer ol {
+              margin: 0.5em 0;
+              padding-left: 1.5em;
+            }
+            .link-info-viewer ul { list-style-type: disc; }
+            .link-info-viewer ol { list-style-type: decimal; }
+            .link-info-viewer li { margin: 0.2em 0; }
+            .link-info-viewer table {
+              width: 100%;
+              border-collapse: collapse;
+              margin: 0.75em 0;
+              border: 1px solid #e2e8f0;
+              border-radius: 0.5rem;
+              overflow: hidden;
+            }
+            .dark .link-info-viewer table {
+              border-color: #334155;
+            }
+            .link-info-viewer table th,
+            .link-info-viewer table td {
+              border: 1px solid #e2e8f0;
+              padding: 0.5em 0.75em;
+              text-align: left;
+            }
+            .dark .link-info-viewer table th,
+            .dark .link-info-viewer table td {
+              border-color: #334155;
+            }
+            .link-info-viewer table th {
+              background-color: #f8fafc;
+              font-weight: 600;
+              color: #334155;
+            }
+            .dark .link-info-viewer table th {
+              background-color: #1e293b;
+              color: #e2e8f0;
+            }
+            .link-info-viewer blockquote {
+              border-left: 3px solid #94a3b8;
+              padding-left: 0.85em;
+              margin: 0.75em 0;
               color: #64748b;
             }
-            .rich-text-viewer code { 
-              background-color: #f1f5f9; 
-              padding: 0.125em 0.25em; 
-              border-radius: 0.25rem; 
-              font-family: monospace; 
+            .link-info-viewer code {
+              background-color: #f1f5f9;
+              padding: 0.125em 0.3em;
+              border-radius: 0.25rem;
+              font-family: ui-monospace, monospace;
               font-size: 0.875em;
             }
-            .rich-text-viewer div[style*="background-color"] {
+            .dark .link-info-viewer code {
+              background-color: #1e293b;
+            }
+            .link-info-viewer img {
+              max-width: 100%;
+              height: auto;
+              display: block;
+              margin: 0.5em 0;
               border-radius: 0.5rem;
-              padding: 1em;
-              margin: 1em 0;
             }
-            .rich-text-viewer .grid {
-              display: grid;
-              gap: 1rem;
-              margin: 1em 0;
+            .link-info-viewer div[style*="background-color"] {
+              border-radius: 0.5rem;
+              padding: 0.85em;
+              margin: 0.65em 0;
+              border: 1px solid #e2e8f0;
             }
-            .rich-text-viewer .grid > div {
-              min-height: 2em;
-            }
-            @media (max-width: 768px) {
-              .rich-text-viewer .grid {
-                grid-template-columns: 1fr !important;
-              }
+            .dark .link-info-viewer div[style*="background-color"] {
+              border-color: #334155;
             }
           `}</style>
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between gap-3">
-          {linkUrl && (
-            <div className="flex items-center gap-3">
-              <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  
-                  // If browser is specified and browser-specific links are enabled, use the assigned browser
-                  if (settings.browser_specific_links_enabled === '1' && browser && browser !== 'default') {
-                    openLinkInBrowser(linkUrl, browser);
-                  } else {
-                    // Default behavior: open in new tab
-                    window.open(linkUrl, '_blank', 'noopener,noreferrer');
-                  }
-                }}
-                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg font-medium transition-colors flex items-center gap-2"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                  <path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" />
-                  <path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" />
-                </svg>
-                Open Link
-              </button>
-              {settings.browser_specific_links_enabled === '1' && browser && browser !== 'default' && (
-                <span className="text-xs text-slate-500 dark:text-slate-400 italic">
-                  Will open in {formatBrowserName(browser)} browser
-                </span>
-              )}
-            </div>
-          )}
+        <div className="shrink-0 px-5 py-3 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            {linkUrl && (
+              <>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (tryHandleSshLinkClick(linkUrl, e)) return;
+                    if (tryHandleVncLinkClick(linkUrl, e)) return;
+                    if (settings.browser_specific_links_enabled === '1' && browser && browser !== 'default') {
+                      openLinkInBrowser(linkUrl, browser);
+                    } else {
+                      window.open(linkUrl, '_blank', 'noopener,noreferrer');
+                    }
+                  }}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" />
+                    <path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" />
+                  </svg>
+                  Open Link
+                </button>
+                {settings.browser_specific_links_enabled === '1' && browser && browser !== 'default' && (
+                  <span className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                    Opens in {formatBrowserName(browser)}
+                  </span>
+                )}
+              </>
+            )}
+          </div>
           <button
+            type="button"
             onClick={onClose}
-            className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium transition-colors ml-auto"
+            className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors"
           >
             Close
           </button>
+        </div>
+
+        {/* Resize handle */}
+        <div
+          className={`absolute bottom-0 right-0 w-5 h-5 cursor-nwse-resize flex items-end justify-end p-0.5 rounded-br-xl ${
+            isResizing ? 'bg-slate-200/80 dark:bg-slate-600/50' : 'hover:bg-slate-100 dark:hover:bg-slate-700'
+          }`}
+          onMouseDown={handleResizeStart}
+          title="Resize"
+          aria-label="Resize dialog"
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" className="text-slate-400 dark:text-slate-500" aria-hidden>
+            <path d="M10 2L2 10M10 6L6 10M10 10L10 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+          </svg>
         </div>
       </div>
     </div>,
