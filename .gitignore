@@ -11,6 +11,9 @@ ldap_debug.log
 # Dependencies
 node_modules/
 
+# Local Python environment / scripts
+bin/
+
 # Build outputs
 dist/
 dist-ssr/

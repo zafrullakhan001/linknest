@@ -8328,16 +8328,6 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Description</label>
-                        <textarea
-                          value={newDesc}
-                          onChange={(e) => setNewDesc(e.target.value)}
-                          placeholder="Short description..."
-                          rows={2}
-                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 resize-none placeholder-slate-400 transition-all"
-                        />
-                      </div>
-                      <div>
                         <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Open Link</label>
                         <div className="space-y-2">
                           <label className="flex items-center gap-2 cursor-pointer">
@@ -8362,69 +8352,6 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             />
                             <span className="text-sm text-slate-700 dark:text-slate-300">Open in same tab</span>
                           </label>
-                        </div>
-                      </div>
-
-                      {/* Emoji & Theme - Also shown for hyperlinks */}
-                      <div className="flex gap-3">
-                        <div className="w-24 relative">
-                          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Icon</label>
-                          <button
-                            type="button"
-                            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                            className="w-full h-12 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-brand-500/50"
-                          >
-                            {newEmoji || (tileType === 'hyperlink' ? '🔗' : '📁')}
-                          </button>
-
-                          {/* Emoji Picker Popover */}
-                          {showEmojiPicker && (
-                            <>
-                              <div className="fixed inset-0" style={{ zIndex: 100001 }} onClick={() => setShowEmojiPicker(false)}></div>
-                              <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl flex flex-col overflow-hidden" style={{ zIndex: 100002 }}>
-                                <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
-                                  <input
-                                    type="text"
-                                    value={newEmoji}
-                                    onChange={(e) => setNewEmoji(e.target.value)}
-                                    placeholder="Type emoji..."
-                                    className="w-full text-sm px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/50 text-slate-900 dark:text-white"
-                                    autoFocus
-                                  />
-                                </div>
-                                <div className="flex-1 overflow-y-auto p-2 grid grid-cols-8 gap-1">
-                                  {POPULAR_EMOJIS.map((emoji) => (
-                                    <button
-                                      key={emoji}
-                                      onClick={() => { setNewEmoji(emoji); setShowEmojiPicker(false); }}
-                                      className="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
-                                    >
-                                      {emoji}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                            </>
-                          )}
-                        </div>
-
-                        <div className="flex-1">
-                          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Theme</label>
-                          <div className="grid grid-cols-9 gap-1.5">
-                            {THEME_COLORS.map(c => (
-                              <button
-                                key={c}
-                                onClick={() => setNewColor(c)}
-                                className={`
-                              w-8 h-8 rounded-lg border-2 transition-all relative overflow-hidden
-                              ${newColor === c ? 'border-brand-500 scale-110 shadow-md shadow-brand-500/30' : 'border-slate-200 dark:border-slate-700 hover:scale-105'} 
-                            `}
-                                title={c}
-                              >
-                                <div className={`absolute inset-0 ${COLOR_STYLES[c].base} rounded-md`}></div>
-                              </button>
-                            ))}
-                          </div>
                         </div>
                       </div>
 
@@ -8689,9 +8616,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                     </FormSection>
                   )}
 
-                  {/* Description - Only shown when type is space */}
-                  {tileType === 'space' && (
-                    <FormSection emoji="📝" title="Details" accent="teal">
+                  {/* Description - shown for space and hyperlink */}
+                  <FormSection emoji="📝" title="Details" accent="teal">
                     <div>
                       <FormLabel emoji="💬">Description</FormLabel>
                       <textarea
@@ -8702,12 +8628,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         className="w-full bg-white/80 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500/50 focus:border-teal-500 resize-none placeholder-slate-400 transition-all"
                       />
                     </div>
-                    </FormSection>
-                  )}
+                  </FormSection>
 
-                  {/* Emoji & Theme - Only shown when type is space */}
-                  {tileType === 'space' && (
-                    <FormSection emoji="🎨" title="Look & Feel" accent="violet">
+                  {/* Look & Feel - shown for space and hyperlink */}
+                  <FormSection emoji="🎨" title="Look & Feel" accent="violet">
                     <div className="flex gap-3">
                       <div className="w-24 relative">
                         <FormLabel emoji="✨">Icon</FormLabel>
@@ -8719,7 +8643,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           {newEmojiImage ? (
                             <img src={newEmojiImage} alt="" className="w-8 h-8 object-contain" />
                           ) : (
-                            newEmoji || '✨'
+                            newEmoji || (tileType === 'hyperlink' ? '🔗' : '✨')
                           )}
                         </button>
 
@@ -8897,11 +8821,11 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       </div>
                     </div>
 
-                  {/* Header image - space cards only */}
+                  {/* Header image */}
                     <div>
                       <FormLabel emoji="🖼️">Header image</FormLabel>
                       <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
-                        Place freely on the space card. Use the tile-sized preview below to align X/Y. Other formats convert to PNG automatically.
+                        Place freely on the tile card. Use the tile-sized preview below to align X/Y. Other formats convert to PNG automatically.
                       </p>
                       <div className="flex flex-wrap items-center gap-3 mb-3">
                         <label className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border cursor-pointer transition-colors ${headerImageUploading ? 'opacity-60 pointer-events-none' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'} text-slate-700 dark:text-slate-200`}>
@@ -9114,8 +9038,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         ) : null}
                       </div>
                     </div>
-                    </FormSection>
-                  )}
+                  </FormSection>
 
                   {/* Category & Visibility - Only shown when type is space */}
                   {tileType === 'space' && (
@@ -11058,7 +10981,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           onClick={() => setShowEmojiPicker(!showEmojiPicker)}
                           className="w-full h-12 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-brand-500/50 overflow-hidden"
                         >
-                          {tileType === 'space' && newEmojiImage ? (
+                          {newEmojiImage ? (
                             <img src={newEmojiImage} alt="" className="w-8 h-8 object-contain" />
                           ) : (
                             newEmoji || (tileType === 'hyperlink' ? '🔗' : '📁')
@@ -11084,7 +11007,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                 {POPULAR_EMOJIS.map((emoji) => (
                                   <button
                                     key={emoji}
-                                    onClick={() => { setNewEmoji(emoji); if (tileType === 'space') setNewEmojiImage(''); setShowEmojiPicker(false); }}
+                                    onClick={() => { setNewEmoji(emoji); setNewEmojiImage(''); setShowEmojiPicker(false); }}
                                     className="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
                                   >
                                     {emoji}
@@ -11094,45 +11017,43 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             </div>
                           </>
                         )}
-                        {tileType === 'space' && (
-                          <div className="mt-1.5 flex flex-col gap-1">
-                            <label className={`inline-flex items-center justify-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border cursor-pointer transition-colors ${emojiImageUploading ? 'opacity-60 pointer-events-none' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'} text-slate-700 dark:text-slate-200`}>
-                              <input
-                                type="file"
-                                accept="image/jpeg,image/png,image/gif,image/webp,image/bmp,.jpg,.jpeg,.png,.gif,.webp,.bmp"
-                                className="hidden"
-                                disabled={emojiImageUploading}
-                                onChange={async (e) => {
-                                  const file = e.target.files?.[0];
-                                  e.target.value = '';
-                                  if (!file) return;
-                                  setEmojiImageUploading(true);
-                                  try {
-                                    const url = await uploadTileEmojiImage(file, {
-                                      removeBackground: emojiRemoveBg,
-                                      bgColor: emojiRemoveBg && emojiBgMode === 'custom' ? emojiBgColor : undefined
-                                    });
-                                    setNewEmojiImage(url);
-                                  } catch (err) {
-                                    alert(err instanceof Error ? err.message : 'Failed to upload emoji image');
-                                  } finally {
-                                    setEmojiImageUploading(false);
-                                  }
-                                }}
-                              />
-                              {emojiImageUploading ? '…' : (newEmojiImage ? 'Replace' : 'Image')}
-                            </label>
-                            {newEmojiImage ? (
-                              <button
-                                type="button"
-                                onClick={() => setNewEmojiImage('')}
-                                className="text-[11px] text-rose-600 dark:text-rose-400 hover:underline"
-                              >
-                                Remove image
-                              </button>
-                            ) : null}
-                          </div>
-                        )}
+                        <div className="mt-1.5 flex flex-col gap-1">
+                          <label className={`inline-flex items-center justify-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border cursor-pointer transition-colors ${emojiImageUploading ? 'opacity-60 pointer-events-none' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'} text-slate-700 dark:text-slate-200`}>
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/gif,image/webp,image/bmp,.jpg,.jpeg,.png,.gif,.webp,.bmp"
+                              className="hidden"
+                              disabled={emojiImageUploading}
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                e.target.value = '';
+                                if (!file) return;
+                                setEmojiImageUploading(true);
+                                try {
+                                  const url = await uploadTileEmojiImage(file, {
+                                    removeBackground: emojiRemoveBg,
+                                    bgColor: emojiRemoveBg && emojiBgMode === 'custom' ? emojiBgColor : undefined
+                                  });
+                                  setNewEmojiImage(url);
+                                } catch (err) {
+                                  alert(err instanceof Error ? err.message : 'Failed to upload emoji image');
+                                } finally {
+                                  setEmojiImageUploading(false);
+                                }
+                              }}
+                            />
+                            {emojiImageUploading ? '…' : (newEmojiImage ? 'Replace' : 'Image')}
+                          </label>
+                          {newEmojiImage ? (
+                            <button
+                              type="button"
+                              onClick={() => setNewEmojiImage('')}
+                              className="text-[11px] text-rose-600 dark:text-rose-400 hover:underline"
+                            >
+                              Remove image
+                            </button>
+                          ) : null}
+                        </div>
                       </div>
 
                       <div className="flex-1">
@@ -11155,101 +11076,98 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       </div>
                     </div>
 
-                    {tileType === 'space' && (
-                      <div className="space-y-2">
-                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <div className="space-y-2">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={newShowEmoji}
+                          onChange={(e) => setNewShowEmoji(e.target.checked)}
+                          className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                        />
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show emoji on card</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={newShowTitle}
+                          onChange={(e) => setNewShowTitle(e.target.checked)}
+                          className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                        />
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show title on card</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={newShowDescription}
+                          onChange={(e) => setNewShowDescription(e.target.checked)}
+                          className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                        />
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show description on card</span>
+                      </label>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <label className="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
                           <input
                             type="checkbox"
-                            checked={newShowEmoji}
-                            onChange={(e) => setNewShowEmoji(e.target.checked)}
-                            className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                            checked={emojiRemoveBg}
+                            onChange={(e) => setEmojiRemoveBg(e.target.checked)}
+                            className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
                           />
-                          <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show emoji on card</span>
+                          Remove emoji image background
                         </label>
-                        <label className="flex items-center gap-2 cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            checked={newShowTitle}
-                            onChange={(e) => setNewShowTitle(e.target.checked)}
-                            className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
-                          />
-                          <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show title on card</span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            checked={newShowDescription}
-                            onChange={(e) => setNewShowDescription(e.target.checked)}
-                            className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
-                          />
-                          <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show description on card</span>
-                        </label>
-                        <div className="flex flex-wrap items-center gap-3">
-                          <label className="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={emojiRemoveBg}
-                              onChange={(e) => setEmojiRemoveBg(e.target.checked)}
-                              className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-                            />
-                            Remove emoji image background
-                          </label>
-                          {emojiRemoveBg ? (
-                            <>
-                              <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
-                                <input type="radio" name="emojiBgModeEdit" checked={emojiBgMode === 'auto'} onChange={() => setEmojiBgMode('auto')} />
-                                Auto (corners)
-                              </label>
-                              <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
-                                <input type="radio" name="emojiBgModeEdit" checked={emojiBgMode === 'custom'} onChange={() => setEmojiBgMode('custom')} />
-                                Pick color
-                              </label>
-                              {emojiBgMode === 'custom' ? (
-                                <input
-                                  type="color"
-                                  value={emojiBgColor}
-                                  onChange={(e) => setEmojiBgColor(e.target.value)}
-                                  className="w-7 h-7 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent"
-                                  title="Background color to remove"
-                                />
-                              ) : null}
-                            </>
-                          ) : null}
-                          {newEmojiImage && emojiRemoveBg ? (
-                            <button
-                              type="button"
-                              disabled={emojiImageUploading}
-                              onClick={async () => {
-                                setEmojiImageUploading(true);
-                                try {
-                                  const url = await uploadTileEmojiImage(null, {
-                                    sourceUrl: newEmojiImage,
-                                    removeBackground: true,
-                                    bgColor: emojiBgMode === 'custom' ? emojiBgColor : undefined
-                                  });
-                                  setNewEmojiImage(url);
-                                } catch (err) {
-                                  alert(err instanceof Error ? err.message : 'Failed to remove background');
-                                } finally {
-                                  setEmojiImageUploading(false);
-                                }
-                              }}
-                              className="text-xs font-medium px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
-                            >
-                              Apply to current image
-                            </button>
-                          ) : null}
-                        </div>
+                        {emojiRemoveBg ? (
+                          <>
+                            <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                              <input type="radio" name="emojiBgModeEdit" checked={emojiBgMode === 'auto'} onChange={() => setEmojiBgMode('auto')} />
+                              Auto (corners)
+                            </label>
+                            <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                              <input type="radio" name="emojiBgModeEdit" checked={emojiBgMode === 'custom'} onChange={() => setEmojiBgMode('custom')} />
+                              Pick color
+                            </label>
+                            {emojiBgMode === 'custom' ? (
+                              <input
+                                type="color"
+                                value={emojiBgColor}
+                                onChange={(e) => setEmojiBgColor(e.target.value)}
+                                className="w-7 h-7 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent"
+                                title="Background color to remove"
+                              />
+                            ) : null}
+                          </>
+                        ) : null}
+                        {newEmojiImage && emojiRemoveBg ? (
+                          <button
+                            type="button"
+                            disabled={emojiImageUploading}
+                            onClick={async () => {
+                              setEmojiImageUploading(true);
+                              try {
+                                const url = await uploadTileEmojiImage(null, {
+                                  sourceUrl: newEmojiImage,
+                                  removeBackground: true,
+                                  bgColor: emojiBgMode === 'custom' ? emojiBgColor : undefined
+                                });
+                                setNewEmojiImage(url);
+                              } catch (err) {
+                                alert(err instanceof Error ? err.message : 'Failed to remove background');
+                              } finally {
+                                setEmojiImageUploading(false);
+                              }
+                            }}
+                            className="text-xs font-medium px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                          >
+                            Apply to current image
+                          </button>
+                        ) : null}
                       </div>
-                    )}
+                    </div>
 
-                    {/* Header image - space cards only */}
-                    {tileType === 'space' && (
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Header image</label>
-                        <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
-                          Place freely on the space card. Use the tile-sized preview below to align X/Y. Other formats convert to PNG automatically.
-                        </p>
+                    {/* Header image */}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Header image</label>
+                      <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+                        Place freely on the tile card. Use the tile-sized preview below to align X/Y. Other formats convert to PNG automatically.
+                      </p>
                         <div className="flex flex-wrap items-center gap-3 mb-3">
                           <label className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border cursor-pointer transition-colors ${headerImageUploading ? 'opacity-60 pointer-events-none' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'} text-slate-700 dark:text-slate-200`}>
                             <input
@@ -11470,7 +11388,6 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           ) : null}
                         </div>
                       </div>
-                    )}
 
                     </FormSection>
 
