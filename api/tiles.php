@@ -199,7 +199,7 @@ function handleGetTiles() {
     // Step 1: Get visible tiles filtered by source_tab
     // Summary mode skips html_content and other heavy columns
     $tileCols = $summaryMode
-        ? 'id, user_id, title, description, emoji, theme_color, "group", position, created_at, visibility, allowed_users, allowed_groups, source_tab, deleted_at, archived_at, is_hyperlink, hyperlink_url, open_in_new_tab, browser, visible_from, expires_at, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, show_title, show_description, published'
+        ? 'id, user_id, title, description, emoji, theme_color, "group", position, created_at, visibility, allowed_users, allowed_groups, source_tab, deleted_at, archived_at, is_hyperlink, hyperlink_url, open_in_new_tab, browser, visible_from, expires_at, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, published'
         : '*';
     $baseWhere = 'deleted_at IS NULL AND archived_at IS NULL';
     if ($sourceTab === 'staging') {
@@ -503,6 +503,10 @@ function handleGetTiles() {
             'headerImageFit' => (isset($row['header_image_fit']) && in_array($row['header_image_fit'], ['contain','cover'], true)) ? $row['header_image_fit'] : null,
             'showEmoji' => !(isset($row['show_emoji']) && ((int)$row['show_emoji'] === 0 || $row['show_emoji'] === '0' || $row['show_emoji'] === false)),
             'emojiImage' => !empty($row['emoji_image']) ? $row['emoji_image'] : null,
+            'emojiImageOpacity' => !empty($row['emoji_image']) && isset($row['emoji_image_opacity']) && $row['emoji_image_opacity'] !== null && $row['emoji_image_opacity'] !== '' ? max(0, min(100, (int)$row['emoji_image_opacity'])) : null,
+            'emojiImageOffsetX' => !empty($row['emoji_image']) && isset($row['emoji_image_offset_x']) && $row['emoji_image_offset_x'] !== null && $row['emoji_image_offset_x'] !== '' ? max(-50, min(50, (int)$row['emoji_image_offset_x'])) : null,
+            'emojiImageOffsetY' => !empty($row['emoji_image']) && isset($row['emoji_image_offset_y']) && $row['emoji_image_offset_y'] !== null && $row['emoji_image_offset_y'] !== '' ? max(-50, min(50, (int)$row['emoji_image_offset_y'])) : null,
+            'emojiImageZoom' => !empty($row['emoji_image']) && isset($row['emoji_image_zoom']) && $row['emoji_image_zoom'] !== null && $row['emoji_image_zoom'] !== '' ? max(50, min(300, (int)$row['emoji_image_zoom'])) : null,
             'showTitle' => !(isset($row['show_title']) && ((int)$row['show_title'] === 0 || $row['show_title'] === '0' || $row['show_title'] === false)),
             'showDescription' => !(isset($row['show_description']) && ((int)$row['show_description'] === 0 || $row['show_description'] === '0' || $row['show_description'] === false)),
             'tabs' => [],
@@ -1199,6 +1203,10 @@ function handleGetTile($tileId) {
         'headerImageFit' => (isset($row['header_image_fit']) && in_array($row['header_image_fit'], ['contain','cover'], true)) ? $row['header_image_fit'] : null,
         'showEmoji' => !(isset($row['show_emoji']) && ((int)$row['show_emoji'] === 0 || $row['show_emoji'] === '0' || $row['show_emoji'] === false)),
         'emojiImage' => !empty($row['emoji_image']) ? $row['emoji_image'] : null,
+        'emojiImageOpacity' => !empty($row['emoji_image']) && isset($row['emoji_image_opacity']) && $row['emoji_image_opacity'] !== null && $row['emoji_image_opacity'] !== '' ? max(0, min(100, (int)$row['emoji_image_opacity'])) : null,
+        'emojiImageOffsetX' => !empty($row['emoji_image']) && isset($row['emoji_image_offset_x']) && $row['emoji_image_offset_x'] !== null && $row['emoji_image_offset_x'] !== '' ? max(-50, min(50, (int)$row['emoji_image_offset_x'])) : null,
+        'emojiImageOffsetY' => !empty($row['emoji_image']) && isset($row['emoji_image_offset_y']) && $row['emoji_image_offset_y'] !== null && $row['emoji_image_offset_y'] !== '' ? max(-50, min(50, (int)$row['emoji_image_offset_y'])) : null,
+        'emojiImageZoom' => !empty($row['emoji_image']) && isset($row['emoji_image_zoom']) && $row['emoji_image_zoom'] !== null && $row['emoji_image_zoom'] !== '' ? max(50, min(300, (int)$row['emoji_image_zoom'])) : null,
             'showTitle' => !(isset($row['show_title']) && ((int)$row['show_title'] === 0 || $row['show_title'] === '0' || $row['show_title'] === false)),
             'showDescription' => !(isset($row['show_description']) && ((int)$row['show_description'] === 0 || $row['show_description'] === '0' || $row['show_description'] === false)),
         'tabs' => [],
@@ -1611,6 +1619,26 @@ function handleCreateTile() {
     $emojiImage = isset($data['emojiImage']) && is_string($data['emojiImage']) && trim($data['emojiImage']) !== ''
         ? trim($data['emojiImage'])
         : null;
+    $emojiImageOpacity = $emojiImage !== null
+        ? (isset($data['emojiImageOpacity']) && is_numeric($data['emojiImageOpacity'])
+            ? max(0, min(100, (int)$data['emojiImageOpacity']))
+            : 100)
+        : null;
+    $emojiImageOffsetX = $emojiImage !== null
+        ? (isset($data['emojiImageOffsetX']) && is_numeric($data['emojiImageOffsetX'])
+            ? max(-50, min(50, (int)$data['emojiImageOffsetX']))
+            : 0)
+        : null;
+    $emojiImageOffsetY = $emojiImage !== null
+        ? (isset($data['emojiImageOffsetY']) && is_numeric($data['emojiImageOffsetY'])
+            ? max(-50, min(50, (int)$data['emojiImageOffsetY']))
+            : 0)
+        : null;
+    $emojiImageZoom = $emojiImage !== null
+        ? (isset($data['emojiImageZoom']) && is_numeric($data['emojiImageZoom'])
+            ? max(50, min(300, (int)$data['emojiImageZoom']))
+            : 100)
+        : null;
     $showTitle = array_key_exists('showTitle', $data)
         ? (!empty($data['showTitle']) && $data['showTitle'] !== '0' && $data['showTitle'] !== 0 && $data['showTitle'] !== false ? 1 : 0)
         : 1;
@@ -1656,7 +1684,7 @@ function handleCreateTile() {
     // Published flag: only admins may create unpublished content
     $published = resolvePublishedFlag($data, $user, true);
     
-    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, show_title, show_description, source_tab, published, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, source_tab, published, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     
     if (!$stmt->execute([
         $tileId,
@@ -1695,6 +1723,10 @@ function handleCreateTile() {
         $headerImageFit,
         $showEmoji,
         $emojiImage,
+        $emojiImageOpacity,
+        $emojiImageOffsetX,
+        $emojiImageOffsetY,
+        $emojiImageZoom,
         $showTitle,
         $showDescription,
         $sourceTab,
@@ -2256,6 +2288,22 @@ function handleCloneTile($tileId) {
             : null;
         $showEmoji = !(isset($originalTile['show_emoji']) && ((int)$originalTile['show_emoji'] === 0 || $originalTile['show_emoji'] === '0'));
         $emojiImage = !empty($originalTile['emoji_image']) ? $originalTile['emoji_image'] : null;
+        $emojiImageOpacity = $emojiImage !== null
+            ? (isset($originalTile['emoji_image_opacity']) && $originalTile['emoji_image_opacity'] !== null && $originalTile['emoji_image_opacity'] !== ''
+                ? max(0, min(100, (int)$originalTile['emoji_image_opacity'])) : 100)
+            : null;
+        $emojiImageOffsetX = $emojiImage !== null
+            ? (isset($originalTile['emoji_image_offset_x']) && $originalTile['emoji_image_offset_x'] !== null && $originalTile['emoji_image_offset_x'] !== ''
+                ? max(-50, min(50, (int)$originalTile['emoji_image_offset_x'])) : 0)
+            : null;
+        $emojiImageOffsetY = $emojiImage !== null
+            ? (isset($originalTile['emoji_image_offset_y']) && $originalTile['emoji_image_offset_y'] !== null && $originalTile['emoji_image_offset_y'] !== ''
+                ? max(-50, min(50, (int)$originalTile['emoji_image_offset_y'])) : 0)
+            : null;
+        $emojiImageZoom = $emojiImage !== null
+            ? (isset($originalTile['emoji_image_zoom']) && $originalTile['emoji_image_zoom'] !== null && $originalTile['emoji_image_zoom'] !== ''
+                ? max(50, min(300, (int)$originalTile['emoji_image_zoom'])) : 100)
+            : null;
         $showTitle = !(isset($originalTile['show_title']) && ((int)$originalTile['show_title'] === 0 || $originalTile['show_title'] === '0'));
         $showDescription = !(isset($originalTile['show_description']) && ((int)$originalTile['show_description'] === 0 || $originalTile['show_description'] === '0'));
         $headerImageOffsetY = $headerImage !== null
@@ -2269,7 +2317,7 @@ function handleCloneTile($tileId) {
         // Copy source_tab so cloned tile stays in same area (staging vs public)
         $newSourceTab = isset($originalTile['source_tab']) && trim($originalTile['source_tab']) === 'staging' ? 'staging' : 'public';
         
-        $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, show_title, show_description, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         
         if (!$insertStmt->execute([
             $newTileId,
@@ -2308,6 +2356,10 @@ function handleCloneTile($tileId) {
             $headerImageFit,
             $showEmoji ? 1 : 0,
             $emojiImage,
+            $emojiImageOpacity,
+            $emojiImageOffsetX,
+            $emojiImageOffsetY,
+            $emojiImageZoom,
             $showTitle ? 1 : 0,
             $showDescription ? 1 : 0,
             $newSourceTab,
@@ -2730,6 +2782,22 @@ function handleCloneCategory($categoryName) {
                 : null;
             $showEmoji = !(isset($originalTile['show_emoji']) && ((int)$originalTile['show_emoji'] === 0 || $originalTile['show_emoji'] === '0'));
             $emojiImage = !empty($originalTile['emoji_image']) ? $originalTile['emoji_image'] : null;
+            $emojiImageOpacity = $emojiImage !== null
+                ? (isset($originalTile['emoji_image_opacity']) && $originalTile['emoji_image_opacity'] !== null && $originalTile['emoji_image_opacity'] !== ''
+                    ? max(0, min(100, (int)$originalTile['emoji_image_opacity'])) : 100)
+                : null;
+            $emojiImageOffsetX = $emojiImage !== null
+                ? (isset($originalTile['emoji_image_offset_x']) && $originalTile['emoji_image_offset_x'] !== null && $originalTile['emoji_image_offset_x'] !== ''
+                    ? max(-50, min(50, (int)$originalTile['emoji_image_offset_x'])) : 0)
+                : null;
+            $emojiImageOffsetY = $emojiImage !== null
+                ? (isset($originalTile['emoji_image_offset_y']) && $originalTile['emoji_image_offset_y'] !== null && $originalTile['emoji_image_offset_y'] !== ''
+                    ? max(-50, min(50, (int)$originalTile['emoji_image_offset_y'])) : 0)
+                : null;
+            $emojiImageZoom = $emojiImage !== null
+                ? (isset($originalTile['emoji_image_zoom']) && $originalTile['emoji_image_zoom'] !== null && $originalTile['emoji_image_zoom'] !== ''
+                    ? max(50, min(300, (int)$originalTile['emoji_image_zoom'])) : 100)
+                : null;
             $showTitle = !(isset($originalTile['show_title']) && ((int)$originalTile['show_title'] === 0 || $originalTile['show_title'] === '0'));
             $showDescription = !(isset($originalTile['show_description']) && ((int)$originalTile['show_description'] === 0 || $originalTile['show_description'] === '0'));
             $headerImageOffsetY = $headerImage !== null
@@ -2741,7 +2809,7 @@ function handleCloneCategory($categoryName) {
                     ? max(50, min(300, (int)$originalTile['header_image_zoom'])) : 100)
                 : null;
             
-            $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, show_title, show_description, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             
             if (!$insertStmt->execute([
                 $newTileId,
@@ -2780,6 +2848,10 @@ function handleCloneCategory($categoryName) {
                 $headerImageFit,
                 $showEmoji ? 1 : 0,
                 $emojiImage,
+                $emojiImageOpacity,
+                $emojiImageOffsetX,
+                $emojiImageOffsetY,
+                $emojiImageZoom,
                 $showTitle ? 1 : 0,
                 $showDescription ? 1 : 0,
                 $sourceTab,
@@ -4052,6 +4124,10 @@ function handleGetRecycleBin() {
             'headerImageFit' => (isset($row['header_image_fit']) && in_array($row['header_image_fit'], ['contain','cover'], true)) ? $row['header_image_fit'] : null,
             'showEmoji' => !(isset($row['show_emoji']) && ((int)$row['show_emoji'] === 0 || $row['show_emoji'] === '0' || $row['show_emoji'] === false)),
             'emojiImage' => !empty($row['emoji_image']) ? $row['emoji_image'] : null,
+            'emojiImageOpacity' => !empty($row['emoji_image']) && isset($row['emoji_image_opacity']) && $row['emoji_image_opacity'] !== null && $row['emoji_image_opacity'] !== '' ? max(0, min(100, (int)$row['emoji_image_opacity'])) : null,
+            'emojiImageOffsetX' => !empty($row['emoji_image']) && isset($row['emoji_image_offset_x']) && $row['emoji_image_offset_x'] !== null && $row['emoji_image_offset_x'] !== '' ? max(-50, min(50, (int)$row['emoji_image_offset_x'])) : null,
+            'emojiImageOffsetY' => !empty($row['emoji_image']) && isset($row['emoji_image_offset_y']) && $row['emoji_image_offset_y'] !== null && $row['emoji_image_offset_y'] !== '' ? max(-50, min(50, (int)$row['emoji_image_offset_y'])) : null,
+            'emojiImageZoom' => !empty($row['emoji_image']) && isset($row['emoji_image_zoom']) && $row['emoji_image_zoom'] !== null && $row['emoji_image_zoom'] !== '' ? max(50, min(300, (int)$row['emoji_image_zoom'])) : null,
             'showTitle' => !(isset($row['show_title']) && ((int)$row['show_title'] === 0 || $row['show_title'] === '0' || $row['show_title'] === false)),
             'showDescription' => !(isset($row['show_description']) && ((int)$row['show_description'] === 0 || $row['show_description'] === '0' || $row['show_description'] === false)),
             'tabs' => []
@@ -4407,8 +4483,12 @@ function handleGetArchive() {
                 'headerImageFit' => (isset($row['header_image_fit']) && in_array($row['header_image_fit'], ['contain','cover'], true)) ? $row['header_image_fit'] : null,
                 'showEmoji' => !(isset($row['show_emoji']) && ((int)$row['show_emoji'] === 0 || $row['show_emoji'] === '0' || $row['show_emoji'] === false)),
                 'emojiImage' => !empty($row['emoji_image']) ? $row['emoji_image'] : null,
-            'showTitle' => !(isset($row['show_title']) && ((int)$row['show_title'] === 0 || $row['show_title'] === '0' || $row['show_title'] === false)),
-            'showDescription' => !(isset($row['show_description']) && ((int)$row['show_description'] === 0 || $row['show_description'] === '0' || $row['show_description'] === false)),
+                'emojiImageOpacity' => !empty($row['emoji_image']) && isset($row['emoji_image_opacity']) && $row['emoji_image_opacity'] !== null && $row['emoji_image_opacity'] !== '' ? max(0, min(100, (int)$row['emoji_image_opacity'])) : null,
+                'emojiImageOffsetX' => !empty($row['emoji_image']) && isset($row['emoji_image_offset_x']) && $row['emoji_image_offset_x'] !== null && $row['emoji_image_offset_x'] !== '' ? max(-50, min(50, (int)$row['emoji_image_offset_x'])) : null,
+                'emojiImageOffsetY' => !empty($row['emoji_image']) && isset($row['emoji_image_offset_y']) && $row['emoji_image_offset_y'] !== null && $row['emoji_image_offset_y'] !== '' ? max(-50, min(50, (int)$row['emoji_image_offset_y'])) : null,
+                'emojiImageZoom' => !empty($row['emoji_image']) && isset($row['emoji_image_zoom']) && $row['emoji_image_zoom'] !== null && $row['emoji_image_zoom'] !== '' ? max(50, min(300, (int)$row['emoji_image_zoom'])) : null,
+                'showTitle' => !(isset($row['show_title']) && ((int)$row['show_title'] === 0 || $row['show_title'] === '0' || $row['show_title'] === false)),
+                'showDescription' => !(isset($row['show_description']) && ((int)$row['show_description'] === 0 || $row['show_description'] === '0' || $row['show_description'] === false)),
                 'tabs' => []
             ];
             
@@ -4892,6 +4972,10 @@ function getTileForVersion($tileId, $db) {
         'headerImageFit' => (isset($row['header_image_fit']) && in_array($row['header_image_fit'], ['contain','cover'], true)) ? $row['header_image_fit'] : null,
         'showEmoji' => !(isset($row['show_emoji']) && ((int)$row['show_emoji'] === 0 || $row['show_emoji'] === '0' || $row['show_emoji'] === false)),
         'emojiImage' => !empty($row['emoji_image']) ? $row['emoji_image'] : null,
+        'emojiImageOpacity' => !empty($row['emoji_image']) && isset($row['emoji_image_opacity']) && $row['emoji_image_opacity'] !== null && $row['emoji_image_opacity'] !== '' ? max(0, min(100, (int)$row['emoji_image_opacity'])) : null,
+        'emojiImageOffsetX' => !empty($row['emoji_image']) && isset($row['emoji_image_offset_x']) && $row['emoji_image_offset_x'] !== null && $row['emoji_image_offset_x'] !== '' ? max(-50, min(50, (int)$row['emoji_image_offset_x'])) : null,
+        'emojiImageOffsetY' => !empty($row['emoji_image']) && isset($row['emoji_image_offset_y']) && $row['emoji_image_offset_y'] !== null && $row['emoji_image_offset_y'] !== '' ? max(-50, min(50, (int)$row['emoji_image_offset_y'])) : null,
+        'emojiImageZoom' => !empty($row['emoji_image']) && isset($row['emoji_image_zoom']) && $row['emoji_image_zoom'] !== null && $row['emoji_image_zoom'] !== '' ? max(50, min(300, (int)$row['emoji_image_zoom'])) : null,
             'showTitle' => !(isset($row['show_title']) && ((int)$row['show_title'] === 0 || $row['show_title'] === '0' || $row['show_title'] === false)),
             'showDescription' => !(isset($row['show_description']) && ((int)$row['show_description'] === 0 || $row['show_description'] === '0' || $row['show_description'] === false)),
         'tabs' => [],
@@ -5458,6 +5542,42 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                 : null)
             : ($currentTileData['emojiImage'] ?? $currentTileData['emoji_image'] ?? null);
 
+        $emojiImageOpacity = array_key_exists('emojiImageOpacity', $data)
+            ? (($emojiImage !== null && isset($data['emojiImageOpacity']) && is_numeric($data['emojiImageOpacity']))
+                ? max(0, min(100, (int)$data['emojiImageOpacity']))
+                : ($emojiImage !== null ? 100 : null))
+            : ($emojiImage !== null
+                ? (isset($currentTileData['emojiImageOpacity']) ? max(0, min(100, (int)$currentTileData['emojiImageOpacity']))
+                    : (isset($currentTileData['emoji_image_opacity']) ? max(0, min(100, (int)$currentTileData['emoji_image_opacity'])) : 100))
+                : null);
+
+        $emojiImageOffsetX = array_key_exists('emojiImageOffsetX', $data)
+            ? (($emojiImage !== null && isset($data['emojiImageOffsetX']) && is_numeric($data['emojiImageOffsetX']))
+                ? max(-50, min(50, (int)$data['emojiImageOffsetX']))
+                : ($emojiImage !== null ? 0 : null))
+            : ($emojiImage !== null
+                ? (isset($currentTileData['emojiImageOffsetX']) ? max(-50, min(50, (int)$currentTileData['emojiImageOffsetX']))
+                    : (isset($currentTileData['emoji_image_offset_x']) ? max(-50, min(50, (int)$currentTileData['emoji_image_offset_x'])) : 0))
+                : null);
+
+        $emojiImageOffsetY = array_key_exists('emojiImageOffsetY', $data)
+            ? (($emojiImage !== null && isset($data['emojiImageOffsetY']) && is_numeric($data['emojiImageOffsetY']))
+                ? max(-50, min(50, (int)$data['emojiImageOffsetY']))
+                : ($emojiImage !== null ? 0 : null))
+            : ($emojiImage !== null
+                ? (isset($currentTileData['emojiImageOffsetY']) ? max(-50, min(50, (int)$currentTileData['emojiImageOffsetY']))
+                    : (isset($currentTileData['emoji_image_offset_y']) ? max(-50, min(50, (int)$currentTileData['emoji_image_offset_y'])) : 0))
+                : null);
+
+        $emojiImageZoom = array_key_exists('emojiImageZoom', $data)
+            ? (($emojiImage !== null && isset($data['emojiImageZoom']) && is_numeric($data['emojiImageZoom']))
+                ? max(50, min(300, (int)$data['emojiImageZoom']))
+                : ($emojiImage !== null ? 100 : null))
+            : ($emojiImage !== null
+                ? (isset($currentTileData['emojiImageZoom']) ? max(50, min(300, (int)$currentTileData['emojiImageZoom']))
+                    : (isset($currentTileData['emoji_image_zoom']) ? max(50, min(300, (int)$currentTileData['emoji_image_zoom'])) : 100))
+                : null);
+
         $showTitle = array_key_exists('showTitle', $data)
             ? (!empty($data['showTitle']) && $data['showTitle'] !== '0' && $data['showTitle'] !== 0 && $data['showTitle'] !== false ? 1 : 0)
             : (isset($currentTileData['showTitle'])
@@ -5542,7 +5662,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
         }
         
         // Update tile
-        $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, allowed_groups = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ?, visible_from = ?, expires_at = ?, browser = ?, tile_background_color = ?, tile_gradient_enabled = ?, tile_gradient_colors = ?, tile_gradient_color_positions = ?, tile_gradient_direction = ?, tile_gradient_type = ?, tile_border_radius = ?, tile_text_color = ?, page_animation = ?, links_animation = ?, header_image = ?, header_image_align = ?, header_image_opacity = ?, header_image_offset_x = ?, header_image_offset_y = ?, header_image_zoom = ?, header_image_fit = ?, show_emoji = ?, emoji_image = ?, show_title = ?, show_description = ?, source_tab = ?, published = ? WHERE id = ?');
+        $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, allowed_groups = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ?, visible_from = ?, expires_at = ?, browser = ?, tile_background_color = ?, tile_gradient_enabled = ?, tile_gradient_colors = ?, tile_gradient_color_positions = ?, tile_gradient_direction = ?, tile_gradient_type = ?, tile_border_radius = ?, tile_text_color = ?, page_animation = ?, links_animation = ?, header_image = ?, header_image_align = ?, header_image_opacity = ?, header_image_offset_x = ?, header_image_offset_y = ?, header_image_zoom = ?, header_image_fit = ?, show_emoji = ?, emoji_image = ?, emoji_image_opacity = ?, emoji_image_offset_x = ?, emoji_image_offset_y = ?, emoji_image_zoom = ?, show_title = ?, show_description = ?, source_tab = ?, published = ? WHERE id = ?');
         $stmt->execute([
             $data['title'] ?? '',
             $data['description'] ?? '',
@@ -5578,6 +5698,10 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
             $headerImageFit,
             $showEmoji,
             $emojiImage,
+            $emojiImageOpacity,
+            $emojiImageOffsetX,
+            $emojiImageOffsetY,
+            $emojiImageZoom,
             $showTitle,
             $showDescription,
             $sourceTab,
@@ -6030,7 +6154,7 @@ function generateChangelogSummary($old, $new) {
     $changes = [];
     
     // Root level fields
-    $rootFields = ['title', 'description', 'htmlContent', 'group', 'emoji', 'showEmoji', 'showTitle', 'showDescription', 'emojiImage', 'visibility', 'browser', 'themeColor', 'isHyperlink', 'hyperlinkUrl', 'pageAnimation', 'linksAnimation', 'headerImage', 'headerImageAlign', 'headerImageOpacity', 'headerImageOffsetX', 'headerImageOffsetY', 'headerImageZoom', 'headerImageFit'];
+    $rootFields = ['title', 'description', 'htmlContent', 'group', 'emoji', 'showEmoji', 'showTitle', 'showDescription', 'emojiImage', 'emojiImageOpacity', 'emojiImageOffsetX', 'emojiImageOffsetY', 'emojiImageZoom', 'visibility', 'browser', 'themeColor', 'isHyperlink', 'hyperlinkUrl', 'pageAnimation', 'linksAnimation', 'headerImage', 'headerImageAlign', 'headerImageOpacity', 'headerImageOffsetX', 'headerImageOffsetY', 'headerImageZoom', 'headerImageFit'];
     foreach ($rootFields as $f) {
         $oldVal = is_array($old) ? ($old[$f] ?? null) : null;
         $newVal = is_array($new) ? ($new[$f] ?? null) : null;

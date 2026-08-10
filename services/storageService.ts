@@ -34,6 +34,18 @@ const transformTile = (apiTile: any): Tile => {
     showTitle: apiTile.showTitle === false || apiTile.showTitle === 0 || apiTile.showTitle === '0' ? false : true,
     showDescription: apiTile.showDescription === false || apiTile.showDescription === 0 || apiTile.showDescription === '0' ? false : true,
     emojiImage: apiTile.emojiImage || undefined,
+    emojiImageOpacity: typeof apiTile.emojiImageOpacity === 'number'
+      ? Math.max(0, Math.min(100, apiTile.emojiImageOpacity))
+      : undefined,
+    emojiImageOffsetX: typeof apiTile.emojiImageOffsetX === 'number'
+      ? Math.max(-50, Math.min(50, apiTile.emojiImageOffsetX))
+      : undefined,
+    emojiImageOffsetY: typeof apiTile.emojiImageOffsetY === 'number'
+      ? Math.max(-50, Math.min(50, apiTile.emojiImageOffsetY))
+      : undefined,
+    emojiImageZoom: typeof apiTile.emojiImageZoom === 'number'
+      ? Math.max(50, Math.min(300, apiTile.emojiImageZoom))
+      : undefined,
     headerImage: apiTile.headerImage || undefined,
     headerImageAlign: apiTile.headerImageAlign === 'left' || apiTile.headerImageAlign === 'center' || apiTile.headerImageAlign === 'right'
       ? apiTile.headerImageAlign

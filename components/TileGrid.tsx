@@ -101,6 +101,10 @@ const HeaderImageTilePreview: React.FC<{
   zoom?: number;
   emoji?: string;
   emojiImage?: string;
+  emojiImageOpacity?: number;
+  emojiImageOffsetX?: number;
+  emojiImageOffsetY?: number;
+  emojiImageZoom?: number;
   showEmoji?: boolean;
   title?: string;
   description?: string;
@@ -117,6 +121,10 @@ const HeaderImageTilePreview: React.FC<{
   zoom = 100,
   emoji = '📁',
   emojiImage,
+  emojiImageOpacity = 100,
+  emojiImageOffsetX = 0,
+  emojiImageOffsetY = 0,
+  emojiImageZoom = 100,
   showEmoji = true,
   title = 'Tile Preview',
   description = 'No description',
@@ -129,6 +137,10 @@ const HeaderImageTilePreview: React.FC<{
   const oy = Math.max(-300, Math.min(300, offsetY));
   const op = Math.max(0, Math.min(100, opacity)) / 100;
   const z = Math.max(50, Math.min(300, zoom)) / 100;
+  const eox = Math.max(-50, Math.min(50, emojiImageOffsetX));
+  const eoy = Math.max(-50, Math.min(50, emojiImageOffsetY));
+  const eop = Math.max(0, Math.min(100, emojiImageOpacity)) / 100;
+  const ez = Math.max(50, Math.min(300, emojiImageZoom)) / 100;
 
   return (
     <div className="w-full flex flex-col items-center gap-2">
@@ -164,7 +176,16 @@ const HeaderImageTilePreview: React.FC<{
               className={`w-10 h-10 rounded-lg ${styles.soft} flex items-center justify-center text-lg border ${styles.border} overflow-hidden shrink-0`}
             >
               {emojiImage ? (
-                <img src={emojiImage} alt="" className="w-full h-full object-contain p-0.5" draggable={false} />
+                <img
+                  src={emojiImage}
+                  alt=""
+                  className="w-full h-full object-contain p-0.5"
+                  style={{
+                    opacity: eop,
+                    transform: `translate(${eox}px, ${eoy}px) scale(${ez})`,
+                  }}
+                  draggable={false}
+                />
               ) : (
                 emoji
               )}
@@ -1621,6 +1642,10 @@ const SortableTile: React.FC<SortableTileProps> = ({
                   src={tile.emojiImage}
                   alt=""
                   className="w-full h-full object-contain p-0.5 pointer-events-none select-none"
+                  style={{
+                    opacity: Math.max(0, Math.min(100, tile.emojiImageOpacity ?? 100)) / 100,
+                    transform: `translate(${Math.max(-50, Math.min(50, tile.emojiImageOffsetX ?? 0))}px, ${Math.max(-50, Math.min(50, tile.emojiImageOffsetY ?? 0))}px) scale(${Math.max(50, Math.min(300, tile.emojiImageZoom ?? 100)) / 100})`
+                  }}
                   draggable={false}
                 />
               ) : (
@@ -2544,6 +2569,10 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [newShowTitle, setNewShowTitle] = useState(true);
   const [newShowDescription, setNewShowDescription] = useState(true);
   const [newEmojiImage, setNewEmojiImage] = useState<string>('');
+  const [newEmojiImageOpacity, setNewEmojiImageOpacity] = useState(100);
+  const [newEmojiImageOffsetX, setNewEmojiImageOffsetX] = useState(0);
+  const [newEmojiImageOffsetY, setNewEmojiImageOffsetY] = useState(0);
+  const [newEmojiImageZoom, setNewEmojiImageZoom] = useState(100);
   const [emojiImageUploading, setEmojiImageUploading] = useState(false);
   const [emojiRemoveBg, setEmojiRemoveBg] = useState(false);
   const [emojiBgMode, setEmojiBgMode] = useState<'auto' | 'custom'>('auto');
@@ -4437,6 +4466,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       showTitle: newShowTitle,
       showDescription: newShowDescription,
       emojiImage: newEmojiImage.trim() || null,
+      emojiImageOpacity: newEmojiImage.trim() ? newEmojiImageOpacity : null,
+      emojiImageOffsetX: newEmojiImage.trim() ? newEmojiImageOffsetX : null,
+      emojiImageOffsetY: newEmojiImage.trim() ? newEmojiImageOffsetY : null,
+      emojiImageZoom: newEmojiImage.trim() ? newEmojiImageZoom : null,
       headerImage: newHeaderImage.trim() || null,
       headerImageAlign: newHeaderImage.trim() ? newHeaderImageAlign : null,
       headerImageOpacity: newHeaderImage.trim() ? newHeaderImageOpacity : null,
@@ -4506,6 +4539,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setNewShowTitle(true);
     setNewShowDescription(true);
     setNewEmojiImage('');
+    setNewEmojiImageOpacity(100);
+    setNewEmojiImageOffsetX(0);
+    setNewEmojiImageOffsetY(0);
+    setNewEmojiImageZoom(100);
     setEmojiImageUploading(false);
     setEmojiRemoveBg(false);
     setEmojiBgMode('auto');
@@ -4948,6 +4985,18 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setNewShowTitle(tile.showTitle !== false);
     setNewShowDescription(tile.showDescription !== false);
     setNewEmojiImage(tile.emojiImage || '');
+    setNewEmojiImageOpacity(
+      typeof tile.emojiImageOpacity === 'number' ? Math.max(0, Math.min(100, tile.emojiImageOpacity)) : 100
+    );
+    setNewEmojiImageOffsetX(
+      typeof tile.emojiImageOffsetX === 'number' ? Math.max(-50, Math.min(50, tile.emojiImageOffsetX)) : 0
+    );
+    setNewEmojiImageOffsetY(
+      typeof tile.emojiImageOffsetY === 'number' ? Math.max(-50, Math.min(50, tile.emojiImageOffsetY)) : 0
+    );
+    setNewEmojiImageZoom(
+      typeof tile.emojiImageZoom === 'number' ? Math.max(50, Math.min(300, tile.emojiImageZoom)) : 100
+    );
     setEmojiRemoveBg(false);
     setEmojiBgMode('auto');
     setEmojiBgColor('#ffffff');
@@ -5237,6 +5286,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       showTitle: newShowTitle,
       showDescription: newShowDescription,
       emojiImage: newEmojiImage.trim() || null,
+      emojiImageOpacity: newEmojiImage.trim() ? newEmojiImageOpacity : null,
+      emojiImageOffsetX: newEmojiImage.trim() ? newEmojiImageOffsetX : null,
+      emojiImageOffsetY: newEmojiImage.trim() ? newEmojiImageOffsetY : null,
+      emojiImageZoom: newEmojiImage.trim() ? newEmojiImageZoom : null,
       headerImage: newHeaderImage.trim() || null,
       headerImageAlign: newHeaderImage.trim() ? newHeaderImageAlign : null,
       headerImageOpacity: newHeaderImage.trim() ? newHeaderImageOpacity : null,
@@ -8757,7 +8810,15 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           className="w-full h-12 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-brand-500/50 overflow-hidden"
                         >
                           {newEmojiImage ? (
-                            <img src={newEmojiImage} alt="" className="w-8 h-8 object-contain" />
+                            <img
+                              src={newEmojiImage}
+                              alt=""
+                              className="w-8 h-8 object-contain"
+                              style={{
+                                opacity: Math.max(0, Math.min(100, newEmojiImageOpacity)) / 100,
+                                transform: `translate(${Math.max(-50, Math.min(50, newEmojiImageOffsetX))}px, ${Math.max(-50, Math.min(50, newEmojiImageOffsetY))}px) scale(${Math.max(50, Math.min(300, newEmojiImageZoom)) / 100})`
+                              }}
+                            />
                           ) : (
                             newEmoji || (tileType === 'hyperlink' ? '🔗' : '✨')
                           )}
@@ -8782,7 +8843,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                 {POPULAR_EMOJIS.map((emoji) => (
                                   <button
                                     key={emoji}
-                                    onClick={() => { setNewEmoji(emoji); setNewEmojiImage(''); setShowEmojiPicker(false); }}
+                                    onClick={() => { setNewEmoji(emoji); setNewEmojiImage(''); setNewEmojiImageOpacity(100); setNewEmojiImageOffsetX(0); setNewEmojiImageOffsetY(0); setNewEmojiImageZoom(100); setShowEmojiPicker(false); }}
                                     className="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
                                   >
                                     {emoji}
@@ -8810,6 +8871,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                     bgColor: emojiRemoveBg && emojiBgMode === 'custom' ? emojiBgColor : undefined
                                   });
                                   setNewEmojiImage(url);
+                                  setNewEmojiImageOpacity(100);
+                                  setNewEmojiImageOffsetX(0);
+                                  setNewEmojiImageOffsetY(0);
+                                  setNewEmojiImageZoom(100);
                                 } catch (err) {
                                   alert(err instanceof Error ? err.message : 'Failed to upload emoji image');
                                 } finally {
@@ -8822,7 +8887,13 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           {newEmojiImage ? (
                             <button
                               type="button"
-                              onClick={() => setNewEmojiImage('')}
+                              onClick={() => {
+                                setNewEmojiImage('');
+                                setNewEmojiImageOpacity(100);
+                                setNewEmojiImageOffsetX(0);
+                                setNewEmojiImageOffsetY(0);
+                                setNewEmojiImageZoom(100);
+                              }}
                               className="text-[11px] text-rose-600 dark:text-rose-400 hover:underline"
                             >
                               Remove image
@@ -8850,6 +8921,87 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         </div>
                       </div>
                     </div>
+
+                    {newEmojiImage ? (
+                      <div className="space-y-2 mb-1">
+                        <label className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+                          <span className="w-20 shrink-0">Opacity</span>
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            value={newEmojiImageOpacity}
+                            onChange={(e) => setNewEmojiImageOpacity(Number(e.target.value))}
+                            className="flex-1 accent-brand-500"
+                          />
+                          <span className="w-10 text-right tabular-nums">{newEmojiImageOpacity}%</span>
+                        </label>
+                        <label className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+                          <span className="w-20 shrink-0">Zoom</span>
+                          <input
+                            type="range"
+                            min={50}
+                            max={300}
+                            value={newEmojiImageZoom}
+                            onChange={(e) => setNewEmojiImageZoom(Number(e.target.value))}
+                            className="flex-1 accent-brand-500"
+                          />
+                          <span className="w-12 text-right tabular-nums">{newEmojiImageZoom}%</span>
+                          <button
+                            type="button"
+                            onClick={() => setNewEmojiImageZoom(100)}
+                            className="text-[11px] text-brand-600 dark:text-brand-400 hover:underline"
+                          >
+                            Reset
+                          </button>
+                        </label>
+                        <label className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+                          <span className="w-20 shrink-0">Position X</span>
+                          <input
+                            type="range"
+                            min={-50}
+                            max={50}
+                            value={newEmojiImageOffsetX}
+                            onChange={(e) => setNewEmojiImageOffsetX(Number(e.target.value))}
+                            className="flex-1 accent-brand-500"
+                          />
+                          <span className="w-12 text-right tabular-nums">{newEmojiImageOffsetX}px</span>
+                          <button
+                            type="button"
+                            onClick={() => setNewEmojiImageOffsetX(0)}
+                            className="text-[11px] text-brand-600 dark:text-brand-400 hover:underline"
+                          >
+                            Reset
+                          </button>
+                        </label>
+                        <label className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+                          <span className="w-20 shrink-0">Position Y</span>
+                          <input
+                            type="range"
+                            min={-50}
+                            max={50}
+                            value={newEmojiImageOffsetY}
+                            onChange={(e) => setNewEmojiImageOffsetY(Number(e.target.value))}
+                            className="flex-1 accent-brand-500"
+                          />
+                          <span className="w-12 text-right tabular-nums">{newEmojiImageOffsetY}px</span>
+                          <button
+                            type="button"
+                            onClick={() => setNewEmojiImageOffsetY(0)}
+                            className="text-[11px] text-brand-600 dark:text-brand-400 hover:underline"
+                          >
+                            Reset
+                          </button>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => { setNewEmojiImageOffsetX(0); setNewEmojiImageOffsetY(0); setNewEmojiImageZoom(100); setNewEmojiImageOpacity(100); }}
+                          className="text-[11px] text-brand-600 dark:text-brand-400 hover:underline"
+                        >
+                          Reset position
+                        </button>
+                      </div>
+                    ) : null}
 
                     <div className="space-y-2">
                       <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -9027,6 +9179,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             zoom={newHeaderImageZoom}
                             emoji={newEmoji}
                             emojiImage={newEmojiImage || undefined}
+                            emojiImageOpacity={newEmojiImageOpacity}
+                            emojiImageOffsetX={newEmojiImageOffsetX}
+                            emojiImageOffsetY={newEmojiImageOffsetY}
+                            emojiImageZoom={newEmojiImageZoom}
                             showEmoji={newShowEmoji}
                             title={newTitle}
                             description={newDesc}
@@ -9636,7 +9792,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       {newShowEmoji ? (
                         <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center text-lg mb-3 border border-slate-200 dark:border-slate-600 overflow-hidden">
                           {newEmojiImage ? (
-                            <img src={newEmojiImage} alt="" className="w-full h-full object-contain p-0.5" draggable={false} />
+                            <img src={newEmojiImage} alt="" className="w-full h-full object-contain p-0.5" style={{
+                              opacity: Math.max(0, Math.min(100, newEmojiImageOpacity)) / 100,
+                              transform: `translate(${Math.max(-50, Math.min(50, newEmojiImageOffsetX))}px, ${Math.max(-50, Math.min(50, newEmojiImageOffsetY))}px) scale(${Math.max(50, Math.min(300, newEmojiImageZoom)) / 100})`
+                            }} draggable={false} />
                           ) : (
                             newEmoji || '📁'
                           )}
@@ -11118,7 +11277,15 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           className="w-full h-12 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-brand-500/50 overflow-hidden"
                         >
                           {newEmojiImage ? (
-                            <img src={newEmojiImage} alt="" className="w-8 h-8 object-contain" />
+                            <img
+                              src={newEmojiImage}
+                              alt=""
+                              className="w-8 h-8 object-contain"
+                              style={{
+                                opacity: Math.max(0, Math.min(100, newEmojiImageOpacity)) / 100,
+                                transform: `translate(${Math.max(-50, Math.min(50, newEmojiImageOffsetX))}px, ${Math.max(-50, Math.min(50, newEmojiImageOffsetY))}px) scale(${Math.max(50, Math.min(300, newEmojiImageZoom)) / 100})`
+                              }}
+                            />
                           ) : (
                             newEmoji || (tileType === 'hyperlink' ? '🔗' : '📁')
                           )}
@@ -11143,7 +11310,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                 {POPULAR_EMOJIS.map((emoji) => (
                                   <button
                                     key={emoji}
-                                    onClick={() => { setNewEmoji(emoji); setNewEmojiImage(''); setShowEmojiPicker(false); }}
+                                    onClick={() => { setNewEmoji(emoji); setNewEmojiImage(''); setNewEmojiImageOpacity(100); setNewEmojiImageOffsetX(0); setNewEmojiImageOffsetY(0); setNewEmojiImageZoom(100); setShowEmojiPicker(false); }}
                                     className="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
                                   >
                                     {emoji}
@@ -11171,6 +11338,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                     bgColor: emojiRemoveBg && emojiBgMode === 'custom' ? emojiBgColor : undefined
                                   });
                                   setNewEmojiImage(url);
+                                  setNewEmojiImageOpacity(100);
+                                  setNewEmojiImageOffsetX(0);
+                                  setNewEmojiImageOffsetY(0);
+                                  setNewEmojiImageZoom(100);
                                 } catch (err) {
                                   alert(err instanceof Error ? err.message : 'Failed to upload emoji image');
                                 } finally {
@@ -11183,7 +11354,13 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           {newEmojiImage ? (
                             <button
                               type="button"
-                              onClick={() => setNewEmojiImage('')}
+                              onClick={() => {
+                                setNewEmojiImage('');
+                                setNewEmojiImageOpacity(100);
+                                setNewEmojiImageOffsetX(0);
+                                setNewEmojiImageOffsetY(0);
+                                setNewEmojiImageZoom(100);
+                              }}
                               className="text-[11px] text-rose-600 dark:text-rose-400 hover:underline"
                             >
                               Remove image
@@ -11211,6 +11388,87 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         </div>
                       </div>
                     </div>
+
+                    {newEmojiImage ? (
+                      <div className="space-y-2 mb-1">
+                        <label className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+                          <span className="w-20 shrink-0">Opacity</span>
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            value={newEmojiImageOpacity}
+                            onChange={(e) => setNewEmojiImageOpacity(Number(e.target.value))}
+                            className="flex-1 accent-brand-500"
+                          />
+                          <span className="w-10 text-right tabular-nums">{newEmojiImageOpacity}%</span>
+                        </label>
+                        <label className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+                          <span className="w-20 shrink-0">Zoom</span>
+                          <input
+                            type="range"
+                            min={50}
+                            max={300}
+                            value={newEmojiImageZoom}
+                            onChange={(e) => setNewEmojiImageZoom(Number(e.target.value))}
+                            className="flex-1 accent-brand-500"
+                          />
+                          <span className="w-12 text-right tabular-nums">{newEmojiImageZoom}%</span>
+                          <button
+                            type="button"
+                            onClick={() => setNewEmojiImageZoom(100)}
+                            className="text-[11px] text-brand-600 dark:text-brand-400 hover:underline"
+                          >
+                            Reset
+                          </button>
+                        </label>
+                        <label className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+                          <span className="w-20 shrink-0">Position X</span>
+                          <input
+                            type="range"
+                            min={-50}
+                            max={50}
+                            value={newEmojiImageOffsetX}
+                            onChange={(e) => setNewEmojiImageOffsetX(Number(e.target.value))}
+                            className="flex-1 accent-brand-500"
+                          />
+                          <span className="w-12 text-right tabular-nums">{newEmojiImageOffsetX}px</span>
+                          <button
+                            type="button"
+                            onClick={() => setNewEmojiImageOffsetX(0)}
+                            className="text-[11px] text-brand-600 dark:text-brand-400 hover:underline"
+                          >
+                            Reset
+                          </button>
+                        </label>
+                        <label className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+                          <span className="w-20 shrink-0">Position Y</span>
+                          <input
+                            type="range"
+                            min={-50}
+                            max={50}
+                            value={newEmojiImageOffsetY}
+                            onChange={(e) => setNewEmojiImageOffsetY(Number(e.target.value))}
+                            className="flex-1 accent-brand-500"
+                          />
+                          <span className="w-12 text-right tabular-nums">{newEmojiImageOffsetY}px</span>
+                          <button
+                            type="button"
+                            onClick={() => setNewEmojiImageOffsetY(0)}
+                            className="text-[11px] text-brand-600 dark:text-brand-400 hover:underline"
+                          >
+                            Reset
+                          </button>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => { setNewEmojiImageOffsetX(0); setNewEmojiImageOffsetY(0); setNewEmojiImageZoom(100); setNewEmojiImageOpacity(100); }}
+                          className="text-[11px] text-brand-600 dark:text-brand-400 hover:underline"
+                        >
+                          Reset position
+                        </button>
+                      </div>
+                    ) : null}
 
                     <div className="space-y-2">
                       <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -11397,6 +11655,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                               zoom={newHeaderImageZoom}
                               emoji={newEmoji}
                               emojiImage={newEmojiImage || undefined}
+                              emojiImageOpacity={newEmojiImageOpacity}
+                              emojiImageOffsetX={newEmojiImageOffsetX}
+                              emojiImageOffsetY={newEmojiImageOffsetY}
+                              emojiImageZoom={newEmojiImageZoom}
                               showEmoji={newShowEmoji}
                               title={newTitle}
                               description={newDesc}

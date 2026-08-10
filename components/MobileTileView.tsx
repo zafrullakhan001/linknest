@@ -1005,6 +1005,10 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                           src={tile.emojiImage}
                           alt=""
                           className="relative z-10 w-full h-full object-contain p-1.5 pointer-events-none select-none rounded-2xl"
+                          style={{
+                            opacity: Math.max(0, Math.min(100, tile.emojiImageOpacity ?? 100)) / 100,
+                            transform: `translate(${Math.max(-50, Math.min(50, tile.emojiImageOffsetX ?? 0))}px, ${Math.max(-50, Math.min(50, tile.emojiImageOffsetY ?? 0))}px) scale(${Math.max(50, Math.min(300, tile.emojiImageZoom ?? 100)) / 100})`
+                          }}
                           draggable={false}
                         />
                       ) : (

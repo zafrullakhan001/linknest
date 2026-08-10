@@ -384,6 +384,10 @@ function ensureTilesHeaderImageColumns(PDO $db): void {
             'header_image_fit' => 'TEXT',
             'show_emoji' => 'INTEGER DEFAULT 1',
             'emoji_image' => 'TEXT',
+            'emoji_image_opacity' => 'INTEGER',
+            'emoji_image_offset_x' => 'INTEGER',
+            'emoji_image_offset_y' => 'INTEGER',
+            'emoji_image_zoom' => 'INTEGER',
             'show_title' => 'INTEGER DEFAULT 1',
             'show_description' => 'INTEGER DEFAULT 1',
             'header_image_offset_y' => 'INTEGER',
@@ -937,6 +941,25 @@ function initDatabase() {
             }
         } catch (PDOException $e) {
             error_log('Tiles emoji_image migration warning: ' . $e->getMessage());
+        }
+
+        // Migrate: emoji image opacity / offset / zoom
+        try {
+            $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll();
+            $columnNames = array_column($columns, 'name');
+            $emojiStyleCols = [
+                'emoji_image_opacity' => 'INTEGER',
+                'emoji_image_offset_x' => 'INTEGER',
+                'emoji_image_offset_y' => 'INTEGER',
+                'emoji_image_zoom' => 'INTEGER',
+            ];
+            foreach ($emojiStyleCols as $columnName => $columnType) {
+                if (!in_array($columnName, $columnNames, true)) {
+                    $db->exec("ALTER TABLE tiles ADD COLUMN $columnName $columnType");
+                }
+            }
+        } catch (PDOException $e) {
+            error_log('Tiles emoji image style migration warning: ' . $e->getMessage());
         }
 
         // Migrate: show_title / show_description / header_image_offset_y

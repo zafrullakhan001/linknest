@@ -105,6 +105,14 @@ export interface Tile {
   showDescription?: boolean | null;
   /** Optional PNG URL shown inside the emoji badge (replaces the emoji character when set). */
   emojiImage?: string | null;
+  /** Opacity of the emoji/icon image (0–100). Default 100. */
+  emojiImageOpacity?: number | null;
+  /** Fine horizontal offset in pixels (−50…50). Default 0. */
+  emojiImageOffsetX?: number | null;
+  /** Fine vertical offset in pixels (−50…50). Default 0. */
+  emojiImageOffsetY?: number | null;
+  /** Zoom of the emoji/icon image (50–300%). Default 100. */
+  emojiImageZoom?: number | null;
   /** Optional PNG shown in the tile card top-right header region (behind admin controls). */
   headerImage?: string | null;
   /** Horizontal alignment of the header image within the controls region. */
