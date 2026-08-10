@@ -112,7 +112,7 @@ define('SYSTEM_TOKEN', 'linknest_secret_token_123'); // Change this for producti
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 81);
+    define('LINKNEST_SCHEMA_VERSION', 82);
 }
 
 /**
@@ -450,6 +450,7 @@ function initDatabase() {
             ensureTilesHeaderImageColumns($db);
             ensureSshConnectionColorColumn($db);
             ensurePublicGuestRole($db);
+            ensureRoleLinkActionDefaults($db);
             return $db;
         }
 
@@ -466,6 +467,7 @@ function initDatabase() {
             ensureTilesHeaderImageColumns($db);
             ensureSshConnectionColorColumn($db);
             ensurePublicGuestRole($db);
+            ensureRoleLinkActionDefaults($db);
             releaseDatabaseInitLock($initLock);
             $initLock = null;
             return $db;
@@ -2507,6 +2509,17 @@ function initDatabase() {
             PRIMARY KEY (role_id, widget_id),
             FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
         )');
+
+        // Role-based link hover action bar permissions (notes, favorite, health, copy, mobile, qr, browser)
+        $db->exec('CREATE TABLE IF NOT EXISTS role_link_action_permissions (
+            role_id INTEGER NOT NULL,
+            action_id TEXT NOT NULL,
+            can_view INTEGER DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (role_id, action_id),
+            FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+        )');
         
         // Create custom_widgets table for custom widget metadata
         $db->exec('CREATE TABLE IF NOT EXISTS custom_widgets (
@@ -2590,6 +2603,9 @@ function initDatabase() {
         
         // Create indexes for optimal performance
         createDatabaseIndexes($db);
+
+        // Seed default link-action allowlists for existing roles (backward-compatible UX)
+        ensureRoleLinkActionDefaults($db);
 
         // Stamp schema version so subsequent connections take the fast path
         $db->exec('PRAGMA user_version = ' . (int)LINKNEST_SCHEMA_VERSION);
@@ -2682,6 +2698,8 @@ function createDatabaseIndexes($db) {
             $db->exec('CREATE INDEX IF NOT EXISTS idx_role_tab_permissions_tab_id ON role_tab_permissions(tab_id)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_role_widget_permissions_role_id ON role_widget_permissions(role_id)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_role_widget_permissions_widget_id ON role_widget_permissions(widget_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_role_link_action_permissions_role_id ON role_link_action_permissions(role_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_role_link_action_permissions_action_id ON role_link_action_permissions(action_id)');
             
             // User tile permissions indexes for faster lookups
             $db->exec('CREATE INDEX IF NOT EXISTS idx_user_tile_permissions_user_id ON user_tile_permissions(user_id)');
@@ -3107,6 +3125,63 @@ function ensurePublicGuestRole($db): void {
         }
     } catch (PDOException $e) {
         error_log('ensurePublicGuestRole failed: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Valid link hover action bar IDs controllable via Access Manager roles.
+ */
+function getValidLinkActionIds(): array {
+    return ['notes', 'favorite', 'health', 'copy', 'mobile', 'qr', 'browser'];
+}
+
+/**
+ * Seed all link actions for a single role when it has none yet (backward-compatible defaults).
+ */
+function seedRoleLinkActionsIfEmpty($db, int $roleId): void {
+    $now = time();
+    $countStmt = $db->prepare('SELECT COUNT(*) FROM role_link_action_permissions WHERE role_id = ?');
+    $countStmt->execute([$roleId]);
+    if ((int)$countStmt->fetchColumn() > 0) {
+        return;
+    }
+
+    $insert = $db->prepare('
+        INSERT OR IGNORE INTO role_link_action_permissions (role_id, action_id, can_view, created_at, updated_at)
+        VALUES (?, ?, 1, ?, ?)
+    ');
+    foreach (getValidLinkActionIds() as $actionId) {
+        $insert->execute([$roleId, $actionId, $now, $now]);
+    }
+}
+
+/**
+ * Ensure role_link_action_permissions exists and every role has a default allowlist.
+ * Safe to call multiple times.
+ */
+function ensureRoleLinkActionDefaults($db): void {
+    try {
+        $db->exec('CREATE TABLE IF NOT EXISTS role_link_action_permissions (
+            role_id INTEGER NOT NULL,
+            action_id TEXT NOT NULL,
+            can_view INTEGER DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (role_id, action_id),
+            FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+        )');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_role_link_action_permissions_role_id ON role_link_action_permissions(role_id)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_role_link_action_permissions_action_id ON role_link_action_permissions(action_id)');
+
+        $rolesStmt = $db->query('SELECT id FROM roles');
+        if (!$rolesStmt) {
+            return;
+        }
+        while ($row = $rolesStmt->fetch(PDO::FETCH_ASSOC)) {
+            seedRoleLinkActionsIfEmpty($db, (int)$row['id']);
+        }
+    } catch (PDOException $e) {
+        error_log('ensureRoleLinkActionDefaults failed: ' . $e->getMessage());
     }
 }
 

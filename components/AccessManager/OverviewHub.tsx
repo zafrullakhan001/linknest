@@ -240,7 +240,7 @@ export const OverviewHub: React.FC<OverviewHubProps> = ({
               <span className="text-slate-400 dark:text-slate-500">has</span>
               <span className="px-3 py-1.5 rounded-md bg-sky-100 dark:bg-sky-900/40 text-sky-800 dark:text-sky-200 font-medium">Role</span>
               <span className="text-slate-400 dark:text-slate-500">can see</span>
-              <span className="px-3 py-1.5 rounded-md bg-slate-100 dark:bg-slate-700 font-medium">Spaces / Links / App tabs / Widgets</span>
+              <span className="px-3 py-1.5 rounded-md bg-slate-100 dark:bg-slate-700 font-medium">Spaces / Links / App tabs / Widgets / Link actions</span>
             </div>
             <div className="flex flex-wrap items-center gap-2 text-slate-700 dark:text-slate-300">
               <span className="px-3 py-1.5 rounded-md bg-slate-100 dark:bg-slate-700 font-medium">Person</span>

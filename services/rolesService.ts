@@ -10,6 +10,7 @@ export interface Role {
   tileCount?: number;
   linkCount?: number;
   widgetCount?: number;
+  linkActionCount?: number;
   createdAt: number;
   updatedAt: number;
   users?: Array<{
@@ -123,6 +124,12 @@ export interface RoleWidgetPermission {
   createdAt: number;
 }
 
+export interface RoleLinkActionPermission {
+  actionId: string;
+  canView: boolean;
+  createdAt: number;
+}
+
 export interface AssignTabsRequest {
   tabIds: string[];
   canView?: boolean;
@@ -133,8 +140,42 @@ export interface AssignWidgetsRequest {
   canView?: boolean;
 }
 
+export interface AssignLinkActionsRequest {
+  actionIds: string[];
+  canView?: boolean;
+}
+
+export const LINK_ACTION_IDS = [
+  'notes',
+  'favorite',
+  'health',
+  'copy',
+  'mobile',
+  'qr',
+  'browser',
+] as const;
+
+export type LinkActionId = (typeof LINK_ACTION_IDS)[number];
+
+export const LINK_ACTION_OPTIONS: Array<{ id: LinkActionId; label: string; description: string }> = [
+  { id: 'notes', label: 'View notes', description: 'Show the notes/info button when a link has notes' },
+  { id: 'favorite', label: 'Favorite', description: 'Allow marking or unmarking a link as a favorite' },
+  { id: 'health', label: 'Check link health', description: 'Allow re-checking HTTP(S) link health status' },
+  { id: 'copy', label: 'Copy URL', description: 'Allow copying the link URL to the clipboard' },
+  { id: 'mobile', label: 'Mobile preview', description: 'Allow opening the mobile/tablet preview for a link' },
+  { id: 'qr', label: 'Show QR code', description: 'Allow displaying a QR code for a link' },
+  { id: 'browser', label: 'Open in browser', description: 'Allow choosing a browser when browser-specific links are enabled' },
+];
+
+export interface RoleAssignmentTotals {
+  tiles: number;
+  links: number;
+  widgets: number;
+  linkActions: number;
+}
+
 export const rolesService = {
-  async getAllRoles(): Promise<Role[]> {
+  async getAllRoles(): Promise<{ roles: Role[]; totals: RoleAssignmentTotals }> {
     const response = await fetch(`${API_BASE}/roles`, {
       method: 'GET',
       credentials: 'include',
@@ -145,7 +186,24 @@ export const rolesService = {
       throw new Error(data.error || 'Failed to fetch roles');
     }
 
-    return response.json();
+    const data = await response.json();
+    // Backward compatible if an older API still returns a bare array
+    if (Array.isArray(data)) {
+      return {
+        roles: data,
+        totals: { tiles: 0, links: 0, widgets: 0, linkActions: LINK_ACTION_IDS.length },
+      };
+    }
+
+    return {
+      roles: Array.isArray(data?.roles) ? data.roles : [],
+      totals: {
+        tiles: Number(data?.totals?.tiles) || 0,
+        links: Number(data?.totals?.links) || 0,
+        widgets: Number(data?.totals?.widgets) || 0,
+        linkActions: Number(data?.totals?.linkActions) || LINK_ACTION_IDS.length,
+      },
+    };
   },
 
   async getRole(roleId: number): Promise<Role> {
@@ -213,6 +271,20 @@ export const rolesService = {
     if (!response.ok) {
       const data = await response.json();
       throw new Error(data.error || 'Failed to fetch role widgets');
+    }
+
+    return response.json();
+  },
+
+  async getRoleLinkActions(roleId: number): Promise<RoleLinkActionPermission[]> {
+    const response = await fetch(`${API_BASE}/roles/${roleId}/link-actions`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to fetch role link actions');
     }
 
     return response.json();
@@ -390,6 +462,20 @@ export const rolesService = {
     }
   },
 
+  async assignLinkActionsToRole(roleId: number, request: AssignLinkActionsRequest): Promise<void> {
+    const response = await fetch(`${API_BASE}/roles/${roleId}/assign-link-actions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to assign link actions to role');
+    }
+  },
+
   async getCurrentUserAllowedTabs(): Promise<string[]> {
     const response = await fetch(`${API_BASE}/roles/current-user/tabs`, {
       method: 'GET',
@@ -402,6 +488,21 @@ export const rolesService = {
     }
 
     return response.json();
+  },
+
+  async getAllowedLinkActions(): Promise<string[]> {
+    const response = await fetch(`${API_BASE}/roles/current-user/link-actions`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to fetch allowed link actions');
+    }
+
+    const data = await response.json();
+    return Array.isArray(data?.actionIds) ? data.actionIds : [];
   },
 
   async removeTileFromRole(roleId: number, tileId: string): Promise<void> {

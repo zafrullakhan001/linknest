@@ -15,7 +15,7 @@ import { accessService, TilePermission } from '../services/accessService';
 import { groupTilePermissionsService, GroupTilePermission } from '../services/groupTilePermissionsService';
 import { APP_TABS, getDisabledTabsFromSettings, setToSortedJsonArray, type AppTabId } from '../services/tabVisibilityService';
 import { broadcastService, BroadcastMessage } from '../services/broadcastService';
-import { rolesService, Role } from '../services/rolesService';
+import { rolesService, Role, LINK_ACTION_OPTIONS, RoleAssignmentTotals } from '../services/rolesService';
 import { userGroupsService, UserGroup } from '../services/userGroupsService';
 import SamlConfigModal from './SamlConfigModal';
 import { BulkAssignRolesModal } from './BulkAssignRolesModal';
@@ -918,11 +918,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
   // Roles management state
   const [roles, setRoles] = useState<Role[]>([]);
+  const [roleAssignmentTotals, setRoleAssignmentTotals] = useState<RoleAssignmentTotals>({
+    tiles: 0,
+    links: 0,
+    widgets: 0,
+    linkActions: LINK_ACTION_OPTIONS.length,
+  });
   const [rolesLoading, setRolesLoading] = useState(false);
   const [showRoleModal, setShowRoleModal] = useState(false);
   const [showRoleTilesModal, setShowRoleTilesModal] = useState(false);
   const [showRoleTabsModal, setShowRoleTabsModal] = useState(false);
   const [showRoleWidgetsModal, setShowRoleWidgetsModal] = useState(false);
+  const [showRoleLinkActionsModal, setShowRoleLinkActionsModal] = useState(false);
   const [showUserRolesModal, setShowUserRolesModal] = useState(false);
   const [showBulkAssignModal, setShowBulkAssignModal] = useState(false);
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
@@ -955,7 +962,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [selectedLinkIds, setSelectedLinkIds] = useState<Set<string>>(new Set());
   const [selectedTabIds, setSelectedTabIds] = useState<Set<string>>(new Set());
   const [selectedWidgetIds, setSelectedWidgetIds] = useState<Set<string>>(new Set());
+  const [selectedLinkActionIds, setSelectedLinkActionIds] = useState<Set<string>>(new Set());
   const [roleWidgetsLoading, setRoleWidgetsLoading] = useState(false);
+  const [roleLinkActionsLoading, setRoleLinkActionsLoading] = useState(false);
   const [availableWidgets, setAvailableWidgets] = useState<Array<{ id: string; label: string; description: string; isCustom?: boolean }>>([]);
   const [widgetsLoading, setWidgetsLoading] = useState(false);
 
@@ -1406,6 +1415,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           setShowRoleWidgetsModal(false);
           setSelectedRole(null);
           setSelectedWidgetIds(new Set());
+        } else if (showRoleLinkActionsModal) {
+          setShowRoleLinkActionsModal(false);
+          setSelectedRole(null);
+          setSelectedLinkActionIds(new Set());
         } else if (showBulkAssignModal) {
           resetBulkAssignModalState();
         } else if (showUserRolesModal) {
@@ -1433,6 +1446,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       showRoleTilesModal ||
       showRoleTabsModal ||
       showRoleWidgetsModal ||
+      showRoleLinkActionsModal ||
       showUserRolesModal ||
       showBulkAssignModal
     )) {
@@ -1454,6 +1468,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     showRoleTilesModal,
     showRoleTabsModal,
     showRoleWidgetsModal,
+    showRoleLinkActionsModal,
     showUserRolesModal,
     showBulkAssignModal
   ]);
@@ -2083,13 +2098,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     try {
       setRolesLoading(true);
       setError('');
-      const rolesList = await rolesService.getAllRoles();
+      const { roles: rolesList, totals } = await rolesService.getAllRoles();
       setRoles(rolesList);
+      setRoleAssignmentTotals(totals);
     } catch (err: any) {
       setError(err.message || 'Failed to load roles');
     } finally {
       setRolesLoading(false);
     }
+  };
+
+  const formatRoleAssignmentRatio = (assigned: number, total: number): string => {
+    const safeTotal = Math.max(0, total || 0);
+    const safeAssigned = Math.max(0, Math.min(assigned || 0, safeTotal || assigned || 0));
+    return `${safeAssigned}/${safeTotal}`;
   };
 
   const loadAllTilesAndLinks = async (sourceTab?: 'public' | 'staging') => {
@@ -2896,6 +2918,45 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       await loadRoles();
     } catch (err: any) {
       setError(err.message || 'Failed to assign widgets');
+    }
+  };
+
+  const handleManageRoleLinkActions = async (role: Role) => {
+    setSelectedRole(role);
+    setRoleLinkActionsLoading(true);
+    setSelectedLinkActionIds(new Set());
+    try {
+      try {
+        const roleActions = await rolesService.getRoleLinkActions(role.id);
+        setSelectedLinkActionIds(new Set(roleActions.map((ra) => ra.actionId)));
+      } catch (err) {
+        // Ignore if none assigned yet
+      }
+      setShowRoleLinkActionsModal(true);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load link actions');
+    } finally {
+      setRoleLinkActionsLoading(false);
+    }
+  };
+
+  const handleAssignLinkActionsToRole = async () => {
+    if (!selectedRole) {
+      setError('No role selected');
+      return;
+    }
+
+    try {
+      setError('');
+      await rolesService.assignLinkActionsToRole(selectedRole.id, {
+        actionIds: Array.from(selectedLinkActionIds),
+        canView: true,
+      });
+      setShowRoleLinkActionsModal(false);
+      setSelectedLinkActionIds(new Set());
+      await loadRoles();
+    } catch (err: any) {
+      setError(err.message || 'Failed to assign link actions');
     }
   };
 
@@ -9811,7 +9872,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     rolesCount: roles.length,
                     teamsCount: userGroups.length,
                     configuredRolesCount: roles.filter(
-                      (r) => (r.tileCount || 0) + (r.linkCount || 0) + (r.widgetCount || 0) > 0
+                      (r) => (r.tileCount || 0) + (r.linkCount || 0) + (r.widgetCount || 0) + (r.linkActionCount || 0) > 0
                     ).length,
                     hasAssignments: roles.some((r) => (r.userCount || 0) > 0) || userGroups.some((g) => (g.roleCount || 0) > 0),
                     hasSpaceEditors:
@@ -9832,7 +9893,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🎭</span> Roles</h3>
                           <p className={ADMIN_SECTION_SUBTITLE}>
                             Roles control visibility. They do not grant edit rights. Configure what each role can see, then assign it to people or teams.
-                            The role marked for guests controls which widgets appear for users who are not logged in — use Configure to adjust its widgets.
+                            The role marked for guests controls which widgets and link action buttons appear for users who are not logged in — use Configure to adjust them.
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-2 shrink-0">
@@ -9892,6 +9953,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Spaces</th>
                                 <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Links</th>
                                 <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Widgets</th>
+                                <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Link actions</th>
                                 <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Actions</th>
                               </tr>
                             </thead>
@@ -9951,9 +10013,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                         void handleManageRoleTiles(role);
                                       }}
                                       className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 hover:bg-brand-100 dark:hover:bg-brand-900/50 transition-colors"
-                                      title="Configure spaces & links for this role"
+                                      title={`Configure spaces & links for this role (${role.tileCount || 0} of ${roleAssignmentTotals.tiles} spaces)`}
                                     >
-                                      {role.tileCount || 0}
+                                      {formatRoleAssignmentRatio(role.tileCount || 0, roleAssignmentTotals.tiles)}
                                     </button>
                                   </td>
                                   <td className="px-4 py-4 whitespace-nowrap text-center">
@@ -9964,9 +10026,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                         void handleManageRoleTiles(role);
                                       }}
                                       className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 hover:bg-brand-100 dark:hover:bg-brand-900/50 transition-colors"
-                                      title="Configure links (and spaces) for this role"
+                                      title={`Configure links (and spaces) for this role (${role.linkCount || 0} of ${roleAssignmentTotals.links} links)`}
                                     >
-                                      {role.linkCount || 0}
+                                      {formatRoleAssignmentRatio(role.linkCount || 0, roleAssignmentTotals.links)}
                                     </button>
                                   </td>
                                   <td className="px-4 py-4 whitespace-nowrap text-center">
@@ -9977,9 +10039,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                         void handleManageRoleWidgets(role);
                                       }}
                                       className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 hover:bg-brand-100 dark:hover:bg-brand-900/50 transition-colors"
-                                      title="Configure widgets for this role"
+                                      title={`Configure widgets for this role (${role.widgetCount || 0} of ${roleAssignmentTotals.widgets} widgets)`}
                                     >
-                                      {role.widgetCount || 0}
+                                      {formatRoleAssignmentRatio(role.widgetCount || 0, roleAssignmentTotals.widgets)}
+                                    </button>
+                                  </td>
+                                  <td className="px-4 py-4 whitespace-nowrap text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setRoleOverflowMenuId(null);
+                                        void handleManageRoleLinkActions(role);
+                                      }}
+                                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 hover:bg-brand-100 dark:hover:bg-brand-900/50 transition-colors"
+                                      title={`Configure link actions for this role (${role.linkActionCount || 0} of ${roleAssignmentTotals.linkActions} actions)`}
+                                    >
+                                      {formatRoleAssignmentRatio(role.linkActionCount || 0, roleAssignmentTotals.linkActions)}
                                     </button>
                                   </td>
                                   <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -16733,6 +16808,21 @@ node .\\load-tests\\generate-report.js`}
                   Choose which floating widgets this role can use
                 </div>
               </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const role = selectedRole;
+                  setShowRoleConfigureModal(false);
+                  void handleManageRoleLinkActions(role);
+                }}
+                className="w-full text-left px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-brand-300 dark:hover:border-brand-600 hover:bg-brand-50/60 dark:hover:bg-brand-900/20 transition-colors"
+              >
+                <div className="font-semibold text-slate-900 dark:text-white">Link actions</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Control which link hover buttons this role can use (notes, favorite, QR, mobile, and more)
+                </div>
+              </button>
             </div>
 
             <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex justify-end">
@@ -17318,6 +17408,130 @@ node .\\load-tests\\generate-report.js`}
                 className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
               >
                 Assign {selectedWidgetIds.size > 0 ? `${selectedWidgetIds.size} ` : ''}Widget{selectedWidgetIds.size !== 1 ? 's' : ''}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Role Link Actions Modal */}
+      {showRoleLinkActionsModal && selectedRole && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                  Link actions for: {selectedRole.name}
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowRoleLinkActionsModal(false);
+                    setSelectedLinkActionIds(new Set());
+                    setError('');
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {error && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
+              {roleLinkActionsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    Select link hover action buttons that users with this role can access.
+                    {selectedRole.isGuest
+                      ? ' This role is marked for guests, so these choices control the action bar for users who are not logged in.'
+                      : ''}
+                  </p>
+
+                  <div className="space-y-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30 p-4">
+                    {LINK_ACTION_OPTIONS.map((action) => (
+                      <label
+                        key={action.id}
+                        className="flex items-start gap-3 p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50 rounded-lg cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedLinkActionIds.has(action.id)}
+                          onChange={(e) => {
+                            const next = new Set(selectedLinkActionIds);
+                            if (e.target.checked) {
+                              next.add(action.id);
+                            } else {
+                              next.delete(action.id);
+                            }
+                            setSelectedLinkActionIds(next);
+                          }}
+                          className="mt-1 h-4 w-4 text-brand-600 focus:ring-brand-500 border-slate-300 rounded"
+                        />
+                        <div className="flex-1">
+                          <div className="text-sm font-medium text-slate-900 dark:text-white">
+                            {action.label}
+                          </div>
+                          <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                            {action.description}
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-700">
+                    <div className="text-sm text-slate-600 dark:text-slate-400">
+                      {selectedLinkActionIds.size} action{selectedLinkActionIds.size !== 1 ? 's' : ''} selected
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const allIds = LINK_ACTION_OPTIONS.map((a) => a.id);
+                        if (selectedLinkActionIds.size === allIds.length) {
+                          setSelectedLinkActionIds(new Set());
+                        } else {
+                          setSelectedLinkActionIds(new Set(allIds));
+                        }
+                      }}
+                      className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
+                    >
+                      {selectedLinkActionIds.size === LINK_ACTION_OPTIONS.length ? 'Deselect All' : 'Select All'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="flex gap-3 p-6 border-t border-slate-200 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRoleLinkActionsModal(false);
+                  setSelectedLinkActionIds(new Set());
+                  setError('');
+                }}
+                className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleAssignLinkActionsToRole}
+                disabled={roleLinkActionsLoading}
+                className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                Assign {selectedLinkActionIds.size > 0 ? `${selectedLinkActionIds.size} ` : ''}Action{selectedLinkActionIds.size !== 1 ? 's' : ''}
               </button>
             </div>
           </div>

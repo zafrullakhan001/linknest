@@ -18,10 +18,14 @@ switch ($method) {
             handleGetRoleTabs($matches[1]);
         } elseif (preg_match('#^/(\d+)/widgets$#', $path, $matches)) {
             handleGetRoleWidgets($matches[1]);
+        } elseif (preg_match('#^/(\d+)/link-actions$#', $path, $matches)) {
+            handleGetRoleLinkActions($matches[1]);
         } elseif (preg_match('#^/(\d+)/groups$#', $path, $matches)) {
             handleGetRoleGroups($matches[1]);
         } elseif ($path === '/current-user/tabs' || $path === '/current-user/tabs/') {
             handleGetCurrentUserTabs();
+        } elseif ($path === '/current-user/link-actions' || $path === '/current-user/link-actions/') {
+            handleGetCurrentUserLinkActions();
         } elseif (preg_match('#^/user/(\d+)$#', $path, $matches)) {
             handleGetUserRoles($matches[1]);
         } elseif (preg_match('#^/users/batch-roles$#', $path)) {
@@ -42,6 +46,8 @@ switch ($method) {
             handleAssignTabsToRole($matches[1]);
         } elseif (preg_match('#^/(\d+)/assign-widgets$#', $path, $matches)) {
             handleAssignWidgetsToRole($matches[1]);
+        } elseif (preg_match('#^/(\d+)/assign-link-actions$#', $path, $matches)) {
+            handleAssignLinkActionsToRole($matches[1]);
         } elseif (preg_match('#^/user/(\d+)/assign$#', $path, $matches)) {
             handleAssignRolesToUser($matches[1]);
         } elseif ($path === '/bulk-assign' || $path === '/bulk-assign/') {
@@ -98,13 +104,15 @@ function handleGetRoles() {
             COUNT(DISTINCT gr.group_id) as group_count,
             COUNT(DISTINCT rtp.tile_id) as tile_count,
             COUNT(DISTINCT rlp.link_id) as link_count,
-            COUNT(DISTINCT rwp.widget_id) as widget_count
+            COUNT(DISTINCT rwp.widget_id) as widget_count,
+            COUNT(DISTINCT rlap.action_id) as link_action_count
         FROM roles r
         LEFT JOIN user_roles ur ON r.id = ur.role_id
         LEFT JOIN group_roles gr ON r.id = gr.role_id
         LEFT JOIN role_tile_permissions rtp ON r.id = rtp.role_id
         LEFT JOIN role_link_permissions rlp ON r.id = rlp.role_id
         LEFT JOIN role_widget_permissions rwp ON r.id = rwp.role_id
+        LEFT JOIN role_link_action_permissions rlap ON r.id = rlap.role_id
         GROUP BY r.id
         ORDER BY r.name
     ');
@@ -121,12 +129,45 @@ function handleGetRoles() {
             'tileCount' => (int)$row['tile_count'],
             'linkCount' => (int)$row['link_count'],
             'widgetCount' => (int)$row['widget_count'],
+            'linkActionCount' => (int)$row['link_action_count'],
             'createdAt' => (int)$row['created_at'],
             'updatedAt' => (int)$row['updated_at']
         ];
     }
+
+    $tileTotal = 0;
+    $linkTotal = 0;
+    $widgetTotal = 0;
+    try {
+        $tileTotal = (int)$db->query('SELECT COUNT(*) FROM tiles WHERE deleted_at IS NULL AND archived_at IS NULL')->fetchColumn();
+        $linkTotal = (int)$db->query('
+            SELECT COUNT(*)
+            FROM links l
+            INNER JOIN sections s ON l.section_id = s.id
+            INNER JOIN tiles t ON s.tile_id = t.id
+            WHERE t.deleted_at IS NULL AND t.archived_at IS NULL
+        ')->fetchColumn();
+    } catch (PDOException $e) {
+        error_log('roles totals tile/link counts: ' . $e->getMessage());
+    }
+
+    $builtInWidgetCount = 13; // keep in sync with api/widgets.php built-in list
+    try {
+        $customWidgetCount = (int)$db->query('SELECT COUNT(*) FROM custom_widgets WHERE enabled = 1')->fetchColumn();
+        $widgetTotal = $builtInWidgetCount + $customWidgetCount;
+    } catch (PDOException $e) {
+        $widgetTotal = $builtInWidgetCount;
+    }
     
-    sendJSON($roles);
+    sendJSON([
+        'roles' => $roles,
+        'totals' => [
+            'tiles' => $tileTotal,
+            'links' => $linkTotal,
+            'widgets' => $widgetTotal,
+            'linkActions' => count(getValidLinkActionIds()),
+        ],
+    ]);
 }
 
 function handleGetRole($roleId) {
@@ -280,6 +321,39 @@ function handleGetRoleWidgets($roleId) {
     sendJSON($widgets);
 }
 
+function handleGetRoleLinkActions($roleId) {
+    requireAdmin();
+    $db = getDB();
+
+    $roleCheck = $db->prepare('SELECT id FROM roles WHERE id = ?');
+    $roleCheck->execute([$roleId]);
+    if (!$roleCheck->fetch()) {
+        sendJSON(['error' => 'Role not found'], 404);
+    }
+
+    $stmt = $db->prepare('
+        SELECT
+            rlap.action_id,
+            rlap.can_view,
+            rlap.created_at
+        FROM role_link_action_permissions rlap
+        WHERE rlap.role_id = ?
+        ORDER BY rlap.action_id
+    ');
+    $stmt->execute([$roleId]);
+
+    $actions = [];
+    while ($row = $stmt->fetch()) {
+        $actions[] = [
+            'actionId' => $row['action_id'],
+            'canView' => (bool)$row['can_view'],
+            'createdAt' => (int)$row['created_at']
+        ];
+    }
+
+    sendJSON($actions);
+}
+
 function handleGetUserRoles($userId) {
     requireAdmin();
     $db = getDB();
@@ -395,6 +469,7 @@ function handleCreateRole() {
         $stmt->execute([$name, $description, $isGuest ? 1 : 0, $currentTime, $currentTime]);
         
         $roleId = (int)$db->lastInsertId();
+        seedRoleLinkActionsIfEmpty($db, $roleId);
         $db->commit();
         
         sendJSON([
@@ -688,6 +763,53 @@ function handleAssignWidgetsToRole($roleId) {
     }
 }
 
+function handleAssignLinkActionsToRole($roleId) {
+    requireAdmin();
+    $data = getJSONInput();
+
+    if (!isset($data['actionIds']) || !is_array($data['actionIds'])) {
+        sendJSON(['error' => 'actionIds array is required'], 400);
+    }
+
+    $db = getDB();
+
+    $roleCheck = $db->prepare('SELECT id FROM roles WHERE id = ?');
+    $roleCheck->execute([$roleId]);
+    if (!$roleCheck->fetch()) {
+        sendJSON(['error' => 'Role not found'], 404);
+    }
+
+    $validActionIds = getValidLinkActionIds();
+    $currentTime = time();
+    $canView = isset($data['canView']) ? (int)(bool)$data['canView'] : 1;
+
+    $db->beginTransaction();
+    try {
+        $deleteStmt = $db->prepare('DELETE FROM role_link_action_permissions WHERE role_id = ?');
+        $deleteStmt->execute([$roleId]);
+
+        if (!empty($data['actionIds'])) {
+            $stmt = $db->prepare('
+                INSERT INTO role_link_action_permissions (role_id, action_id, can_view, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+            ');
+
+            foreach ($data['actionIds'] as $actionId) {
+                if (!in_array($actionId, $validActionIds, true)) {
+                    continue;
+                }
+                $stmt->execute([$roleId, $actionId, $canView, $currentTime, $currentTime]);
+            }
+        }
+
+        $db->commit();
+        sendJSON(['success' => true]);
+    } catch (PDOException $e) {
+        $db->rollBack();
+        sendJSON(['error' => 'Failed to assign link actions: ' . $e->getMessage()], 500);
+    }
+}
+
 function handleAssignRolesToUser($userId) {
     requireAdmin();
     $data = getJSONInput();
@@ -934,6 +1056,49 @@ function handleGetCurrentUserTabs() {
     } catch (Throwable $e) {
         error_log('roles/current-user/tabs: ' . $e->getMessage());
         sendJSON(['error' => 'Failed to load tab permissions'], 500);
+    }
+}
+
+function handleGetCurrentUserLinkActions() {
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    try {
+        $user = getAuthenticatedUser();
+        $db = getDB();
+        $validActionIds = getValidLinkActionIds();
+
+        // Admins get all link actions
+        if ($user && !empty($user['is_admin'])) {
+            sendJSON(['actionIds' => $validActionIds]);
+        }
+
+        $roleIds = getUserRoleIds($user ? $user['id'] : null, $db);
+        if (empty($roleIds)) {
+            sendJSON(['actionIds' => []]);
+        }
+
+        $placeholders = implode(',', array_fill(0, count($roleIds), '?'));
+        $stmt = $db->prepare("SELECT DISTINCT action_id FROM role_link_action_permissions WHERE role_id IN ($placeholders) AND can_view = 1");
+        $stmt->execute($roleIds);
+
+        $allowed = [];
+        while ($row = $stmt->fetch()) {
+            $actionId = $row['action_id'];
+            if (in_array($actionId, $validActionIds, true)) {
+                $allowed[] = $actionId;
+            }
+        }
+
+        sendJSON(['actionIds' => array_values(array_unique($allowed))]);
+    } catch (PDOException $e) {
+        error_log('roles/current-user/link-actions: ' . $e->getMessage());
+        // Fail open to all actions if table missing during rollout
+        sendJSON(['actionIds' => getValidLinkActionIds()]);
+    } catch (Throwable $e) {
+        error_log('roles/current-user/link-actions: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to load link action permissions'], 500);
     }
 }
 

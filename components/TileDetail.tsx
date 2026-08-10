@@ -52,6 +52,8 @@ import { AuthSourceBadge } from './AuthSourceBadge';
 import { getDisplayUrl, isHttpOrHttpsUrl, normalizeStoredLinkUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
 import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
+import { printQrView } from '../utils/printQrView';
+import { rolesService, LINK_ACTION_IDS, type LinkActionId } from '../services/rolesService';
 
 type ViewLayoutMode = 'stacked' | 'side-by-side' | 'grid' | 'compact' | 'qr';
 
@@ -697,6 +699,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [showHeaderActionsMenu, setShowHeaderActionsMenu] = useState(false);
     const [mobilePageAnimOpen, setMobilePageAnimOpen] = useState(false);
     const headerActionsMenuRef = useRef<HTMLDivElement>(null);
+    const qrPrintRootRef = useRef<HTMLDivElement>(null);
 
     // CSV Import State
     const [importingSectionLinks, setImportingSectionLinks] = useState<Record<string, boolean>>({});
@@ -730,6 +733,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [linkInfoDialog, setLinkInfoDialog] = useState<{ link: Link } | null>(null);
     const [qrDialogState, setQrDialogState] = useState<{ url: string; label: string } | null>(null);
     const [mobilePreviewState, setMobilePreviewState] = useState<{ url: string; label: string } | null>(null);
+    const [allowedLinkActions, setAllowedLinkActions] = useState<Set<string>>(
+        () => new Set(LINK_ACTION_IDS)
+    );
 
     // Version Control State
     const [showVersions, setShowVersions] = useState(false);
@@ -1256,17 +1262,55 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
     const getSectionLinkLayout = (section: { id: string; forceStackedView?: boolean }): ViewLayoutMode => {
         if (section.forceStackedView) return 'stacked';
-        if (syncSectionViews) return viewLayout;
-        return sectionLinkLayouts[section.id] || viewLayout;
+        const layout = syncSectionViews ? viewLayout : (sectionLinkLayouts[section.id] || viewLayout);
+        if (layout === 'qr' && !isLinkActionAllowed('qr')) {
+            return 'side-by-side';
+        }
+        return layout;
     };
 
     const setSectionLinkLayout = (sectionId: string, layout: ViewLayoutMode) => {
         // Choosing a per-section layout turns off global sync so overrides can stick.
+        if (layout === 'qr' && !isLinkActionAllowed('qr')) {
+            return;
+        }
         if (syncSectionViews) {
             setSyncSectionViews(false);
         }
         setSectionLinkLayouts(prev => ({ ...prev, [sectionId]: layout }));
     };
+
+    const handlePrintAllQrCodes = useCallback(async () => {
+        const root = qrPrintRootRef.current;
+        if (!root) return;
+        try {
+            await printQrView({
+                title: stripHtmlTags(tile.title || '') || 'QR Codes',
+                subtitle: 'All QR codes on this page',
+                root,
+            });
+        } catch (err) {
+            console.warn('QR print failed:', err);
+            window.alert(err instanceof Error ? err.message : 'Failed to print QR codes');
+        }
+    }, [tile.title]);
+
+    const handlePrintSectionQrCodes = useCallback(async (sectionId: string, sectionTitle?: string) => {
+        const root = qrPrintRootRef.current?.querySelector(
+            `[data-qr-print-section="${CSS.escape(sectionId)}"]`
+        ) as HTMLElement | null;
+        if (!root) return;
+        try {
+            await printQrView({
+                title: stripHtmlTags(tile.title || '') || 'QR Codes',
+                subtitle: sectionTitle?.trim() || 'Section QR codes',
+                root,
+            });
+        } catch (err) {
+            console.warn('QR section print failed:', err);
+            window.alert(err instanceof Error ? err.message : 'Failed to print QR codes');
+        }
+    }, [tile.title]);
 
     // Handle ESC key to close visibility and scheduling dialogs
     useEffect(() => {
@@ -1293,6 +1337,46 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             return () => document.removeEventListener('keydown', handleEscKey);
         }
     }, [visibilityDialogTab, visibilityDialogSection, schedulingDialogTab, schedulingDialogSection, schedulingDialogLink, schedulingDialogRichText]);
+
+    // Load Access Manager link action allowlist (guest-aware via Public role)
+    useEffect(() => {
+        let cancelled = false;
+        const loadAllowedLinkActions = async () => {
+            if (user?.is_admin) {
+                if (!cancelled) {
+                    setAllowedLinkActions(new Set(LINK_ACTION_IDS));
+                }
+                return;
+            }
+            try {
+                const actionIds = await rolesService.getAllowedLinkActions();
+                if (!cancelled) {
+                    setAllowedLinkActions(new Set(actionIds));
+                }
+            } catch (error) {
+                console.error('Failed to load link action permissions:', error);
+                if (!cancelled) {
+                    setAllowedLinkActions(new Set(LINK_ACTION_IDS));
+                }
+            }
+        };
+        void loadAllowedLinkActions();
+        return () => {
+            cancelled = true;
+        };
+    }, [isAuthenticated, user?.id, user?.is_admin]);
+
+    const isLinkActionAllowed = useCallback((actionId: LinkActionId): boolean => {
+        if (user?.is_admin) return true;
+        return allowedLinkActions.has(actionId);
+    }, [allowedLinkActions, user?.is_admin]);
+
+    // If QR view permission is revoked, leave QR layout so content stays usable
+    useEffect(() => {
+        if (viewLayout === 'qr' && !isLinkActionAllowed('qr')) {
+            setViewLayout('side-by-side');
+        }
+    }, [viewLayout, isLinkActionAllowed]);
 
     // Load users list when editing and authenticated
     useEffect(() => {
@@ -5003,6 +5087,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zM2 10a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10zm0 5.25a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
                                                 </svg>
                                             </button>
+                                            {isLinkActionAllowed('qr') && (
                                             <button
                                                 onClick={() => {
                                                     // QR needs full-width section cards — sync top view so section icons match content
@@ -5021,7 +5106,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     <path fillRule="evenodd" d="M3 3.5A1.5 1.5 0 014.5 2h3A1.5 1.5 0 019 3.5v3A1.5 1.5 0 017.5 8h-3A1.5 1.5 0 013 6.5v-3zM4.5 3.5v3h3v-3h-3zM11 3.5A1.5 1.5 0 0112.5 2h3A1.5 1.5 0 0117 3.5v3A1.5 1.5 0 0115.5 8h-3A1.5 1.5 0 0111 6.5v-3zm1.5 0v3h3v-3h-3zM3 12.5A1.5 1.5 0 014.5 11h3A1.5 1.5 0 019 12.5v3A1.5 1.5 0 017.5 17h-3A1.5 1.5 0 013 15.5v-3zm1.5 0v3h3v-3h-3zM12.5 11a.75.75 0 01.75-.75h1a.75.75 0 01.75.75v1a.75.75 0 01-.75.75h-1a.75.75 0 01-.75-.75v-1zM11 14.25a.75.75 0 01.75-.75H13a.75.75 0 010 1.5h-1.25a.75.75 0 01-.75-.75zM14.25 14a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5h-1.5zM11 16.75a.75.75 0 01.75-.75h3.5a.75.75 0 010 1.5h-3.5a.75.75 0 01-.75-.75zM15.5 11.75a.75.75 0 01.75-.75H17a.75.75 0 010 1.5h-.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
                                                 </svg>
                                             </button>
+                                            )}
                                         </div>
+                                        {viewLayout === 'qr' && isLinkActionAllowed('qr') && (
+                                            <button
+                                                type="button"
+                                                onClick={() => void handlePrintAllQrCodes()}
+                                                className="inline-flex items-center justify-center p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 hover:border-brand-300 dark:hover:border-brand-600 transition-colors"
+                                                title="Print all QR codes on this page"
+                                                aria-label="Print all QR codes"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor" className="w-4 h-4" aria-hidden>
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0H6.34m11.318 0h1.152c.95 0 1.745-.695 1.885-1.63l.583-4.083A1.876 1.876 0 0019.25 9.75H4.75a1.875 1.875 0 00-1.863 2.114l.583 4.083c.14.935.935 1.63 1.885 1.63H6.34" />
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 9.75V6A2.25 2.25 0 0110.5 3.75h3A2.25 2.25 0 0115.75 6v3.75" />
+                                                </svg>
+                                            </button>
+                                        )}
                                         <button
                                             type="button"
                                             onClick={() => setSyncSectionViews((prev) => !prev)}
@@ -5251,8 +5351,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             </div>
                         ) : (
                             <div
+                                ref={qrPrintRootRef}
                                 className={viewLayout === 'side-by-side' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' : 'space-y-8'}
                                 data-sections-layout={viewLayout}
+                                data-qr-print-all=""
                             >
                                 {filteredSections.map((section, sectionIndex) => {
                                     // Per-section link layout: saved preference > forceStackedView > global view
@@ -5275,6 +5377,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             key={section.id}
                                             style={{ animationDelay: isQrLayout ? undefined : `${sectionIndex * 120}ms` }}
                                             data-view-layout={sectionLinkLayout}
+                                            data-qr-print-section={isQrLayout ? section.id : undefined}
+                                            data-qr-print-title={isQrLayout ? (section.title || '') : undefined}
                                             className={`linknest-content-section bg-white/80 dark:bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-200/80 dark:border-slate-700/50 shadow-sm relative ${
                                                 isQrLayout
                                                     ? 'p-4 overflow-hidden col-span-full'
@@ -5372,6 +5476,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zM2 10a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10zm0 5.25a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
                                                             </svg>
                                                         </button>
+                                                        {isLinkActionAllowed('qr') && (
                                                         <button
                                                             type="button"
                                                             onClick={() => setSectionLinkLayout(section.id, 'qr')}
@@ -5387,6 +5492,25 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 <path fillRule="evenodd" d="M3 3.5A1.5 1.5 0 014.5 2h3A1.5 1.5 0 019 3.5v3A1.5 1.5 0 017.5 8h-3A1.5 1.5 0 013 6.5v-3zM4.5 3.5v3h3v-3h-3zM11 3.5A1.5 1.5 0 0112.5 2h3A1.5 1.5 0 0117 3.5v3A1.5 1.5 0 0115.5 8h-3A1.5 1.5 0 0111 6.5v-3zm1.5 0v3h3v-3h-3zM3 12.5A1.5 1.5 0 014.5 11h3A1.5 1.5 0 019 12.5v3A1.5 1.5 0 017.5 17h-3A1.5 1.5 0 013 15.5v-3zm1.5 0v3h3v-3h-3zM12.5 11a.75.75 0 01.75-.75h1a.75.75 0 01.75.75v1a.75.75 0 01-.75.75h-1a.75.75 0 01-.75-.75v-1zM11 14.25a.75.75 0 01.75-.75H13a.75.75 0 010 1.5h-1.25a.75.75 0 01-.75-.75zM14.25 14a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5h-1.5zM11 16.75a.75.75 0 01.75-.75h3.5a.75.75 0 010 1.5h-3.5a.75.75 0 01-.75-.75zM15.5 11.75a.75.75 0 01.75-.75H17a.75.75 0 010 1.5h-.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
                                                             </svg>
                                                         </button>
+                                                        )}
+                                                        {isQrLayout && isLinkActionAllowed('qr') && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.preventDefault();
+                                                                    e.stopPropagation();
+                                                                    void handlePrintSectionQrCodes(section.id, section.title);
+                                                                }}
+                                                                className="p-1.5 rounded-md text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-white dark:hover:bg-slate-700 transition-all"
+                                                                title="Print this section's QR codes"
+                                                                aria-label="Print section QR codes"
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0H6.34m11.318 0h1.152c.95 0 1.745-.695 1.885-1.63l.583-4.083A1.876 1.876 0 0019.25 9.75H4.75a1.875 1.875 0 00-1.863 2.114l.583 4.083c.14.935.935 1.63 1.885 1.63H6.34" />
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 9.75V6A2.25 2.25 0 0110.5 3.75h3A2.25 2.25 0 0115.75 6v3.75" />
+                                                                </svg>
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 )}
                                             </div>
@@ -5461,6 +5585,27 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         const isGridCards = sectionLinkLayout === 'grid';
                                                         const isCompact = sectionLinkLayout === 'compact';
                                                         const isQrView = sectionLinkLayout === 'qr';
+                                                        const showNotesAction = isLinkActionAllowed('notes') && !!(link.notes && link.notes.trim());
+                                                        const showFavoriteAction = isLinkActionAllowed('favorite');
+                                                        const showHealthAction = isLinkActionAllowed('health') && !skipHealth;
+                                                        const showCopyAction = isLinkActionAllowed('copy');
+                                                        const showMobileAction = isLinkActionAllowed('mobile') && !!link.url;
+                                                        const showQrAction = isLinkActionAllowed('qr');
+                                                        const showBrowserAction =
+                                                            isLinkActionAllowed('browser') &&
+                                                            settings.browser_specific_links_enabled === '1' &&
+                                                            isAuthenticated &&
+                                                            tile.canChangeBrowser === true &&
+                                                            typeof window !== 'undefined' &&
+                                                            !!(window as any).BrowserLauncher;
+                                                        const showLinkActionBar =
+                                                            showNotesAction ||
+                                                            showFavoriteAction ||
+                                                            showHealthAction ||
+                                                            showCopyAction ||
+                                                            showMobileAction ||
+                                                            showQrAction ||
+                                                            showBrowserAction;
 
                                                         if (isQrView) {
                                                             const plainQrLabel = stripHtmlTags(link.label || '');
@@ -5826,11 +5971,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     document.body
                                                                 )}
 
+                                                                {showLinkActionBar && (
                                                                 <div className={`absolute flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all duration-200 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm p-0.5 rounded-lg border border-slate-200/50 dark:border-slate-700/50 z-20 pointer-events-none group-hover:pointer-events-auto ${
                                                                     isGridCards || isCompact ? 'top-1 right-1' : 'top-1.5 right-1.5'
                                                                 }`}>
                                                                     {/* Notes info button - only show if link has notes */}
-                                                                    {link.notes && link.notes.trim() && (
+                                                                    {showNotesAction && (
                                                                         <button
                                                                             onClick={(e) => {
                                                                                 e.preventDefault();
@@ -5850,6 +5996,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         </button>
                                                                     )}
                                                                     {/* Favorite button - available for all users */}
+                                                                    {showFavoriteAction && (
                                                                     <button
                                                                         onClick={(e) => {
                                                                             e.preventDefault();
@@ -5881,9 +6028,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
                                                                         </svg>
                                                                     </button>
+                                                                    )}
 
                                                                     {/* Re-check button (HTTP(S) only — SSH/VNC are not HTTP-probed) */}
-                                                                    {!skipHealth && (
+                                                                    {showHealthAction && (
                                                                     <button
                                                                         onClick={(e) => {
                                                                             e.preventDefault();
@@ -5908,6 +6056,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     )}
 
                                                                     {/* Copy button */}
+                                                                    {showCopyAction && (
                                                                     <button
                                                                         onClick={(e) => handleCopy(e, link.url, link.id)}
                                                                         className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all relative"
@@ -5924,9 +6073,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             </svg>
                                                                         )}
                                                                     </button>
+                                                                    )}
 
                                                                     {/* Mobile / tablet preview button */}
-                                                                    {link.url ? (
+                                                                    {showMobileAction ? (
                                                                         <button
                                                                             onClick={(e) => {
                                                                                 e.preventDefault();
@@ -5950,6 +6100,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     ) : null}
 
                                                                     {/* QR code button */}
+                                                                    {showQrAction && (
                                                                     <button
                                                                         onClick={(e) => {
                                                                             e.preventDefault();
@@ -5969,9 +6120,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             <path fillRule="evenodd" d="M3 4a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm2 1v1h1V5H5zm8-2a1 1 0 00-1 1v3a1 1 0 001 1h3a1 1 0 001-1V4a1 1 0 00-1-1h-3zm1 2v1h1V5h-1zM3 13a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3zm2 1v1h1v-1H5zm5-1a1 1 0 011-1h.01a1 1 0 110 2H11a1 1 0 01-1-1zm3 0a1 1 0 011-1h.01a1 1 0 110 2H14a1 1 0 01-1-1zm-3 3a1 1 0 011-1h.01a1 1 0 110 2H11a1 1 0 01-1-1zm3 0a1 1 0 011-1h.01a1 1 0 110 2H14a1 1 0 01-1-1zm3-3a1 1 0 011-1h.01a1 1 0 110 2H17a1 1 0 01-1-1zm0 3a1 1 0 011-1h.01a1 1 0 110 2H17a1 1 0 01-1-1z" clipRule="evenodd" />
                                                                         </svg>
                                                                     </button>
+                                                                    )}
 
                                                                     {/* Browser selection button - only show when extension is enabled, user is authenticated, and has canChangeBrowser */}
-                                                                    {settings.browser_specific_links_enabled === '1' && isAuthenticated && tile.canChangeBrowser === true && typeof window !== 'undefined' && (window as any).BrowserLauncher && (
+                                                                    {showBrowserAction && (
                                                                         <button
                                                                             onClick={(e) => {
                                                                                 e.preventDefault();
@@ -6019,6 +6171,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         </button>
                                                                     )}
                                                                 </div>
+                                                                )}
                                                             </div>
                                                         );
                                                     });
