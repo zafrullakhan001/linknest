@@ -667,6 +667,17 @@ function handleSshGatewayStatus() {
         'available' => $ttydPath !== null && $sshPath !== null,
         'ttydPath' => $ttydPath,
         'sshPath' => $sshPath,
+        'ttydFound' => $ttydPath !== null,
+        'sshFound' => $sshPath !== null,
+        'missing' => array_values(array_filter([
+            $ttydPath === null ? 'ttyd' : null,
+            $sshPath === null ? 'ssh' : null,
+        ])),
+        'hint' => ($ttydPath === null
+            ? 'ttyd was not found. Deploy bin/ttyd.exe with the package (package-for-deployment / ensure-ttyd-runtime.ps1), or set Admin → Add-ons → SSH Gateway path.'
+            : ($sshPath === null
+                ? 'OpenSSH ssh.exe was not found. Install OpenSSH Client, or set Admin → Add-ons → SSH Gateway path.'
+                : null)),
         'platform' => PHP_OS,
         'docker' => $inDocker,
         'maxConnections' => sshGatewayMaxPerUser(),

@@ -1092,6 +1092,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
   const [sshUsername, setSshUsername] = useState(() => localStorage.getItem(USER_STORAGE_KEY) || '');
   const [x11Forward, setX11Forward] = useState(() => localStorage.getItem(X11_STORAGE_KEY) === 'true');
   const [gatewayAvailable, setGatewayAvailable] = useState<boolean | null>(null);
+  const [gatewayHint, setGatewayHint] = useState<string | null>(null);
   const [maxSshTabs, setMaxSshTabs] = useState(DEFAULT_MAX_SSH_TABS);
   const [guiHint, setGuiHint] = useState<string | null>(null);
   const [guiDisplayReady, setGuiDisplayReady] = useState<boolean | null>(null);
@@ -1298,6 +1299,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
   useEffect(() => {
     if (!useServer) {
       setGatewayAvailable(false);
+      setGatewayHint(null);
       setGuiDisplayReady(null);
       setGuiHint(null);
       return;
@@ -1308,6 +1310,18 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
         const st = await sshGatewayService.status();
         if (cancelled) return;
         setGatewayAvailable(Boolean(st.available));
+        if (!st.available) {
+          const parts: string[] = [];
+          if (st.ttydFound === false || (Array.isArray(st.missing) && st.missing.includes('ttyd'))) {
+            parts.push('ttyd missing (deploy bin/ttyd.exe or set Admin → Add-ons → SSH Gateway)');
+          }
+          if (st.sshFound === false || (Array.isArray(st.missing) && st.missing.includes('ssh'))) {
+            parts.push('OpenSSH ssh.exe missing (install OpenSSH Client)');
+          }
+          setGatewayHint(st.hint || (parts.length ? parts.join(' · ') : 'SSH gateway unavailable — check Admin → Add-ons → SSH Gateway'));
+        } else {
+          setGatewayHint(null);
+        }
         if (typeof st.maxConnections === 'number' && st.maxConnections >= 1) {
           setMaxSshTabs(Math.floor(st.maxConnections));
         }
@@ -1316,6 +1330,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       } catch {
         if (!cancelled) {
           setGatewayAvailable(false);
+          setGatewayHint('Could not reach SSH gateway status API — sign in and refresh, then confirm bin/ttyd.exe is deployed.');
           setGuiDisplayReady(null);
         }
       }
@@ -4286,8 +4301,14 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                           )}
                           {useServer && gatewayAvailable === false && (
                             <p className="text-[10px] text-amber-600 dark:text-amber-400">
-                              ttyd was not found on this server. Install with{' '}
-                              <code className="font-mono">winget install tsl0922.ttyd --source winget</code> then refresh.
+                              {gatewayHint || (
+                                <>
+                                  ttyd was not found on this server. Deploy{' '}
+                                  <code className="font-mono">bin/ttyd.exe</code> with the package, or install with{' '}
+                                  <code className="font-mono">winget install tsl0922.ttyd --source winget</code> then set
+                                  Admin → Add-ons → SSH Gateway.
+                                </>
+                              )}
                             </p>
                           )}
                         </>

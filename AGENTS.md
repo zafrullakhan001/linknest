@@ -388,7 +388,7 @@ See [`docs/XAMPP_PHP_UPGRADE.md`](docs/XAMPP_PHP_UPGRADE.md) and `scripts/upgrad
 
 ## Package for deployment (Windows XAMPP)
 
-See [`docs/PACKAGE_FOR_DEPLOYMENT.md`](docs/PACKAGE_FOR_DEPLOYMENT.md). Double-click or run `package-for-deployment.bat` (flags forward to `package-for-deployment.ps1`: `-IncludeDatabase`, `-ExcludeUploads`, `-SkipBuild`, `-SkipSqliteRuntime`, `-SkipRemoteRuntime`, `-BasePath`, `-OutputDir`).
+See [`docs/PACKAGE_FOR_DEPLOYMENT.md`](docs/PACKAGE_FOR_DEPLOYMENT.md). Double-click or run `package-for-deployment.bat` (flags forward to `package-for-deployment.ps1`: `-AppOnly` for a lean application ZIP, `-IncludeDatabase`, `-ExcludeUploads`, `-SkipBuild`, `-SkipSqliteRuntime`, `-SkipRemoteRuntime`, `-BasePath`, `-OutputDir`).
 
 ## Office / Windows Server 2022 replication
 

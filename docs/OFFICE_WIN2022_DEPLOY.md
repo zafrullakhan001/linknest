@@ -50,11 +50,29 @@ Optional: mirror this PC’s database:
 package-for-deployment.bat -IncludeDatabase
 ```
 
-On the **office / target** host:
+**Package and push in one step** (SMB admin share + elevated scheduled task):
 
-1. Install a base **XAMPP** under `C:\xampp` (Apache + PHP) if missing.
+```bat
+package-for-deployment.bat -RemoteHost 192.168.0.197 -RemoteUser administrator -RemoteMode Fresh
+```
+
+Empty remote with no Apache/PHP yet:
+
+```bat
+package-for-deployment.bat -RemoteHost 192.168.0.197 -RemoteUser administrator -IncludeXamppRuntime
+```
+
+Or package first, then:
+
+```bat
+deploy-remote-xampp.bat -ComputerName 192.168.0.197 -ZipPath .\linknest-deploy-YYYYMMDD_HHMMSS.zip -Mode Fresh
+```
+
+On the **office / target** host (manual path):
+
+1. Install a base **XAMPP** under `C:\xampp` (Apache + PHP) if missing (or use `-IncludeXamppRuntime`).
 2. Extract `linknest-deploy-*.zip`.
-3. Run `deploy-xampp.bat` (fresh) or `update-xampp.bat` (keep `data/`).
+3. Run `deploy-xampp.bat` (fresh) or `update-xampp.bat` (keep `data/`) — these now call `harden-xampp-target.ps1`.
 4. Approve UAC for SQLite runtime install if prompted.
 5. Run elevated:
 

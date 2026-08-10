@@ -35,6 +35,10 @@ export interface SshGatewayStatus {
   available: boolean;
   ttydPath?: string | null;
   sshPath?: string | null;
+  ttydFound?: boolean;
+  sshFound?: boolean;
+  missing?: string[];
+  hint?: string | null;
   platform?: string;
   maxConnections?: number;
   maxConnectionsCeiling?: number;

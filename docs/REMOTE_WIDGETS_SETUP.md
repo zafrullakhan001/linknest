@@ -40,7 +40,7 @@ Install these on the **machine that runs LinkNest** (and the remote Linux host w
 
 | Dependency | Required for | Windows install | Notes |
 |------------|--------------|-----------------|-------|
-| **ttyd** | Easy mode + Advanced gateway | `winget install tsl0922.ttyd --source winget` | Prefer copying to `bin/ttyd.exe`, or set path under **Admin → Add-ons → SSH Gateway**. Apache often cannot see WinGet PATH. |
+| **ttyd** | Easy mode + Advanced gateway | Bundled as `bin/ttyd.exe` by `package-for-deployment.bat` (auto-downloads from GitHub via `scripts/ensure-ttyd-runtime.ps1`). Fallback: `winget install tsl0922.ttyd --source winget` | Prefer `bin/ttyd.exe`, or set path under **Admin → Add-ons → SSH Gateway**. Apache often cannot see WinGet PATH. |
 | **OpenSSH Client** | All SSH sessions | Optional Features → *OpenSSH Client* | Default `C:\Windows\System32\OpenSSH\ssh.exe` — override in Admin if your install differs |
 | **LinkNest login** | Easy mode (auto-start ttyd) | — | Guests can only use Advanced WebSocket URL mode |
 | **VcXsrv** (or X410) | **Terminal + GUI (X11)** | `winget install marha.VcXsrv` or [VcXsrv](https://sourceforge.net/projects/vcxsrv/) | Start XLaunch → Multiple windows → Start no client before connecting |
