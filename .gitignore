@@ -40,12 +40,19 @@ uploads/*
 
 # Deployment bundles and artifacts
 *.zip
+*.zip.*
+*.zip.[0-9][0-9][0-9]
 linknest-deploy-*/
 linknest-docker-deploy-*/
 docker-deploy-package/
 *-deployment-*/
 test-bundle/
 bundle-*/
+
+# Clone job temp status / elevated helpers (local-only)
+clone_status_*.json
+clone_temp_*.bat
+clone_elevated_*.ps1
 
 # Copy/backup directories
 * copy/
