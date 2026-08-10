@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef, lazy, Suspens
 import { createPortal } from 'react-dom';
 import { Tile, LinkSection, ThemeColor, THEME_COLORS, COLOR_STYLES, POPULAR_EMOJIS, TileVisibility, TileMessage, Link, CelebrationConfig } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
-import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite, saveTile, createTile, getTiles, cloneCategory, toggleCategoryFavorite, getRecycleBin, restoreTile, purgeRecycleBin, permanentDeleteTile, permanentDeleteCategory, deleteTile, getArchive, archiveTile, unarchiveTile, purgeArchive, archiveCategory, unarchiveCategory, getFavoriteLinks, FavoriteLink, csvToJson, uploadTileHeaderImage, uploadTileEmojiImage } from '../services/storageService';
+import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite, saveTile, createTile, getTiles, getTile, cloneCategory, toggleCategoryFavorite, getRecycleBin, restoreTile, purgeRecycleBin, permanentDeleteTile, permanentDeleteCategory, deleteTile, getArchive, archiveTile, unarchiveTile, purgeArchive, archiveCategory, unarchiveCategory, getFavoriteLinks, FavoriteLink, csvToJson, uploadTileHeaderImage, uploadTileEmojiImage } from '../services/storageService';
 import {
   exportCategoryToFile,
   exportTileToFile,
@@ -2765,24 +2765,59 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const validAnimationTypes = ['rollover', 'still', 'flash', 'flip-horizontal', 'flip-vertical', 'bounce', 'pulse', 'shake', 'fade', 'slide'] as const;
   const validCelebrationEffects = ['none', 'fireworks', 'confetti', 'snowfall', 'hearts-rising', 'hearts-falling', 'hearts', 'bubbles', 'butterflies', 'birds-flying', 'rocket-launch', 'burst-fireworks', 'sparkles', 'petals', 'shooting-stars', 'leaves', 'fireflies', 'balloons', 'stars', 'rainbow'] as const;
 
+  const normalizeImportedMessageUrl = (raw: unknown): string | undefined => {
+    if (typeof raw !== 'string') return undefined;
+    const trimmed = raw.trim();
+    if (!trimmed) return undefined;
+    // Already a safe absolute / relative / protocol URL
+    if (/^(https?:\/\/|\/|#|mailto:|tel:)/i.test(trimmed)) {
+      return trimmed;
+    }
+    if (/^www\./i.test(trimmed)) {
+      return `https://${trimmed}`;
+    }
+    // host.tld… without scheme
+    if (/^[a-z0-9.-]+\.[a-z]{2,}([/:?#].*)?$/i.test(trimmed)) {
+      return `https://${trimmed}`;
+    }
+    // Reject garbage like "123123" that is not a URL (avoids broken scroll/links on tiles)
+    return undefined;
+  };
+
   const normalizeImportedMessage = (raw: unknown, index: number): TileMessage | null => {
     if (!raw || typeof raw !== 'object') return null;
     const m = raw as Record<string, unknown>;
     const content = typeof m.content === 'string' ? m.content : '';
     if (!content.trim()) return null;
+    // Reject objects that look like full tiles/spaces accidentally nested in a messages array
+    if (
+      ('tabs' in m || 'sections' in m || 'themeColor' in m || 'emoji' in m) &&
+      !('type' in m && validMessageTypes.includes(m.type as any))
+    ) {
+      return null;
+    }
     const type = validMessageTypes.includes(m.type as any) ? (m.type as typeof validMessageTypes[number]) : 'info';
     const displayLocation = validDisplayLocations.includes(m.displayLocation as any) ? (m.displayLocation as typeof validDisplayLocations[number]) : 'both';
     const animationType = validAnimationTypes.includes(m.animationType as any) ? (m.animationType as typeof validAnimationTypes[number]) : 'rollover';
-    let celebrationEffect = validCelebrationEffects.includes(m.celebrationEffect as any) ? (m.celebrationEffect as string) : 'fireworks';
+    let celebrationEffect = validCelebrationEffects.includes(m.celebrationEffect as any) ? (m.celebrationEffect as string) : (type === 'celebration' ? 'fireworks' : 'none');
     if (celebrationEffect === 'hearts') celebrationEffect = 'hearts-rising';
-    const startDate = typeof m.startDate === 'string' ? m.startDate : new Date().toISOString();
-    const endDate = typeof m.endDate === 'string' ? m.endDate : new Date().toISOString();
+    const now = new Date();
+    const defaultEnd = new Date(now);
+    defaultEnd.setFullYear(defaultEnd.getFullYear() + 1);
+    let startDate = typeof m.startDate === 'string' && m.startDate.trim() ? m.startDate : now.toISOString();
+    let endDate = typeof m.endDate === 'string' && m.endDate.trim() ? m.endDate : defaultEnd.toISOString();
+    // Missing/invalid end dates previously defaulted to "now" and made imports expire immediately
+    if (Number.isNaN(Date.parse(startDate))) startDate = now.toISOString();
+    if (Number.isNaN(Date.parse(endDate))) endDate = defaultEnd.toISOString();
+    if (new Date(endDate) < new Date(startDate)) {
+      endDate = defaultEnd.toISOString();
+    }
     const isActive = typeof m.isActive === 'boolean' ? m.isActive : true;
-    const priority = typeof m.priority === 'number' ? m.priority : index;
+    const priority = typeof m.priority === 'number' && Number.isFinite(m.priority) ? m.priority : index;
     const textColor = typeof m.textColor === 'string' ? m.textColor : undefined;
     const fontStyle = typeof m.fontStyle === 'string' ? m.fontStyle : undefined;
-    const delayBefore = typeof m.delayBefore === 'number' ? m.delayBefore : 0;
-    const url = typeof m.url === 'string' && m.url.trim() ? m.url.trim() : undefined;
+    const delayBefore = typeof m.delayBefore === 'number' && Number.isFinite(m.delayBefore) ? m.delayBefore : 0;
+    const url = normalizeImportedMessageUrl(m.url);
     const urlLabel = typeof m.urlLabel === 'string' ? m.urlLabel.trim() || undefined : undefined;
     let celebrationConfig: CelebrationConfig | undefined;
     if (m.celebrationConfig && typeof m.celebrationConfig === 'object' && m.celebrationConfig !== null) {
@@ -2829,6 +2864,36 @@ export const TileGrid: React.FC<TileGridProps> = ({
     URL.revokeObjectURL(url);
   }, [messages, editingTile?.id]);
 
+  const extractMessagesFromSpaceExport = (data: Record<string, unknown>): unknown[] | null => {
+    const type = data.type;
+    if (type !== 'tile' && type !== 'category' && type !== 'all_categories') {
+      return null;
+    }
+    const collectFromTiles = (tiles: unknown[]): unknown[] => {
+      const out: unknown[] = [];
+      for (const t of tiles) {
+        if (!t || typeof t !== 'object') continue;
+        const tile = t as { id?: string; title?: string; messages?: unknown[] };
+        // Prefer the tile being edited when the export contains several spaces
+        if (editingTile && (tile.id === editingTile.id || tile.title === editingTile.title)) {
+          return Array.isArray(tile.messages) ? tile.messages : [];
+        }
+        if (Array.isArray(tile.messages)) {
+          out.push(...tile.messages);
+        }
+      }
+      return out;
+    };
+    if (type === 'tile' && data.tile && typeof data.tile === 'object') {
+      const tile = data.tile as { messages?: unknown[] };
+      return Array.isArray(tile.messages) ? tile.messages : [];
+    }
+    if (Array.isArray(data.tiles)) {
+      return collectFromTiles(data.tiles);
+    }
+    return null;
+  };
+
   const handleImportMessageBoard = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -2838,14 +2903,39 @@ export const TileGrid: React.FC<TileGridProps> = ({
         const text = reader.result as string;
         const data = JSON.parse(text) as unknown;
         let rawList: unknown[] = [];
+        let fromSpaceExport = false;
+
         if (Array.isArray(data)) {
           rawList = data;
-        } else if (data && typeof data === 'object' && Array.isArray((data as { messages?: unknown[] }).messages)) {
-          rawList = (data as { messages: unknown[] }).messages;
+        } else if (data && typeof data === 'object') {
+          const obj = data as Record<string, unknown>;
+          // Accidental Space export into Message Board import — extract messages instead of failing/corrupting
+          const spaceMessages = extractMessagesFromSpaceExport(obj);
+          if (spaceMessages !== null) {
+            fromSpaceExport = true;
+            if (spaceMessages.length === 0) {
+              alert('This looks like a Space export, but it has no Message Board messages to import. Use Import Space for full spaces.');
+              e.target.value = '';
+              return;
+            }
+            if (!confirm(`This file looks like a Space export. Import ${spaceMessages.length} message(s) from it into this Message Board?`)) {
+              e.target.value = '';
+              return;
+            }
+            rawList = spaceMessages;
+          } else if (Array.isArray(obj.messages)) {
+            rawList = obj.messages;
+          } else {
+            alert('Invalid format. Expected a JSON array of messages or { "messages": [...] }.');
+            e.target.value = '';
+            return;
+          }
         } else {
           alert('Invalid format. Expected a JSON array of messages or { "messages": [...] }.');
+          e.target.value = '';
           return;
         }
+
         const normalized: TileMessage[] = [];
         rawList.forEach((item, i) => {
           const msg = normalizeImportedMessage(item, i);
@@ -2853,9 +2943,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
         });
         setMessages(normalized);
         setEditingMessageId(null);
-        if (normalized.length !== rawList.length) {
-          const skipped = rawList.length - normalized.length;
-          alert(`Imported ${normalized.length} message(s). Skipped ${skipped} invalid or empty.`);
+        const skipped = rawList.length - normalized.length;
+        if (skipped > 0 || fromSpaceExport) {
+          const parts = [`Imported ${normalized.length} message(s).`];
+          if (skipped > 0) parts.push(`Skipped ${skipped} invalid or empty.`);
+          if (fromSpaceExport) parts.push('Click Update Space to save them.');
+          alert(parts.join(' '));
         }
       } catch (err) {
         console.error('Import failed:', err);
@@ -2864,7 +2957,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
       e.target.value = '';
     };
     reader.readAsText(file, 'UTF-8');
-  }, []);
+  }, [editingTile?.id, editingTile?.title]);
 
   const handleDownloadAIPrompt = useCallback(() => {
     const prompt = `# Linknest Message Board – AI Bulk Generator Prompt
@@ -2886,7 +2979,7 @@ Generate a JSON array of scheduled message board messages for Linknest. Each mes
 | content | string | any text; URLs allowed, **bold** and _italic_ supported | — |
 | type | string | "info", "warning", "celebration", "alert", "custom" | "info" |
 | startDate | string | ISO 8601 date-time (e.g. "2026-01-15T09:00:00.000Z") | now |
-| endDate | string | ISO 8601 date-time | now |
+| endDate | string | ISO 8601 date-time | one year from now |
 | isActive | boolean | true, false | true |
 | priority | number | 0, 1, 2, ... (lower = higher priority) | 0 |
 | textColor | string | hex e.g. "#3b82f6" | — |
@@ -4941,9 +5034,22 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setTileGradientType((tile.tileGradientType ?? 'linear') as 'linear' | 'radial' | 'conic' | 'repeating-linear' | 'repeating-radial' | 'repeating-conic');
     setTileBorderRadius(tile.tileBorderRadius ?? 12);
     setTileTextColor(tile.tileTextColor ?? '');
-    setMessages(tile.messages || []);
+    setMessages(Array.isArray(tile.messages) ? tile.messages : []);
     setEditModalActiveTab('general');
     setIsEditModalOpen(true);
+
+    // Summary tiles may omit messages on older API caches — load them for Message Board
+    if (!Array.isArray(tile.messages) && isAuthenticated) {
+      getTile(tile.id)
+        .then((full) => {
+          if (!full || !Array.isArray(full.messages)) return;
+          setMessages(full.messages);
+          setEditingTile((prev) =>
+            prev && prev.id === tile.id ? { ...prev, messages: full.messages } : prev
+          );
+        })
+        .catch(() => { /* keep empty board */ });
+    }
 
     // Load users if needed for private visibility
     if (tile.visibility === 'private' && isAuthenticated && safeAvailableUsers.length === 0 && !isLoadingUsers) {
@@ -10231,7 +10337,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                   delayBefore: messageDelayBefore || 0,
                                   celebrationEffect: messageCelebrationEffect,
                                   celebrationConfig: messageCelebrationEffect !== 'none' ? messageCelebrationConfig : undefined,
-                                  url: messageUrl || undefined,
+                                  url: normalizeImportedMessageUrl(messageUrl) || undefined,
                                   urlLabel: messageUrlLabel.trim() || undefined,
                                 };
 

@@ -96,13 +96,15 @@ const transformTile = (apiTile: any): Tile => {
   };
 };
 
-/** Card-only fields for home grid state (drop nested graph after detail updates). */
+/** Card-only fields for home grid state (drop nested graph after detail updates).
+ * Keep messages — they are small and needed for tile card banners + Message Board edits.
+ */
 export const toSummaryTile = (tile: Tile): Tile => ({
   ...tile,
   tabs: [],
   sections: [],
   htmlContent: undefined,
-  messages: undefined,
+  messages: Array.isArray(tile.messages) ? tile.messages : undefined,
   linkCount: tile.linkCount ?? (tile.tabs?.reduce(
     (n, tab) => n + (tab.sections?.reduce((sn, s) => sn + (s.links?.length || 0), 0) || 0),
     0
@@ -183,6 +185,7 @@ export const saveTile = async (tile: Tile, isFinal: boolean = false): Promise<vo
       !!(tile.htmlContent && String(tile.htmlContent).trim());
 
     // Home-grid / card edits often have empty tabs; never send that as a full replace.
+    // Still include messages so Message Board edits from the edit-space modal persist.
     const payload: Record<string, unknown> = hasNestedContent
       ? { ...tile, is_final: isFinal }
       : (() => {
@@ -190,11 +193,12 @@ export const saveTile = async (tile: Tile, isFinal: boolean = false): Promise<vo
             tabs: _tabs,
             sections: _sections,
             htmlContent: _html,
-            messages: _messages,
             ...meta
           } = tile as Tile & Record<string, unknown>;
           return {
             ...meta,
+            // Explicitly keep messages (including [] to clear the board)
+            messages: Array.isArray(tile.messages) ? tile.messages : undefined,
             preserve_nested: true,
             is_final: isFinal,
           };

@@ -362,7 +362,7 @@ export const normalizeImportedTiles = (
                 : 'info',
             startDate: typeof msg.startDate === 'string' ? msg.startDate : new Date().toISOString(),
             endDate: typeof msg.endDate === 'string' ? msg.endDate : new Date().toISOString(),
-            isActive: typeof msg.isActive === 'boolean' ? msg.isActive : false,
+            isActive: typeof msg.isActive === 'boolean' ? msg.isActive : true,
             priority: typeof msg.priority === 'number' ? msg.priority : undefined,
             textColor: typeof msg.textColor === 'string' ? msg.textColor : undefined,
             fontStyle: typeof msg.fontStyle === 'string' ? msg.fontStyle : undefined,
@@ -386,7 +386,14 @@ export const normalizeImportedTiles = (
               typeof msg.celebrationConfig === 'object' && msg.celebrationConfig !== null
                 ? msg.celebrationConfig
                 : undefined,
-            url: typeof msg.url === 'string' && msg.url.trim() ? msg.url.trim() : undefined,
+            url: (() => {
+              if (typeof msg.url !== 'string' || !msg.url.trim()) return undefined;
+              const trimmed = msg.url.trim();
+              if (/^(https?:\/\/|\/|#|mailto:|tel:)/i.test(trimmed)) return trimmed;
+              if (/^www\./i.test(trimmed)) return `https://${trimmed}`;
+              if (/^[a-z0-9.-]+\.[a-z]{2,}([/:?#].*)?$/i.test(trimmed)) return `https://${trimmed}`;
+              return undefined;
+            })(),
             urlLabel:
               typeof msg.urlLabel === 'string' && msg.urlLabel.trim()
                 ? msg.urlLabel.trim()
