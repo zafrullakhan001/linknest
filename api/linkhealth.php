@@ -130,21 +130,10 @@ function releaseSessionLock() {
 }
 
 /**
- * Non-HTTP schemes (SSH, RDP, etc.) cannot be probed with cURL HEAD — skip health checks.
+ * Non-HTTP schemes (SSH, VNC, RDP, etc.) cannot be probed with cURL HEAD — skip health checks.
  */
 function isNonHttpHealthUrl($url) {
-    $url = trim((string)$url);
-    if ($url === '') {
-        return true;
-    }
-    if (preg_match('#^(ssh|auto|rdp|vnc|sftp|ftp|file|mailto|tel)://#i', $url)) {
-        return true;
-    }
-    // Bare user@host:port (sometimes pasted without ssh://)
-    if (preg_match('#^[^\\s/@]+@[^\\s/@]+:\\d+$#', $url)) {
-        return true;
-    }
-    return false;
+    return isNonHttpLinkHealthUrl($url);
 }
 
 /**

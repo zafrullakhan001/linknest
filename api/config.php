@@ -2920,6 +2920,24 @@ function canUserSeePublishedContent($user, $rowOrValue): bool {
 }
 
 /**
+ * URLs that cannot be HTTP-probed (ssh://, vnc://, etc.). Shared by link health + tiles.
+ */
+function isNonHttpLinkHealthUrl($url): bool {
+    $url = trim((string)$url);
+    if ($url === '') {
+        return true;
+    }
+    if (preg_match('#^(ssh|auto|auto-vnc|rdp|vnc|sftp|ftp|file|mailto|tel)://#i', $url)) {
+        return true;
+    }
+    // Bare user@host:port (sometimes pasted without ssh://)
+    if (preg_match('#^[^\\s/@]+@[^\\s/@]+:\\d+$#', $url)) {
+        return true;
+    }
+    return false;
+}
+
+/**
  * Check whether the current user may see content by visibility / ACL.
  * Accepts DB rows (snake_case) or already-mapped arrays (camelCase).
  * Does not apply role-based link overrides — callers handle those separately.

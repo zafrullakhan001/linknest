@@ -6,7 +6,8 @@ const API_BASE: string =
 
 export interface LinkHealthCheckResult {
     linkId: string;
-    health: LinkHealth;
+    health: LinkHealth | null;
+    skipped?: boolean;
     latency?: number; // Local latency (roundtrip from browser to server) in milliseconds
     serverLatency?: number; // Server-side latency (time taken by server to check URL) in milliseconds
 }
@@ -45,6 +46,17 @@ class FavoriteLinkHealthService {
 
             const data = await response.json();
             const localLatency = Math.round(performance.now() - startTime);
+
+            // SSH / VNC / non-HTTP links are skipped by the API
+            if (data.skipped || !data.health) {
+                return {
+                    linkId,
+                    health: null,
+                    skipped: true,
+                    latency: localLatency,
+                    serverLatency: 0
+                };
+            }
 
             return {
                 linkId,
@@ -123,8 +135,9 @@ class FavoriteLinkHealthService {
 
                 const batchResults = await Promise.all(batchPromises);
 
-                // Store results
+                // Store results (omit skipped ssh:// / vnc://)
                 batchResults.forEach(result => {
+                    if (result.skipped || !result.health) return;
                     results.set(result.linkId, result);
                 });
 

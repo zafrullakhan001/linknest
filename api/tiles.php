@@ -827,7 +827,7 @@ function handleGetTiles() {
                                     ];
                                     
                                     // Include health data if available
-                                    if (isset($linkRow['health_status'])) {
+                                    if (isset($linkRow['health_status']) && !isNonHttpLinkHealthUrl($linkRow['url'] ?? '')) {
                                         $link['health'] = [
                                             'status' => $linkRow['health_status'] ?? 'unknown',
                                             'httpCode' => $linkRow['health_http_code'] ? (int)$linkRow['health_http_code'] : null,
@@ -932,7 +932,7 @@ function handleGetTiles() {
                                 'position' => (int)($linkRow['position'] ?? 0)
                             ];
                             
-                            if (isset($linkRow['health_status'])) {
+                            if (isset($linkRow['health_status']) && !isNonHttpLinkHealthUrl($linkRow['url'] ?? '')) {
                                 $link['health'] = [
                                     'status' => $linkRow['health_status'] ?? 'unknown',
                                     'httpCode' => $linkRow['health_http_code'] ? (int)$linkRow['health_http_code'] : null,
@@ -1365,7 +1365,7 @@ function handleGetTile($tileId) {
                 ];
                 
                 // Include health data if available
-                if (isset($linkRow['health_status'])) {
+                if (isset($linkRow['health_status']) && !isNonHttpLinkHealthUrl($linkRow['url'] ?? '')) {
                     $link['health'] = [
                         'status' => $linkRow['health_status'] ?? 'unknown',
                         'httpCode' => $linkRow['health_http_code'] ? (int)$linkRow['health_http_code'] : null,
@@ -1482,7 +1482,7 @@ function handleGetTile($tileId) {
                         'position' => (int)($linkRow['position'] ?? 0)
                     ];
 
-                    if (isset($linkRow['health_status'])) {
+                    if (isset($linkRow['health_status']) && !isNonHttpLinkHealthUrl($linkRow['url'] ?? '')) {
                         $link['health'] = [
                             'status' => $linkRow['health_status'] ?? 'unknown',
                             'httpCode' => $linkRow['health_http_code'] ? (int)$linkRow['health_http_code'] : null,
@@ -3923,9 +3923,9 @@ function handleGetFavoriteLinks() {
                 }
             }
             
-            // Parse health data if available
+            // Parse health data if available (skip ssh://, vnc://, etc.)
             $health = null;
-            if ($row['health_status']) {
+            if ($row['health_status'] && !isNonHttpLinkHealthUrl($row['url'] ?? '')) {
                 $health = [
                     'status' => $row['health_status'],
                     'httpCode' => $row['health_http_code'] ?? null,
@@ -4125,7 +4125,7 @@ function handleGetRecycleBin() {
                     ];
                     
                     // Include health data if available
-                    if (isset($linkRow['health_status'])) {
+                    if (isset($linkRow['health_status']) && !isNonHttpLinkHealthUrl($linkRow['url'] ?? '')) {
                         $link['health'] = [
                             'status' => $linkRow['health_status'] ?? 'unknown',
                             'httpCode' => $linkRow['health_http_code'] ? (int)$linkRow['health_http_code'] : null,
@@ -4491,7 +4491,7 @@ function handleGetArchive() {
                             'animation' => $linkRow['animation'] ?? null,
                         ];
                         
-                        if (isset($linkRow['health_status'])) {
+                        if (isset($linkRow['health_status']) && !isNonHttpLinkHealthUrl($linkRow['url'] ?? '')) {
                             $link['health'] = [
                                 'status' => $linkRow['health_status'] ?? 'unknown',
                                 'httpCode' => $linkRow['health_http_code'] ? (int)$linkRow['health_http_code'] : null,

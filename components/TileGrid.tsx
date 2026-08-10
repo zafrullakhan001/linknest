@@ -3426,7 +3426,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         const results = await favoriteLinkHealthService.checkMultipleLinks(
           linksToCheck,
           (linkId, result) => {
-            // Update results progressively as each link is checked
+            // Update results progressively as each link is checked (skip ssh:// / vnc://)
+            if (result.skipped || !result.health) return;
             setLinkHealthResults(prev => {
               const newMap = new Map(prev);
               newMap.set(linkId, result);
@@ -3482,6 +3483,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       await favoriteLinkHealthService.checkMultipleLinks(
         linksToCheck,
         (linkId, result) => {
+          if (result.skipped || !result.health) return;
           setLinkHealthResults(prev => {
             const newMap = new Map(prev);
             newMap.set(linkId, result);
@@ -5513,13 +5515,14 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     const rows: string[][] = [];
 
     favoriteLinks.forEach(link => {
+      if (isSshLinkUrl(link.url) || isVncLinkUrl(link.url)) return;
       const healthResult = linkHealthResults.get(link.id);
-      const status = healthResult?.health.status || 'unknown';
-      const httpCode = healthResult?.health.httpCode || '';
+      const status = healthResult?.health?.status || 'unknown';
+      const httpCode = healthResult?.health?.httpCode || '';
       const localLatency = healthResult?.latency || 0;
       const serverLatency = healthResult?.serverLatency || 0;
       const totalLatency = localLatency; // Local latency already includes server processing time
-      const lastChecked = healthResult?.health.checkedAt
+      const lastChecked = healthResult?.health?.checkedAt
         ? new Date(healthResult.health.checkedAt).toLocaleString()
         : 'Never';
 
@@ -7346,11 +7349,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                   const animationDelay = (linkIndex * 50);
                   const tileAnimatedClass = animationClass ? 'linknest-tile-animated' : '';
 
-                  // Get health check result for this link
-                  const healthResult = linkHealthResults.get(link.id);
-                  const healthStatus = healthResult?.health.status || 'unknown';
+                  // Get health check result for this link (ssh:// / vnc:// are never probed)
+                  const skipHealth = isSshLinkUrl(link.url) || isVncLinkUrl(link.url);
+                  const healthResult = skipHealth ? undefined : linkHealthResults.get(link.id);
+                  const healthStatus = healthResult?.health?.status || 'unknown';
                   const latency = healthResult?.latency;
-                  const httpCode = healthResult?.health.httpCode;
+                  const httpCode = healthResult?.health?.httpCode;
 
                   return (
                     <div
@@ -7868,8 +7872,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         window.open(link.url, '_blank');
                       }}
                     >
-                      {/* Health Status Indicator */}
-                      {link.health && (
+                      {/* Health Status Indicator (HTTP(S) only — skip ssh:// / vnc://) */}
+                      {link.health && !isSshLinkUrl(link.url) && !isVncLinkUrl(link.url) && (
                         <div className="shrink-0">
                           <div
                             className={`w-2 h-2 rounded-full ${linkHealthService.getHealthColor(link.health.status)}`}
@@ -8078,11 +8082,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                     const animationDelay = (linkIndex * 50);
                     const tileAnimatedClass = animationClass ? 'linknest-tile-animated' : '';
 
-                    // Get health check result for this link
-                    const healthResult = linkHealthResults.get(link.id);
-                    const healthStatus = healthResult?.health.status || 'unknown';
+                    // Get health check result for this link (ssh:// / vnc:// are never probed)
+                    const skipHealth = isSshLinkUrl(link.url) || isVncLinkUrl(link.url);
+                    const healthResult = skipHealth ? undefined : linkHealthResults.get(link.id);
+                    const healthStatus = healthResult?.health?.status || 'unknown';
                     const latency = healthResult?.latency;
-                    const httpCode = healthResult?.health.httpCode;
+                    const httpCode = healthResult?.health?.httpCode;
 
                     return (
                       <div

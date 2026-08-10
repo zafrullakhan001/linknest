@@ -1061,12 +1061,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             setEditSections(clonedSections);
         }
 
-        // Load health status from tile data
+        // Load health status from tile data (skip ssh:// / vnc:// — not HTTP-probed)
         const healthMap: LinkHealthMap = {};
         const sectionsToCheck = tile.tabs ? tile.tabs.flatMap(tab => tab.sections) : (tile.sections || []);
         sectionsToCheck.forEach(section => {
             section.links?.forEach(link => {
-                if (link.health) {
+                if (link.health && !isSshLinkUrl(link.url || '') && !isVncLinkUrl(link.url || '')) {
                     healthMap[link.id] = link.health;
                 }
             });
