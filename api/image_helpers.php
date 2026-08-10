@@ -1,6 +1,14 @@
 <?php
 /**
  * Shared GD image helpers for brand logos, favicons, and tile header images.
+ *
+ * REQUIREMENT — PHP GD extension (ext-gd):
+ * - Background removal, PNG conversion, and resizing all use PHP's built-in GD library.
+ * - No Composer/npm image library is needed on the frontend or backend.
+ * - If backgrounds are not stripped / uploads fail with "GD image extension is required",
+ *   enable GD in php.ini (Windows XAMPP: uncomment extension=gd) and restart Apache.
+ * - Confirm with: php -m | findstr gd   (Windows) or php -m | grep gd  (Linux).
+ * - WebP/BMP decode also needs GD built with WebP/BMP support (standard on PHP 8+ builds).
  */
 
 /**
@@ -108,13 +116,18 @@ function resizeGdImageExactSquare($src, $size) {
  * - SVG: stored as-is (background removal not applied)
  * - Raster: converted to PNG, resized to target; optional chroma-key background removal
  *
+ * Background removal uses PHP GD only (see file header). Missing ext-gd → error below.
+ *
  * @param bool $removeBackground When true, chroma-key background to transparency
  * @param string|null $bgColorHex Optional #rrggbb; when empty uses corner sampling
  * @return array{filename: string, filepath: string, converted: bool, width?: int, height?: int}
  */
 function processUploadedBrandImage($tmpPath, $originalName, $mimeType, $kind, $removeBackground = false, $bgColorHex = null) {
+    // REQUIRES: PHP GD (ext-gd). Not Imagick / not a frontend library.
     if (!extension_loaded('gd')) {
-        sendJSON(['error' => 'GD image extension is required for automatic image conversion'], 500);
+        sendJSON([
+            'error' => 'PHP GD extension (ext-gd) is required for image conversion and background removal. Enable extension=gd in php.ini and restart Apache. Check: php -m | findstr gd'
+        ], 500);
     }
 
     $uploadDir = __DIR__ . '/../uploads';
@@ -309,8 +322,11 @@ function removeGdImageBackgroundColor($src, $r, $g, $b, $tolerance = 42) {
  * @return array{filename: string, filepath: string, converted: bool, width: int, height: int}
  */
 function processUploadedTileHeaderImage($tmpPath, $originalName, $mimeType, $maxW = 400, $maxH = 80, $removeBackground = false, $bgColorHex = null, $filenamePrefix = 'tileheader_') {
+    // REQUIRES: PHP GD (ext-gd). See file header comment.
     if (!extension_loaded('gd')) {
-        sendJSON(['error' => 'GD image extension is required for automatic image conversion'], 500);
+        sendJSON([
+            'error' => 'PHP GD extension (ext-gd) is required for image conversion and background removal. Enable extension=gd in php.ini and restart Apache. Check: php -m | findstr gd'
+        ], 500);
     }
 
     $uploadDir = __DIR__ . '/../uploads';

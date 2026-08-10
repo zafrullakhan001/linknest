@@ -376,10 +376,44 @@ export const settingsService = {
     }
   },
 
-  async uploadLogo(file: File, settingKey: 'logo_image' | 'header_logo_image' = 'logo_image'): Promise<string> {
+  /**
+   * Upload brand or header logo.
+   * Background removal is done server-side with PHP GD (ext-gd) — no frontend image library.
+   * If removeBackground fails, enable extension=gd in php.ini and restart Apache.
+   */
+  async uploadLogo(
+    file: File | null,
+    settingKeyOrOptions:
+      | 'logo_image'
+      | 'header_logo_image'
+      | {
+          settingKey?: 'logo_image' | 'header_logo_image';
+          removeBackground?: boolean;
+          bgColor?: string;
+          /** Reprocess an existing /uploads/logo_* URL without uploading a new file. */
+          sourceUrl?: string;
+        } = 'logo_image'
+  ): Promise<string> {
+    const options =
+      typeof settingKeyOrOptions === 'string'
+        ? { settingKey: settingKeyOrOptions as 'logo_image' | 'header_logo_image' }
+        : settingKeyOrOptions;
+    const settingKey = options.settingKey || 'logo_image';
+
     const formData = new FormData();
-    formData.append('logo', file);
+    if (file) {
+      formData.append('logo', file);
+    }
     formData.append('setting_key', settingKey);
+    if (options.sourceUrl) {
+      formData.append('source_url', options.sourceUrl);
+    }
+    if (options.removeBackground) {
+      formData.append('remove_background', '1');
+    }
+    if (options.bgColor) {
+      formData.append('bg_color', options.bgColor);
+    }
 
     const response = await fetch(`${API_BASE}/settings/upload-logo`, {
       method: 'POST',
@@ -396,9 +430,32 @@ export const settingsService = {
     return data.url;
   },
 
-  async uploadFavicon(file: File): Promise<string> {
+  /**
+   * Upload favicon (or reprocess existing).
+   * Background removal requires PHP GD (ext-gd) on the server — not a JS library.
+   */
+  async uploadFavicon(
+    file: File | null,
+    options?: {
+      removeBackground?: boolean;
+      bgColor?: string;
+      /** Reprocess an existing /uploads/favicon_* URL without uploading a new file. */
+      sourceUrl?: string;
+    }
+  ): Promise<string> {
     const formData = new FormData();
-    formData.append('favicon', file);
+    if (file) {
+      formData.append('favicon', file);
+    }
+    if (options?.sourceUrl) {
+      formData.append('source_url', options.sourceUrl);
+    }
+    if (options?.removeBackground) {
+      formData.append('remove_background', '1');
+    }
+    if (options?.bgColor) {
+      formData.append('bg_color', options.bgColor);
+    }
 
     const response = await fetch(`${API_BASE}/settings/upload-favicon`, {
       method: 'POST',

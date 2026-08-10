@@ -633,6 +633,63 @@ function handleGetSettings() {
 
 function handleUploadLogo() {
     requireAdmin(); // Only admins can upload
+
+    // Optional target setting key (brand logo vs header/company logo)
+    $settingKey = $_POST['setting_key'] ?? 'logo_image';
+    if (!in_array($settingKey, ['logo_image', 'header_logo_image'], true)) {
+        $settingKey = 'logo_image';
+    }
+
+    // Background removal uses PHP GD (ext-gd) via processUploadedBrandImage / image_helpers.php.
+    // No Composer package required. If this fails, enable extension=gd in php.ini.
+    $removeBackground = !empty($_POST['remove_background']) && (
+        $_POST['remove_background'] === '1' ||
+        $_POST['remove_background'] === 'true' ||
+        $_POST['remove_background'] === true
+    );
+    $bgColor = isset($_POST['bg_color']) ? trim((string)$_POST['bg_color']) : '';
+    if ($bgColor === '') {
+        $bgColor = null;
+    }
+
+    // Reprocess an existing uploaded logo (no new file) — e.g. strip background
+    $sourceUrl = isset($_POST['source_url']) ? trim((string)$_POST['source_url']) : '';
+    if ($sourceUrl !== '' && (!isset($_FILES['logo']) || $_FILES['logo']['error'] === UPLOAD_ERR_NO_FILE)) {
+        $filename = basename(parse_url($sourceUrl, PHP_URL_PATH) ?: $sourceUrl);
+        if (!preg_match('/^[a-zA-Z0-9._-]+$/', $filename) || strpos($filename, 'logo_') !== 0) {
+            sendJSON(['error' => 'Invalid source logo'], 400);
+        }
+        $filepath = __DIR__ . '/../uploads/' . $filename;
+        if (!is_file($filepath)) {
+            sendJSON(['error' => 'Source logo not found'], 404);
+        }
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mimeType = finfo_file($finfo, $filepath);
+        finfo_close($finfo);
+        $result = processUploadedBrandImage(
+            $filepath,
+            $filename,
+            $mimeType ?: 'image/png',
+            'logo',
+            $removeBackground,
+            $bgColor
+        );
+        $url = '/uploads/' . $result['filename'];
+        $db = getDB();
+        $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
+        $stmt->execute([$settingKey, $url, time()]);
+        $normalizedUrl = normalizeLogoUrl($url);
+        sendJSON([
+            'success' => true,
+            'url' => $normalizedUrl,
+            'converted' => !empty($result['converted']),
+            'width' => $result['width'] ?? null,
+            'height' => $result['height'] ?? null,
+            'message' => $removeBackground
+                ? 'Logo background removed and converted to PNG (max 512×512)'
+                : 'Logo reprocessed to PNG (max 512×512)'
+        ]);
+    }
     
     // Check if file was uploaded
     if (!isset($_FILES['logo']) || $_FILES['logo']['error'] !== UPLOAD_ERR_OK) {
@@ -657,14 +714,15 @@ function handleUploadLogo() {
         sendJSON(['error' => 'File size too large. Maximum size: 10MB'], 400);
     }
     
-    $result = processUploadedBrandImage($file['tmp_name'], $file['name'], $mimeType, 'logo');
+    $result = processUploadedBrandImage(
+        $file['tmp_name'],
+        $file['name'],
+        $mimeType,
+        'logo',
+        $removeBackground,
+        $bgColor
+    );
     $url = '/uploads/' . $result['filename'];
-
-    // Optional target setting key (brand logo vs header/company logo)
-    $settingKey = $_POST['setting_key'] ?? 'logo_image';
-    if (!in_array($settingKey, ['logo_image', 'header_logo_image'], true)) {
-        $settingKey = 'logo_image';
-    }
     
     // Update settings with the new logo URL (stored without prefix)
     $db = getDB();
@@ -673,6 +731,13 @@ function handleUploadLogo() {
     
     // Return normalized URL for current environment
     $normalizedUrl = normalizeLogoUrl($url);
+
+    $message = 'Logo uploaded successfully';
+    if (!empty($result['converted'])) {
+        $message = $removeBackground
+            ? 'Logo uploaded, background removed, and converted to PNG (max 512×512)'
+            : 'Logo uploaded and auto-converted to PNG (max 512×512)';
+    }
     
     sendJSON([
         'success' => true,
@@ -680,9 +745,7 @@ function handleUploadLogo() {
         'converted' => $result['converted'],
         'width' => $result['width'] ?? null,
         'height' => $result['height'] ?? null,
-        'message' => $result['converted']
-            ? 'Logo uploaded and auto-converted to PNG (max 512×512)'
-            : 'Logo uploaded successfully'
+        'message' => $message
     ]);
 }
 

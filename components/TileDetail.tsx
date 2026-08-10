@@ -664,6 +664,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             return 'side-by-side';
         }
     });
+    /**
+     * Independent of link view mode (stacked/grid/compact/qr/columns).
+     * When true, section cards sit in a multi-column grid; can stay ON while other views are selected.
+     */
+    const [sectionsSideBySide, setSectionsSideBySide] = useState(() => {
+        try {
+            const saved = localStorage.getItem('linknest_sections_side_by_side');
+            if (saved === '1' || saved === 'true') return true;
+            if (saved === '0' || saved === 'false') return false;
+            // Migrate: previous exclusive "side-by-side" view meant sections were side-by-side
+            const layout = localStorage.getItem('linknest_view_layout');
+            return layout === null || layout === 'side-by-side';
+        } catch {
+            return true;
+        }
+    });
     const [sectionLinkLayouts, setSectionLinkLayouts] = useState<Record<string, ViewLayoutMode>>(() =>
         loadSectionLinkLayouts(tile.id)
     );
@@ -1237,6 +1253,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             console.error('Failed to save view layout preference:', error);
         }
     }, [viewLayout]);
+
+    useEffect(() => {
+        try {
+            localStorage.setItem('linknest_sections_side_by_side', sectionsSideBySide ? '1' : '0');
+        } catch (error) {
+            console.error('Failed to save sections side-by-side preference:', error);
+        }
+    }, [sectionsSideBySide]);
 
     useEffect(() => {
         try {
@@ -5036,13 +5060,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         <span className="text-xs font-medium text-slate-500 dark:text-slate-400">View:</span>
                                         <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
                                             <button
+                                                type="button"
                                                 onClick={() => setViewLayout('stacked')}
                                                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${viewLayout === 'stacked'
                                                     ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
                                                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                                                     }`}
-                                                title="Stacked view - sections appear vertically"
-                                                aria-label="Stacked view"
+                                                title="Stacked list — links appear vertically (combine with side-by-side sections)"
+                                                aria-label="Stacked list view"
                                                 aria-pressed={viewLayout === 'stacked'}
                                             >
                                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
@@ -5050,20 +5075,25 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 </svg>
                                             </button>
                                             <button
-                                                onClick={() => setViewLayout('side-by-side')}
-                                                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${viewLayout === 'side-by-side'
+                                                type="button"
+                                                onClick={() => {
+                                                    // Independent toggle: keep stacked/grid/compact/qr (or columns) link mode as-is
+                                                    setSectionsSideBySide((prev) => !prev);
+                                                }}
+                                                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${sectionsSideBySide
                                                     ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
                                                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                                                     }`}
-                                                title="Side-by-side view - sections appear horizontally"
-                                                aria-label="Side-by-side view"
-                                                aria-pressed={viewLayout === 'side-by-side'}
+                                                title="Side-by-side sections — toggle on/off with any link view"
+                                                aria-label="Toggle side-by-side sections"
+                                                aria-pressed={sectionsSideBySide}
                                             >
                                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                                                     <path d="M2 4.5A2.5 2.5 0 014.5 2h3A2.5 2.5 0 0110 4.5v11A2.5 2.5 0 017.5 18h-3A2.5 2.5 0 012 15.5v-11zM10.5 2A2.5 2.5 0 0013 4.5v11a2.5 2.5 0 01-2.5 2.5H13a2.5 2.5 0 002.5-2.5v-11A2.5 2.5 0 0013 2h-.5z" />
                                                 </svg>
                                             </button>
                                             <button
+                                                type="button"
                                                 onClick={() => setViewLayout('grid')}
                                                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${viewLayout === 'grid'
                                                     ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
@@ -5078,6 +5108,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 </svg>
                                             </button>
                                             <button
+                                                type="button"
                                                 onClick={() => setViewLayout('compact')}
                                                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${viewLayout === 'compact'
                                                     ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
@@ -5093,6 +5124,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             </button>
                                             {isLinkActionAllowed('qr') && (
                                             <button
+                                                type="button"
                                                 onClick={() => {
                                                     // QR needs full-width section cards — sync top view so section icons match content
                                                     setSyncSectionViews(true);
@@ -5356,8 +5388,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         ) : (
                             <div
                                 ref={qrPrintRootRef}
-                                className={viewLayout === 'side-by-side' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' : 'space-y-8'}
-                                data-sections-layout={viewLayout}
+                                className={sectionsSideBySide ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' : 'space-y-8'}
+                                data-sections-layout={sectionsSideBySide ? 'side-by-side' : 'stacked'}
+                                data-view-layout={viewLayout}
                                 data-qr-print-all=""
                             >
                                 {filteredSections.map((section, sectionIndex) => {

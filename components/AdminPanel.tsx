@@ -424,8 +424,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [adminPasswordLoading, setAdminPasswordLoading] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [logoRemoveBg, setLogoRemoveBg] = useState(false);
+  const [logoBgMode, setLogoBgMode] = useState<'auto' | 'custom'>('auto');
+  const [logoBgColor, setLogoBgColor] = useState('#ffffff');
   const [headerLogoUploading, setHeaderLogoUploading] = useState(false);
   const [headerLogoPreview, setHeaderLogoPreview] = useState<string | null>(null);
+  const [headerLogoRemoveBg, setHeaderLogoRemoveBg] = useState(false);
+  const [headerLogoBgMode, setHeaderLogoBgMode] = useState<'auto' | 'custom'>('auto');
+  const [headerLogoBgColor, setHeaderLogoBgColor] = useState('#ffffff');
   const [faviconUploading, setFaviconUploading] = useState(false);
   const [faviconPreview, setFaviconPreview] = useState<string | null>(null);
   const [faviconRemoveBg, setFaviconRemoveBg] = useState(false);
@@ -11012,18 +11018,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   {(logoPreview || settings.logo_image) && (
                                     <div className="mb-3 p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg">
                                       <div className="flex items-center gap-3">
-                                        <img
-                                          src={logoPreview || settings.logo_image}
-                                          alt="Logo preview"
-                                          className="w-16 h-16 object-contain rounded border border-slate-200 dark:border-slate-700"
-                                          onError={(e) => {
-                                            (e.target as HTMLImageElement).style.display = 'none';
+                                        <div
+                                          className="w-16 h-16 rounded border border-slate-200 dark:border-slate-700 p-1 flex items-center justify-center overflow-hidden"
+                                          style={{
+                                            backgroundImage:
+                                              'linear-gradient(45deg, #d4d4d8 25%, transparent 25%), linear-gradient(-45deg, #d4d4d8 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #d4d4d8 75%), linear-gradient(-45deg, transparent 75%, #d4d4d8 75%)',
+                                            backgroundSize: '10px 10px',
+                                            backgroundPosition: '0 0, 0 5px, 5px -5px, -5px 0',
+                                            backgroundColor: '#f4f4f5',
                                           }}
-                                        />
+                                          title="Checkerboard shows transparency"
+                                        >
+                                          <img
+                                            src={logoPreview || settings.logo_image}
+                                            alt="Logo preview"
+                                            className="max-w-full max-h-full object-contain"
+                                            onError={(e) => {
+                                              (e.target as HTMLImageElement).style.display = 'none';
+                                            }}
+                                          />
+                                        </div>
                                         <div className="flex-1">
                                           <p className="text-xs text-slate-600 dark:text-slate-400">Current logo preview</p>
                                           {settings.logo_image && (
                                             <button
+                                              type="button"
                                               onClick={() => {
                                                 updateBranding({ logo_image: '' });
                                                 setLogoPreview(null);
@@ -11061,7 +11080,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                           try {
                                             setLogoUploading(true);
                                             setError('');
-                                            const url = await settingsService.uploadLogo(file);
+                                            // Background removal runs on PHP GD (ext-gd) via /settings/upload-logo
+                                            const url = await settingsService.uploadLogo(file, {
+                                              settingKey: 'logo_image',
+                                              removeBackground: logoRemoveBg,
+                                              bgColor: logoRemoveBg && logoBgMode === 'custom' ? logoBgColor : undefined,
+                                            });
                                             updateBranding({ logo_image: url });
                                             setLogoPreview(null);
                                             URL.revokeObjectURL(objectUrl);
@@ -11084,13 +11108,89 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                         </svg>
-                                        Uploading...
+                                        {logoRemoveBg ? 'Removing background & uploading...' : 'Uploading...'}
                                       </div>
                                     )}
                                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                                       JPEG, PNG, GIF, SVG, WebP — auto-converted to PNG (max 512×512). SVG kept as-is. Max 10MB.
                                     </p>
                                   </div>
+
+                                  <div className="flex flex-wrap items-center gap-3 mb-3">
+                                    <label className="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={logoRemoveBg}
+                                        onChange={(e) => setLogoRemoveBg(e.target.checked)}
+                                        className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                                      />
+                                      Remove background
+                                    </label>
+                                    {logoRemoveBg ? (
+                                      <>
+                                        <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                                          <input
+                                            type="radio"
+                                            name="logoBgMode"
+                                            checked={logoBgMode === 'auto'}
+                                            onChange={() => setLogoBgMode('auto')}
+                                          />
+                                          Auto (corners)
+                                        </label>
+                                        <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                                          <input
+                                            type="radio"
+                                            name="logoBgMode"
+                                            checked={logoBgMode === 'custom'}
+                                            onChange={() => setLogoBgMode('custom')}
+                                          />
+                                          Pick color
+                                        </label>
+                                        {logoBgMode === 'custom' ? (
+                                          <input
+                                            type="color"
+                                            value={logoBgColor}
+                                            onChange={(e) => setLogoBgColor(e.target.value)}
+                                            className="w-7 h-7 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent"
+                                            title="Background color to remove"
+                                          />
+                                        ) : null}
+                                      </>
+                                    ) : null}
+                                    {settings.logo_image && logoRemoveBg && /\/uploads\/logo_/i.test(settings.logo_image) ? (
+                                      <button
+                                        type="button"
+                                        disabled={logoUploading}
+                                        onClick={async () => {
+                                          setLogoUploading(true);
+                                          setError('');
+                                          try {
+                                            // Server-side PHP GD chroma-key (ext-gd required)
+                                            const url = await settingsService.uploadLogo(null, {
+                                              settingKey: 'logo_image',
+                                              sourceUrl: settings.logo_image,
+                                              removeBackground: true,
+                                              bgColor: logoBgMode === 'custom' ? logoBgColor : undefined,
+                                            });
+                                            updateBranding({ logo_image: url });
+                                            setLogoPreview(null);
+                                          } catch (err: any) {
+                                            setError(err.message || 'Failed to remove logo background');
+                                          } finally {
+                                            setLogoUploading(false);
+                                          }
+                                        }}
+                                        className="text-xs font-medium px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
+                                      >
+                                        Apply to current logo
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                  {logoRemoveBg ? (
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 -mt-2 mb-3">
+                                      Strips a solid background (white, etc.) to transparent via PHP GD (ext-gd). Works on raster uploads; SVG is not supported. If removal fails, enable <code className="text-[10px]">extension=gd</code> in php.ini and restart Apache.
+                                    </p>
+                                  ) : null}
 
                                   <div>
                                     <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
@@ -11138,18 +11238,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               {(headerLogoPreview || settings.header_logo_image) && (
                                 <div className="mb-3 p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg">
                                   <div className="flex items-center gap-3">
-                                    <img
-                                      src={headerLogoPreview || settings.header_logo_image}
-                                      alt="Header logo preview"
-                                      className="w-16 h-16 object-contain rounded border border-slate-200 dark:border-slate-700"
-                                      onError={(e) => {
-                                        (e.target as HTMLImageElement).style.display = 'none';
+                                    <div
+                                      className="w-16 h-16 rounded border border-slate-200 dark:border-slate-700 p-1 flex items-center justify-center overflow-hidden"
+                                      style={{
+                                        backgroundImage:
+                                          'linear-gradient(45deg, #d4d4d8 25%, transparent 25%), linear-gradient(-45deg, #d4d4d8 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #d4d4d8 75%), linear-gradient(-45deg, transparent 75%, #d4d4d8 75%)',
+                                        backgroundSize: '10px 10px',
+                                        backgroundPosition: '0 0, 0 5px, 5px -5px, -5px 0',
+                                        backgroundColor: '#f4f4f5',
                                       }}
-                                    />
+                                      title="Checkerboard shows transparency"
+                                    >
+                                      <img
+                                        src={headerLogoPreview || settings.header_logo_image}
+                                        alt="Header logo preview"
+                                        className="max-w-full max-h-full object-contain"
+                                        onError={(e) => {
+                                          (e.target as HTMLImageElement).style.display = 'none';
+                                        }}
+                                      />
+                                    </div>
                                     <div className="flex-1">
                                       <p className="text-xs text-slate-600 dark:text-slate-400">Current header logo preview</p>
                                       {settings.header_logo_image && (
                                         <button
+                                          type="button"
                                           onClick={() => {
                                             updateBranding({ header_logo_image: '' });
                                             setHeaderLogoPreview(null);
@@ -11187,7 +11300,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       try {
                                         setHeaderLogoUploading(true);
                                         setError('');
-                                        const url = await settingsService.uploadLogo(file, 'header_logo_image');
+                                        // Background removal runs on PHP GD (ext-gd) via /settings/upload-logo
+                                        const url = await settingsService.uploadLogo(file, {
+                                          settingKey: 'header_logo_image',
+                                          removeBackground: headerLogoRemoveBg,
+                                          bgColor: headerLogoRemoveBg && headerLogoBgMode === 'custom' ? headerLogoBgColor : undefined,
+                                        });
                                         updateBranding({ header_logo_image: url });
                                         setHeaderLogoPreview(null);
                                         URL.revokeObjectURL(objectUrl);
@@ -11210,13 +11328,89 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                     </svg>
-                                    Uploading...
+                                    {headerLogoRemoveBg ? 'Removing background & uploading...' : 'Uploading...'}
                                   </div>
                                 )}
                                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                                   JPEG, PNG, GIF, SVG, WebP — auto-converted to PNG (max 512×512). SVG kept as-is. Max 10MB.
                                 </p>
                               </div>
+
+                              <div className="flex flex-wrap items-center gap-3 mb-3">
+                                <label className="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={headerLogoRemoveBg}
+                                    onChange={(e) => setHeaderLogoRemoveBg(e.target.checked)}
+                                    className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                                  />
+                                  Remove background
+                                </label>
+                                {headerLogoRemoveBg ? (
+                                  <>
+                                    <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                                      <input
+                                        type="radio"
+                                        name="headerLogoBgMode"
+                                        checked={headerLogoBgMode === 'auto'}
+                                        onChange={() => setHeaderLogoBgMode('auto')}
+                                      />
+                                      Auto (corners)
+                                    </label>
+                                    <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                                      <input
+                                        type="radio"
+                                        name="headerLogoBgMode"
+                                        checked={headerLogoBgMode === 'custom'}
+                                        onChange={() => setHeaderLogoBgMode('custom')}
+                                      />
+                                      Pick color
+                                    </label>
+                                    {headerLogoBgMode === 'custom' ? (
+                                      <input
+                                        type="color"
+                                        value={headerLogoBgColor}
+                                        onChange={(e) => setHeaderLogoBgColor(e.target.value)}
+                                        className="w-7 h-7 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent"
+                                        title="Background color to remove"
+                                      />
+                                    ) : null}
+                                  </>
+                                ) : null}
+                                {settings.header_logo_image && headerLogoRemoveBg && /\/uploads\/logo_/i.test(settings.header_logo_image) ? (
+                                  <button
+                                    type="button"
+                                    disabled={headerLogoUploading}
+                                    onClick={async () => {
+                                      setHeaderLogoUploading(true);
+                                      setError('');
+                                      try {
+                                        // Server-side PHP GD chroma-key (ext-gd required)
+                                        const url = await settingsService.uploadLogo(null, {
+                                          settingKey: 'header_logo_image',
+                                          sourceUrl: settings.header_logo_image,
+                                          removeBackground: true,
+                                          bgColor: headerLogoBgMode === 'custom' ? headerLogoBgColor : undefined,
+                                        });
+                                        updateBranding({ header_logo_image: url });
+                                        setHeaderLogoPreview(null);
+                                      } catch (err: any) {
+                                        setError(err.message || 'Failed to remove header logo background');
+                                      } finally {
+                                        setHeaderLogoUploading(false);
+                                      }
+                                    }}
+                                    className="text-xs font-medium px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
+                                  >
+                                    Apply to current header logo
+                                  </button>
+                                ) : null}
+                              </div>
+                              {headerLogoRemoveBg ? (
+                                <p className="text-xs text-slate-500 dark:text-slate-400 -mt-2 mb-3">
+                                  Strips a solid background (white, etc.) to transparent via PHP GD (ext-gd). Works on raster uploads; SVG is not supported. If removal fails, enable <code className="text-[10px]">extension=gd</code> in php.ini and restart Apache.
+                                </p>
+                              ) : null}
 
                               <div>
                                 <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
@@ -11548,7 +11742,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               </div>
                               {faviconRemoveBg ? (
                                 <p className="text-xs text-slate-500 dark:text-slate-400 -mt-2">
-                                  Strips a solid background (white, etc.) to transparent. Works on raster uploads; SVG is not supported.
+                                  Strips a solid background (white, etc.) to transparent via PHP GD (ext-gd). Works on raster uploads; SVG is not supported. If removal fails, enable <code className="text-[10px]">extension=gd</code> in php.ini and restart Apache.
                                 </p>
                               ) : null}
 
