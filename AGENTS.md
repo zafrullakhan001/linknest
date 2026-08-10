@@ -348,6 +348,8 @@ Default credentials:
 ## Documentation References
 
 - `docs/SETUP.md` - Detailed setup instructions
+- `docs/PACKAGE_FOR_DEPLOYMENT.md` - Windows XAMPP deploy ZIP (`package-for-deployment.bat`)
+- `docs/XAMPP_PHP_UPGRADE.md` - Upgrade PHP inside Windows XAMPP (8.5+ / future minors)
 - `docs/PRODUCTION.md` - Production deployment guide
 - `docs/DEPLOYMENT_INSTRUCTIONS.md` - Deployment procedures
 - `docker/README_DOCKER.md` - Docker-specific documentation
@@ -379,3 +381,15 @@ Default credentials:
 ## In-app updates
 
 See [`docs/APP_UPDATES.md`](docs/APP_UPDATES.md) for publishing GitHub Releases (`scripts/publish-update-release.ps1`) and applying them from Admin → App Updates.
+
+## XAMPP PHP upgrades
+
+See [`docs/XAMPP_PHP_UPGRADE.md`](docs/XAMPP_PHP_UPGRADE.md) and `scripts/upgrade-xampp-php.ps1` to upgrade the Windows XAMPP PHP runtime (LDAP-gated; works for 8.5 and later published minors).
+
+## Package for deployment (Windows XAMPP)
+
+See [`docs/PACKAGE_FOR_DEPLOYMENT.md`](docs/PACKAGE_FOR_DEPLOYMENT.md). Double-click or run `package-for-deployment.bat` (flags forward to `package-for-deployment.ps1`: `-IncludeDatabase`, `-ExcludeUploads`, `-SkipBuild`, `-SkipSqliteRuntime`, `-SkipRemoteRuntime`, `-BasePath`, `-OutputDir`).
+
+## Office / Windows Server 2022 replication
+
+See [`docs/OFFICE_WIN2022_DEPLOY.md`](docs/OFFICE_WIN2022_DEPLOY.md) for the verified Win2022 deploy (PHP 8.5.9, Apache, link-health fix, performance tweaks) and how to repeat it on an office host.

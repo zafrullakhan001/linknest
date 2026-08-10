@@ -72,7 +72,7 @@ function determineHealthStatus($httpCode, $errno, $error, $redirectCount = 0) {
         $status = 'redirected';
         $error = 'Redirected (HTTP ' . $httpCode . ')';
     } elseif ($httpCode >= 200 && $httpCode < 300) {
-        // Success (2xx) — mark as redirected when the check followed one or more redirects
+        // Success (2xx) â€” mark as redirected when the check followed one or more redirects
         if ($redirectCount > 0) {
             $status = 'redirected';
             $error = 'Reached after ' . (int)$redirectCount . ' redirect(s)';
@@ -130,7 +130,7 @@ function releaseSessionLock() {
 }
 
 /**
- * Non-HTTP schemes (SSH, VNC, RDP, etc.) cannot be probed with cURL HEAD — skip health checks.
+ * Non-HTTP schemes (SSH, VNC, RDP, etc.) cannot be probed with cURL HEAD â€” skip health checks.
  */
 function isNonHttpHealthUrl($url) {
     return isNonHttpLinkHealthUrl($url);
@@ -362,8 +362,6 @@ function checkUrlHealth($url, $timeoutSeconds = 2) {
     $redirectCount = (int)curl_getinfo($ch, CURLINFO_REDIRECT_COUNT);
     $error = curl_error($ch);
     $errno = curl_errno($ch);
-    curl_close($ch);
-
     // Determine status using shared logic
     $statusResult = determineHealthStatus($httpCode, $errno, $error, $redirectCount);
     $status = $statusResult['status'];
@@ -390,7 +388,7 @@ function createHealthCurlHandle($url, $timeoutSeconds = 2) {
         CURLOPT_MAXREDIRS => 2,
         CURLOPT_TIMEOUT => $timeoutSeconds,
         CURLOPT_CONNECTTIMEOUT => min(1, $timeoutSeconds),
-        CURLOPT_NOBODY => true, // HEAD — fastest probe
+        CURLOPT_NOBODY => true, // HEAD â€” fastest probe
         CURLOPT_SSL_VERIFYPEER => false,
         CURLOPT_SSL_VERIFYHOST => 0,
         CURLOPT_USERAGENT => (function_exists('getAppName') ? (getAppName() ?: 'LinkNest') : 'LinkNest') . ' Health Checker/1.0',
@@ -509,7 +507,6 @@ function checkUrlsParallel($urls, $maxConcurrent = 12) {
                 unset($active[$doneUrl]);
             }
             curl_multi_remove_handle($multiHandle, $ch);
-            curl_close($ch);
             $addNext();
         }
 
@@ -532,12 +529,8 @@ function checkUrlsParallel($urls, $maxConcurrent = 12) {
             'server_latency' => round((microtime(true) - $meta['started']) * 1000)
         ];
         curl_multi_remove_handle($multiHandle, $ch);
-        curl_close($ch);
     }
     $active = [];
-
-    curl_multi_close($multiHandle);
-
     foreach ($queue as $url) {
         if (!isset($results[$url])) {
             $results[$url] = [
@@ -1085,7 +1078,7 @@ function handleCheckTileLinks() {
             $lastChecked = isset($link['health_checked_at']) ? (int)$link['health_checked_at'] : null;
             $currentStatus = $link['health_status'] ?? null;
 
-            // Skip SSH / RDP / non-HTTP / exception-listed URLs — never mark them broken via HTTP probe
+            // Skip SSH / RDP / non-HTTP / exception-listed URLs â€” never mark them broken via HTTP probe
             if (shouldSkipLinkHealthCheck($link['url'])) {
                 clearLinkHealth($link['id']);
                 $results[$link['id']] = [

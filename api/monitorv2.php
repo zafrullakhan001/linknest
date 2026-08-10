@@ -61,7 +61,7 @@ function getMonitorv2DB() {
 
     if ($host === '' || $database === '') {
         $GLOBALS['_monitorv2_db_failure'] = [
-            'message' => 'Monitorv2 database is not configured. Please configure it in Add-ons → Monitorv2.',
+            'message' => 'Monitorv2 database is not configured. Please configure it in Add-ons â†’ Monitorv2.',
             'code' => 'not_configured'
         ];
         return null;
@@ -965,8 +965,6 @@ function performMonitorv2Check($monitor) {
             $info = curl_getinfo($ch);
             $error = curl_error($ch);
             $errno = curl_errno($ch);
-            curl_close($ch);
-            
             $result['response_time'] = round((microtime(true) - $startTime) * 1000);
             
             if ($errno !== 0) {
@@ -1590,16 +1588,16 @@ function dashboardHtml($error, $summary, $monitors, $recentChecks) {
     $h = function ($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); };
     $row = function ($m) use ($h) {
         $target = $m['target'] ?? '';
-        $targetShort = strlen($target) > 50 ? substr($target, 0, 50) . '…' : $target;
+        $targetShort = strlen($target) > 50 ? substr($target, 0, 50) . 'â€¦' : $target;
         $status = $m['current_status'] ?? 'unknown';
-        $resp = isset($m['last_response_time_ms']) && $m['last_response_time_ms'] !== '' ? $h($m['last_response_time_ms']) . ' ms' : '—';
-        $uptime = isset($m['uptime_percentage']) && $m['uptime_percentage'] !== '' && $m['uptime_percentage'] !== null ? number_format((float)$m['uptime_percentage'], 1) . '%' : '—';
-        $last = isset($m['last_checked_at']) && $m['last_checked_at'] ? date('Y-m-d H:i', strtotime($m['last_checked_at'])) : '—';
+        $resp = isset($m['last_response_time_ms']) && $m['last_response_time_ms'] !== '' ? $h($m['last_response_time_ms']) . ' ms' : 'â€”';
+        $uptime = isset($m['uptime_percentage']) && $m['uptime_percentage'] !== '' && $m['uptime_percentage'] !== null ? number_format((float)$m['uptime_percentage'], 1) . '%' : 'â€”';
+        $last = isset($m['last_checked_at']) && $m['last_checked_at'] ? date('Y-m-d H:i', strtotime($m['last_checked_at'])) : 'â€”';
         return '<tr><td>' . $h($m['name'] ?? '') . '</td><td>' . $h($m['type'] ?? '') . '</td><td>' . $h($targetShort) . '</td><td><span class="status ' . $h($status) . '">' . $h($status) . '</span></td><td>' . $resp . '</td><td>' . $uptime . '</td><td class="time">' . $h($last) . '</td></tr>';
     };
     $checkRow = function ($c) use ($h) {
-        $resp = isset($c['response_time_ms']) && $c['response_time_ms'] !== '' && $c['response_time_ms'] !== null ? $h($c['response_time_ms']) . ' ms' : '—';
-        $time = isset($c['checked_at']) && $c['checked_at'] ? date('Y-m-d H:i:s', strtotime($c['checked_at'])) : '—';
+        $resp = isset($c['response_time_ms']) && $c['response_time_ms'] !== '' && $c['response_time_ms'] !== null ? $h($c['response_time_ms']) . ' ms' : 'â€”';
+        $time = isset($c['checked_at']) && $c['checked_at'] ? date('Y-m-d H:i:s', strtotime($c['checked_at'])) : 'â€”';
         return '<tr><td>' . $h($c['monitor_name'] ?? '') . '</td><td><span class="status ' . $h($c['status'] ?? '') . '">' . $h($c['status'] ?? '') . '</span></td><td>' . $resp . '</td><td class="time">' . $h($time) . '</td></tr>';
     };
     $monitorRows = implode('', array_map($row, $monitors));
@@ -1619,7 +1617,7 @@ function dashboardHtml($error, $summary, $monitors, $recentChecks) {
         );
     return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Monitorv2 Dashboard | LinkNest</title><style>
 *{box-sizing:border-box}body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:16px;background:#0f172a;color:#e2e8f0}.container{max-width:1200px;margin:0 auto}h1{font-size:1.5rem;margin:0 0 8px 0}.subtitle{color:#94a3b8;font-size:0.9rem;margin-bottom:24px}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:24px}.stat{background:#1e293b;padding:16px;border-radius:8px;text-align:center}.stat-value{font-size:1.75rem;font-weight:700}.stat-label{font-size:0.8rem;color:#94a3b8;margin-top:4px}.stat.up .stat-value{color:#22c55e}.stat.down .stat-value{color:#ef4444}.stat.warning .stat-value{color:#eab308}.card{background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px}.card h2{font-size:1rem;margin:0 0 12px 0;color:#94a3b8}table{width:100%;border-collapse:collapse}th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #334155}th{color:#94a3b8;font-weight:600;font-size:0.85rem}.status{display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.8rem;font-weight:600}.status.up{background:#166534;color:#86efac}.status.down{background:#991b1b;color:#fca5a5}.status.warning{background:#854d0e;color:#fde047}.status.unknown{background:#475569;color:#cbd5e1}.time{font-size:0.85rem;color:#94a3b8}.error{background:#7f1d1d;color:#fecaca;padding:16px;border-radius:8px;margin-bottom:16px}.refresh{margin-bottom:16px}.refresh a{color:#38bdf8;text-decoration:none}.refresh a:hover{text-decoration:underline}
-</style></head><body><div class="container"><h1>Monitorv2 Dashboard</h1><p class="subtitle">zmonitoring · pg_cron views</p><div class="refresh"><a href="' . $h($refreshUrl) . '">Refresh</a></div>' . $body . '</div></body></html>';
+</style></head><body><div class="container"><h1>Monitorv2 Dashboard</h1><p class="subtitle">zmonitoring Â· pg_cron views</p><div class="refresh"><a href="' . $h($refreshUrl) . '">Refresh</a></div>' . $body . '</div></body></html>';
 }
 
 function handleSetupSchema() {

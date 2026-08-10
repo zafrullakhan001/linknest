@@ -36,7 +36,7 @@ if ($parts === false || empty($parts['host']) || !in_array(strtolower($parts['sc
 
 $host = strtolower($parts['host']);
 if ($host === 'localhost' || $host === '127.0.0.1' || str_ends_with($host, '.localhost')) {
-    // Local targets are typically same-origin/self-hosted — treat as embeddable for preview.
+    // Local targets are typically same-origin/self-hosted â€” treat as embeddable for preview.
     echo json_encode([
         'data' => [
             'url' => $rawUrl,
@@ -94,9 +94,7 @@ function linknest_check_frame_embed(string $url): array
     $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $finalUrl = (string)(curl_getinfo($ch, CURLINFO_EFFECTIVE_URL) ?: $url);
     $errno = curl_errno($ch);
-    curl_close($ch);
-
-    // Some hosts reject HEAD — retry a lightweight GET of headers only.
+    // Some hosts reject HEAD â€” retry a lightweight GET of headers only.
     if ($errno || $httpCode === 0 || $httpCode === 405 || $httpCode === 501) {
         $headers = [];
         $ch = curl_init();
@@ -121,7 +119,6 @@ function linknest_check_frame_embed(string $url): array
         curl_exec($ch);
         $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $finalUrl = (string)(curl_getinfo($ch, CURLINFO_EFFECTIVE_URL) ?: $url);
-        curl_close($ch);
     }
 
     $xfo = $headers['x-frame-options'] ?? null;
@@ -150,12 +147,12 @@ function linknest_check_frame_embed(string $url): array
 
     if ($embeddable && is_string($frameAncestors) && $frameAncestors !== '') {
         $fa = strtolower($frameAncestors);
-        // 'none' or missing * / our host → treat as blocked for third-party embed
+        // 'none' or missing * / our host â†’ treat as blocked for third-party embed
         if (preg_match('/(?:^|\s)\'?none\'?(?:\s|$)/', $fa)) {
             $embeddable = false;
             $reason = "CSP frame-ancestors 'none'";
         } elseif (!str_contains($fa, '*')) {
-            // Restrictive list without wildcard — almost always blocks us
+            // Restrictive list without wildcard â€” almost always blocks us
             $embeddable = false;
             $reason = 'CSP frame-ancestors restricts embedding';
         }

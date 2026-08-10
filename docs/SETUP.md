@@ -83,3 +83,18 @@ Make sure the `data/` directory is writable for session storage.
 
 See `README_BACKEND.md` for production setup instructions.
 
+## Upgrade PHP on Windows XAMPP
+
+Official XAMPP packages may ship an older PHP (for example 8.2) while LinkNest runs well on newer releases such as **PHP 8.5**.
+
+Use the PowerShell upgrader (elevated when Apache is a Windows service):
+
+```powershell
+cd C:\xampp\htdocs\linknest
+.\scripts\upgrade-xampp-php-run-elevated.ps1 -Version 8.5 -RestartApache
+```
+
+The script downloads the official Thread Safe x64 build, verifies SHA256, checks **LDAP** before swapping, and keeps a `php-backup-*` folder for rollback.
+
+Full guide (also in Help → Guides): [XAMPP_PHP_UPGRADE.md](XAMPP_PHP_UPGRADE.md).
+

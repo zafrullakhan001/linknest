@@ -19,6 +19,8 @@ const DOCS_CATEGORY_MAP = [
     'SETUP.md' => 'Getting Started',
     'ARCHITECTURE.md' => 'Architecture',
     'APP_UPDATES.md' => 'Updates & Deploy',
+    'PACKAGE_FOR_DEPLOYMENT.md' => 'Updates & Deploy',
+    'XAMPP_PHP_UPGRADE.md' => 'Updates & Deploy',
     'DEPLOYMENT_INSTRUCTIONS.md' => 'Updates & Deploy',
     'PRODUCTION.md' => 'Updates & Deploy',
     'CREATE_BUNDLE.md' => 'Updates & Deploy',
@@ -51,13 +53,15 @@ const DOCS_CATEGORY_ORDER = [
 /** Preferred sort within Updates & Deploy */
 const DOCS_FILE_PRIORITY = [
     'APP_UPDATES.md' => 0,
+    'PACKAGE_FOR_DEPLOYMENT.md' => 1,
+    'XAMPP_PHP_UPGRADE.md' => 2,
     'SETUP.md' => 0,
     'ARCHITECTURE.md' => 0,
-    'DEPLOYMENT_INSTRUCTIONS.md' => 1,
-    'PRODUCTION.md' => 2,
-    'CREATE_BUNDLE.md' => 3,
-    'HTTPS_CONFIGURATION.md' => 4,
-    'PRODUCTION_TROUBLESHOOTING.md' => 5,
+    'DEPLOYMENT_INSTRUCTIONS.md' => 3,
+    'PRODUCTION.md' => 4,
+    'CREATE_BUNDLE.md' => 5,
+    'HTTPS_CONFIGURATION.md' => 6,
+    'PRODUCTION_TROUBLESHOOTING.md' => 7,
 ];
 
 function docsSendJson($data, int $code = 200): void {

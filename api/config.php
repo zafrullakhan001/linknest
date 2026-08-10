@@ -2,7 +2,8 @@
 // Disable error display, log errors instead
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
-error_reporting(E_ALL);
+// PHP 8.5+: keep runtime clean; deprecations (e.g. curl_close) must not surface as API failures.
+error_reporting(E_ALL & ~E_DEPRECATED & ~E_STRICT);
 
 // Set timezone to match system time
 // On Windows, ALWAYS use the Windows system timezone to match the system clock
@@ -83,6 +84,10 @@ if (!ob_get_level()) {
 
 // Set custom error handler to prevent HTML output
 set_error_handler(function($errno, $errstr, $errfile, $errline) {
+    // Ignore deprecations/strict notices (PHP 8.5 curl_close etc.) — do not escalate to failures
+    if ($errno === E_DEPRECATED || $errno === E_USER_DEPRECATED || $errno === E_STRICT) {
+        return true;
+    }
     // Log the error but don't output it
     error_log("PHP Error [$errno]: $errstr in $errfile on line $errline");
     // Return false to let PHP handle it normally (but display_errors is off, so it won't output)

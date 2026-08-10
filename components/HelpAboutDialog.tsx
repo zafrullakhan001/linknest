@@ -553,6 +553,18 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">XAMPP PHP Runtime Upgrade</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      On Windows XAMPP, upgrade the PHP runtime (for example to 8.5.x) with <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">scripts/upgrade-xampp-php.ps1</code>. The script verifies LDAP before swapping. Full steps: <strong>Guides → Upgrade PHP in XAMPP</strong>.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Package for Deployment (Windows)</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Build a XAMPP deploy ZIP with <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">package-for-deployment.bat</code> (fresh DB by default; optional <code className="text-xs">-IncludeDatabase</code>, <code className="text-xs">-ExcludeUploads</code>, <code className="text-xs">-BasePath</code>, <code className="text-xs">-OutputDir</code>, and more). The ZIP includes <code className="text-xs">upgrade-xampp-php.bat</code> + PHP upgrade scripts for the target. Target runs <code className="text-xs">deploy-xampp.bat</code> / <code className="text-xs">update-xampp.bat</code>. See <strong>Guides → Package for Deployment</strong>.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Email Notifications</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
                       Advanced email notification system with multiple SMTP server support, custom templates, time-based rules, day-of-week filters, and recipient management. Pause/resume notifications globally.
@@ -670,6 +682,101 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
                     <p className="text-sm text-amber-800 dark:text-amber-200">
                       <strong>Note:</strong> Private repos need a GitHub classic PAT with <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">repo</code> scope. Docker in-container updates are out of scope — use your image rebuild process instead. Full details are in Guides → App Updates.
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <path fillRule="evenodd" d="M4.5 2A1.5 1.5 0 003 3.5v13A1.5 1.5 0 004.5 18h11a1.5 1.5 0 001.5-1.5V7.621a1.5 1.5 0 00-.44-1.06l-4.12-4.122A1.5 1.5 0 0011.378 2H4.5zM10 8a.75.75 0 01.75.75v1.5h1.5a.75.75 0 010 1.5h-1.5v1.5a.75.75 0 01-1.5 0v-1.5h-1.5a.75.75 0 010-1.5h1.5v-1.5A.75.75 0 0110 8z" clipRule="evenodd" />
+                  </svg>
+                  Upgrade PHP in XAMPP
+                </h3>
+                <div className="space-y-3 text-slate-700 dark:text-slate-300">
+                  <p>
+                    Official XAMPP packages may ship an older PHP while {appName} supports newer releases (recommended <strong>PHP 8.5+</strong>, minimum 8.2). Use the PowerShell upgrader to swap only the PHP folder — including an <strong>LDAP hard gate</strong> before the live swap.
+                  </p>
+                  <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-brand-900 dark:text-brand-100">Quick start (elevated PowerShell on Windows):</p>
+                    <pre className="text-xs bg-white dark:bg-slate-800 p-3 rounded overflow-x-auto whitespace-pre-wrap">{`cd C:\\xampp\\htdocs\\linknest
+.\\scripts\\upgrade-xampp-php-run-elevated.ps1 -Version 8.5 -RestartApache`}</pre>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>Downloads the official Thread Safe x64 build and verifies SHA256</li>
+                      <li>Preserves your XAMPP <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">php.ini</code> extensions and paths</li>
+                      <li>Keeps a <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">php-backup-*</code> folder for rollback</li>
+                      <li>Works for future minors when published (omit <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">-Version</code> to take the newest)</li>
+                    </ul>
+                  </div>
+                  <p className="text-sm">
+                    Full steps, remote reuse, and troubleshooting: <strong>Guides → Upgrade PHP in XAMPP</strong>.
+                  </p>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <path fillRule="evenodd" d="M3 3.5A1.5 1.5 0 014.5 2h6.879a1.5 1.5 0 011.06.44l4.122 4.12A1.5 1.5 0 0117 7.622V16.5a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 013 16.5v-13zM13.25 6a.75.75 0 00-.75-.75H11.5a.75.75 0 01-.75-.75V3.5a.75.75 0 00-1.5 0V4.5A2.25 2.25 0 0011.5 6.75h.999A.75.75 0 0013.25 6z" clipRule="evenodd" />
+                  </svg>
+                  Package for Deployment (Windows)
+                </h3>
+                <div className="space-y-3 text-slate-700 dark:text-slate-300">
+                  <p>
+                    Build a self-contained XAMPP deploy ZIP on this PC with <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">package-for-deployment.bat</code> (or <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">package-for-deployment.ps1</code>). Default is a <strong>fresh</strong> package (no live database). On the target: extract → <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">deploy-xampp.bat</code> (new) or <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">update-xampp.bat</code> (keeps <code className="text-xs">data/</code>).
+                  </p>
+                  <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-brand-900 dark:text-brand-100">Quick start:</p>
+                    <pre className="text-xs bg-white dark:bg-slate-800 p-3 rounded overflow-x-auto whitespace-pre-wrap">{`package-for-deployment.bat`}</pre>
+                    <p className="text-sm">Default package includes production <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">dist/</code>, API, SQLite DLL runtime, remote-widget <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">bin/</code> (ttyd + websockify), updater files, and docs. Also emits <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">linknest-update-vX.Y.Z.zip</code> for App Updates.</p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2 overflow-x-auto">
+                    <p className="font-medium text-slate-900 dark:text-white">All options (pass after the .bat name):</p>
+                    <table className="w-full text-sm text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400">
+                          <th className="py-1.5 pr-3 font-medium">Flag</th>
+                          <th className="py-1.5 font-medium">Purpose</th>
+                        </tr>
+                      </thead>
+                      <tbody className="align-top">
+                        <tr className="border-b border-slate-100 dark:border-slate-800">
+                          <td className="py-1.5 pr-3"><code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">-IncludeDatabase</code></td>
+                          <td className="py-1.5">Ship this PC&apos;s live <code className="text-xs">data/linknest.db</code></td>
+                        </tr>
+                        <tr className="border-b border-slate-100 dark:border-slate-800">
+                          <td className="py-1.5 pr-3"><code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">-ExcludeUploads</code></td>
+                          <td className="py-1.5">Skip the <code className="text-xs">uploads/</code> folder</td>
+                        </tr>
+                        <tr className="border-b border-slate-100 dark:border-slate-800">
+                          <td className="py-1.5 pr-3"><code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">-SkipBuild</code></td>
+                          <td className="py-1.5">Reuse existing <code className="text-xs">dist/</code> (not recommended for code changes)</td>
+                        </tr>
+                        <tr className="border-b border-slate-100 dark:border-slate-800">
+                          <td className="py-1.5 pr-3"><code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">-SkipSqliteRuntime</code></td>
+                          <td className="py-1.5">Do not bundle the SQLite DLL for target XAMPP</td>
+                        </tr>
+                        <tr className="border-b border-slate-100 dark:border-slate-800">
+                          <td className="py-1.5 pr-3"><code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">-SkipRemoteRuntime</code></td>
+                          <td className="py-1.5">Do not bundle ttyd / websockify under <code className="text-xs">bin/</code></td>
+                        </tr>
+                        <tr className="border-b border-slate-100 dark:border-slate-800">
+                          <td className="py-1.5 pr-3"><code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">-BasePath &quot;/name&quot;</code></td>
+                          <td className="py-1.5">Frontend base path (default <code className="text-xs">/linknest</code>)</td>
+                        </tr>
+                        <tr>
+                          <td className="py-1.5 pr-3"><code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">-OutputDir &quot;E:\&quot;</code></td>
+                          <td className="py-1.5">Write the ZIP somewhere other than the project root</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <pre className="text-xs bg-white dark:bg-slate-800 p-3 rounded overflow-x-auto whitespace-pre-wrap mt-2">{`package-for-deployment.bat -IncludeDatabase -ExcludeUploads -OutputDir "D:\\zips"
+package-for-deployment.bat -BasePath "/myapp"`}</pre>
+                  </div>
+                  <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
+                    <p className="text-sm text-amber-800 dark:text-amber-200">
+                      <strong>Target needs:</strong> XAMPP (Apache + PHP). For SSH/VNC Easy widgets also install Python 3 and OpenSSH Client. The ZIP includes <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">upgrade-xampp-php.bat</code> for PHP 8.5+. Full walkthrough: <strong>Guides → Package for Deployment (Windows / XAMPP)</strong>.
                     </p>
                   </div>
                 </div>
@@ -1223,6 +1330,8 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <li>Manage roles and assign them to users and groups for streamlined access control (admin only)</li>
                     <li>Track tile changes with version control — view, compare, and restore versions</li>
                     <li>Apply App Updates from the admin bell, with DB backup and rollback (admin, XAMPP installs)</li>
+                    <li>Upgrade XAMPP PHP (e.g. to 8.5) with <code className="text-xs">scripts/upgrade-xampp-php.ps1</code> — see Guides → Upgrade PHP in XAMPP (admin / server ops)</li>
+                    <li>Build a Windows XAMPP deploy ZIP with <code className="text-xs">package-for-deployment.bat</code> (options: <code className="text-xs">-IncludeDatabase</code>, <code className="text-xs">-ExcludeUploads</code>, <code className="text-xs">-BasePath</code>, <code className="text-xs">-OutputDir</code>, …) — Guides → Package for Deployment</li>
                     <li>Configure optional Analytics and Monitorv2 add-ons under Admin → Add-ons</li>
                     <li>Clone {appName} instances for testing or backup purposes (admin only)</li>
                     <li>Run database cleanup to remove orphaned records and optimize performance (admin only)</li>
@@ -1240,7 +1349,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <li>Use SAML/SSO for enterprise Single Sign-On authentication (admin only)</li>
                     <li>Control tab visibility to show/hide specific tabs application-wide (admin only)</li>
                     <li>Send broadcast messages that scroll across the application (admin only)</li>
-                    <li>Open the <strong>Guides</strong> tab for searchable docs (Architecture, App Updates, deployment, and more)</li>
+                    <li>Open the <strong>Guides</strong> tab for searchable docs (Architecture, App Updates, Package for Deployment, XAMPP PHP upgrade, deployment, and more)</li>
                   </ul>
                 </div>
               </section>
@@ -1352,7 +1461,9 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <ul className="list-disc list-inside space-y-1 ml-2">
                     <li><strong>Mobile Link Preview:</strong> Phone action on Quick Links opens an in-app device mockup (phone / tablet / watch) or a device-sized window for DevTools testing</li>
                     <li><strong>In-app App Updates:</strong> Check GitHub commits/releases, preview changes, apply with DB backup, and roll back from Admin (XAMPP installs)</li>
-                    <li><strong>Guides tab:</strong> Searchable in-app documentation (Architecture, App Updates, Remote Widgets / SSH &amp; VNC, deployment, and more)</li>
+                    <li><strong>XAMPP PHP upgrade:</strong> PowerShell script to move to PHP 8.5+ with LDAP verification — see Guides → Upgrade PHP in XAMPP</li>
+                    <li><strong>Package for Deployment:</strong> <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">package-for-deployment.bat</code> builds a full XAMPP ZIP with SQLite runtime, remote-widget binaries, and optional DB/uploads flags</li>
+                    <li><strong>Guides tab:</strong> Searchable in-app documentation (Architecture, App Updates, Package for Deployment, XAMPP PHP upgrade, Remote Widgets / SSH &amp; VNC, deployment, and more)</li>
                     <li><strong>QR sharing:</strong> Branded QR codes for the app URL and spaces (desktop + mobile)</li>
                     <li><strong>Share spaces:</strong> Share with users, accept/reject notifications, and revoke access</li>
                     <li><strong>Visitor stats:</strong> Hit counts and unique visitors on Space Info</li>
@@ -1399,7 +1510,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Backend</h4>
                     <ul className="text-sm text-slate-700 dark:text-slate-300 space-y-1">
-                      <li>• PHP 8+</li>
+                      <li>• PHP 8.5+ (8.2+ minimum)</li>
                       <li>• SQLite</li>
                       <li>• RESTful API</li>
                       <li>• Apache/Nginx</li>
@@ -1445,6 +1556,8 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     'Access Manager',
                     'Staging & AI Offline Kit',
                     'In-app App Updates & Rollback',
+                    'XAMPP PHP Runtime Upgrade Script',
+                    'Package for Deployment (Windows ZIP)',
                     'Help Guides (in-app docs)',
                     'Instance Cloning',
                     'LDAP Authentication',

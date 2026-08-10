@@ -302,8 +302,6 @@ function checkUrl($url, $opts = []) {
     $info = curl_getinfo($ch);
     $error = curl_error($ch);
     $errno = curl_errno($ch);
-    curl_close($ch);
-    
     if ($exec === false || $errno !== 0) {
         // Handle timeout specifically
         if ($errno === CURLE_OPERATION_TIMEDOUT || $errno === CURLE_OPERATION_TIMEOUTED) {
@@ -355,8 +353,6 @@ function checkKeyword($url, $keyword, $opts = []) {
     $info = curl_getinfo($ch);
     $error = curl_error($ch);
     $errno = curl_errno($ch);
-    curl_close($ch);
-    
     if ($body === false || $errno !== 0) {
         // Handle timeout specifically
         if ($errno === CURLE_OPERATION_TIMEDOUT || $errno === CURLE_OPERATION_TIMEOUTED) {

@@ -13,12 +13,17 @@
     in-app updater. Ships api/updater*.php, utils/, docs/APP_UPDATES.md, and
     scripts/publish-update-release.ps1.
 
+    PHP runtime upgrade (Windows XAMPP): ships scripts/upgrade-xampp-php.ps1,
+    scripts/upgrade-xampp-php-run-elevated.ps1, docs/XAMPP_PHP_UPGRADE.md, and a
+    root upgrade-xampp-php.bat launcher so the target can move to PHP 8.5+ (LDAP-gated).
+
     Default: FRESH install package (no live SQLite DB). The target PC creates
     a new database on first launch. Use -IncludeDatabase to mirror this PC's DB.
 
-    SQLite: ships runtime/sqlite/ (libsqlite3.dll 3.53.4) plus install-sqlite-xampp.bat.
-    deploy/update scripts install that DLL into the target XAMPP PHP folder so
-    performance pragmas in api/config.php (WAL, mmap, cache, worker threads) take effect.
+    SQLite: ships runtime/sqlite/ (libsqlite3.dll 3.53.4) plus install-sqlite-xampp.bat
+    and scripts/install-sqlite-xampp.ps1. Deploy enables extension=sqlite3 / pdo_sqlite in
+    php.ini (fixes "Class SQLite3 not found" on minimal XAMPP) and upgrades libsqlite3.dll
+    so performance pragmas in api/config.php (WAL, mmap, cache, worker threads) take effect.
 
     Specs: api/system_specs_check.php (Admin -> Maintenance Scripts -> System Specs Check)
     validates that the target matches this packager host (PHP/SQLite/dirs/cache).
@@ -787,6 +792,7 @@ else {
             "Build ID: $BuildId"
             ''
             'Install on target with install-sqlite-xampp.bat (also run by deploy/update scripts).'
+            'Enables extension=sqlite3 + extension=pdo_sqlite in php.ini (fixes "Class SQLite3 not found").'
             'Replaces %XAMPP%\php\libsqlite3.dll so PHP PDO/SQLite3 use this version.'
             'LinkNest api/config.php then applies WAL, mmap 256MB, 32MB cache, 4 worker threads.'
         ) -join [Environment]::NewLine
@@ -847,6 +853,21 @@ if (Test-Path $scriptsSrc) {
     }
     else {
         Write-Warn "scripts/install-websockify.ps1 missing (target can still pip-install websockify manually)"
+    }
+    $phpUpgradePs1 = Join-Path $scriptsDst "upgrade-xampp-php.ps1"
+    $phpUpgradeElevated = Join-Path $scriptsDst "upgrade-xampp-php-run-elevated.ps1"
+    if ((Test-Path $phpUpgradePs1) -and (Test-Path $phpUpgradeElevated)) {
+        Write-OK "scripts/upgrade-xampp-php.ps1 + upgrade-xampp-php-run-elevated.ps1 present"
+    }
+    else {
+        Write-Warn "PHP upgrade scripts missing under scripts/ (expected upgrade-xampp-php.ps1 + upgrade-xampp-php-run-elevated.ps1)"
+    }
+    $sqliteInstallPs1 = Join-Path $scriptsDst "install-sqlite-xampp.ps1"
+    if (Test-Path $sqliteInstallPs1) {
+        Write-OK "scripts/install-sqlite-xampp.ps1 present"
+    }
+    else {
+        Write-Warn "scripts/install-sqlite-xampp.ps1 missing (deploy will not enable sqlite3 in php.ini)"
     }
 }
 else {
@@ -1116,6 +1137,15 @@ $buildInfo = [ordered]@{
         )
         adminUi = 'Admin -> Add-ons -> SSH Gateway / VNC Gateway'
     }
+    phpUpgrade = @{
+        enabled = $true
+        launcher = 'upgrade-xampp-php.bat'
+        script = 'scripts/upgrade-xampp-php.ps1'
+        elevatedLauncher = 'scripts/upgrade-xampp-php-run-elevated.ps1'
+        docs = 'docs/XAMPP_PHP_UPGRADE.md'
+        recommended = 'PHP 8.5+ Thread Safe x64 (LDAP hard-gated)'
+        note = 'Run elevated on target when Apache2.4 is a Windows service. Backs up C:\xampp\php to php-backup-*'
+    }
     indexAsset  = $indexAsset
     indexSha12  = $indexHash
     jsAssetCount = $assetJs.Count
@@ -1152,6 +1182,15 @@ if ($null -ne $SourceSpecsSnapshot) {
                     'api/updater_lib.php',
                     'api/updater_apply_cli.php'
                 )
+            }
+            phpUpgrade = @{
+                launcher = 'upgrade-xampp-php.bat'
+                scripts = @(
+                    'scripts/upgrade-xampp-php.ps1',
+                    'scripts/upgrade-xampp-php-run-elevated.ps1'
+                )
+                docs = 'docs/XAMPP_PHP_UPGRADE.md'
+                recommended = 'PHP 8.5+ Thread Safe x64'
             }
         }
         Set-Content -Path (Join-Path $TempDir "TARGET_REQUIREMENTS.json") -Value ($targetOnly | ConvertTo-Json -Depth 8) -Encoding UTF8
@@ -1192,7 +1231,9 @@ $installSqliteBat = @'
 setlocal enabledelayedexpansion
 REM ==========================================================
 REM  LinkNest - Install SQLite __SQLITE_TARGET__ into XAMPP PHP
-REM  Replaces php\libsqlite3.dll (backed up first). Needs Admin.
+REM  1) Enables extension=sqlite3 + pdo_sqlite in php.ini
+REM  2) Replaces php\libsqlite3.dll (backed up first)
+REM  Needs Admin. Calls scripts\install-sqlite-xampp.ps1
 REM ==========================================================
 echo.
 echo  =============================================
@@ -1204,7 +1245,7 @@ echo.
 
 net session >nul 2>&1
 if errorlevel 1 (
-    echo  Administrator rights required to replace PHP SQLite DLL.
+    echo  Administrator rights required to update php.ini / replace PHP SQLite DLL.
     echo  Re-launching elevated...
     powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -ArgumentList '%*' -Verb RunAs -Wait"
     exit /b %ERRORLEVEL%
@@ -1212,14 +1253,19 @@ if errorlevel 1 (
 
 set "PKG_DIR=%~dp0"
 if "%PKG_DIR:~-1%"=="\" set "PKG_DIR=%PKG_DIR:~0,-1%"
+set "PS1=%PKG_DIR%\scripts\install-sqlite-xampp.ps1"
 set "SRC_DLL=%PKG_DIR%\runtime\sqlite\libsqlite3.dll"
 if not exist "%SRC_DLL%" set "SRC_DLL=%PKG_DIR%\runtime\sqlite\sqlite3.dll"
 
-if /i "%~2"=="quiet" set "LINKNEST_SQLITE_QUIET=1"
+set "LINKNEST_SQLITE_QUIET="
+set "XAMPP_ROOT="
 if /i "%~1"=="quiet" (
     set "LINKNEST_SQLITE_QUIET=1"
     set "XAMPP_ROOT=C:\xampp"
+) else if not "%~1"=="" (
+    set "XAMPP_ROOT=%~1"
 )
+if /i "%~2"=="quiet" set "LINKNEST_SQLITE_QUIET=1"
 
 if not exist "%SRC_DLL%" (
     echo  ERROR: runtime\sqlite\libsqlite3.dll not found in this package.
@@ -1228,7 +1274,13 @@ if not exist "%SRC_DLL%" (
     exit /b 1
 )
 
-if /i not "%~1"=="quiet" if not "%~1"=="" set "XAMPP_ROOT=%~1"
+if not exist "%PS1%" (
+    echo  ERROR: scripts\install-sqlite-xampp.ps1 missing from this package.
+    echo  Re-run package-for-deployment.bat on the source PC.
+    pause
+    exit /b 1
+)
+
 if "%XAMPP_ROOT%"=="" (
     set "XAMPP_ROOT=C:\xampp"
     set /p "XAMPP_ROOT=XAMPP install path (press Enter for C:\xampp): "
@@ -1244,51 +1296,34 @@ if not exist "%PHP_DIR%\php.exe" (
 
 echo  XAMPP PHP : %PHP_DIR%
 echo  Source DLL: %SRC_DLL%
+echo  Script    : %PS1%
 echo.
 
 echo  Current SQLite (before):
-"%PHP_DIR%\php.exe" -r "echo '  PHP SQLite: '.SQLite3::version()['versionString'].PHP_EOL;" 2>nul
+"%PHP_DIR%\php.exe" -m 2>nul | findstr /i /c:"sqlite3" /c:"pdo_sqlite"
+if errorlevel 1 echo   [!!] sqlite3 / pdo_sqlite NOT in php -m  (will enable in php.ini)
 echo.
 
-echo  Stopping Apache so the DLL can be replaced...
-net stop Apache2.4 >nul 2>&1
-taskkill /F /IM httpd.exe >nul 2>&1
-timeout /t 2 /nobreak >nul
-
-set "DEST=%PHP_DIR%\libsqlite3.dll"
-set "DEST2=%PHP_DIR%\windowsXamppPhp\libsqlite3.dll"
-set "BACKUP=%PHP_DIR%\libsqlite3.dll.bak-before-linknest"
-
-if exist "%DEST%" (
-    if not exist "%BACKUP%" copy /Y "%DEST%" "%BACKUP%" >nul
-    echo  [OK] Backup: %BACKUP%
-)
-
-copy /Y "%SRC_DLL%" "%DEST%" >nul
-if errorlevel 1 (
-    echo  ERROR: Could not write %DEST%
-    net start Apache2.4 >nul 2>&1
-    pause
-    exit /b 1
-)
-echo  [OK] Installed %DEST%
-
-if exist "%PHP_DIR%\windowsXamppPhp" (
-    copy /Y "%SRC_DLL%" "%DEST2%" >nul 2>&1
-    copy /Y "%SRC_DLL%" "%PHP_DIR%\sqlite3.dll" >nul 2>&1
-    echo  [OK] Also updated windowsXamppPhp copy / sqlite3.dll
+if "%LINKNEST_SQLITE_QUIET%"=="1" (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS1%" -XamppRoot "%XAMPP_ROOT%" -SourceDll "%SRC_DLL%" -PackageDir "%PKG_DIR%" -Quiet
 ) else (
-    copy /Y "%SRC_DLL%" "%PHP_DIR%\sqlite3.dll" >nul 2>&1
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS1%" -XamppRoot "%XAMPP_ROOT%" -SourceDll "%SRC_DLL%" -PackageDir "%PKG_DIR%"
+)
+set "RC=%ERRORLEVEL%"
+
+if not "%RC%"=="0" (
+    echo.
+    echo  [XX] SQLite install/repair failed ^(exit %RC%^).
+    echo  Common fix on minimal XAMPP: enable these in %PHP_DIR%\php.ini
+    echo    extension=pdo_sqlite
+    echo    extension=sqlite3
+    echo  Or run upgrade-xampp-php.bat ^(elevated^) - see docs\XAMPP_PHP_UPGRADE.md
+    echo.
+    if "%LINKNEST_SQLITE_QUIET%"=="1" exit /b %RC%
+    pause
+    exit /b %RC%
 )
 
-echo  Starting Apache...
-net start Apache2.4 >nul 2>&1
-
-echo.
-echo  SQLite after upgrade:
-"%PHP_DIR%\php.exe" -r "echo '  PHP SQLite: '.SQLite3::version()['versionString'].PHP_EOL; $p=new PDO('sqlite::memory:'); echo '  PDO SQLite: '.$p->query('select sqlite_version()')->fetchColumn().PHP_EOL;" 2>nul
-echo.
-echo  LinkNest performance pragmas (WAL / mmap / cache / threads) apply on next API request.
 echo.
 if "%LINKNEST_SQLITE_QUIET%"=="1" exit /b 0
 pause
@@ -1431,6 +1466,16 @@ echo.
 echo  Upgrading XAMPP PHP SQLite to __SQLITE_TARGET__ (recommended)...
 if exist "%PKG_DIR%\install-sqlite-xampp.bat" (
     call "%PKG_DIR%\install-sqlite-xampp.bat" "%XAMPP_ROOT%" quiet
+    if errorlevel 1 (
+        echo.
+        echo  [XX] SQLite install failed - LinkNest will not work until SQLite3 is enabled.
+        echo  Fix: run install-sqlite-xampp.bat as Administrator from the ZIP folder.
+        echo  Or edit %XAMPP_ROOT%\php\php.ini and uncomment:
+        echo    extension=pdo_sqlite
+        echo    extension=sqlite3
+        echo  Then restart Apache.
+        echo.
+    )
 ) else (
     echo  [!!] install-sqlite-xampp.bat missing - skip SQLite DLL upgrade
 )
@@ -1450,6 +1495,7 @@ echo  6. Default login: admin / admin123 - change it immediately
 echo  7. Confirm SQLite: "%XAMPP_ROOT%\php\php.exe" -r "echo SQLite3::version()['versionString'];"
 echo  8. Admin -^> Maintenance Scripts -^> System Specs Check ^(must match SOURCE_SPECS.json / TARGET_REQUIREMENTS.json^)
 echo  9. Showcase: open load-tests\results\report.html in a browser ^(packager host load-test report^)
+echo  10. Optional PHP 8.5+: run upgrade-xampp-php.bat ^(elevated^) - see docs\XAMPP_PHP_UPGRADE.md
 echo.
 echo  Tip: run verify-install.bat from the extracted ZIP if anything looks wrong.
 echo.
@@ -1564,6 +1610,16 @@ echo.
 echo  Upgrading XAMPP PHP SQLite to __SQLITE_TARGET__ ...
 if exist "%PKG_DIR%\install-sqlite-xampp.bat" (
     call "%PKG_DIR%\install-sqlite-xampp.bat" "%XAMPP_ROOT%" quiet
+    if errorlevel 1 (
+        echo.
+        echo  [XX] SQLite install failed - LinkNest will not work until SQLite3 is enabled.
+        echo  Fix: run install-sqlite-xampp.bat as Administrator from the ZIP folder.
+        echo  Or edit %XAMPP_ROOT%\php\php.ini and uncomment:
+        echo    extension=pdo_sqlite
+        echo    extension=sqlite3
+        echo  Then restart Apache.
+        echo.
+    )
 ) else (
     echo  [!!] install-sqlite-xampp.bat missing - skip SQLite DLL upgrade
 )
@@ -1590,7 +1646,7 @@ $updateBat = $updateBat.Replace('__BUILD_ID__', $BuildId).Replace('__PKG_VERSION
 
 # -- verify-install.bat (quick health check against an install OR this ZIP) -
 $verifySqliteChecks = if ($SqliteRuntimeBundled) {
-    "    `"runtime\sqlite\libsqlite3.dll`"`r`n    `"install-sqlite-xampp.bat`""
+    "    `"runtime\sqlite\libsqlite3.dll`"`r`n    `"install-sqlite-xampp.bat`"`r`n    `"scripts\install-sqlite-xampp.ps1`""
 } else {
     ''
 }
@@ -1644,6 +1700,10 @@ for %%F in (
     "utils\releaseNotesMarkdown.ts"
     "docs\APP_UPDATES.md"
     "scripts\publish-update-release.ps1"
+    "docs\XAMPP_PHP_UPGRADE.md"
+    "scripts\upgrade-xampp-php.ps1"
+    "scripts\upgrade-xampp-php-run-elevated.ps1"
+    "upgrade-xampp-php.bat"
     "components\UpdatesDialog.tsx"
     "services\updaterService.ts"
 __VERIFY_SQLITE_CHECKS__
@@ -1841,9 +1901,12 @@ SQLite  : __SQLITE_SHIP_NOTE__
     target PC. This ZIP already includes ``bin/ttyd.exe`` and vendored websockify under
     ``bin/python-packages`` when packaged with remote runtime. See ``docs/REMOTE_WIDGETS_SETUP.md``.
     If websockify is missing: ``powershell -File scripts/install-websockify.ps1``.
+13. **Upgrade PHP (recommended 8.5+):** double-click ``upgrade-xampp-php.bat`` (elevated /
+    UAC) or run ``scripts\upgrade-xampp-php.ps1 -Version 8.5 -RestartApache``. LDAP is
+    hard-gated before swap. See ``docs/XAMPP_PHP_UPGRADE.md``.
 
 Optional: run ``verify-install.bat`` to confirm required files (including ``runtime/sqlite/``,
-``api/system_specs_check.php``, ``api/updater*.php``, and ``bin/`` remote runtime) are present.
+``api/system_specs_check.php``, ``api/updater*.php``, PHP upgrade scripts, and ``bin/`` remote runtime) are present.
 Optional: run ``install-sqlite-xampp.bat`` alone if you skipped it during deploy.
 
 ---
@@ -1878,6 +1941,27 @@ Requires PHP extensions: ``curl``, ``zip`` (and ``openssl`` for encrypted token 
 
 ---
 
+## Upgrade PHP in XAMPP (ships with this package)
+
+Official XAMPP often ships an older PHP. This ZIP includes a Thread Safe upgrader for Windows:
+
+| Piece | Purpose |
+|-------|---------|
+| ``upgrade-xampp-php.bat`` | Root launcher (UAC / elevated) — defaults to PHP 8.5 + Apache restart |
+| ``scripts/upgrade-xampp-php.ps1`` | Download latest TS x64 from releases.json, LDAP hard gate, backup, swap |
+| ``scripts/upgrade-xampp-php-run-elevated.ps1`` | Elevated wrapper used by the .bat |
+| ``docs/XAMPP_PHP_UPGRADE.md`` | Full operator guide |
+
+``````
+upgrade-xampp-php.bat
+REM or:
+powershell -ExecutionPolicy Bypass -File scripts\upgrade-xampp-php.ps1 -Version 8.5 -RestartApache
+``````
+
+Keeps a ``C:\xampp\php-backup-*`` folder for rollback. Requires VC++ 2015–2022 x64 redistributable.
+
+---
+
 ## System Specs Check (match this package's host)
 
 | File / action | Purpose |
@@ -1909,7 +1993,7 @@ HTML report from the packager host (when available):
 | Piece | What it does |
 |-------|----------------|
 | ``runtime/sqlite/libsqlite3.dll`` | Official Windows x64 SQLite **__SQLITE_TARGET__** for XAMPP PHP |
-| ``install-sqlite-xampp.bat`` | Replaces ``%XAMPP%\php\libsqlite3.dll`` (backs up the old one) |
+| ``install-sqlite-xampp.bat`` / ``scripts/install-sqlite-xampp.ps1`` | Enables ``extension=sqlite3`` + ``pdo_sqlite`` in ``php.ini``, de-dupes openssl, replaces ``%XAMPP%\php\libsqlite3.dll`` |
 | ``api/config.php`` | Applies WAL, mmap 256MB, 32MB cache, 4 worker threads, temp in memory |
 
 After install, confirm on the target PC:
@@ -1951,17 +2035,73 @@ Password : admin123
 | API 404 | Enable AllowOverride All + mod_rewrite in Apache |
 | SAML library missing | Package must include ``vendor/`` - re-run packager on source PC |
 | Permission errors | Ensure ``data/``, ``uploads/``, ``logs/`` are writable by Apache |
+| ``Class SQLite3 not found`` / Fatal error in deploy log | Remote ``php.ini`` has ``extension=sqlite3`` commented out. Re-run ``install-sqlite-xampp.bat`` (Admin) — it now enables the extension. Or manually uncomment ``extension=sqlite3`` and ``extension=pdo_sqlite`` then restart Apache |
+| ``Module openssl is already loaded`` | Duplicate ``extension=openssl`` lines; the installer de-dupes them. Or remove extras in ``php.ini`` |
+| ``The service name is invalid`` / ``net stop Apache2.4`` | Normal when XAMPP is not installed as a Windows service. Newer installer ignores that and stops ``httpd`` / uses XAMPP Control Panel start. Re-run ``install-sqlite-xampp.bat`` |
 | Old SQLite (3.39.x) | Run ``install-sqlite-xampp.bat`` as Administrator; restart Apache |
 | DLL locked / copy failed | Stop Apache in XAMPP Control Panel, re-run install-sqlite-xampp.bat |
+| ``php_sqlite3.dll`` missing under ``php\ext`` | Incomplete XAMPP PHP — run ``upgrade-xampp-php.bat`` elevated |
 | Specs Check failing | Open Admin → System Specs Check; follow each advice line; compare ``TARGET_REQUIREMENTS.json`` |
 | SSH Easy: ttyd missing | Confirm ``bin/ttyd.exe`` shipped; or winget install + Admin → SSH Gateway path |
 | VNC Easy: websockify missing | Run ``scripts/install-websockify.ps1``; install Python 3; see ``docs/REMOTE_WIDGETS_SETUP.md`` |
+| Need PHP 8.5+ / LDAP | Run ``upgrade-xampp-php.bat`` elevated; see ``docs/XAMPP_PHP_UPGRADE.md`` |
 '@
 $readmeMd = $readmeMd.Replace('__CREATED_AT__', $createdAt).Replace('__PACKAGE_NAME__', $PackageName).Replace('__BUILD_ID__', $BuildId).Replace('__PKG_VERSION__', $pkgVersion).Replace('__DB_MODE_NOTE__', $dbModeNote).Replace('__SQLITE_SHIP_NOTE__', $sqliteShipNote).Replace('__SQLITE_TARGET__', $SqliteTargetVersion).Replace('__BASE_PATH_FOR_BAT__', $basePathForBat).Replace('__BASE_PATH_DISPLAY__', $(if ($BasePath) { $BasePath } else { "/" }))
+
+# -- upgrade-xampp-php.bat (root launcher for target PHP runtime upgrade) ---
+$upgradePhpBat = @'
+@echo off
+REM ============================================================
+REM  LinkNest - Upgrade XAMPP PHP (Thread Safe x64)
+REM  Ships with the deployment package. Run elevated / approve UAC.
+REM  Default: PHP 8.5 latest patch + restart Apache.
+REM  Docs: docs\XAMPP_PHP_UPGRADE.md
+REM ============================================================
+set "PKG=%~dp0"
+cd /d "%PKG%"
+
+if not exist "%PKG%scripts\upgrade-xampp-php-run-elevated.ps1" (
+    echo  [XX] Missing scripts\upgrade-xampp-php-run-elevated.ps1
+    pause
+    exit /b 1
+)
+if not exist "%PKG%scripts\upgrade-xampp-php.ps1" (
+    echo  [XX] Missing scripts\upgrade-xampp-php.ps1
+    pause
+    exit /b 1
+)
+
+echo.
+echo  Upgrading XAMPP PHP via scripts\upgrade-xampp-php-run-elevated.ps1
+echo  Default: -Version 8.5 -RestartApache
+echo  Extra args are forwarded: %*
+echo.
+
+if "%~1"=="" (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PKG%scripts\upgrade-xampp-php-run-elevated.ps1" -Version 8.5 -RestartApache
+) else (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PKG%scripts\upgrade-xampp-php-run-elevated.ps1" %*
+)
+set "ERR=%ERRORLEVEL%"
+if %ERR% NEQ 0 (
+    echo.
+    echo  *** PHP upgrade failed. See messages above / docs\XAMPP_PHP_UPGRADE.md ***
+    echo.
+    pause
+    exit /b %ERR%
+)
+echo.
+echo  Done. Confirm: C:\xampp\php\php.exe -v
+echo.
+pause
+exit /b 0
+'@
 
 Set-Content -Path (Join-Path $TempDir "deploy-xampp.bat") -Value $deployBat -Encoding ASCII
 Set-Content -Path (Join-Path $TempDir "update-xampp.bat") -Value $updateBat -Encoding ASCII
 Set-Content -Path (Join-Path $TempDir "verify-install.bat") -Value $verifyBat -Encoding ASCII
+Set-Content -Path (Join-Path $TempDir "upgrade-xampp-php.bat") -Value $upgradePhpBat -Encoding ASCII
+Write-OK "upgrade-xampp-php.bat written (target PHP 8.5+ upgrader)"
 if ($SqliteRuntimeBundled) {
     Set-Content -Path (Join-Path $TempDir "install-sqlite-xampp.bat") -Value $installSqliteBat -Encoding ASCII
 }
@@ -2007,6 +2147,10 @@ $requiredInPackage = @(
     "utils\urlDisplay.ts",
     "docs\APP_UPDATES.md",
     "scripts\publish-update-release.ps1",
+    "docs\XAMPP_PHP_UPGRADE.md",
+    "scripts\upgrade-xampp-php.ps1",
+    "scripts\upgrade-xampp-php-run-elevated.ps1",
+    "upgrade-xampp-php.bat",
     "components\UpdatesDialog.tsx",
     "services\updaterService.ts"
 )
@@ -2015,7 +2159,8 @@ if ($SqliteRuntimeBundled) {
     $requiredInPackage += @(
         "runtime\sqlite\libsqlite3.dll",
         "runtime\sqlite\SQLITE_VERSION.txt",
-        "install-sqlite-xampp.bat"
+        "install-sqlite-xampp.bat",
+        "scripts\install-sqlite-xampp.ps1"
     )
 }
 
@@ -2129,12 +2274,17 @@ try {
         "utils/releaseNotesMarkdown.ts",
         "docs/APP_UPDATES.md",
         "scripts/publish-update-release.ps1",
+        "docs/XAMPP_PHP_UPGRADE.md",
+        "scripts/upgrade-xampp-php.ps1",
+        "scripts/upgrade-xampp-php-run-elevated.ps1",
+        "upgrade-xampp-php.bat",
         ".htaccess"
     )
     if ($SqliteRuntimeBundled) {
         $mustHaveInZip += @(
             "runtime/sqlite/libsqlite3.dll",
-            "install-sqlite-xampp.bat"
+            "install-sqlite-xampp.bat",
+            "scripts/install-sqlite-xampp.ps1"
         )
     }
     if ($LoadTestReportBundled) {
@@ -2221,6 +2371,7 @@ Write-Host "  Remote  : $(if ($SkipRemoteRuntime) { 'skipped' } elseif ($RemoteR
 Write-Host "  Specs   : $(if ($SourceSpecsReady) { 'SOURCE_SPECS.json (ready_for_target_parity=true)' } elseif ($null -ne $SourceSpecsSnapshot) { 'SOURCE_SPECS.json (warnings on source host)' } else { 'no live snapshot' })" -ForegroundColor Green
 Write-Host "  Report  : $(if ($LoadTestReportBundled) { 'load-tests/results/report.html (showcase)' } else { 'not bundled' })" -ForegroundColor Green
 Write-Host "  Updater : api/updater*.php + docs/APP_UPDATES.md + publish-update-release.ps1" -ForegroundColor Green
+Write-Host "  PHP upg : upgrade-xampp-php.bat + scripts/upgrade-xampp-php*.ps1 + docs/XAMPP_PHP_UPGRADE.md" -ForegroundColor Green
 if ($gitCommitSha) {
     Write-Host ("  Commit  : {0}" -f $gitCommitSha) -ForegroundColor Green
 }
@@ -2238,8 +2389,9 @@ Write-Host "  8. Admin -> Maintenance Scripts -> System Specs Check (match SOURC
 Write-Host "  9. Admin -> App Updates: set GitHub PAT, track branch, Check for updates" -ForegroundColor Yellow
 Write-Host "  10. Docs: docs/APP_UPDATES.md" -ForegroundColor Yellow
 Write-Host "  11. Remote widgets: install Python 3 + OpenSSH; see docs/REMOTE_WIDGETS_SETUP.md" -ForegroundColor Yellow
+Write-Host "  12. PHP 8.5+: run upgrade-xampp-php.bat (elevated) - docs/XAMPP_PHP_UPGRADE.md" -ForegroundColor Yellow
 if ($LoadTestReportBundled) {
-    Write-Host "  12. Showcase report: open load-tests\results\report.html in a browser" -ForegroundColor Yellow
+    Write-Host "  13. Showcase report: open load-tests\results\report.html in a browser" -ForegroundColor Yellow
 }
 Write-Host ""
 

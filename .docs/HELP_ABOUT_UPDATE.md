@@ -3,6 +3,40 @@
 ## Overview
 The Help & About dialog has been comprehensively updated to reflect all new features added to LinkNest.
 
+## Latest: Package for Deployment + XAMPP PHP docs (2026-08)
+
+- Added in-app guide: [`docs/PACKAGE_FOR_DEPLOYMENT.md`](../docs/PACKAGE_FOR_DEPLOYMENT.md) (Help → **Guides** → Updates & Deploy)
+- [`package-for-deployment.bat`](../package-for-deployment.bat) now **forwards all CLI flags** to `package-for-deployment.ps1`
+- Help tab: **Package for Deployment (Windows)** section with full options table
+- Cross-links in Tips, feature cards, and About → What’s New
+
+### Packager options (Windows)
+| Flag | Purpose |
+|------|---------|
+| *(default)* | Fresh ZIP, rebuild `dist/`, no live DB, include uploads + SQLite + remote `bin/` |
+| `-IncludeDatabase` | Ship live `data/linknest.db` |
+| `-ExcludeUploads` | Skip `uploads/` |
+| `-SkipBuild` | Reuse existing `dist/` |
+| `-SkipSqliteRuntime` | Skip SQLite DLL bundle |
+| `-SkipRemoteRuntime` | Skip ttyd/websockify under `bin/` |
+| `-BasePath "/name"` | Frontend base path (default `/linknest`) |
+| `-OutputDir "E:\"` | ZIP output directory |
+
+```bat
+package-for-deployment.bat
+package-for-deployment.bat -IncludeDatabase -OutputDir "D:\zips"
+```
+
+### Also: XAMPP PHP upgrade docs
+- Guide: [`docs/XAMPP_PHP_UPGRADE.md`](../docs/XAMPP_PHP_UPGRADE.md)
+- Help section + About tech stack: **PHP 8.5+ (8.2+ minimum)**
+
+```powershell
+.\scripts\upgrade-xampp-php-run-elevated.ps1 -Version 8.5 -RestartApache
+```
+
+---
+
 ## Changes Made
 
 ### Updated Version
@@ -213,6 +247,8 @@ The Help & About dialog now comprehensively documents all features in LinkNest 2
 - Database Cleanup
 - Custom Widgets
 - Enterprise SSO/SAML
+- XAMPP PHP runtime upgrade (Guides → Upgrade PHP in XAMPP)
+- Package for Deployment / Windows XAMPP ZIP (Guides → Package for Deployment)
 - And 50+ other features
 
-Users can now fully understand the capabilities of LinkNest through the built-in help system! 🎉
+Users can now fully understand the capabilities of LinkNest through the built-in help system.
