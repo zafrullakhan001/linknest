@@ -19,11 +19,28 @@ $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
 $path = rtrim($path, '/') ?: '/';
 
 define('SSH_GATEWAY_DIR', DB_DIR . '/ssh_gateway');
-// Override via env in Docker when host XAMPP already uses 17681–17780
+// Override via env in Docker when host XAMPP already uses 17681–18680
 define('SSH_GATEWAY_PORT_MIN', (int)(getenv('SSH_GATEWAY_PORT_MIN') ?: 17681));
-define('SSH_GATEWAY_PORT_MAX', (int)(getenv('SSH_GATEWAY_PORT_MAX') ?: 17780));
-define('SSH_GATEWAY_MAX_PER_USER', 8);
+define('SSH_GATEWAY_PORT_MAX', (int)(getenv('SSH_GATEWAY_PORT_MAX') ?: 18680));
+define('SSH_GATEWAY_MAX_PER_USER_DEFAULT', 8);
+define('SSH_GATEWAY_MAX_PER_USER_CEILING', 1000);
 define('SSH_GATEWAY_TTL_SEC', 6 * 3600);
+
+/** Hard ceiling for admin max-connections setting (also bounded by listen-port span). */
+function sshGatewayMaxConnectionsCeiling(): int {
+    $portSpan = max(1, SSH_GATEWAY_PORT_MAX - SSH_GATEWAY_PORT_MIN + 1);
+    return min(SSH_GATEWAY_MAX_PER_USER_CEILING, $portSpan);
+}
+
+/** Active concurrent Easy-mode sessions per user (admin-configurable, 1–ceiling). */
+function sshGatewayMaxPerUser(): int {
+    $raw = getSetting('ssh_gateway_max_per_user', (string)SSH_GATEWAY_MAX_PER_USER_DEFAULT);
+    $n = (int)$raw;
+    if ($n < 1) {
+        return SSH_GATEWAY_MAX_PER_USER_DEFAULT;
+    }
+    return min(sshGatewayMaxConnectionsCeiling(), $n);
+}
 
 if (SSH_GATEWAY_PORT_MIN < 1024 || SSH_GATEWAY_PORT_MAX > 65535 || SSH_GATEWAY_PORT_MIN > SSH_GATEWAY_PORT_MAX) {
     // Keep safe defaults if env is misconfigured
@@ -126,7 +143,7 @@ function sshGatewayCleanup(array $sessions): array {
         $expired = $created > 0 && ($now - $created) > SSH_GATEWAY_TTL_SEC;
 
         // A gateway slot is only "active" if ttyd is actually listening.
-        // Stale launcher/cmd PIDs without a listen port were filling the max-8 quota.
+        // Stale launcher/cmd PIDs without a listen port were filling the max-connections quota.
         $portPid = $listenPort > 0 ? sshGatewayPidListeningOnPort($listenPort) : 0;
         $alive = $portPid > 0;
         if ($alive) {
@@ -336,6 +353,7 @@ function handleSshGatewayGetConfig() {
             'ttydPath' => $ttydConfigured,
             'sshPath' => $sshConfigured,
             'x11Display' => sshGatewayDefaultDisplay(),
+            'maxConnections' => sshGatewayMaxPerUser(),
         ],
         'resolved' => [
             'ttydPath' => $ttydResolved,
@@ -347,6 +365,9 @@ function handleSshGatewayGetConfig() {
         'defaults' => [
             'ttydCandidates' => array_values(array_filter(sshGatewayDefaultTtydCandidates(), 'is_file')),
             'sshCandidates' => array_values(array_filter(sshGatewayDefaultSshCandidates(), 'is_file')),
+            'maxConnectionsDefault' => SSH_GATEWAY_MAX_PER_USER_DEFAULT,
+            'maxConnectionsCeiling' => sshGatewayMaxConnectionsCeiling(),
+            'portRange' => [SSH_GATEWAY_PORT_MIN, SSH_GATEWAY_PORT_MAX],
         ],
     ]);
 }
@@ -358,6 +379,9 @@ function handleSshGatewayPutConfig() {
     $ttydPath = isset($data['ttydPath']) ? trim((string)$data['ttydPath']) : null;
     $sshPath = isset($data['sshPath']) ? trim((string)$data['sshPath']) : null;
     $x11Display = isset($data['x11Display']) ? trim((string)$data['x11Display']) : null;
+    $maxConnections = array_key_exists('maxConnections', $data) || array_key_exists('max_connections', $data)
+        ? ($data['maxConnections'] ?? $data['max_connections'])
+        : null;
 
     if ($ttydPath !== null) {
         if ($ttydPath !== '' && preg_match('/[;\|&<>]/i', $ttydPath)) {
@@ -384,6 +408,21 @@ function handleSshGatewayPutConfig() {
             sendJSON(['error' => 'Invalid X11 display value'], 400);
         }
         setSetting('ssh_gateway_x11_display', $x11Display);
+    }
+
+    if ($maxConnections !== null) {
+        if (!is_numeric($maxConnections)) {
+            sendJSON(['error' => 'Max connections must be a number'], 400);
+        }
+        $maxN = (int)$maxConnections;
+        $ceiling = sshGatewayMaxConnectionsCeiling();
+        if ($maxN < 1 || $maxN > $ceiling) {
+            sendJSON([
+                'error' => 'Max connections must be between 1 and ' . $ceiling .
+                    ' (limited by gateway port range ' . SSH_GATEWAY_PORT_MIN . '-' . SSH_GATEWAY_PORT_MAX . ')',
+            ], 400);
+        }
+        setSetting('ssh_gateway_max_per_user', (string)$maxN);
     }
 
     handleSshGatewayGetConfig();
@@ -630,6 +669,9 @@ function handleSshGatewayStatus() {
         'sshPath' => $sshPath,
         'platform' => PHP_OS,
         'docker' => $inDocker,
+        'maxConnections' => sshGatewayMaxPerUser(),
+        'maxConnectionsCeiling' => sshGatewayMaxConnectionsCeiling(),
+        'portRange' => [SSH_GATEWAY_PORT_MIN, SSH_GATEWAY_PORT_MAX],
         'gui' => [
             'supported' => true,
             'display' => $display,
@@ -874,12 +916,13 @@ function handleSshGatewayStart() {
             $mine++;
         }
     }
-    if ($mine >= SSH_GATEWAY_MAX_PER_USER) {
+    $maxPerUser = sshGatewayMaxPerUser();
+    if ($mine >= $maxPerUser) {
         sendJSON([
-            'error' => 'Too many active SSH gateways (max ' . SSH_GATEWAY_MAX_PER_USER . '). Close a session tab first, or use stop-all if tabs are already gone.',
+            'error' => 'Too many active SSH gateways (max ' . $maxPerUser . '). Close a session tab first, or use stop-all if tabs are already gone.',
             'code' => 'gateway_limit',
             'active' => $mine,
-            'max' => SSH_GATEWAY_MAX_PER_USER,
+            'max' => $maxPerUser,
         ], 429);
     }
 

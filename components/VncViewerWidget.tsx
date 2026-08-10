@@ -51,7 +51,7 @@ const PANEL_WIDTH_KEY = 'linknest.vncViewer.panelWidth.v1';
 const PANEL_MIN_WIDTH = 160;
 const PANEL_MAX_WIDTH = 420;
 const PANEL_DEFAULT_WIDTH = 210;
-const MAX_VNC_TABS = 8;
+const DEFAULT_MAX_VNC_TABS = 8;
 const IDLE_NOTICE =
   'Easy mode: enter VNC host and port — LinkNest starts websockify for you. Or use Advanced WebSocket URL.';
 
@@ -195,6 +195,7 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [tileLayout, setTileLayout] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [maxVncTabs, setMaxVncTabs] = useState(DEFAULT_MAX_VNC_TABS);
 
   const activeTab = useMemo(() => tabs.find((t) => t.id === activeTabId) ?? null, [tabs, activeTabId]);
   const status: ConnState = activeTab?.status ?? 'idle';
@@ -261,12 +262,21 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
       if (!useServer) {
         setConnections(loadLocalConnections());
         setStorageReady(true);
+        setMaxVncTabs(DEFAULT_MAX_VNC_TABS);
         return;
       }
       setStorageReady(false);
       try {
-        const list = await vncConnectionService.list();
-        if (!cancelled) setConnections(list);
+        const [list, st] = await Promise.all([
+          vncConnectionService.list(),
+          vncGatewayService.status().catch(() => null),
+        ]);
+        if (!cancelled) {
+          setConnections(list);
+          if (st && typeof st.maxConnections === 'number' && st.maxConnections >= 1) {
+            setMaxVncTabs(Math.floor(st.maxConnections));
+          }
+        }
       } catch (err) {
         if (!cancelled) {
           setNotice(err instanceof Error ? err.message : 'Failed to load saved connections');
@@ -521,8 +531,8 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
       host?: string;
       port?: number;
     }) => {
-      if (sessionHandlesRef.current.size >= MAX_VNC_TABS) {
-        setNotice(`Maximum of ${MAX_VNC_TABS} open sessions. Close a tab first.`);
+      if (sessionHandlesRef.current.size >= maxVncTabs) {
+        setNotice(`Maximum of ${maxVncTabs} open sessions. Close a tab first.`);
         return;
       }
 
@@ -768,6 +778,7 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
       draftColor,
       connections,
       useServer,
+      maxVncTabs,
       updateTab,
       markLastUsed,
       closeTab,
@@ -1342,9 +1353,9 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
                 <button
                   type="button"
                   onClick={() => void connect()}
-                  disabled={tabs.length >= MAX_VNC_TABS}
+                  disabled={tabs.length >= maxVncTabs}
                   className="px-2 py-1 text-[10px] font-semibold rounded-md bg-brand-600 hover:bg-brand-700 text-white disabled:opacity-50"
-                  title={tabs.length >= MAX_VNC_TABS ? `Maximum ${MAX_VNC_TABS} sessions` : 'Open a new session tab'}
+                  title={tabs.length >= maxVncTabs ? `Maximum ${maxVncTabs} sessions` : 'Open a new session tab'}
                 >
                   {status === 'connected' || status === 'connecting' ? 'New tab' : 'Connect'}
                 </button>
@@ -1468,9 +1479,9 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
                         <button
                           type="button"
                           onClick={() => applyConnection(c, true)}
-                          disabled={tabs.length >= MAX_VNC_TABS}
+                          disabled={tabs.length >= maxVncTabs}
                           className="inline-flex items-center justify-center h-7 w-7 rounded-md bg-brand-600 hover:bg-brand-700 text-white disabled:opacity-50"
-                          title={tabs.length >= MAX_VNC_TABS ? `Maximum ${MAX_VNC_TABS} sessions` : 'Connect'}
+                          title={tabs.length >= maxVncTabs ? `Maximum ${maxVncTabs} sessions` : 'Connect'}
                           aria-label={`Connect to ${c.name}`}
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
@@ -1733,7 +1744,7 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
               <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed">
                 {connectMode === 'auto' ? (
                   <>
-                    Easy mode starts <strong>websockify</strong> on this LinkNest server (ports 17881–17980) and bridges to your VNC host.
+                    Easy mode starts <strong>websockify</strong> on this LinkNest server (ports 19000–19999) and bridges to your VNC host.
                     Requires sign-in. Passwords stay in the browser session only.
                   </>
                 ) : (
@@ -1820,7 +1831,7 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
                     </button>
                   )}
                   <span className="px-1.5 text-[10px] text-slate-500">
-                    {tabs.length}/{MAX_VNC_TABS}
+                    {tabs.length}/{maxVncTabs}
                   </span>
                 </div>
               </div>
@@ -1880,7 +1891,7 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({ onClose }) => 
                     </div>
                     <p className="text-xs text-slate-400">
                       {connections.length
-                        ? 'Click a saved connection to open a session tab (up to 8)'
+                        ? `Click a saved connection to open a session tab (up to ${maxVncTabs})`
                         : 'Connect or pick a saved host — each session opens in its own tab'}
                     </p>
                   </div>

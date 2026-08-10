@@ -172,6 +172,69 @@ function normalizeSshColor($raw): string {
     return '#0ea5e9';
 }
 
+function normalizeSshAppearance($raw): ?array {
+    if ($raw === null || $raw === '') {
+        return null;
+    }
+    $obj = $raw;
+    if (is_string($raw)) {
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return null;
+        }
+        $obj = $decoded;
+    }
+    if (!is_array($obj)) {
+        return null;
+    }
+
+    $out = [];
+    if (isset($obj['themePresetId']) && is_string($obj['themePresetId'])) {
+        $preset = trim($obj['themePresetId']);
+        if ($preset !== '' && mb_strlen($preset) <= 64) {
+            $out['themePresetId'] = $preset;
+        }
+    }
+    if (isset($obj['fontSize']) && is_numeric($obj['fontSize'])) {
+        $size = (int)$obj['fontSize'];
+        if ($size >= 11 && $size <= 24) {
+            $out['fontSize'] = $size;
+        }
+    }
+    if (isset($obj['fontFamily']) && is_string($obj['fontFamily'])) {
+        $family = trim($obj['fontFamily']);
+        if ($family !== '' && mb_strlen($family) <= 256) {
+            $out['fontFamily'] = $family;
+        }
+    }
+    foreach (['bgColor', 'fgColor', 'cursorColor', 'selectionBg'] as $key) {
+        if (!isset($obj[$key])) {
+            continue;
+        }
+        $hex = strtolower(trim((string)$obj[$key]));
+        if (preg_match('/^#[0-9a-f]{6}$/', $hex)) {
+            $out[$key] = $hex;
+        }
+    }
+    if (isset($obj['ansi']) && is_array($obj['ansi'])) {
+        $ansi = [];
+        foreach ($obj['ansi'] as $k => $v) {
+            if (!is_string($k) || mb_strlen($k) > 32) {
+                continue;
+            }
+            $hex = strtolower(trim((string)$v));
+            if (preg_match('/^#[0-9a-f]{6}$/', $hex)) {
+                $ansi[$k] = $hex;
+            }
+        }
+        if (!empty($ansi)) {
+            $out['ansi'] = $ansi;
+        }
+    }
+
+    return empty($out) ? null : $out;
+}
+
 function rowToConnection(array $row): array {
     $tags = [];
     if (!empty($row['tags'])) {
@@ -181,6 +244,7 @@ function rowToConnection(array $row): array {
         }
     }
     $notes = isset($row['notes']) ? (string)$row['notes'] : '';
+    $appearance = normalizeSshAppearance($row['appearance'] ?? null);
     return [
         'id' => (string)$row['id'],
         'name' => (string)$row['name'],
@@ -189,6 +253,7 @@ function rowToConnection(array $row): array {
         'tags' => $tags,
         'notes' => $notes !== '' ? $notes : null,
         'color' => normalizeSshColor($row['color'] ?? '#0ea5e9'),
+        'appearance' => $appearance,
         'createdAt' => (int)$row['created_at'],
         'lastUsedAt' => $row['last_used_at'] !== null ? (int)$row['last_used_at'] : null,
     ];
@@ -198,7 +263,7 @@ function handleListSshConnections() {
     $user = requireAuth();
     $db = getDB();
 
-    $stmt = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE user_id = ? ORDER BY COALESCE(last_used_at, created_at) DESC');
+    $stmt = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, appearance, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE user_id = ? ORDER BY COALESCE(last_used_at, created_at) DESC');
     $stmt->execute([(int)$user['id']]);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -239,6 +304,8 @@ function handleCreateSshConnection() {
         sendJSON(['error' => 'Notes are too long (max 1000 chars)'], 400);
     }
     $color = normalizeSshColor($data['color'] ?? '#0ea5e9');
+    $appearance = array_key_exists('appearance', $data) ? normalizeSshAppearance($data['appearance']) : null;
+    $appearanceJson = $appearance !== null ? json_encode($appearance, JSON_UNESCAPED_UNICODE) : null;
 
     $id = isset($data['id']) && is_string($data['id']) && preg_match('/^[A-Za-z0-9_-]{1,64}$/', $data['id'])
         ? $data['id']
@@ -246,7 +313,7 @@ function handleCreateSshConnection() {
 
     $db = getDB();
     $now = time();
-    $stmt = $db->prepare('INSERT INTO user_ssh_connections (id, user_id, name, ws_url, tags, notes, color, protocol, created_at, last_used_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)');
+    $stmt = $db->prepare('INSERT INTO user_ssh_connections (id, user_id, name, ws_url, tags, notes, color, protocol, appearance, created_at, last_used_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)');
     try {
         $stmt->execute([
             $id,
@@ -257,6 +324,7 @@ function handleCreateSshConnection() {
             $notes !== '' ? $notes : null,
             $color,
             $protocol,
+            $appearanceJson,
             $now,
             $now,
         ]);
@@ -276,6 +344,7 @@ function handleCreateSshConnection() {
             'tags' => $tags,
             'notes' => $notes !== '' ? $notes : null,
             'color' => $color,
+            'appearance' => $appearance,
             'createdAt' => $now,
             'lastUsedAt' => null,
         ]
@@ -347,6 +416,12 @@ function handleUpdateSshConnection(string $id) {
         $params[] = normalizeSshColor($data['color']);
     }
 
+    if (array_key_exists('appearance', $data)) {
+        $appearance = normalizeSshAppearance($data['appearance']);
+        $fields[] = 'appearance = ?';
+        $params[] = $appearance !== null ? json_encode($appearance, JSON_UNESCAPED_UNICODE) : null;
+    }
+
     if (isset($data['lastUsedAt']) || isset($data['last_used_at'])) {
         $last = isset($data['lastUsedAt']) ? (int)$data['lastUsedAt'] : (int)$data['last_used_at'];
         $fields[] = 'last_used_at = ?';
@@ -367,7 +442,7 @@ function handleUpdateSshConnection(string $id) {
     $stmt = $db->prepare($sql);
     $stmt->execute($params);
 
-    $fetch = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE id = ? AND user_id = ?');
+    $fetch = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, appearance, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE id = ? AND user_id = ?');
     $fetch->execute([$id, (int)$user['id']]);
     $row = $fetch->fetch(PDO::FETCH_ASSOC);
     sendJSON(['connection' => rowToConnection($row)]);
@@ -408,8 +483,8 @@ function handleBulkUpsertSshConnections() {
         $byUrl[(string)$row['ws_url']] = (string)$row['id'];
     }
 
-    $insert = $db->prepare('INSERT INTO user_ssh_connections (id, user_id, name, ws_url, tags, notes, color, protocol, created_at, last_used_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    $update = $db->prepare('UPDATE user_ssh_connections SET name = ?, tags = ?, notes = ?, color = ?, protocol = ?, last_used_at = COALESCE(?, last_used_at), updated_at = ? WHERE id = ? AND user_id = ?');
+    $insert = $db->prepare('INSERT INTO user_ssh_connections (id, user_id, name, ws_url, tags, notes, color, protocol, appearance, created_at, last_used_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $update = $db->prepare('UPDATE user_ssh_connections SET name = ?, tags = ?, notes = ?, color = ?, protocol = ?, appearance = COALESCE(?, appearance), last_used_at = COALESCE(?, last_used_at), updated_at = ? WHERE id = ? AND user_id = ?');
 
     $db->beginTransaction();
     try {
@@ -440,6 +515,8 @@ function handleBulkUpsertSshConnections() {
                 $notes = mb_substr($notes, 0, 1000);
             }
             $color = normalizeSshColor($item['color'] ?? '#0ea5e9');
+            $appearance = array_key_exists('appearance', $item) ? normalizeSshAppearance($item['appearance']) : null;
+            $appearanceJson = $appearance !== null ? json_encode($appearance, JSON_UNESCAPED_UNICODE) : null;
             $lastUsed = null;
             if (isset($item['lastUsedAt'])) {
                 $lastUsed = (int)$item['lastUsedAt'] ?: null;
@@ -458,6 +535,7 @@ function handleBulkUpsertSshConnections() {
                     $notes !== '' ? $notes : null,
                     $color,
                     $protocol,
+                    $appearanceJson,
                     $lastUsed,
                     $now,
                     $byUrl[$wsUrl],
@@ -482,6 +560,7 @@ function handleBulkUpsertSshConnections() {
                     $notes !== '' ? $notes : null,
                     $color,
                     $protocol,
+                    $appearanceJson,
                     $createdAt,
                     $lastUsed,
                     $now,
@@ -496,7 +575,7 @@ function handleBulkUpsertSshConnections() {
         sendJSON(['error' => 'Failed to import connections'], 500);
     }
 
-    $stmt = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE user_id = ? ORDER BY COALESCE(last_used_at, created_at) DESC');
+    $stmt = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, appearance, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE user_id = ? ORDER BY COALESCE(last_used_at, created_at) DESC');
     $stmt->execute([$userId]);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     sendJSON(['connections' => array_map('rowToConnection', $rows)]);

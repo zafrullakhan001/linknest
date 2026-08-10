@@ -89,7 +89,7 @@ if docker compose -f docker/docker-compose.yml ps | grep -q "Up"; then
     echo ""
     echo "VNC Viewer gateway (Docker):"
     echo "   websockify ports: 18881-18980"
-    echo "   (avoids host XAMPP 17881-17980)"
+    echo "   (avoids host XAMPP 17681-18680 / 19000-19999)"
     echo ""
     echo "Default credentials:"
     echo "   Username: admin"

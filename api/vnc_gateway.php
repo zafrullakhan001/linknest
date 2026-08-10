@@ -20,10 +20,28 @@ $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
 $path = rtrim($path, '/') ?: '/';
 
 define('VNC_GATEWAY_DIR', DB_DIR . '/vnc_gateway');
-define('VNC_GATEWAY_PORT_MIN', (int)(getenv('VNC_GATEWAY_PORT_MIN') ?: 17881));
-define('VNC_GATEWAY_PORT_MAX', (int)(getenv('VNC_GATEWAY_PORT_MAX') ?: 17980));
-define('VNC_GATEWAY_MAX_PER_USER', 8);
+// Keep VNC above SSH's expanded range (17681–18680) to avoid listen-port collisions
+define('VNC_GATEWAY_PORT_MIN', (int)(getenv('VNC_GATEWAY_PORT_MIN') ?: 19000));
+define('VNC_GATEWAY_PORT_MAX', (int)(getenv('VNC_GATEWAY_PORT_MAX') ?: 19999));
+define('VNC_GATEWAY_MAX_PER_USER_DEFAULT', 8);
+define('VNC_GATEWAY_MAX_PER_USER_CEILING', 1000);
 define('VNC_GATEWAY_TTL_SEC', 6 * 3600);
+
+/** Hard ceiling for admin max-connections setting (also bounded by listen-port span). */
+function vncGatewayMaxConnectionsCeiling(): int {
+    $portSpan = max(1, VNC_GATEWAY_PORT_MAX - VNC_GATEWAY_PORT_MIN + 1);
+    return min(VNC_GATEWAY_MAX_PER_USER_CEILING, $portSpan);
+}
+
+/** Active concurrent Easy-mode sessions per user (admin-configurable, 1–ceiling). */
+function vncGatewayMaxPerUser(): int {
+    $raw = getSetting('vnc_gateway_max_per_user', (string)VNC_GATEWAY_MAX_PER_USER_DEFAULT);
+    $n = (int)$raw;
+    if ($n < 1) {
+        return VNC_GATEWAY_MAX_PER_USER_DEFAULT;
+    }
+    return min(vncGatewayMaxConnectionsCeiling(), $n);
+}
 
 if ($method === 'GET' && ($path === '/' || $path === '/status')) {
     handleVncGatewayStatus();
@@ -374,8 +392,8 @@ function vncGatewayAllocatePort(): int {
     $min = VNC_GATEWAY_PORT_MIN;
     $max = VNC_GATEWAY_PORT_MAX;
     if ($min < 1024 || $max > 65535 || $min > $max) {
-        $min = 17881;
-        $max = 17980;
+        $min = 19000;
+        $max = 19999;
     }
     for ($port = $min; $port <= $max; $port++) {
         if (isset($used[$port])) {
@@ -624,6 +642,8 @@ function handleVncGatewayStatus() {
         'websockifyModule' => $moduleOk,
         'packagesDir' => vncGatewayPackagesDir(),
         'platform' => PHP_OS,
+        'maxConnections' => vncGatewayMaxPerUser(),
+        'maxConnectionsCeiling' => vncGatewayMaxConnectionsCeiling(),
         'portRange' => [VNC_GATEWAY_PORT_MIN, VNC_GATEWAY_PORT_MAX],
         'sessions' => array_map(static function ($s) {
             return [
@@ -646,6 +666,7 @@ function handleVncGatewayGetConfig() {
         'config' => [
             'pythonPath' => trim((string)getSetting('vnc_gateway_python_path', '')),
             'websockifyPath' => trim((string)getSetting('vnc_gateway_websockify_path', '')),
+            'maxConnections' => vncGatewayMaxPerUser(),
         ],
         'resolved' => [
             'pythonPath' => $python,
@@ -658,6 +679,9 @@ function handleVncGatewayGetConfig() {
         'defaults' => [
             'pythonCandidates' => vncGatewayDefaultPythonCandidates(),
             'launcherCandidates' => vncGatewayDefaultLauncherCandidates(),
+            'maxConnectionsDefault' => VNC_GATEWAY_MAX_PER_USER_DEFAULT,
+            'maxConnectionsCeiling' => vncGatewayMaxConnectionsCeiling(),
+            'portRange' => [VNC_GATEWAY_PORT_MIN, VNC_GATEWAY_PORT_MAX],
         ],
     ]);
 }
@@ -679,6 +703,21 @@ function handleVncGatewayPutConfig() {
             sendJSON(['error' => 'websockify path is too long'], 400);
         }
         setSetting('vnc_gateway_websockify_path', $path);
+    }
+    if (array_key_exists('maxConnections', $data) || array_key_exists('max_connections', $data)) {
+        $maxConnections = $data['maxConnections'] ?? $data['max_connections'];
+        if (!is_numeric($maxConnections)) {
+            sendJSON(['error' => 'Max connections must be a number'], 400);
+        }
+        $maxN = (int)$maxConnections;
+        $ceiling = vncGatewayMaxConnectionsCeiling();
+        if ($maxN < 1 || $maxN > $ceiling) {
+            sendJSON([
+                'error' => 'Max connections must be between 1 and ' . $ceiling .
+                    ' (limited by gateway port range ' . VNC_GATEWAY_PORT_MIN . '-' . VNC_GATEWAY_PORT_MAX . ')',
+            ], 400);
+        }
+        setSetting('vnc_gateway_max_per_user', (string)$maxN);
     }
 
     handleVncGatewayGetConfig();
@@ -705,12 +744,13 @@ function handleVncGatewayStart() {
             $mine++;
         }
     }
-    if ($mine >= VNC_GATEWAY_MAX_PER_USER) {
+    $maxPerUser = vncGatewayMaxPerUser();
+    if ($mine >= $maxPerUser) {
         sendJSON([
-            'error' => 'Too many active VNC gateways (max ' . VNC_GATEWAY_MAX_PER_USER . '). Close a session tab first, or use stop-all if tabs are already gone.',
+            'error' => 'Too many active VNC gateways (max ' . $maxPerUser . '). Close a session tab first, or use stop-all if tabs are already gone.',
             'code' => 'gateway_limit',
             'active' => $mine,
-            'max' => VNC_GATEWAY_MAX_PER_USER,
+            'max' => $maxPerUser,
         ], 429);
     }
 

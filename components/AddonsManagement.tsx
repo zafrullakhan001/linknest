@@ -1798,6 +1798,8 @@ const SshGatewayAddonCard: React.FC = () => {
     const [ttydPath, setTtydPath] = useState('');
     const [sshPath, setSshPath] = useState('');
     const [x11Display, setX11Display] = useState('127.0.0.1:0.0');
+    const [maxConnections, setMaxConnections] = useState(8);
+    const [maxCeiling, setMaxCeiling] = useState(1000);
     const [resolved, setResolved] = useState<SshGatewayConfigResponse['resolved'] | null>(null);
     const [defaults, setDefaults] = useState<SshGatewayConfigResponse['defaults'] | null>(null);
 
@@ -1805,6 +1807,8 @@ const SshGatewayAddonCard: React.FC = () => {
         setTtydPath(data.config.ttydPath || '');
         setSshPath(data.config.sshPath || '');
         setX11Display(data.config.x11Display || '127.0.0.1:0.0');
+        setMaxConnections(Math.max(1, Number(data.config.maxConnections) || 8));
+        setMaxCeiling(Math.max(1, Number(data.defaults.maxConnectionsCeiling) || 1000));
         setResolved(data.resolved);
         setDefaults(data.defaults);
     };
@@ -1831,13 +1835,15 @@ const SshGatewayAddonCard: React.FC = () => {
             setSaving(true);
             setError(null);
             setSavedMsg(null);
+            const clamped = Math.min(maxCeiling, Math.max(1, Math.floor(Number(maxConnections) || 1)));
             const data = await sshGatewayService.putConfig({
                 ttydPath: ttydPath.trim(),
                 sshPath: sshPath.trim(),
                 x11Display: x11Display.trim(),
+                maxConnections: clamped,
             });
             applyResponse(data);
-            setSavedMsg('SSH gateway paths saved.');
+            setSavedMsg('SSH gateway settings saved.');
         } catch (err: any) {
             setError(err.message || 'Failed to save');
         } finally {
@@ -1881,6 +1887,9 @@ const SshGatewayAddonCard: React.FC = () => {
                                     </span>
                                     <span className="px-2 py-1 bg-white rounded border border-sky-100 dark:border-sky-900/40 dark:bg-slate-900/40">
                                         VcXsrv: {resolved.vcxsrvPath ? 'found' : 'not detected'}
+                                    </span>
+                                    <span className="px-2 py-1 bg-white rounded border border-sky-100 dark:border-sky-900/40 dark:bg-slate-900/40">
+                                        max sessions: {maxConnections}/{maxCeiling}
                                     </span>
                                 </div>
                             )}
@@ -1997,6 +2006,35 @@ const SshGatewayAddonCard: React.FC = () => {
                                 )}
                             </div>
 
+                            <div>
+                                <label className="block text-sm font-medium text-slate-800 dark:text-slate-200 mb-1">
+                                    Max concurrent connections per user
+                                </label>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    max={maxCeiling}
+                                    step={1}
+                                    value={maxConnections}
+                                    onChange={(e) => {
+                                        const n = Number.parseInt(e.target.value, 10);
+                                        if (!Number.isFinite(n)) {
+                                            setMaxConnections(1);
+                                            return;
+                                        }
+                                        setMaxConnections(Math.min(maxCeiling, Math.max(1, n)));
+                                    }}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm max-w-xs"
+                                />
+                                <p className="mt-1 text-xs text-slate-500">
+                                    Limits open SSH Easy-mode sessions at once (default {defaults?.maxConnectionsDefault ?? 8},
+                                    maximum {maxCeiling}). The SSH Terminal widget enforces the same limit.
+                                    {defaults?.portRange && (
+                                        <> Gateway ports: {defaults.portRange[0]}–{defaults.portRange[1]}.</>
+                                    )}
+                                </p>
+                            </div>
+
                             <div className="flex justify-end gap-3 pt-2 border-t border-emerald-100 dark:border-emerald-900/40">
                                 <button
                                     type="button"
@@ -2015,7 +2053,7 @@ const SshGatewayAddonCard: React.FC = () => {
                                     disabled={saving}
                                     className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors disabled:opacity-50 font-medium"
                                 >
-                                    {saving ? 'Saving…' : 'Save Paths'}
+                                    {saving ? 'Saving…' : 'Save Settings'}
                                 </button>
                             </div>
                         </>
@@ -2034,12 +2072,16 @@ const VncGatewayAddonCard: React.FC = () => {
     const [savedMsg, setSavedMsg] = useState<string | null>(null);
     const [pythonPath, setPythonPath] = useState('');
     const [websockifyPath, setWebsockifyPath] = useState('');
+    const [maxConnections, setMaxConnections] = useState(8);
+    const [maxCeiling, setMaxCeiling] = useState(1000);
     const [resolved, setResolved] = useState<VncGatewayConfigResponse['resolved'] | null>(null);
     const [defaults, setDefaults] = useState<VncGatewayConfigResponse['defaults'] | null>(null);
 
     const applyResponse = (data: VncGatewayConfigResponse) => {
         setPythonPath(data.config.pythonPath || '');
         setWebsockifyPath(data.config.websockifyPath || '');
+        setMaxConnections(Math.max(1, Number(data.config.maxConnections) || 8));
+        setMaxCeiling(Math.max(1, Number(data.defaults.maxConnectionsCeiling) || 1000));
         setResolved(data.resolved);
         setDefaults(data.defaults);
     };
@@ -2066,12 +2108,14 @@ const VncGatewayAddonCard: React.FC = () => {
             setSaving(true);
             setError(null);
             setSavedMsg(null);
+            const clamped = Math.min(maxCeiling, Math.max(1, Math.floor(Number(maxConnections) || 1)));
             const data = await vncGatewayService.putConfig({
                 pythonPath: pythonPath.trim(),
                 websockifyPath: websockifyPath.trim(),
+                maxConnections: clamped,
             });
             applyResponse(data);
-            setSavedMsg('VNC gateway paths saved.');
+            setSavedMsg('VNC gateway settings saved.');
         } catch (err: any) {
             setError(err.message || 'Failed to save');
         } finally {
@@ -2114,6 +2158,9 @@ const VncGatewayAddonCard: React.FC = () => {
                                     </span>
                                     <span className="px-2 py-1 bg-white rounded border border-sky-100 dark:border-sky-900/40 dark:bg-slate-900/40">
                                         packages: {resolved.packagesPresent ? 'vendored' : 'run install script'}
+                                    </span>
+                                    <span className="px-2 py-1 bg-white rounded border border-sky-100 dark:border-sky-900/40 dark:bg-slate-900/40">
+                                        max sessions: {maxConnections}/{maxCeiling}
                                     </span>
                                 </div>
                             )}
@@ -2189,6 +2236,35 @@ const VncGatewayAddonCard: React.FC = () => {
                                 )}
                             </div>
 
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
+                                    Max concurrent connections per user
+                                </label>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    max={maxCeiling}
+                                    step={1}
+                                    value={maxConnections}
+                                    onChange={(e) => {
+                                        const n = Number.parseInt(e.target.value, 10);
+                                        if (!Number.isFinite(n)) {
+                                            setMaxConnections(1);
+                                            return;
+                                        }
+                                        setMaxConnections(Math.min(maxCeiling, Math.max(1, n)));
+                                    }}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm max-w-xs"
+                                />
+                                <p className="mt-1 text-xs text-slate-500">
+                                    Limits open VNC Easy-mode sessions at once (default {defaults?.maxConnectionsDefault ?? 8},
+                                    maximum {maxCeiling}). The VNC Viewer widget enforces the same limit.
+                                    {defaults?.portRange && (
+                                        <> Gateway ports: {defaults.portRange[0]}–{defaults.portRange[1]}.</>
+                                    )}
+                                </p>
+                            </div>
+
                             <div className="flex justify-end gap-3 pt-2 border-t border-violet-100 dark:border-violet-900/40">
                                 <button
                                     type="button"
@@ -2207,7 +2283,7 @@ const VncGatewayAddonCard: React.FC = () => {
                                     disabled={saving}
                                     className="px-5 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-lg transition-colors disabled:opacity-50 font-medium"
                                 >
-                                    {saving ? 'Saving…' : 'Save Paths'}
+                                    {saving ? 'Saving…' : 'Save Settings'}
                                 </button>
                             </div>
                         </>

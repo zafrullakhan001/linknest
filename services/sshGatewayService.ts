@@ -36,6 +36,9 @@ export interface SshGatewayStatus {
   ttydPath?: string | null;
   sshPath?: string | null;
   platform?: string;
+  maxConnections?: number;
+  maxConnectionsCeiling?: number;
+  portRange?: [number, number];
   gui?: {
     supported?: boolean;
     display?: string;
@@ -59,6 +62,7 @@ export interface SshGatewayConfigResponse {
     ttydPath: string;
     sshPath: string;
     x11Display: string;
+    maxConnections: number;
   };
   resolved: {
     ttydPath: string | null;
@@ -70,6 +74,9 @@ export interface SshGatewayConfigResponse {
   defaults: {
     ttydCandidates: string[];
     sshCandidates: string[];
+    maxConnectionsDefault: number;
+    maxConnectionsCeiling: number;
+    portRange?: [number, number];
   };
 }
 
@@ -92,6 +99,7 @@ export const sshGatewayService = {
     ttydPath?: string;
     sshPath?: string;
     x11Display?: string;
+    maxConnections?: number;
   }): Promise<SshGatewayConfigResponse> {
     const res = await fetch(`${GW_BASE}/config`, {
       method: 'PUT',

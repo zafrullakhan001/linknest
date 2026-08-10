@@ -124,7 +124,7 @@ echo    X11: host.docker.internal:0.0  [VcXsrv + Disable access control]
 echo.
 echo VNC Viewer gateway [Docker]:
 echo    websockify ports: 18881-18980
-echo    [avoids host XAMPP 17881-17980]
+    echo    [avoids host XAMPP 17681-18680 / 19000-19999]
 echo.
 echo Default credentials:
 echo    Username: admin

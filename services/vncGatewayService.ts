@@ -35,6 +35,8 @@ export interface VncGatewayStatus {
   websockifyModule?: boolean;
   packagesDir?: string;
   platform?: string;
+  maxConnections?: number;
+  maxConnectionsCeiling?: number;
   portRange?: [number, number];
   sessions: Array<{
     sessionId: string;
@@ -50,6 +52,7 @@ export interface VncGatewayConfigResponse {
   config: {
     pythonPath: string;
     websockifyPath: string;
+    maxConnections: number;
   };
   resolved: {
     pythonPath: string | null;
@@ -62,6 +65,9 @@ export interface VncGatewayConfigResponse {
   defaults: {
     pythonCandidates: string[];
     launcherCandidates: string[];
+    maxConnectionsDefault: number;
+    maxConnectionsCeiling: number;
+    portRange?: [number, number];
   };
 }
 
@@ -83,6 +89,7 @@ export const vncGatewayService = {
   async putConfig(input: {
     pythonPath?: string;
     websockifyPath?: string;
+    maxConnections?: number;
   }): Promise<VncGatewayConfigResponse> {
     const res = await fetch(`${GW_BASE}/config`, {
       method: 'PUT',
