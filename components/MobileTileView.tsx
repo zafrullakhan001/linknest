@@ -4,8 +4,8 @@ import { useSettings } from '../contexts/SettingsContext';
 import { useAuth } from '../contexts/AuthContext';
 import { COLOR_STYLES } from '../types';
 import { TileAnimationSelector, useTileAnimation, getTileAnimationClass, getTileDecorationClass, TileAnimation, TileDecoration } from './TileAnimationSelector';
-import { getPublicFavorites, checkLocalStorageAvailability, togglePublicFavorite, isPublicFavorite, getPublicLinkFavorites } from '../services/publicFavoritesService';
-import { getFavoriteLinks, FavoriteLink } from '../services/storageService';
+import { getPublicFavorites, checkLocalStorageAvailability, togglePublicFavorite, isPublicFavorite, getPublicLinkFavorites, getPublicLinkFavoriteDetails, syncPublicLinkFavoriteDetails } from '../services/publicFavoritesService';
+import { getFavoriteLinks, resolveFavoriteLinks, FavoriteLink } from '../services/storageService';
 import { getDisplayUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick } from '../utils/sshLink';
 import { tryHandleVncLinkClick } from '../utils/vncLink';
@@ -32,7 +32,7 @@ function forEachTileLink(tile: Tile, cb: (link: any) => void) {
   });
 }
 
-function buildGuestFavoriteLinks(allTiles: Tile[], favoriteLinkIds: string[]): FavoriteLink[] {
+function buildGuestFavoriteLinksFromTiles(allTiles: Tile[], favoriteLinkIds: string[]): FavoriteLink[] {
   const guestFavoriteLinks: FavoriteLink[] = [];
   const seen = new Set<string>();
   allTiles.forEach((tile) => {
@@ -150,24 +150,61 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
 
     let cancelled = false;
 
-    if (isAuthenticated) {
-      setIsLoadingFavoriteLinks(true);
-      getFavoriteLinks()
-        .then((links) => {
+    const load = async () => {
+      if (isAuthenticated) {
+        setIsLoadingFavoriteLinks(true);
+        try {
+          const links = await getFavoriteLinks();
           if (!cancelled) setFavoriteLinks(links);
-        })
-        .catch((error) => {
+        } catch (error) {
           console.error('Failed to load favorite links (mobile):', error);
           if (!cancelled) setFavoriteLinks([]);
-        })
-        .finally(() => {
+        } finally {
           if (!cancelled) setIsLoadingFavoriteLinks(false);
-        });
-    } else {
+        }
+        return;
+      }
+
       const ids = getPublicLinkFavorites();
-      if (!cancelled) setFavoriteLinks(buildGuestFavoriteLinks(tiles, ids));
-      setIsLoadingFavoriteLinks(false);
-    }
+      if (ids.length === 0) {
+        if (!cancelled) {
+          setFavoriteLinks([]);
+          setIsLoadingFavoriteLinks(false);
+        }
+        return;
+      }
+
+      const cached = getPublicLinkFavoriteDetails().map((detail) => ({
+        ...detail,
+        isFavorite: true as const
+      }));
+      const fromTiles = buildGuestFavoriteLinksFromTiles(tiles, ids);
+      const immediate = cached.length > 0 ? cached : fromTiles;
+      if (!cancelled && immediate.length > 0) {
+        setFavoriteLinks(immediate);
+      }
+
+      setIsLoadingFavoriteLinks(true);
+      try {
+        const resolved = await resolveFavoriteLinks(ids);
+        if (cancelled) return;
+        if (resolved.length > 0) {
+          syncPublicLinkFavoriteDetails(resolved);
+          setFavoriteLinks(resolved);
+        } else if (immediate.length === 0) {
+          setFavoriteLinks([]);
+        }
+      } catch (error) {
+        console.error('Failed to resolve guest favorite links (mobile):', error);
+        if (!cancelled && immediate.length === 0) {
+          setFavoriteLinks([]);
+        }
+      } finally {
+        if (!cancelled) setIsLoadingFavoriteLinks(false);
+      }
+    };
+
+    load();
 
     return () => {
       cancelled = true;

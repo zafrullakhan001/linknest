@@ -6,7 +6,33 @@
 
 const STORAGE_KEY = 'linknest_public_favorites';
 const LINK_STORAGE_KEY = 'linknest_public_link_favorites';
+const LINK_DETAILS_STORAGE_KEY = 'linknest_public_link_favorite_details';
 const ACTIVE_TAB_KEY = 'linknest_public_active_tab';
+
+export interface PublicFavoriteLinkDetail {
+  id: string;
+  label: string;
+  url: string;
+  icon?: string;
+  textColor?: string;
+  visibility?: string;
+  notes?: string;
+  tooltip?: string;
+  browser?: string;
+  richTextContent?: string;
+  health?: {
+    status: 'unknown' | 'healthy' | 'broken' | 'timeout' | 'checking' | 'restricted' | 'accessible' | 'redirected';
+    httpCode?: number | null;
+    error?: string | null;
+    checkedAt?: number | null;
+  };
+  tile: {
+    id: string;
+    title: string;
+    emoji: string;
+    themeColor: string;
+  };
+}
 
 // ============ LOCALSTORAGE AVAILABILITY CHECK ============
 
@@ -332,10 +358,80 @@ export const togglePublicLinkFavorite = (linkId: string): boolean => {
   const isFavorite = isPublicLinkFavorite(linkId);
   if (isFavorite) {
     removePublicLinkFavorite(linkId);
+    removePublicLinkFavoriteDetail(linkId);
     return false;
   } else {
     addPublicLinkFavorite(linkId);
     return true;
+  }
+};
+
+/**
+ * Get cached public favorite link details (snapshots saved when favoriting).
+ */
+export const getPublicLinkFavoriteDetailsMap = (): Record<string, PublicFavoriteLinkDetail> => {
+  try {
+    const stored = localStorage.getItem(LINK_DETAILS_STORAGE_KEY);
+    if (!stored) return {};
+    const parsed = JSON.parse(stored);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch (error) {
+    console.error('Failed to get public link favorite details:', error);
+    return {};
+  }
+};
+
+/**
+ * Ordered list of cached public favorite link details for current IDs.
+ */
+export const getPublicLinkFavoriteDetails = (): PublicFavoriteLinkDetail[] => {
+  const ids = getPublicLinkFavorites();
+  const map = getPublicLinkFavoriteDetailsMap();
+  return ids.map((id) => map[id]).filter(Boolean) as PublicFavoriteLinkDetail[];
+};
+
+/**
+ * Store/update a snapshot for a public favorite link so the Favorites tab
+ * can render even when home-grid tiles are loaded in summary mode.
+ */
+export const upsertPublicLinkFavoriteDetail = (detail: PublicFavoriteLinkDetail): void => {
+  if (!detail?.id) return;
+  try {
+    const map = getPublicLinkFavoriteDetailsMap();
+    map[detail.id] = detail;
+    localStorage.setItem(LINK_DETAILS_STORAGE_KEY, JSON.stringify(map));
+  } catch (error) {
+    console.error('Failed to save public link favorite detail:', error);
+  }
+};
+
+export const removePublicLinkFavoriteDetail = (linkId: string): void => {
+  try {
+    const map = getPublicLinkFavoriteDetailsMap();
+    if (map[linkId]) {
+      delete map[linkId];
+      localStorage.setItem(LINK_DETAILS_STORAGE_KEY, JSON.stringify(map));
+    }
+  } catch (error) {
+    console.error('Failed to remove public link favorite detail:', error);
+  }
+};
+
+/**
+ * Replace cached details with a freshly resolved list (keeps only current IDs).
+ */
+export const syncPublicLinkFavoriteDetails = (details: PublicFavoriteLinkDetail[]): void => {
+  try {
+    const ids = new Set(getPublicLinkFavorites());
+    const map: Record<string, PublicFavoriteLinkDetail> = {};
+    details.forEach((detail) => {
+      if (detail?.id && ids.has(detail.id)) {
+        map[detail.id] = detail;
+      }
+    });
+    localStorage.setItem(LINK_DETAILS_STORAGE_KEY, JSON.stringify(map));
+  } catch (error) {
+    console.error('Failed to sync public link favorite details:', error);
   }
 };
 
@@ -345,6 +441,7 @@ export const togglePublicLinkFavorite = (linkId: string): boolean => {
 export const clearPublicLinkFavorites = (): void => {
   try {
     localStorage.removeItem(LINK_STORAGE_KEY);
+    localStorage.removeItem(LINK_DETAILS_STORAGE_KEY);
   } catch (error) {
     console.error('Failed to clear public link favorites:', error);
   }

@@ -629,9 +629,43 @@ export const getFavoriteLinks = async (): Promise<FavoriteLink[]> => {
       throw new Error('Failed to fetch favorite links');
     }
 
-    return await response.json();
+    const data = await response.json();
+    return Array.isArray(data) ? data : [];
   } catch (e) {
     console.error("Failed to fetch favorite links", e);
+    return [];
+  }
+};
+
+/**
+ * Resolve link IDs into FavoriteLink payloads (for guest/public favorites).
+ * Home-grid tiles load in summary mode without nested links, so guests cannot
+ * rebuild favorites from the tiles array alone.
+ */
+export const resolveFavoriteLinks = async (linkIds: string[]): Promise<FavoriteLink[]> => {
+  const uniqueIds = Array.from(new Set((linkIds || []).filter((id) => typeof id === 'string' && id.trim() !== '')));
+  if (uniqueIds.length === 0) {
+    return [];
+  }
+
+  try {
+    const response = await fetch(`${API_BASE}/tiles/resolve-favorite-links`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ linkIds: uniqueIds })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      console.error('API Error Response (resolveFavoriteLinks):', errorData);
+      throw new Error('Failed to resolve favorite links');
+    }
+
+    const data = await response.json();
+    return Array.isArray(data) ? data : [];
+  } catch (e) {
+    console.error('Failed to resolve favorite links', e);
     return [];
   }
 };

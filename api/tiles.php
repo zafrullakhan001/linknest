@@ -56,6 +56,8 @@ switch ($method) {
             handleToggleCategoryFavorite($matches[1]);
         } elseif (preg_match('#^/link/([^/]+)/favorite$#', $path, $matches)) {
             handleToggleLinkFavorite($matches[1]);
+        } elseif ($path === '/resolve-favorite-links' || $path === '/resolve-favorite-links/') {
+            handleResolveFavoriteLinks();
         } elseif (preg_match('#^/([^/]+)/favorite$#', $path, $matches)) {
             handleToggleFavorite($matches[1]);
         } elseif (preg_match('#^/([^/]+)/clone$#', $path, $matches)) {
@@ -4013,36 +4015,75 @@ function handleGetFavorites() {
     ]);
 }
 
+/**
+ * Map a joined link+tile DB row into the FavoriteLink API shape.
+ */
+function mapFavoriteLinkRow(array $row): array {
+    $health = null;
+    if (!empty($row['health_status']) && !isNonHttpLinkHealthUrl($row['url'] ?? '')) {
+        $health = [
+            'status' => $row['health_status'],
+            'httpCode' => $row['health_http_code'] ?? null,
+            'error' => $row['health_error'] ?? null,
+            'checkedAt' => $row['health_checked_at'] ?? null
+        ];
+    }
+
+    return [
+        'id' => $row['id'],
+        'label' => $row['label'],
+        'url' => $row['url'],
+        'icon' => $row['icon'] ?? null,
+        'textColor' => $row['text_color'] ?? null,
+        'visibility' => $row['visibility'] ?? 'public',
+        'published' => isContentPublished($row),
+        'notes' => $row['notes'] ?? null,
+        'tooltip' => $row['tooltip'] ?? null,
+        'browser' => $row['browser'] ?? null,
+        'richTextContent' => $row['rich_text_content'] ?? null,
+        'isFavorite' => true,
+        'health' => $health,
+        'tile' => [
+            'id' => $row['tile_id'],
+            'title' => $row['tile_title'] ?? 'Untitled',
+            'emoji' => $row['tile_emoji'] ?? '✨',
+            'themeColor' => $row['tile_theme_color'] ?? 'blue'
+        ]
+    ];
+}
+
 function handleGetFavoriteLinks() {
     try {
         $user = requireAuth();
         $db = getDB();
-        
+
         // Get all favorited links with their parent tile information
         // Order by position ASC (with created_at as fallback for backward compatibility)
         $stmt = $db->prepare('
-            SELECT 
+            SELECT
                 l.*,
-                t.id as tile_id,
+                COALESCE(s.tile_id, tb.tile_id) as tile_id,
                 t.title as tile_title,
                 t.emoji as tile_emoji,
                 t.theme_color as tile_theme_color,
+                t.published as tile_published,
                 s.id as section_id
             FROM user_link_favorites ulf
             INNER JOIN links l ON l.id = ulf.link_id
             LEFT JOIN sections s ON l.section_id = s.id
-            LEFT JOIN tiles t ON s.tile_id = t.id
+            LEFT JOIN tabs tb ON s.tab_id = tb.id
+            LEFT JOIN tiles t ON t.id = COALESCE(s.tile_id, tb.tile_id)
             WHERE ulf.user_id = ?
             AND (t.deleted_at IS NULL OR t.id IS NULL)
             AND (t.archived_at IS NULL OR t.id IS NULL)
             ORDER BY ulf.position ASC, ulf.created_at ASC
         ');
         $stmt->execute([$user['id']]);
-        
+
         $favoriteLinks = [];
-        while ($row = $stmt->fetch()) {
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
             // Skip if tile is missing (orphaned link)
-            if (!$row['tile_id']) {
+            if (empty($row['tile_id'])) {
                 continue;
             }
 
@@ -4050,55 +4091,128 @@ function handleGetFavoriteLinks() {
             if (!canUserSeePublishedContent($user, $row)) {
                 continue;
             }
-            // Also hide if parent tile is unpublished (join may expose tile published via another query;
-            // favorite query selects l.* and t fields but not t.published — check separately)
-            if (!$user['is_admin']) {
-                $tilePubStmt = $db->prepare('SELECT published FROM tiles WHERE id = ?');
-                $tilePubStmt->execute([$row['tile_id']]);
-                $tilePub = $tilePubStmt->fetchColumn();
-                if ($tilePub !== false && !isContentPublished(['published' => $tilePub])) {
-                    continue;
-                }
+            if (empty($user['is_admin']) && !isContentPublished(['published' => $row['tile_published'] ?? 1])) {
+                continue;
             }
-            
-            // Parse health data if available (skip ssh://, vnc://, etc.)
-            $health = null;
-            if ($row['health_status'] && !isNonHttpLinkHealthUrl($row['url'] ?? '')) {
-                $health = [
-                    'status' => $row['health_status'],
-                    'httpCode' => $row['health_http_code'] ?? null,
-                    'error' => $row['health_error'] ?? null,
-                    'checkedAt' => $row['health_checked_at'] ?? null
-                ];
-            }
-            
-            $favoriteLinks[] = [
-                'id' => $row['id'],
-                'label' => $row['label'],
-                'url' => $row['url'],
-                'icon' => $row['icon'] ?? null,
-                'textColor' => $row['text_color'] ?? null,
-                'visibility' => $row['visibility'] ?? 'public',
-                'published' => isContentPublished($row),
-                'notes' => $row['notes'] ?? null,
-                'tooltip' => $row['tooltip'] ?? null,
-                'browser' => $row['browser'] ?? null,
-                'richTextContent' => $row['rich_text_content'] ?? null,
-                'isFavorite' => true,
-                'health' => $health,
-                'tile' => [
-                    'id' => $row['tile_id'],
-                    'title' => $row['tile_title'] ?? 'Untitled',
-                    'emoji' => $row['tile_emoji'] ?? '✨',
-                    'themeColor' => $row['tile_theme_color'] ?? 'blue'
-                ]
-            ];
+
+            // Keep the user's own favorites list intact (visibility/ACL was already
+            // checked when they could open/favorite the link).
+            $favoriteLinks[] = mapFavoriteLinkRow($row);
         }
-        
+
         sendJSON($favoriteLinks);
     } catch (Exception $e) {
         error_log('Error in handleGetFavoriteLinks: ' . $e->getMessage());
         sendJSON(['error' => 'Failed to fetch favorite links', 'details' => $e->getMessage()], 500);
+    }
+}
+
+/**
+ * Resolve favorite-link payloads for a list of link IDs (used by guest public favorites).
+ * Authenticated callers also get ACL-filtered results (useful for cache refresh).
+ */
+function handleResolveFavoriteLinks() {
+    try {
+        $user = getAuthenticatedUser();
+        $db = getDB();
+        $data = getJSONInput();
+        $linkIds = $data['linkIds'] ?? $data['link_ids'] ?? [];
+        if (!is_array($linkIds)) {
+            sendJSON(['error' => 'linkIds must be an array'], 400);
+        }
+
+        // Sanitize + cap to avoid abuse
+        $cleanIds = [];
+        foreach ($linkIds as $id) {
+            if (!is_string($id) && !is_numeric($id)) {
+                continue;
+            }
+            $id = trim((string)$id);
+            if ($id === '' || strlen($id) > 128) {
+                continue;
+            }
+            $cleanIds[$id] = true;
+            if (count($cleanIds) >= 200) {
+                break;
+            }
+        }
+        $cleanIds = array_keys($cleanIds);
+        if (empty($cleanIds)) {
+            sendJSON([]);
+        }
+
+        $userGroupIds = [];
+        if ($user && empty($user['is_admin'])) {
+            $groupStmt = $db->prepare('SELECT group_id FROM user_group_members WHERE user_id = ?');
+            $groupStmt->execute([$user['id']]);
+            while ($group = $groupStmt->fetch()) {
+                $userGroupIds[] = (int)$group['group_id'];
+            }
+        }
+
+        $placeholders = implode(',', array_fill(0, count($cleanIds), '?'));
+        $stmt = $db->prepare('
+            SELECT
+                l.*,
+                COALESCE(s.tile_id, tb.tile_id) as tile_id,
+                t.title as tile_title,
+                t.emoji as tile_emoji,
+                t.theme_color as tile_theme_color,
+                t.visibility as tile_visibility,
+                t.allowed_users as tile_allowed_users,
+                t.allowed_groups as tile_allowed_groups,
+                t.published as tile_published,
+                s.id as section_id
+            FROM links l
+            LEFT JOIN sections s ON l.section_id = s.id
+            LEFT JOIN tabs tb ON s.tab_id = tb.id
+            LEFT JOIN tiles t ON t.id = COALESCE(s.tile_id, tb.tile_id)
+            WHERE l.id IN (' . $placeholders . ')
+            AND t.id IS NOT NULL
+            AND t.deleted_at IS NULL
+            AND t.archived_at IS NULL
+        ');
+        $stmt->execute($cleanIds);
+
+        $byId = [];
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            if (empty($row['tile_id'])) {
+                continue;
+            }
+            if (!canUserSeePublishedContent($user, $row)) {
+                continue;
+            }
+            if (!($user && !empty($user['is_admin'])) && !isContentPublished(['published' => $row['tile_published'] ?? 1])) {
+                continue;
+            }
+
+            $tileRow = [
+                'visibility' => $row['tile_visibility'] ?? 'public',
+                'allowed_users' => $row['tile_allowed_users'] ?? null,
+                'allowed_groups' => $row['tile_allowed_groups'] ?? null,
+            ];
+            if (!canUserSeeByVisibility($user, $tileRow, $userGroupIds)) {
+                continue;
+            }
+            if (!canUserSeeByVisibility($user, $row, $userGroupIds)) {
+                continue;
+            }
+
+            $byId[$row['id']] = mapFavoriteLinkRow($row);
+        }
+
+        // Preserve caller order
+        $favoriteLinks = [];
+        foreach ($cleanIds as $id) {
+            if (isset($byId[$id])) {
+                $favoriteLinks[] = $byId[$id];
+            }
+        }
+
+        sendJSON($favoriteLinks);
+    } catch (Exception $e) {
+        error_log('Error in handleResolveFavoriteLinks: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to resolve favorite links', 'details' => $e->getMessage()], 500);
     }
 }
 

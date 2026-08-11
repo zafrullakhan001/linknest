@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef, lazy, Suspens
 import { createPortal } from 'react-dom';
 import { Tile, LinkSection, ThemeColor, THEME_COLORS, COLOR_STYLES, POPULAR_EMOJIS, TileVisibility, TileMessage, Link, CelebrationConfig } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
-import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite, saveTile, createTile, getTiles, getTile, cloneCategory, toggleCategoryFavorite, getRecycleBin, restoreTile, purgeRecycleBin, permanentDeleteTile, permanentDeleteCategory, deleteTile, getArchive, archiveTile, unarchiveTile, purgeArchive, archiveCategory, unarchiveCategory, getFavoriteLinks, FavoriteLink, csvToJson, uploadTileHeaderImage, uploadTileEmojiImage } from '../services/storageService';
+import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite, saveTile, createTile, getTiles, getTile, cloneCategory, toggleCategoryFavorite, getRecycleBin, restoreTile, purgeRecycleBin, permanentDeleteTile, permanentDeleteCategory, deleteTile, getArchive, archiveTile, unarchiveTile, purgeArchive, archiveCategory, unarchiveCategory, getFavoriteLinks, resolveFavoriteLinks, FavoriteLink, csvToJson, uploadTileHeaderImage, uploadTileEmojiImage } from '../services/storageService';
 import {
   exportCategoryToFile,
   exportTileToFile,
@@ -12,7 +12,7 @@ import {
 import { authService, UserListItem } from '../services/authService';
 import { useAuth } from '../contexts/AuthContext';
 import { userPreferencesService } from '../services/userPreferencesService';
-import { getPublicFavorites, togglePublicFavorite, isPublicFavorite, getPublicActiveTab, setPublicActiveTab, exportPublicFavorites, importPublicFavorites, clearPublicFavorites, getPublicLinkFavorites, togglePublicLinkFavorite, clearPublicLinkFavorites } from '../services/publicFavoritesService';
+import { getPublicFavorites, togglePublicFavorite, isPublicFavorite, getPublicActiveTab, setPublicActiveTab, exportPublicFavorites, importPublicFavorites, clearPublicFavorites, getPublicLinkFavorites, togglePublicLinkFavorite, clearPublicLinkFavorites, getPublicLinkFavoriteDetails, syncPublicLinkFavoriteDetails, upsertPublicLinkFavoriteDetail, removePublicLinkFavoriteDetail } from '../services/publicFavoritesService';
 import { linkHealthService } from '../services/linkHealthService';
 import { favoriteLinkHealthService, LinkHealthCheckResult } from '../services/favoriteLinkHealthService';
 import { generateUuid } from '../services/idService';
@@ -1662,7 +1662,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
           </div>
         ) : null}
         <div className="relative flex-1 min-w-0 min-h-[40px]">
-          <div className={`relative z-10 ${isAuthenticated ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'} transition-opacity flex flex-wrap items-center gap-1 justify-end w-full min-w-0`}>
+          <div className="relative z-10 opacity-0 group-hover:opacity-100 transition-opacity flex flex-wrap items-center gap-1 justify-end w-full min-w-0">
           {isAuthenticated && (
             <>
               {/* Category Selector */}
@@ -1775,7 +1775,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
               )}
             </>
           )}
-          {/* Favorite Button for Public Users - Always visible */}
+          {/* Favorite Button for Public Users - shown on card hover (parent opacity) */}
           {!isAuthenticated && onToggleFavorite && !isRecycleBin && (
             <button
               onClick={(e) => {
@@ -3458,61 +3458,80 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
   // Load favorite links when favorites tab is active
   useEffect(() => {
-    if (activeTab === 'favorites' || activeTab === 'public-favorites') {
-      console.log('Fetching favorite links...');
+    if (activeTab !== 'favorites' && activeTab !== 'public-favorites') {
+      return;
+    }
 
+    let cancelled = false;
+    console.log('Fetching favorite links...');
+
+    const load = async () => {
       if (isAuthenticated) {
         // For authenticated users, fetch from API
         setIsLoadingFavoriteLinks(true);
-        getFavoriteLinks()
-          .then(links => {
+        try {
+          const links = await getFavoriteLinks();
+          if (!cancelled) {
             console.log('Favorite links fetched from API:', links);
             setFavoriteLinks(links);
-            setIsLoadingFavoriteLinks(false);
-          })
-          .catch(error => {
-            console.error('Failed to load favorite links:', error);
-            setIsLoadingFavoriteLinks(false);
-          });
-      } else {
-        // For guest users, get from localStorage
-        const favoriteLinkIds = getPublicLinkFavorites();
-        console.log('Favorite link IDs from localStorage:', favoriteLinkIds);
-
-        // Build favorite links from tiles data
-        const guestFavoriteLinks: FavoriteLink[] = [];
-        tiles.forEach(tile => {
-          tile.sections?.forEach(section => {
-            section.links?.forEach(link => {
-              if (favoriteLinkIds.includes(link.id)) {
-                guestFavoriteLinks.push({
-                  id: link.id,
-                  label: link.label,
-                  url: link.url,
-                  icon: link.icon,
-                  textColor: link.textColor,
-                  visibility: link.visibility,
-                  notes: link.notes,
-                  tooltip: link.tooltip,
-                  browser: link.browser,
-                  isFavorite: true,
-                  health: link.health,
-                  tile: {
-                    id: tile.id,
-                    title: tile.title,
-                    emoji: tile.emoji || '✨',
-                    themeColor: tile.themeColor || 'blue'
-                  }
-                });
-              }
-            });
-          });
-        });
-
-        console.log('Guest favorite links built:', guestFavoriteLinks);
-        setFavoriteLinks(guestFavoriteLinks);
+          }
+        } catch (error) {
+          console.error('Failed to load favorite links:', error);
+          if (!cancelled) setFavoriteLinks([]);
+        } finally {
+          if (!cancelled) setIsLoadingFavoriteLinks(false);
+        }
+        return;
       }
-    }
+
+      // Guest users: IDs live in localStorage. Home-grid tiles are summary-only
+      // (no nested links), so resolve details via API + local snapshots.
+      const favoriteLinkIds = getPublicLinkFavorites();
+      console.log('Favorite link IDs from localStorage:', favoriteLinkIds);
+
+      if (favoriteLinkIds.length === 0) {
+        if (!cancelled) {
+          setFavoriteLinks([]);
+          setIsLoadingFavoriteLinks(false);
+        }
+        return;
+      }
+
+      // Show cached snapshots immediately while resolving
+      const cached = getPublicLinkFavoriteDetails().map((detail) => ({
+        ...detail,
+        isFavorite: true as const
+      }));
+      if (!cancelled && cached.length > 0) {
+        setFavoriteLinks(cached);
+      }
+
+      setIsLoadingFavoriteLinks(true);
+      try {
+        const resolved = await resolveFavoriteLinks(favoriteLinkIds);
+        if (cancelled) return;
+
+        if (resolved.length > 0) {
+          syncPublicLinkFavoriteDetails(resolved);
+          setFavoriteLinks(resolved);
+          console.log('Guest favorite links resolved from API:', resolved);
+        } else if (cached.length === 0) {
+          setFavoriteLinks([]);
+        }
+      } catch (error) {
+        console.error('Failed to resolve guest favorite links:', error);
+        if (!cancelled && cached.length === 0) {
+          setFavoriteLinks([]);
+        }
+      } finally {
+        if (!cancelled) setIsLoadingFavoriteLinks(false);
+      }
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
   }, [activeTab, isAuthenticated, tiles]);
 
   // Check health of favorite links when favorites tab is active with 5s delay and cancellation
@@ -7669,12 +7688,23 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                               setFavoriteLinks(links);
                             } else {
                               togglePublicLinkFavorite(link.id);
+                              removePublicLinkFavoriteDetail(link.id);
                               const favIds = getPublicLinkFavorites();
-                              const newLinks: FavoriteLink[] = [];
-                              tiles.forEach(t => t.sections?.forEach(s => s.links?.forEach(l => {
-                                if (favIds.includes(l.id)) newLinks.push({ id: l.id, label: l.label, url: l.url, icon: l.icon, textColor: l.textColor, visibility: l.visibility, notes: l.notes, tooltip: l.tooltip, browser: l.browser, richTextContent: l.richTextContent, isFavorite: true, health: l.health, tile: { id: t.id, title: t.title, emoji: t.emoji || '✨', themeColor: t.themeColor || 'blue' } });
-                              })));
-                              setFavoriteLinks(newLinks);
+                              if (favIds.length === 0) {
+                                setFavoriteLinks([]);
+                              } else {
+                                const cached = getPublicLinkFavoriteDetails().map((detail) => ({
+                                  ...detail,
+                                  isFavorite: true as const
+                                }));
+                                setFavoriteLinks(cached);
+                                resolveFavoriteLinks(favIds).then((resolved) => {
+                                  if (resolved.length > 0) {
+                                    syncPublicLinkFavoriteDetails(resolved);
+                                    setFavoriteLinks(resolved);
+                                  }
+                                }).catch(() => { /* keep cached */ });
+                              }
                             }
                           }}
                           className="p-1.5 rounded-lg text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all"
@@ -8095,13 +8125,46 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             const links = await getFavoriteLinks();
                             setFavoriteLinks(links);
                           } else {
-                            togglePublicLinkFavorite(link.id);
+                            const nowFavorite = togglePublicLinkFavorite(link.id);
+                            if (nowFavorite) {
+                              upsertPublicLinkFavoriteDetail({
+                                id: link.id,
+                                label: link.label,
+                                url: link.url,
+                                icon: link.icon,
+                                textColor: undefined,
+                                visibility: undefined,
+                                notes: undefined,
+                                tooltip: undefined,
+                                browser: link.browser,
+                                richTextContent: link.richTextContent,
+                                health: link.health,
+                                tile: {
+                                  id: link.tile.id,
+                                  title: link.tile.title,
+                                  emoji: link.tile.emoji || '✨',
+                                  themeColor: link.tile.themeColor || 'blue'
+                                }
+                              });
+                            } else {
+                              removePublicLinkFavoriteDetail(link.id);
+                            }
                             const favIds = getPublicLinkFavorites();
-                            const newLinks: FavoriteLink[] = [];
-                            tiles.forEach(t => t.sections?.forEach(s => s.links?.forEach(l => {
-                              if (favIds.includes(l.id)) newLinks.push({ id: l.id, label: l.label, url: l.url, icon: l.icon, textColor: l.textColor, visibility: l.visibility, notes: l.notes, tooltip: l.tooltip, browser: l.browser, richTextContent: l.richTextContent, isFavorite: true, health: l.health, tile: { id: t.id, title: t.title, emoji: t.emoji || '✨', themeColor: t.themeColor || 'blue' } });
-                            })));
-                            setFavoriteLinks(newLinks);
+                            if (favIds.length === 0) {
+                              setFavoriteLinks([]);
+                            } else {
+                              const cached = getPublicLinkFavoriteDetails().map((detail) => ({
+                                ...detail,
+                                isFavorite: true as const
+                              }));
+                              setFavoriteLinks(cached);
+                              resolveFavoriteLinks(favIds).then((resolved) => {
+                                if (resolved.length > 0) {
+                                  syncPublicLinkFavoriteDetails(resolved);
+                                  setFavoriteLinks(resolved);
+                                }
+                              }).catch(() => { /* keep cached */ });
+                            }
                           }
                         }}
                         className={`absolute top-2 right-2 p-1.5 rounded-lg transition-all z-10 ${(isAuthenticated ? favoriteLinks.some(fl => fl.id === link.id) : getPublicLinkFavorites().includes(link.id))
@@ -8400,12 +8463,23 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                 setFavoriteLinks(links);
                               } else {
                                 togglePublicLinkFavorite(link.id);
+                                removePublicLinkFavoriteDetail(link.id);
                                 const favIds = getPublicLinkFavorites();
-                                const newLinks: FavoriteLink[] = [];
-                                tiles.forEach(t => t.sections?.forEach(s => s.links?.forEach(l => {
-                                  if (favIds.includes(l.id)) newLinks.push({ id: l.id, label: l.label, url: l.url, icon: l.icon, textColor: l.textColor, visibility: l.visibility, notes: l.notes, tooltip: l.tooltip, browser: l.browser, richTextContent: l.richTextContent, isFavorite: true, health: l.health, tile: { id: t.id, title: t.title, emoji: t.emoji || '✨', themeColor: t.themeColor || 'blue' } });
-                                })));
-                                setFavoriteLinks(newLinks);
+                                if (favIds.length === 0) {
+                                  setFavoriteLinks([]);
+                                } else {
+                                  const cached = getPublicLinkFavoriteDetails().map((detail) => ({
+                                    ...detail,
+                                    isFavorite: true as const
+                                  }));
+                                  setFavoriteLinks(cached);
+                                  resolveFavoriteLinks(favIds).then((resolved) => {
+                                    if (resolved.length > 0) {
+                                      syncPublicLinkFavoriteDetails(resolved);
+                                      setFavoriteLinks(resolved);
+                                    }
+                                  }).catch(() => { /* keep cached */ });
+                                }
                               }
                             }}
                             className="p-1.5 rounded-lg text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all"

@@ -31,7 +31,7 @@ import {
 } from './RichTextBoxOptionsFields';
 import type { BoxAlign } from './RichTextBoxedView';
 import { RichTextContent } from '../types';
-import { isPublicLinkFavorite, togglePublicLinkFavorite } from '../services/publicFavoritesService';
+import { isPublicLinkFavorite, togglePublicLinkFavorite, upsertPublicLinkFavoriteDetail, removePublicLinkFavoriteDetail } from '../services/publicFavoritesService';
 import { LinkInfoDialog } from './LinkInfoDialog';
 import { LinkNotesDialog } from './LinkNotesDialog';
 import { QRCodeDialog } from './QRCodeDialog';
@@ -6041,8 +6041,31 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             if (isAuthenticated) {
                                                                                 handleToggleLinkFavorite(link.id);
                                                                             } else {
-                                                                                // For guest users, use localStorage
-                                                                                togglePublicLinkFavorite(link.id);
+                                                                                // For guest users, use localStorage + snapshot for Favorites tab
+                                                                                const nowFavorite = togglePublicLinkFavorite(link.id);
+                                                                                if (nowFavorite) {
+                                                                                    upsertPublicLinkFavoriteDetail({
+                                                                                        id: link.id,
+                                                                                        label: link.label,
+                                                                                        url: link.url,
+                                                                                        icon: link.icon,
+                                                                                        textColor: link.textColor,
+                                                                                        visibility: link.visibility,
+                                                                                        notes: link.notes,
+                                                                                        tooltip: link.tooltip,
+                                                                                        browser: link.browser,
+                                                                                        richTextContent: link.richTextContent,
+                                                                                        health: link.health,
+                                                                                        tile: {
+                                                                                            id: tile.id,
+                                                                                            title: tile.title,
+                                                                                            emoji: tile.emoji || '✨',
+                                                                                            themeColor: tile.themeColor || 'blue'
+                                                                                        }
+                                                                                    });
+                                                                                } else {
+                                                                                    removePublicLinkFavoriteDetail(link.id);
+                                                                                }
                                                                                 // Force re-render by updating parent
                                                                                 onUpdateTiles([...allTiles], true);
                                                                             }
