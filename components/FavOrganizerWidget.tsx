@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createTile, getTiles } from '../services/storageService';
-import { parseSpaceExportObject, normalizeImportedTiles } from '../services/spaceTransferService';
+import { parseSpaceExportObject, normalizeImportedTiles, restoreImportedTileAssets } from '../services/spaceTransferService';
 import { settingsService } from '../services/settingsService';
 import { useAuth } from '../contexts/AuthContext';
 import { generateUuid } from '../services/idService';
@@ -1369,6 +1369,7 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
       // Parse and normalize using the same functions as the app
       const parsed = parseSpaceExportObject(data);
       const normalizedTiles = normalizeImportedTiles(parsed);
+      await restoreImportedTileAssets(normalizedTiles, parsed.assets);
 
       // Update group to the category name and ensure tabs are private
       const tilesToImport = normalizedTiles

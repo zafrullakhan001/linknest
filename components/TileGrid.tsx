@@ -4,10 +4,10 @@ import { Tile, LinkSection, ThemeColor, THEME_COLORS, COLOR_STYLES, POPULAR_EMOJ
 import { useSettings } from '../contexts/SettingsContext';
 import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite, saveTile, createTile, getTiles, getTile, cloneCategory, toggleCategoryFavorite, getRecycleBin, restoreTile, purgeRecycleBin, permanentDeleteTile, permanentDeleteCategory, deleteTile, getArchive, archiveTile, unarchiveTile, purgeArchive, archiveCategory, unarchiveCategory, getFavoriteLinks, resolveFavoriteLinks, FavoriteLink, csvToJson, uploadTileHeaderImage, uploadTileEmojiImage } from '../services/storageService';
 import {
-  exportCategoryToFile,
-  exportTileToFile,
+  exportTileToFileAsync,
   parseSpaceExportObject,
-  normalizeImportedTiles
+  normalizeImportedTiles,
+  restoreImportedTileAssets
 } from '../services/spaceTransferService';
 import { authService, UserListItem } from '../services/authService';
 import { useAuth } from '../contexts/AuthContext';
@@ -5697,12 +5697,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
   );
 
   const handleExportTile = useCallback(
-    (tile: Tile) => {
+    async (tile: Tile) => {
       if (!user?.is_admin) {
         alert('Only administrators can export tiles.');
         return;
       }
-      exportTileToFile(tile);
+      await exportTileToFileAsync(tile);
     },
     [user]
   );
@@ -5796,6 +5796,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
           // Normalize imported tiles and assign to the target category
           const normalizedTiles = normalizeImportedTiles(parsed);
+          await restoreImportedTileAssets(normalizedTiles, parsed.assets);
 
           // Update group to target category; when in staging, put tiles in staging
           const tilesToImport = normalizedTiles.map(tile => ({
@@ -5998,6 +5999,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       const data = JSON.parse(text);
       const parsed = parseSpaceExportObject(data);
       const normalizedTiles = normalizeImportedTiles(parsed);
+      await restoreImportedTileAssets(normalizedTiles, parsed.assets);
       const tilesToImport = normalizedTiles.map(tile => ({ ...tile, sourceTab: 'staging' as const }));
       if (tilesToImport.length === 0) {
         alert('No tiles found in JSON.');

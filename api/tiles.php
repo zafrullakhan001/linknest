@@ -691,7 +691,7 @@ function handleGetTiles() {
                     'displayLocation' => $msgRow['display_location'] ?? 'both',
                     'animationType' => $msgRow['animation_type'] ?? 'rollover',
                     'delayBefore' => isset($msgRow['delay_before']) ? (float)$msgRow['delay_before'] : 0,
-                    'celebrationEffect' => $msgRow['celebration_effect'] ?? 'fireworks',
+                    'celebrationEffect' => $msgRow['celebration_effect'] ?? 'none',
                     'celebrationConfig' => $cc,
                     'url' => $msgRow['url'] ?? null,
                     'urlLabel' => $msgRow['url_label'] ?? null
@@ -851,7 +851,7 @@ function handleGetTiles() {
                 'displayLocation' => $msgRow['display_location'] ?? 'both',
                 'animationType' => $msgRow['animation_type'] ?? 'rollover',
                 'delayBefore' => isset($msgRow['delay_before']) ? (float)$msgRow['delay_before'] : 0,
-                'celebrationEffect' => $msgRow['celebration_effect'] ?? 'fireworks',
+                'celebrationEffect' => $msgRow['celebration_effect'] ?? 'none',
                 'celebrationConfig' => $cc,
                 'url' => $msgRow['url'] ?? null,
                 'urlLabel' => $msgRow['url_label'] ?? null
@@ -1390,7 +1390,7 @@ function handleGetTile($tileId) {
             'displayLocation' => $msgRow['display_location'] ?? 'both',
             'animationType' => $msgRow['animation_type'] ?? 'rollover',
             'delayBefore' => isset($msgRow['delay_before']) ? (float)$msgRow['delay_before'] : 0,
-            'celebrationEffect' => $msgRow['celebration_effect'] ?? 'fireworks',
+            'celebrationEffect' => $msgRow['celebration_effect'] ?? 'none',
             'celebrationConfig' => $cc,
             'url' => $msgRow['url'] ?? null,
             'urlLabel' => $msgRow['url_label'] ?? null
@@ -2129,7 +2129,7 @@ function handleCreateTile() {
                 $msg['displayLocation'] ?? 'both',
                 $msg['animationType'] ?? 'rollover',
                 isset($msg['delayBefore']) ? (float)$msg['delayBefore'] : 0,
-                $msg['celebrationEffect'] ?? 'fireworks',
+                $msg['celebrationEffect'] ?? 'none',
                 $cc,
                 $msg['url'] ?? null,
                 $msg['urlLabel'] ?? null
@@ -2739,7 +2739,7 @@ function handleCloneTile($tileId) {
                 $msg['display_location'] ?? 'both',
                 $msg['animation_type'] ?? 'rollover',
                 isset($msg['delay_before']) ? (float)$msg['delay_before'] : 0,
-                $msg['celebration_effect'] ?? 'fireworks',
+                $msg['celebration_effect'] ?? 'none',
                 $cc,
                 $msg['url'] ?? null,
                 $msg['url_label'] ?? null
@@ -3169,7 +3169,7 @@ function handleCloneCategory($categoryName) {
                         $msg['display_location'] ?? 'both',
                         $msg['animation_type'] ?? 'rollover',
                         isset($msg['delay_before']) ? (float)$msg['delay_before'] : 0,
-                        $msg['celebration_effect'] ?? 'fireworks',
+                        $msg['celebration_effect'] ?? 'none',
                         $cc,
                         $msg['url'] ?? null,
                         $msg['url_label'] ?? null
@@ -5288,7 +5288,7 @@ function getTileForVersion($tileId, $db) {
             'displayLocation' => $msgRow['display_location'] ?? 'both',
             'animationType' => $msgRow['animation_type'] ?? 'rollover',
             'delayBefore' => isset($msgRow['delay_before']) ? (float)$msgRow['delay_before'] : 0,
-            'celebrationEffect' => $msgRow['celebration_effect'] ?? 'fireworks',
+            'celebrationEffect' => $msgRow['celebration_effect'] ?? 'none',
             'celebrationConfig' => $cc,
             'url' => $msgRow['url'] ?? null,
             'urlLabel' => $msgRow['url_label'] ?? null
@@ -6028,7 +6028,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                             $msg['displayLocation'] ?? 'both',
                             $msg['animationType'] ?? 'rollover',
                             isset($msg['delayBefore']) ? (float)$msg['delayBefore'] : 0,
-                            $msg['celebrationEffect'] ?? 'fireworks',
+                            $msg['celebrationEffect'] ?? 'none',
                             $cc,
                             $msg['url'] ?? null,
                             $msg['urlLabel'] ?? null
@@ -6317,7 +6317,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                     $msg['displayLocation'] ?? 'both',
                     $msg['animationType'] ?? 'rollover',
                     isset($msg['delayBefore']) ? (float)$msg['delayBefore'] : 0,
-                    $msg['celebrationEffect'] ?? 'fireworks',
+                    $msg['celebrationEffect'] ?? 'none',
                     $cc,
                     $msg['url'] ?? null,
                     $msg['urlLabel'] ?? null

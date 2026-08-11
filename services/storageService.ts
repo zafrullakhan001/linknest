@@ -67,6 +67,11 @@ const transformTile = (apiTile: any): Tile => {
       : undefined,
     themeColor: (apiTile.themeColor || 'blue') as any,
     group: apiTile.group || 'General',
+    position: typeof apiTile.position === 'number'
+      ? apiTile.position
+      : (typeof apiTile.position === 'string' && apiTile.position !== '' && !Number.isNaN(Number(apiTile.position))
+        ? Number(apiTile.position)
+        : undefined),
     createdAt: apiTile.createdAt || Date.now(),
     tabs: apiTile.tabs || [], // Include tabs if present (with richTextContent); empty for summary lists
     sections: apiTile.sections || [], // Keep for backward compatibility (with richTextContent)

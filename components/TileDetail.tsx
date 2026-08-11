@@ -4,7 +4,7 @@ import { Tile, Link, LinkSection, Tab, LinkVisibility, TileVisibility, COLOR_STY
 import { linkHealthService, LinkHealthMap } from '../services/linkHealthService';
 import { performanceAnalyticsService, type AnalyticsMetric } from '../services/performanceAnalyticsService';
 import { authService, UserListItem, User } from '../services/authService';
-import { exportTileToFile } from '../services/spaceTransferService';
+import { exportTileToFileAsync } from '../services/spaceTransferService';
 import {
     exportSectionLinksToFile,
     exportTabToFile,
@@ -4609,7 +4609,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     )}
                                     {/* Export single space */}
                                     <button
-                                        onClick={() => exportTileToFile(tile)}
+                                        onClick={() => exportTileToFileAsync(tile)}
                                         className="px-4 py-2 rounded-lg bg-white/15 hover:bg-white/25 text-white text-sm font-medium border border-white/20 transition-all shadow-sm flex items-center justify-center gap-2 backdrop-blur-sm"
                                         title="Export this space as JSON"
                                     >
@@ -4856,7 +4856,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             type="button"
                                                             onClick={() => {
                                                                 setShowHeaderActionsMenu(false);
-                                                                exportTileToFile(tile);
+                                                                exportTileToFileAsync(tile);
                                                             }}
                                                             className="w-full px-3 py-3 text-left text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg flex items-center gap-3"
                                                         >

@@ -131,6 +131,8 @@ export interface Tile {
   tabs: Tab[]; // Tabs contain sections
   sections?: LinkSection[]; // Deprecated: kept for backward compatibility, use tabs instead
   group?: string; // New: Category/Group for the tile
+  /** Dashboard card order (global across categories). Lower = earlier. */
+  position?: number;
   /** Alternate search keywords (up to 100); matched by global "Search spaces…" */
   searchTags?: string[];
   createdAt: number;

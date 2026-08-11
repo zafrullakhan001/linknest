@@ -5,8 +5,8 @@ import { settingsService, AppSettings, SEMI_PWA_EXCLUDE_PATHS_DEFAULT } from '..
 import { databaseService } from '../services/databaseService';
 import { useSettings, resolvePageTitle } from '../contexts/SettingsContext';
 import { useAuth } from '../contexts/AuthContext';
-import { getTiles, createTile, saveTile, deleteTile, bulkImportTiles, getCategoryArrangement } from '../services/storageService';
-import { exportAllCategoriesToFile, parseSpaceExportObject, normalizeImportedTiles } from '../services/spaceTransferService';
+import { getTiles, createTile, saveTile, deleteTile, bulkImportTiles, getCategoryArrangement, saveCategoryArrangement } from '../services/storageService';
+import { exportAllCategoriesToFileAsync, parseSpaceExportObject, normalizeImportedTiles, restoreImportedTileAssets } from '../services/spaceTransferService';
 import { Tile, POPULAR_EMOJIS } from '../types';
 import { SecurePasswordInput } from './SecurePasswordInput';
 import { PasswordCriteriaList } from './PasswordCriteriaList';
@@ -6141,7 +6141,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         <span aria-hidden>📦</span> Spaces Export & Import
                       </h3>
                       <p className={ADMIN_SECTION_SUBTITLE}>
-                        Export spaces to JSON or CSV, or import from previously exported files. JSON keeps full space data; CSV is simplified links only.
+                        Export spaces to JSON or CSV, or import from previously exported files. JSON v1.3 keeps full space data including logos, celebrations, tabs/links, and category order; CSV is simplified links only.
                       </p>
                     </div>
                     <div className="p-6">
@@ -6155,7 +6155,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           </h4>
                           <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                             Export all spaces to JSON or CSV format for backup or sharing.
-                            JSON format preserves all data including rich text content, tabs, scheduling, visibility, browser settings, and more.
+                            JSON format preserves logos (embedded), celebrations, decorations, rich text, tabs, scheduling, visibility, browser settings, and category/tile order.
                           </p>
                           <div className="space-y-2">
                             <button
@@ -6163,8 +6163,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 try {
                                   setSpacesExporting(true);
                                   setError('');
-                                  await loadSpaces();
-                                  exportAllCategoriesToFile(spacesTiles, spacesCategoryOrder);
+                                  const tiles = await getTiles({ summary: false });
+                                  const categoryArrangement = await getCategoryArrangement();
+                                  const categoryOrder = categoryArrangement.length > 0
+                                    ? categoryArrangement.map((c) => c.categoryName)
+                                    : spacesCategoryOrder;
+                                  setSpacesTiles(tiles);
+                                  if (categoryOrder.length > 0) {
+                                    setSpacesCategoryOrder(categoryOrder);
+                                  }
+                                  if (!tiles.length) {
+                                    setError('No spaces to export.');
+                                    return;
+                                  }
+                                  await exportAllCategoriesToFileAsync(tiles, categoryOrder);
                                   alert('Spaces exported successfully!');
                                 } catch (err: any) {
                                   setError(err.message || 'Failed to export spaces');
@@ -6198,14 +6210,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 try {
                                   setSpacesExporting(true);
                                   setError('');
-                                  await loadSpaces();
+                                  const tilesForCsv = await getTiles({ summary: false });
+                                  setSpacesTiles(tilesForCsv);
 
                                   // Convert tiles to CSV format
                                   // Note: CSV format is simplified and does not include rich text content, tabs structure, scheduling, browser settings, icons, or other advanced features
                                   const csvRows: string[] = [];
                                   csvRows.push('Tile Title,Tile Description,Tile Emoji,Tile Theme Color,Tile Group,Tab Title,Section Title,Link Label,Link URL,Link Icon,Link Browser,Link Visibility,Link Notes,Link Tooltip');
 
-                                  spacesTiles.forEach(tile => {
+                                  tilesForCsv.forEach(tile => {
                                     // Handle tabs structure (new structure)
                                     if (tile.tabs && tile.tabs.length > 0) {
                                       tile.tabs.forEach(tab => {
@@ -6409,6 +6422,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       return;
                                     }
 
+                                    // Re-upload embedded logo assets so images work on a new host
+                                    await restoreImportedTileAssets(newTiles, parsed.assets);
+
                                     const currentTiles = await getTiles();
 
                                     if (spacesImportReplaceAll) {
@@ -6435,13 +6451,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     const maxPosition = spacesImportReplaceAll
                                       ? -1
                                       : (currentTiles.length
-                                        ? Math.max(...currentTiles.map((t) => (t as Tile & { position?: number }).position ?? 0))
+                                        ? Math.max(...currentTiles.map((t) => t.position ?? 0))
                                         : -1);
                                     let nextPosition = maxPosition + 1;
                                     let imported = 0;
                                     let updated = 0;
                                     let errors: string[] = [];
 
+                                    // Preserve export order (already sorted by category + position in parse)
                                     for (const tile of newTiles) {
                                       try {
                                         if (!spacesImportReplaceAll && spacesImportOverwrite) {
@@ -6449,7 +6466,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                             (t) => t.title === tile.title && (t.group || 'General') === (tile.group || 'General')
                                           );
                                           if (existing) {
-                                            await saveTile({ ...tile, id: existing.id }, true);
+                                            await saveTile({ ...tile, id: existing.id, position: existing.position ?? nextPosition }, true);
                                             updated++;
                                           } else {
                                             await createTile({ ...tile, position: nextPosition });
@@ -6465,6 +6482,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                         const errorMsg = err.message || 'Unknown error';
                                         errors.push(`Failed to import "${tile.title}": ${errorMsg}`);
                                         console.error('Failed to import tile:', tile.title, err);
+                                      }
+                                    }
+
+                                    // Restore category order from the export file
+                                    const categoriesToSave =
+                                      (parsed.categories && parsed.categories.length > 0)
+                                        ? parsed.categories
+                                        : Array.from(new Set(newTiles.map((t) => t.group || 'General')));
+                                    if (categoriesToSave.length > 0 && (imported > 0 || updated > 0 || deleted > 0)) {
+                                      try {
+                                        await saveCategoryArrangement(
+                                          categoriesToSave.map((categoryName, position) => ({
+                                            categoryName,
+                                            position
+                                          }))
+                                        );
+                                        setSpacesCategoryOrder(categoriesToSave);
+                                      } catch (err) {
+                                        console.warn('Failed to restore category arrangement after import:', err);
                                       }
                                     }
 
@@ -6634,14 +6670,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           <p className="text-sm font-semibold text-sky-900 dark:text-sky-100 mb-1">Import/Export Notes</p>
                           <ul className="text-xs text-sky-800/80 dark:text-sky-200/80 space-y-1 list-disc list-inside">
                             <li><strong>JSON Import:</strong> Supports single space exports, category exports, or all categories exports</li>
-                            <li><strong>JSON Export:</strong> Preserves all space data including categories, arrangements, tabs, rich text content, scheduling, visibility settings, browser preferences, icons, and more</li>
+                            <li><strong>JSON Export (v1.3):</strong> Preserves logos (embedded), celebrations, decorations, categories/order, tabs, rich text, scheduling, visibility, browser preferences, and more</li>
                             <li><strong>CSV Export:</strong> Creates a simplified spreadsheet-friendly format for bulk editing. <strong>Note:</strong> CSV format does not include rich text content, tabs, scheduling, or advanced features - use JSON for complete data preservation</li>
                             <li><strong>CSV Import:</strong> Requires specific column format - download template for reference. Only basic link information is imported</li>
                             <li>By default, importing spaces adds them to your existing collection. Use <strong>Overwrite existing tiles</strong> to update matches, or <strong>Delete all existing spaces…</strong> to replace everything with the file contents (existing spaces go to the recycle bin; staging is untouched)</li>
                             <li><strong>JSON format supports:</strong> All link properties (visibility, notes, tooltips, icons, text colors, browser settings), rich text content with formatting, tabs with scheduling, section and tab text colors, tile-level browser preferences, and visibility controls</li>
-                            <li>Category imports preserve the category name from the export file</li>
+                            <li>Category imports preserve the category name and order from the export file</li>
                             <li>Rich text content, tabs, and all advanced features are preserved in JSON exports and can be imported back</li>
-                            <li>Export version 1.2 includes animations, celebrations, decorations, and ACLs — older 1.0/1.1 exports are still supported</li>
+                            <li>Export version 1.3 embeds logos and restores category/tile order — older 1.0/1.1/1.2 exports are still supported</li>
                           </ul>
                         </div>
                       </div>

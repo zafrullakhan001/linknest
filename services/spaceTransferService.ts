@@ -1,17 +1,24 @@
 import { Tile, LinkSection, Link } from '../types';
 import { generateUuid } from './idService';
+import {
+  uploadTileEmojiImage,
+  uploadTileHeaderImage
+} from './storageService';
 
 export type SpaceExportType = 'tile' | 'category' | 'all_categories';
 
 export interface SpaceExportFile {
-  // 1.2: decorations, messages (celebration + url/urlLabel), pageAnimation, linksAnimation, link animation, allowedGroups (tile + nested)
-  version: '1.2';
+  // 1.3: logos embedded in assets, position, category order, show* flags
+  // 1.2: decorations, messages (celebration + url/urlLabel), pageAnimation, linksAnimation, link animation, allowedGroups
+  version: '1.2' | '1.3';
   type: SpaceExportType;
   exportedAt: number;
   tile?: Tile;
   tiles?: Tile[];
   categoryName?: string;
   categories?: string[];
+  /** Map of normalized upload asset keys → base64 data URLs (emoji/header logos). */
+  assets?: Record<string, string>;
 }
 
 export interface ParsedSpaceImport {
@@ -19,6 +26,7 @@ export interface ParsedSpaceImport {
   tiles: Tile[];
   categoryName?: string;
   categories?: string[];
+  assets?: Record<string, string>;
 }
 
 // Simple ID generator for imported items (client-side only)
@@ -93,6 +101,225 @@ const triggerDownload = (data: unknown, filename: string) => {
   window.URL.revokeObjectURL(url);
 };
 
+/** Normalize upload URL/path to a stable asset key (basename preferred). */
+export const normalizeAssetKey = (urlOrPath: string | null | undefined): string | null => {
+  if (!urlOrPath || typeof urlOrPath !== 'string') return null;
+  const trimmed = urlOrPath.trim();
+  if (!trimmed || trimmed.startsWith('data:')) return null;
+  try {
+    const pathPart = trimmed.includes('://')
+      ? new URL(trimmed).pathname
+      : trimmed.split('?')[0];
+    const uploadsIdx = pathPart.toLowerCase().lastIndexOf('/uploads/');
+    if (uploadsIdx >= 0) {
+      const rest = pathPart.slice(uploadsIdx + '/uploads/'.length);
+      const filename = rest.split('/').pop() || rest;
+      return filename && /^[a-zA-Z0-9._-]+$/.test(filename) ? filename : null;
+    }
+    const filename = pathPart.split('/').pop() || '';
+    return filename && /^[a-zA-Z0-9._-]+$/.test(filename) ? filename : null;
+  } catch {
+    return null;
+  }
+};
+
+/** Resolve categories list preserving provided order when present. */
+export const resolveExportCategories = (
+  tiles: Tile[],
+  categoryOrder: string[] | undefined
+): string[] => {
+  const categoriesFromTiles = Array.from(
+    new Set(tiles.map((t) => t.group || 'General'))
+  );
+
+  if (!categoryOrder || categoryOrder.length === 0) {
+    return categoriesFromTiles;
+  }
+
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  categoryOrder.forEach((cat) => {
+    if (categoriesFromTiles.includes(cat) && !seen.has(cat)) {
+      ordered.push(cat);
+      seen.add(cat);
+    }
+  });
+  categoriesFromTiles.forEach((cat) => {
+    if (!seen.has(cat)) {
+      ordered.push(cat);
+      seen.add(cat);
+    }
+  });
+  return ordered;
+};
+
+/** Sort tiles by category order then by position (stable for display order). */
+export const sortTilesByCategoryAndPosition = (
+  tiles: Tile[],
+  categories: string[]
+): Tile[] => {
+  const catIndex = new Map<string, number>();
+  categories.forEach((c, i) => catIndex.set(c, i));
+
+  return [...tiles].sort((a, b) => {
+    const ga = a.group || 'General';
+    const gb = b.group || 'General';
+    const ia = catIndex.has(ga) ? (catIndex.get(ga) as number) : Number.MAX_SAFE_INTEGER;
+    const ib = catIndex.has(gb) ? (catIndex.get(gb) as number) : Number.MAX_SAFE_INTEGER;
+    if (ia !== ib) return ia - ib;
+    const pa = typeof a.position === 'number' ? a.position : Number.MAX_SAFE_INTEGER;
+    const pb = typeof b.position === 'number' ? b.position : Number.MAX_SAFE_INTEGER;
+    if (pa !== pb) return pa - pb;
+    return 0;
+  });
+};
+
+const collectImageUrlsFromTiles = (tiles: Tile[]): string[] => {
+  const urls = new Set<string>();
+  tiles.forEach((tile) => {
+    if (typeof tile.emojiImage === 'string' && tile.emojiImage.trim()) {
+      urls.add(tile.emojiImage.trim());
+    }
+    if (typeof tile.headerImage === 'string' && tile.headerImage.trim()) {
+      urls.add(tile.headerImage.trim());
+    }
+  });
+  return Array.from(urls);
+};
+
+const blobToDataUrl = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('Failed to read image'));
+    reader.readAsDataURL(blob);
+  });
+
+/** Fetch upload images and return assets map (key → data URL). Best-effort; skips failures. */
+export const collectSpaceExportAssets = async (
+  tiles: Tile[]
+): Promise<Record<string, string>> => {
+  const assets: Record<string, string> = {};
+  const urls = collectImageUrlsFromTiles(tiles);
+
+  await Promise.all(
+    urls.map(async (url) => {
+      const key = normalizeAssetKey(url);
+      if (!key || assets[key]) return;
+      try {
+        const response = await fetch(url, { credentials: 'include' });
+        if (!response.ok) return;
+        const blob = await response.blob();
+        if (!blob || blob.size === 0) return;
+        const dataUrl = await blobToDataUrl(blob);
+        if (dataUrl.startsWith('data:')) {
+          assets[key] = dataUrl;
+        }
+      } catch (err) {
+        console.warn('Failed to embed space export asset:', url, err);
+      }
+    })
+  );
+
+  return assets;
+};
+
+const dataUrlToFile = (dataUrl: string, filename: string): File | null => {
+  const match = /^data:([^;]+);base64,(.+)$/i.exec(dataUrl);
+  if (!match) return null;
+  const mime = match[1] || 'application/octet-stream';
+  const b64 = match[2];
+  try {
+    const binary = atob(b64);
+    const len = binary.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+    const ext =
+      mime.includes('png') ? 'png'
+        : mime.includes('jpeg') || mime.includes('jpg') ? 'jpg'
+          : mime.includes('gif') ? 'gif'
+            : mime.includes('webp') ? 'webp'
+              : 'bin';
+    const safeName = filename.includes('.') ? filename : `${filename}.${ext}`;
+    return new File([bytes], safeName, { type: mime });
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Re-upload embedded assets and rewrite emojiImage/headerImage URLs on tiles.
+ * Mutates tiles in place; returns a map of oldKey → newUrl for debugging.
+ */
+export const restoreImportedTileAssets = async (
+  tiles: Tile[],
+  assets: Record<string, string> | undefined
+): Promise<Record<string, string>> => {
+  const rewritten: Record<string, string> = {};
+  if (!assets || Object.keys(assets).length === 0) {
+    return rewritten;
+  }
+
+  const uploadCache = new Map<string, Promise<string>>();
+
+  const resolveUpload = (
+    key: string,
+    kind: 'emoji' | 'header'
+  ): Promise<string> => {
+    const cacheKey = `${kind}:${key}`;
+    const existing = uploadCache.get(cacheKey);
+    if (existing) return existing;
+
+    const promise = (async () => {
+      const dataUrl = assets[key];
+      if (!dataUrl) throw new Error(`Missing asset: ${key}`);
+      const file = dataUrlToFile(dataUrl, key);
+      if (!file) throw new Error(`Invalid asset data: ${key}`);
+      if (kind === 'emoji') {
+        return uploadTileEmojiImage(file);
+      }
+      return uploadTileHeaderImage(file);
+    })();
+
+    uploadCache.set(cacheKey, promise);
+    return promise;
+  };
+
+  for (const tile of tiles) {
+    if (typeof tile.emojiImage === 'string' && tile.emojiImage.trim()) {
+      const key = normalizeAssetKey(tile.emojiImage) || (
+        assets[tile.emojiImage] ? tile.emojiImage : null
+      );
+      if (key && assets[key]) {
+        try {
+          const newUrl = await resolveUpload(key, 'emoji');
+          rewritten[key] = newUrl;
+          tile.emojiImage = newUrl;
+        } catch (err) {
+          console.warn('Failed to restore emoji image asset:', key, err);
+        }
+      }
+    }
+
+    if (typeof tile.headerImage === 'string' && tile.headerImage.trim()) {
+      const key = normalizeAssetKey(tile.headerImage) || (
+        assets[tile.headerImage] ? tile.headerImage : null
+      );
+      if (key && assets[key]) {
+        try {
+          const newUrl = await resolveUpload(key, 'header');
+          rewritten[key] = newUrl;
+          tile.headerImage = newUrl;
+        } catch (err) {
+          console.warn('Failed to restore header image asset:', key, err);
+        }
+      }
+    }
+  }
+
+  return rewritten;
+};
+
 /** Normalize a single link from import JSON */
 const normalizeImportedLink = (link: any): Link => ({
   id: generateId(),
@@ -153,10 +380,20 @@ const normalizeImportedSection = (section: any): LinkSection => {
   };
 };
 
-/** Export a single space/tile to a JSON file */
+const asOptionalBoolean = (value: unknown): boolean | undefined => {
+  if (typeof value === 'boolean') return value;
+  if (value === 0 || value === '0') return false;
+  if (value === 1 || value === '1') return true;
+  return undefined;
+};
+
+const asOptionalNumber = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+
+/** Export a single space/tile to a JSON file (sync; no asset embed). Prefer exportTileToFileAsync. */
 export const exportTileToFile = (tile: Tile) => {
   const payload: SpaceExportFile = {
-    version: '1.2',
+    version: '1.3',
     type: 'tile',
     exportedAt: Date.now(),
     tile
@@ -166,10 +403,25 @@ export const exportTileToFile = (tile: Tile) => {
   triggerDownload(payload, filename);
 };
 
-/** Export all tiles in a category (group) to a JSON file */
+/** Export a single space with embedded logo assets. */
+export const exportTileToFileAsync = async (tile: Tile) => {
+  const assets = await collectSpaceExportAssets([tile]);
+  const payload: SpaceExportFile = {
+    version: '1.3',
+    type: 'tile',
+    exportedAt: Date.now(),
+    tile,
+    ...(Object.keys(assets).length > 0 ? { assets } : {})
+  };
+  const filename = `linknest-space-${slugify(tile.title)}.json`;
+  triggerDownload(payload, filename);
+};
+
+/** Export all tiles in a category (group) to a JSON file (sync; no asset embed). */
 export const exportCategoryToFile = (categoryName: string, tiles: Tile[]) => {
-  const categoryTiles = tiles.filter(
-    (t) => (t.group || 'General') === categoryName
+  const categoryTiles = sortTilesByCategoryAndPosition(
+    tiles.filter((t) => (t.group || 'General') === categoryName),
+    [categoryName]
   );
 
   if (categoryTiles.length === 0) {
@@ -178,7 +430,7 @@ export const exportCategoryToFile = (categoryName: string, tiles: Tile[]) => {
   }
 
   const payload: SpaceExportFile = {
-    version: '1.2',
+    version: '1.3',
     type: 'category',
     exportedAt: Date.now(),
     categoryName,
@@ -189,45 +441,74 @@ export const exportCategoryToFile = (categoryName: string, tiles: Tile[]) => {
   triggerDownload(payload, filename);
 };
 
-/** Export all spaces (all categories) to a JSON file */
+/** Export a category with embedded logo assets. */
+export const exportCategoryToFileAsync = async (categoryName: string, tiles: Tile[]) => {
+  const categoryTiles = sortTilesByCategoryAndPosition(
+    tiles.filter((t) => (t.group || 'General') === categoryName),
+    [categoryName]
+  );
+
+  if (categoryTiles.length === 0) {
+    alert(`No spaces found in category "${categoryName}".`);
+    return;
+  }
+
+  const assets = await collectSpaceExportAssets(categoryTiles);
+  const payload: SpaceExportFile = {
+    version: '1.3',
+    type: 'category',
+    exportedAt: Date.now(),
+    categoryName,
+    tiles: categoryTiles,
+    ...(Object.keys(assets).length > 0 ? { assets } : {})
+  };
+  const filename = `linknest-category-${slugify(categoryName)}.json`;
+  triggerDownload(payload, filename);
+};
+
+/** Export all spaces (all categories) to a JSON file (sync; no asset embed). Prefer async. */
 export const exportAllCategoriesToFile = (tiles: Tile[], categoryOrder: string[] | undefined) => {
   if (!tiles.length) {
     alert('No spaces to export.');
     return;
   }
 
-  // Derive categories from tiles, preserving the provided order if any
-  const categoriesFromTiles = Array.from(
-    new Set(tiles.map((t) => t.group || 'General'))
-  );
-
-  let categories: string[];
-  if (categoryOrder && categoryOrder.length > 0) {
-    const seen = new Set<string>();
-    const ordered: string[] = [];
-    categoryOrder.forEach((cat) => {
-      if (categoriesFromTiles.includes(cat) && !seen.has(cat)) {
-        ordered.push(cat);
-        seen.add(cat);
-      }
-    });
-    categoriesFromTiles.forEach((cat) => {
-      if (!seen.has(cat)) {
-        ordered.push(cat);
-        seen.add(cat);
-      }
-    });
-    categories = ordered;
-  } else {
-    categories = categoriesFromTiles;
-  }
+  const categories = resolveExportCategories(tiles, categoryOrder);
+  const orderedTiles = sortTilesByCategoryAndPosition(tiles, categories);
 
   const payload: SpaceExportFile = {
-    version: '1.2',
+    version: '1.3',
     type: 'all_categories',
     exportedAt: Date.now(),
-    tiles,
+    tiles: orderedTiles,
     categories
+  };
+
+  const filename = 'linknest-spaces-all-categories.json';
+  triggerDownload(payload, filename);
+};
+
+/** Export all spaces with full order + embedded logo assets (v1.3). */
+export const exportAllCategoriesToFileAsync = async (
+  tiles: Tile[],
+  categoryOrder: string[] | undefined
+) => {
+  if (!tiles.length) {
+    alert('No spaces to export.');
+    return;
+  }
+
+  const categories = resolveExportCategories(tiles, categoryOrder);
+  const orderedTiles = sortTilesByCategoryAndPosition(tiles, categories);
+  const assets = await collectSpaceExportAssets(orderedTiles);
+
+  const payload: SpaceExportFile = {
+    version: '1.3',
+    type: 'all_categories',
+    exportedAt: Date.now(),
+    tiles: orderedTiles,
+    categories,
+    ...(Object.keys(assets).length > 0 ? { assets } : {})
   };
 
   const filename = 'linknest-spaces-all-categories.json';
@@ -240,8 +521,13 @@ export const parseSpaceExportObject = (data: any): ParsedSpaceImport => {
     throw new Error('Invalid file: expected a JSON object.');
   }
 
-  // Support 1.0, 1.1, and 1.2 for backward compatibility
-  if (data.version !== '1.0' && data.version !== '1.1' && data.version !== '1.2') {
+  // Support 1.0–1.3 for backward compatibility
+  if (
+    data.version !== '1.0' &&
+    data.version !== '1.1' &&
+    data.version !== '1.2' &&
+    data.version !== '1.3'
+  ) {
     console.warn('Unknown space export version, proceeding anyway:', data.version);
   }
 
@@ -270,7 +556,26 @@ export const parseSpaceExportObject = (data: any): ParsedSpaceImport => {
     ? data.categories.filter((c: unknown) => typeof c === 'string')
     : undefined;
 
-  return { type, tiles, categoryName, categories };
+  const assets: Record<string, string> | undefined =
+    data.assets && typeof data.assets === 'object' && !Array.isArray(data.assets)
+      ? Object.fromEntries(
+          Object.entries(data.assets as Record<string, unknown>).filter(
+            ([k, v]) => typeof k === 'string' && typeof v === 'string' && (v as string).startsWith('data:')
+          ) as [string, string][]
+        )
+      : undefined;
+
+  // Prefer file display order: by categories + position when available
+  const orderedCategories = resolveExportCategories(tiles, categories);
+  const orderedTiles = sortTilesByCategoryAndPosition(tiles, orderedCategories);
+
+  return {
+    type,
+    tiles: orderedTiles,
+    categoryName,
+    categories: categories || orderedCategories,
+    assets: assets && Object.keys(assets).length > 0 ? assets : undefined
+  };
 };
 
 /** Create fresh Tile objects from imported data with new IDs to avoid collisions */
@@ -308,6 +613,10 @@ export const normalizeImportedTiles = (
       ? src.sections.map(normalizeImportedSection)
       : [];
 
+    const showEmoji = asOptionalBoolean(src.showEmoji);
+    const showTitle = asOptionalBoolean(src.showTitle);
+    const showDescription = asOptionalBoolean(src.showDescription);
+
     const tile: Tile = {
       id: generateUuid(),
       title: String(src.title || `Imported Space ${index + 1}`),
@@ -321,12 +630,42 @@ export const normalizeImportedTiles = (
         : [],
       htmlContent: src.htmlContent || '',
       emoji: src.emoji || '📁',
+      showEmoji: showEmoji !== undefined ? showEmoji : undefined,
+      showTitle: showTitle !== undefined ? showTitle : undefined,
+      showDescription: showDescription !== undefined ? showDescription : undefined,
+      emojiImage: typeof src.emojiImage === 'string' && src.emojiImage.trim()
+        ? src.emojiImage.trim()
+        : undefined,
+      emojiImageOpacity: asOptionalNumber(src.emojiImageOpacity),
+      emojiImageOffsetX: asOptionalNumber(src.emojiImageOffsetX),
+      emojiImageOffsetY: asOptionalNumber(src.emojiImageOffsetY),
+      emojiImageZoom: asOptionalNumber(src.emojiImageZoom),
+      headerImage: typeof src.headerImage === 'string' && src.headerImage.trim()
+        ? src.headerImage.trim()
+        : undefined,
+      headerImageAlign:
+        src.headerImageAlign === 'left' ||
+        src.headerImageAlign === 'center' ||
+        src.headerImageAlign === 'right'
+          ? src.headerImageAlign
+          : undefined,
+      headerImageOpacity: asOptionalNumber(src.headerImageOpacity),
+      headerImageOffsetX: asOptionalNumber(src.headerImageOffsetX),
+      headerImageOffsetY: asOptionalNumber(src.headerImageOffsetY),
+      headerImageZoom: asOptionalNumber(src.headerImageZoom),
+      headerImageFit:
+        src.headerImageFit === 'cover' || src.headerImageFit === 'contain'
+          ? src.headerImageFit
+          : undefined,
       themeColor: (src.themeColor as any) || 'blue',
       tabs: tabs.length > 0 ? tabs : undefined,
       sections: sections.length > 0 ? sections : [],
       group: baseGroup,
+      position: asOptionalNumber(src.position),
       createdAt: typeof src.createdAt === 'number' ? src.createdAt : now,
       visibility: src.visibility || 'public',
+      published: asOptionalBoolean(src.published),
+      sourceTab: src.sourceTab === 'staging' ? 'staging' : 'public',
       allowedUsers: asNumberArray(src.allowedUsers),
       allowedGroups: asNumberArray(src.allowedGroups),
       isHyperlink: src.isHyperlink || false,
@@ -384,11 +723,12 @@ export const normalizeImportedTiles = (
                 ? (msg.animationType as any)
                 : 'rollover',
             delayBefore: typeof msg.delayBefore === 'number' ? msg.delayBefore : undefined,
+            // Default to none so import never invents fireworks
             celebrationEffect:
               typeof msg.celebrationEffect === 'string' &&
               (CELEBRATION_EFFECTS as readonly string[]).includes(msg.celebrationEffect)
                 ? (msg.celebrationEffect as any)
-                : undefined,
+                : 'none',
             celebrationConfig:
               typeof msg.celebrationConfig === 'object' && msg.celebrationConfig !== null
                 ? msg.celebrationConfig
