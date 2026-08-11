@@ -530,8 +530,14 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
     };
     const [searchQuery, setSearchQuery] = useState('');
     const buttonRef = useRef<HTMLButtonElement>(null);
+    const panelRef = useRef<HTMLDivElement>(null);
     const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+    const [previewKey, setPreviewKey] = useState(0);
     const { user } = useAuth();
+
+    const replayPreview = () => setPreviewKey((k) => k + 1);
 
     // Sync controlled value for local / per-item mode
     useEffect(() => {
@@ -623,11 +629,11 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
         };
     }, [user, onAnimationChange, onDecorationChange, persistGlobal, value]);
 
-    // Update dropdown position when opened
+    // Update dropdown position when opened — clamp so the full panel (incl. Done) stays on-screen
     useEffect(() => {
         if (isOpen) {
-            const dropdownWidth = 360;
-            const dropdownHeight = 480;
+            const dropdownWidth = Math.min(360, window.innerWidth - 32);
+            const maxPanelHeight = Math.min(520, window.innerHeight - 32);
             const viewportWidth = window.innerWidth;
             const viewportHeight = window.innerHeight;
             const rect = buttonRef.current?.getBoundingClientRect();
@@ -637,11 +643,10 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
             let topPosition: number;
 
             if (viewportWidth < 640 || !hasUsableTrigger) {
-                leftPosition = Math.max(16, (viewportWidth - Math.min(dropdownWidth, viewportWidth - 32)) / 2);
-                topPosition = Math.max(16, Math.min(
-                    hasUsableTrigger ? rect!.bottom + 8 : (viewportHeight - Math.min(dropdownHeight, viewportHeight - 32)) / 2,
-                    viewportHeight - 32
-                ));
+                leftPosition = Math.max(16, (viewportWidth - dropdownWidth) / 2);
+                topPosition = hasUsableTrigger
+                    ? rect!.bottom + 8
+                    : Math.max(16, (viewportHeight - maxPanelHeight) / 2);
             } else {
                 leftPosition = Math.min(
                     rect!.right - dropdownWidth,
@@ -651,10 +656,16 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
                 topPosition = rect!.bottom + 8;
             }
 
+            // Keep the full panel in the viewport (footer/Done must remain reachable)
+            topPosition = Math.max(16, Math.min(topPosition, viewportHeight - maxPanelHeight - 16));
+            leftPosition = Math.max(16, Math.min(leftPosition, viewportWidth - dropdownWidth - 16));
+
             setDropdownPosition({
                 top: topPosition,
                 left: leftPosition,
             });
+            setIsDragging(false);
+            setPreviewKey((k) => k + 1);
         }
     }, [isOpen, hideTrigger]);
 
@@ -672,8 +683,38 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
         return () => window.removeEventListener('keydown', onKeyDown, true);
     }, [isOpen]);
 
+    const handleDragHeaderMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+        // Allow dragging from tab buttons and empty header chrome so the panel is always movable
+        if ((e.target as HTMLElement).closest('input, textarea, a')) return;
+        setDragOffset({
+            x: e.clientX - dropdownPosition.left,
+            y: e.clientY - dropdownPosition.top,
+        });
+        setIsDragging(true);
+        e.preventDefault();
+    };
+
+    useEffect(() => {
+        if (!isDragging) return;
+        const handleMouseMove = (e: MouseEvent) => {
+            const panelWidth = panelRef.current?.offsetWidth ?? Math.min(360, window.innerWidth - 32);
+            const panelHeight = panelRef.current?.offsetHeight ?? Math.min(520, window.innerHeight - 32);
+            const left = Math.max(8, Math.min(e.clientX - dragOffset.x, window.innerWidth - panelWidth - 8));
+            const top = Math.max(8, Math.min(e.clientY - dragOffset.y, window.innerHeight - panelHeight - 8));
+            setDropdownPosition({ top, left });
+        };
+        const handleMouseUp = () => setIsDragging(false);
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [isDragging, dragOffset]);
+
     const handleAnimationSelect = async (animation: TileAnimation) => {
         setSelectedAnimation(animation);
+        setPreviewKey((k) => k + 1);
         if (persistGlobal) {
             localStorage.setItem(ANIMATION_STORAGE_KEY, animation);
             if (user) {
@@ -691,6 +732,7 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
 
     const handleDecorationSelect = async (decoration: TileDecoration) => {
         setSelectedDecoration(decoration);
+        setPreviewKey((k) => k + 1);
         if (persistGlobal) {
             localStorage.setItem(DECORATION_STORAGE_KEY, decoration);
             if (user) {
@@ -779,14 +821,15 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
 
                     {/* Options Panel */}
                     <div
-                        className="fixed w-[min(360px,calc(100vw-32px))] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[10070] overflow-hidden"
+                        ref={panelRef}
+                        className="fixed w-[min(360px,calc(100vw-32px))] max-h-[min(520px,calc(100vh-32px))] flex flex-col bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[10070] overflow-hidden"
                         style={{
                             top: `${dropdownPosition.top}px`,
                             left: `${dropdownPosition.left}px`,
                         }}
                     >
                         {/* Tabs */}
-                        <div className="flex border-b border-slate-200 dark:border-slate-700">
+                        <div className="flex border-b border-slate-200 dark:border-slate-700 shrink-0">
                             <button
                                 onClick={() => setActiveTab('animations')}
                                 className={`${animationsOnly ? 'w-full' : 'flex-1'} py-3 text-xs font-bold uppercase tracking-wider transition-colors ${activeTab === 'animations'
@@ -809,8 +852,12 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
                             )}
                         </div>
 
-                        {/* Search & Header */}
-                        <div className="p-3 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
+                        {/* Search & Header — drag handle */}
+                        <div
+                            onMouseDown={handleDragHeaderMouseDown}
+                            className={`p-3 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 shrink-0 select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+                            title="Drag to move"
+                        >
                             <div className="flex items-center justify-between mb-2">
                                 <span className="text-[10px] font-black uppercase tracking-tighter text-brand-600 dark:text-brand-400">
                                     {scopeLabel || (persistGlobal ? 'Global Visual Engine' : 'Link Animation')}
@@ -837,10 +884,53 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                                 </svg>
                             </div>
+
+                            {/* Sample link — live entrance animation preview */}
+                            <div
+                                className="mt-2 overflow-hidden rounded-lg border border-dashed border-slate-200 dark:border-slate-600 bg-white/80 dark:bg-slate-800/60 p-2"
+                                onMouseDown={(e) => e.stopPropagation()}
+                            >
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Link preview</span>
+                                    <button
+                                        type="button"
+                                        onClick={replayPreview}
+                                        className="text-[9px] font-bold uppercase tracking-wider text-brand-600 dark:text-brand-400 hover:underline"
+                                    >
+                                        Replay
+                                    </button>
+                                </div>
+                                <div className="overflow-hidden rounded-lg">
+                                    <div
+                                        key={previewKey}
+                                        className={`
+                                            linknest-anim-preview-link flex items-center gap-2 rounded-lg
+                                            bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700
+                                            px-2.5 py-2 shadow-sm
+                                            ${getTileAnimationClass(selectedAnimation)}
+                                            ${!animationsOnly ? getTileDecorationClass(selectedDecoration) : ''}
+                                        `}
+                                    >
+                                        <div className="w-8 h-8 rounded-lg bg-brand-500/15 text-brand-600 dark:text-brand-400 flex items-center justify-center text-sm shrink-0 select-none">
+                                            {selectedAnimationOption.icon}
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">
+                                                Sample Link
+                                            </div>
+                                            <div className="text-[10px] text-slate-400 dark:text-slate-500 truncate">
+                                                {selectedAnimation === 'none' || selectedAnimation === 'inherit'
+                                                    ? selectedAnimationOption.description
+                                                    : 'example.com/link'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
-                        {/* Options Grid */}
-                        <div className="max-h-96 overflow-y-auto p-2">
+                        {/* Options Grid — scrolls; footer stays pinned */}
+                        <div className="flex-1 min-h-0 overflow-y-auto p-2">
                             {(animationsOnly || activeTab === 'animations') ? (
                                 <div className="grid grid-cols-2 gap-2">
                                     {filteredAnimations.map((option) => (
@@ -903,7 +993,7 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
                         </div>
 
                         {/* Footer / Actions */}
-                        <div className="p-3 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900">
+                        <div className="p-3 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 shrink-0">
                             <div className="flex items-center justify-between">
                                 <div className="flex flex-col">
                                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Preview Active</span>
@@ -914,6 +1004,7 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
                                 <div className="flex items-center gap-2">
                                     <button
                                         onClick={() => {
+                                            replayPreview();
                                             const selector = persistGlobal ? '.linknest-tile-animated' : '.linknest-content-link';
                                             const tiles = document.querySelectorAll(selector);
                                             tiles.forEach((tile) => {

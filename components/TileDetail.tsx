@@ -2253,8 +2253,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             allowedGroups: editVisibility === 'private' ? editAllowedGroups : undefined,
             browser: editBrowser !== 'default' ? editBrowser : undefined,
             // Preserve section animation from tile (edited via view header); save links default from edit panel
+            // Send null (not undefined) so JSON includes the key and the API clears links_animation
             pageAnimation: tile.pageAnimation && tile.pageAnimation !== 'none' ? tile.pageAnimation : undefined,
-            linksAnimation: editLinksAnimation && editLinksAnimation !== 'none' ? editLinksAnimation : undefined,
+            linksAnimation: editLinksAnimation && editLinksAnimation !== 'none' ? editLinksAnimation : null,
         };
 
         const updatedTiles = allTiles.map(t => t.id === updatedTile.id ? updatedTile : t);

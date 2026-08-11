@@ -178,8 +178,8 @@ export interface Tile {
   tileTextColor?: string; // Text color (hex code)
   /** Entrance animation for link sections on this space page (not individual links). */
   pageAnimation?: string;
-  /** Default entrance animation for all links on this space (links may inherit or override). */
-  linksAnimation?: string;
+  /** Default entrance animation for all links on this space (links may inherit or override). null clears persisted default. */
+  linksAnimation?: string | null;
   messages?: TileMessage[]; // Array of scheduled messages
   /** Link count for home-grid cards when nested graph is omitted (summary mode). */
   linkCount?: number;
