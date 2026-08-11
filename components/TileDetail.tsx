@@ -508,6 +508,36 @@ const UrlProbeBadges: React.FC<{ url: string }> = ({ url }) => {
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
+/** Yellow = Authenticated, orange = specific users/groups. Shown to editors/admins only. */
+const VisibilityProtectionBadge: React.FC<{
+  visibility?: LinkVisibility | string | null;
+  size?: 'sm' | 'md';
+}> = ({ visibility, size = 'sm' }) => {
+  if (!visibility || visibility === 'public') return null;
+  const isAuth = visibility === 'authenticated';
+  const label = isAuth ? 'Auth' : 'Restricted';
+  const title = isAuth
+    ? 'Authenticated users only — not public'
+    : 'Restricted to specific users/groups — not public';
+  const colorClass = isAuth
+    ? 'bg-yellow-100 text-yellow-800 ring-yellow-300/70 dark:bg-yellow-900/40 dark:text-yellow-200 dark:ring-yellow-700/50'
+    : 'bg-orange-100 text-orange-800 ring-orange-300/70 dark:bg-orange-900/40 dark:text-orange-200 dark:ring-orange-700/50';
+  const pad = size === 'md' ? 'px-2 py-1 text-xs' : 'px-1.5 py-0.5 text-[10px] sm:text-xs';
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 font-semibold rounded-md shrink-0 ring-1 ring-inset ${pad} ${colorClass}`}
+      title={title}
+      aria-label={title}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={size === 'md' ? 'w-3.5 h-3.5' : 'w-3 h-3'} aria-hidden>
+        <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />
+      </svg>
+      {label}
+    </span>
+  );
+};
+
 export const TileDetail: React.FC<TileDetailProps> = ({
     tile,
     allTiles,
@@ -5360,6 +5390,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             >
                                                 <span className="flex items-center gap-2">
                                                     {tab.title}
+                                                    {(tile.canEdit === true || !!user?.is_admin) && (
+                                                        <VisibilityProtectionBadge visibility={tab.visibility} />
+                                                    )}
                                                     {tabLinksCount > 0 && (
                                                         <span className={`px-2 py-0.5 text-xs rounded-full font-semibold transition-colors ${isActive
                                                             ? `${styles.iconBg} ${styles.text}`
@@ -5439,6 +5472,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     >
                                                         <span className={`w-1.5 rounded-full shrink-0 ${styles.base} shadow-sm ${sectionLinkLayout === 'compact' ? 'h-5' : 'h-7'}`}></span>
                                                         <span className="truncate">{section.title}</span>
+                                                        {(tile.canEdit === true || !!user?.is_admin) && (
+                                                            <VisibilityProtectionBadge visibility={section.visibility} />
+                                                        )}
                                                     </h3>
                                                 ) : (
                                                     <div />
@@ -7641,12 +7677,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         </span>
                                                     )}
                                                     {tab.visibility && tab.visibility !== 'public' && (
-                                                        <span className={`text-xs px-2 py-1 rounded ${tab.visibility === 'authenticated'
-                                                            ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-                                                            : 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
-                                                            }`}>
-                                                            {tab.visibility === 'authenticated' ? '🔒 Auth' : '🔐 Private'}
-                                                        </span>
+                                                        <VisibilityProtectionBadge visibility={tab.visibility} size="md" />
                                                     )}
                                                     {user?.is_admin && tab.published === false && (
                                                         <span className="text-xs px-2 py-1 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-medium">
@@ -7940,12 +7971,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         </span>
                                                                     )}
                                                                     {section.visibility && section.visibility !== 'public' && (
-                                                                        <span className={`text-xs px-2 py-1 rounded ${section.visibility === 'authenticated'
-                                                                            ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-                                                                            : 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
-                                                                            }`}>
-                                                                            {section.visibility === 'authenticated' ? '🔒' : '🔐'}
-                                                                        </span>
+                                                                        <VisibilityProtectionBadge visibility={section.visibility} size="md" />
                                                                     )}
                                                                     {user?.is_admin && section.published === false && (
                                                                         <span className="text-xs px-2 py-1 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-medium">
