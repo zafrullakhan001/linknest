@@ -247,9 +247,13 @@ function handleLogin() {
         
         $username = trim($data['username']);
         $password = $data['password'];
-    $authMethod = isset($data['auth_method']) ? $data['auth_method'] : null; // 'local' or 'ldap' or null for auto
+    $authMethod = isset($data['auth_method']) ? $data['auth_method'] : null; // 'local' or 'ldap' or null/'auto'
+    if ($authMethod === 'auto' || $authMethod === '') {
+        $authMethod = null; // normalize auto → try LDAP then local
+    }
     $rememberMe = isset($data['remember_me']) ? (bool)$data['remember_me'] : false;
     $ldapServerIndex = isset($data['ldap_server_index']) ? (int)$data['ldap_server_index'] : null; // Selected LDAP server index
+    $isAutoAuth = ($authMethod === null); // Auto: LDAP first, then local — must fail LDAP fast
     
     $db = getDB();
     
@@ -300,6 +304,13 @@ function handleLogin() {
     // Note: ldap_escape_filter and ldap_escape_dn are now defined globally above
     
     if ($ldapEnabled && extension_loaded('ldap')) {
+        // Release session lock before slow LDAP I/O so parallel requests
+        // (e.g. client auto→local fallback, /auth/me, tile reload) are not blocked.
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
+
+        try {
         // Get LDAP servers list
         $ldapServers = getLdapServers($settings);
         
@@ -359,10 +370,20 @@ function handleLogin() {
             }
         }
         
-        $retryCount = (int)($serverConfig['connection_retry'] ?? 3);
-        $retryDelay = (int)($serverConfig['retry_delay'] ?? 1);
-        $ldap = null;
-        $lastError = null;
+                $retryCount = (int)($serverConfig['connection_retry'] ?? 3);
+                $retryDelay = (int)($serverConfig['retry_delay'] ?? 1);
+                $ldap = null;
+                $lastError = null;
+                $timeout = (int)($serverConfig['timeout'] ?? 30);
+
+                // Auto mode: fail LDAP quickly and fall through to local auth.
+                // Otherwise unreachable LDAP (30s × retries) makes local admin login appear stuck.
+                if ($isAutoAuth) {
+                    $timeout = min(max(1, $timeout), 3);
+                    $retryCount = 0;
+                    $retryDelay = 0;
+                    debug_log("LDAP: Auto mode — using short timeout={$timeout}s, no retries");
+                }
         
         // Retry connection logic
         for ($attempt = 0; $attempt <= $retryCount; $attempt++) {
@@ -371,7 +392,7 @@ function handleLogin() {
                 $port = (int)($serverConfig['port'] ?? 389);
                 $protocol = trim($serverConfig['protocol'] ?? 'ldap');
                 $tls = !empty($serverConfig['tls']) && $serverConfig['tls'] == '1';
-                $timeout = (int)($serverConfig['timeout'] ?? 30);
+                // $timeout already set above (shortened in auto mode)
                 
                 if (empty($server)) {
                     debug_log("LDAP: Server address is empty");
@@ -737,6 +758,15 @@ function handleLogin() {
             $ldapUser = null;
             // Continue to local auth (unless auth_method is 'ldap', which will be handled below)
         }
+        } catch (Exception $e) {
+            // Outer catch: connection/config failures — fall through to local in auto mode
+            debug_log("LDAP Error (setup/connect): " . $e->getMessage());
+            if ($ldapError === null) {
+                $ldapError = $e->getMessage();
+            }
+            $ldapSuccess = false;
+            $ldapUser = null;
+        }
     } else {
         debug_log("LDAP: Skipped. Enabled: " . ($ldapEnabled ? 'Yes' : 'No') . ", Extension: " . (extension_loaded('ldap') ? 'Yes' : 'No'));
     }
@@ -819,6 +849,9 @@ function handleLogin() {
         }
         
         // Login success - set session with remember me support
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
         $_SESSION['user_id'] = $user['id'];
         $_SESSION['username'] = $user['username'];
         
@@ -912,6 +945,9 @@ function handleLogin() {
     }
     
     // Login success - set session with remember me support
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
     $_SESSION['user_id'] = $user['id'];
     $_SESSION['username'] = $user['username'];
     

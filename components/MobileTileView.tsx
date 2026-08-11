@@ -500,8 +500,36 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
       const emojiMatch = tile.emoji?.toLowerCase().includes(searchLower);
       const groupMatch = tile.group?.toLowerCase().includes(searchLower);
       const tagsMatch = (tile.searchTags ?? []).some(tag => tag.toLowerCase().includes(searchLower));
+      const linksMatch = (tile.searchLinks ?? []).some(link =>
+        (link.label || '').toLowerCase().includes(searchLower) ||
+        (link.url || '').toLowerCase().includes(searchLower) ||
+        (link.notes || '').toLowerCase().includes(searchLower) ||
+        (link.tooltip || '').toLowerCase().includes(searchLower)
+      );
 
-      return titleMatch || descriptionMatch || emojiMatch || groupMatch || tagsMatch;
+      // Full nested graph (when present)
+      const nestedLinksMatch = (tile.tabs ?? []).some(tab =>
+        (tab.title || '').toLowerCase().includes(searchLower) ||
+        (tab.sections ?? []).some(section =>
+          (section.title || '').toLowerCase().includes(searchLower) ||
+          (section.links ?? []).some(link =>
+            (link.label || '').toLowerCase().includes(searchLower) ||
+            (link.url || '').toLowerCase().includes(searchLower) ||
+            (link.notes || '').toLowerCase().includes(searchLower) ||
+            (link.tooltip || '').toLowerCase().includes(searchLower)
+          )
+        )
+      ) || (tile.sections ?? []).some(section =>
+        (section.title || '').toLowerCase().includes(searchLower) ||
+        (section.links ?? []).some(link =>
+          (link.label || '').toLowerCase().includes(searchLower) ||
+          (link.url || '').toLowerCase().includes(searchLower) ||
+          (link.notes || '').toLowerCase().includes(searchLower) ||
+          (link.tooltip || '').toLowerCase().includes(searchLower)
+        )
+      );
+
+      return titleMatch || descriptionMatch || emojiMatch || groupMatch || tagsMatch || linksMatch || nestedLinksMatch;
     });
     // Dependencies: tiles array reference changes when data loads, groupedTiles updates accordingly
     // We check both to handle cases where groupedTiles is stale on refresh

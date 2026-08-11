@@ -553,22 +553,112 @@ function handleGetTiles() {
     }
 
     // Summary mode: return card fields only (home grid). Detail loads via GET /tiles/{id}.
-    // Messages are included — they are small and required for tile banners + Message Board edits.
+    // Messages + lightweight searchLinks are included for banners and home-grid search.
     if ($summaryMode) {
-        // Optional link counts for card badges (one aggregate query, no nested graph)
+        // Link role access (needed so role-granted private links appear in search)
+        $linkRoleAccess = [];
+        if ($user && !empty($userRoleIds) && empty($user['is_admin'])) {
+            $rolePlaceholders = implode(',', array_fill(0, count($userRoleIds), '?'));
+            $linkRoleStmt = $db->prepare("SELECT DISTINCT link_id FROM role_link_permissions WHERE role_id IN ($rolePlaceholders) AND can_view = 1");
+            $linkRoleStmt->execute($userRoleIds);
+            while ($linkRole = $linkRoleStmt->fetch(PDO::FETCH_ASSOC)) {
+                $linkRoleAccess[$linkRole['link_id']] = true;
+            }
+        }
+
+        // Lightweight searchable links (label/url/etc.) without full nested tabs/sections graph
+        $searchLinksByTile = [];
         $linkCounts = [];
         if (!empty($visibleTileIds)) {
             $placeholders = implode(',', array_fill(0, count($visibleTileIds), '?'));
-            $countStmt = $db->prepare(
-                "SELECT s.tile_id, COUNT(l.id) AS link_count
+            $searchLinkStmt = $db->prepare(
+                "SELECT s.tile_id,
+                        s.visibility AS section_visibility,
+                        s.allowed_users AS section_allowed_users,
+                        s.allowed_groups AS section_allowed_groups,
+                        s.published AS section_published,
+                        t.visibility AS tab_visibility,
+                        t.allowed_users AS tab_allowed_users,
+                        t.allowed_groups AS tab_allowed_groups,
+                        t.published AS tab_published,
+                        t.id AS tab_id,
+                        l.id, l.label, l.url, l.icon, l.browser, l.notes, l.tooltip,
+                        l.rich_text_content, l.visibility, l.allowed_users, l.allowed_groups,
+                        l.published, l.health_status, l.health_http_code, l.health_error, l.health_checked_at
                  FROM sections s
                  INNER JOIN links l ON l.section_id = s.id
+                 LEFT JOIN tabs t ON t.id = s.tab_id
                  WHERE s.tile_id IN ($placeholders)
-                 GROUP BY s.tile_id"
+                 ORDER BY s.tile_id, l.position ASC, l.id ASC"
             );
-            $countStmt->execute($visibleTileIds);
-            while ($c = $countStmt->fetch(PDO::FETCH_ASSOC)) {
-                $linkCounts[$c['tile_id']] = (int)$c['link_count'];
+            $searchLinkStmt->execute($visibleTileIds);
+            while ($linkRow = $searchLinkStmt->fetch(PDO::FETCH_ASSOC)) {
+                $tileId = $linkRow['tile_id'];
+
+                // Parent tab visibility (when section belongs to a tab)
+                if (!empty($linkRow['tab_id'])) {
+                    $tabRow = [
+                        'visibility' => $linkRow['tab_visibility'] ?? 'public',
+                        'allowed_users' => $linkRow['tab_allowed_users'],
+                        'allowed_groups' => $linkRow['tab_allowed_groups'],
+                        'published' => $linkRow['tab_published'],
+                    ];
+                    if (!canUserSeePublishedContent($user, $tabRow) || !canUserSeeByVisibility($user, $tabRow, $userGroupIds)) {
+                        continue;
+                    }
+                }
+
+                // Parent section visibility
+                $sectionRow = [
+                    'visibility' => $linkRow['section_visibility'] ?? 'public',
+                    'allowed_users' => $linkRow['section_allowed_users'],
+                    'allowed_groups' => $linkRow['section_allowed_groups'],
+                    'published' => $linkRow['section_published'],
+                ];
+                if (!canUserSeePublishedContent($user, $sectionRow) || !canUserSeeByVisibility($user, $sectionRow, $userGroupIds)) {
+                    continue;
+                }
+
+                // Link visibility (+ role override)
+                if (!canUserSeePublishedContent($user, $linkRow)) {
+                    continue;
+                }
+                $isVisible = canUserSeeByVisibility($user, $linkRow, $userGroupIds);
+                $linkHasRoleAccess = isset($linkRoleAccess[$linkRow['id']]);
+                if ($linkHasRoleAccess && !$isVisible) {
+                    $isVisible = true;
+                }
+                if (!$isVisible) {
+                    continue;
+                }
+
+                if (!isset($searchLinksByTile[$tileId])) {
+                    $searchLinksByTile[$tileId] = [];
+                }
+
+                $searchLink = [
+                    'id' => $linkRow['id'],
+                    'label' => $linkRow['label'],
+                    'url' => $linkRow['url'],
+                    'icon' => $linkRow['icon'] ?? null,
+                    'browser' => $linkRow['browser'] ?? null,
+                    'notes' => $linkRow['notes'] ?? null,
+                    'tooltip' => $linkRow['tooltip'] ?? null,
+                    'richTextContent' => $linkRow['rich_text_content'] ?? null,
+                ];
+                if (isset($linkRow['health_status']) && !isNonHttpLinkHealthUrl($linkRow['url'] ?? '')) {
+                    $searchLink['health'] = [
+                        'status' => $linkRow['health_status'] ?? 'unknown',
+                        'httpCode' => $linkRow['health_http_code'] ? (int)$linkRow['health_http_code'] : null,
+                        'error' => $linkRow['health_error'],
+                        'checkedAt' => $linkRow['health_checked_at'] ? (int)$linkRow['health_checked_at'] : null,
+                    ];
+                }
+                $searchLinksByTile[$tileId][] = $searchLink;
+            }
+
+            foreach ($searchLinksByTile as $tileId => $links) {
+                $linkCounts[$tileId] = count($links);
             }
         }
 
@@ -615,6 +705,7 @@ function handleGetTiles() {
             }
             $tile = $tilesById[$tileId];
             $tile['linkCount'] = $linkCounts[$tileId] ?? 0;
+            $tile['searchLinks'] = $searchLinksByTile[$tileId] ?? [];
             $tile['tabs'] = [];
             $tile['sections'] = [];
             $tile['messages'] = $messagesByTile[$tileId] ?? [];

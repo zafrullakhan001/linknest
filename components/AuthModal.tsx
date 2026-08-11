@@ -322,8 +322,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
     }
 
     if (authState === 'ldap_attempting' || authState === 'ldap_authenticating') {
-      // Reset countdown when starting LDAP authentication
-      setCountdown(30);
+      // Auto mode uses a short LDAP window; explicit LDAP keeps 30s
+      const initialCountdown = authMethod === 'auto' ? 5 : 30;
+      setCountdown(initialCountdown);
 
       countdownTimerRef.current = setInterval(() => {
         setCountdown((prev) => {
@@ -361,11 +362,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
 
     try {
       if (mode === 'login') {
-        // Determine auth method: 'auto' means try LDAP first, then local
-        const method = authMethod === 'auto' ? undefined : authMethod;
+        // Auto: server tries LDAP briefly then local. Explicit methods stay as selected.
+        const method: 'local' | 'ldap' | 'auto' | undefined =
+          authMethod === 'auto' ? 'auto' : authMethod === 'ldap' || authMethod === 'local' ? authMethod : undefined;
 
         // Set initial state based on method
-        if (method === 'ldap' || (method === undefined && ldapEnabled)) {
+        if (method === 'ldap' || (method === 'auto' && ldapEnabled)) {
           setAuthState('connecting');
           setCurrentMethod('ldap');
 
@@ -374,16 +376,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
 
           setAuthState('ldap_attempting');
 
-          // Set up timeout for LDAP attempt (30 seconds)
+          // Auto mode: short client timeout so unreachable LDAP does not leave the spinner stuck.
+          // Explicit LDAP keeps a longer window for real directory auth.
+          const ldapClientTimeoutMs = method === 'auto' ? 5000 : 30000;
+          const abortController = new AbortController();
           const timeoutPromise = new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('LDAP_TIMEOUT')), 30000)
+            setTimeout(() => {
+              abortController.abort();
+              reject(new Error('LDAP_TIMEOUT'));
+            }, ldapClientTimeoutMs)
           );
 
           try {
-            // Try login with timeout - pass selected LDAP server index if LDAP method
-            const ldapServerIndex = (method === 'ldap' || (method === undefined && ldapEnabled)) ? selectedLdapServerIndex : undefined;
+            const ldapServerIndex = (method === 'ldap' || method === 'auto') ? selectedLdapServerIndex : undefined;
             await Promise.race([
-              login(username, password, method === 'ldap' ? 'ldap' : undefined, rememberMe, ldapServerIndex),
+              login(username, password, method === 'ldap' ? 'ldap' : 'auto', rememberMe, ldapServerIndex, abortController.signal),
               timeoutPromise
             ]);
 
@@ -393,19 +400,32 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
             await new Promise(resolve => setTimeout(resolve, 200));
 
           } catch (err: any) {
-            // If timeout or LDAP error and in auto mode, try local
-            if ((err.message === 'LDAP_TIMEOUT' || err.message?.includes('LDAP') || err.message?.includes('timeout')) && method === undefined) {
+            // Abort any in-flight auto/LDAP request before local fallback
+            if (!abortController.signal.aborted) {
+              abortController.abort();
+            }
+
+            // Auto mode: any LDAP failure/timeout falls through to local auth
+            const canFallbackToLocal =
+              method === 'auto' &&
+              localAuthEnabled &&
+              (err.message === 'LDAP_TIMEOUT' ||
+                err.name === 'AbortError' ||
+                err.message?.includes('LDAP') ||
+                err.message?.includes('timeout') ||
+                err.message?.includes('Failed to connect') ||
+                err.message?.includes('Login failed'));
+
+            if (canFallbackToLocal) {
               setAuthState('local_authenticating');
               setCurrentMethod('local');
-              setProgress(50); // Reset progress
+              setProgress(50);
 
-              // Try local authentication (no LDAP server index needed)
               await login(username, password, 'local', rememberMe, undefined);
               setAuthState('success');
               setProgress(100);
               await new Promise(resolve => setTimeout(resolve, 200));
             } else {
-              // Re-throw error for error handling
               throw err;
             }
           }

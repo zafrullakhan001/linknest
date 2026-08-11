@@ -181,6 +181,11 @@ export interface Tile {
   messages?: TileMessage[]; // Array of scheduled messages
   /** Link count for home-grid cards when nested graph is omitted (summary mode). */
   linkCount?: number;
+  /**
+   * Lightweight links for home-grid search (summary mode).
+   * Present when tabs/sections are omitted so search can still match labels/URLs.
+   */
+  searchLinks?: Link[];
   // Shared-with-me: when tile was shared by another user and receiver accepted
   sharedWithMeInvitationId?: number | null;
   sharedWithMeSharer?: { userId: number; username: string } | null;

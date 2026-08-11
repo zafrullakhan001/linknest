@@ -155,7 +155,7 @@ export const authService = {
     return { pending: data.pending || false, message: data.message };
   },
 
-  async login(username: string, password: string, authMethod?: 'local' | 'ldap', rememberMe?: boolean, ldapServerIndex?: number): Promise<User> {
+  async login(username: string, password: string, authMethod?: 'local' | 'ldap' | 'auto', rememberMe?: boolean, ldapServerIndex?: number, signal?: AbortSignal): Promise<User> {
     const body: any = { username, password, auth_method: authMethod, remember_me: rememberMe || false };
     if (ldapServerIndex !== undefined && ldapServerIndex !== null) {
       body.ldap_server_index = ldapServerIndex;
@@ -164,7 +164,8 @@ export const authService = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      signal
     });
 
     const data = await response.json();

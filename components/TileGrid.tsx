@@ -1285,7 +1285,9 @@ const SortableTile: React.FC<SortableTileProps> = ({
       uniqueLinks.add(key);
     };
 
-    if (tile.tabs && tile.tabs.length > 0) {
+    if (tile.searchLinks && tile.searchLinks.length > 0) {
+      tile.searchLinks.forEach(processLink);
+    } else if (tile.tabs && tile.tabs.length > 0) {
       tile.tabs.forEach(tab => {
         tab.sections?.forEach(section => {
           section.links?.forEach(processLink);
@@ -4261,6 +4263,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
     const searchLower = searchTerm.toLowerCase();
 
+    const linkMatchesSearch = (link: { label?: string; url?: string; notes?: string; tooltip?: string }) =>
+      (link.label || '').toLowerCase().includes(searchLower) ||
+      (link.url || '').toLowerCase().includes(searchLower) ||
+      (link.notes || '').toLowerCase().includes(searchLower) ||
+      (link.tooltip || '').toLowerCase().includes(searchLower);
+
     // Global search: check title, description, tab titles, section titles, link labels, link URLs, notes, and tooltips
     const filtered = filteredTiles.filter(t => {
       // Check tile-level properties (but NOT the group/category name to avoid irrelevant results when searching)
@@ -4272,17 +4280,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         return true;
       }
 
-      // Check tabs, sections and links within the tile
-      const allSections = [
-        ...(t.sections || []),
-        ...(t.tabs?.flatMap(tab => {
-          // Also match tab title
-          if (tab.title.toLowerCase().includes(searchLower)) return tab.sections; // If tab matches, we should probably return true for the tile
-          return tab.sections;
-        }) || [])
-      ];
+      // Summary-mode home grid: searchable links without nested tabs/sections
+      if ((t.searchLinks ?? []).some(linkMatchesSearch)) {
+        return true;
+      }
 
-      // A better way to check tabs/sections/links comprehensively
+      // Check tabs, sections and links within the tile (full graph when present)
 
       // 1. Check Tabs
       if (t.tabs && t.tabs.length > 0) {
@@ -4295,9 +4298,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
               if (section.links && section.links.length > 0) {
                 for (const link of section.links) {
-                  if (
-                    link.label.toLowerCase().includes(searchLower)
-                  ) {
+                  if (linkMatchesSearch(link)) {
                     return true;
                   }
                 }
@@ -4322,9 +4323,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
           if (section.links && section.links.length > 0) {
             for (const link of section.links) {
-              if (
-                link.label.toLowerCase().includes(searchLower)
-              ) {
+              if (linkMatchesSearch(link)) {
                 return true;
               }
             }
@@ -7374,16 +7373,21 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 uniqueLinks.add(key);
               };
 
-              if (t.tabs && t.tabs.length > 0) {
+              // Summary-mode home grid carries searchLinks instead of nested tabs/sections
+              if (t.searchLinks && t.searchLinks.length > 0) {
+                t.searchLinks.forEach(processLink);
+              } else if (t.tabs && t.tabs.length > 0) {
                 t.tabs.forEach(tab => {
                   tab.sections?.forEach(section => {
                     section.links?.forEach(processLink);
                   });
                 });
-              } else {
-                t.sections?.forEach(section => {
+              } else if (t.sections && t.sections.length > 0) {
+                t.sections.forEach(section => {
                   section.links?.forEach(processLink);
                 });
+              } else if (typeof t.linkCount === 'number') {
+                return acc + t.linkCount;
               }
               return acc + uniqueLinks.size;
             }, 0)} Links</span>
@@ -7961,37 +7965,57 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
           Object.values(groupedTiles).forEach((groupTiles: Tile[]) => {
             groupTiles.forEach(tile => {
+              const addMatchingLink = (link: {
+                id: string;
+                label: string;
+                url: string;
+                icon?: string;
+                browser?: string | null;
+                health?: any;
+                richTextContent?: string;
+                notes?: string;
+                tooltip?: string;
+              }) => {
+                const uniqueKey = `${(link.label || '').toLowerCase()}|${(link.url || '').toLowerCase()}`;
+                if (uniqueLinksMap.has(uniqueKey)) return;
+
+                const matches =
+                  (link.label || '').toLowerCase().includes(searchLower) ||
+                  (link.url || '').toLowerCase().includes(searchLower) ||
+                  (link.notes || '').toLowerCase().includes(searchLower) ||
+                  (link.tooltip || '').toLowerCase().includes(searchLower);
+
+                if (!matches) return;
+
+                uniqueLinksMap.set(uniqueKey, {
+                  id: link.id,
+                  label: link.label,
+                  url: link.url,
+                  icon: link.icon,
+                  browser: link.browser,
+                  health: link.health,
+                  richTextContent: link.richTextContent,
+                  tile: {
+                    id: tile.id,
+                    title: tile.title,
+                    emoji: tile.emoji || '✨',
+                    themeColor: tile.themeColor || 'blue',
+                    browser: tile.browser
+                  }
+                });
+              };
+
               // Helper to process a list of sections
               const processSections = (sections: LinkSection[]) => {
                 sections.forEach(section => {
-                  section.links?.forEach(link => {
-                    const uniqueKey = `${link.label.toLowerCase()}|${link.url.toLowerCase()}`;
-
-                    // Only process/add if we haven't seen this specific link yet
-                    if (
-                      !uniqueLinksMap.has(uniqueKey) &&
-                      (link.label.toLowerCase().includes(searchLower))
-                    ) {
-                      uniqueLinksMap.set(uniqueKey, {
-                        id: link.id,
-                        label: link.label,
-                        url: link.url,
-                        icon: link.icon,
-                        browser: link.browser,
-                        health: link.health,
-                        richTextContent: link.richTextContent,
-                        tile: {
-                          id: tile.id,
-                          title: tile.title,
-                          emoji: tile.emoji || '✨',
-                          themeColor: tile.themeColor || 'blue',
-                          browser: tile.browser
-                        }
-                      });
-                    }
-                  });
+                  section.links?.forEach(addMatchingLink);
                 });
               };
+
+              // Summary-mode searchable links
+              if (tile.searchLinks && tile.searchLinks.length > 0) {
+                tile.searchLinks.forEach(addMatchingLink);
+              }
 
               // Process deprecated sections
               if (tile.sections) {

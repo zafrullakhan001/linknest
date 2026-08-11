@@ -103,26 +103,65 @@ const transformTile = (apiTile: any): Tile => {
     linksAnimation: apiTile.linksAnimation && apiTile.linksAnimation !== 'none' ? apiTile.linksAnimation : undefined,
     messages: apiTile.messages || undefined, // Include scheduled messages
     linkCount: typeof apiTile.linkCount === 'number' ? apiTile.linkCount : undefined,
+    searchLinks: Array.isArray(apiTile.searchLinks) ? apiTile.searchLinks : undefined,
+    searchTags: Array.isArray(apiTile.searchTags) ? apiTile.searchTags : undefined,
     // Shared-with-me: when tile was shared by another user and receiver accepted
     sharedWithMeInvitationId: apiTile.sharedWithMeInvitationId ?? undefined,
     sharedWithMeSharer: apiTile.sharedWithMeSharer ?? undefined
   };
 };
 
+/** Build lightweight searchLinks from a full nested tile graph. */
+const extractSearchLinks = (tile: Tile): Tile['searchLinks'] => {
+  if (Array.isArray(tile.searchLinks) && tile.searchLinks.length > 0) {
+    return tile.searchLinks;
+  }
+  const links: NonNullable<Tile['searchLinks']> = [];
+  const seen = new Set<string>();
+  const addLinks = (sectionLinks?: { id: string; label: string; url: string; icon?: string; browser?: string; notes?: string; tooltip?: string; richTextContent?: string; health?: any }[]) => {
+    sectionLinks?.forEach((link) => {
+      const key = `${(link.label || '').toLowerCase()}|${(link.url || '').toLowerCase()}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      links.push({
+        id: link.id,
+        label: link.label,
+        url: link.url,
+        icon: link.icon,
+        browser: link.browser,
+        notes: link.notes,
+        tooltip: link.tooltip,
+        richTextContent: link.richTextContent,
+        health: link.health,
+      });
+    });
+  };
+  if (tile.tabs && tile.tabs.length > 0) {
+    tile.tabs.forEach((tab) => tab.sections?.forEach((section) => addLinks(section.links)));
+  } else {
+    tile.sections?.forEach((section) => addLinks(section.links));
+  }
+  return links.length > 0 ? links : undefined;
+};
+
 /** Card-only fields for home grid state (drop nested graph after detail updates).
- * Keep messages — they are small and needed for tile card banners + Message Board edits.
+ * Keep messages + searchLinks — needed for banners and home-grid link search.
  */
-export const toSummaryTile = (tile: Tile): Tile => ({
-  ...tile,
-  tabs: [],
-  sections: [],
-  htmlContent: undefined,
-  messages: Array.isArray(tile.messages) ? tile.messages : undefined,
-  linkCount: tile.linkCount ?? (tile.tabs?.reduce(
-    (n, tab) => n + (tab.sections?.reduce((sn, s) => sn + (s.links?.length || 0), 0) || 0),
-    0
-  ) ?? tile.sections?.reduce((n, s) => n + (s.links?.length || 0), 0))
-});
+export const toSummaryTile = (tile: Tile): Tile => {
+  const searchLinks = extractSearchLinks(tile);
+  return {
+    ...tile,
+    tabs: [],
+    sections: [],
+    htmlContent: undefined,
+    messages: Array.isArray(tile.messages) ? tile.messages : undefined,
+    searchLinks,
+    linkCount: tile.linkCount ?? searchLinks?.length ?? (tile.tabs?.reduce(
+      (n, tab) => n + (tab.sections?.reduce((sn, s) => sn + (s.links?.length || 0), 0) || 0),
+      0
+    ) ?? tile.sections?.reduce((n, s) => n + (s.links?.length || 0), 0))
+  };
+};
 
 export interface GetTilesOptions {
   /** 'public' = main tab tiles (default); 'staging' = staging tab tiles (admin only) */
