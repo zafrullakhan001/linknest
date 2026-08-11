@@ -584,11 +584,11 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
 
   return (
     <div className="w-full min-h-screen bg-slate-50 dark:bg-slate-900 pb-6">
-      {/* Mobile header: menu left | brand centered | actions right (company logo lives in drawer) */}
+      {/* Mobile header: row 1 = menu + brand; row 2 = compact actions (avoids title overlap) */}
       <nav className="linknest-nav sticky top-0 z-20 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
-        <div className="relative w-full px-3 py-1.5" style={{ minHeight: navMinHeight }}>
-          {/* Left: hamburger only */}
-          <div className="absolute left-2 top-1/2 -translate-y-1/2 z-20 flex items-center">
+        <div className="w-full px-2 pt-1.5 pb-1 flex flex-col gap-0.5">
+          {/* Row 1: hamburger + brand (spacer mirrors menu width for true center) */}
+          <div className="flex items-center gap-1 min-w-0" style={{ minHeight: navMinHeight - 4 }}>
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -605,48 +605,50 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                 )}
               </svg>
             </button>
-          </div>
 
-          {/* Center: app brand — always centered in the bar */}
-          <div
-            onClick={() => { window.location.hash = '#/'; }}
-            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex items-center justify-center gap-1.5 cursor-pointer min-w-0 max-w-[52vw]"
-          >
-            {settingsLoading && !settings.app_name ? (
-              <div className="h-7 min-w-[5rem]" aria-hidden="true" />
-            ) : (
-              <>
-                {settings.logo_type === 'image' && settings.logo_image ? (
-                  <img
-                    src={settings.logo_image}
-                    alt={settings.app_name}
-                    className="rounded-md object-contain flex-shrink-0"
-                    style={{ height: logoSize, width: logoSize }}
-                  />
-                ) : settings.logo_type !== 'image' && settings.logo_icon ? (
-                  <div
-                    className="rounded-md bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center shadow flex-shrink-0"
-                    style={{ height: logoSize, width: logoSize, fontSize: Math.max(11, logoSize * 0.55) }}
-                  >
-                    {settings.logo_icon}
-                  </div>
-                ) : null}
-                <div className="flex flex-col min-w-0 items-center text-center">
-                  <span className="linknest-page-title linknest-brand-app-name text-base font-bold leading-tight truncate max-w-full">
-                    {settings.app_name || ''}
-                  </span>
-                  {settings.app_subheading ? (
-                    <span className="linknest-brand-subheading text-[10px] text-slate-500 dark:text-slate-400 leading-tight truncate max-w-full">
-                      {settings.app_subheading}
-                    </span>
+            <div
+              onClick={() => { window.location.hash = '#/'; }}
+              className="flex-1 flex items-center justify-center gap-1.5 cursor-pointer min-w-0"
+            >
+              {settingsLoading && !settings.app_name ? (
+                <div className="h-7 min-w-[5rem]" aria-hidden="true" />
+              ) : (
+                <>
+                  {settings.logo_type === 'image' && settings.logo_image ? (
+                    <img
+                      src={settings.logo_image}
+                      alt={settings.app_name}
+                      className="rounded-md object-contain flex-shrink-0"
+                      style={{ height: logoSize, width: logoSize }}
+                    />
+                  ) : settings.logo_type !== 'image' && settings.logo_icon ? (
+                    <div
+                      className="rounded-md bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center shadow flex-shrink-0"
+                      style={{ height: logoSize, width: logoSize, fontSize: Math.max(11, logoSize * 0.55) }}
+                    >
+                      {settings.logo_icon}
+                    </div>
                   ) : null}
-                </div>
-              </>
-            )}
+                  <div className="flex flex-col min-w-0 items-center text-center">
+                    <span className="linknest-page-title linknest-brand-app-name text-base font-bold leading-tight truncate max-w-full">
+                      {settings.app_name || ''}
+                    </span>
+                    {settings.app_subheading ? (
+                      <span className="linknest-brand-subheading text-[10px] text-slate-500 dark:text-slate-400 leading-tight truncate max-w-full">
+                        {settings.app_subheading}
+                      </span>
+                    ) : null}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Mirrors hamburger width so brand stays optically centered */}
+            <div className="w-8 flex-shrink-0" aria-hidden="true" />
           </div>
 
-          {/* Right: actions */}
-          <div className="absolute right-2 top-1/2 -translate-y-1/2 z-20 flex items-center gap-0.5">
+          {/* Row 2: compact action controls */}
+          <div className="flex items-center justify-center gap-0.5 pb-0.5">
             <button
               onClick={() => setShowFavoriteStars(!showFavoriteStars)}
               className={`linknest-nav-icon p-1.5 rounded-full transition-all ${showFavoriteStars
