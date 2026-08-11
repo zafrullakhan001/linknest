@@ -312,6 +312,13 @@ export const normalizeImportedTiles = (
       id: generateUuid(),
       title: String(src.title || `Imported Space ${index + 1}`),
       description: String(src.description || ''),
+      searchTags: Array.isArray(src.searchTags)
+        ? (src.searchTags as unknown[])
+            .filter((t): t is string => typeof t === 'string')
+            .map((t) => t.trim())
+            .filter(Boolean)
+            .slice(0, 100)
+        : [],
       htmlContent: src.htmlContent || '',
       emoji: src.emoji || '📁',
       themeColor: (src.themeColor as any) || 'blue',

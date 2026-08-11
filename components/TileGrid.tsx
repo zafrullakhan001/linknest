@@ -45,6 +45,7 @@ import { MonitoringOverview } from './MonitoringOverview';
 import { RecycleBinOverview } from './RecycleBinOverview';
 import { TileInfoDialog } from './TileInfoDialog';
 import { FormSection, FormLabel, SpaceModalHeader, EditModalTabButton } from './SpaceFormChrome';
+import { SearchTagsInput } from './SearchTagsInput';
 import { TileFireworks } from './TileFireworks';
 import { TileConfetti } from './TileConfetti';
 import { TileSnowfall } from './TileSnowfall';
@@ -2568,6 +2569,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   // New Tile Form State
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
+  const [newSearchTags, setNewSearchTags] = useState<string[]>([]);
   const [newGroup, setNewGroup] = useState('');
   const [newEmoji, setNewEmoji] = useState('📁');
   const [newShowEmoji, setNewShowEmoji] = useState(true);
@@ -4245,7 +4247,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       // Check tile-level properties (but NOT the group/category name to avoid irrelevant results when searching)
       if (
         t.title.toLowerCase().includes(searchLower) ||
-        t.description.toLowerCase().includes(searchLower)
+        t.description.toLowerCase().includes(searchLower) ||
+        (t.searchTags ?? []).some(tag => tag.toLowerCase().includes(searchLower))
       ) {
         return true;
       }
@@ -4491,6 +4494,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       id: generateUuid(),
       title: newTitle,
       description: newDesc,
+      searchTags: newSearchTags.length > 0 ? newSearchTags : [],
       emoji: newEmoji,
       showEmoji: newShowEmoji,
       showTitle: newShowTitle,
@@ -4563,6 +4567,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
   const resetForm = () => {
     setNewTitle('');
     setNewDesc('');
+    setNewSearchTags([]);
     setNewGroup('');
     setNewEmoji('📁');
     setNewShowEmoji(true);
@@ -5003,6 +5008,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setEditingTile(tile);
     setNewTitle(tile.title);
     setNewDesc(tile.description);
+    setNewSearchTags(Array.isArray(tile.searchTags) ? [...tile.searchTags] : []);
     setNewGroup(tile.group || '');
     setNewEmoji(tile.emoji);
     setNewShowEmoji(tile.showEmoji !== false);
@@ -5305,6 +5311,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       ...editingTile,
       title: newTitle,
       description: newDesc,
+      searchTags: newSearchTags,
       emoji: newEmoji,
       showEmoji: newShowEmoji,
       showTitle: newShowTitle,
@@ -8830,6 +8837,14 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         className="w-full bg-white/80 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500/50 focus:border-teal-500 resize-none placeholder-slate-400 transition-all"
                       />
                     </div>
+                    <div>
+                      <FormLabel emoji="🏷️">Search Tags</FormLabel>
+                      <SearchTagsInput
+                        tags={newSearchTags}
+                        onChange={setNewSearchTags}
+                        className="w-full min-h-[42px] bg-white/80 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-sm focus-within:ring-2 focus-within:ring-teal-500/50 focus-within:border-teal-500 transition-all"
+                      />
+                    </div>
                   </FormSection>
 
                   {/* Look & Feel - shown for space and hyperlink */}
@@ -10780,6 +10795,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         rows={2}
                         className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 resize-none placeholder-slate-400 transition-all"
                       />
+                    </div>
+
+                    {/* Search tags — alternate keywords for "Search spaces…" */}
+                    <div>
+                      <FormLabel emoji="🏷️">Search Tags</FormLabel>
+                      <SearchTagsInput tags={newSearchTags} onChange={setNewSearchTags} />
                     </div>
 
                     {/* Open Link - Only for hyperlinks */}

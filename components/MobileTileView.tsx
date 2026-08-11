@@ -462,8 +462,9 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
       const descriptionMatch = tile.description?.toLowerCase().includes(searchLower);
       const emojiMatch = tile.emoji?.toLowerCase().includes(searchLower);
       const groupMatch = tile.group?.toLowerCase().includes(searchLower);
+      const tagsMatch = (tile.searchTags ?? []).some(tag => tag.toLowerCase().includes(searchLower));
 
-      return titleMatch || descriptionMatch || emojiMatch || groupMatch;
+      return titleMatch || descriptionMatch || emojiMatch || groupMatch || tagsMatch;
     });
     // Dependencies: tiles array reference changes when data loads, groupedTiles updates accordingly
     // We check both to handle cases where groupedTiles is stale on refresh

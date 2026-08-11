@@ -117,7 +117,7 @@ define('SYSTEM_TOKEN', 'linknest_secret_token_123'); // Change this for producti
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 82);
+    define('LINKNEST_SCHEMA_VERSION', 83);
 }
 
 /**
@@ -409,6 +409,91 @@ function ensureTilesHeaderImageColumns(PDO $db): void {
     }
 }
 
+/** Ensure tiles.search_tags column exists (JSON array of alternate search keywords). */
+function ensureTilesSearchTagsColumn(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $columns = $db->query('PRAGMA table_info(tiles)')->fetchAll(PDO::FETCH_ASSOC);
+        if (empty($columns)) {
+            return;
+        }
+        $names = array_column($columns, 'name');
+        if (!in_array('search_tags', $names, true)) {
+            $db->exec('ALTER TABLE tiles ADD COLUMN search_tags TEXT');
+        }
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureTilesSearchTagsColumn warning: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Normalize search tag lists: trim, drop empties, case-insensitive dedupe, max 50 chars, max 100 tags.
+ * @param mixed $input
+ * @return string[]
+ */
+function sanitizeSearchTagsArray($input): array {
+    if (!is_array($input)) {
+        return [];
+    }
+    $result = [];
+    $seen = [];
+    foreach ($input as $tag) {
+        if (!is_string($tag) && !is_numeric($tag)) {
+            continue;
+        }
+        $t = trim((string)$tag);
+        if ($t === '') {
+            continue;
+        }
+        if (function_exists('mb_strlen') && function_exists('mb_substr') && function_exists('mb_strtolower')) {
+            if (mb_strlen($t) > 50) {
+                $t = mb_substr($t, 0, 50);
+            }
+            $key = mb_strtolower($t);
+        } else {
+            if (strlen($t) > 50) {
+                $t = substr($t, 0, 50);
+            }
+            $key = strtolower($t);
+        }
+        if (isset($seen[$key])) {
+            continue;
+        }
+        $seen[$key] = true;
+        $result[] = $t;
+        if (count($result) >= 100) {
+            break;
+        }
+    }
+    return $result;
+}
+
+/**
+ * Encode sanitized search tags for SQLite (JSON text column). Empty list stores as NULL.
+ * @param mixed $input
+ */
+function encodeSearchTagsForStorage($input): ?string {
+    $tags = sanitizeSearchTagsArray($input);
+    return empty($tags) ? null : json_encode(array_values($tags), JSON_UNESCAPED_UNICODE);
+}
+
+/**
+ * Decode search_tags column from a tiles row into a string array.
+ * @param array $row
+ * @return string[]
+ */
+function decodeSearchTagsFromRow(array $row): array {
+    if (empty($row['search_tags'])) {
+        return [];
+    }
+    $decoded = json_decode($row['search_tags'], true);
+    return is_array($decoded) ? sanitizeSearchTagsArray($decoded) : [];
+}
+
 /** Ensure SSH connection color column exists (identification strip in SSH Terminal). */
 function ensureSshConnectionColorColumn(PDO $db): void {
     static $ensured = false;
@@ -458,6 +543,7 @@ function initDatabase() {
         }
         if ($currentVersion >= (int)LINKNEST_SCHEMA_VERSION) {
             ensureTilesHeaderImageColumns($db);
+            ensureTilesSearchTagsColumn($db);
             ensureSshConnectionColorColumn($db);
             ensurePublicGuestRole($db);
             ensureRoleLinkActionDefaults($db);
@@ -475,6 +561,7 @@ function initDatabase() {
         }
         if ($currentVersion >= (int)LINKNEST_SCHEMA_VERSION) {
             ensureTilesHeaderImageColumns($db);
+            ensureTilesSearchTagsColumn($db);
             ensureSshConnectionColorColumn($db);
             ensurePublicGuestRole($db);
             ensureRoleLinkActionDefaults($db);
@@ -1023,6 +1110,17 @@ function initDatabase() {
             }
         } catch (PDOException $e) {
             error_log('Tiles show_title/show_description/header_image_offset_y migration warning: ' . $e->getMessage());
+        }
+
+        // Migrate: search_tags (JSON array of alternate search keywords for spaces)
+        try {
+            $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll();
+            $columnNames = array_column($columns, 'name');
+            if (!in_array('search_tags', $columnNames, true)) {
+                $db->exec('ALTER TABLE tiles ADD COLUMN search_tags TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Tiles search_tags migration warning: ' . $e->getMessage());
         }
         
         // Create tabs table

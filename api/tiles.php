@@ -199,7 +199,7 @@ function handleGetTiles() {
     // Step 1: Get visible tiles filtered by source_tab
     // Summary mode skips html_content and other heavy columns
     $tileCols = $summaryMode
-        ? 'id, user_id, title, description, emoji, theme_color, "group", position, created_at, visibility, allowed_users, allowed_groups, source_tab, deleted_at, archived_at, is_hyperlink, hyperlink_url, open_in_new_tab, browser, visible_from, expires_at, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, published'
+        ? 'id, user_id, title, description, emoji, theme_color, "group", position, created_at, visibility, allowed_users, allowed_groups, source_tab, deleted_at, archived_at, is_hyperlink, hyperlink_url, open_in_new_tab, browser, visible_from, expires_at, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, search_tags, published'
         : '*';
     $baseWhere = 'deleted_at IS NULL AND archived_at IS NULL';
     if ($sourceTab === 'staging') {
@@ -481,6 +481,7 @@ function handleGetTiles() {
             'emoji' => $row['emoji'],
             'themeColor' => $row['theme_color'],
             'group' => $row['group'],
+            'searchTags' => decodeSearchTagsFromRow($row),
             'createdAt' => (int)$row['created_at'],
             'position' => $position,
             'visibility' => $tileVisibility,
@@ -1212,6 +1213,7 @@ function handleGetTile($tileId) {
         'emoji' => $row['emoji'],
         'themeColor' => $row['theme_color'],
         'group' => $row['group'],
+        'searchTags' => decodeSearchTagsFromRow($row),
         'createdAt' => (int)$row['created_at'],
         'visibility' => $tileVisibility,
         'published' => isContentPublished($row),
@@ -1693,6 +1695,7 @@ function handleCreateTile() {
     $showDescription = array_key_exists('showDescription', $data)
         ? (!empty($data['showDescription']) && $data['showDescription'] !== '0' && $data['showDescription'] !== 0 && $data['showDescription'] !== false ? 1 : 0)
         : 1;
+    $searchTagsJson = encodeSearchTagsForStorage($data['searchTags'] ?? $data['search_tags'] ?? []);
     $headerImageOffsetY = $headerImage !== null
         ? (isset($data['headerImageOffsetY']) && is_numeric($data['headerImageOffsetY'])
             ? max(-300, min(300, (int)$data['headerImageOffsetY']))
@@ -1732,7 +1735,7 @@ function handleCreateTile() {
     // Published flag: only admins may create unpublished content
     $published = resolvePublishedFlag($data, $user, true);
     
-    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, source_tab, published, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, search_tags, source_tab, published, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     
     if (!$stmt->execute([
         $tileId,
@@ -1777,6 +1780,7 @@ function handleCreateTile() {
         $emojiImageZoom,
         $showTitle,
         $showDescription,
+        $searchTagsJson,
         $sourceTab,
         $published,
         $position,
@@ -2354,6 +2358,7 @@ function handleCloneTile($tileId) {
             : null;
         $showTitle = !(isset($originalTile['show_title']) && ((int)$originalTile['show_title'] === 0 || $originalTile['show_title'] === '0'));
         $showDescription = !(isset($originalTile['show_description']) && ((int)$originalTile['show_description'] === 0 || $originalTile['show_description'] === '0'));
+        $searchTagsJson = encodeSearchTagsForStorage(decodeSearchTagsFromRow($originalTile));
         $headerImageOffsetY = $headerImage !== null
             ? (isset($originalTile['header_image_offset_y']) && $originalTile['header_image_offset_y'] !== null && $originalTile['header_image_offset_y'] !== ''
                 ? max(-300, min(300, (int)$originalTile['header_image_offset_y'])) : 0)
@@ -2365,7 +2370,7 @@ function handleCloneTile($tileId) {
         // Copy source_tab so cloned tile stays in same area (staging vs public)
         $newSourceTab = isset($originalTile['source_tab']) && trim($originalTile['source_tab']) === 'staging' ? 'staging' : 'public';
         
-        $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, search_tags, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         
         if (!$insertStmt->execute([
             $newTileId,
@@ -2410,6 +2415,7 @@ function handleCloneTile($tileId) {
             $emojiImageZoom,
             $showTitle ? 1 : 0,
             $showDescription ? 1 : 0,
+            $searchTagsJson,
             $newSourceTab,
             $newPosition,
             time()
@@ -2848,6 +2854,7 @@ function handleCloneCategory($categoryName) {
                 : null;
             $showTitle = !(isset($originalTile['show_title']) && ((int)$originalTile['show_title'] === 0 || $originalTile['show_title'] === '0'));
             $showDescription = !(isset($originalTile['show_description']) && ((int)$originalTile['show_description'] === 0 || $originalTile['show_description'] === '0'));
+            $searchTagsJson = encodeSearchTagsForStorage(decodeSearchTagsFromRow($originalTile));
             $headerImageOffsetY = $headerImage !== null
                 ? (isset($originalTile['header_image_offset_y']) && $originalTile['header_image_offset_y'] !== null && $originalTile['header_image_offset_y'] !== ''
                     ? max(-300, min(300, (int)$originalTile['header_image_offset_y'])) : 0)
@@ -2857,7 +2864,7 @@ function handleCloneCategory($categoryName) {
                     ? max(50, min(300, (int)$originalTile['header_image_zoom'])) : 100)
                 : null;
             
-            $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, search_tags, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             
             if (!$insertStmt->execute([
                 $newTileId,
@@ -2902,6 +2909,7 @@ function handleCloneCategory($categoryName) {
                 $emojiImageZoom,
                 $showTitle ? 1 : 0,
                 $showDescription ? 1 : 0,
+                $searchTagsJson,
                 $sourceTab,
                 $nextPosition++,
                 time()
@@ -4156,6 +4164,7 @@ function handleGetRecycleBin() {
             'emoji' => $row['emoji'],
             'themeColor' => $row['theme_color'],
             'group' => $row['group'],
+            'searchTags' => decodeSearchTagsFromRow($row),
             'createdAt' => (int)$row['created_at'],
             'deletedAt' => (int)$row['deleted_at'],
             'visibility' => $tileVisibility,
@@ -4515,6 +4524,7 @@ function handleGetArchive() {
                 'emoji' => $row['emoji'],
                 'themeColor' => $row['theme_color'],
                 'group' => $row['group'],
+                'searchTags' => decodeSearchTagsFromRow($row),
                 'createdAt' => (int)$row['created_at'],
                 'archivedAt' => isset($row['archived_at']) && $row['archived_at'] !== null ? (int)$row['archived_at'] : null,
                 'visibility' => $tileVisibility,
@@ -5010,6 +5020,7 @@ function getTileForVersion($tileId, $db) {
         'emoji' => $row['emoji'],
         'themeColor' => $row['theme_color'],
         'group' => $row['group'],
+        'searchTags' => decodeSearchTagsFromRow($row),
         'visibility' => $row['visibility'] ?? 'public',
         'published' => isContentPublished($row),
         'allowedUsers' => $row['allowed_users'] ? json_decode($row['allowed_users'], true) : [],
@@ -5660,6 +5671,14 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                     ? ((int)$currentTileData['show_description'] === 0 ? 0 : 1)
                     : 1));
 
+        if (array_key_exists('searchTags', $data) || array_key_exists('search_tags', $data)) {
+            $searchTagsJson = encodeSearchTagsForStorage($data['searchTags'] ?? $data['search_tags'] ?? []);
+        } else {
+            $existingTags = $currentTileData['searchTags']
+                ?? (isset($currentTileData['search_tags']) ? decodeSearchTagsFromRow($currentTileData) : []);
+            $searchTagsJson = encodeSearchTagsForStorage(is_array($existingTags) ? $existingTags : []);
+        }
+
         $headerImageOffsetY = array_key_exists('headerImageOffsetY', $data)
             ? (($headerImage !== null && isset($data['headerImageOffsetY']) && is_numeric($data['headerImageOffsetY']))
                 ? max(-300, min(300, (int)$data['headerImageOffsetY']))
@@ -5728,7 +5747,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
         }
         
         // Update tile
-        $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, allowed_groups = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ?, visible_from = ?, expires_at = ?, browser = ?, tile_background_color = ?, tile_gradient_enabled = ?, tile_gradient_colors = ?, tile_gradient_color_positions = ?, tile_gradient_direction = ?, tile_gradient_type = ?, tile_border_radius = ?, tile_text_color = ?, page_animation = ?, links_animation = ?, header_image = ?, header_image_align = ?, header_image_opacity = ?, header_image_offset_x = ?, header_image_offset_y = ?, header_image_zoom = ?, header_image_fit = ?, show_emoji = ?, emoji_image = ?, emoji_image_opacity = ?, emoji_image_offset_x = ?, emoji_image_offset_y = ?, emoji_image_zoom = ?, show_title = ?, show_description = ?, source_tab = ?, published = ? WHERE id = ?');
+        $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, allowed_groups = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ?, visible_from = ?, expires_at = ?, browser = ?, tile_background_color = ?, tile_gradient_enabled = ?, tile_gradient_colors = ?, tile_gradient_color_positions = ?, tile_gradient_direction = ?, tile_gradient_type = ?, tile_border_radius = ?, tile_text_color = ?, page_animation = ?, links_animation = ?, header_image = ?, header_image_align = ?, header_image_opacity = ?, header_image_offset_x = ?, header_image_offset_y = ?, header_image_zoom = ?, header_image_fit = ?, show_emoji = ?, emoji_image = ?, emoji_image_opacity = ?, emoji_image_offset_x = ?, emoji_image_offset_y = ?, emoji_image_zoom = ?, show_title = ?, show_description = ?, search_tags = ?, source_tab = ?, published = ? WHERE id = ?');
         $stmt->execute([
             $data['title'] ?? '',
             $data['description'] ?? '',
@@ -5770,6 +5789,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
             $emojiImageZoom,
             $showTitle,
             $showDescription,
+            $searchTagsJson,
             $sourceTab,
             $published,
             $tileId
