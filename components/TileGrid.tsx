@@ -6621,6 +6621,33 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         const updatedFavorites = getPublicFavorites();
         setPublicFavorites(updatedFavorites);
 
+        // Refresh guest favorite links from imported IDs / snapshots
+        const favIds = getPublicLinkFavorites();
+        const cached = getPublicLinkFavoriteDetails().map((detail) => ({
+          ...detail,
+          isFavorite: true as const
+        }));
+        if (cached.length > 0) {
+          setFavoriteLinks(cached);
+        } else if (favIds.length === 0) {
+          setFavoriteLinks([]);
+        }
+
+        if (favIds.length > 0) {
+          resolveFavoriteLinks(favIds)
+            .then((resolved) => {
+              if (resolved.length > 0) {
+                syncPublicLinkFavoriteDetails(resolved);
+                setFavoriteLinks(resolved);
+              } else if (cached.length === 0) {
+                setFavoriteLinks([]);
+              }
+            })
+            .catch(() => {
+              if (cached.length === 0) setFavoriteLinks([]);
+            });
+        }
+
         // Ensure we're on the favorites tab to see the imported tiles
         if (activeTab !== 'public-favorites') {
           setActiveTab('public-favorites');
