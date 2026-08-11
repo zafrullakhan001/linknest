@@ -3514,12 +3514,21 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         if (cancelled) return;
 
         if (resolved.length > 0) {
-          syncPublicLinkFavoriteDetails(resolved);
-          setFavoriteLinks(resolved);
-          console.log('Guest favorite links resolved from API:', resolved);
+          // Merge API results over cache; keep unresolved snapshots so favorites
+          // are not blanked when some IDs cannot be resolved.
+          const byId = new Map<string, (typeof cached)[number]>();
+          cached.forEach((c) => byId.set(c.id, c));
+          resolved.forEach((r) => byId.set(r.id, { ...r, isFavorite: true as const }));
+          const merged = favoriteLinkIds
+            .map((id) => byId.get(id))
+            .filter(Boolean) as typeof cached;
+          syncPublicLinkFavoriteDetails(merged);
+          setFavoriteLinks(merged);
+          console.log('Guest favorite links resolved from API:', merged);
         } else if (cached.length === 0) {
           setFavoriteLinks([]);
         }
+        // else: keep cached snapshots already set above
       } catch (error) {
         console.error('Failed to resolve guest favorite links:', error);
         if (!cancelled && cached.length === 0) {
@@ -6603,12 +6612,41 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
   const handleExportPublicFavorites = useCallback(() => {
     try {
-      exportPublicFavorites();
+      // Export only what is currently shown on the Favorites tab
+      // (not stale orphan IDs that may still sit in localStorage).
+      const visibleSpaceIds = tiles
+        .filter((t) => publicFavorites.includes(t.id))
+        .map((t) => t.id);
+      const visibleLinks = favoriteLinks.map((link) => ({
+        id: link.id,
+        label: link.label,
+        url: link.url,
+        icon: link.icon,
+        browser: link.browser,
+        richTextContent: link.richTextContent,
+        health: link.health,
+        tile: {
+          id: link.tile.id,
+          title: link.tile.title,
+          emoji: link.tile.emoji || '🔗',
+          themeColor: link.tile.themeColor || 'blue'
+        }
+      }));
+
+      if (visibleSpaceIds.length === 0 && visibleLinks.length === 0) {
+        alert('No favorites to export.');
+        return;
+      }
+
+      exportPublicFavorites({
+        spaceIds: visibleSpaceIds,
+        links: visibleLinks
+      });
     } catch (error) {
       console.error('Failed to export public favorites:', error);
-      alert('Failed to export favorites. Please try again.');
+      alert(error instanceof Error ? error.message : 'Failed to export favorites. Please try again.');
     }
-  }, []);
+  }, [tiles, publicFavorites, favoriteLinks]);
 
   const handleImportPublicFavorites = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -6621,7 +6659,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         const updatedFavorites = getPublicFavorites();
         setPublicFavorites(updatedFavorites);
 
-        // Refresh guest favorite links from imported IDs / snapshots
+        // Refresh guest favorite links from imported IDs / snapshots first
+        // so the UI is never blank while waiting on API resolve.
         const favIds = getPublicLinkFavorites();
         const cached = getPublicLinkFavoriteDetails().map((detail) => ({
           ...detail,
@@ -6637,14 +6676,17 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           resolveFavoriteLinks(favIds)
             .then((resolved) => {
               if (resolved.length > 0) {
-                syncPublicLinkFavoriteDetails(resolved);
-                setFavoriteLinks(resolved);
-              } else if (cached.length === 0) {
-                setFavoriteLinks([]);
+                // Merge resolved over cache; keep unresolved snapshots
+                const byId = new Map(cached.map((c) => [c.id, c]));
+                resolved.forEach((r) => byId.set(r.id, r));
+                const merged = favIds.map((id) => byId.get(id)).filter(Boolean) as typeof cached;
+                syncPublicLinkFavoriteDetails(merged);
+                setFavoriteLinks(merged);
               }
+              // If resolve returns nothing, keep cached snapshots (do not blank the list)
             })
             .catch(() => {
-              if (cached.length === 0) setFavoriteLinks([]);
+              // keep cached
             });
         }
 
@@ -6654,7 +6696,6 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         }
 
         // Force a re-render by updating tiles (this ensures the filtered view updates)
-        // The tiles themselves don't change, but this triggers the useMemo to recalculate
         onUpdateTiles([...tiles]);
 
         alert(result.message);

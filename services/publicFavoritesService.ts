@@ -197,6 +197,22 @@ export const setPublicActiveTab = (tab: string): void => {
 };
 
 /**
+ * Keep only string IDs that currently belong in public favorites storage.
+ */
+const pruneIdList = (ids: string[]): string[] => {
+  const seen = new Set<string>();
+  const cleaned: string[] = [];
+  for (const id of ids) {
+    if (typeof id !== 'string') continue;
+    const trimmed = id.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    cleaned.push(trimmed);
+  }
+  return cleaned;
+};
+
+/**
  * Coerce mixed ID lists from older exports into unique non-empty strings.
  * Skips bad entries instead of failing the whole import.
  */
@@ -251,6 +267,7 @@ const normalizeLinkFavoriteDetails = (
       )
     : (value as Record<string, unknown>);
 
+  // Prefer explicit IDs; if none, fall back to detail keys that look like real snapshots
   const preferredIds = linkIds.length > 0 ? linkIds : Object.keys(source);
 
   for (const id of preferredIds) {
@@ -271,6 +288,11 @@ const normalizeLinkFavoriteDetails = (
       (typeof detail.url === 'string' && detail.url) ||
       (typeof detail.href === 'string' && detail.href) ||
       '';
+
+    // Skip empty junk snapshots that have neither label nor url
+    if (!url && label === 'Favorite Link' && !detail.label && !detail.title) {
+      continue;
+    }
 
     map[id] = {
       id,
@@ -299,24 +321,108 @@ const normalizeLinkFavoriteDetails = (
   return map;
 };
 
+export interface PublicFavoritesExportOptions {
+  /** Space IDs currently visible on the Favorites tab (preferred over raw localStorage). */
+  spaceIds?: string[];
+  /** Link snapshots currently shown on the Favorites tab. */
+  links?: PublicFavoriteLinkDetail[];
+}
+
+/**
+ * Build a clean export payload from what the user actually has favorited,
+ * not stale/orphan IDs left in localStorage.
+ */
+export const buildPublicFavoritesExportData = (
+  options?: PublicFavoritesExportOptions
+): {
+  version: string;
+  exportDate: string;
+  favorites: string[];
+  linkFavorites: string[];
+  linkFavoriteDetails: Record<string, PublicFavoriteLinkDetail>;
+  activeTab: string;
+} => {
+  const storedSpaceIds = pruneIdList(getPublicFavorites());
+  const storedLinkIds = pruneIdList(getPublicLinkFavorites());
+  const storedDetails = getPublicLinkFavoriteDetailsMap();
+
+  // When the UI passes live Favorites-tab data, that is authoritative
+  // (including empty lists — do not fall back to stale localStorage junk).
+  const favorites = pruneIdList(
+    options?.spaceIds !== undefined ? options.spaceIds : storedSpaceIds
+  );
+
+  let linkFavorites: string[];
+  let linkFavoriteDetails: Record<string, PublicFavoriteLinkDetail> = {};
+
+  if (options?.links !== undefined) {
+    linkFavorites = [];
+    for (const link of options.links) {
+      if (!link?.id || typeof link.id !== 'string') continue;
+      const id = link.id.trim();
+      if (!id || linkFavorites.includes(id)) continue;
+      linkFavorites.push(id);
+      linkFavoriteDetails[id] = {
+        id,
+        label: link.label || 'Favorite Link',
+        url: link.url || '',
+        icon: link.icon,
+        textColor: link.textColor,
+        visibility: link.visibility,
+        notes: link.notes,
+        tooltip: link.tooltip,
+        browser: link.browser,
+        richTextContent: link.richTextContent,
+        health: link.health,
+        tile: {
+          id: link.tile?.id || '',
+          title: link.tile?.title || 'Space',
+          emoji: link.tile?.emoji || '🔗',
+          themeColor: link.tile?.themeColor || 'blue'
+        }
+      };
+    }
+  } else {
+    // Fall back to storage, but only keep details that match current link IDs
+    linkFavorites = storedLinkIds;
+    for (const id of linkFavorites) {
+      if (storedDetails[id]) {
+        linkFavoriteDetails[id] = storedDetails[id];
+      }
+    }
+  }
+
+  // Persist the cleaned lists so future exports/imports stay accurate
+  try {
+    if (isLocalStorageAvailable()) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(favorites));
+      localStorage.setItem(LINK_STORAGE_KEY, JSON.stringify(linkFavorites));
+      localStorage.setItem(LINK_DETAILS_STORAGE_KEY, JSON.stringify(linkFavoriteDetails));
+    }
+  } catch (error) {
+    console.error('Failed to prune public favorites during export:', error);
+  }
+
+  return {
+    version: '1.2',
+    exportDate: new Date().toISOString(),
+    favorites,
+    linkFavorites,
+    linkFavoriteDetails,
+    activeTab: getPublicActiveTab() || 'public-favorites'
+  };
+};
+
 /**
  * Export public favorites to a JSON file
  */
-export const exportPublicFavorites = (): void => {
+export const exportPublicFavorites = (options?: PublicFavoritesExportOptions): void => {
   try {
-    const favorites = getPublicFavorites();
-    const linkFavorites = getPublicLinkFavorites();
-    const linkFavoriteDetails = getPublicLinkFavoriteDetailsMap();
-    const activeTab = getPublicActiveTab();
+    const exportData = buildPublicFavoritesExportData(options);
 
-    const exportData = {
-      version: '1.2',
-      exportDate: new Date().toISOString(),
-      favorites,
-      linkFavorites,
-      linkFavoriteDetails,
-      activeTab: activeTab || 'public'
-    };
+    if (exportData.favorites.length === 0 && exportData.linkFavorites.length === 0) {
+      throw new Error('No public favorites to export.');
+    }
 
     const jsonString = JSON.stringify(exportData, null, 2);
     const blob = new Blob([jsonString], { type: 'application/json' });
@@ -338,6 +444,8 @@ export const exportPublicFavorites = (): void => {
  * Import public favorites from a JSON file.
  * Tolerant of older app versions and incomplete JSON: missing fields are skipped
  * or defaulted, and invalid entries are filtered out instead of failing import.
+ * Empty arrays do not wipe existing favorites unless the file clearly replaces that list
+ * with real content in the paired field / details.
  */
 export const importPublicFavorites = async (file: File): Promise<{
   success: boolean;
@@ -359,119 +467,127 @@ export const importPublicFavorites = async (file: File): Promise<{
       throw new Error('Invalid JSON file. Please ensure the file is a valid public favorites export.');
     }
 
-    // Support legacy shapes:
-    // - { favorites, linkFavorites, ... } (current)
-    // - [ "tile-id", ... ] (very old / raw ID list)
-    // - { tileFavorites / tiles / spaces } alternate keys
-    let favoritesRaw: unknown = [];
+    let favoritesRaw: unknown = undefined;
     let linkFavoritesRaw: unknown = undefined;
     let linkDetailsRaw: unknown = undefined;
     let activeTabRaw: unknown = undefined;
 
     if (Array.isArray(data)) {
+      // Legacy: bare array of space IDs
       favoritesRaw = data;
     } else if (data && typeof data === 'object') {
       const obj = data as Record<string, unknown>;
-      favoritesRaw =
-        obj.favorites ??
-        obj.tileFavorites ??
-        obj.tiles ??
-        obj.spaces ??
-        obj.favoriteTiles ??
-        [];
-      linkFavoritesRaw =
-        obj.linkFavorites ??
-        obj.favoriteLinks ??
-        obj.links ??
-        obj.linkIds;
-      linkDetailsRaw =
-        obj.linkFavoriteDetails ??
-        obj.linkDetails ??
-        obj.favoriteLinkDetails ??
-        obj.linkFavoriteSnapshots;
+      // Only accept known favorites export keys (avoid accidental picks like "tiles"/"links")
+      if ('favorites' in obj) favoritesRaw = obj.favorites;
+      else if ('tileFavorites' in obj) favoritesRaw = obj.tileFavorites;
+      else if ('favoriteTiles' in obj) favoritesRaw = obj.favoriteTiles;
+
+      if ('linkFavorites' in obj) linkFavoritesRaw = obj.linkFavorites;
+      else if ('favoriteLinks' in obj) linkFavoritesRaw = obj.favoriteLinks;
+      else if ('linkIds' in obj) linkFavoritesRaw = obj.linkIds;
+
+      if ('linkFavoriteDetails' in obj) linkDetailsRaw = obj.linkFavoriteDetails;
+      else if ('favoriteLinkDetails' in obj) linkDetailsRaw = obj.favoriteLinkDetails;
+      else if ('linkFavoriteSnapshots' in obj) linkDetailsRaw = obj.linkFavoriteSnapshots;
+
       activeTabRaw = obj.activeTab;
     } else {
       throw new Error('Invalid export format. Expected a JSON object or array of favorite IDs.');
     }
 
-    const hasFavoritesField = Array.isArray(data)
-      ? true
-      : !!(data && typeof data === 'object' && (
-          'favorites' in (data as object) ||
-          'tileFavorites' in (data as object) ||
-          'tiles' in (data as object) ||
-          'spaces' in (data as object) ||
-          'favoriteTiles' in (data as object)
-        ));
+    const hasFavoritesField = favoritesRaw !== undefined;
+    const hasLinkFavoritesField = linkFavoritesRaw !== undefined;
+    const hasLinkDetailsField = linkDetailsRaw !== undefined;
 
-    const favorites = normalizeIdList(favoritesRaw);
-    const linkFavorites = linkFavoritesRaw === undefined
-      ? null
-      : normalizeIdList(linkFavoritesRaw);
+    let favorites = hasFavoritesField ? normalizeIdList(favoritesRaw) : null;
+    let linkFavorites = hasLinkFavoritesField ? normalizeIdList(linkFavoritesRaw) : null;
 
-    // Nothing usable at all
-    if (
-      (!hasFavoritesField || favorites.length === 0) &&
-      (linkFavorites === null || linkFavorites.length === 0) &&
-      !linkDetailsRaw
-    ) {
-      throw new Error('No favorites found in this file. Nothing to import.');
+    // Build details early so we can recover IDs from snapshots when the ID list is missing/empty
+    let detailsMap: Record<string, PublicFavoriteLinkDetail> = {};
+    if (hasLinkDetailsField) {
+      detailsMap = normalizeLinkFavoriteDetails(
+        linkDetailsRaw,
+        linkFavorites && linkFavorites.length > 0 ? linkFavorites : []
+      );
     }
 
-    // Only replace fields that exist in the file (missing keys keep current localStorage)
-    if (hasFavoritesField) {
+    // Recover link IDs from detail snapshots when the ID list is absent or empty
+    if ((linkFavorites === null || linkFavorites.length === 0) && Object.keys(detailsMap).length > 0) {
+      linkFavorites = Object.keys(detailsMap);
+    }
+
+    const importingSpaces = favorites !== null && favorites.length > 0;
+    const importingLinks =
+      (linkFavorites !== null && linkFavorites.length > 0) ||
+      Object.keys(detailsMap).length > 0;
+
+    if (!importingSpaces && !importingLinks) {
+      throw new Error('No favorites found in this file. Existing favorites were left unchanged.');
+    }
+
+    // Apply space favorites only when the file has real space IDs
+    // (never wipe spaces just because an old/partial file had favorites: [])
+    if (importingSpaces && favorites) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(favorites));
     }
 
     let importedLinks = 0;
-    if (linkFavorites !== null) {
+    if (linkFavorites !== null && linkFavorites.length > 0) {
       localStorage.setItem(LINK_STORAGE_KEY, JSON.stringify(linkFavorites));
       importedLinks = linkFavorites.length;
-    }
 
-    // Import link detail snapshots when present (v1.2+); still helpful for older partial payloads
-    const detailLinkIds = linkFavorites ?? getPublicLinkFavorites();
-    if (linkDetailsRaw) {
-      const detailsMap = normalizeLinkFavoriteDetails(linkDetailsRaw, detailLinkIds);
-      // Also pull IDs from details when linkFavorites was missing
-      if (linkFavorites === null && Object.keys(detailsMap).length > 0) {
-        const inferredIds = Object.keys(detailsMap);
-        localStorage.setItem(LINK_STORAGE_KEY, JSON.stringify(inferredIds));
-        importedLinks = inferredIds.length;
+      if (Object.keys(detailsMap).length > 0) {
+        // Keep only details for imported IDs
+        const kept: Record<string, PublicFavoriteLinkDetail> = {};
+        for (const id of linkFavorites) {
+          if (detailsMap[id]) kept[id] = detailsMap[id];
+        }
+        // If normalize filtered by empty preferredIds earlier, rebuild from all details for these IDs
+        if (Object.keys(kept).length === 0 && hasLinkDetailsField) {
+          const rebuilt = normalizeLinkFavoriteDetails(linkDetailsRaw, linkFavorites);
+          localStorage.setItem(LINK_DETAILS_STORAGE_KEY, JSON.stringify(rebuilt));
+        } else {
+          localStorage.setItem(LINK_DETAILS_STORAGE_KEY, JSON.stringify(kept));
+        }
+      } else {
+        // Keep any existing snapshots that still match imported IDs
+        const existing = getPublicLinkFavoriteDetailsMap();
+        const kept: Record<string, PublicFavoriteLinkDetail> = {};
+        for (const id of linkFavorites) {
+          if (existing[id]) kept[id] = existing[id];
+        }
+        localStorage.setItem(LINK_DETAILS_STORAGE_KEY, JSON.stringify(kept));
       }
+    } else if (Object.keys(detailsMap).length > 0) {
+      const inferredIds = Object.keys(detailsMap);
+      localStorage.setItem(LINK_STORAGE_KEY, JSON.stringify(inferredIds));
       localStorage.setItem(LINK_DETAILS_STORAGE_KEY, JSON.stringify(detailsMap));
-    } else if (linkFavorites !== null) {
-      // Drop stale snapshots that no longer match imported IDs
-      const existing = getPublicLinkFavoriteDetailsMap();
-      const kept: Record<string, PublicFavoriteLinkDetail> = {};
-      for (const id of linkFavorites) {
-        if (existing[id]) kept[id] = existing[id];
-      }
-      localStorage.setItem(LINK_DETAILS_STORAGE_KEY, JSON.stringify(kept));
+      importedLinks = inferredIds.length;
     }
 
     if (typeof activeTabRaw === 'string') {
       const validTabs = ['public', 'public-favorites'];
       if (validTabs.includes(activeTabRaw)) {
         setPublicActiveTab(activeTabRaw);
+      } else {
+        setPublicActiveTab('public-favorites');
       }
+    } else {
+      setPublicActiveTab('public-favorites');
     }
 
     const parts: string[] = [];
-    if (hasFavoritesField) {
+    if (importingSpaces && favorites) {
       parts.push(`${favorites.length} space favorite(s)`);
     }
-    if (linkFavorites !== null || importedLinks > 0) {
+    if (importedLinks > 0) {
       parts.push(`${importedLinks} link favorite(s)`);
-    }
-    if (parts.length === 0) {
-      parts.push('link details');
     }
 
     return {
       success: true,
       message: `Successfully imported ${parts.join(' and ')}.`,
-      importedCount: (hasFavoritesField ? favorites.length : 0) + importedLinks
+      importedCount: (importingSpaces && favorites ? favorites.length : 0) + importedLinks
     };
   } catch (error) {
     console.error('Failed to import public favorites:', error);
