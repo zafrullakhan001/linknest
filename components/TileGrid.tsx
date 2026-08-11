@@ -5,6 +5,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite, saveTile, createTile, getTiles, getTile, cloneCategory, toggleCategoryFavorite, getRecycleBin, restoreTile, purgeRecycleBin, permanentDeleteTile, permanentDeleteCategory, deleteTile, getArchive, archiveTile, unarchiveTile, purgeArchive, archiveCategory, unarchiveCategory, getFavoriteLinks, resolveFavoriteLinks, FavoriteLink, csvToJson, uploadTileHeaderImage, uploadTileEmojiImage } from '../services/storageService';
 import {
   exportTileToFileAsync,
+  exportCategoryToFileAsync,
   parseSpaceExportObject,
   normalizeImportedTiles,
   restoreImportedTileAssets
@@ -5603,7 +5604,6 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       }
 
       try {
-        // Initialize progress
         setExportProgress({
           current: 0,
           total: 0,
@@ -5611,69 +5611,59 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           errors: []
         });
 
-        // Get category tiles from the appropriate source (staging vs main)
         const sourceTiles = activeTab === 'staging' ? stagingTiles : tiles;
-        const categoryTiles = sourceTiles.filter(
+        const categorySummaries = sourceTiles.filter(
           (t) => (t.group || 'General') === categoryName
         );
 
-        if (categoryTiles.length === 0) {
+        if (categorySummaries.length === 0) {
           setExportProgress(null);
           alert(`No spaces found in category "${categoryName}".`);
           return;
         }
 
-        // Update progress with total count
         setExportProgress({
           current: 0,
-          total: categoryTiles.length,
-          status: `Exporting ${categoryTiles.length} tiles from "${categoryName}"...`,
+          total: categorySummaries.length,
+          status: `Loading full data for ${categorySummaries.length} space(s)...`,
           errors: []
         });
 
-        // Small delay to show progress animation
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Load full nested tiles (logos + tabs/links) — home grid is summary-only
+        const fullTiles: Tile[] = [];
+        for (let i = 0; i < categorySummaries.length; i++) {
+          const summary = categorySummaries[i];
+          try {
+            const full = await getTile(summary.id);
+            fullTiles.push(full);
+          } catch (err) {
+            console.warn('Failed to load full tile for export, using summary:', summary.title, err);
+            fullTiles.push(summary);
+          }
+          setExportProgress({
+            current: i + 1,
+            total: categorySummaries.length,
+            status: `Loading ${i + 1} of ${categorySummaries.length}...`,
+            errors: []
+          });
+        }
 
-        // Prepare export payload (keep in sync with spaceTransferService v1.2)
-        const payload = {
-          version: '1.2' as const,
-          type: 'category' as const,
-          exportedAt: Date.now(),
-          categoryName,
-          tiles: categoryTiles
-        };
-
-        // Update progress - processing
         setExportProgress({
-          current: categoryTiles.length / 2,
-          total: categoryTiles.length,
-          status: `Processing ${categoryTiles.length} tiles...`,
+          current: categorySummaries.length,
+          total: categorySummaries.length,
+          status: `Embedding logos and writing JSON...`,
           errors: []
         });
 
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await exportCategoryToFileAsync(categoryName, fullTiles);
 
-        // Trigger download
-        const json = JSON.stringify(payload, null, 2);
-        const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `linknest-category-${categoryName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'space'}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-
-        // Final status
         setExportProgress({
-          current: categoryTiles.length,
-          total: categoryTiles.length,
-          status: `✅ Successfully exported ${categoryTiles.length} tiles from category "${categoryName}"!`,
+          current: categorySummaries.length,
+          total: categorySummaries.length,
+          status: `✅ Successfully exported ${fullTiles.length} tiles from category "${categoryName}"!`,
           errors: []
         });
 
-        // Clear progress after delay
         setTimeout(() => {
           setExportProgress(null);
         }, 3000);
@@ -5687,7 +5677,6 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         });
         console.error('Export error:', error);
 
-        // Clear progress after delay
         setTimeout(() => {
           setExportProgress(null);
         }, 5000);
@@ -5702,7 +5691,14 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         alert('Only administrators can export tiles.');
         return;
       }
-      await exportTileToFileAsync(tile);
+      try {
+        // Home-grid tile is summary-only; fetch full nested space + embed logos
+        const full = await getTile(tile.id);
+        await exportTileToFileAsync(full);
+      } catch (err) {
+        console.warn('Full tile fetch failed; exporting card summary:', tile.title, err);
+        await exportTileToFileAsync(tile);
+      }
     },
     [user]
   );
@@ -5794,7 +5790,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           // Validate and parse the import file
           const parsed = parseSpaceExportObject(data);
 
-          // Normalize imported tiles and assign to the target category
+          // Normalize imported tiles and restore embedded logos
           const normalizedTiles = normalizeImportedTiles(parsed);
           await restoreImportedTileAssets(normalizedTiles, parsed.assets);
 
@@ -5810,6 +5806,16 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             alert('No tiles/spaces found to import.');
             return;
           }
+
+          // Preserve import file order via sequential positions
+          const existingForPos =
+            activeTab === 'staging'
+              ? stagingTiles
+              : tiles;
+          const maxPosition = existingForPos.length
+            ? Math.max(...existingForPos.map((t) => t.position ?? 0))
+            : -1;
+          let nextPosition = maxPosition + 1;
 
           // Update progress with total count
           setImportProgress({
@@ -5827,7 +5833,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           for (let i = 0; i < tilesToImport.length; i++) {
             const tile = tilesToImport[i];
             try {
-              await createTile(tile);
+              await createTile({ ...tile, position: nextPosition });
+              nextPosition++;
               successCount++;
 
               // Update progress
@@ -5905,7 +5912,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       };
       input.click();
     },
-    [isAuthenticated, onAuthRequired, onUpdateTiles, user, activeTab]
+    [isAuthenticated, onAuthRequired, onUpdateTiles, user, activeTab, tiles, stagingTiles]
   );
 
   const API_BASE = resolveApiBase();
@@ -6006,12 +6013,17 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         e.target.value = '';
         return;
       }
+      const maxPosition = stagingTiles.length
+        ? Math.max(...stagingTiles.map((t) => t.position ?? 0))
+        : -1;
+      let nextPosition = maxPosition + 1;
       setImportProgress({ current: 0, total: tilesToImport.length, status: `Importing ${tilesToImport.length} tiles to Staging...`, errors: [] });
       let successCount = 0;
       const errors: string[] = [];
       for (let i = 0; i < tilesToImport.length; i++) {
         try {
-          await createTile(tilesToImport[i]);
+          await createTile({ ...tilesToImport[i], position: nextPosition });
+          nextPosition++;
           successCount++;
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'Unknown error';
@@ -6028,7 +6040,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       alert(`Import failed: ${msg}`);
     }
     e.target.value = '';
-  }, [user]);
+  }, [user, stagingTiles]);
 
   const handleCloneCategory = useCallback(
     async (categoryName: string) => {

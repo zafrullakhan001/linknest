@@ -1477,6 +1477,17 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
         return;
       }
 
+      // Preserve file order with sequential positions
+      let nextPosition = 0;
+      try {
+        const existing = await getTiles();
+        nextPosition = existing.length
+          ? Math.max(...existing.map((t) => t.position ?? 0)) + 1
+          : 0;
+      } catch {
+        nextPosition = 0;
+      }
+
       // Update progress
       setImportProgress({
         current: 0,
@@ -1519,7 +1530,8 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
             tile.createdAt = Date.now();
           }
 
-          await createTile(tile);
+          await createTile({ ...tile, position: nextPosition });
+          nextPosition++;
           successCount++;
 
           // Update progress

@@ -4,7 +4,7 @@ import { Tile } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { authService, UserListItem } from '../services/authService';
 import { createTile, saveTile } from '../services/storageService';
-import { parseSpaceExportObject, normalizeImportedTiles } from '../services/spaceTransferService';
+import { parseSpaceExportObject, normalizeImportedTiles, restoreImportedTileAssets } from '../services/spaceTransferService';
 import { generateUuid } from '../services/idService';
 import { isEscapeDialogOpen } from '../hooks/useEscapeToClose';
 
@@ -311,22 +311,36 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
         return;
       }
 
-      // Ensure arrays exist for tabs and sections to avoid map errors
-      const cleanedTileData = {
-        ...tileData,
-        tabs: Array.isArray(tileData.tabs) ? tileData.tabs : [],
-        sections: Array.isArray(tileData.sections) ? tileData.sections : []
-      };
-
-      // Create a ParsedSpaceImport object for normalizeImportedTiles
-      const parsed: any = {
-        type: 'tile',
-        tiles: [cleanedTileData],
-        categoryName: 'Imported'
-      };
+      // Support full SpaceExportFile (v1.2/v1.3) or a raw tile object
+      let parsed;
+      try {
+        if (
+          tileData.type === 'tile' ||
+          tileData.type === 'category' ||
+          tileData.type === 'all_categories'
+        ) {
+          parsed = parseSpaceExportObject(tileData);
+        } else {
+          const cleanedTileData = {
+            ...tileData,
+            tabs: Array.isArray(tileData.tabs) ? tileData.tabs : [],
+            sections: Array.isArray(tileData.sections) ? tileData.sections : []
+          };
+          parsed = {
+            type: 'tile' as const,
+            tiles: [cleanedTileData],
+            categoryName: 'Imported',
+            assets: undefined
+          };
+        }
+      } catch (err) {
+        alert(err instanceof Error ? err.message : 'Invalid tile data. Unable to import.');
+        return;
+      }
       
-      // Normalize the tile data
+      // Normalize the tile data and restore any embedded logos
       const normalizedTiles = normalizeImportedTiles(parsed);
+      await restoreImportedTileAssets(normalizedTiles, parsed.assets);
       
       if (!normalizedTiles || normalizedTiles.length === 0) {
         alert('Invalid tile data. Unable to import.');
