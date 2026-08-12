@@ -4,12 +4,13 @@
  *
  * POST /api/vnc-gateway/start  { host, port? }
  * POST /api/vnc-gateway/stop   { sessionId }
- * POST /api/vnc-gateway/stop-all
+ * POST /api/vnc-gateway/stop-all  { scope?: "all" }  // admins may stop every session
  * GET  /api/vnc-gateway/status
  * GET/PUT /api/vnc-gateway/config
  */
 
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/gateway_usage_lib.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -209,6 +210,110 @@ function vncGatewayCleanup(array $sessions): array {
     return $out;
 }
 
+function vncGatewayListeningPortsInRange(bool $refresh = false): array {
+    static $cache = null;
+    static $cacheAt = 0;
+    $now = time();
+    if ($refresh) {
+        $cache = null;
+        $cacheAt = 0;
+    }
+    if (is_array($cache) && ($now - $cacheAt) < 2) {
+        return $cache;
+    }
+    $map = [];
+    $min = VNC_GATEWAY_PORT_MIN;
+    $max = VNC_GATEWAY_PORT_MAX;
+
+    if (stripos(PHP_OS, 'WIN') === 0) {
+        $out = [];
+        @exec('netstat -ano -p tcp 2>NUL', $out);
+        foreach ($out as $line) {
+            if (stripos($line, 'LISTENING') === false) {
+                continue;
+            }
+            if (!preg_match('/[:\]](\d+)\s/', $line, $pm)) {
+                continue;
+            }
+            $port = (int)$pm[1];
+            if ($port < $min || $port > $max) {
+                continue;
+            }
+            if (!preg_match('/\s(\d+)\s*$/', $line, $m)) {
+                continue;
+            }
+            $pid = (int)$m[1];
+            if ($pid > 0) {
+                $map[$port] = $pid;
+            }
+        }
+    } else {
+        $out = [];
+        @exec('ss -ltnp 2>/dev/null', $out);
+        foreach ($out as $line) {
+            if (!preg_match('/:(\d+)\s/', $line, $pm)) {
+                continue;
+            }
+            $port = (int)$pm[1];
+            if ($port < $min || $port > $max) {
+                continue;
+            }
+            if (preg_match('/pid=(\d+)/', $line, $m)) {
+                $map[$port] = (int)$m[1];
+            }
+        }
+    }
+
+    $cache = $map;
+    $cacheAt = $now;
+    return $map;
+}
+
+function vncGatewayDestroySessionRecord(array $s): void {
+    $pid = isset($s['pid']) ? (int)$s['pid'] : 0;
+    $listenPort = isset($s['listenPort']) ? (int)$s['listenPort'] : 0;
+    if ($pid > 0) {
+        vncGatewayKillPid($pid);
+    }
+    if ($listenPort > 0) {
+        $portPid = vncGatewayPidListeningOnPort($listenPort);
+        if ($portPid > 0 && $portPid !== $pid) {
+            vncGatewayKillPid($portPid);
+        }
+    }
+    if (!empty($s['launcher']) && is_string($s['launcher']) && is_file($s['launcher'])) {
+        @unlink($s['launcher']);
+    }
+}
+
+function vncGatewaySweepUntrackedListeners(array $sessions): int {
+    $known = [];
+    foreach ($sessions as $s) {
+        if (!is_array($s)) {
+            continue;
+        }
+        $lp = isset($s['listenPort']) ? (int)$s['listenPort'] : 0;
+        if ($lp > 0) {
+            $known[$lp] = true;
+        }
+    }
+    $killed = 0;
+    foreach (vncGatewayListeningPortsInRange(true) as $port => $pid) {
+        if (isset($known[$port])) {
+            continue;
+        }
+        $pid = (int)$pid;
+        if ($pid > 0) {
+            vncGatewayKillPid($pid);
+            $killed++;
+        }
+    }
+    if ($killed > 0) {
+        vncGatewayListeningPortsInRange(true);
+    }
+    return $killed;
+}
+
 function vncGatewayQuoteCmd(string $s): string {
     return '"' . str_replace('"', '""', $s) . '"';
 }
@@ -264,7 +369,7 @@ function vncGatewayDefaultPythonCandidates(): array {
     $root = realpath(__DIR__ . '/..') ?: (__DIR__ . '/..');
     $candidates = [];
     if (stripos(PHP_OS, 'WIN') === 0) {
-        // Offline / packaged embeddable Python (package-remote-widgets-runtime)
+        // Bundled embeddable Python (package-for-deployment / app update ZIP)
         $candidates[] = $root . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'python' . DIRECTORY_SEPARATOR . 'python.exe';
         $candidates[] = 'C:\\Program Files\\Python312\\python.exe';
         $candidates[] = 'C:\\Program Files\\Python311\\python.exe';
@@ -656,38 +761,102 @@ function vncGatewaySpawnWebsockify(
 
 function handleVncGatewayStatus() {
     $user = requireAuth();
+    $isAdmin = !empty($user['is_admin']);
     $sessions = vncGatewayCleanup(vncGatewayLoadSessions());
     vncGatewaySaveSessions($sessions);
-    $mine = array_values(array_filter($sessions, static function ($s) use ($user) {
+
+    $annotatedAll = lnGatewayAnnotateSessionsMemory($sessions);
+    $sessionsWithMem = $annotatedAll['rows'];
+    $globalMemBytes = (int)$annotatedAll['usageMemoryBytes'];
+    $mineWithMem = array_values(array_filter($sessionsWithMem, static function ($s) use ($user) {
         return (int)($s['userId'] ?? 0) === (int)$user['id'];
     }));
+    $mineMemBytes = 0;
+    foreach ($mineWithMem as $s) {
+        $tb = $s['_memory']['totalBytes'] ?? null;
+        if ($tb !== null) {
+            $mineMemBytes += (int)$tb;
+        }
+    }
+
+    $maxPerUser = vncGatewayMaxPerUser();
+    $portCapacity = vncGatewayMaxConnectionsCeiling();
+    $mineCount = count($mineWithMem);
+    $globalCount = count($sessionsWithMem);
+
+    $mapSession = static function (array $s, bool $includeOwner): array {
+        $mem = is_array($s['_memory'] ?? null) ? $s['_memory'] : [];
+        $row = [
+            'sessionId' => $s['id'],
+            'host' => $s['host'] ?? null,
+            'port' => $s['vncPort'] ?? null,
+            'listenPort' => $s['listenPort'] ?? null,
+            'wsUrl' => $s['wsUrl'] ?? null,
+            'createdAt' => $s['createdAt'] ?? null,
+            'pid' => isset($s['pid']) ? (int)$s['pid'] : null,
+            'memory' => [
+                'pid' => $mem['pid'] ?? (isset($s['pid']) ? (int)$s['pid'] : null),
+                'processBytes' => $mem['processBytes'] ?? null,
+                'childrenBytes' => $mem['childrenBytes'] ?? 0,
+                'childProcessCount' => $mem['childProcessCount'] ?? 0,
+                'totalBytes' => $mem['totalBytes'] ?? null,
+                'processHuman' => $mem['processHuman'] ?? null,
+                'childrenHuman' => $mem['childrenHuman'] ?? null,
+                'totalHuman' => $mem['totalHuman'] ?? null,
+            ],
+        ];
+        if ($includeOwner) {
+            $row['userId'] = isset($s['userId']) ? (int)$s['userId'] : null;
+        }
+        return $row;
+    };
 
     $python = vncGatewaySoftResolvePython();
     $launcher = vncGatewaySoftResolveLauncher();
     $moduleOk = vncGatewayWebsockifyModuleAvailable($python);
     $available = ($python && $moduleOk) || $launcher !== null;
 
-    sendJSON([
+    $payload = [
         'available' => $available,
         'pythonPath' => $python,
         'websockifyPath' => $launcher,
         'websockifyModule' => $moduleOk,
         'packagesDir' => vncGatewayPackagesDir(),
         'platform' => PHP_OS,
-        'maxConnections' => vncGatewayMaxPerUser(),
-        'maxConnectionsCeiling' => vncGatewayMaxConnectionsCeiling(),
+        'maxConnections' => $maxPerUser,
+        'maxConnectionsCeiling' => $portCapacity,
         'portRange' => [VNC_GATEWAY_PORT_MIN, VNC_GATEWAY_PORT_MAX],
-        'sessions' => array_map(static function ($s) {
-            return [
-                'sessionId' => $s['id'],
-                'host' => $s['host'] ?? null,
-                'port' => $s['vncPort'] ?? null,
-                'listenPort' => $s['listenPort'] ?? null,
-                'wsUrl' => $s['wsUrl'] ?? null,
-                'createdAt' => $s['createdAt'] ?? null,
-            ];
-        }, $mine),
-    ]);
+        'usage' => [
+            'mine' => [
+                'sessions' => $mineCount,
+                'maxConnections' => $maxPerUser,
+                'remaining' => max(0, $maxPerUser - $mineCount),
+                'memoryBytes' => $mineMemBytes,
+                'memoryHuman' => lnGatewayFormatBytes($mineMemBytes),
+            ],
+            'global' => [
+                'sessions' => $globalCount,
+                'portCapacity' => $portCapacity,
+                'remainingPorts' => max(0, $portCapacity - $globalCount),
+                'memoryBytes' => $globalMemBytes,
+                'memoryHuman' => lnGatewayFormatBytes($globalMemBytes),
+                'note' => 'Global counts every active websockify on this server. Per-user quota is maxConnections; hard ceiling follows the gateway port range.',
+            ],
+            'host' => lnGatewayHostResources(),
+            'sampledAt' => time(),
+        ],
+        'sessions' => array_map(static function ($s) use ($mapSession) {
+            return $mapSession($s, false);
+        }, $mineWithMem),
+    ];
+
+    if ($isAdmin) {
+        $payload['allSessions'] = array_map(static function ($s) use ($mapSession) {
+            return $mapSession($s, true);
+        }, $sessionsWithMem);
+    }
+
+    sendJSON($payload);
 }
 
 function handleVncGatewayGetConfig() {
@@ -886,32 +1055,31 @@ function handleVncGatewayStop() {
     sendJSON(['success' => true]);
 }
 
+/** Stop every VNC gateway session for the current user (orphans left when UI tabs were closed).
+ *  Admins may pass { "scope": "all" } to kill every websockify on this server (all users + untracked).
+ */
 function handleVncGatewayStopAll() {
     $user = requireAuth();
+    $data = getJSONInput();
+    $scopeAll = !empty($user['is_admin']) && isset($data['scope']) && strtolower((string)$data['scope']) === 'all';
+
     $sessions = vncGatewayCleanup(vncGatewayLoadSessions());
     $kept = [];
     $stopped = 0;
     foreach ($sessions as $s) {
-        if ((int)($s['userId'] ?? 0) !== (int)$user['id']) {
+        if (!$scopeAll && (int)($s['userId'] ?? 0) !== (int)$user['id']) {
             $kept[] = $s;
             continue;
         }
         $stopped++;
-        $pid = isset($s['pid']) ? (int)$s['pid'] : 0;
-        $listenPort = isset($s['listenPort']) ? (int)$s['listenPort'] : 0;
-        if ($pid > 0) {
-            vncGatewayKillPid($pid);
-        }
-        if ($listenPort > 0) {
-            $portPid = vncGatewayPidListeningOnPort($listenPort);
-            if ($portPid > 0) {
-                vncGatewayKillPid($portPid);
-            }
-        }
-        if (!empty($s['launcher']) && is_string($s['launcher']) && is_file($s['launcher'])) {
-            @unlink($s['launcher']);
-        }
+        vncGatewayDestroySessionRecord($s);
     }
+    $swept = vncGatewaySweepUntrackedListeners($kept);
     vncGatewaySaveSessions($kept);
-    sendJSON(['success' => true, 'stopped' => $stopped]);
+    sendJSON([
+        'success' => true,
+        'stopped' => $stopped,
+        'sweptUntracked' => $swept,
+        'scope' => $scopeAll ? 'all' : 'mine',
+    ]);
 }

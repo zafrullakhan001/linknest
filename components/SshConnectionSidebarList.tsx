@@ -28,7 +28,7 @@ import {
 } from '../services/sshConnectionService';
 import { parseAutoTargetUrl } from '../services/sshGatewayService';
 
-export type SshListViewMode = 'cards' | 'compact' | 'tree';
+export type SshListViewMode = 'cards' | 'compact' | 'tree' | 'simple';
 export type SshColorMode = 'vivid' | 'calm';
 export type SshCategoryMetaMap = Record<string, { color: string }>;
 
@@ -347,6 +347,7 @@ interface SortableConnectionProps {
   onDisconnect: () => void;
   onEdit: () => void;
   onClone: () => void;
+  onDuplicate?: () => void;
   onCopySsh: () => void;
   onDelete: () => void;
   onRestore?: () => void;
@@ -373,6 +374,7 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
   onDisconnect,
   onEdit,
   onClone,
+  onDuplicate,
   onCopySsh,
   onDelete,
   onRestore,
@@ -592,6 +594,96 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
           : 'border-slate-200/90 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-500'
     } ${extra}`;
 
+  if (view === 'simple') {
+    const simpleBtn =
+      'inline-flex items-center justify-center h-5 px-1 rounded text-[8px] font-semibold border leading-none disabled:opacity-35 disabled:pointer-events-none';
+    return (
+      <div
+        ref={setNodeRef}
+        style={style}
+        className={`group/simple flex items-center gap-1 min-w-0 py-0.5 pl-1 pr-0.5 rounded ${
+          active ? 'bg-slate-100 dark:bg-slate-800' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60'
+        }`}
+      >
+        <span className="w-3 shrink-0 text-slate-400" aria-hidden>
+          {isRdp ? '🖥️' : '🔑'}
+        </span>
+        <button
+          type="button"
+          className="flex-1 min-w-0 text-left"
+          onClick={onEdit}
+          onDoubleClick={onConnect}
+          title={`${c.name} — ${hostLine(c)}`}
+        >
+          <span
+            className="block truncate text-[11px] font-medium"
+            style={{ color: 'var(--ssh-side-row, inherit)' }}
+          >
+            {c.name}
+          </span>
+        </button>
+        <div className="flex items-center gap-0.5 shrink-0">
+          <button
+            type="button"
+            className={simpleBtn}
+            style={{
+              backgroundColor: 'var(--ssh-side-accent-bg, #0284c7)',
+              color: 'var(--ssh-side-accent-fg, #fff)',
+              borderColor: 'transparent',
+            }}
+            title={maxReached ? 'Maximum sessions reached' : `Start ${c.name}`}
+            onClick={onConnect}
+            disabled={maxReached}
+          >
+            Start
+          </button>
+          <button
+            type="button"
+            className={simpleBtn}
+            style={{
+              backgroundColor: canDisconnect ? '#dc2626' : 'var(--ssh-side-ctrl-bg, #fff)',
+              color: canDisconnect ? '#fff' : 'var(--ssh-side-ctrl-fg, #64748b)',
+              borderColor: 'var(--ssh-side-ctrl-border, #e2e8f0)',
+            }}
+            title={isLive ? `Stop ${c.name}` : 'Not connected'}
+            onClick={onDisconnect}
+            disabled={!canDisconnect}
+          >
+            Stop
+          </button>
+          <button
+            type="button"
+            className={simpleBtn}
+            style={{
+              backgroundColor: 'var(--ssh-side-ctrl-bg, #fff)',
+              color: 'var(--ssh-side-ctrl-fg, #64748b)',
+              borderColor: 'var(--ssh-side-ctrl-border, #e2e8f0)',
+            }}
+            title={`Clone saved connection “${c.name}”`}
+            onClick={onClone}
+            disabled={libraryScope !== 'active'}
+          >
+            Clone
+          </button>
+          <button
+            type="button"
+            className={simpleBtn}
+            style={{
+              backgroundColor: 'var(--ssh-side-ctrl-bg, #fff)',
+              color: 'var(--ssh-side-ctrl-fg, #64748b)',
+              borderColor: 'var(--ssh-side-ctrl-border, #e2e8f0)',
+            }}
+            title={maxReached ? 'Maximum sessions reached' : `Duplicate session for ${c.name}`}
+            onClick={onDuplicate || onConnect}
+            disabled={maxReached || libraryScope !== 'active'}
+          >
+            Dup
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (view === 'tree') {
     return (
       <div
@@ -754,6 +846,7 @@ const SortableCategorySection: React.FC<{
   filterActive: boolean;
   canRename: boolean;
   treeMode?: boolean;
+  simpleMode?: boolean;
   selectedCount: number;
   allSelected: boolean;
   spaceSelected: boolean;
@@ -790,6 +883,7 @@ const SortableCategorySection: React.FC<{
   filterActive,
   canRename,
   treeMode = false,
+  simpleMode = false,
   selectedCount,
   allSelected,
   spaceSelected,
@@ -830,6 +924,36 @@ const SortableCategorySection: React.FC<{
     transition: sortable.transition,
     opacity: sortable.isDragging ? 0.55 : 1,
   };
+
+  if (simpleMode) {
+    return (
+      <div ref={sortable.setNodeRef} style={style}>
+        <button
+          type="button"
+          onClick={onToggleCollapse}
+          className="w-full flex items-center gap-1.5 px-1 py-1 rounded hover:bg-slate-50 dark:hover:bg-slate-800/70 text-left min-w-0"
+          title={collapsed ? `Expand ${categoryLabel(category)}` : `Collapse ${categoryLabel(category)}`}
+        >
+          <span className="shrink-0 w-3 text-[10px] text-slate-400" aria-hidden>
+            {collapsed ? '▸' : '▾'}
+          </span>
+          <span className="shrink-0 text-[13px] leading-none" aria-hidden>
+            📁
+          </span>
+          <span
+            className="flex-1 min-w-0 truncate text-[11px] font-semibold"
+            style={{ color: 'var(--ssh-side-row, inherit)' }}
+          >
+            {categoryLabel(category)}
+          </span>
+          <span className="shrink-0 text-[9px] tabular-nums" style={{ color: 'var(--ssh-side-muted, #94a3b8)' }}>
+            {itemCount}
+          </span>
+        </button>
+        {!collapsed && <div className="pl-4 pr-0.5 pb-0.5">{children}</div>}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -1204,6 +1328,7 @@ export interface SshConnectionSidebarListProps {
   onDisconnect: (id: string) => void;
   onEdit: (c: SavedSshConnection) => void;
   onClone: (c: SavedSshConnection) => void;
+  onDuplicate?: (c: SavedSshConnection) => void;
   onCopySsh: (c: SavedSshConnection) => void;
   onDelete: (id: string) => void;
   onSettings: (c: SavedSshConnection) => void;
@@ -1258,6 +1383,7 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
   onDisconnect,
   onEdit,
   onClone,
+  onDuplicate,
   onCopySsh,
   onDelete,
   onSettings,
@@ -1607,7 +1733,7 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
                     : 'No active connections in this view.'}
             </p>
           )}
-        {canCreatePrivateSpace && libraryScope === 'active' && (
+        {canCreatePrivateSpace && libraryScope === 'active' && view !== 'simple' && (
           <div className="rounded-md border border-violet-200 dark:border-violet-900/50 bg-violet-50/80 dark:bg-violet-950/30 px-1.5 py-1.5 space-y-1">
             <p className="text-[9px] text-violet-700 dark:text-violet-300 leading-snug">
               Check categories below, then create a private space with their SSH links.
@@ -1683,6 +1809,7 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
                 filterActive={filterActive}
                 canRename={cat !== UNCATEGORIZED_KEY}
                 treeMode={view === 'tree'}
+                simpleMode={view === 'simple'}
                 selectedCount={selectedInCat.length}
                 allSelected={allSelected}
                 spaceSelected={spaceCategoryIds.has(cat)}
@@ -1741,7 +1868,9 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
                   <SortableContext items={items.map((c) => c.id)} strategy={verticalListSortingStrategy}>
                     {items.length === 0 ? (
                       <p className="text-[10px] text-slate-400 dark:text-slate-500 px-1.5 py-2 text-center">
-                        {view === 'tree' ? 'Empty folder — drop connections here' : 'Drop connections here'}
+                        {view === 'tree' || view === 'simple'
+                          ? 'Empty folder — drop connections here'
+                          : 'Drop connections here'}
                       </p>
                     ) : (
                       items.map((c) => {
@@ -1765,6 +1894,7 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
                             onDisconnect={() => onDisconnect(c.id)}
                             onEdit={() => onEdit(c)}
                             onClone={() => onClone(c)}
+                            onDuplicate={() => onDuplicate?.(c)}
                             onCopySsh={() => onCopySsh(c)}
                             onDelete={() => onDelete(c.id)}
                             onRestore={() => onRestoreConnection?.(c.id)}

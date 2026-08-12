@@ -36,10 +36,12 @@
     Showcase: bundles load-tests/ including results/report.html + last-summary.json from
     this host so the target can open the performance report for reference.
 
-    Remote widgets: bundles bin/ (ttyd.exe / ttyd.x86_64, run-websockify*, vendored
+    Remote widgets: bundles bin/ (ttyd.exe / ttyd.x86_64, portable OpenSSH under
+    bin/OpenSSH, embeddable Python under bin/python, run-websockify*, vendored
     websockify under bin/python-packages) so SSH Easy + VNC Easy work on the target
-    after Python 3 is installed. Runs scripts/install-websockify.ps1 when packages
-    are missing (unless -SkipRemoteRuntime).
+    without a system Python or OpenSSH install. Runs scripts/ensure-ttyd-runtime.ps1,
+    scripts/ensure-openssh-runtime.ps1, scripts/ensure-python-runtime.ps1 and
+    scripts/install-websockify.ps1 when missing (unless -SkipRemoteRuntime).
 .PARAMETER SkipBuild
     Skip the npm build step (use existing dist/). Not recommended when shipping code changes.
 .PARAMETER IncludeDatabase
@@ -49,7 +51,7 @@
 .PARAMETER SkipSqliteRuntime
     Do not bundle/download SQLite 3.53.4 DLL for XAMPP (not recommended).
 .PARAMETER SkipRemoteRuntime
-    Do not vendor/bundle bin/ ttyd + websockify (SSH/VNC Easy gateways will need manual install on target).
+    Do not vendor/bundle bin/ ttyd + OpenSSH + embeddable Python + websockify (SSH/VNC Easy gateways will need manual install on target).
 .PARAMETER OutputDir
     Where to save the final ZIP. Defaults to the project root.
 .PARAMETER BasePath
@@ -136,6 +138,8 @@ $TtydWinBundled = $false
 $TtydLinuxBundled = $false
 $WebsockifyBundled = $false
 $WebsockifyLauncherBundled = $false
+$PythonBundled = $false
+$OpenSshBundled = $false
 
 # Normalize base path:
 #   relative|auto|portable|./  → portable Vite base "./" (works for ArchLinks, ERP3, linknest, …)
@@ -290,7 +294,7 @@ Write-Host "  Build ID     : $BuildId" -ForegroundColor Gray
 Write-Host "  Database     : $(if ($IncludeDatabase) { 'INCLUDE live DB from this PC' } else { 'FRESH (no live DB - recommended)' })" -ForegroundColor Gray
 Write-Host "  Uploads      : $(if ($ExcludeUploads) { 'excluded' } else { 'included' })" -ForegroundColor Gray
 Write-Host "  SQLite DLL   : $(if ($SkipSqliteRuntime) { 'SKIPPED' } else { "bundle $SqliteTargetVersion for target XAMPP" })" -ForegroundColor Gray
-Write-Host "  Remote bin/  : $(if ($SkipRemoteRuntime) { 'SKIPPED' } else { 'ttyd + websockify for SSH/VNC Easy' })" -ForegroundColor Gray
+Write-Host "  Remote bin/  : $(if ($SkipRemoteRuntime) { 'SKIPPED' } else { 'ttyd + OpenSSH + embeddable Python + websockify for SSH/VNC Easy' })" -ForegroundColor Gray
 Write-Host "  Remote push  : $(if ($RemoteHost -and -not $SkipRemoteDeploy) { "$RemoteMode -> $RemoteHost (user=$RemoteUser)" } else { 'off (package only)' })" -ForegroundColor Gray
 Write-Host "  Load report  : $(if ($AppOnly) { 'skipped (-AppOnly)' } else { 'load-tests/results/report.html (if present)' })" -ForegroundColor Gray
 Write-Host "  Output ZIP   : $ZipOutput"   -ForegroundColor Gray
@@ -992,6 +996,20 @@ if (Test-Path $scriptsSrc) {
         else {
             Write-Warn "scripts/ensure-ttyd-runtime.ps1 missing (packager may not auto-download ttyd)"
         }
+        $ensureOpenSshPs1 = Join-Path $scriptsDst "ensure-openssh-runtime.ps1"
+        $ensurePythonPs1 = Join-Path $scriptsDst "ensure-python-runtime.ps1"
+        if (Test-Path $ensureOpenSshPs1) {
+            Write-OK "scripts/ensure-openssh-runtime.ps1 present"
+        }
+        else {
+            Write-Warn "scripts/ensure-openssh-runtime.ps1 missing (packager may not auto-download OpenSSH)"
+        }
+        if (Test-Path $ensurePythonPs1) {
+            Write-OK "scripts/ensure-python-runtime.ps1 present"
+        }
+        else {
+            Write-Warn "scripts/ensure-python-runtime.ps1 missing (packager may not auto-download Python)"
+        }
     }
     else {
         # Lean package: drop host-upgrade / remote-widget tooling from scripts/
@@ -1000,6 +1018,8 @@ if (Test-Path $scriptsSrc) {
             "upgrade-xampp-php-run-elevated.ps1",
             "install-sqlite-xampp.ps1",
             "ensure-ttyd-runtime.ps1",
+            "ensure-openssh-runtime.ps1",
+            "ensure-python-runtime.ps1",
             "deploy-remote-xampp.ps1",
             "install-websockify.ps1",
             "fix-apache-php-curl.ps1",
@@ -1043,13 +1063,13 @@ $binSrc = Join-Path $ProjectRoot "bin"
 $binDst = Join-Path $TempDir "bin"
 
 if ($SkipRemoteRuntime) {
-    Write-Warn $(if ($AppOnly) { "AppOnly: skipping bin/ttyd + websockify" } else { "Skipping remote widget runtime (-SkipRemoteRuntime)" })
+    Write-Warn $(if ($AppOnly) { "AppOnly: skipping bin/ttyd + OpenSSH + python + websockify" } else { "Skipping remote widget runtime (-SkipRemoteRuntime)" })
     Ensure-Dir $binDst
     Ensure-Dir (Join-Path $binDst "python-packages")
     $skipMsg = if ($AppOnly) {
-        "App-only package: ttyd/websockify not included. Target must already have SSH/VNC gateways if those widgets are used."
+        "App-only package: ttyd/OpenSSH/python/websockify not included. Target must already have SSH/VNC gateways if those widgets are used."
     } else {
-        "Remote runtime (ttyd/websockify) was not packaged. Install on target per docs/REMOTE_WIDGETS_SETUP.md."
+        "Remote runtime (ttyd/OpenSSH/python/websockify) was not packaged. Install on target per docs/REMOTE_WIDGETS_SETUP.md."
     }
     Set-Content -Path (Join-Path $binDst "SKIPPED.txt") -Value $skipMsg -Encoding ASCII
 }
@@ -1074,6 +1094,44 @@ else {
     }
     else {
         Write-Warn "scripts/ensure-ttyd-runtime.ps1 missing - relying on existing bin/ttyd*"
+    }
+
+    # Auto-vendor portable OpenSSH client (required for SSH Easy without Windows Optional Features)
+    $ensureOpenSsh = Join-Path $ProjectRoot "scripts\ensure-openssh-runtime.ps1"
+    if (Test-Path $ensureOpenSsh) {
+        Write-Step "Ensuring bin/OpenSSH/ssh.exe (download portable OpenSSH if missing)..."
+        try {
+            & $ensureOpenSsh -ProjectRoot $ProjectRoot -FailIfMissing
+            Write-OK "OpenSSH runtime ensured"
+        }
+        catch {
+            Write-Err ("OpenSSH ensure failed: {0}" -f $_.Exception.Message)
+            Write-Err "SSH Easy requires bin/OpenSSH/ssh.exe. Re-run with network access or install Windows OpenSSH Client."
+            Read-Host "Press Enter to exit"
+            exit 1
+        }
+    }
+    else {
+        Write-Warn "scripts/ensure-openssh-runtime.ps1 missing - relying on existing bin/OpenSSH"
+    }
+
+    # Auto-vendor embeddable CPython (required for VNC Easy without system Python)
+    $ensurePython = Join-Path $ProjectRoot "scripts\ensure-python-runtime.ps1"
+    if (Test-Path $ensurePython) {
+        Write-Step "Ensuring bin/python/python.exe (download embeddable CPython if missing)..."
+        try {
+            & $ensurePython -ProjectRoot $ProjectRoot -FailIfMissing
+            Write-OK "Python runtime ensured"
+        }
+        catch {
+            Write-Err ("Python ensure failed: {0}" -f $_.Exception.Message)
+            Write-Err "VNC Easy requires bin/python/python.exe. Re-run with network access or place embeddable CPython under bin/python."
+            Read-Host "Press Enter to exit"
+            exit 1
+        }
+    }
+    else {
+        Write-Warn "scripts/ensure-python-runtime.ps1 missing - relying on existing bin/python"
     }
 
     # Vendor websockify into bin/python-packages if missing (needs Python on packager host)
@@ -1186,7 +1244,7 @@ exit 1
         Write-OK "Created bin/run-websockify"
     }
 
-    Write-Step "Copying bin/ (ttyd, websockify launchers, python-packages)..."
+    Write-Step "Copying bin/ (ttyd, OpenSSH, embeddable Python, websockify launchers, python-packages)..."
     $copiedBin = Copy-TreeReliable -Source $binSrc -Destination $binDst `
         -ExcludeDirs @("__pycache__", ".git", "node_modules") `
         -ExcludeFiles @("*.pyc", "*.pyo")
@@ -1197,6 +1255,8 @@ exit 1
     $WebsockifyLauncherBundled = (Test-Path (Join-Path $binDst "run-websockify.cmd")) -or (Test-Path (Join-Path $binDst "run-websockify"))
     $WebsockifyBundled = (Test-Path (Join-Path $binDst "python-packages\websockify")) -or `
         (Test-Path (Join-Path $binDst "python-packages\websockify\__main__.py"))
+    $PythonBundled = Test-Path (Join-Path $binDst "python\python.exe")
+    $OpenSshBundled = Test-Path (Join-Path $binDst "OpenSSH\ssh.exe")
 
     if ($TtydWinBundled) { Write-OK "bin/ttyd.exe bundled (SSH Easy on Windows)" }
     else {
@@ -1207,6 +1267,20 @@ exit 1
 
     if ($TtydLinuxBundled) { Write-OK "bin/ttyd (Linux) bundled" }
     else { Write-Warn "bin/ttyd.x86_64 missing (needed for Linux/Docker SSH Easy)" }
+
+    if ($OpenSshBundled) { Write-OK "bin/OpenSSH/ssh.exe bundled (SSH Easy portable client)" }
+    else {
+        Write-Err "bin/OpenSSH/ssh.exe missing after ensure step - aborting package"
+        Read-Host "Press Enter to exit"
+        exit 1
+    }
+
+    if ($PythonBundled) { Write-OK "bin/python/python.exe bundled (VNC Easy embeddable CPython)" }
+    else {
+        Write-Err "bin/python/python.exe missing after ensure step - aborting package"
+        Read-Host "Press Enter to exit"
+        exit 1
+    }
 
     if ($WebsockifyLauncherBundled) { Write-OK "bin/run-websockify* launcher bundled" }
     else { Write-Warn "bin/run-websockify* missing" }
@@ -1220,7 +1294,7 @@ exit 1
         Write-Warn "bin/python-packages/websockify missing - VNC Easy needs scripts/install-websockify.ps1 on target"
     }
 
-    $RemoteRuntimeBundled = $TtydWinBundled -or $TtydLinuxBundled -or $WebsockifyBundled -or $WebsockifyLauncherBundled
+    $RemoteRuntimeBundled = $TtydWinBundled -or $TtydLinuxBundled -or $WebsockifyBundled -or $WebsockifyLauncherBundled -or $PythonBundled -or $OpenSshBundled
 
     $remoteReadme = @(
         "LinkNest remote widget runtime (SSH Terminal + VNC Viewer Easy modes)"
@@ -1230,12 +1304,14 @@ exit 1
         "Included:"
         "  ttyd.exe (Windows)     : $(if ($TtydWinBundled) { 'YES' } else { 'NO' })"
         "  ttyd Linux binary     : $(if ($TtydLinuxBundled) { 'YES' } else { 'NO' })"
+        "  OpenSSH/ssh.exe       : $(if ($OpenSshBundled) { 'YES' } else { 'NO' })"
         "  run-websockify*       : $(if ($WebsockifyLauncherBundled) { 'YES' } else { 'NO' })"
+        "  python/python.exe     : $(if ($PythonBundled) { 'YES' } else { 'NO' })"
         "  python-packages/websockify : $(if ($WebsockifyBundled) { 'YES' } else { 'NO' })"
         ""
         "Target requirements:"
-        "  - SSH Easy: OpenSSH Client (Windows Optional Features)"
-        "  - VNC Easy: Python 3 on PATH (uses vendored websockify above)"
+        "  - SSH Easy: bundled bin/ttyd.exe + bin/OpenSSH/ssh.exe (no Windows Optional Features required)"
+        "  - VNC Easy: bundled bin/python + vendored websockify (no system Python required)"
         "  - See docs/REMOTE_WIDGETS_SETUP.md"
         ""
         "If websockify is missing after deploy:"
@@ -1321,12 +1397,14 @@ $buildInfo = [ordered]@{
         ttydLinux = [bool]$TtydLinuxBundled
         websockifyPackages = [bool]$WebsockifyBundled
         websockifyLauncher = [bool]$WebsockifyLauncherBundled
+        pythonBundled = [bool]$PythonBundled
+        openSshBundled = [bool]$OpenSshBundled
         docs = 'docs/REMOTE_WIDGETS_SETUP.md'
         installScript = 'scripts/install-websockify.ps1'
         binReadme = 'bin/README.txt'
         targetNeeds = @(
-            'OpenSSH Client (SSH Easy)',
-            'Python 3 on PATH (VNC Easy uses bin/python-packages)'
+            'bundled bin/ttyd.exe + bin/OpenSSH/ssh.exe (SSH Easy; no Optional Features required)',
+            'bundled bin/python (VNC Easy; no system Python required)'
         )
         adminUi = 'Admin -> Add-ons -> SSH Gateway / VNC Gateway'
     }
@@ -1968,10 +2046,14 @@ $verifyRemoteChecks = if (-not $SkipRemoteRuntime) {
     @(
         '    "bin\run-websockify.cmd"',
         '    "bin\run-websockify"',
+        '    "bin\ttyd.exe"',
+        '    "bin\OpenSSH\ssh.exe"',
+        '    "bin\python\python.exe"',
         '    "docs\REMOTE_WIDGETS_SETUP.md"',
         '    "scripts\install-websockify.ps1"',
         '    "api\vnc_gateway.php"',
-        '    "api\ssh_gateway.php"'
+        '    "api\ssh_gateway.php"',
+        '    "api\gateway_usage_lib.php"'
     ) -join "`r`n"
 } else {
     ''
@@ -2237,9 +2319,10 @@ SQLite  : __SQLITE_SHIP_NOTE__
 11. **In-app updates (optional):** Admin → Tools → App Updates (or the nav bell).
     Save a GitHub PAT (``repo`` scope) for private repos. Track branch defaults to ``main``.
     See ``docs/APP_UPDATES.md``. PHP needs **curl** + **zip** extensions enabled.
-12. **Remote widgets (SSH / VNC Easy):** Install **Python 3** + **OpenSSH Client** on the
-    target PC. This ZIP already includes ``bin/ttyd.exe`` and vendored websockify under
-    ``bin/python-packages`` when packaged with remote runtime. See ``docs/REMOTE_WIDGETS_SETUP.md``.
+12. **Remote widgets (SSH / VNC Easy):** This ZIP already includes ``bin/ttyd.exe``,
+    portable OpenSSH under ``bin/OpenSSH``, embeddable Python under ``bin/python``,
+    and vendored websockify under ``bin/python-packages`` when packaged with remote
+    runtime. See ``docs/REMOTE_WIDGETS_SETUP.md``.
     If websockify is missing: ``powershell -File scripts/install-websockify.ps1``.
 13. **Upgrade PHP (recommended 8.5+):** double-click ``upgrade-xampp-php.bat`` (elevated /
     UAC) or run ``scripts\upgrade-xampp-php.ps1 -Version 8.5 -RestartApache``. LDAP is
@@ -2264,13 +2347,18 @@ Optional: run ``install-sqlite-xampp.bat`` alone if you skipped it during deploy
 | Piece | Purpose |
 |-------|---------|
 | ``bin/ttyd.exe`` / ``bin/ttyd.x86_64`` | SSH Easy gateway binary |
+| ``bin/OpenSSH/ssh.exe`` | Portable OpenSSH client for SSH Easy |
+| ``bin/python/python.exe`` | Embeddable CPython for VNC Easy |
 | ``bin/run-websockify.cmd`` / ``bin/run-websockify`` | Launches vendored websockify |
 | ``bin/python-packages/`` | Vendored websockify for VNC Easy |
 | ``api/ssh_gateway.php`` / ``api/vnc_gateway.php`` | Start/stop local gateways |
 | ``docs/REMOTE_WIDGETS_SETUP.md`` | Full setup guide |
 | ``scripts/install-websockify.ps1`` | Re-vendor websockify on the target |
+| ``scripts/ensure-ttyd-runtime.ps1`` | Download ttyd into bin/ |
+| ``scripts/ensure-openssh-runtime.ps1`` | Download portable OpenSSH into bin/OpenSSH |
+| ``scripts/ensure-python-runtime.ps1`` | Download embeddable CPython into bin/python |
 
-Target still needs **Python 3** (VNC Easy) and **OpenSSH Client** (SSH Easy).
+SSH Easy uses bundled ``bin/ttyd.exe`` + ``bin/OpenSSH``. VNC Easy uses bundled ``bin/python``.
 Admin → Add-ons → SSH Gateway / VNC Gateway if paths differ on that machine.
 
 ---
@@ -2391,7 +2479,9 @@ Password : admin123
 | ``php_sqlite3.dll`` missing under ``php\ext`` | Incomplete XAMPP PHP — run ``upgrade-xampp-php.bat`` elevated |
 | Specs Check failing | Open Admin → System Specs Check; follow each advice line; compare ``TARGET_REQUIREMENTS.json`` |
 | SSH Easy: ttyd missing | Confirm ``bin/ttyd.exe`` shipped; or winget install + Admin → SSH Gateway path |
-| VNC Easy: websockify missing | Run ``scripts/install-websockify.ps1``; install Python 3; see ``docs/REMOTE_WIDGETS_SETUP.md`` |
+| SSH Easy: ssh missing | Confirm ``bin/OpenSSH/ssh.exe`` shipped (ensure-openssh-runtime); Admin → SSH Gateway path |
+| VNC Easy: Python missing | Confirm ``bin/python/python.exe`` shipped (ensure-python-runtime); Admin → VNC Gateway path |
+| VNC Easy: websockify missing | Run ``scripts/install-websockify.ps1``; see ``docs/REMOTE_WIDGETS_SETUP.md`` |
 | Need PHP 8.5+ / LDAP | Run ``upgrade-xampp-php.bat`` elevated; see ``docs/XAMPP_PHP_UPGRADE.md`` |
 '@
 $readmeMd = $readmeMd.Replace('__CREATED_AT__', $createdAt).Replace('__PACKAGE_NAME__', $PackageName).Replace('__BUILD_ID__', $BuildId).Replace('__PKG_VERSION__', $pkgVersion).Replace('__DB_MODE_NOTE__', $dbModeNote).Replace('__SQLITE_SHIP_NOTE__', $sqliteShipNote).Replace('__SQLITE_TARGET__', $SqliteTargetVersion).Replace('__BASE_PATH_FOR_BAT__', $basePathForBat).Replace('__BASE_PATH_DISPLAY__', $(if ($BasePath) { $BasePath } else { "/" }))
@@ -2567,11 +2657,16 @@ if (-not $SkipRemoteRuntime) {
         "bin\run-websockify.cmd",
         "bin\run-websockify",
         "bin\ttyd.exe",
+        "bin\OpenSSH\ssh.exe",
+        "bin\python\python.exe",
         "docs\REMOTE_WIDGETS_SETUP.md",
         "scripts\install-websockify.ps1",
         "scripts\ensure-ttyd-runtime.ps1",
+        "scripts\ensure-openssh-runtime.ps1",
+        "scripts\ensure-python-runtime.ps1",
         "api\vnc_gateway.php",
-        "api\ssh_gateway.php"
+        "api\ssh_gateway.php",
+        "api\gateway_usage_lib.php"
     )
     # Prefer at least one Linux ttyd binary; warn-only if missing (Docker path)
     if (-not $TtydWinBundled -and -not $TtydLinuxBundled) {
@@ -2698,11 +2793,16 @@ try {
         $mustHaveInZip += @(
             "bin/run-websockify.cmd",
             "bin/ttyd.exe",
+            "bin/OpenSSH/ssh.exe",
+            "bin/python/python.exe",
             "docs/REMOTE_WIDGETS_SETUP.md",
             "scripts/install-websockify.ps1",
             "scripts/ensure-ttyd-runtime.ps1",
+            "scripts/ensure-openssh-runtime.ps1",
+            "scripts/ensure-python-runtime.ps1",
             "api/vnc_gateway.php",
-            "api/ssh_gateway.php"
+            "api/ssh_gateway.php",
+            "api/gateway_usage_lib.php"
         )
     }
     $zipBad = $false
@@ -2737,6 +2837,22 @@ try {
         }
         else {
             Write-Warn "ZIP has no ttyd binary (SSH Easy needs install on target)"
+        }
+        $pyInZip = $names -contains "bin/python/python.exe"
+        if ($pyInZip) {
+            Write-OK "ZIP includes embeddable Python (bin/python/python.exe)"
+        }
+        else {
+            Write-Err "ZIP missing bin/python/python.exe"
+            $zipBad = $true
+        }
+        $sshInZip = $names -contains "bin/OpenSSH/ssh.exe"
+        if ($sshInZip) {
+            Write-OK "ZIP includes portable OpenSSH (bin/OpenSSH/ssh.exe)"
+        }
+        else {
+            Write-Err "ZIP missing bin/OpenSSH/ssh.exe"
+            $zipBad = $true
         }
     }
     if ($zipBad) {
@@ -2807,7 +2923,7 @@ Write-Host "  Version : $pkgVersion" -ForegroundColor Green
 Write-Host "  DB mode : $(if ($IncludeDatabase) { 'includes live DB' } else { 'FRESH (no live DB)' })" -ForegroundColor Green
 Write-Host "  Mode    : $(if ($AppOnly) { 'APP-ONLY (lean application ZIP)' } else { 'FULL deploy package' })" -ForegroundColor Green
 Write-Host "  SQLite  : $(if ($SqliteRuntimeBundled) { "bundled $SqliteVersionShipped + install-sqlite-xampp.bat" } else { 'not bundled' })" -ForegroundColor Green
-Write-Host "  Remote  : $(if ($SkipRemoteRuntime) { 'skipped' } elseif ($RemoteRuntimeBundled) { "bin/ ttyd=$(if ($TtydWinBundled -or $TtydLinuxBundled) {'yes'} else {'no'}) websockify=$(if ($WebsockifyBundled) {'yes'} else {'no'})" } else { 'partial/missing' })" -ForegroundColor Green
+Write-Host "  Remote  : $(if ($SkipRemoteRuntime) { 'skipped' } elseif ($RemoteRuntimeBundled) { "bin/ ttyd=$(if ($TtydWinBundled -or $TtydLinuxBundled) {'yes'} else {'no'}) openssh=$(if ($OpenSshBundled) {'yes'} else {'no'}) python=$(if ($PythonBundled) {'yes'} else {'no'}) websockify=$(if ($WebsockifyBundled) {'yes'} else {'no'})" } else { 'partial/missing' })" -ForegroundColor Green
 Write-Host "  Specs   : $(if ($SourceSpecsReady) { 'SOURCE_SPECS.json (ready_for_target_parity=true)' } elseif ($null -ne $SourceSpecsSnapshot) { 'SOURCE_SPECS.json (warnings on source host)' } else { 'no live snapshot' })" -ForegroundColor Green
 Write-Host "  Report  : $(if ($LoadTestReportBundled) { 'load-tests/results/report.html (showcase)' } else { 'not bundled' })" -ForegroundColor Green
 Write-Host "  Updater : api/updater*.php + docs/APP_UPDATES.md + publish-update-release.ps1" -ForegroundColor Green
@@ -2844,7 +2960,7 @@ if ($AppOnly) {
     Write-Host "  8. Admin -> Maintenance Scripts -> System Specs Check (match SOURCE_SPECS.json)" -ForegroundColor Yellow
     Write-Host "  9. Admin -> App Updates: set GitHub PAT, track branch, Check for updates" -ForegroundColor Yellow
     Write-Host "  10. Docs: docs/APP_UPDATES.md" -ForegroundColor Yellow
-    Write-Host "  11. Remote widgets: install Python 3 + OpenSSH; see docs/REMOTE_WIDGETS_SETUP.md" -ForegroundColor Yellow
+    Write-Host "  11. Remote widgets: bundled ttyd + OpenSSH + Python; see docs/REMOTE_WIDGETS_SETUP.md" -ForegroundColor Yellow
     Write-Host "  12. PHP 8.5+: run upgrade-xampp-php.bat (elevated) - docs/XAMPP_PHP_UPGRADE.md" -ForegroundColor Yellow
     Write-Host "  13. Remote push from this PC: deploy-remote-xampp.bat -ComputerName HOST -ZipPath <zip>" -ForegroundColor Yellow
     Write-Host "  14. Office/Win2022 guide: docs/OFFICE_WIN2022_DEPLOY.md" -ForegroundColor Yellow

@@ -293,6 +293,22 @@ function normalizeSshAppearance($raw): ?array {
             $out['ansi'] = $ansi;
         }
     }
+    // Modern TERM values only (Easy-mode ttyd -T); reject legacy vt100/OpenVMS/etc.
+    $termAllow = [
+        'xterm-256color',
+        'xterm-direct',
+        'tmux-256color',
+        'screen-256color',
+        'rxvt-unicode-256color',
+        'xterm',
+        'linux',
+    ];
+    if (isset($obj['termType']) && is_string($obj['termType'])) {
+        $term = trim($obj['termType']);
+        if (in_array($term, $termAllow, true)) {
+            $out['termType'] = $term;
+        }
+    }
 
     return empty($out) ? null : $out;
 }

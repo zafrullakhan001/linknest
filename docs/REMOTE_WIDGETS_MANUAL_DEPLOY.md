@@ -31,9 +31,9 @@ Passwords are never saved. Prefer LAN / VPN; do not expose unauthenticated gatew
 
 | Component | Required for | Install |
 |-----------|--------------|---------|
-| **ttyd** | SSH Easy + Advanced | Deployment ZIP often includes `bin\ttyd.exe`. Or: `winget install tsl0922.ttyd --source winget` then copy to `bin\ttyd.exe` (Apache often cannot see WinGet PATH) |
-| **OpenSSH Client** | All SSH | Windows Optional Features → *OpenSSH Client* (default `C:\Windows\System32\OpenSSH\ssh.exe`) |
-| **Python 3** | VNC Easy | Install from python.org; ensure `python` is on PATH for the Apache / SYSTEM account if needed |
+| **ttyd** | SSH Easy + Advanced | Bundled as `bin\ttyd.exe` in deploy / App Update packages (`scripts/ensure-ttyd-runtime.ps1`). Fallback: `winget install tsl0922.ttyd --source winget` then copy to `bin\ttyd.exe` |
+| **OpenSSH Client** | All SSH | Bundled as `bin\OpenSSH\ssh.exe` in deploy / App Update packages (`scripts/ensure-openssh-runtime.ps1`). Fallback: Windows Optional Features → *OpenSSH Client* |
+| **Python 3** | VNC Easy | Bundled as `bin\python\python.exe` in deploy / App Update packages. Leave Admin path blank to auto-detect. |
 | **websockify** | VNC Easy | `scripts\install-websockify.ps1` or `python -m pip install --target=bin\python-packages websockify` |
 | **VcXsrv** (optional) | SSH Terminal + GUI (X11) | [VcXsrv](https://sourceforge.net/projects/vcxsrv/) or `winget install marha.VcXsrv` |
 | **LinkNest login** | Easy mode | Guests can only use Advanced WebSocket URLs |
@@ -76,10 +76,11 @@ Produces `linknest-remote-widgets-runtime-YYYYMMDD-HHMMSS.zip` with:
 |-----------|-----------------|
 | ttyd | `bin/ttyd.exe` (+ Linux `ttyd.x86_64` if included) |
 | OpenSSH client | `bin/OpenSSH/ssh.exe` |
-| websockify | `bin/python-packages/` (use with system Python 3 on the target) |
+| Python | `bin/python/python.exe` (embeddable CPython) |
+| websockify | `bin/python-packages/` (used by bundled Python) |
 | VcXsrv | `VcXsrv/` (if present on the build PC) |
 
-Python is **not** in the ZIP by default. Install Python 3 on the target, or pass `-IncludePython` when packing.
+Embeddable Python is in the ZIP by default. Pass `-SkipPython` only if the target already has Python 3.
 
 If the ZIP must travel in small pieces, use the packager’s split/parts folder and `MERGE-ZIP.bat` on the target before install.
 
@@ -95,8 +96,7 @@ powershell -File .\install-remote-widgets-runtime.ps1 -InstallDir D:\Apache\htdo
 ```
 
 3. Refresh **Admin → Add-ons → SSH Gateway / VNC Gateway** — statuses should show Ready/found.
-4. Install **Python 3** on the target if VNC Easy is needed and Python was not bundled.
-5. Start **VcXsrv** before using SSH Terminal + GUI.
+4. Start **VcXsrv** before using SSH Terminal + GUI.
 
 ---
 
@@ -207,7 +207,7 @@ Settings → **RDP** → paste Guacamole / web RDP `https://…` URL → Save �
 
 ### Easy mode
 
-1. Install Python 3 + websockify (see Path A / B).
+1. Confirm **Admin → Add-ons → VNC Gateway** shows Python found (bundled `bin\python`) and websockify ready.
 2. Open **VNC Viewer** → Easy → host + port (default `5900`).
 3. Optional session password → Connect.
 4. LinkNest starts websockify on a localhost port in **17881–17980**.
@@ -228,8 +228,8 @@ Settings → **RDP** → paste Guacamole / web RDP `https://…` URL → Save �
 
 - [ ] App deployed under `htdocs` (e.g. `ArchLinks`, `linknest`)
 - [ ] ttyd at `bin\ttyd.exe` (or Admin path set)
-- [ ] OpenSSH Client installed (or `bin\OpenSSH\ssh.exe` from offline pack)
-- [ ] Python 3 + websockify for VNC Easy
+- [ ] OpenSSH at `bin\OpenSSH\ssh.exe` (or Admin path / Windows Optional Features)
+- [ ] Python 3 + websockify for VNC Easy (`bin\python\python.exe` from the package)
 - [ ] Admin → Add-ons statuses Ready
 - [ ] Roles → Widgets: `ssh-terminal`, `vnc-viewer`
 - [ ] If site is **HTTPS**: gateway WSS proxy enabled once inside SSL vhost; HTTP/1.1; no double proxy
@@ -240,7 +240,7 @@ Settings → **RDP** → paste Guacamole / web RDP `https://…` URL → Save �
 - [ ] Built `package-remote-widgets-runtime` ZIP on an online PC
 - [ ] Merged split parts if used
 - [ ] Ran `install-remote-widgets-runtime` as Administrator against `-InstallDir`
-- [ ] Python 3 on target (unless `-IncludePython`)
+- [ ] Python bundled (`bin\python`) or system Python 3 on target
 - [ ] VcXsrv installed/started for GUI SSH
 
 ---
@@ -251,14 +251,14 @@ Settings → **RDP** → paste Guacamole / web RDP `https://…` URL → Save �
 |---------|-----|
 | Easy: ttyd / ssh not found | Copy to `bin\`, or set path under **Admin → Add-ons → SSH Gateway** |
 | Easy: configured path missing | Fix or clear invalid Admin paths |
-| Easy: failed to start | OpenSSH installed; PHP allowed to spawn processes; full `ssh.exe` path |
+| Easy: failed to start | Bundled `bin\OpenSSH\ssh.exe` present; PHP allowed to spawn processes; full `ssh.exe` path |
 | Mixed Content / `ws://` blocked on HTTPS | Run `enable-gateway-wss-proxy`; include proxy conf **once** in SSL vhost |
 | Broken close frame / no MFA after proxy | Remove duplicate Include; force HTTP/1.1; use `mod_proxy_wstunnel` |
 | MFA works then `Connection closed by …` | Remote PAM/SSH closed session — credentials/MFA/policy, not Apache |
 | `CreateProcessW` 267 (manual ttyd) | Use `-w $env:USERPROFILE` + full `ssh.exe` path |
 | `Can't open display:` | Start VcXsrv; Easy → Terminal + GUI; remote `X11Forwarding yes` |
 | Want GUI in the browser | Use **VNC Viewer**, not X11 |
-| VNC Easy fails | Python 3 + `bin\python-packages` websockify; check **Admin → Add-ons → VNC Gateway** |
+| VNC Easy fails | Confirm `bin\python\python.exe` + `bin\python-packages` websockify; check **Admin → Add-ons → VNC Gateway** |
 
 ---
 
@@ -270,7 +270,7 @@ HTTPS WSS:     enable-gateway-wss-proxy (once in SSL vhost, HTTP/1.1, no double 
 SSH Easy:      Host + Port + Username  OR  paste/copy ssh://
 SSH save:      auto://… (internal)  |  tile link: ssh://…
 VNC Easy:      Host + Port (5900)   |  tile link: vnc://…
-Deps SSH:      ttyd + OpenSSH [+ VcXsrv for GUI]
-Deps VNC:      Python 3 + websockify + VNC server on target
+Deps SSH:      bundled bin\ttyd.exe + bin\OpenSSH [+ VcXsrv for GUI]
+Deps VNC:      bundled bin\python + websockify + VNC server on target
 Admin:         Add-ons → SSH Gateway / VNC Gateway; Roles → Widgets
 ```

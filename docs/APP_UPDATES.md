@@ -22,6 +22,7 @@ Use this when you have **more than one** install on the same server (e.g. `D:\Ap
 | PHP / `api/` | Yes | Yes |
 | `utils/`, `components/` | Yes (allow-list) | Yes |
 | Built UI (`dist/`) | **No** (`dist/` is gitignored) | **Yes** (built on publish) |
+| `bin/` ttyd + OpenSSH + Python | **No** | **Yes** (ttyd, portable OpenSSH, embeddable CPython + websockify) |
 | Works without Node on office | API only; **widgets stay old** | Full UI + widgets |
 
 The browser loads **`dist/`**, not raw `.tsx`. Zip-mode office hosts usually have **no Node**, so applying a commit alone leaves the old SSH/VNC widget UI.

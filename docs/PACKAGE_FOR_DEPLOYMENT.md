@@ -23,7 +23,7 @@ package-for-deployment.bat
 - **FRESH** database mode (does **not** ship this PC’s live `data/linknest.db`)
 - Includes `uploads/` (unless excluded)
 - Bundles SQLite DLL runtime for target XAMPP
-- Bundles `bin/` ttyd + websockify for SSH/VNC Easy
+- Bundles `bin/` ttyd + OpenSSH + embeddable Python + websockify for SSH/VNC Easy
 - Emits `linknest-deploy-YYYYMMDD_HHMMSS.zip` and an App Updates asset `linknest-update-vX.Y.Z.zip`
 - Stamps `BUILD_INFO.json` / source specs for PWA cache busting and System Specs Check
 
@@ -48,7 +48,7 @@ Pass flags after the `.bat` name (they are forwarded to PowerShell), or call the
 | `-ExcludeUploads` | switch | off | Skip the `uploads/` directory |
 | `-SkipBuild` | switch | off | Reuse existing `dist/` (not recommended when shipping code changes) |
 | `-SkipSqliteRuntime` | switch | off | Do not bundle/download the SQLite DLL for XAMPP (not recommended for full packages) |
-| `-SkipRemoteRuntime` | switch | off | Do not bundle `bin/` ttyd + websockify (SSH/VNC Easy need manual install on target) |
+| `-SkipRemoteRuntime` | switch | off | Do not bundle `bin/` ttyd + OpenSSH + embeddable Python + websockify (SSH/VNC Easy need manual install on target) |
 | `-BasePath "/name"` | string | `/linknest` | Vite base path baked into the frontend (subfolder deploy) |
 | `-OutputDir "E:\"` | string | project root | Where to write the deploy ZIP |
 | `-RemoteHost HOST` | string | *(empty)* | After ZIP, push to this Windows host via SMB + elevated schtasks |
@@ -59,7 +59,7 @@ Pass flags after the `.bat` name (they are forwarded to PowerShell), or call the
 | `-RemoteShare C$` | string | `C$` | Admin share used for the remote copy |
 | `-SkipRemoteDeploy` | switch | off | Package only even if `-RemoteHost` is set |
 
-**Air-gapped SSH/VNC binaries only** (ttyd, OpenSSH, websockify, VcXsrv; Python installed separately on target): run `scripts\package-remote-widgets-runtime.bat` on a networked PC, then on the target run `install-remote-widgets-runtime.bat` from the unzipped folder. Full walkthrough: [REMOTE_WIDGETS_MANUAL_DEPLOY.md](REMOTE_WIDGETS_MANUAL_DEPLOY.md). Also [REMOTE_WIDGETS_SETUP.md](REMOTE_WIDGETS_SETUP.md#offline--air-gapped-install-no-internet-on-target).
+**Air-gapped SSH/VNC binaries only** (ttyd, OpenSSH, embeddable Python, websockify, VcXsrv): run `scripts\package-remote-widgets-runtime.bat` on a networked PC, then on the target run `install-remote-widgets-runtime.bat` from the unzipped folder. Full walkthrough: [REMOTE_WIDGETS_MANUAL_DEPLOY.md](REMOTE_WIDGETS_MANUAL_DEPLOY.md). Also [REMOTE_WIDGETS_SETUP.md](REMOTE_WIDGETS_SETUP.md#offline--air-gapped-install-no-internet-on-target).
 
 **HTTPS Mixed Content (ws:// blocked):** on the office XAMPP host run `scripts\enable-gateway-wss-proxy.bat` so SSH/VNC use `wss://host/_ln_sshgw/…` on port 443. See [REMOTE_WIDGETS_MANUAL_DEPLOY.md](REMOTE_WIDGETS_MANUAL_DEPLOY.md#path-c--https-office-deploy-wss-on-port-443) and [REMOTE_WIDGETS_SETUP.md](REMOTE_WIDGETS_SETUP.md#https-mixed-content-office--wss-on-port-443).
 
@@ -114,7 +114,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\package-for-deployment.ps1
 - `vendor/` (e.g. SAML) when present
 - Updater APIs (`api/updater*.php`), docs, publish helper
 - `runtime/sqlite/` + `install-sqlite-xampp.bat` + `scripts/install-sqlite-xampp.ps1` (unless `-SkipSqliteRuntime`) — enables `sqlite3`/`pdo_sqlite` in `php.ini` and upgrades `libsqlite3.dll`
-- `bin/` ttyd + websockify (unless `-SkipRemoteRuntime`)
+- `bin/` ttyd + OpenSSH + embeddable Python + websockify (unless `-SkipRemoteRuntime`)
 - `deploy-xampp.bat` / `update-xampp.bat` / `verify-install.bat` helpers
 - **PHP upgrade tools:** `upgrade-xampp-php.bat`, `scripts/upgrade-xampp-php.ps1`, `scripts/upgrade-xampp-php-run-elevated.ps1`, `docs/XAMPP_PHP_UPGRADE.md`
 - **Remote Windows push:** `deploy-remote-xampp.bat`, `scripts/deploy-remote-xampp.ps1`, `scripts/harden-xampp-target.ps1`, `docs/OFFICE_WIN2022_DEPLOY.md`
@@ -126,7 +126,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\package-for-deployment.ps1
 - Production frontend (`dist/`) and PHP API + `vendor/`
 - `deploy-xampp.bat` / `update-xampp.bat` / `verify-install.bat` + `scripts/harden-xampp-target.ps1`
 - Updater APIs and `docs/APP_UPDATES.md`
-- **Not included:** SQLite DLL runtime, `bin/` ttyd/websockify, PHP-upgrade scripts, remote-push helpers, load-test showcase, `SOURCE_SPECS.json`
+- **Not included:** SQLite DLL runtime, `bin/` ttyd/OpenSSH/python/websockify, PHP-upgrade scripts, remote-push helpers, load-test showcase, `SOURCE_SPECS.json`
 
 **Not included by default (either mode):** live SQLite DB (use `-IncludeDatabase`), `node_modules`, `.git`
 
@@ -143,7 +143,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\package-for-deployment.ps1
 7. Open the app; Ctrl+F5 once if an old UI remains (service worker)
 8. **Full packages:** Admin → Maintenance Scripts → **System Specs Check** (compare to `SOURCE_SPECS.json`)
 9. Admin → **App Updates**: configure GitHub PAT / branch as needed ([APP_UPDATES.md](APP_UPDATES.md))
-10. **Full packages:** remote widgets — install **Python 3** + **OpenSSH Client**; see [REMOTE_WIDGETS_SETUP.md](REMOTE_WIDGETS_SETUP.md)
+10. **Full packages:** remote widgets — bundled ttyd + OpenSSH + Python; see [REMOTE_WIDGETS_SETUP.md](REMOTE_WIDGETS_SETUP.md)
 11. **Full packages:** **Upgrade PHP (recommended 8.5+):** run `upgrade-xampp-php.bat` (elevated) — see [XAMPP_PHP_UPGRADE.md](XAMPP_PHP_UPGRADE.md)
 
 ### Push from the packager PC (no manual copy)
@@ -160,7 +160,7 @@ deploy-remote-xampp.bat -ComputerName 192.168.0.197 -ZipPath .\linknest-deploy-Y
 
 Requires SMB admin share access (`C$`) and permission to create scheduled tasks on the remote. Full notes: [OFFICE_WIN2022_DEPLOY.md](OFFICE_WIN2022_DEPLOY.md).
 
-**Target prerequisites:** Windows XAMPP (Apache + PHP with `php_sqlite3.dll` / `php_pdo_sqlite.dll` under `php\ext`), write access under `htdocs`. Full packages enable those extensions in `php.ini` automatically. App-only packages expect SQLite already enabled on the target. For SSH/VNC Easy: Python 3 and OpenSSH Client (and a full package, or manually installed gateways).
+**Target prerequisites:** Windows XAMPP (Apache + PHP with `php_sqlite3.dll` / `php_pdo_sqlite.dll` under `php\ext`), write access under `htdocs`. Full packages enable those extensions in `php.ini` automatically. App-only packages expect SQLite already enabled on the target. For SSH/VNC Easy: a full package (bundled ttyd, OpenSSH, Python) or manually installed gateways.
 
 **If deploy shows `Class SQLite3 not found`:** the target `php.ini` had SQLite disabled. Re-run `install-sqlite-xampp.bat` as Administrator from a **full** ZIP (newer packages enable the extensions). Manual fix: uncomment `extension=sqlite3` and `extension=pdo_sqlite` in `%XAMPP%\php\php.ini`, restart Apache.
 

@@ -4,7 +4,7 @@
     Install offline SSH/VNC gateway binaries into a LinkNest XAMPP install.
 
 .DESCRIPTION
-    Copies packaged bin/ (ttyd, OpenSSH, websockify; optional Python) into InstallDir,
+    Copies packaged bin/ (ttyd, OpenSSH, python, websockify) into InstallDir,
     optionally installs VcXsrv to Program Files, and writes Admin gateway paths
     into SQLite (without loading api/config.php migrations).
 

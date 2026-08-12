@@ -28,6 +28,57 @@ export interface VncGatewaySession {
   pid?: number;
 }
 
+export interface VncGatewaySessionMemory {
+  pid?: number | null;
+  processBytes?: number | null;
+  childrenBytes?: number;
+  childProcessCount?: number;
+  totalBytes?: number | null;
+  processHuman?: string | null;
+  childrenHuman?: string | null;
+  totalHuman?: string | null;
+}
+
+export interface VncGatewayUsageMine {
+  sessions: number;
+  maxConnections: number;
+  remaining: number;
+  memoryBytes: number;
+  memoryHuman?: string | null;
+}
+
+export interface VncGatewayUsageGlobal {
+  sessions: number;
+  portCapacity: number;
+  remainingPorts: number;
+  memoryBytes: number;
+  memoryHuman?: string | null;
+  note?: string;
+}
+
+export interface VncGatewayHostResources {
+  memoryTotalBytes?: number | null;
+  memoryAvailableBytes?: number | null;
+  memoryUsedBytes?: number | null;
+  memoryTotalHuman?: string | null;
+  memoryAvailableHuman?: string | null;
+  memoryUsedHuman?: string | null;
+  cpuCount?: number | null;
+  loadAverage?: { '1m': number; '5m': number; '15m': number } | null;
+}
+
+export interface VncGatewaySessionStatusRow {
+  sessionId: string;
+  host?: string | null;
+  port?: number | null;
+  listenPort?: number | null;
+  wsUrl?: string | null;
+  createdAt?: number | null;
+  pid?: number | null;
+  userId?: number | null;
+  memory?: VncGatewaySessionMemory;
+}
+
 export interface VncGatewayStatus {
   available: boolean;
   pythonPath?: string | null;
@@ -38,14 +89,15 @@ export interface VncGatewayStatus {
   maxConnections?: number;
   maxConnectionsCeiling?: number;
   portRange?: [number, number];
-  sessions: Array<{
-    sessionId: string;
-    host?: string;
-    port?: number;
-    listenPort?: number;
-    wsUrl?: string;
-    createdAt?: number;
-  }>;
+  usage?: {
+    mine: VncGatewayUsageMine;
+    global: VncGatewayUsageGlobal;
+    host?: VncGatewayHostResources;
+    sampledAt?: number;
+  };
+  sessions: VncGatewaySessionStatusRow[];
+  /** Present for admins only — every active websockify on the server. */
+  allSessions?: VncGatewaySessionStatusRow[];
 }
 
 export interface VncGatewayConfigResponse {
@@ -137,16 +189,24 @@ export const vncGatewayService = {
     if (!res.ok) throw new Error((data as any).error || 'Failed to stop VNC gateway');
   },
 
-  async stopAll(): Promise<{ stopped: number }> {
+  async stopAll(opts?: { scope?: 'mine' | 'all' }): Promise<{
+    stopped: number;
+    sweptUntracked?: number;
+    scope?: string;
+  }> {
     const res = await fetch(`${GW_BASE}/stop-all`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({}),
+      body: JSON.stringify(opts?.scope === 'all' ? { scope: 'all' } : {}),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error((data as any).error || 'Failed to stop VNC gateways');
-    return { stopped: Number((data as any).stopped) || 0 };
+    return {
+      stopped: Number((data as any).stopped) || 0,
+      sweptUntracked: Number((data as any).sweptUntracked) || 0,
+      scope: typeof (data as any).scope === 'string' ? (data as any).scope : undefined,
+    };
   },
 };
 

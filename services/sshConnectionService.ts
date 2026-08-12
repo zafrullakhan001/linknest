@@ -36,6 +36,26 @@ export type SshConnectionColor = (typeof SSH_CONNECTION_COLORS)[number] | string
 export type RemoteConnectionProtocol = 'ssh' | 'rdp';
 
 /** Per-connection terminal look (theme / font). Shared command-bar settings stay global. */
+/** Modern TERM values for Easy-mode ttyd/ssh (not vt100-era legacy types). */
+export const SSH_TERM_TYPES = [
+  'xterm-256color',
+  'xterm-direct',
+  'tmux-256color',
+  'screen-256color',
+  'rxvt-unicode-256color',
+  'xterm',
+  'linux',
+] as const;
+
+export type SshTermType = (typeof SSH_TERM_TYPES)[number];
+
+export const DEFAULT_SSH_TERM_TYPE: SshTermType = 'xterm-256color';
+
+export function normalizeSshTermType(raw: unknown): SshTermType {
+  const t = String(raw || '').trim();
+  return (SSH_TERM_TYPES as readonly string[]).includes(t) ? (t as SshTermType) : DEFAULT_SSH_TERM_TYPE;
+}
+
 export interface SshConnectionAppearance {
   themePresetId?: string;
   fontSize?: number;
@@ -45,6 +65,8 @@ export interface SshConnectionAppearance {
   cursorColor?: string;
   selectionBg?: string;
   ansi?: Record<string, string>;
+  /** TERM string for Easy-mode ttyd (-T); applied on next Connect */
+  termType?: SshTermType;
 }
 
 export interface SavedSshConnection {
@@ -124,6 +146,12 @@ export function normalizeSshAppearance(raw: unknown): SshConnectionAppearance | 
       if (/^#[0-9a-f]{6}$/.test(hex)) ansi[k] = hex;
     }
     if (Object.keys(ansi).length) out.ansi = ansi;
+  }
+  if (typeof obj.termType === 'string' && obj.termType.trim()) {
+    const term = obj.termType.trim();
+    if ((SSH_TERM_TYPES as readonly string[]).includes(term)) {
+      out.termType = term as SshTermType;
+    }
   }
   return Object.keys(out).length ? out : undefined;
 }

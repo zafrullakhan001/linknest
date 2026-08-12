@@ -488,7 +488,7 @@ function sshGatewayDefaultSshCandidates(): array {
     $root = realpath(__DIR__ . '/..') ?: (__DIR__ . '/..');
     $candidates = [];
     if (stripos(PHP_OS, 'WIN') === 0) {
-        // Offline / packaged OpenSSH (package-remote-widgets-runtime)
+        // Bundled portable OpenSSH (package-for-deployment / app update ZIP)
         $candidates[] = $root . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'OpenSSH' . DIRECTORY_SEPARATOR . 'ssh.exe';
         $candidates[] = 'C:\\Windows\\System32\\OpenSSH\\ssh.exe';
         $sysRoot = getenv('SystemRoot') ?: 'C:\\Windows';
@@ -579,7 +579,7 @@ function sshGatewayResolveSsh(): string {
         return $found;
     }
     sendJSON([
-        'error' => 'OpenSSH ssh client was not found. Install OpenSSH Client or set a custom path in Admin → Add-ons → SSH Gateway.',
+        'error' => 'OpenSSH ssh client was not found. Deploy bin/OpenSSH/ssh.exe with the package, or set a custom path in Admin → Add-ons → SSH Gateway.',
         'code' => 'ssh_missing',
     ], 503);
     return '';
@@ -1037,7 +1037,7 @@ function handleSshGatewayStatus() {
         'hint' => ($ttydPath === null
             ? 'ttyd was not found. Deploy bin/ttyd.exe with the package (package-for-deployment / ensure-ttyd-runtime.ps1), or set Admin → Add-ons → SSH Gateway path.'
             : ($sshPath === null
-                ? 'OpenSSH ssh.exe was not found. Install OpenSSH Client, or set Admin → Add-ons → SSH Gateway path.'
+                ? 'OpenSSH ssh.exe was not found. Deploy bin/OpenSSH/ssh.exe with the package (package-for-deployment / ensure-openssh-runtime.ps1), or set Admin → Add-ons → SSH Gateway path.'
                 : null)),
         'platform' => PHP_OS,
         'docker' => $inDocker,
@@ -1459,6 +1459,20 @@ function sshGatewayCleanup(array $sessions): array {
     return $out;
 }
 
+function sshGatewayNormalizeTermType($raw): string {
+    $allow = [
+        'xterm-256color',
+        'xterm-direct',
+        'tmux-256color',
+        'screen-256color',
+        'rxvt-unicode-256color',
+        'xterm',
+        'linux',
+    ];
+    $term = is_string($raw) ? trim($raw) : '';
+    return in_array($term, $allow, true) ? $term : 'xterm-256color';
+}
+
 function sshGatewaySpawnTtyd(
     string $ttyd,
     string $ssh,
@@ -1468,11 +1482,15 @@ function sshGatewaySpawnTtyd(
     bool $x11,
     string $x11Display,
     string $logFile,
-    bool $useSsl = false
+    bool $useSsl = false,
+    string $termType = 'xterm-256color'
 ): array {
+    $termType = sshGatewayNormalizeTermType($termType);
     if (stripos(PHP_OS, 'WIN') === 0) {
         $bat = sshGatewayEnsureDir() . DIRECTORY_SEPARATOR . 'run_' . bin2hex(random_bytes(6)) . '.cmd';
         $lines = ['@echo off'];
+        // TERM backup for the child; ttyd -T is the primary path into ssh PTY.
+        $lines[] = 'set "TERM=' . $termType . '"';
         if ($x11) {
             // Safe charset already validated by caller
             $lines[] = 'set "DISPLAY=' . $x11Display . '"';
@@ -1481,6 +1499,7 @@ function sshGatewaySpawnTtyd(
         $line = sshGatewayQuoteCmd($ttyd)
             . ' -W -m 1 -P 15 -i ' . (sshGatewayPreferHttpProxy() ? '127.0.0.1' : '0.0.0.0')
             . ' -p ' . (int)$listenPort
+            . ' -T ' . sshGatewayQuoteCmd($termType)
             . ' -w ' . sshGatewayQuoteCmd($cwd)
             . ' ' . sshGatewayQuoteCmd($ssh);
         foreach ($sshArgs as $a) {
@@ -1528,7 +1547,7 @@ function sshGatewaySpawnTtyd(
 
     // Proxy mode / Docker: bind loopback only — Apache terminates TLS and proxies WSS.
     $bind = sshGatewayPreferHttpProxy() ? '127.0.0.1' : '0.0.0.0';
-    $cmd = [$ttyd, '-W', '-m', '1', '-P', '15', '-i', $bind, '-p', (string)$listenPort];
+    $cmd = [$ttyd, '-W', '-m', '1', '-P', '15', '-i', $bind, '-p', (string)$listenPort, '-T', $termType];
     $sslPaths = ($useSsl && !sshGatewayPreferHttpProxy()) ? sshGatewaySslPaths() : null;
     if ($sslPaths !== null) {
         $cmd[] = '--ssl';
@@ -1540,19 +1559,19 @@ function sshGatewaySpawnTtyd(
         $useSsl = false;
     }
     $cmd = array_merge($cmd, ['-w', $cwd, $ssh], $sshArgs);
-    $env = null;
+    $env = [];
+    foreach ($_ENV as $k => $v) {
+        if (is_string($k) && is_string($v)) {
+            $env[$k] = $v;
+        }
+    }
+    foreach ($_SERVER as $k => $v) {
+        if (is_string($k) && is_string($v) && !array_key_exists($k, $env) && preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $k)) {
+            $env[$k] = $v;
+        }
+    }
+    $env['TERM'] = $termType;
     if ($x11) {
-        $env = [];
-        foreach ($_ENV as $k => $v) {
-            if (is_string($k) && is_string($v)) {
-                $env[$k] = $v;
-            }
-        }
-        foreach ($_SERVER as $k => $v) {
-            if (is_string($k) && is_string($v) && !array_key_exists($k, $env) && preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $k)) {
-                $env[$k] = $v;
-            }
-        }
         $env['DISPLAY'] = $x11Display;
         $env['LIBGL_ALWAYS_INDIRECT'] = $env['LIBGL_ALWAYS_INDIRECT'] ?? '1';
     }
@@ -1619,6 +1638,7 @@ function handleSshGatewayStart() {
     if ($x11 && !preg_match('/^[0-9A-Za-z.:_-]+$/', $x11Display)) {
         sendJSON(['error' => 'Invalid X11 display value'], 400);
     }
+    $termType = sshGatewayNormalizeTermType($data['termType'] ?? $data['term'] ?? null);
 
     $sessions = sshGatewayCleanup(sshGatewayLoadSessions());
     sshGatewaySaveSessions($sessions);
@@ -1664,7 +1684,7 @@ function handleSshGatewayStart() {
     // On HTTPS pages outside Docker, start ttyd with TLS so the browser can use wss://
     // In Docker, Apache terminates TLS and proxies /_ln_sshgw/<port>/ to plain ttyd.
     $wantSsl = !sshGatewayPreferHttpProxy() && sshGatewayRequestIsHttps() && sshGatewaySslPaths() !== null;
-    $spawn = sshGatewaySpawnTtyd($ttyd, $ssh, $listenPort, $cwd, $sshArgs, $x11, $x11Display, $logFile, $wantSsl);
+    $spawn = sshGatewaySpawnTtyd($ttyd, $ssh, $listenPort, $cwd, $sshArgs, $x11, $x11Display, $logFile, $wantSsl, $termType);
     $pid = (int)($spawn['pid'] ?? 0);
     $ready = !empty($spawn['ready']);
     $usedSsl = !empty($spawn['ssl']);

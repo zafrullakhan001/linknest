@@ -13,12 +13,16 @@ import {
   type SavedSshConnection,
   type SshConnectionAppearance,
   type RemoteConnectionProtocol,
+  type SshTermType,
   SSH_CONNECTION_COLORS,
+  SSH_TERM_TYPES,
+  DEFAULT_SSH_TERM_TYPE,
   normalizeSshColor,
   normalizeSshAppearance,
   normalizeSshCategory,
   normalizeSshSortOrder,
   normalizeConnectionProtocol,
+  normalizeSshTermType,
 } from '../services/sshConnectionService';
 import {
   buildAutoTargetUrl,
@@ -902,7 +906,7 @@ function loadRecycledCategories(accountKey: string): SshRecycledCategory[] {
 function loadListDensity(): SshListViewMode {
   try {
     const raw = localStorage.getItem(LIST_DENSITY_KEY);
-    if (raw === 'compact' || raw === 'tree' || raw === 'cards') return raw;
+    if (raw === 'compact' || raw === 'tree' || raw === 'cards' || raw === 'simple') return raw;
     return 'cards';
   } catch {
     return 'cards';
@@ -1224,6 +1228,7 @@ function defaultConnectionAppearance(): SshConnectionAppearance {
     cursorColor: loadTermColor(TERM_CURSOR_COLOR_KEY, preset?.cursor || DEFAULT_TERM_CURSOR_COLOR),
     selectionBg: loadTermColor(TERM_SELECTION_BG_KEY, preset?.selectionBackground || DEFAULT_TERM_SELECTION_BG),
     ansi: loadTermAnsi() as Record<string, string>,
+    termType: DEFAULT_SSH_TERM_TYPE,
   };
 }
 
@@ -1236,6 +1241,7 @@ function mergeConnectionAppearance(raw?: SshConnectionAppearance | null): {
   cursorColor: string;
   selectionBg: string;
   ansi: TermAnsiPalette;
+  termType: SshTermType;
 } {
   const base = defaultConnectionAppearance();
   const a = normalizeSshAppearance(raw) || {};
@@ -1256,6 +1262,7 @@ function mergeConnectionAppearance(raw?: SshConnectionAppearance | null): {
       preset?.selectionBackground || DEFAULT_TERM_SELECTION_BG
     ),
     ansi: (a.ansi && Object.keys(a.ansi).length ? a.ansi : base.ansi || {}) as TermAnsiPalette,
+    termType: normalizeSshTermType(a.termType ?? base.termType),
   };
 }
 
@@ -1422,6 +1429,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
   const [sshUsername, setSshUsername] = useState(() => localStorage.getItem(USER_STORAGE_KEY) || '');
   const [sshUrlDraft, setSshUrlDraft] = useState('');
   const [x11Forward, setX11Forward] = useState(() => localStorage.getItem(X11_STORAGE_KEY) === 'true');
+  const [termType, setTermType] = useState<SshTermType>(DEFAULT_SSH_TERM_TYPE);
   const [gatewayAvailable, setGatewayAvailable] = useState<boolean | null>(null);
   const [gatewayHint, setGatewayHint] = useState<string | null>(null);
   const [maxSshTabs, setMaxSshTabs] = useState(DEFAULT_MAX_SSH_TABS);
@@ -1558,6 +1566,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     cursorColor: termCursorColor,
     selectionBg: termSelectionBg,
     ansi: termAnsi as Record<string, string>,
+    termType,
   });
   appearanceDraftRef.current = {
     themePresetId,
@@ -1568,6 +1577,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     cursorColor: termCursorColor,
     selectionBg: termSelectionBg,
     ansi: termAnsi as Record<string, string>,
+    termType,
   };
 
   const snapshotDraftAppearance = useCallback((): SshConnectionAppearance => {
@@ -1584,6 +1594,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     setTermCursorColor(a.cursorColor);
     setTermSelectionBg(a.selectionBg);
     setTermAnsi(a.ansi);
+    setTermType(a.termType);
   }, []);
 
   const applyAppearanceToConnectionTabs = useCallback(
@@ -1702,6 +1713,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
         cursorColor: next.cursorColor,
         selectionBg: next.selectionBg,
         ansi: next.ansi as Record<string, string>,
+        termType: next.termType,
       };
 
       const cid = tab.connectionId || null;
@@ -2289,6 +2301,24 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     ws.send(bytes);
   }, []);
 
+  const sendRawInputToTab = useCallback((tabId: string, payload: string): boolean => {
+    const handle = sessionHandlesRef.current.get(tabId);
+    if (!handle) return false;
+    const bytes = encoderRef.current.encode(CMD.INPUT + payload);
+    if (handle.useBridge) {
+      sshSessionBridge.send(tabId, bytes);
+      return true;
+    }
+    const ws = handle.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+    try {
+      ws.send(bytes);
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
   const fitSessions = useCallback(
     (ids?: string[] | null) => {
       const list = ids && ids.length ? ids : Array.from(sessionHandlesRef.current.keys());
@@ -2316,20 +2346,12 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       const text = raw.replace(/\r\n/g, '\n');
       if (!text) return;
       const payload = text.endsWith('\n') ? text : `${text}\n`;
-      const frame = encoderRef.current.encode(CMD.INPUT + payload);
       let sent = 0;
       for (const tab of tabs) {
         if ((tab.kind || 'ssh') === 'rdp') continue;
         if (tab.excludeFromMulti) continue;
         if (tab.status !== 'connected') continue;
-        const ws = sessionHandlesRef.current.get(tab.id)?.ws;
-        if (!ws || ws.readyState !== WebSocket.OPEN) continue;
-        try {
-          ws.send(frame);
-          sent += 1;
-        } catch {
-          // ignore
-        }
+        if (sendRawInputToTab(tab.id, payload)) sent += 1;
       }
       setNotice(
         sent > 0
@@ -2337,25 +2359,17 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
           : 'No included terminals to receive the command'
       );
     },
-    [tabs]
+    [tabs, sendRawInputToTab]
   );
 
   const sendKeyToAll = useCallback(
     (payload: string, label: string) => {
-      const frame = encoderRef.current.encode(CMD.INPUT + payload);
       let sent = 0;
       for (const tab of tabs) {
         if ((tab.kind || 'ssh') === 'rdp') continue;
         if (tab.excludeFromMulti) continue;
         if (tab.status !== 'connected') continue;
-        const ws = sessionHandlesRef.current.get(tab.id)?.ws;
-        if (!ws || ws.readyState !== WebSocket.OPEN) continue;
-        try {
-          ws.send(frame);
-          sent += 1;
-        } catch {
-          // ignore
-        }
+        if (sendRawInputToTab(tab.id, payload)) sent += 1;
       }
       setNotice(
         sent > 0
@@ -2363,7 +2377,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
           : `No included terminals to receive ${label}`
       );
     },
-    [tabs]
+    [tabs, sendRawInputToTab]
   );
 
   const interruptAll = useCallback(() => {
@@ -2415,17 +2429,15 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       if (tab.excludeFromMulti) continue;
       if (tab.status !== 'connected') continue;
       const handle = sessionHandlesRef.current.get(tab.id);
-      const term = handle?.term;
-      const ws = handle?.ws;
-      if (!ws || ws.readyState !== WebSocket.OPEN) continue;
+      if (!handle) continue;
       try {
-        if (term) {
+        if (handle.term) {
           // Prefer xterm paste so bracketed-paste mode is honored when available
-          term.paste(text);
-        } else {
-          ws.send(encoderRef.current.encode(CMD.INPUT + text));
+          handle.term.paste(text);
+          sent += 1;
+        } else if (sendRawInputToTab(tab.id, text)) {
+          sent += 1;
         }
-        sent += 1;
       } catch {
         // ignore
       }
@@ -2435,7 +2447,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
         ? `Pasted to ${sent} terminal${sent === 1 ? '' : 's'}`
         : 'No included terminals to paste into'
     );
-  }, [tabs]);
+  }, [tabs, sendRawInputToTab]);
 
   const tileCols = useMemo(() => {
     const n = tabs.length;
@@ -2516,6 +2528,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       username?: string;
       mode?: ConnectMode;
       x11?: boolean;
+      termType?: string;
     }) => {
       if (sessionHandlesRef.current.size >= maxSshTabs) {
         setNotice(`Maximum of ${maxSshTabs} open sessions. Close a tab first.`);
@@ -2606,6 +2619,13 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
         const host = (opts?.host ?? autoFromUrl?.host ?? sshHost).trim();
         const username = (opts?.username ?? autoFromUrl?.username ?? sshUsername).trim();
         const port = opts?.port ?? autoFromUrl?.port ?? (Number.parseInt(sshPort, 10) || 22);
+        const resolvedTermType = normalizeSshTermType(
+          opts?.termType ??
+            (nextConnectionId
+              ? connectionsRef.current.find((c) => c.id === nextConnectionId)?.appearance?.termType
+              : undefined) ??
+            termType
+        );
         if (!host || !username) {
           failTab('Host and username are required.');
           return;
@@ -2624,6 +2644,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
             port,
             username,
             x11: opts?.x11 ?? x11Forward,
+            termType: resolvedTermType,
           });
           const handle = sessionHandlesRef.current.get(tabId);
           if (handle) handle.gatewaySessionId = session.sessionId;
@@ -2656,6 +2677,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                 port,
                 username,
                 x11: opts?.x11 ?? x11Forward,
+                termType: resolvedTermType,
               });
               const handle = sessionHandlesRef.current.get(tabId);
               if (handle) handle.gatewaySessionId = session.sessionId;
@@ -3074,6 +3096,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       waitForTabHost,
       sendResize,
       closeTab,
+      termType,
     ]);
 
   const copyActiveSelection = useCallback(async () => {
@@ -3147,9 +3170,12 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       setNotice('Use the RDP gateway UI to paste text');
       return;
     }
-    const term = sessionHandlesRef.current.get(id)?.term;
-    const ws = sessionHandlesRef.current.get(id)?.ws;
-    if (!term || !ws || ws.readyState !== WebSocket.OPEN) {
+    const handle = sessionHandlesRef.current.get(id);
+    const term = handle?.term;
+    const connected =
+      Boolean(term) &&
+      (handle?.useBridge || (handle?.ws && handle.ws.readyState === WebSocket.OPEN));
+    if (!term || !connected) {
       setNotice('Terminal is not connected');
       return;
     }
@@ -4260,6 +4286,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
           host: auto?.host,
           port: auto?.port,
           username: auto?.username,
+          termType: normalizeSshTermType(c.appearance?.termType),
         });
       }
     },
@@ -4299,6 +4326,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
           host: auto?.host,
           port: auto?.port,
           username: auto?.username,
+          termType: normalizeSshTermType(c.appearance?.termType),
         });
         if (index === toRun.length - 1) {
           setActiveConnectionId(c.id);
@@ -5910,6 +5938,15 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                   </button>
                   <button
                     type="button"
+                    onClick={() => setListDensity('simple')}
+                    className={`px-1.5 py-0.5 text-[9px] rounded ${sidebarToggleClass(listDensity === 'simple')}`}
+                    style={sidebarToggleStyle(listDensity === 'simple')}
+                    title="Simple tree — category and name, with Start / Stop / Clone / Duplicate"
+                  >
+                    Simple
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => {
                       setColorMode((m) => {
                         const next = m === 'calm' ? 'vivid' : 'calm';
@@ -6320,6 +6357,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                   onDisconnect={(id) => void disconnectConnectionSessions(id)}
                   onEdit={(c) => applyConnection(c, false)}
                   onClone={(c) => void cloneConnection(c)}
+                  onDuplicate={(c) => applyConnection(c, true)}
                   onCopySsh={(c) => void copySshUrlForConnection(c)}
                   onDelete={(id) => void deleteConnection(id)}
                   onSettings={(c) => applyConnection(c, false)}
@@ -7159,6 +7197,26 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                           <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug">
                             PAM-friendly: long usernames with `\`, `+`, and non-22 ports (e.g. 4489) are passed verbatim to SSH.
                           </p>
+                          <div className="rounded-md border border-slate-200 dark:border-slate-600 p-2 space-y-2 bg-white/70 dark:bg-slate-950/30">
+                            <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+                              Terminal type (TERM)
+                              <select
+                                value={termType}
+                                onChange={(e) => setTermType(normalizeSshTermType(e.target.value))}
+                                className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono"
+                              >
+                                {SSH_TERM_TYPES.map((t) => (
+                                  <option key={t} value={t}>
+                                    {t}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug">
+                              Sent to the remote PTY via ttyd. Default <code className="font-mono">xterm-256color</code>{' '}
+                              works on most hosts. Changing TERM on a live session requires Start again.
+                            </p>
+                          </div>
                           <div className="rounded-md border border-slate-200 dark:border-slate-600 p-2 space-y-2 bg-white/70 dark:bg-slate-950/30">
                             <p className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">Session type (via ttyd)</p>
                             <div className="flex flex-wrap gap-1">

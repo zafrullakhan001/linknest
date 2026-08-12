@@ -836,7 +836,7 @@ package-for-deployment.bat -BasePath "/myapp"`}</pre>
                   </div>
                   <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
                     <p className="text-sm text-amber-800 dark:text-amber-200">
-                      <strong>Target needs:</strong> XAMPP (Apache + PHP). For SSH/VNC Easy widgets also install Python 3 and OpenSSH Client. The ZIP includes <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">upgrade-xampp-php.bat</code> for PHP 8.5+. Full walkthrough: <strong>Guides → Package for Deployment (Windows / XAMPP)</strong>.
+                      <strong>Target needs:</strong> XAMPP (Apache + PHP). SSH Easy and VNC Easy use bundled <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">bin/ttyd.exe</code>, <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">bin/OpenSSH</code>, and <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">bin/python</code>. The ZIP includes <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">upgrade-xampp-php.bat</code> for PHP 8.5+. Full walkthrough: <strong>Guides → Package for Deployment (Windows / XAMPP)</strong>.
                     </p>
                   </div>
                 </div>
@@ -1211,7 +1211,7 @@ package-for-deployment.bat -BasePath "/myapp"`}</pre>
                     <p className="font-medium text-slate-900 dark:text-white">Choose an install path</p>
                     <ol className="list-decimal list-inside space-y-1.5 text-sm ml-0.5">
                       <li>
-                        <strong>Online host:</strong> install ttyd (<code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">bin\ttyd.exe</code> or winget), OpenSSH Client, Python 3 + websockify; optional VcXsrv for SSH GUI.
+                        <strong>Online host:</strong> deploy packages already include ttyd (<code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">bin\ttyd.exe</code>), portable OpenSSH (<code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">bin\OpenSSH\ssh.exe</code>), and Python + websockify; optional VcXsrv for SSH GUI.
                       </li>
                       <li>
                         <strong>Air-gapped:</strong> on a networked PC run <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">scripts\package-remote-widgets-runtime.bat</code>, copy the ZIP, then on the target (Admin):{' '}
@@ -1241,8 +1241,7 @@ package-for-deployment.bat -BasePath "/myapp"`}</pre>
                             <td className="py-2 pr-3 font-medium">ttyd</td>
                             <td className="py-2 pr-3">SSH Easy mode &amp; Advanced gateway</td>
                             <td className="py-2">
-                              Prefer <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">bin\ttyd.exe</code> from deploy/offline pack, or{' '}
-                              <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">winget install tsl0922.ttyd</code>
+                              Bundled as <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">bin\ttyd.exe</code> in deploy / App Update packages
                               <span className="block text-[11px] text-amber-800/80 dark:text-amber-200/70 mt-0.5">Set full path under Admin → Add-ons → SSH Gateway if needed</span>
                             </td>
                           </tr>
@@ -1250,15 +1249,15 @@ package-for-deployment.bat -BasePath "/myapp"`}</pre>
                             <td className="py-2 pr-3 font-medium">OpenSSH Client</td>
                             <td className="py-2 pr-3">SSH connections from the server</td>
                             <td className="py-2">
-                              Windows Optional Features → <em>OpenSSH Client</em>, or offline pack <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">bin\OpenSSH\ssh.exe</code>
+                              Bundled as <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">bin\OpenSSH\ssh.exe</code> in deploy / App Update packages (Windows Optional Features still works as fallback)
                             </td>
                           </tr>
                           <tr>
                             <td className="py-2 pr-3 font-medium">Python 3 + websockify</td>
                             <td className="py-2 pr-3">VNC Easy mode</td>
                             <td className="py-2">
-                              Install Python 3; run <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">scripts\install-websockify.ps1</code> or use{' '}
-                              <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">bin\python-packages</code> from the offline pack
+                              Bundled as <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">bin\python\python.exe</code> in deploy / App Update packages, plus{' '}
+                              <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">bin\python-packages</code> websockify
                             </td>
                           </tr>
                           <tr>

@@ -38,6 +38,7 @@ const UPDATER_ZIP_ALLOW_PREFIXES = [
     'apache/',
     'config/',
     'runtime/',
+    'bin/',
     'load-tests/',
 ];
 

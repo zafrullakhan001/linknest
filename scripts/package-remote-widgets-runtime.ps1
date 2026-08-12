@@ -4,13 +4,13 @@
     Build an offline ZIP of SSH/VNC gateway binaries for air-gapped LinkNest hosts.
 
 .DESCRIPTION
-    Packages SSH/VNC gateway binaries (Python excluded by default - install on target):
+    Packages SSH/VNC gateway binaries (embeddable Python included by default):
       - ttyd (Windows + Linux)
       - OpenSSH client (portable under bin/OpenSSH)
       - VcXsrv (X11 for SSH GUI mode)
-      - Vendored websockify (bin/python-packages) for use with system Python
+      - Embeddable CPython under bin/python
+      - Vendored websockify (bin/python-packages)
       - run-websockify launchers
-      - Optional: embeddable Python via -IncludePython
 
     Run this on a machine WITH internet (or with tools already installed).
     Copy the ZIP to the restricted host and run install-remote-widgets-runtime.bat.
@@ -22,10 +22,13 @@
     Where to write the ZIP (default: project root)
 
 .PARAMETER PythonVersion
-    Embeddable CPython version when -IncludePython is set (default 3.12.4)
+    Embeddable CPython version (default 3.12.4)
 
 .PARAMETER IncludePython
-    Also bundle embeddable Python under bin/python (off by default)
+    Deprecated: Python is bundled by default. Kept so older commands still work.
+
+.PARAMETER SkipPython
+    Do not bundle embeddable Python (target would need system Python 3)
 
 .PARAMETER SkipVcXsrv
     Do not include VcXsrv (SSH Terminal+GUI will need a separate install)
@@ -33,13 +36,14 @@
 .EXAMPLE
     .\scripts\package-remote-widgets-runtime.ps1
     .\scripts\package-remote-widgets-runtime.ps1 -OutputDir D:\usb
-    .\scripts\package-remote-widgets-runtime.ps1 -IncludePython
+    .\scripts\package-remote-widgets-runtime.ps1 -SkipPython
 #>
 param(
     [string]$ProjectRoot = "",
     [string]$OutputDir = "",
     [string]$PythonVersion = "3.12.4",
     [switch]$IncludePython,
+    [switch]$SkipPython,
     [switch]$SkipVcXsrv
 )
 
@@ -96,7 +100,9 @@ $PackageName = "linknest-remote-widgets-runtime-$Timestamp"
 $Staging = Join-Path $env:TEMP $PackageName
 $ZipPath = Join-Path $OutputDir "$PackageName.zip"
 
-Write-Header "LinkNest remote-widgets offline package"
+if ($IncludePython -and $SkipPython) {
+    Write-Warn "-IncludePython and -SkipPython both set; SkipPython wins."
+}
 Write-Host "  Project : $ProjectRoot" -ForegroundColor Gray
 Write-Host "  Staging : $Staging" -ForegroundColor Gray
 Write-Host "  Output  : $ZipPath" -ForegroundColor Gray
@@ -132,34 +138,21 @@ if (Test-Path $verNote) { Copy-Item $verNote $stageBin -Force }
 # 2. OpenSSH (portable copy for Admin path / auto-detect)
 # ---------------------------------------------------------------------------
 Write-Header "2 / OpenSSH client"
+$ensureOpenSsh = Join-Path $ProjectRoot "scripts\ensure-openssh-runtime.ps1"
+if (Test-Path $ensureOpenSsh) {
+    & $ensureOpenSsh -ProjectRoot $ProjectRoot -FailIfMissing
+}
+$sshSrc = Join-Path $ProjectRoot "bin\OpenSSH\ssh.exe"
+if (-not (Test-Path $sshSrc)) {
+    throw "bin/OpenSSH/ssh.exe missing after ensure-openssh-runtime."
+}
 $sshStage = Join-Path $stageBin "OpenSSH"
 New-Item -ItemType Directory -Force -Path $sshStage | Out-Null
-$sysSsh = "C:\Windows\System32\OpenSSH"
-if (Test-Path (Join-Path $sysSsh "ssh.exe")) {
-    Copy-Item (Join-Path $sysSsh "*") $sshStage -Force
-    Write-OK ("Copied system OpenSSH ({0} files)" -f @(Get-ChildItem $sshStage -File).Count)
-}
-else {
-    $sshZip = Join-Path $env:TEMP "OpenSSH-Win64.zip"
-    $ok = Get-HttpFile -Url "https://github.com/PowerShell/Win32-OpenSSH/releases/download/v9.5.0.0p1-Beta/OpenSSH-Win64.zip" `
-        -Dest $sshZip -Label "OpenSSH-Win64.zip" -MinBytes 1000000
-    if (-not $ok) { throw "OpenSSH not found locally and download failed." }
-    $sshExtract = Join-Path $env:TEMP ("openssh-extract-" + [guid]::NewGuid().ToString("N"))
-    Expand-Archive -Path $sshZip -DestinationPath $sshExtract -Force
-    $inner = Get-ChildItem $sshExtract -Directory | Select-Object -First 1
-    if ($inner) {
-        Copy-Item (Join-Path $inner.FullName "*") $sshStage -Recurse -Force
-    }
-    else {
-        Copy-Item (Join-Path $sshExtract "*") $sshStage -Recurse -Force
-    }
-    Remove-Item $sshExtract -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item $sshZip -Force -ErrorAction SilentlyContinue
-    Write-OK "OpenSSH from GitHub release"
-}
+Copy-Item (Join-Path $ProjectRoot "bin\OpenSSH\*") $sshStage -Recurse -Force
 if (-not (Test-Path (Join-Path $sshStage "ssh.exe"))) {
-    throw "bin/OpenSSH/ssh.exe missing after package step"
+    throw "bin/OpenSSH/ssh.exe missing after copy"
 }
+Write-OK "OpenSSH copied to package bin/OpenSSH"
 
 # ---------------------------------------------------------------------------
 # 3. Vendored websockify (lean reinstall when Python available)
@@ -192,51 +185,30 @@ else {
 }
 
 # ---------------------------------------------------------------------------
-# 4. Embeddable Python (optional - install system Python on target by default)
+# 4. Embeddable Python (default — VNC Easy without system Python)
 # ---------------------------------------------------------------------------
 Write-Header "4 / Python"
 $pyStage = Join-Path $stageBin "python"
 $PythonBundled = $false
-if (-not $IncludePython) {
-    Write-Warn "Skipping embeddable Python (default). Install Python 3 on the target for VNC Easy."
+if ($SkipPython) {
+    Write-Warn "Skipping embeddable Python (-SkipPython). Install Python 3 on the target for VNC Easy."
 }
 else {
+    $ensurePython = Join-Path $ProjectRoot "scripts\ensure-python-runtime.ps1"
+    if (Test-Path $ensurePython) {
+        & $ensurePython -ProjectRoot $ProjectRoot -Version $PythonVersion -FailIfMissing
+    }
     $existingPy = Join-Path $ProjectRoot "bin\python\python.exe"
+    if (-not (Test-Path $existingPy)) {
+        throw "bin/python/python.exe missing after ensure-python-runtime."
+    }
     New-Item -ItemType Directory -Force -Path $pyStage | Out-Null
-    $pyZip = Join-Path $env:TEMP ("python-embed-$PythonVersion.zip")
-    $pyUrl = "https://www.python.org/ftp/python/$PythonVersion/python-$PythonVersion-embed-amd64.zip"
-    $ok = Get-HttpFile -Url $pyUrl -Dest $pyZip -Label "Python $PythonVersion embeddable" -MinBytes 5000000
-    if (-not $ok) {
-        if (Test-Path $existingPy) {
-            Copy-Item (Join-Path $ProjectRoot "bin\python\*") $pyStage -Recurse -Force
-            Write-Warn "Download failed; used existing bin/python"
-        }
-        else {
-            throw "Python embeddable download failed and bin/python is missing."
-        }
-    }
-    else {
-        Expand-Archive -Path $pyZip -DestinationPath $pyStage -Force
-        Remove-Item $pyZip -Force -ErrorAction SilentlyContinue
-        $pth = Get-ChildItem $pyStage -Filter "python*._pth" | Select-Object -First 1
-        if ($pth) {
-            $lines = @(
-                "python$($PythonVersion.Split('.')[0] + $PythonVersion.Split('.')[1]).zip"
-                "."
-                "..\python-packages"
-                "import site"
-            )
-            $zipName = Get-ChildItem $pyStage -Filter "python*.zip" | Select-Object -First 1
-            if ($zipName) { $lines[0] = $zipName.Name }
-            Set-Content -Path $pth.FullName -Value ($lines -join "`r`n") -Encoding ASCII
-            Write-OK ("Updated {0} for vendored packages" -f $pth.Name)
-        }
-        Write-OK "Python embeddable extracted to bin/python"
-    }
+    Copy-Item (Join-Path $ProjectRoot "bin\python\*") $pyStage -Recurse -Force
     if (-not (Test-Path (Join-Path $pyStage "python.exe"))) {
-        throw "bin/python/python.exe missing after -IncludePython"
+        throw "bin/python/python.exe missing after copy"
     }
     $PythonBundled = $true
+    Write-OK "Python embeddable copied to package bin/python"
 }
 
 # ---------------------------------------------------------------------------
@@ -305,7 +277,7 @@ Write-OK "install-remote-widgets-runtime.*"
 $pyNote = if ($PythonBundled) {
     "bin/python/python.exe     Embeddable CPython $PythonVersion"
 } else {
-    "(Python NOT included - install Python 3 on the target for VNC Easy)"
+    "(Python NOT included - install Python 3 on the target for VNC Easy, or omit -SkipPython)"
 }
 $readme = @"
 LinkNest remote-widgets offline runtime
@@ -319,21 +291,20 @@ bin/ttyd.exe              SSH Easy gateway (Windows)
 bin/ttyd.x86_64           SSH Easy gateway (Linux/Docker)
 bin/OpenSSH/ssh.exe       OpenSSH client (portable)
 $pyNote
-bin/python-packages/      Vendored websockify (+ deps; needs system Python 3)
+bin/python-packages/      Vendored websockify (+ deps; used by bundled or system Python)
 bin/run-websockify.cmd    VNC Easy launcher
 VcXsrv/                   X server for SSH Terminal + GUI (if included)
 
 Install on target
 -----------------
-1. Install Python 3 on the target if not already present.
-2. Copy this folder (or unzip the ZIP) onto the LinkNest server.
-3. Open an elevated PowerShell (recommended for VcXsrv -> Program Files):
+1. Copy this folder (or unzip the ZIP) onto the LinkNest server.
+2. Open an elevated PowerShell (recommended for VcXsrv -> Program Files):
      cd <this-folder>
      .\install-remote-widgets-runtime.bat
    Or:
      powershell -ExecutionPolicy Bypass -File .\install-remote-widgets-runtime.ps1 -InstallDir C:\xampp\htdocs\linknest
-4. Refresh Admin -> Add-ons -> SSH Gateway / VNC Gateway - statuses should show Ready/found.
-5. For SSH GUI mode: start VcXsrv (XLaunch -> Multiple windows -> Start no client -> Disable access control).
+3. Refresh Admin -> Add-ons -> SSH Gateway / VNC Gateway - statuses should show Ready/found.
+4. For SSH GUI mode: start VcXsrv (XLaunch -> Multiple windows -> Start no client -> Disable access control).
 
 Optional flags
 --------------
@@ -343,8 +314,8 @@ Optional flags
 
 Notes
 -----
-- OpenSSH is also placed under bin\OpenSSH; the installer sets Admin ssh path when system OpenSSH is absent.
-- VNC Easy uses system Python + bin\python-packages (websockify). Set Admin -> VNC Gateway python path if needed.
+- SSH Easy uses bundled bin\ttyd.exe + bin\OpenSSH\ssh.exe. Set Admin -> SSH Gateway paths if needed.
+- VNC Easy uses bundled bin\python + bin\python-packages (websockify). Set Admin -> VNC Gateway python path if needed.
 - Prefer LAN/VPN; do not expose unauthenticated ttyd/websockify to the public internet.
 "@
 Set-Content -Path (Join-Path $Staging "README.txt") -Value $readme -Encoding ASCII

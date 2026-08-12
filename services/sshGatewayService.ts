@@ -186,6 +186,8 @@ export const sshGatewayService = {
     username: string;
     x11?: boolean;
     x11Display?: string;
+    /** TERM for ttyd -T / remote PTY (allowlisted modern values) */
+    termType?: string;
   }): Promise<SshGatewaySession> {
     const res = await fetch(`${GW_BASE}/start`, {
       method: 'POST',
@@ -197,6 +199,7 @@ export const sshGatewayService = {
         username: input.username,
         x11: Boolean(input.x11),
         x11Display: input.x11Display || undefined,
+        termType: input.termType || undefined,
       }),
     });
     const data = await res.json();

@@ -49,7 +49,7 @@ Install these on the **machine that runs LinkNest** (and the remote Linux host w
 | Dependency | Required for | Windows install | Notes |
 |------------|--------------|-----------------|-------|
 | **ttyd** | Easy mode + Advanced gateway | Bundled as `bin/ttyd.exe` by `package-for-deployment.bat` (auto-downloads from GitHub via `scripts/ensure-ttyd-runtime.ps1`). Fallback: `winget install tsl0922.ttyd --source winget` | Prefer `bin/ttyd.exe`, or set path under **Admin → Add-ons → SSH Gateway**. Apache often cannot see WinGet PATH. |
-| **OpenSSH Client** | All SSH sessions | Optional Features → *OpenSSH Client* | Default `C:\Windows\System32\OpenSSH\ssh.exe` — override in Admin if your install differs |
+| **OpenSSH Client** | All SSH sessions | Bundled as `bin/OpenSSH/ssh.exe` by `package-for-deployment.bat` (via `scripts/ensure-openssh-runtime.ps1`). Fallback: Windows Optional Features → *OpenSSH Client* | Prefer `bin/OpenSSH/ssh.exe`, or `C:\Windows\System32\OpenSSH\ssh.exe` — override in Admin if your install differs |
 | **LinkNest login** | Easy mode (auto-start ttyd) | — | Guests can only use Advanced WebSocket URL mode |
 | **VcXsrv** (or X410) | **Terminal + GUI (X11)** | `winget install marha.VcXsrv` or [VcXsrv](https://sourceforge.net/projects/vcxsrv/) | Start XLaunch → Multiple windows → Start no client before connecting |
 | **Remote sshd X11** | GUI apps from Linux | On remote: `X11Forwarding yes` in `sshd_config`, restart sshd | Optional: `sudo apt install x11-apps` for `xclock` |
@@ -61,10 +61,10 @@ If `ttyd` or `ssh` live somewhere non-standard, set full executable paths in **A
 | Setting | Example (this host) | Purpose |
 |---------|---------------------|---------|
 | ttyd path | `C:\xampp\htdocs\linknest\bin\ttyd.exe` | Easy-mode gateway binary |
-| OpenSSH path | `C:\Windows\System32\OpenSSH\ssh.exe` | Client invoked by ttyd |
+| OpenSSH path | `C:\xampp\htdocs\linknest\bin\OpenSSH\ssh.exe` | Client invoked by ttyd |
 | X11 display | `127.0.0.1:0.0` | Default `DISPLAY` for GUI mode |
 
-Leave a path blank to auto-detect common locations (`bin/ttyd.exe`, WinGet packages, system OpenSSH). Clear invalid configured paths if Connect fails with “Configured … path was not found”.
+Leave a path blank to auto-detect common locations (`bin/ttyd.exe`, `bin/OpenSSH/ssh.exe`, WinGet packages, system OpenSSH). Clear invalid configured paths if Connect fails with “Configured … path was not found”.
 
 API (admin session): `GET/PUT /api/ssh-gateway/config` with `{ ttydPath, sshPath, x11Display }`.
 
@@ -83,10 +83,11 @@ That produces `linknest-remote-widgets-runtime-YYYYMMDD-HHMMSS.zip` containing:
 |-----------|-----------------|
 | ttyd | `bin/ttyd.exe` (+ Linux `ttyd.x86_64`) |
 | OpenSSH client | `bin/OpenSSH/ssh.exe` |
-| websockify | `bin/python-packages/` (use with system Python 3 on the target) |
+| Python | `bin/python/python.exe` (embeddable CPython) |
+| websockify | `bin/python-packages/` (used by bundled Python) |
 | VcXsrv | `VcXsrv/` (copied from this PC if installed) |
 
-Python is **not** included by default (install on the target). Pass `-IncludePython` only if you need the embeddable runtime in the ZIP.
+Embeddable Python is included by default. Pass `-SkipPython` only if the target already has Python 3.
 
 Copy the ZIP to the restricted server, unzip, then run **as Administrator**:
 
@@ -137,14 +138,14 @@ Requires Apache modules: `rewrite`, `proxy`, `proxy_http`, `proxy_wstunnel` (the
 | Dependency | Required for | Notes |
 |------------|--------------|-------|
 | **VNC server** on target | Desktop view | RealVNC, TightVNC, TigerVNC, x11vnc, etc. (often port 5900+) |
-| **Python 3** + **websockify** | Easy mode | Install Python 3 on the server; websockify is vendored in the offline runtime pack (`bin/python-packages`) or via `scripts/install-websockify.ps1`. Or set paths under **Admin → Add-ons → VNC Gateway**. |
+| **Python 3** + **websockify** | Easy mode | Bundled as `bin/python/python.exe` by `package-for-deployment.bat` (via `scripts/ensure-python-runtime.ps1`) plus vendored websockify in `bin/python-packages`. Or set paths under **Admin → Add-ons → VNC Gateway**. |
 | **websockify** (manual) | Advanced mode only | Example: listen on `6080`, forward to `localhost:5900` |
 
 #### VNC Easy mode (recommended)
 
 Signed-in users can skip running websockify by hand:
 
-1. Install **Python 3** and run `scripts/install-websockify.ps1` (or `python -m pip install --target=bin/python-packages websockify`)
+1. Confirm **Admin → Add-ons → VNC Gateway** shows Python found (bundled `bin/python`) and websockify ready. If packages are missing, run `scripts/install-websockify.ps1`.
 2. Open **VNC Viewer** → Settings → **Easy (host / port)**
 3. Enter the remote **host** and **VNC port** (default `5900`), optional password (session only), Connect
 4. LinkNest starts websockify on a localhost port in **17881–17980** and opens noVNC against it
@@ -174,7 +175,7 @@ ssh -V
 
 Signed-in users can skip running ttyd by hand:
 
-1. Install **ttyd** + **OpenSSH Client** (see table above)
+1. Confirm **Admin → Add-ons → SSH Gateway** shows ttyd and ssh found (bundled `bin/ttyd.exe` + `bin/OpenSSH/ssh.exe`).
 2. Open **SSH Terminal** → **Easy (host / port)**
 3. Enter **Host**, **Port** (default 22), **Username**
 4. Click **Connect** — LinkNest starts ttyd, then opens the terminal WebSocket for you
@@ -196,7 +197,7 @@ Disconnect stops the temporary ttyd process. You can still Save connections (sto
 ### Requirements checklist
 
 - [ ] ttyd installed (`bin/ttyd.exe` or path set in Admin → Add-ons → SSH Gateway)
-- [ ] OpenSSH Client installed (or custom ssh path configured)
+- [ ] OpenSSH at `bin\OpenSSH\ssh.exe` (or Admin path / Windows Optional Features)
 - [ ] Signed in to LinkNest (for Easy mode)  
 - [ ] Browser can reach the server’s ttyd listen port (usually `17681–17780`)  
 - [ ] For GUI: VcXsrv running + remote `X11Forwarding yes`
@@ -240,7 +241,7 @@ ttyd -W -p 7681 -w $env:USERPROFILE C:\Windows\System32\OpenSSH\ssh.exe -tt zafa
 |---------|-----|
 | Easy mode: ttyd not found | Install ttyd; copy to `bin/ttyd.exe` or set path in **Admin → Add-ons → SSH Gateway**; retry Connect |
 | Easy mode: configured path missing | Fix or clear ttyd/ssh paths in Admin → Add-ons → SSH Gateway |
-| Easy mode: failed to start | OpenSSH Client installed; PHP allowed to spawn processes; use full `ssh.exe` path |
+| Easy mode: failed to start | Bundled `bin/OpenSSH/ssh.exe` present; PHP allowed to spawn processes; use full `ssh.exe` path |
 | `CreateProcessW` 267 (manual) | Use `-w $env:USERPROFILE` + full `ssh.exe` path |
 | `Can't open display:` | Start VcXsrv; use **Terminal + GUI**; remote `X11Forwarding yes` |
 | Want GUI in the browser | Use **VNC Viewer** instead |
@@ -266,7 +267,7 @@ Enable **SSH Terminal** (`ssh-terminal`) and **VNC Viewer** (`vnc-viewer`) under
 ## Quick reference
 
 ```text
-Deps (SSH):  ttyd + OpenSSH Client [+ VcXsrv for GUI]
+Deps (SSH):  bundled bin/ttyd.exe + bin/OpenSSH [+ VcXsrv for GUI]
 Deps (VNC):  VNC server + websockify
 Easy:        Host + Port + Username → Connect
 GUI:         Easy → Terminal + GUI (X11) + VcXsrv running
