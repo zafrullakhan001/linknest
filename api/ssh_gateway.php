@@ -517,6 +517,14 @@ function sshGatewayPreferHttpProxy(): bool {
     return sshGatewayRequestIsHttps();
 }
 
+/**
+ * App base path for proxy URLs when LinkNest is not at domain root.
+ * Delegates to getAppBasePath() — works for /ArchLinks, /ERP3, /linknest, etc.
+ */
+function sshGatewayHttpProxyBasePath(): string {
+    return getAppBasePath();
+}
+
 /** Apache self-signed certs (Docker) — used so HTTPS UI can open wss:// to ttyd. */
 function sshGatewaySslPaths(): ?array {
     $candidates = [
@@ -537,7 +545,8 @@ function sshGatewayBuildWsUrl(int $listenPort, ?bool $useSsl = null): string {
         $https = sshGatewayRequestIsHttps();
         $scheme = $https ? 'wss' : 'ws';
         $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-        return $scheme . '://' . $host . '/_ln_sshgw/' . $listenPort . '/ws';
+        $base = sshGatewayHttpProxyBasePath();
+        return $scheme . '://' . $host . $base . '/_ln_sshgw/' . $listenPort . '/ws';
     }
 
     $https = $useSsl === null ? sshGatewayRequestIsHttps() : $useSsl;

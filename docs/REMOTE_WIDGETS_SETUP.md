@@ -101,13 +101,26 @@ On the **LinkNest XAMPP server** (run as Administrator once):
 scripts\enable-gateway-wss-proxy.bat
 ```
 
-Or:
+Or (point `-InstallDir` at whatever folder you use — ArchLinks, ERP3, linknest, …):
 
 ```powershell
-.\scripts\enable-gateway-wss-proxy.ps1 -XamppRoot C:\xampp -InstallDir C:\xampp\htdocs\ERP3 -RestartApache
+.\scripts\enable-gateway-wss-proxy.ps1 -XamppRoot C:\xampp -InstallDir C:\xampp\htdocs\ArchLinks -RestartApache
 ```
 
-Then hard-refresh the browser and Connect again. You should see `wss://…/_ln_sshgw/…` in DevTools instead of `ws://…:17681`.
+Then hard-refresh the browser and Connect again. Expected URL shape (base path is auto-detected):
+
+- App at domain root: `wss://host/_ln_sshgw/17681/ws`
+- App under `/ArchLinks`: `wss://host/ArchLinks/_ln_sshgw/17681/ws`
+- App under `/ERP3`: `wss://host/ERP3/_ln_sshgw/17681/ws`
+
+If WSS still fails, on the server verify:
+
+1. `httpd -t` is OK and Apache was restarted after enabling the proxy  
+2. ttyd is listening: `netstat -ano | findstr 17681` (should show `127.0.0.1:17681`)  
+3. Local proxy works: `http://127.0.0.1/<YourFolder>/_ln_sshgw/17681/` on the server  
+4. Any front load balancer must forward `/<YourFolder>/_ln_sshgw/` with WebSocket Upgrade headers  
+
+Optional override if auto-detect misses the folder: setting `gateway_http_proxy_base` = `ArchLinks` (or `ERP3`, etc., no leading slash), or env `LINKNEST_GATEWAY_PROXY_BASE` / `VITE_BASE_PATH`.
 
 Requires Apache modules: `rewrite`, `proxy`, `proxy_http`, `proxy_wstunnel` (the script enables them).
 

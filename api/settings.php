@@ -66,34 +66,7 @@ switch ($method) {
  * Returns the base path (e.g., '/myapp' or '') or empty string if at root
  */
 function getBasePath() {
-    $requestUri = $_SERVER['REQUEST_URI'] ?? '';
-    $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
-    $httpHost = $_SERVER['HTTP_HOST'] ?? '';
-    $httpReferer = $_SERVER['HTTP_REFERER'] ?? '';
-    
-    // Extract base path from REQUEST_URI
-    // Look for pattern: /basepath/api/...
-    if (preg_match('#^/([^/]+)/api/#', $requestUri, $matches)) {
-        return '/' . $matches[1];
-    }
-    
-    // Check SCRIPT_NAME for base path
-    if (preg_match('#^/([^/]+)/api/#', $scriptName, $matches)) {
-        return '/' . $matches[1];
-    }
-    
-    // In dev mode, check HTTP_REFERER for base path (Vite proxy might strip it from REQUEST_URI)
-    // Look for pattern like http://localhost:3000/basepath/...
-    if (!empty($httpReferer) && preg_match('#://[^/]+/([^/]+)/#', $httpReferer, $matches)) {
-        $refererBasePath = '/' . $matches[1];
-        // Only use if it's not a common path like 'api', 'uploads', 'dist', 'assets'
-        if (!in_array($matches[1], ['api', 'uploads', 'dist', 'assets', 'node_modules'])) {
-            return $refererBasePath;
-        }
-    }
-    
-    // No base path detected (running from root)
-    return '';
+    return getAppBasePath();
 }
 
 /**

@@ -472,6 +472,11 @@ function vncGatewayPreferHttpProxy(): bool {
     return vncGatewayRequestIsHttps();
 }
 
+/** App base path when not deployed at domain root (any folder name). */
+function vncGatewayHttpProxyBasePath(): string {
+    return getAppBasePath();
+}
+
 function vncGatewaySslPaths(): ?array {
     $candidates = [
         ['cert' => '/etc/apache2/ssl/linknest.crt', 'key' => '/etc/apache2/ssl/linknest.key'],
@@ -490,7 +495,8 @@ function vncGatewayBuildWsUrl(int $listenPort, bool $useSsl = false): string {
         $https = vncGatewayRequestIsHttps();
         $scheme = $https ? 'wss' : 'ws';
         $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-        return $scheme . '://' . $host . '/_ln_vncgw/' . $listenPort . '/websockify';
+        $base = vncGatewayHttpProxyBasePath();
+        return $scheme . '://' . $host . $base . '/_ln_vncgw/' . $listenPort . '/websockify';
     }
 
     $https = $useSsl;

@@ -4516,6 +4516,106 @@ function getSetting(string $key, $default = null) {
 }
 
 /**
+ * Detect the URL base path when LinkNest is deployed under a subfolder.
+ * Works for any folder name (/ArchLinks, /ERP3, /linknest, …) — not hardcoded.
+ *
+ * Priority: setting/env override → SCRIPT_NAME → REQUEST_URI → HTTP_REFERER
+ *
+ * @return string '' at domain root, or '/ArchLinks' style prefix (no trailing slash)
+ */
+function getAppBasePath(): string {
+    static $cached = null;
+    if ($cached !== null) {
+        return $cached;
+    }
+
+    $reserved = [
+        'api', 'uploads', 'dist', 'assets', 'node_modules', 'vendor',
+        'public', 'data', 'bin', 'scripts', 'docs', 'apache',
+        '_ln_sshgw', '_ln_vncgw',
+    ];
+
+    $normalize = static function (string $raw) use ($reserved): string {
+        $raw = trim(str_replace('\\', '/', $raw));
+        if ($raw === '' || $raw === '/') {
+            return '';
+        }
+        $raw = '/' . trim($raw, '/');
+        // Only keep a single URL segment (e.g. /ArchLinks)
+        if (!preg_match('#^/([^/]+)$#', $raw, $m)) {
+            // If multi-segment slipped in, take the first
+            if (preg_match('#^/([^/]+)#', $raw, $m2)) {
+                $seg = $m2[1];
+            } else {
+                return '';
+            }
+        } else {
+            $seg = $m[1];
+        }
+        if ($seg === '' || in_array(strtolower($seg), $reserved, true)) {
+            return '';
+        }
+        return '/' . $seg;
+    };
+
+    // Explicit override (optional) — any name, e.g. ArchLinks or ERP3
+    $forced = '';
+    try {
+        $forced = trim((string)getSetting('gateway_http_proxy_base', ''));
+    } catch (Throwable $e) {
+        $forced = '';
+    }
+    if ($forced === '' && getenv('LINKNEST_GATEWAY_PROXY_BASE')) {
+        $forced = (string)getenv('LINKNEST_GATEWAY_PROXY_BASE');
+    }
+    if ($forced === '' && getenv('VITE_BASE_PATH')) {
+        $forced = (string)getenv('VITE_BASE_PATH');
+    }
+    if ($forced === '' && getenv('BASE_PATH')) {
+        $forced = (string)getenv('BASE_PATH');
+    }
+    $fromForced = $normalize($forced);
+    if ($fromForced !== '') {
+        return $cached = $fromForced;
+    }
+
+    $script = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? ''));
+    if (preg_match('#^/([^/]+)/api/(?:index\.php)?$#', $script, $m)
+        || preg_match('#^/([^/]+)/api/#', $script, $m)) {
+        $base = $normalize('/' . $m[1]);
+        if ($base !== '') {
+            return $cached = $base;
+        }
+    }
+
+    $uri = str_replace('\\', '/', (string)($_SERVER['REQUEST_URI'] ?? ''));
+    $uri = explode('?', $uri, 2)[0];
+    if (preg_match('#^/([^/]+)/api/#', $uri, $m)) {
+        $base = $normalize('/' . $m[1]);
+        if ($base !== '') {
+            return $cached = $base;
+        }
+    }
+
+    // Alias / subdir installs sometimes expose CONTEXT_PREFIX
+    $ctx = str_replace('\\', '/', (string)($_SERVER['CONTEXT_PREFIX'] ?? ''));
+    $fromCtx = $normalize($ctx);
+    if ($fromCtx !== '') {
+        return $cached = $fromCtx;
+    }
+
+    $referer = (string)($_SERVER['HTTP_REFERER'] ?? '');
+    if ($referer !== '' && preg_match('#://[^/]+/([^/]+)/#', $referer, $m)) {
+        $base = $normalize('/' . $m[1]);
+        if ($base !== '') {
+            return $cached = $base;
+        }
+    }
+
+    return $cached = '';
+}
+
+/**
  * Persist a setting value (string). Creates or updates the row.
  */
 function setSetting(string $key, string $value): void {
