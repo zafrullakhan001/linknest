@@ -159,6 +159,7 @@ Env (optional): `GITHUB_TOKEN` / `GH_TOKEN`.
 | Dubious ownership / hung fetch | Updater injects `safe.directory` + PAT; ensure token is saved |
 | Rollback has no DB option | That snapshot was created with backup unchecked |
 | UI still old after commit update | Zip mode without Node: apply a **Release** with `dist/` (`publish-update-release.ps1`), then Ctrl+F5 |
+| Build fails: `buildSshLinkUrl` is not exported | App Update skipped `utils/` (fixed in updater allow-list). Copy latest `utils/sshLink.ts` from the repo, or re-apply a Release after updating `api/updater_lib.php` |
 | UI still old | Ctrl+F5; check `BUILD_INFO.json` and that `dist/assets/*.js` timestamps changed |
 
 ---

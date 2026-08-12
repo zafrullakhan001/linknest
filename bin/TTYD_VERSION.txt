@@ -3,4 +3,4 @@ Version: 1.7.7
 Windows: bin/ttyd.exe (from ttyd.win32.exe)
 Linux:   bin/ttyd.x86_64
 Source:  https://github.com/tsl0922/ttyd/releases/tag/1.7.7
-Updated: 2026-08-11 20:55:52
+Updated: 2026-08-12 04:37:54
