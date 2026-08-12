@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 type Point = { x: number; y: number };
 type Size = { width: number; height: number };
@@ -11,6 +11,17 @@ const MIN_HEIGHT = 360;
 const MAX_WIDTH = 1400;
 const MAX_HEIGHT = 1000;
 const FOOTER_DRAG_HEIGHT = 32;
+
+export type SshFloatWindowDragContextValue = {
+  startDrag: (e: React.PointerEvent) => void;
+  isDragging: boolean;
+};
+
+export const SshFloatWindowDragContext = createContext<SshFloatWindowDragContextValue | null>(null);
+
+export function useSshFloatWindowDrag(): SshFloatWindowDragContextValue | null {
+  return useContext(SshFloatWindowDragContext);
+}
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -227,6 +238,15 @@ export const FloatingSshTerminalWidget: React.FC<{
     e.preventDefault();
     e.stopPropagation();
   };
+  const startDragRef = useRef(startDrag);
+  startDragRef.current = startDrag;
+
+  const stableStartDrag = useMemo(
+    () => (e: React.PointerEvent) => {
+      startDragRef.current(e);
+    },
+    []
+  );
 
   const startResize = (e: React.PointerEvent, direction: string) => {
     resizeStartRef.current = {
@@ -297,81 +317,88 @@ export const FloatingSshTerminalWidget: React.FC<{
 
   const grabClass = isDragging ? 'cursor-grabbing' : 'cursor-grab';
 
+  const dragContextValue = useMemo<SshFloatWindowDragContextValue>(
+    () => ({ startDrag: stableStartDrag, isDragging }),
+    [stableStartDrag, isDragging]
+  );
+
   return (
-    <div
-      ref={containerRef}
-      className="linknest-overlay select-none"
-      style={{
-        position: 'fixed',
-        left: pos.x,
-        top: pos.y,
-        width: size.width,
-        height: size.height,
-        zIndex: 2147483647,
-      }}
-    >
-      <div className="relative w-full h-full flex flex-col rounded-xl overflow-hidden shadow-2xl">
-        {/* Top drag handle */}
-        <button
-          type="button"
-          className={`absolute -top-3 left-1/2 -translate-x-1/2 z-20 w-16 h-7 rounded-full shadow-md border border-sky-300/70 dark:border-sky-600/60 bg-sky-500/95 dark:bg-sky-600/95 backdrop-blur flex items-center justify-center text-white ${grabClass}`}
-          onPointerDown={startDrag}
-          title="Drag SSH terminal"
-          aria-label="Drag SSH terminal from top"
-        >
-          <span className="text-[16px] leading-none tracking-widest flex items-center">⋮⋮⋮</span>
-        </button>
+    <SshFloatWindowDragContext.Provider value={dragContextValue}>
+      <div
+        ref={containerRef}
+        className="linknest-overlay select-none"
+        style={{
+          position: 'fixed',
+          left: pos.x,
+          top: pos.y,
+          width: size.width,
+          height: size.height,
+          zIndex: 2147483647,
+        }}
+      >
+        <div className="relative w-full h-full flex flex-col rounded-xl overflow-hidden shadow-2xl">
+          {/* Top drag handle */}
+          <button
+            type="button"
+            className={`absolute -top-3 left-1/2 -translate-x-1/2 z-20 w-16 h-7 rounded-full shadow-md border border-sky-300/70 dark:border-sky-600/60 bg-sky-500/95 dark:bg-sky-600/95 backdrop-blur flex items-center justify-center text-white ${grabClass}`}
+            onPointerDown={stableStartDrag}
+            title="Drag SSH terminal"
+            aria-label="Drag SSH terminal from top"
+          >
+            <span className="text-[16px] leading-none tracking-widest flex items-center">⋮⋮⋮</span>
+          </button>
 
-        <div className="flex-1 min-h-0 overflow-hidden">{children}</div>
+          <div className="flex-1 min-h-0 overflow-hidden">{children}</div>
 
-        {/* Footer drag bar — always reachable even if the top handle is off-screen */}
-        <div
-          role="button"
-          tabIndex={0}
-          className={`shrink-0 z-20 flex items-center justify-center gap-2 border-t border-sky-400/40 bg-gradient-to-r from-sky-600 via-sky-500 to-sky-600 text-white shadow-inner ${grabClass} ${
-            isDragging ? 'brightness-110' : 'hover:brightness-105'
-          }`}
-          style={{ height: FOOTER_DRAG_HEIGHT }}
-          onPointerDown={startDrag}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') e.preventDefault();
-          }}
-          title="Drag SSH terminal from the footer"
-          aria-label="Drag SSH terminal from footer"
-        >
-          <span className="text-[14px] leading-none tracking-widest opacity-90" aria-hidden>
-            ⋮⋮⋮
-          </span>
-          <span className="text-[10px] font-semibold tracking-wide uppercase">
-            {isDragging ? 'Moving…' : 'Drag to move'}
-          </span>
-          <span className="text-[14px] leading-none tracking-widest opacity-90" aria-hidden>
-            ⋮⋮⋮
-          </span>
+          {/* Footer drag bar — always reachable even if the top handle is off-screen */}
+          <div
+            role="button"
+            tabIndex={0}
+            className={`shrink-0 z-20 flex items-center justify-center gap-2 border-t border-sky-400/40 bg-gradient-to-r from-sky-600 via-sky-500 to-sky-600 text-white shadow-inner ${grabClass} ${
+              isDragging ? 'brightness-110' : 'hover:brightness-105'
+            }`}
+            style={{ height: FOOTER_DRAG_HEIGHT }}
+            onPointerDown={stableStartDrag}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') e.preventDefault();
+            }}
+            title="Drag SSH terminal from the footer"
+            aria-label="Drag SSH terminal from footer"
+          >
+            <span className="text-[14px] leading-none tracking-widest opacity-90" aria-hidden>
+              ⋮⋮⋮
+            </span>
+            <span className="text-[10px] font-semibold tracking-wide uppercase">
+              {isDragging ? 'Moving…' : 'Drag to move'}
+            </span>
+            <span className="text-[14px] leading-none tracking-widest opacity-90" aria-hidden>
+              ⋮⋮⋮
+            </span>
+          </div>
+
+          {/* Resize handles */}
+          <div
+            className={`absolute top-0 right-0 w-3 h-3 cursor-ne-resize z-30 ${isResizing ? 'opacity-100' : 'opacity-0 hover:opacity-100'} transition-opacity`}
+            onPointerDown={(e) => startResize(e, 'ne')}
+            style={{ background: 'linear-gradient(135deg, transparent 50%, rgba(14, 165, 233, 0.55) 50%)' }}
+          />
+          <div
+            className={`absolute bottom-0 right-0 w-3 h-3 cursor-se-resize z-30 ${isResizing ? 'opacity-100' : 'opacity-0 hover:opacity-100'} transition-opacity`}
+            onPointerDown={(e) => startResize(e, 'se')}
+            style={{ background: 'linear-gradient(45deg, transparent 50%, rgba(14, 165, 233, 0.55) 50%)' }}
+          />
+          <div
+            className={`absolute bottom-0 left-0 w-3 h-3 cursor-sw-resize z-30 ${isResizing ? 'opacity-100' : 'opacity-0 hover:opacity-100'} transition-opacity`}
+            onPointerDown={(e) => startResize(e, 'sw')}
+            style={{ background: 'linear-gradient(-45deg, transparent 50%, rgba(14, 165, 233, 0.55) 50%)' }}
+          />
+          <div
+            className={`absolute top-0 left-0 w-3 h-3 cursor-nw-resize z-30 ${isResizing ? 'opacity-100' : 'opacity-0 hover:opacity-100'} transition-opacity`}
+            onPointerDown={(e) => startResize(e, 'nw')}
+            style={{ background: 'linear-gradient(-135deg, transparent 50%, rgba(14, 165, 233, 0.55) 50%)' }}
+          />
         </div>
-
-        {/* Resize handles */}
-        <div
-          className={`absolute top-0 right-0 w-3 h-3 cursor-ne-resize z-30 ${isResizing ? 'opacity-100' : 'opacity-0 hover:opacity-100'} transition-opacity`}
-          onPointerDown={(e) => startResize(e, 'ne')}
-          style={{ background: 'linear-gradient(135deg, transparent 50%, rgba(14, 165, 233, 0.55) 50%)' }}
-        />
-        <div
-          className={`absolute bottom-0 right-0 w-3 h-3 cursor-se-resize z-30 ${isResizing ? 'opacity-100' : 'opacity-0 hover:opacity-100'} transition-opacity`}
-          onPointerDown={(e) => startResize(e, 'se')}
-          style={{ background: 'linear-gradient(45deg, transparent 50%, rgba(14, 165, 233, 0.55) 50%)' }}
-        />
-        <div
-          className={`absolute bottom-0 left-0 w-3 h-3 cursor-sw-resize z-30 ${isResizing ? 'opacity-100' : 'opacity-0 hover:opacity-100'} transition-opacity`}
-          onPointerDown={(e) => startResize(e, 'sw')}
-          style={{ background: 'linear-gradient(-45deg, transparent 50%, rgba(14, 165, 233, 0.55) 50%)' }}
-        />
-        <div
-          className={`absolute top-0 left-0 w-3 h-3 cursor-nw-resize z-30 ${isResizing ? 'opacity-100' : 'opacity-0 hover:opacity-100'} transition-opacity`}
-          onPointerDown={(e) => startResize(e, 'nw')}
-          style={{ background: 'linear-gradient(-135deg, transparent 50%, rgba(14, 165, 233, 0.55) 50%)' }}
-        />
       </div>
-    </div>
+    </SshFloatWindowDragContext.Provider>
   );
 };

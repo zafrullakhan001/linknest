@@ -27,6 +27,7 @@ import {
 } from '../services/sshGatewayService';
 import type { OpenSshTerminalDetail } from '../utils/sshLink';
 import { buildSshLinkUrl } from '../utils/sshLink';
+import { useSshFloatWindowDrag } from './FloatingSshTerminalWidget';
 import { RdpSessionPane } from './RdpSessionPane';
 import { XtermZoomSafeHost } from './XtermZoomSafeHost';
 import {
@@ -79,6 +80,10 @@ const TAB_BAR_FONT_SIZE_KEY = 'linknest.sshTerminal.tabBarFontSize.v1';
 const SKIP_BAR_HEIGHT_KEY = 'linknest.sshTerminal.skipBarHeight.v1';
 const SKIP_BAR_FONT_SIZE_KEY = 'linknest.sshTerminal.skipBarFontSize.v1';
 const VIEW_MODE_KEY = 'linknest.sshTerminal.viewMode.v1';
+const PANE_SHARES_KEY = 'linknest.sshTerminal.paneShares.v1';
+const GRID_COL_SHARES_KEY = 'linknest.sshTerminal.gridColShares.v1';
+const GRID_ROW_SHARES_KEY = 'linknest.sshTerminal.gridRowShares.v1';
+const PANE_SHARE_MIN = 0.15;
 const PANEL_MIN_WIDTH = 160;
 const PANEL_MAX_WIDTH = 420;
 const DEFAULT_MAX_SSH_TABS = 8;
@@ -1193,6 +1198,61 @@ function loadViewMode(): TerminalViewMode {
   return 'single';
 }
 
+function loadShareArray(key: string, fallbackLen = 0): number[] {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return Array.from({ length: fallbackLen }, () => 1);
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return Array.from({ length: fallbackLen }, () => 1);
+    const shares = parsed
+      .map((n) => (typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : 1))
+      .filter((n) => n > 0);
+    if (shares.length === 0) return Array.from({ length: fallbackLen }, () => 1);
+    return shares;
+  } catch {
+    return Array.from({ length: fallbackLen }, () => 1);
+  }
+}
+
+function normalizeShareArray(prev: number[], length: number): number[] {
+  if (length <= 0) return [];
+  if (prev.length === length) return prev;
+  if (prev.length > length) return prev.slice(0, length);
+  return [...prev, ...Array.from({ length: length - prev.length }, () => 1)];
+}
+
+function persistShareArray(key: string, shares: number[]) {
+  try {
+    localStorage.setItem(key, JSON.stringify(shares));
+  } catch {
+    // ignore
+  }
+}
+
+function redistributeAdjacentShares(
+  shares: number[],
+  leftIndex: number,
+  deltaShare: number
+): number[] {
+  if (leftIndex < 0 || leftIndex >= shares.length - 1) return shares;
+  const a = shares[leftIndex];
+  const b = shares[leftIndex + 1];
+  const sum = a + b;
+  const min = Math.min(PANE_SHARE_MIN, sum / 2);
+  const nextA = Math.min(sum - min, Math.max(min, a + deltaShare));
+  const next = shares.slice();
+  next[leftIndex] = nextA;
+  next[leftIndex + 1] = sum - nextA;
+  return next;
+}
+
+function shareBoundaryPct(shares: number[], afterIndex: number): number {
+  const total = shares.reduce((acc, n) => acc + n, 0) || 1;
+  let sum = 0;
+  for (let i = 0; i < afterIndex; i++) sum += shares[i] || 0;
+  return (sum / total) * 100;
+}
+
 function formatTabTags(tags: string[] | undefined | null): string {
   if (!tags || tags.length === 0) return '';
   return ` [${tags.join(', ')}]`;
@@ -1273,7 +1333,13 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
   const panelResizeCleanupRef = useRef<(() => void) | null>(null);
   const cmdBarHeightRef = useRef(loadCmdBarHeight());
   const cmdBarResizeCleanupRef = useRef<(() => void) | null>(null);
+  const paneSharesRef = useRef<number[]>(loadShareArray(PANE_SHARES_KEY));
+  const gridColSharesRef = useRef<number[]>(loadShareArray(GRID_COL_SHARES_KEY));
+  const gridRowSharesRef = useRef<number[]>(loadShareArray(GRID_ROW_SHARES_KEY));
+  const paneResizeCleanupRef = useRef<(() => void) | null>(null);
+  const tileLayoutRef = useRef<HTMLDivElement | null>(null);
   const encoderRef = useRef(new TextEncoder());
+  const floatWindowDrag = useSshFloatWindowDrag();
 
   const [connectMode, setConnectMode] = useState<ConnectMode>(() => {
     const saved = localStorage.getItem(MODE_STORAGE_KEY) as ConnectMode | null;
@@ -1307,6 +1373,10 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
   const [isResizingPanel, setIsResizingPanel] = useState(false);
   const [cmdBarHeight, setCmdBarHeight] = useState(() => loadCmdBarHeight());
   const [isResizingCmdBar, setIsResizingCmdBar] = useState(false);
+  const [paneShares, setPaneShares] = useState<number[]>(() => loadShareArray(PANE_SHARES_KEY));
+  const [gridColShares, setGridColShares] = useState<number[]>(() => loadShareArray(GRID_COL_SHARES_KEY));
+  const [gridRowShares, setGridRowShares] = useState<number[]>(() => loadShareArray(GRID_ROW_SHARES_KEY));
+  const [isResizingPanes, setIsResizingPanes] = useState(false);
   const [termFontSize, setTermFontSize] = useState(() =>
     loadClampedInt(TERM_FONT_SIZE_KEY, 14, TERM_FONT_SIZE_MIN, TERM_FONT_SIZE_MAX)
   );
@@ -1479,6 +1549,129 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       return applied;
     },
     []
+  );
+
+  const applyAppearanceToTabId = useCallback(
+    (
+      tabId: string,
+      appearance: {
+        fontSize: number;
+        fontFamily: string;
+        bgColor: string;
+        fgColor: string;
+        cursorColor: string;
+        selectionBg: string;
+        ansi: TermAnsiPalette;
+      }
+    ) => {
+      const handle = sessionHandlesRef.current.get(tabId);
+      if (!handle?.term) return;
+      try {
+        handle.term.options.fontSize = appearance.fontSize;
+        handle.term.options.fontFamily = appearance.fontFamily;
+        handle.term.options.theme = buildXtermTheme({
+          background: appearance.bgColor,
+          foreground: appearance.fgColor,
+          cursor: appearance.cursorColor,
+          selectionBackground: appearance.selectionBg,
+          ansi: appearance.ansi,
+        });
+        handle.term.refresh(0, Math.max(0, handle.term.rows - 1));
+        handle.fit?.fit();
+      } catch {
+        // ignore
+      }
+    },
+    []
+  );
+
+  const resolveTabAppearance = useCallback((tab: SessionTab) => {
+    const cid = tab.connectionId || null;
+    if (cid && editingIdRef.current === cid) {
+      return mergeConnectionAppearance(appearanceDraftRef.current);
+    }
+    if (cid) {
+      const saved = connectionsRef.current.find((c) => c.id === cid);
+      return mergeConnectionAppearance(saved?.appearance);
+    }
+    return mergeConnectionAppearance(appearanceDraftRef.current);
+  }, []);
+
+  const applyQuickTitleBarAppearance = useCallback(
+    (
+      tab: SessionTab,
+      patch: Partial<{
+        fontSize: number;
+        fontFamily: string;
+        bgColor: string;
+        fgColor: string;
+      }>
+    ) => {
+      if ((tab.kind || 'ssh') === 'rdp') return;
+      const current = resolveTabAppearance(tab);
+      const colorsTouched = patch.bgColor != null || patch.fgColor != null;
+      const next = {
+        ...current,
+        ...patch,
+        themePresetId: colorsTouched ? 'custom' : current.themePresetId,
+      };
+      const appearancePayload: SshConnectionAppearance = {
+        themePresetId: next.themePresetId,
+        fontSize: next.fontSize,
+        fontFamily: next.fontFamily,
+        bgColor: next.bgColor,
+        fgColor: next.fgColor,
+        cursorColor: next.cursorColor,
+        selectionBg: next.selectionBg,
+        ansi: next.ansi as Record<string, string>,
+      };
+
+      const cid = tab.connectionId || null;
+      if (cid) {
+        applyAppearanceToConnectionTabs(cid, next);
+        const nextList = connectionsRef.current.map((c) =>
+          c.id === cid
+            ? { ...c, appearance: normalizeSshAppearance(appearancePayload) || undefined }
+            : c
+        );
+        connectionsRef.current = nextList;
+        setConnections(nextList);
+        if (!useServer) {
+          persistLocalConnections(nextList);
+        } else {
+          void sshConnectionService
+            .update(cid, { appearance: normalizeSshAppearance(appearancePayload) || undefined })
+            .then((updated) => {
+              setConnections((prev) => prev.map((c) => (c.id === cid ? updated : c)));
+            })
+            .catch(() => {
+              // keep local optimistic update
+            });
+        }
+        if (editingIdRef.current === cid) {
+          loadAppearanceIntoForm(appearancePayload);
+        }
+      } else {
+        applyAppearanceToTabId(tab.id, next);
+        if (patch.fontSize != null) setTermFontSize(next.fontSize);
+        if (patch.fontFamily != null) setTermFontFamily(next.fontFamily);
+        if (patch.bgColor != null) {
+          setThemePresetId('custom');
+          setTermBgColor(next.bgColor);
+        }
+        if (patch.fgColor != null) {
+          setThemePresetId('custom');
+          setTermFgColor(next.fgColor);
+        }
+      }
+    },
+    [
+      applyAppearanceToConnectionTabs,
+      applyAppearanceToTabId,
+      loadAppearanceIntoForm,
+      resolveTabAppearance,
+      useServer,
+    ]
   );
 
   // After exit / last tab closed, don't leave "Connecting…" stuck in the header
@@ -2097,6 +2290,47 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     if (n <= 6) return 3;
     return 4;
   }, [tabs.length]);
+
+  const tileRows = useMemo(
+    () => Math.max(1, Math.ceil(Math.max(tabs.length, 1) / tileCols)),
+    [tabs.length, tileCols]
+  );
+
+  useEffect(() => {
+    setPaneShares((prev) => {
+      const next = normalizeShareArray(prev, tabs.length);
+      paneSharesRef.current = next;
+      return next;
+    });
+  }, [tabs.length]);
+
+  useEffect(() => {
+    setGridColShares((prev) => {
+      const next = normalizeShareArray(prev, tileCols);
+      gridColSharesRef.current = next;
+      return next;
+    });
+  }, [tileCols]);
+
+  useEffect(() => {
+    setGridRowShares((prev) => {
+      const next = normalizeShareArray(prev, tileRows);
+      gridRowSharesRef.current = next;
+      return next;
+    });
+  }, [tileRows]);
+
+  useEffect(() => {
+    paneSharesRef.current = paneShares;
+  }, [paneShares]);
+
+  useEffect(() => {
+    gridColSharesRef.current = gridColShares;
+  }, [gridColShares]);
+
+  useEffect(() => {
+    gridRowSharesRef.current = gridRowShares;
+  }, [gridRowShares]);
 
   useEffect(() => {
     const onFs = () => {
@@ -3035,6 +3269,8 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       panelResizeCleanupRef.current = null;
       cmdBarResizeCleanupRef.current?.();
       cmdBarResizeCleanupRef.current = null;
+      paneResizeCleanupRef.current?.();
+      paneResizeCleanupRef.current = null;
     };
   }, []);
 
@@ -3075,7 +3311,21 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       }
     }, 60);
     return () => window.clearTimeout(t);
-  }, [panelOpen, panelWidth, showSettings, activeTabId, isFullscreen, multiView, viewMode, cmdBarHeight, sendResize, fitSessions]);
+  }, [
+    panelOpen,
+    panelWidth,
+    showSettings,
+    activeTabId,
+    isFullscreen,
+    multiView,
+    viewMode,
+    cmdBarHeight,
+    paneShares,
+    gridColShares,
+    gridRowShares,
+    sendResize,
+    fitSessions,
+  ]);
 
   useEffect(() => {
     try {
@@ -3183,6 +3433,114 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     cmdBarResizeCleanupRef.current = () => {
       window.removeEventListener('pointermove', onMove);
     };
+  };
+
+  const startStackPaneResize = (e: React.PointerEvent, leftIndex: number, axis: 'x' | 'y') => {
+    e.preventDefault();
+    e.stopPropagation();
+    paneResizeCleanupRef.current?.();
+    paneResizeCleanupRef.current = null;
+    setIsResizingPanes(true);
+
+    const startCoord = axis === 'x' ? e.clientX : e.clientY;
+    const startShares = paneSharesRef.current.slice();
+    const pairSum = (startShares[leftIndex] || 1) + (startShares[leftIndex + 1] || 1);
+
+    const onMove = (ev: PointerEvent) => {
+      const el = tileLayoutRef.current;
+      if (!el) return;
+      const size = axis === 'x' ? el.clientWidth : el.clientHeight;
+      if (size <= 0) return;
+      const deltaPx = (axis === 'x' ? ev.clientX : ev.clientY) - startCoord;
+      const deltaShare = (deltaPx / size) * pairSum;
+      const next = redistributeAdjacentShares(startShares, leftIndex, deltaShare);
+      paneSharesRef.current = next;
+      setPaneShares(next);
+    };
+
+    const onUp = () => {
+      paneResizeCleanupRef.current?.();
+      paneResizeCleanupRef.current = null;
+      setIsResizingPanes(false);
+      persistShareArray(PANE_SHARES_KEY, paneSharesRef.current);
+      window.setTimeout(() => {
+        try {
+          fitSessions();
+        } catch {
+          // ignore
+        }
+      }, 40);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp, { once: true });
+    window.addEventListener('pointercancel', onUp, { once: true });
+    paneResizeCleanupRef.current = () => {
+      window.removeEventListener('pointermove', onMove);
+    };
+  };
+
+  const startGridTrackResize = (
+    e: React.PointerEvent,
+    track: 'col' | 'row',
+    leftIndex: number
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    paneResizeCleanupRef.current?.();
+    paneResizeCleanupRef.current = null;
+    setIsResizingPanes(true);
+
+    const startCoord = track === 'col' ? e.clientX : e.clientY;
+    const startShares =
+      track === 'col' ? gridColSharesRef.current.slice() : gridRowSharesRef.current.slice();
+    const pairSum = (startShares[leftIndex] || 1) + (startShares[leftIndex + 1] || 1);
+
+    const onMove = (ev: PointerEvent) => {
+      const el = tileLayoutRef.current;
+      if (!el) return;
+      const size = track === 'col' ? el.clientWidth : el.clientHeight;
+      if (size <= 0) return;
+      const deltaPx = (track === 'col' ? ev.clientX : ev.clientY) - startCoord;
+      const deltaShare = (deltaPx / size) * pairSum;
+      const next = redistributeAdjacentShares(startShares, leftIndex, deltaShare);
+      if (track === 'col') {
+        gridColSharesRef.current = next;
+        setGridColShares(next);
+      } else {
+        gridRowSharesRef.current = next;
+        setGridRowShares(next);
+      }
+    };
+
+    const onUp = () => {
+      paneResizeCleanupRef.current?.();
+      paneResizeCleanupRef.current = null;
+      setIsResizingPanes(false);
+      persistShareArray(GRID_COL_SHARES_KEY, gridColSharesRef.current);
+      persistShareArray(GRID_ROW_SHARES_KEY, gridRowSharesRef.current);
+      window.setTimeout(() => {
+        try {
+          fitSessions();
+        } catch {
+          // ignore
+        }
+      }, 40);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp, { once: true });
+    window.addEventListener('pointercancel', onUp, { once: true });
+    paneResizeCleanupRef.current = () => {
+      window.removeEventListener('pointermove', onMove);
+    };
+  };
+
+  const onPaneTitleBarPointerDown = (e: React.PointerEvent) => {
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest('button, input, label, a, select, textarea')) return;
+    floatWindowDrag?.startDrag(e);
   };
 
   useEffect(() => {
@@ -6308,25 +6666,35 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
             )}
 
             <div
+              className={`relative flex-1 min-h-0 overflow-hidden ${
+                isResizingPanes ? 'select-none' : ''
+              }`}
+            >
+            <div
+              ref={tileLayoutRef}
               className={
                 viewMode === 'grid'
-                  ? 'relative flex-1 min-h-0 grid gap-1 p-1 overflow-hidden'
+                  ? 'absolute inset-0 grid gap-1 p-1 overflow-hidden'
                   : viewMode === 'stack-v'
-                    ? 'relative flex-1 min-h-0 flex flex-col gap-1 p-1 overflow-hidden'
+                    ? 'absolute inset-0 flex flex-col p-1 overflow-hidden'
                     : viewMode === 'stack-h'
-                      ? 'relative flex-1 min-h-0 flex flex-row gap-1 p-1 overflow-hidden'
-                      : 'relative flex-1 min-h-0 overflow-hidden'
+                      ? 'absolute inset-0 flex flex-row p-1 overflow-hidden'
+                      : 'absolute inset-0 overflow-hidden'
               }
               style={
                 viewMode === 'grid'
                   ? {
-                      gridTemplateColumns: `repeat(${tileCols}, minmax(0, 1fr))`,
-                      gridAutoRows: 'minmax(0, 1fr)',
+                      gridTemplateColumns: normalizeShareArray(gridColShares, tileCols)
+                        .map((s) => `minmax(0, ${s}fr)`)
+                        .join(' '),
+                      gridTemplateRows: normalizeShareArray(gridRowShares, tileRows)
+                        .map((s) => `minmax(0, ${s}fr)`)
+                        .join(' '),
                     }
                   : undefined
               }
             >
-              {tabs.map((tab) => {
+              {tabs.map((tab, tabIndex) => {
                 const conn = tab.connectionId
                   ? connections.find((c) => c.id === tab.connectionId)
                   : undefined;
@@ -6334,12 +6702,27 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                 const tagSuffix = formatTabTags(conn?.tags);
                 const skipCheckSize = Math.max(12, Math.min(18, Math.round(skipBarFontSize)));
                 const isActive = tab.id === activeTabId;
-                return (
+                const paneShare = normalizeShareArray(paneShares, tabs.length)[tabIndex] ?? 1;
+                const stackFlex =
+                  multiView && (viewMode === 'stack-h' || viewMode === 'stack-v')
+                    ? { flex: `${paneShare} 1 0%` }
+                    : undefined;
+                const titleGrabClass = floatWindowDrag
+                  ? floatWindowDrag.isDragging
+                    ? 'cursor-grabbing'
+                    : 'cursor-grab'
+                  : '';
+                const tabAppearance = resolveTabAppearance(tab);
+                const paneBg =
+                  multiView && (tab.kind || 'ssh') !== 'rdp'
+                    ? tabAppearance.bgColor
+                    : termBgColor;
+
+                const pane = (
                   <div
-                    key={tab.id}
                     className={
                       multiView
-                        ? `min-h-0 min-w-0 flex-1 flex flex-col rounded-md border overflow-hidden transition-[box-shadow,border-color] duration-200 ${
+                        ? `min-h-0 min-w-0 flex flex-col rounded-md border overflow-hidden transition-[box-shadow,border-color] duration-200 ${
                             isActive
                               ? 'ring-2 ring-orange-400/80 border-orange-400/70 shadow-[0_0_0_1px_rgba(251,146,60,0.35)]'
                               : 'opacity-90'
@@ -6352,9 +6735,10 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                       multiView
                         ? {
                             borderColor: isActive ? undefined : `${connColor}66`,
-                            backgroundColor: termBgColor,
+                            backgroundColor: paneBg,
+                            ...stackFlex,
                           }
-                        : { backgroundColor: termBgColor }
+                        : { backgroundColor: paneBg }
                     }
                     aria-hidden={!multiView && !isActive}
                     onMouseDown={() => {
@@ -6363,7 +6747,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                   >
                     {multiView && (
                       <div
-                        className={`shrink-0 flex items-center gap-1.5 px-1.5 font-medium border-b transition-colors duration-200 ${
+                        className={`shrink-0 flex items-center gap-1 px-1.5 font-medium border-b transition-colors duration-200 ${titleGrabClass} ${
                           isActive
                             ? 'bg-orange-500/25 text-orange-50 border-orange-400/50'
                             : 'bg-slate-900/80 text-slate-300 border-slate-800'
@@ -6376,6 +6760,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                           height: skipBarHeight,
                           fontSize: skipBarFontSize,
                         }}
+                        onPointerDown={onPaneTitleBarPointerDown}
                       >
                         <span
                           className={`rounded-full shrink-0 ring-2 ${
@@ -6391,7 +6776,10 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                           aria-hidden
                           title={isActive ? 'Active terminal' : undefined}
                         />
-                        <span className="truncate flex-1">
+                        <span
+                          className="truncate min-w-0 max-w-[28%] pointer-events-none"
+                          title={floatWindowDrag ? `${tab.title} — drag bar to move window` : tab.title}
+                        >
                           {tab.title}
                           {tagSuffix ? (
                             <span
@@ -6403,9 +6791,132 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                             </span>
                           ) : null}
                         </span>
+                        {(tab.kind || 'ssh') !== 'rdp' && (
+                          <div
+                            className="flex items-center gap-0.5 shrink-0 min-w-0 flex-1 justify-end overflow-hidden"
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            title="Quick terminal appearance"
+                          >
+                            <select
+                              value={
+                                TERM_FONT_PRESETS.find((p) => p.value === tabAppearance.fontFamily)
+                                  ?.id || 'system'
+                              }
+                              onChange={(e) => {
+                                const preset = TERM_FONT_PRESETS.find((p) => p.id === e.target.value);
+                                applyQuickTitleBarAppearance(tab, {
+                                  fontFamily: preset?.value || DEFAULT_TERM_FONT_FAMILY,
+                                });
+                              }}
+                              className={`h-5 max-w-[7.5rem] min-w-0 px-0.5 rounded border text-[9px] leading-none cursor-pointer ${
+                                isActive
+                                  ? 'border-orange-300/50 bg-orange-950/40 text-orange-50'
+                                  : 'border-slate-600 bg-slate-950 text-slate-200'
+                              }`}
+                              style={{ fontFamily: tabAppearance.fontFamily }}
+                              title="Font family"
+                              aria-label={`Font for ${tab.title}`}
+                            >
+                              {TERM_FONT_GROUPS.map((group) => (
+                                <optgroup key={group} label={group}>
+                                  {TERM_FONT_PRESETS.filter((p) => p.group === group).map((p) => (
+                                    <option key={p.id} value={p.id} style={{ fontFamily: p.value }}>
+                                      {p.label}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                applyQuickTitleBarAppearance(tab, {
+                                  fontSize: Math.max(TERM_FONT_SIZE_MIN, tabAppearance.fontSize - 1),
+                                });
+                              }}
+                              className={`h-5 w-5 shrink-0 rounded border text-[9px] font-bold leading-none cursor-pointer ${
+                                isActive
+                                  ? 'border-orange-300/50 text-orange-50 hover:bg-orange-500/30'
+                                  : 'border-slate-600 text-slate-300 hover:bg-slate-800'
+                              }`}
+                              title="Smaller font"
+                              aria-label={`Smaller font for ${tab.title}`}
+                            >
+                              A−
+                            </button>
+                            <span
+                              className={`shrink-0 w-5 text-center tabular-nums text-[9px] font-semibold pointer-events-none ${
+                                isActive ? 'text-orange-100' : 'text-slate-400'
+                              }`}
+                              title="Font size"
+                            >
+                              {tabAppearance.fontSize}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                applyQuickTitleBarAppearance(tab, {
+                                  fontSize: Math.min(TERM_FONT_SIZE_MAX, tabAppearance.fontSize + 1),
+                                });
+                              }}
+                              className={`h-5 w-5 shrink-0 rounded border text-[9px] font-bold leading-none cursor-pointer ${
+                                isActive
+                                  ? 'border-orange-300/50 text-orange-50 hover:bg-orange-500/30'
+                                  : 'border-slate-600 text-slate-300 hover:bg-slate-800'
+                              }`}
+                              title="Larger font"
+                              aria-label={`Larger font for ${tab.title}`}
+                            >
+                              A+
+                            </button>
+                            <label
+                              className="relative shrink-0 h-5 w-5 rounded border overflow-hidden cursor-pointer"
+                              style={{
+                                borderColor: isActive ? 'rgba(253,186,116,0.5)' : '#475569',
+                                backgroundColor: tabAppearance.fgColor,
+                              }}
+                              title="Foreground color"
+                            >
+                              <input
+                                type="color"
+                                value={normalizeHexColor(tabAppearance.fgColor, DEFAULT_TERM_FG_COLOR)}
+                                onChange={(e) => {
+                                  applyQuickTitleBarAppearance(tab, {
+                                    fgColor: normalizeHexColor(e.target.value, DEFAULT_TERM_FG_COLOR),
+                                  });
+                                }}
+                                className="absolute inset-0 opacity-0 cursor-pointer"
+                                aria-label={`Foreground color for ${tab.title}`}
+                              />
+                            </label>
+                            <label
+                              className="relative shrink-0 h-5 w-5 rounded border overflow-hidden cursor-pointer"
+                              style={{
+                                borderColor: isActive ? 'rgba(253,186,116,0.5)' : '#475569',
+                                backgroundColor: tabAppearance.bgColor,
+                              }}
+                              title="Background color"
+                            >
+                              <input
+                                type="color"
+                                value={normalizeHexColor(tabAppearance.bgColor, DEFAULT_TERM_BG_COLOR)}
+                                onChange={(e) => {
+                                  applyQuickTitleBarAppearance(tab, {
+                                    bgColor: normalizeHexColor(e.target.value, DEFAULT_TERM_BG_COLOR),
+                                  });
+                                }}
+                                className="absolute inset-0 opacity-0 cursor-pointer"
+                                aria-label={`Background color for ${tab.title}`}
+                              />
+                            </label>
+                          </div>
+                        )}
                         {isActive && (
                           <span
-                            className="shrink-0 px-1.5 py-0.5 rounded bg-orange-500/90 text-white font-bold uppercase tracking-wide"
+                            className="shrink-0 px-1.5 py-0.5 rounded bg-orange-500/90 text-white font-bold uppercase tracking-wide pointer-events-none"
                             style={{ fontSize: Math.max(9, skipBarFontSize - 2) }}
                           >
                             Active
@@ -6418,7 +6929,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                               e.stopPropagation();
                               exportTerminalAscii(tab.id);
                             }}
-                            className={`shrink-0 px-1.5 py-0.5 rounded border font-semibold ${
+                            className={`shrink-0 px-1.5 py-0.5 rounded border font-semibold cursor-pointer ${
                               isActive
                                 ? 'border-orange-300/50 text-orange-50 hover:bg-orange-500/30'
                                 : 'border-emerald-700/60 text-emerald-200 hover:bg-emerald-950/50'
@@ -6463,7 +6974,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                           </label>
                         )}
                         <span
-                          className={`shrink-0 ${isActive ? 'text-orange-100/70' : 'text-slate-500'}`}
+                          className={`shrink-0 pointer-events-none ${isActive ? 'text-orange-100/70' : 'text-slate-500'}`}
                           style={{ fontSize: Math.max(9, skipBarFontSize - 1) }}
                         >
                           {tab.status}
@@ -6474,7 +6985,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                             e.stopPropagation();
                             duplicateTab(tab.id);
                           }}
-                          className={`shrink-0 px-1.5 py-0.5 rounded border font-semibold leading-none ${
+                          className={`shrink-0 px-1.5 py-0.5 rounded border font-semibold leading-none cursor-pointer ${
                             isActive
                               ? 'border-sky-300/70 bg-sky-600/80 text-white hover:bg-sky-500'
                               : 'border-sky-700/70 bg-sky-950/50 text-sky-300 hover:bg-sky-900/70 hover:text-sky-100'
@@ -6491,7 +7002,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                             e.stopPropagation();
                             void closeTab(tab.id);
                           }}
-                          className={`shrink-0 px-1.5 py-0.5 rounded border font-bold leading-none ${
+                          className={`shrink-0 px-1.5 py-0.5 rounded border font-bold leading-none cursor-pointer ${
                             isActive
                               ? 'border-rose-400/70 bg-rose-600/80 text-white hover:bg-rose-500'
                               : 'border-rose-700/70 bg-rose-950/50 text-rose-300 hover:bg-rose-900/70 hover:text-rose-100'
@@ -6530,6 +7041,37 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                     )}
                   </div>
                 );
+
+                if (
+                  multiView &&
+                  (viewMode === 'stack-h' || viewMode === 'stack-v') &&
+                  tabIndex < tabs.length - 1
+                ) {
+                  const axis = viewMode === 'stack-h' ? 'x' : 'y';
+                  return (
+                    <React.Fragment key={tab.id}>
+                      {pane}
+                      <div
+                        role="separator"
+                        aria-orientation={axis === 'x' ? 'vertical' : 'horizontal'}
+                        aria-label="Resize terminal panes"
+                        title="Drag to resize panes"
+                        onPointerDown={(e) => startStackPaneResize(e, tabIndex, axis)}
+                        className={
+                          axis === 'x'
+                            ? `shrink-0 self-stretch w-1.5 z-10 cursor-col-resize rounded-full ${
+                                isResizingPanes ? 'bg-brand-500/50' : 'bg-transparent hover:bg-brand-400/40'
+                              }`
+                            : `shrink-0 self-stretch h-1.5 z-10 cursor-row-resize rounded-full ${
+                                isResizingPanes ? 'bg-brand-500/50' : 'bg-transparent hover:bg-brand-400/40'
+                              }`
+                        }
+                      />
+                    </React.Fragment>
+                  );
+                }
+
+                return <React.Fragment key={tab.id}>{pane}</React.Fragment>;
               })}
               {tabs.length === 0 && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -6548,6 +7090,62 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                   </div>
                 </div>
               )}
+            </div>
+              {multiView &&
+                viewMode === 'grid' &&
+                tabs.length > 1 &&
+                normalizeShareArray(gridColShares, tileCols)
+                  .slice(0, -1)
+                  .map((_, i) => {
+                    const cols = normalizeShareArray(gridColShares, tileCols);
+                    const pct = shareBoundaryPct(cols, i + 1);
+                    return (
+                      <div
+                        key={`grid-col-split-${i}`}
+                        role="separator"
+                        aria-orientation="vertical"
+                        aria-label="Resize terminal columns"
+                        title="Drag to resize columns"
+                        onPointerDown={(e) => startGridTrackResize(e, 'col', i)}
+                        className={`absolute z-10 w-1.5 -ml-[3px] cursor-col-resize rounded-full ${
+                          isResizingPanes ? 'bg-brand-500/50' : 'bg-transparent hover:bg-brand-400/40'
+                        }`}
+                        style={{
+                          left: `calc(0.25rem + (100% - 0.5rem) * ${pct / 100})`,
+                          top: '0.25rem',
+                          bottom: '0.25rem',
+                        }}
+                      />
+                    );
+                  })}
+              {multiView &&
+                viewMode === 'grid' &&
+                tabs.length > 1 &&
+                tileRows > 1 &&
+                normalizeShareArray(gridRowShares, tileRows)
+                  .slice(0, -1)
+                  .map((_, i) => {
+                    const rows = normalizeShareArray(gridRowShares, tileRows);
+                    const pct = shareBoundaryPct(rows, i + 1);
+                    return (
+                      <div
+                        key={`grid-row-split-${i}`}
+                        role="separator"
+                        aria-orientation="horizontal"
+                        aria-label="Resize terminal rows"
+                        title="Drag to resize rows"
+                        onPointerDown={(e) => startGridTrackResize(e, 'row', i)}
+                        className={`absolute z-10 h-1.5 -mt-[3px] cursor-row-resize rounded-full ${
+                          isResizingPanes ? 'bg-brand-500/50' : 'bg-transparent hover:bg-brand-400/40'
+                        }`}
+                        style={{
+                          top: `calc(0.25rem + (100% - 0.5rem) * ${pct / 100})`,
+                          left: '0.25rem',
+                          right: '0.25rem',
+                        }}
+                      />
+                    );
+                  })}
             </div>
 
             {(() => {
