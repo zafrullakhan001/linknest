@@ -6,6 +6,8 @@ import '@xterm/xterm/css/xterm.css';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { isEscapeDialogOpen } from '../hooks/useEscapeToClose';
+import { createTile } from '../services/storageService';
+import type { Link, LinkSection, Tab, Tile } from '../types';
 import {
   sshConnectionService,
   type SavedSshConnection,
@@ -31,6 +33,8 @@ import {
   SshConnectionSidebarList,
   mergeCategoryOrder,
   categoryAccentColor,
+  categoryLabel,
+  categoryKey,
   type SshCategoryMetaMap,
   type SshListViewMode,
 } from './SshConnectionSidebarList';
@@ -832,9 +836,28 @@ function loadListDensity(): SshListViewMode {
   }
 }
 
-function loadCategoryOrder(): string[] {
+/** Category prefs are per account so they never leak across signed-in users on the same browser. */
+function categoryAccountStorageKey(base: string, accountKey: string): string {
+  return `${base}.${accountKey}`;
+}
+
+function readCategoryStorageRaw(base: string, accountKey: string): string | null {
   try {
-    const raw = localStorage.getItem(CATEGORY_ORDER_KEY);
+    const scoped = localStorage.getItem(categoryAccountStorageKey(base, accountKey));
+    if (scoped) return scoped;
+    // One-time guest migration from legacy unscoped keys only (never reuse for signed-in users).
+    if (accountKey === 'guest') {
+      return localStorage.getItem(base);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function loadCategoryOrder(accountKey: string): string[] {
+  try {
+    const raw = readCategoryStorageRaw(CATEGORY_ORDER_KEY, accountKey);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -844,9 +867,9 @@ function loadCategoryOrder(): string[] {
   }
 }
 
-function loadCollapsedCategories(): Record<string, boolean> {
+function loadCollapsedCategories(accountKey: string): Record<string, boolean> {
   try {
-    const raw = localStorage.getItem(CATEGORY_COLLAPSED_KEY);
+    const raw = readCategoryStorageRaw(CATEGORY_COLLAPSED_KEY, accountKey);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
@@ -860,9 +883,9 @@ function loadCollapsedCategories(): Record<string, boolean> {
   }
 }
 
-function loadCategoryMeta(): SshCategoryMetaMap {
+function loadCategoryMeta(accountKey: string): SshCategoryMetaMap {
   try {
-    const raw = localStorage.getItem(CATEGORY_META_KEY);
+    const raw = readCategoryStorageRaw(CATEGORY_META_KEY, accountKey);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
@@ -1240,11 +1263,14 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [notice, setNotice] = useState(IDLE_NOTICE);
   const [listDensity, setListDensity] = useState<SshListViewMode>(() => loadListDensity());
-  const [categoryOrder, setCategoryOrder] = useState<string[]>(() => loadCategoryOrder());
+  const [categoryScope, setCategoryScope] = useState(authUserKey);
+  const [categoryOrder, setCategoryOrder] = useState<string[]>(() => loadCategoryOrder(authUserKey));
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>(
-    () => loadCollapsedCategories()
+    () => loadCollapsedCategories(authUserKey)
   );
-  const [categoryMeta, setCategoryMeta] = useState<SshCategoryMetaMap>(() => loadCategoryMeta());
+  const [categoryMeta, setCategoryMeta] = useState<SshCategoryMetaMap>(() => loadCategoryMeta(authUserKey));
+  const [creatingPrivateSpace, setCreatingPrivateSpace] = useState(false);
+  const [cloningCategory, setCloningCategory] = useState(false);
 
   const useServer = Boolean(isAuthenticated);
 
@@ -1511,6 +1537,15 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     });
   }, [connections]);
 
+  // Reload category prefs whenever the signed-in account (or guest) changes.
+  useEffect(() => {
+    if (authUserKey === categoryScope) return;
+    setCategoryOrder(loadCategoryOrder(authUserKey));
+    setCollapsedCategories(loadCollapsedCategories(authUserKey));
+    setCategoryMeta(loadCategoryMeta(authUserKey));
+    setCategoryScope(authUserKey);
+  }, [authUserKey, categoryScope]);
+
   useEffect(() => {
     try {
       localStorage.setItem(LIST_DENSITY_KEY, listDensity);
@@ -1520,28 +1555,40 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
   }, [listDensity]);
 
   useEffect(() => {
+    if (categoryScope !== authUserKey) return;
     try {
-      localStorage.setItem(CATEGORY_ORDER_KEY, JSON.stringify(categoryOrder));
+      localStorage.setItem(
+        categoryAccountStorageKey(CATEGORY_ORDER_KEY, authUserKey),
+        JSON.stringify(categoryOrder)
+      );
     } catch {
       // ignore
     }
-  }, [categoryOrder]);
+  }, [categoryOrder, categoryScope, authUserKey]);
 
   useEffect(() => {
+    if (categoryScope !== authUserKey) return;
     try {
-      localStorage.setItem(CATEGORY_COLLAPSED_KEY, JSON.stringify(collapsedCategories));
+      localStorage.setItem(
+        categoryAccountStorageKey(CATEGORY_COLLAPSED_KEY, authUserKey),
+        JSON.stringify(collapsedCategories)
+      );
     } catch {
       // ignore
     }
-  }, [collapsedCategories]);
+  }, [collapsedCategories, categoryScope, authUserKey]);
 
   useEffect(() => {
+    if (categoryScope !== authUserKey) return;
     try {
-      localStorage.setItem(CATEGORY_META_KEY, JSON.stringify(categoryMeta));
+      localStorage.setItem(
+        categoryAccountStorageKey(CATEGORY_META_KEY, authUserKey),
+        JSON.stringify(categoryMeta)
+      );
     } catch {
       // ignore
     }
-  }, [categoryMeta]);
+  }, [categoryMeta, categoryScope, authUserKey]);
 
   const updateConnectionsLocal = useCallback((next: SavedSshConnection[]) => {
     setConnections(next);
@@ -3071,6 +3118,140 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     [connections, draftCategory, persistConnectionOrder]
   );
 
+  const createPrivateSpaceFromCategories = useCallback(
+    async (categoryKeys: string[], layout: 'sections' | 'tabs') => {
+      if (!isAuthenticated || user?.id == null) {
+        setNotice('Sign in to create a private space from categories');
+        return;
+      }
+      const userId = user.id;
+      const cats = categoryKeys.map((c) => categoryKey(c));
+      if (cats.length === 0) {
+        setNotice('Select at least one category');
+        return;
+      }
+
+      const makeId = (prefix: string) =>
+        `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
+      const linksForCategory = (cat: string): Link[] => {
+        const items = connections
+          .filter((c) => categoryKey(c.category) === cat)
+          .slice()
+          .sort((a, b) => normalizeSshSortOrder(a.sortOrder) - normalizeSshSortOrder(b.sortOrder));
+        const links: Link[] = [];
+        for (const c of items) {
+          const protocol = normalizeConnectionProtocol(c.protocol);
+          let url: string | null = null;
+          let icon = '🖥️';
+          if (protocol === 'rdp') {
+            url = (c.wsUrl || '').trim() || null;
+            icon = '🪟';
+          } else {
+            url = sshUrlForConnection(c);
+            icon = '⌨️';
+          }
+          if (!url) continue;
+          links.push({
+            id: makeId('link'),
+            label: c.name,
+            url,
+            icon,
+            visibility: 'private',
+            allowedUsers: [userId],
+            notes: c.notes || undefined,
+            position: links.length,
+          });
+        }
+        return links;
+      };
+
+      const buckets = cats
+        .map((cat) => ({ cat, label: categoryLabel(cat), links: linksForCategory(cat) }))
+        .filter((b) => b.links.length > 0);
+
+      if (buckets.length === 0) {
+        setNotice('No pasteable SSH/RDP links in the selected categories (Easy ssh:// or RDP URL required)');
+        return;
+      }
+
+      const defaultTitle =
+        buckets.length === 1
+          ? `SSH · ${buckets[0].label}`
+          : `SSH · ${buckets.map((b) => b.label).join(', ')}`;
+      const prompted = window.prompt('Private space title', defaultTitle);
+      if (prompted == null) return;
+      const title = prompted.trim() || defaultTitle;
+
+      let tabs: Tab[];
+      if (layout === 'tabs') {
+        tabs = buckets.map((b, tabIndex) => ({
+          id: makeId('tab'),
+          title: b.label,
+          position: tabIndex,
+          visibility: 'private' as const,
+          allowedUsers: [userId],
+          sections: [
+            {
+              id: makeId('sec'),
+              title: 'Connections',
+              position: 0,
+              visibility: 'private' as const,
+              allowedUsers: [userId],
+              links: b.links,
+            },
+          ],
+        }));
+      } else {
+        tabs = [
+          {
+            id: makeId('tab'),
+            title: buckets.length === 1 ? buckets[0].label : 'SSH',
+            position: 0,
+            visibility: 'private' as const,
+            allowedUsers: [userId],
+            sections: buckets.map((b, secIndex) => ({
+              id: makeId('sec'),
+              title: buckets.length === 1 ? 'Connections' : b.label,
+              position: secIndex,
+              visibility: 'private' as const,
+              allowedUsers: [userId],
+              links: b.links,
+            })),
+          },
+        ];
+      }
+
+      const tile: Tile = {
+        id: makeId('tile'),
+        title,
+        description: `Private SSH links from ${buckets.map((b) => b.label).join(', ')}`,
+        emoji: '🖥️',
+        themeColor: 'sky',
+        tabs,
+        createdAt: Date.now(),
+        visibility: 'private',
+        published: true,
+        allowedUsers: [userId],
+        group: 'SSH',
+      };
+
+      setCreatingPrivateSpace(true);
+      try {
+        await createTile(tile);
+        window.dispatchEvent(new CustomEvent('linknest-tiles-refresh'));
+        setNotice(
+          `Created private space “${title}” with ${buckets.reduce((n, b) => n + b.links.length, 0)} link(s) — open the Private tab`
+        );
+      } catch (err) {
+        setNotice(err instanceof Error ? err.message : 'Failed to create private space');
+      } finally {
+        setCreatingPrivateSpace(false);
+      }
+    },
+    [connections, isAuthenticated, sshUrlForConnection, user?.id]
+  );
+
   // Handle open from ssh:// space links (App → pendingOpen)
   useEffect(() => {
     if (!pendingOpen?.requestId || !pendingOpen.host) return;
@@ -3583,6 +3764,117 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     }
   };
 
+  const cloneCategory = useCallback(
+    async (fromRaw: string) => {
+      const from = categoryKey(fromRaw);
+      const fromLabel = categoryLabel(from);
+      const suggested =
+        from === ''
+          ? 'Uncategorized (copy)'
+          : from.toLowerCase().endsWith('(copy)')
+            ? `${from} 2`
+            : `${from} (copy)`;
+      const prompted = window.prompt(`Clone category “${fromLabel}” as…`, suggested);
+      if (prompted == null) return;
+      const to = normalizeSshCategory(prompted);
+      if (!to) {
+        setNotice('Category name cannot be empty');
+        return;
+      }
+      if (to === from) {
+        setNotice('Choose a different category name for the clone');
+        return;
+      }
+      if (connections.some((c) => categoryKey(c.category) === to) || categoryOrder.includes(to)) {
+        const ok = window.confirm(
+          `Category “${to}” already exists. Add cloned connections into it?`
+        );
+        if (!ok) return;
+      }
+
+      const sourceItems = connections
+        .filter((c) => categoryKey(c.category) === from)
+        .slice()
+        .sort((a, b) => normalizeSshSortOrder(a.sortOrder) - normalizeSshSortOrder(b.sortOrder));
+
+      setCloningCategory(true);
+      try {
+        const createdList: SavedSshConnection[] = [];
+        let sortOrder =
+          connections
+            .filter((c) => categoryKey(c.category) === to)
+            .reduce((m, x) => Math.max(m, normalizeSshSortOrder(x.sortOrder)), -1) + 1;
+
+        for (const c of sourceItems) {
+          const name = (c.name || 'Connection').trim() || 'Connection';
+          const tags = Array.isArray(c.tags) ? [...c.tags] : [];
+          const notes = c.notes || undefined;
+          const color = normalizeSshColor(c.color);
+          const protocol = normalizeConnectionProtocol(c.protocol);
+          const appearance = normalizeSshAppearance(c.appearance) || undefined;
+
+          if (useServer) {
+            const created = await sshConnectionService.create({
+              name,
+              wsUrl: c.wsUrl,
+              tags,
+              notes,
+              color,
+              protocol,
+              appearance: appearance || undefined,
+              category: to,
+              sortOrder,
+            });
+            createdList.push(created);
+          } else {
+            createdList.push({
+              id: `ssh_local_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+              name,
+              wsUrl: c.wsUrl,
+              protocol,
+              tags,
+              notes,
+              color,
+              appearance: appearance || undefined,
+              category: to,
+              sortOrder,
+              createdAt: Date.now(),
+              lastUsedAt: undefined,
+            });
+          }
+          sortOrder += 1;
+        }
+
+        if (useServer) {
+          setConnections((prev) => [...createdList, ...prev]);
+        } else {
+          updateConnectionsLocal([...createdList, ...connections]);
+        }
+
+        setCategoryOrder((prev) => mergeCategoryOrder(prev, [{ category: to } as SavedSshConnection]));
+        setCollapsedCategories((prev) => ({ ...prev, [to]: false }));
+        setCategoryMeta((prev) => ({
+          ...prev,
+          [to]: {
+            color: prev[to]?.color || categoryAccentColor(from, prev) || categoryAccentColor(to, prev),
+          },
+        }));
+        setDraftCategory(to);
+
+        setNotice(
+          sourceItems.length === 0
+            ? `Created empty category “${to}”`
+            : `Cloned category “${fromLabel}” → “${to}” (${createdList.length} connection${createdList.length === 1 ? '' : 's'})`
+        );
+      } catch (err) {
+        setNotice(err instanceof Error ? err.message : 'Failed to clone category');
+      } finally {
+        setCloningCategory(false);
+      }
+    },
+    [categoryMeta, categoryOrder, connections, updateConnectionsLocal, useServer]
+  );
+
   const statusColor =
     status === 'connected'
       ? 'text-emerald-600 dark:text-emerald-400'
@@ -3979,6 +4271,11 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                   }}
                   onCategoryRename={(from, to) => void renameCategory(from, to)}
                   onConnectMany={connectMany}
+                  canCreatePrivateSpace={useServer && Boolean(user?.id)}
+                  creatingPrivateSpace={creatingPrivateSpace}
+                  cloningCategory={cloningCategory}
+                  onCloneCategory={(cat) => void cloneCategory(cat)}
+                  onCreatePrivateSpace={(cats, layout) => void createPrivateSpaceFromCategories(cats, layout)}
                   onConnectionsChange={(next) => setConnections(next)}
                   onReorderCommit={(next) => void persistConnectionOrder(next)}
                   liveCountFor={(id) => liveTabsForConnection(id).length}

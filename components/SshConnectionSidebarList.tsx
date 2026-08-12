@@ -442,10 +442,12 @@ const SortableCategorySection: React.FC<{
   canRename: boolean;
   selectedCount: number;
   allSelected: boolean;
+  spaceSelected: boolean;
   colorPickerOpen: boolean;
   renaming: boolean;
   renameDraft: string;
   onToggleCollapse: () => void;
+  onToggleSpaceSelect: () => void;
   onToggleColorPicker: () => void;
   onPickColor: (color: string) => void;
   onStartRename: () => void;
@@ -455,6 +457,8 @@ const SortableCategorySection: React.FC<{
   onToggleSelectAll: () => void;
   onRunAll: () => void;
   onRunSelected: () => void;
+  onCloneCategory: () => void;
+  cloningCategory?: boolean;
   children: React.ReactNode;
 }> = ({
   category,
@@ -465,10 +469,12 @@ const SortableCategorySection: React.FC<{
   canRename,
   selectedCount,
   allSelected,
+  spaceSelected,
   colorPickerOpen,
   renaming,
   renameDraft,
   onToggleCollapse,
+  onToggleSpaceSelect,
   onToggleColorPicker,
   onPickColor,
   onStartRename,
@@ -478,6 +484,8 @@ const SortableCategorySection: React.FC<{
   onToggleSelectAll,
   onRunAll,
   onRunSelected,
+  onCloneCategory,
+  cloningCategory = false,
   children,
 }) => {
   const sortable = useSortable({
@@ -563,6 +571,19 @@ const SortableCategorySection: React.FC<{
               </div>
             )}
           </div>
+
+          <input
+            type="checkbox"
+            checked={spaceSelected}
+            onChange={(e) => {
+              e.stopPropagation();
+              onToggleSpaceSelect();
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className="shrink-0 h-3.5 w-3.5 rounded border-slate-300 dark:border-slate-600 text-violet-600 focus:ring-violet-500 cursor-pointer"
+            title="Select category to create a private space"
+            aria-label={`Select category ${categoryLabel(category)} for private space`}
+          />
 
           {renaming ? (
             <form
@@ -665,6 +686,19 @@ const SortableCategorySection: React.FC<{
               </svg>
             </button>
           )}
+          <button
+            type="button"
+            onClick={onCloneCategory}
+            disabled={cloningCategory}
+            className="inline-flex items-center justify-center h-6 w-6 rounded border border-slate-200 dark:border-slate-600 text-slate-500 hover:bg-white dark:hover:bg-slate-800 disabled:opacity-40"
+            title={`Clone category “${categoryLabel(category)}” and all its connections`}
+            aria-label={`Clone category ${categoryLabel(category)}`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3 h-3" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 8.25V6.75A2.25 2.25 0 0014.25 4.5h-7.5A2.25 2.25 0 004.5 6.75v7.5A2.25 2.25 0 006.75 16.5h1.5" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75h7.5A2.25 2.25 0 0119.5 12v7.5a2.25 2.25 0 01-2.25 2.25h-7.5A2.25 2.25 0 017.5 19.5V12a2.25 2.25 0 012.25-2.25z" />
+            </svg>
+          </button>
         </div>
       </div>
       {!collapsed && <div className="p-1">{children}</div>}
@@ -689,6 +723,11 @@ export interface SshConnectionSidebarListProps {
   onCategoryColorChange: (category: string, color: string) => void;
   onCategoryRename: (from: string, to: string) => void;
   onConnectMany: (list: SavedSshConnection[]) => void;
+  canCreatePrivateSpace?: boolean;
+  creatingPrivateSpace?: boolean;
+  cloningCategory?: boolean;
+  onCloneCategory: (category: string) => void;
+  onCreatePrivateSpace: (categories: string[], layout: 'sections' | 'tabs') => void;
   /** Optimistic local update while dragging */
   onConnectionsChange: (next: SavedSshConnection[]) => void;
   /** Persist category/sort after a drag completes */
@@ -722,6 +761,11 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
   onCategoryColorChange,
   onCategoryRename,
   onConnectMany,
+  canCreatePrivateSpace = false,
+  creatingPrivateSpace = false,
+  cloningCategory = false,
+  onCloneCategory,
+  onCreatePrivateSpace,
   onConnectionsChange,
   onReorderCommit,
   liveCountFor,
@@ -737,6 +781,8 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
 }) => {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [spaceCategoryIds, setSpaceCategoryIds] = useState<Set<string>>(() => new Set());
+  const [categoriesAsTabs, setCategoriesAsTabs] = useState(false);
   const [colorPickerCat, setColorPickerCat] = useState<string | null>(null);
   const [renamingCat, setRenamingCat] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
@@ -932,6 +978,15 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
     });
   };
 
+  const toggleSpaceCategory = (cat: string) => {
+    setSpaceCategoryIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat);
+      else next.add(cat);
+      return next;
+    });
+  };
+
   const commitRename = (from: string) => {
     const to = normalizeSshCategory(renameDraft);
     setRenamingCat(null);
@@ -959,6 +1014,44 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
             Clear filter to drag-and-drop rearrange.
           </p>
         )}
+        {canCreatePrivateSpace && (
+          <div className="rounded-md border border-violet-200 dark:border-violet-900/50 bg-violet-50/80 dark:bg-violet-950/30 px-1.5 py-1.5 space-y-1">
+            <p className="text-[9px] text-violet-700 dark:text-violet-300 leading-snug">
+              Check categories below, then create a private space with their SSH links.
+            </p>
+            {spaceCategoryIds.size > 1 && (
+              <label className="flex items-start gap-1.5 text-[10px] text-slate-700 dark:text-slate-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={categoriesAsTabs}
+                  onChange={(e) => setCategoriesAsTabs(e.target.checked)}
+                  className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-violet-600"
+                />
+                <span>
+                  Use <strong>tabs</strong> per category
+                  <span className="block text-[9px] text-slate-500 dark:text-slate-400">
+                    Off = each category becomes a section in one tab
+                  </span>
+                </span>
+              </label>
+            )}
+            <button
+              type="button"
+              disabled={creatingPrivateSpace || spaceCategoryIds.size === 0}
+              onClick={() => {
+                const ordered = categories.filter((c) => spaceCategoryIds.has(c));
+                onCreatePrivateSpace(ordered, categoriesAsTabs ? 'tabs' : 'sections');
+              }}
+              className="w-full h-7 px-2 text-[10px] font-semibold rounded-md bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-40"
+            >
+              {creatingPrivateSpace
+                ? 'Creating…'
+                : spaceCategoryIds.size === 0
+                  ? 'Create private space'
+                  : `Create private space (${spaceCategoryIds.size})`}
+            </button>
+          </div>
+        )}
         <SortableContext items={namedCategoryIds} strategy={verticalListSortingStrategy}>
           {categories.map((cat) => {
             const items = itemsByCategory[cat] || [];
@@ -978,10 +1071,12 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
                 canRename={cat !== UNCATEGORIZED_KEY}
                 selectedCount={selectedInCat.length}
                 allSelected={allSelected}
+                spaceSelected={spaceCategoryIds.has(cat)}
                 colorPickerOpen={colorPickerCat === cat}
                 renaming={renamingCat === cat}
                 renameDraft={renameDraft}
                 onToggleCollapse={() => onToggleCategory(cat)}
+                onToggleSpaceSelect={() => toggleSpaceCategory(cat)}
                 onToggleColorPicker={() =>
                   setColorPickerCat((prev) => (prev === cat ? null : cat))
                 }
@@ -1003,6 +1098,8 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
                 onToggleSelectAll={() => toggleSelectCategory(cat)}
                 onRunAll={() => onConnectMany(items)}
                 onRunSelected={() => onConnectMany(selectedInCat)}
+                onCloneCategory={() => onCloneCategory(cat)}
+                cloningCategory={cloningCategory}
               >
                 <CategoryDropZone category={cat}>
                   <SortableContext items={items.map((c) => c.id)} strategy={verticalListSortingStrategy}>

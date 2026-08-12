@@ -744,6 +744,17 @@ const AppContent: React.FC = () => {
     }
   }, [isAuthenticated, guestAccessEnabled, settingsLoading]); // Reload when auth state or guest access changes
 
+  // Allow widgets (e.g. SSH → create private space) to refresh the dashboard tile list
+  useEffect(() => {
+    const onRefresh = () => {
+      void getTiles()
+        .then((stored) => setTiles(stored))
+        .catch((err) => console.error('Failed to refresh tiles:', err));
+    };
+    window.addEventListener('linknest-tiles-refresh', onRefresh);
+    return () => window.removeEventListener('linknest-tiles-refresh', onRefresh);
+  }, []);
+
   // Load database path on mount
   useEffect(() => {
     const loadDatabasePath = async () => {
