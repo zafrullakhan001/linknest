@@ -1336,16 +1336,16 @@ package-for-deployment.bat -BasePath "/myapp"`}</pre>
                     </p>
                     <ul className="list-disc list-inside space-y-1 text-sm ml-0.5 text-slate-700 dark:text-slate-300">
                       <li>
-                        <strong>Survives:</strong> F5 / reload while the widget stays enabled and at least one LinkNest tab for this site remains available to the browser.
+                        <strong>Survives:</strong> F5 / reload while the widget stays enabled and the small <strong>SSH session keeper</strong> window remains open (you can minimize it; allow pop-ups for LinkNest).
                       </li>
                       <li>
-                        <strong>Does not survive:</strong> closing every LinkNest tab, quitting the browser, or closing the SSH widget.
+                        <strong>Does not survive:</strong> closing the keeper + refreshing, closing every LinkNest tab, quitting the browser, or closing the SSH widget.
                       </li>
                       <li>
-                        After refresh you may see “Reattached” — recent output is replayed; the remote shell continues when reattach succeeds.
+                        After refresh you may see “Reattached” — recent output is replayed; the remote shell continues when reattach succeeds (no new password).
                       </li>
                       <li>
-                        Browsers without SharedWorker fall back to the old behavior (sessions die on refresh).
+                        If the keeper/worker is missing, Connect still works but refresh starts a new SSH login (password again).
                       </li>
                     </ul>
                     <p className="text-sm text-slate-700 dark:text-slate-300">

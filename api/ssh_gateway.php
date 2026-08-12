@@ -26,6 +26,8 @@ define('SSH_GATEWAY_PORT_MAX', (int)(getenv('SSH_GATEWAY_PORT_MAX') ?: 18680));
 define('SSH_GATEWAY_MAX_PER_USER_DEFAULT', 8);
 define('SSH_GATEWAY_MAX_PER_USER_CEILING', 1000);
 define('SSH_GATEWAY_TTL_SEC', 6 * 3600);
+/** Kill ttyd with no browser/WebSocket clients after this many seconds (orphans after refresh/UI close). */
+define('SSH_GATEWAY_IDLE_SEC', (int)(getenv('SSH_GATEWAY_IDLE_SEC') ?: 600));
 
 /** Hard ceiling for admin max-connections setting (also bounded by listen-port span). */
 function sshGatewayMaxConnectionsCeiling(): int {
@@ -133,47 +135,305 @@ function sshGatewayKillPid(int $pid): void {
     }
 }
 
-function sshGatewayCleanup(array $sessions): array {
-    $now = time();
-    $out = [];
+/** Human-readable byte size (e.g. 12.4 MB). */
+function sshGatewayFormatBytes(?int $bytes): ?string {
+    if ($bytes === null || $bytes < 0) {
+        return null;
+    }
+    $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    $n = (float)$bytes;
+    $i = 0;
+    while ($n >= 1024 && $i < count($units) - 1) {
+        $n /= 1024;
+        $i++;
+    }
+    $decimals = $i === 0 ? 0 : ($n >= 100 ? 0 : ($n >= 10 ? 1 : 2));
+    return number_format($n, $decimals) . ' ' . $units[$i];
+}
+
+/**
+ * Snapshot of running processes: pid => ['ppid' => int, 'ws' => int working-set bytes].
+ * One system call when possible so status stays cheap with many ttyd sessions.
+ *
+ * @return array<int, array{ppid:int, ws:int}>
+ */
+function sshGatewaySnapshotProcesses(): array {
+    $byPid = [];
+    if (stripos(PHP_OS, 'WIN') === 0) {
+        $out = [];
+        @exec('wmic process get ProcessId,ParentProcessId,WorkingSetSize /FORMAT:CSV 2>NUL', $out);
+        $header = null;
+        foreach ($out as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+            $cols = str_getcsv($line);
+            if ($header === null) {
+                $header = array_map(static function ($h) {
+                    return strtolower(trim((string)$h));
+                }, $cols);
+                continue;
+            }
+            if (count($cols) < count($header)) {
+                continue;
+            }
+            $row = [];
+            foreach ($header as $idx => $name) {
+                $row[$name] = $cols[$idx] ?? '';
+            }
+            $pid = (int)($row['processid'] ?? 0);
+            if ($pid < 1) {
+                continue;
+            }
+            $byPid[$pid] = [
+                'ppid' => (int)($row['parentprocessid'] ?? 0),
+                'ws' => (int)($row['workingsetsize'] ?? 0),
+            ];
+        }
+        if ($byPid !== []) {
+            return $byPid;
+        }
+        // Fallback when WMIC is missing (some Win11 images): PowerShell CIM once.
+        $ps = [];
+        @exec(
+            'powershell -NoProfile -NonInteractive -Command '
+            . '"Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,WorkingSetSize | ConvertTo-Csv -NoTypeInformation"',
+            $ps
+        );
+        $header = null;
+        foreach ($ps as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+            $cols = str_getcsv($line);
+            if ($header === null) {
+                $header = array_map(static function ($h) {
+                    return strtolower(trim((string)$h));
+                }, $cols);
+                continue;
+            }
+            if (count($cols) < count($header)) {
+                continue;
+            }
+            $row = [];
+            foreach ($header as $idx => $name) {
+                $row[$name] = $cols[$idx] ?? '';
+            }
+            $pid = (int)($row['processid'] ?? 0);
+            if ($pid < 1) {
+                continue;
+            }
+            $byPid[$pid] = [
+                'ppid' => (int)($row['parentprocessid'] ?? 0),
+                'ws' => (int)($row['workingsetsize'] ?? 0),
+            ];
+        }
+        return $byPid;
+    }
+
+    foreach (glob('/proc/[0-9]*', GLOB_ONLYDIR) ?: [] as $dir) {
+        $pid = (int)basename($dir);
+        if ($pid < 1) {
+            continue;
+        }
+        $stat = @file_get_contents($dir . '/stat');
+        $ppid = 0;
+        if (is_string($stat) && preg_match('/^\d+ \([^)]*\) \S+ (\d+)/', $stat, $m)) {
+            $ppid = (int)$m[1];
+        }
+        $ws = 0;
+        $status = @file_get_contents($dir . '/status');
+        if (is_string($status) && preg_match('/VmRSS:\s+(\d+)\s+kB/i', $status, $rm)) {
+            $ws = (int)$rm[1] * 1024;
+        }
+        $byPid[$pid] = ['ppid' => $ppid, 'ws' => $ws];
+    }
+    return $byPid;
+}
+
+/**
+ * Working-set for a ttyd root PID plus descendant processes (typically ssh / sshd clients).
+ *
+ * @param array<int, array{ppid:int, ws:int}> $byPid
+ * @return array{pid:int, ttydBytes:?int, childrenBytes:int, childProcessCount:int, totalBytes:?int, ttydHuman:?string, childrenHuman:?string, totalHuman:?string}
+ */
+function sshGatewayTreeMemory(array $byPid, int $rootPid): array {
+    $empty = [
+        'pid' => $rootPid,
+        'ttydBytes' => null,
+        'childrenBytes' => 0,
+        'childProcessCount' => 0,
+        'totalBytes' => null,
+        'ttydHuman' => null,
+        'childrenHuman' => null,
+        'totalHuman' => null,
+    ];
+    if ($rootPid < 1 || !isset($byPid[$rootPid])) {
+        return $empty;
+    }
+
+    $ttydBytes = (int)($byPid[$rootPid]['ws'] ?? 0);
+    $childrenBytes = 0;
+    $childCount = 0;
+    $queue = [$rootPid];
+    $seen = [$rootPid => true];
+    while ($queue !== []) {
+        $parent = array_shift($queue);
+        foreach ($byPid as $pid => $info) {
+            if (isset($seen[$pid])) {
+                continue;
+            }
+            if ((int)($info['ppid'] ?? 0) !== $parent) {
+                continue;
+            }
+            $seen[$pid] = true;
+            $queue[] = $pid;
+            if ($pid === $rootPid) {
+                continue;
+            }
+            $childrenBytes += (int)($info['ws'] ?? 0);
+            $childCount++;
+        }
+    }
+    $total = $ttydBytes + $childrenBytes;
+    return [
+        'pid' => $rootPid,
+        'ttydBytes' => $ttydBytes > 0 ? $ttydBytes : null,
+        'childrenBytes' => $childrenBytes,
+        'childProcessCount' => $childCount,
+        'totalBytes' => $total > 0 ? $total : null,
+        'ttydHuman' => sshGatewayFormatBytes($ttydBytes > 0 ? $ttydBytes : null),
+        'childrenHuman' => sshGatewayFormatBytes($childrenBytes > 0 ? $childrenBytes : 0),
+        'totalHuman' => sshGatewayFormatBytes($total > 0 ? $total : null),
+    ];
+}
+
+/**
+ * Host RAM / CPU snapshot for capacity planning (not per-ttyd).
+ *
+ * @return array{memoryTotalBytes:?int, memoryAvailableBytes:?int, memoryUsedBytes:?int, memoryTotalHuman:?string, memoryAvailableHuman:?string, memoryUsedHuman:?string, cpuCount:?int, loadAverage:?array}
+ */
+function sshGatewayHostResources(): array {
+    $total = null;
+    $available = null;
+    $cpuCount = null;
+    $load = null;
+
+    if (stripos(PHP_OS, 'WIN') === 0) {
+        $out = [];
+        @exec('wmic OS get FreePhysicalMemory,TotalVisibleMemorySize /FORMAT:CSV 2>NUL', $out);
+        $header = null;
+        foreach ($out as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+            $cols = str_getcsv($line);
+            if ($header === null) {
+                $header = array_map(static function ($h) {
+                    return strtolower(trim((string)$h));
+                }, $cols);
+                continue;
+            }
+            $row = [];
+            foreach ($header as $idx => $name) {
+                $row[$name] = $cols[$idx] ?? '';
+            }
+            $freeKb = (int)($row['freephysicalmemory'] ?? 0);
+            $totalKb = (int)($row['totalvisiblememorysize'] ?? 0);
+            if ($totalKb > 0) {
+                $total = $totalKb * 1024;
+                $available = $freeKb * 1024;
+            }
+            break;
+        }
+        $envCpu = getenv('NUMBER_OF_PROCESSORS');
+        if (is_string($envCpu) && ctype_digit(trim($envCpu))) {
+            $cpuCount = (int)trim($envCpu);
+        } else {
+            $cpuOut = [];
+            @exec('wmic cpu get NumberOfLogicalProcessors /VALUE 2>NUL', $cpuOut);
+            $sum = 0;
+            foreach ($cpuOut as $line) {
+                if (preg_match('/NumberOfLogicalProcessors\s*=\s*(\d+)/i', $line, $m)) {
+                    $sum += (int)$m[1];
+                }
+            }
+            if ($sum > 0) {
+                $cpuCount = $sum;
+            }
+        }
+    } else {
+        $meminfo = @file_get_contents('/proc/meminfo');
+        if (is_string($meminfo)) {
+            if (preg_match('/MemTotal:\s+(\d+)\s+kB/i', $meminfo, $m)) {
+                $total = (int)$m[1] * 1024;
+            }
+            if (preg_match('/MemAvailable:\s+(\d+)\s+kB/i', $meminfo, $m)) {
+                $available = (int)$m[1] * 1024;
+            } elseif (preg_match('/MemFree:\s+(\d+)\s+kB/i', $meminfo, $m)) {
+                $available = (int)$m[1] * 1024;
+            }
+        }
+        $nproc = @exec('nproc 2>/dev/null');
+        if (is_string($nproc) && ctype_digit(trim($nproc))) {
+            $cpuCount = (int)trim($nproc);
+        } elseif (is_file('/proc/cpuinfo')) {
+            $cpuCount = substr_count((string)@file_get_contents('/proc/cpuinfo'), 'processor');
+            if ($cpuCount < 1) {
+                $cpuCount = null;
+            }
+        }
+        if (function_exists('sys_getloadavg')) {
+            $la = @sys_getloadavg();
+            if (is_array($la) && count($la) >= 3) {
+                $load = [
+                    '1m' => round((float)$la[0], 2),
+                    '5m' => round((float)$la[1], 2),
+                    '15m' => round((float)$la[2], 2),
+                ];
+            }
+        }
+    }
+
+    $used = ($total !== null && $available !== null) ? max(0, $total - $available) : null;
+    return [
+        'memoryTotalBytes' => $total,
+        'memoryAvailableBytes' => $available,
+        'memoryUsedBytes' => $used,
+        'memoryTotalHuman' => sshGatewayFormatBytes($total),
+        'memoryAvailableHuman' => sshGatewayFormatBytes($available),
+        'memoryUsedHuman' => sshGatewayFormatBytes($used),
+        'cpuCount' => $cpuCount,
+        'loadAverage' => $load,
+    ];
+}
+
+/**
+ * Enrich gateway session rows with memory + build usage totals.
+ *
+ * @param array<int, array> $sessions
+ * @return array{rows: array<int, array>, usageMemoryBytes: int}
+ */
+function sshGatewayAnnotateSessionsMemory(array $sessions): array {
+    $byPid = sshGatewaySnapshotProcesses();
+    $rows = [];
+    $sum = 0;
     foreach ($sessions as $s) {
-        if (!is_array($s) || empty($s['id'])) {
+        if (!is_array($s)) {
             continue;
         }
         $pid = isset($s['pid']) ? (int)$s['pid'] : 0;
-        $listenPort = isset($s['listenPort']) ? (int)$s['listenPort'] : 0;
-        $created = isset($s['createdAt']) ? (int)$s['createdAt'] : 0;
-        $expired = $created > 0 && ($now - $created) > SSH_GATEWAY_TTL_SEC;
-
-        // A gateway slot is only "active" if ttyd is actually listening.
-        // Stale launcher/cmd PIDs without a listen port were filling the max-connections quota.
-        $portPid = $listenPort > 0 ? sshGatewayPidListeningOnPort($listenPort) : 0;
-        $alive = $portPid > 0;
-        if ($alive) {
-            $s['pid'] = $portPid;
-            $pid = $portPid;
+        $mem = sshGatewayTreeMemory($byPid, $pid);
+        if (($mem['totalBytes'] ?? null) !== null) {
+            $sum += (int)$mem['totalBytes'];
         }
-
-        if (!$alive || $expired) {
-            if ($pid > 0) {
-                sshGatewayKillPid($pid);
-            }
-            if ($listenPort > 0 && $portPid > 0 && $portPid !== $pid) {
-                sshGatewayKillPid($portPid);
-            } elseif ($listenPort > 0 && !$alive) {
-                $again = sshGatewayPidListeningOnPort($listenPort);
-                if ($again > 0) {
-                    sshGatewayKillPid($again);
-                }
-            }
-            if (!empty($s['launcher']) && is_string($s['launcher']) && is_file($s['launcher'])) {
-                @unlink($s['launcher']);
-            }
-            continue;
-        }
-        $out[] = $s;
+        $s['_memory'] = $mem;
+        $rows[] = $s;
     }
-    return $out;
+    return ['rows' => $rows, 'usageMemoryBytes' => $sum];
 }
 
 function sshGatewayFindBinary(string $name, array $extraPaths = []): ?string {
@@ -675,11 +935,72 @@ function sshGatewayDefaultDisplay(): string {
 
 function handleSshGatewayStatus() {
     $user = requireAuth();
+    $isAdmin = !empty($user['is_admin']);
     $sessions = sshGatewayCleanup(sshGatewayLoadSessions());
     sshGatewaySaveSessions($sessions);
-    $mine = array_values(array_filter($sessions, static function ($s) use ($user) {
+
+    $annotatedAll = sshGatewayAnnotateSessionsMemory($sessions);
+    $sessionsWithMem = $annotatedAll['rows'];
+    $globalMemBytes = (int)$annotatedAll['usageMemoryBytes'];
+    $mineWithMem = array_values(array_filter($sessionsWithMem, static function ($s) use ($user) {
         return (int)($s['userId'] ?? 0) === (int)$user['id'];
     }));
+    $mineMemBytes = 0;
+    foreach ($mineWithMem as $s) {
+        $tb = $s['_memory']['totalBytes'] ?? null;
+        if ($tb !== null) {
+            $mineMemBytes += (int)$tb;
+        }
+    }
+
+    $maxPerUser = sshGatewayMaxPerUser();
+    $portCapacity = sshGatewayMaxConnectionsCeiling();
+    $mineCount = count($mineWithMem);
+    $globalCount = count($sessionsWithMem);
+    $countClientless = static function (array $rows): int {
+        $n = 0;
+        foreach ($rows as $s) {
+            if ((int)($s['clientCount'] ?? 0) < 1) {
+                $n++;
+            }
+        }
+        return $n;
+    };
+    $mineClientless = $countClientless($mineWithMem);
+    $globalClientless = $countClientless($sessionsWithMem);
+
+    $mapSession = static function (array $s, bool $includeOwner): array {
+        $mem = is_array($s['_memory'] ?? null) ? $s['_memory'] : [];
+        $clients = (int)($s['clientCount'] ?? 0);
+        $row = [
+            'sessionId' => $s['id'],
+            'host' => $s['host'] ?? null,
+            'port' => $s['sshPort'] ?? null,
+            'username' => $s['username'] ?? null,
+            'listenPort' => $s['listenPort'] ?? null,
+            'wsUrl' => $s['wsUrl'] ?? null,
+            'x11' => !empty($s['x11']),
+            'createdAt' => $s['createdAt'] ?? null,
+            'lastClientAt' => $s['lastClientAt'] ?? null,
+            'clientCount' => $clients,
+            'orphan' => $clients < 1,
+            'pid' => isset($s['pid']) ? (int)$s['pid'] : null,
+            'memory' => [
+                'pid' => $mem['pid'] ?? (isset($s['pid']) ? (int)$s['pid'] : null),
+                'ttydBytes' => $mem['ttydBytes'] ?? null,
+                'childrenBytes' => $mem['childrenBytes'] ?? 0,
+                'childProcessCount' => $mem['childProcessCount'] ?? 0,
+                'totalBytes' => $mem['totalBytes'] ?? null,
+                'ttydHuman' => $mem['ttydHuman'] ?? null,
+                'childrenHuman' => $mem['childrenHuman'] ?? null,
+                'totalHuman' => $mem['totalHuman'] ?? null,
+            ],
+        ];
+        if ($includeOwner) {
+            $row['userId'] = isset($s['userId']) ? (int)$s['userId'] : null;
+        }
+        return $row;
+    };
 
     $ttydPath = sshGatewaySoftResolve('ttyd');
     $sshPath = sshGatewaySoftResolve('ssh');
@@ -703,7 +1024,7 @@ function handleSshGatewayStatus() {
         $hint = 'Start VcXsrv (or another X server) on this PC before using GUI mode. XLaunch → Multiple windows → Start no client → Disable access control (recommended).';
     }
 
-    sendJSON([
+    $payload = [
         'available' => $ttydPath !== null && $sshPath !== null,
         'ttydPath' => $ttydPath,
         'sshPath' => $sshPath,
@@ -720,8 +1041,8 @@ function handleSshGatewayStatus() {
                 : null)),
         'platform' => PHP_OS,
         'docker' => $inDocker,
-        'maxConnections' => sshGatewayMaxPerUser(),
-        'maxConnectionsCeiling' => sshGatewayMaxConnectionsCeiling(),
+        'maxConnections' => $maxPerUser,
+        'maxConnectionsCeiling' => $portCapacity,
         'portRange' => [SSH_GATEWAY_PORT_MIN, SSH_GATEWAY_PORT_MAX],
         'gui' => [
             'supported' => true,
@@ -731,24 +1052,45 @@ function handleSshGatewayStatus() {
             'displayReachable' => $displayReachable,
             'hint' => $hint,
         ],
-        'sessions' => array_map(static function ($s) {
-            return [
-                'sessionId' => $s['id'],
-                'host' => $s['host'] ?? null,
-                'port' => $s['sshPort'] ?? null,
-                'username' => $s['username'] ?? null,
-                'listenPort' => $s['listenPort'] ?? null,
-                'wsUrl' => $s['wsUrl'] ?? null,
-                'x11' => !empty($s['x11']),
-                'createdAt' => $s['createdAt'] ?? null,
-            ];
-        }, $mine),
+        'usage' => [
+            'mine' => [
+                'sessions' => $mineCount,
+                'maxConnections' => $maxPerUser,
+                'remaining' => max(0, $maxPerUser - $mineCount),
+                'memoryBytes' => $mineMemBytes,
+                'memoryHuman' => sshGatewayFormatBytes($mineMemBytes),
+                'clientless' => $mineClientless,
+            ],
+            'global' => [
+                'sessions' => $globalCount,
+                'portCapacity' => $portCapacity,
+                'remainingPorts' => max(0, $portCapacity - $globalCount),
+                'memoryBytes' => $globalMemBytes,
+                'memoryHuman' => sshGatewayFormatBytes($globalMemBytes),
+                'clientless' => $globalClientless,
+                'note' => 'Global counts every active ttyd on this server. Per-user quota is maxConnections; hard ceiling follows the gateway port range. Clientless ttyd (no browser/SharedWorker) is auto-killed after idle timeout.',
+            ],
+            'idleSec' => max(60, SSH_GATEWAY_IDLE_SEC),
+            'host' => sshGatewayHostResources(),
+            'sampledAt' => time(),
+        ],
+        'sessions' => array_map(static function ($s) use ($mapSession) {
+            return $mapSession($s, false);
+        }, $mineWithMem),
         'proxy' => [
             'preferHttpProxy' => sshGatewayPreferHttpProxy(),
             'basePath' => sshGatewayHttpProxyBasePath(),
             'exampleWsUrl' => sshGatewayBuildWsUrl(SSH_GATEWAY_PORT_MIN),
         ],
-    ]);
+    ];
+
+    if ($isAdmin) {
+        $payload['allSessions'] = array_map(static function ($s) use ($mapSession) {
+            return $mapSession($s, true);
+        }, $sessionsWithMem);
+    }
+
+    sendJSON($payload);
 }
 
 /**
@@ -865,6 +1207,31 @@ function sshGatewayPidListeningOnPort(int $port): int {
     if ($port < 1 || $port > 65535) {
         return 0;
     }
+    $map = sshGatewayListeningPortsInRange();
+    return isset($map[$port]) ? (int)$map[$port] : 0;
+}
+
+/**
+ * One netstat/ss scan → map listenPort => pid for the gateway port range.
+ *
+ * @return array<int, int>
+ */
+function sshGatewayListeningPortsInRange(bool $refresh = false): array {
+    static $cache = null;
+    static $cacheAt = 0;
+    $now = time();
+    if ($refresh) {
+        $cache = null;
+        $cacheAt = 0;
+    }
+    // Short request-local cache so cleanup+status don't re-exec netstat repeatedly.
+    if (is_array($cache) && ($now - $cacheAt) < 2) {
+        return $cache;
+    }
+    $map = [];
+    $min = SSH_GATEWAY_PORT_MIN;
+    $max = SSH_GATEWAY_PORT_MAX;
+
     if (stripos(PHP_OS, 'WIN') === 0) {
         $out = [];
         @exec('netstat -ano -p tcp 2>NUL', $out);
@@ -872,42 +1239,226 @@ function sshGatewayPidListeningOnPort(int $port): int {
             if (stripos($line, 'LISTENING') === false) {
                 continue;
             }
-            // Match :PORT before whitespace (IPv4 / IPv6 forms)
-            if (!preg_match('/[:\]]' . (int)$port . '\s/', $line)) {
+            if (!preg_match('/[:\]](\d+)\s/', $line, $pm)) {
                 continue;
             }
-            if (preg_match('/\s(\d+)\s*$/', $line, $m)) {
-                $pid = (int)$m[1];
-                if ($pid > 0) {
-                    return $pid;
+            $port = (int)$pm[1];
+            if ($port < $min || $port > $max) {
+                continue;
+            }
+            if (!preg_match('/\s(\d+)\s*$/', $line, $m)) {
+                continue;
+            }
+            $pid = (int)$m[1];
+            if ($pid > 0) {
+                $map[$port] = $pid;
+            }
+        }
+    } else {
+        $out = [];
+        @exec('ss -ltnp 2>/dev/null', $out);
+        foreach ($out as $line) {
+            if (!preg_match('/:(\d+)\s/', $line, $pm)) {
+                continue;
+            }
+            $port = (int)$pm[1];
+            if ($port < $min || $port > $max) {
+                continue;
+            }
+            if (preg_match('/pid=(\d+)/', $line, $m)) {
+                $map[$port] = (int)$m[1];
+            }
+        }
+        if ($map === []) {
+            for ($port = $min; $port <= min($max, $min + 200); $port++) {
+                $pidOut = [];
+                @exec('lsof -nP -iTCP:' . (int)$port . ' -sTCP:LISTEN -t 2>/dev/null', $pidOut);
+                foreach ($pidOut as $line) {
+                    $pid = (int)trim($line);
+                    if ($pid > 0) {
+                        $map[$port] = $pid;
+                        break;
+                    }
                 }
             }
         }
-        return 0;
     }
 
-    $out = [];
-    @exec('ss -ltnp \'sport = :' . (int)$port . '\' 2>/dev/null', $out);
-    foreach ($out as $line) {
-        if (preg_match('/pid=(\d+)/', $line, $m)) {
-            return (int)$m[1];
-        }
-    }
-    $out = [];
-    @exec('lsof -nP -iTCP:' . (int)$port . ' -sTCP:LISTEN -t 2>/dev/null', $out);
-    foreach ($out as $line) {
-        $pid = (int)trim($line);
-        if ($pid > 0) {
-            return $pid;
-        }
-    }
-    return 0;
+    $cache = $map;
+    $cacheAt = $now;
+    return $map;
+}
+
+/** Count ESTABLISHED TCP clients connected to a local listen port. */
+function sshGatewayPortClientCount(int $port): int {
+    $all = sshGatewayClientCountsByPort();
+    return isset($all[$port]) ? (int)$all[$port] : 0;
 }
 
 /**
- * Spawn ttyd detached so it survives after the PHP/Apache request ends (critical on Windows).
- * @return array{pid:int,ready:bool}
+ * @return array<int, int> listenPort => established client count
  */
+function sshGatewayClientCountsByPort(bool $refresh = false): array {
+    static $cache = null;
+    static $cacheAt = 0;
+    $now = time();
+    if ($refresh) {
+        $cache = null;
+        $cacheAt = 0;
+    }
+    if (is_array($cache) && ($now - $cacheAt) < 2) {
+        return $cache;
+    }
+    $counts = [];
+    $min = SSH_GATEWAY_PORT_MIN;
+    $max = SSH_GATEWAY_PORT_MAX;
+
+    if (stripos(PHP_OS, 'WIN') === 0) {
+        $out = [];
+        @exec('netstat -ano -p tcp 2>NUL', $out);
+        foreach ($out as $line) {
+            if (stripos($line, 'ESTABLISHED') === false) {
+                continue;
+            }
+            if (!preg_match('/^\s*TCP\s+\S+:(\d+)\s+\S+\s+ESTABLISHED/i', $line, $m)) {
+                continue;
+            }
+            $port = (int)$m[1];
+            if ($port < $min || $port > $max) {
+                continue;
+            }
+            $counts[$port] = ($counts[$port] ?? 0) + 1;
+        }
+    } else {
+        $out = [];
+        @exec('ss -tn state established 2>/dev/null', $out);
+        foreach ($out as $line) {
+            if (!preg_match('/:(\d+)\s/', $line, $m)) {
+                continue;
+            }
+            // Prefer sport (local) — ss columns vary; count local gateway ports only.
+            if (!preg_match_all('/:(\d+)\b/', $line, $mm)) {
+                continue;
+            }
+            foreach ($mm[1] as $rawPort) {
+                $port = (int)$rawPort;
+                if ($port >= $min && $port <= $max) {
+                    $counts[$port] = ($counts[$port] ?? 0) + 1;
+                    break;
+                }
+            }
+        }
+    }
+
+    $cache = $counts;
+    $cacheAt = $now;
+    return $counts;
+}
+
+/**
+ * Kill ttyd listeners on gateway ports that are not recorded in sessions.json
+ * (registry wipe / failed stop / crash leftovers).
+ *
+ * @param array<int, array> $sessions
+ * @return int number killed
+ */
+function sshGatewaySweepUntrackedListeners(array $sessions): int {
+    $known = [];
+    foreach ($sessions as $s) {
+        if (!is_array($s)) {
+            continue;
+        }
+        $lp = isset($s['listenPort']) ? (int)$s['listenPort'] : 0;
+        if ($lp > 0) {
+            $known[$lp] = true;
+        }
+    }
+    $killed = 0;
+    foreach (sshGatewayListeningPortsInRange(true) as $port => $pid) {
+        if (isset($known[$port])) {
+            continue;
+        }
+        $pid = (int)$pid;
+        if ($pid > 0) {
+            sshGatewayKillPid($pid);
+            $killed++;
+        }
+    }
+    if ($killed > 0) {
+        sshGatewayListeningPortsInRange(true);
+        sshGatewayClientCountsByPort(true);
+    }
+    return $killed;
+}
+
+function sshGatewayDestroySessionRecord(array $s): void {
+    $pid = isset($s['pid']) ? (int)$s['pid'] : 0;
+    $listenPort = isset($s['listenPort']) ? (int)$s['listenPort'] : 0;
+    if ($pid > 0) {
+        sshGatewayKillPid($pid);
+    }
+    if ($listenPort > 0) {
+        $portPid = sshGatewayPidListeningOnPort($listenPort);
+        if ($portPid > 0 && $portPid !== $pid) {
+            sshGatewayKillPid($portPid);
+        }
+    }
+    if (!empty($s['launcher']) && is_string($s['launcher']) && is_file($s['launcher'])) {
+        @unlink($s['launcher']);
+    }
+}
+
+function sshGatewayCleanup(array $sessions): array {
+    $now = time();
+    $idleSec = max(60, SSH_GATEWAY_IDLE_SEC);
+    $out = [];
+    $listeners = sshGatewayListeningPortsInRange();
+
+    foreach ($sessions as $s) {
+        if (!is_array($s) || empty($s['id'])) {
+            continue;
+        }
+        $pid = isset($s['pid']) ? (int)$s['pid'] : 0;
+        $listenPort = isset($s['listenPort']) ? (int)$s['listenPort'] : 0;
+        $created = isset($s['createdAt']) ? (int)$s['createdAt'] : 0;
+        $expired = $created > 0 && ($now - $created) > SSH_GATEWAY_TTL_SEC;
+
+        // A gateway slot is only "active" if ttyd is actually listening.
+        // Stale launcher/cmd PIDs without a listen port were filling the max-connections quota.
+        $portPid = ($listenPort > 0 && isset($listeners[$listenPort])) ? (int)$listeners[$listenPort] : 0;
+        $alive = $portPid > 0;
+        if ($alive) {
+            $s['pid'] = $portPid;
+            $pid = $portPid;
+        }
+
+        $clients = $alive && $listenPort > 0 ? sshGatewayPortClientCount($listenPort) : 0;
+        if ($clients > 0) {
+            $s['lastClientAt'] = $now;
+            $s['clientCount'] = $clients;
+        } else {
+            $s['clientCount'] = 0;
+            $lastClient = isset($s['lastClientAt']) ? (int)$s['lastClientAt'] : $created;
+            // No browser/SharedWorker attached — reap after idle so refresh leftovers don't fill quota forever.
+            $idleTooLong = $lastClient > 0 && ($now - $lastClient) >= $idleSec;
+            if ($alive && $idleTooLong) {
+                sshGatewayDestroySessionRecord($s);
+                continue;
+            }
+        }
+
+        if (!$alive || $expired) {
+            sshGatewayDestroySessionRecord($s);
+            continue;
+        }
+        $out[] = $s;
+    }
+
+    // Registry gaps: ttyd still listening on a gateway port with no sessions.json row.
+    sshGatewaySweepUntrackedListeners($out);
+    return $out;
+}
+
 function sshGatewaySpawnTtyd(
     string $ttyd,
     string $ssh,
@@ -1150,6 +1701,8 @@ function handleSshGatewayStart() {
         'x11Display' => $x11 ? $x11Display : null,
         'wsUrl' => $wsUrl,
         'createdAt' => time(),
+        'lastClientAt' => time(),
+        'clientCount' => 0,
         'logFile' => $logFile,
         'launcher' => $spawn['launcher'] ?? null,
     ];
@@ -1212,33 +1765,32 @@ function handleSshGatewayStop() {
     sendJSON(['success' => true]);
 }
 
-/** Stop every gateway session for the current user (orphans left when UI tabs were closed). */
+/** Stop every gateway session for the current user (orphans left when UI tabs were closed).
+ *  Admins may pass { "scope": "all" } to kill every ttyd on this server (all users + untracked).
+ */
 function handleSshGatewayStopAll() {
     $user = requireAuth();
+    $data = getJSONInput();
+    $scopeAll = !empty($user['is_admin']) && isset($data['scope']) && strtolower((string)$data['scope']) === 'all';
+
     $sessions = sshGatewayCleanup(sshGatewayLoadSessions());
     $kept = [];
     $stopped = 0;
     foreach ($sessions as $s) {
-        if ((int)($s['userId'] ?? 0) !== (int)$user['id']) {
+        if (!$scopeAll && (int)($s['userId'] ?? 0) !== (int)$user['id']) {
             $kept[] = $s;
             continue;
         }
         $stopped++;
-        $pid = isset($s['pid']) ? (int)$s['pid'] : 0;
-        $listenPort = isset($s['listenPort']) ? (int)$s['listenPort'] : 0;
-        if ($pid > 0) {
-            sshGatewayKillPid($pid);
-        }
-        if ($listenPort > 0) {
-            $portPid = sshGatewayPidListeningOnPort($listenPort);
-            if ($portPid > 0) {
-                sshGatewayKillPid($portPid);
-            }
-        }
-        if (!empty($s['launcher']) && is_string($s['launcher']) && is_file($s['launcher'])) {
-            @unlink($s['launcher']);
-        }
+        sshGatewayDestroySessionRecord($s);
     }
+    // Always sweep listeners with no registry row (true orphans).
+    $swept = sshGatewaySweepUntrackedListeners($kept);
     sshGatewaySaveSessions($kept);
-    sendJSON(['success' => true, 'stopped' => $stopped]);
+    sendJSON([
+        'success' => true,
+        'stopped' => $stopped,
+        'sweptUntracked' => $swept,
+        'scope' => $scopeAll ? 'all' : 'mine',
+    ]);
 }

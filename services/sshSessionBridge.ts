@@ -38,6 +38,77 @@ function resolveWorkerUrl(): string {
   }
 }
 
+/** Candidate URLs for XAMPP /linknest, dist/, portable ./ base, Vite BASE_URL. */
+function candidateWorkerUrls(): string[] {
+  const origin = window.location.origin;
+  const path = window.location.pathname || '/';
+  const dir = path.endsWith('/') ? path : path.replace(/\/[^/]*$/, '/');
+  const base = String((import.meta as any)?.env?.BASE_URL || '/');
+  const out: string[] = [];
+  const add = (u: string) => {
+    if (u && !out.includes(u)) out.push(u);
+  };
+
+  try {
+    add(new URL('ssh-session-shared-worker.js', window.location.href).href);
+    add(new URL('dist/ssh-session-shared-worker.js', window.location.href).href);
+  } catch {
+    // ignore
+  }
+  add(`${origin}${dir}ssh-session-shared-worker.js`);
+  add(`${origin}${dir}dist/ssh-session-shared-worker.js`);
+
+  if (base && base !== './' && base !== '.') {
+    const normalized = base.endsWith('/') ? base : `${base}/`;
+    try {
+      add(new URL(`${normalized}ssh-session-shared-worker.js`, origin).href);
+      add(new URL(`${normalized}dist/ssh-session-shared-worker.js`, origin).href);
+    } catch {
+      add(`${normalized}ssh-session-shared-worker.js`);
+    }
+  }
+
+  // Common XAMPP folder installs
+  const m = path.match(/^(\/[^/]+)\//);
+  if (m) {
+    add(`${origin}${m[1]}/dist/ssh-session-shared-worker.js`);
+    add(`${origin}${m[1]}/ssh-session-shared-worker.js`);
+  }
+
+  add(resolveWorkerUrl());
+  return out;
+}
+
+async function pickWorkingWorkerUrl(): Promise<string | null> {
+  for (const url of candidateWorkerUrls()) {
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+      if (!res.ok) continue;
+      const ct = (res.headers.get('content-type') || '').toLowerCase();
+      if (ct.includes('text/html')) continue;
+      const text = await res.text();
+      const trimmed = text.trimStart();
+      if (trimmed.startsWith('<!') || trimmed.startsWith('<html')) continue;
+      if (
+        text.includes('self.onconnect') ||
+        text.includes('linknest-ssh') ||
+        (text.includes('SharedWorker') && text.includes('onconnect'))
+      ) {
+        return url;
+      }
+      // Accept plain JS that looks like a worker
+      if (text.includes('onconnect') && text.includes('WebSocket')) return url;
+    } catch {
+      // try next
+    }
+  }
+  return null;
+}
+
 function bufferFromMessageData(data: unknown): ArrayBuffer | null {
   if (data instanceof ArrayBuffer) return data;
   if (ArrayBuffer.isView(data)) {
@@ -54,49 +125,212 @@ class SshSessionBridge {
   private listeners = new Map<string, Set<SshBridgeListener>>();
   private pendingOpen = new Map<string, PendingOpen>();
   private sessionCache: SshBridgeSessionInfo[] = [];
+  private keeperWin: Window | null = null;
+  private resolvedWorkerUrl: string | null = null;
 
   isAvailable(): boolean {
     return typeof SharedWorker !== 'undefined' && !this.unsupported;
+  }
+
+  /** Tiny companion window that keeps the SharedWorker alive during main-page refresh. */
+  ensureKeeperWindow(): boolean {
+    try {
+      if (this.keeperWin && !this.keeperWin.closed) {
+        try {
+          this.keeperWin.postMessage({ source: 'linknest-ssh', type: 'ping' }, '*');
+        } catch {
+          // ignore
+        }
+        // Do not focus an existing keeper — leave it in the background.
+        return true;
+      }
+      const url = this.resolveKeeperUrl();
+      // Opened from Connect click (user gesture) so popup blockers usually allow it.
+      // Place in the bottom-right and keep it small so it is less likely to be closed by accident.
+      const width = 300;
+      const height = 140;
+      const dualScreenLeft = window.screenLeft ?? window.screenX ?? 0;
+      const dualScreenTop = window.screenTop ?? window.screenY ?? 0;
+      const viewportW = window.innerWidth || document.documentElement.clientWidth || screen.width;
+      const viewportH = window.innerHeight || document.documentElement.clientHeight || screen.height;
+      const left = Math.max(0, Math.round(dualScreenLeft + viewportW - width - 16));
+      const top = Math.max(0, Math.round(dualScreenTop + viewportH - height - 16));
+      const win = window.open(
+        url,
+        'linknest-ssh-keeper',
+        `popup=yes,width=${width},height=${height},left=${left},top=${top}`
+      );
+      this.keeperWin = win;
+      if (!win) return false;
+
+      // Browsers do not allow scripted minimize; tuck away + return focus to the app instead.
+      const tuckAway = () => {
+        try {
+          win.resizeTo(280, 120);
+        } catch {
+          // ignore
+        }
+        try {
+          const sx = typeof screen !== 'undefined' ? screen.availWidth || screen.width || 0 : 0;
+          const sy = typeof screen !== 'undefined' ? screen.availHeight || screen.height || 0 : 0;
+          if (sx > 0 && sy > 0) {
+            win.moveTo(Math.max(0, sx - 290), Math.max(0, sy - 130));
+          }
+        } catch {
+          // ignore
+        }
+        try {
+          win.blur();
+        } catch {
+          // ignore
+        }
+        try {
+          win.postMessage({ source: 'linknest-ssh', type: 'go-background' }, '*');
+        } catch {
+          // ignore
+        }
+        try {
+          window.focus();
+        } catch {
+          // ignore
+        }
+      };
+
+      // Run twice: once ASAP, once after the keeper finishes loading.
+      tuckAway();
+      window.setTimeout(tuckAway, 120);
+      window.setTimeout(tuckAway, 400);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  closeKeeperWindow() {
+    try {
+      if (this.keeperWin && !this.keeperWin.closed) {
+        try {
+          this.keeperWin.postMessage({ source: 'linknest-ssh', type: 'close-keeper' }, '*');
+        } catch {
+          // ignore
+        }
+        try {
+          this.keeperWin.close();
+        } catch {
+          // ignore
+        }
+      }
+    } catch {
+      // ignore
+    }
+    this.keeperWin = null;
+  }
+
+  private resolveKeeperUrl(): string {
+    const origin = window.location.origin;
+    const path = window.location.pathname || '/';
+    const dir = path.endsWith('/') ? path : path.replace(/\/[^/]*$/, '/');
+    const candidates = [
+      new URL('ssh-session-keepalive.html', window.location.href).href,
+      new URL('dist/ssh-session-keepalive.html', window.location.href).href,
+      `${origin}${dir}ssh-session-keepalive.html`,
+      `${origin}${dir}dist/ssh-session-keepalive.html`,
+    ];
+    const m = path.match(/^(\/[^/]+)\//);
+    if (m) {
+      candidates.push(`${origin}${m[1]}/dist/ssh-session-keepalive.html`);
+      candidates.push(`${origin}${m[1]}/ssh-session-keepalive.html`);
+    }
+    // Prefer dist when worker was resolved from dist/
+    if (this.resolvedWorkerUrl && this.resolvedWorkerUrl.includes('/dist/')) {
+      return (
+        candidates.find((u) => u.includes('/dist/ssh-session-keepalive.html')) || candidates[0]
+      );
+    }
+    return candidates[0];
   }
 
   private ensure(): Promise<void> {
     if (this.unsupported) return Promise.reject(new Error('SharedWorker unavailable'));
     if (this.ready) return this.ready;
 
-    this.ready = new Promise<void>((resolve, reject) => {
+    this.ready = (async () => {
       try {
         if (typeof SharedWorker === 'undefined') {
           this.unsupported = true;
-          reject(new Error('SharedWorker unavailable'));
-          return;
+          throw new Error('SharedWorker unavailable');
         }
-        const worker = new SharedWorker(resolveWorkerUrl(), {
+        const workerUrl = await pickWorkingWorkerUrl();
+        if (!workerUrl) {
+          this.unsupported = true;
+          throw new Error('SSH SharedWorker script not found (404). Using direct WebSocket.');
+        }
+        this.resolvedWorkerUrl = workerUrl;
+        const worker = new SharedWorker(workerUrl, {
           name: 'linknest-ssh-sessions',
           type: 'classic',
         });
         this.worker = worker;
         this.port = worker.port;
-        let settled = false;
-        const settle = () => {
-          if (settled) return;
-          settled = true;
-          resolve();
-        };
-        worker.port.onmessage = (ev) => {
-          this.onMessage(ev.data);
-          if (ev.data?.type === 'hello-ok') settle();
-        };
-        worker.port.start();
-        worker.port.postMessage({ type: 'hello' });
-        window.setTimeout(settle, 80);
+
+        await new Promise<void>((resolve, reject) => {
+          let settled = false;
+          const timer = window.setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            this.unsupported = true;
+            this.ready = null;
+            reject(new Error('SSH SharedWorker did not respond. Using direct WebSocket.'));
+          }, 2500);
+
+          worker.port.onmessage = (ev) => {
+            this.onMessage(ev.data);
+            if (ev.data?.type === 'hello-ok' && !settled) {
+              settled = true;
+              window.clearTimeout(timer);
+              resolve();
+            }
+          };
+          worker.port.onmessageerror = () => {
+            if (settled) return;
+            settled = true;
+            window.clearTimeout(timer);
+            this.unsupported = true;
+            this.ready = null;
+            reject(new Error('SSH SharedWorker message error'));
+          };
+          try {
+            worker.port.start();
+            worker.port.postMessage({ type: 'hello' });
+          } catch (err) {
+            if (settled) return;
+            settled = true;
+            window.clearTimeout(timer);
+            this.unsupported = true;
+            this.ready = null;
+            reject(err instanceof Error ? err : new Error('Failed to start SharedWorker'));
+          }
+        });
       } catch (err) {
         this.unsupported = true;
         this.ready = null;
-        reject(err instanceof Error ? err : new Error('Failed to start SharedWorker'));
+        this.worker = null;
+        this.port = null;
+        throw err instanceof Error ? err : new Error('Failed to start SharedWorker');
       }
-    });
+    })();
 
     return this.ready;
+  }
+
+  /** True only after a successful worker hello (or API exists before probe). Prefer ensure()/open(). */
+  async ensureReady(): Promise<boolean> {
+    try {
+      await this.ensure();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private onMessage(msg: any) {
@@ -296,6 +530,7 @@ class SshSessionBridge {
     }
     this.listeners.clear();
     this.pendingOpen.clear();
+    this.closeKeeperWindow();
   }
 }
 

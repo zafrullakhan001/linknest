@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { SecurePasswordInput } from './SecurePasswordInput';
 import { resolveApiBase } from '../services/apiHelpers';
-import { sshGatewayService, type SshGatewayConfigResponse } from '../services/sshGatewayService';
+import { sshGatewayService, type SshGatewayConfigResponse, type SshGatewayStatus } from '../services/sshGatewayService';
 import { vncGatewayService, type VncGatewayConfigResponse } from '../services/vncGatewayService';
 
 // Resolve API base URL once at module load
@@ -1802,6 +1802,9 @@ const SshGatewayAddonCard: React.FC = () => {
     const [maxCeiling, setMaxCeiling] = useState(1000);
     const [resolved, setResolved] = useState<SshGatewayConfigResponse['resolved'] | null>(null);
     const [defaults, setDefaults] = useState<SshGatewayConfigResponse['defaults'] | null>(null);
+    const [usageStatus, setUsageStatus] = useState<SshGatewayStatus | null>(null);
+    const [usageLoading, setUsageLoading] = useState(false);
+    const [usageError, setUsageError] = useState<string | null>(null);
 
     const applyResponse = (data: SshGatewayConfigResponse) => {
         setTtydPath(data.config.ttydPath || '');
@@ -1813,12 +1816,26 @@ const SshGatewayAddonCard: React.FC = () => {
         setDefaults(data.defaults);
     };
 
+    const loadUsage = async () => {
+        try {
+            setUsageLoading(true);
+            setUsageError(null);
+            const st = await sshGatewayService.status();
+            setUsageStatus(st);
+        } catch (err: any) {
+            setUsageError(err.message || 'Failed to load ttyd usage');
+        } finally {
+            setUsageLoading(false);
+        }
+    };
+
     const loadConfiguration = async () => {
         try {
             setLoading(true);
             setError(null);
             const data = await sshGatewayService.getConfig();
             applyResponse(data);
+            void loadUsage();
         } catch (err: any) {
             setError(err.message || 'Failed to load SSH gateway config');
         } finally {
@@ -1829,6 +1846,15 @@ const SshGatewayAddonCard: React.FC = () => {
     useEffect(() => {
         loadConfiguration();
     }, []);
+
+    useEffect(() => {
+        if (!expanded) return;
+        void loadUsage();
+        const t = window.setInterval(() => {
+            void loadUsage();
+        }, 15000);
+        return () => window.clearInterval(t);
+    }, [expanded]);
 
     const handleSave = async () => {
         try {
@@ -1844,6 +1870,7 @@ const SshGatewayAddonCard: React.FC = () => {
             });
             applyResponse(data);
             setSavedMsg('SSH gateway settings saved.');
+            void loadUsage();
         } catch (err: any) {
             setError(err.message || 'Failed to save');
         } finally {
@@ -1852,6 +1879,56 @@ const SshGatewayAddonCard: React.FC = () => {
     };
 
     const ready = Boolean(resolved?.ttydExists && resolved?.sshExists);
+    const usage = usageStatus?.usage;
+    const sessionRows = usageStatus?.allSessions ?? usageStatus?.sessions ?? [];
+
+    const stopMyLeftovers = async () => {
+        if (!window.confirm('Stop all of your leftover ttyd gateways? Open SSH tabs will disconnect.')) {
+            return;
+        }
+        try {
+            setUsageLoading(true);
+            setUsageError(null);
+            const r = await sshGatewayService.stopAll();
+            setSavedMsg(
+                `Stopped ${r.stopped} gateway(s)` +
+                    (r.sweptUntracked ? ` and swept ${r.sweptUntracked} untracked listener(s)` : '') +
+                    '.'
+            );
+            await loadUsage();
+        } catch (err: any) {
+            setUsageError(err.message || 'Failed to stop gateways');
+            setError(err.message || 'Failed to stop gateways');
+        } finally {
+            setUsageLoading(false);
+        }
+    };
+
+    const stopAllOnServer = async () => {
+        if (
+            !window.confirm(
+                'ADMIN: Stop ALL ttyd gateways on this server for every user? This kills every Easy-mode SSH process.'
+            )
+        ) {
+            return;
+        }
+        try {
+            setUsageLoading(true);
+            setUsageError(null);
+            const r = await sshGatewayService.stopAll({ scope: 'all' });
+            setSavedMsg(
+                `Stopped ${r.stopped} gateway(s) (server-wide)` +
+                    (r.sweptUntracked ? `, swept ${r.sweptUntracked} untracked` : '') +
+                    '.'
+            );
+            await loadUsage();
+        } catch (err: any) {
+            setUsageError(err.message || 'Failed to stop all gateways');
+            setError(err.message || 'Failed to stop all gateways');
+        } finally {
+            setUsageLoading(false);
+        }
+    };
 
     return (
         <div className="mt-6 bg-white rounded-xl shadow-lg border border-sky-100 dark:border-sky-900/40 overflow-hidden">
@@ -1891,7 +1968,57 @@ const SshGatewayAddonCard: React.FC = () => {
                                     <span className="px-2 py-1 bg-white rounded border border-sky-100 dark:border-sky-900/40 dark:bg-slate-900/40">
                                         max sessions: {maxConnections}/{maxCeiling}
                                     </span>
+                                    {usage && (
+                                        <>
+                                            <span className="px-2 py-1 bg-white rounded border border-sky-100 dark:border-sky-900/40 dark:bg-slate-900/40">
+                                                your ttyd: {usage.mine.sessions}/{usage.mine.maxConnections}
+                                                {usage.mine.memoryHuman ? ` · ${usage.mine.memoryHuman}` : ''}
+                                            </span>
+                                            <span className="px-2 py-1 bg-white rounded border border-sky-100 dark:border-sky-900/40 dark:bg-slate-900/40">
+                                                global ttyd: {usage.global.sessions}/{usage.global.portCapacity}
+                                                {usage.global.memoryHuman ? ` · ${usage.global.memoryHuman}` : ''}
+                                            </span>
+                                            {usage.host?.memoryUsedHuman && usage.host?.memoryTotalHuman && (
+                                                <span className="px-2 py-1 bg-white rounded border border-sky-100 dark:border-sky-900/40 dark:bg-slate-900/40">
+                                                    host RAM: {usage.host.memoryUsedHuman}/{usage.host.memoryTotalHuman}
+                                                    {usage.host.cpuCount ? ` · ${usage.host.cpuCount} CPU` : ''}
+                                                </span>
+                                            )}
+                                        </>
+                                    )}
                                 </div>
+                            )}
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => void loadUsage()}
+                                    disabled={usageLoading}
+                                    className="px-3 py-1.5 text-xs font-medium rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50"
+                                >
+                                    {usageLoading ? 'Refreshing…' : 'Refresh usage'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => void stopMyLeftovers()}
+                                    disabled={usageLoading}
+                                    className="px-3 py-1.5 text-xs font-semibold rounded-md border border-amber-400 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-100 hover:bg-amber-100 dark:hover:bg-amber-900/50 disabled:opacity-50"
+                                >
+                                    Stop my leftovers
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => void stopAllOnServer()}
+                                    disabled={usageLoading}
+                                    className="px-3 py-1.5 text-xs font-semibold rounded-md border border-red-400 bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-200 hover:bg-red-100 dark:hover:bg-red-900/50 disabled:opacity-50"
+                                >
+                                    Stop all on server
+                                </button>
+                            </div>
+                            {usageError && !expanded && (
+                                <p className="mt-2 text-xs text-red-600 dark:text-red-400">{usageError}</p>
+                            )}
+                            {savedMsg && !expanded && (
+                                <p className="mt-2 text-xs text-emerald-700 dark:text-emerald-300">{savedMsg}</p>
                             )}
                         </div>
                     </div>
@@ -1918,6 +2045,141 @@ const SshGatewayAddonCard: React.FC = () => {
                             {savedMsg}
                         </div>
                     )}
+
+                    <div className="rounded-lg border border-emerald-200 dark:border-emerald-900/40 bg-white dark:bg-slate-900 p-4 space-y-3">
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                            <div>
+                                <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Live ttyd usage</h3>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                    Per-user quota, global port capacity, and working-set memory (ttyd + child ssh). Use this when deciding to raise max sessions or host RAM/CPU.
+                                </p>
+                            </div>
+                            <div className="flex flex-wrap gap-2 justify-end">
+                            <button
+                                type="button"
+                                onClick={() => void loadUsage()}
+                                disabled={usageLoading}
+                                className="px-3 py-1.5 text-xs font-medium rounded-md border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50"
+                            >
+                                {usageLoading ? 'Refreshing…' : 'Refresh usage'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => void stopMyLeftovers()}
+                                disabled={usageLoading}
+                                className="px-3 py-1.5 text-xs font-medium rounded-md border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-200 hover:bg-amber-50 dark:hover:bg-amber-950/40 disabled:opacity-50"
+                            >
+                                Stop my leftovers
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => void stopAllOnServer()}
+                                disabled={usageLoading}
+                                className="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 dark:border-red-900 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-50"
+                            >
+                                Stop all on server
+                            </button>
+                            </div>
+                        </div>
+                        {usageError && <p className="text-xs text-red-600 dark:text-red-400">{usageError}</p>}
+                        {usage && (
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                                <div className="rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950/40 px-3 py-2">
+                                    <div className="text-slate-500 dark:text-slate-400">Your quota</div>
+                                    <div className="mt-1 text-base font-semibold text-slate-900 dark:text-white">
+                                        {usage.mine.sessions} / {usage.mine.maxConnections}
+                                    </div>
+                                    <div className="text-slate-500">
+                                        {usage.mine.remaining} remaining · {usage.mine.memoryHuman || '0 B'}
+                                        {typeof usage.mine.clientless === 'number' && usage.mine.clientless > 0
+                                            ? ` · ${usage.mine.clientless} clientless`
+                                            : ''}
+                                    </div>
+                                </div>
+                                <div className="rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950/40 px-3 py-2">
+                                    <div className="text-slate-500 dark:text-slate-400">Global (all users)</div>
+                                    <div className="mt-1 text-base font-semibold text-slate-900 dark:text-white">
+                                        {usage.global.sessions} / {usage.global.portCapacity}
+                                    </div>
+                                    <div className="text-slate-500">
+                                        {usage.global.remainingPorts} ports free · {usage.global.memoryHuman || '0 B'}
+                                    </div>
+                                </div>
+                                <div className="rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950/40 px-3 py-2">
+                                    <div className="text-slate-500 dark:text-slate-400">Host resources</div>
+                                    <div className="mt-1 text-base font-semibold text-slate-900 dark:text-white">
+                                        {usage.host?.memoryUsedHuman || '—'} / {usage.host?.memoryTotalHuman || '—'}
+                                    </div>
+                                    <div className="text-slate-500">
+                                        {usage.host?.memoryAvailableHuman
+                                            ? `${usage.host.memoryAvailableHuman} free`
+                                            : 'RAM n/a'}
+                                        {usage.host?.cpuCount ? ` · ${usage.host.cpuCount} logical CPU` : ''}
+                                        {usage.host?.loadAverage
+                                            ? ` · load ${usage.host.loadAverage['1m']} / ${usage.host.loadAverage['5m']} / ${usage.host.loadAverage['15m']}`
+                                            : ''}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        {sessionRows.length > 0 ? (
+                            <div className="overflow-x-auto rounded-md border border-slate-200 dark:border-slate-700">
+                                <table className="min-w-full text-xs">
+                                    <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                                        <tr>
+                                            <th className="text-left px-2 py-1.5 font-medium">Target</th>
+                                            <th className="text-left px-2 py-1.5 font-medium">Clients</th>
+                                            <th className="text-left px-2 py-1.5 font-medium">Port</th>
+                                            <th className="text-left px-2 py-1.5 font-medium">PID</th>
+                                            <th className="text-right px-2 py-1.5 font-medium">ttyd</th>
+                                            <th className="text-right px-2 py-1.5 font-medium">Children</th>
+                                            <th className="text-right px-2 py-1.5 font-medium">Total</th>
+                                            {sessionRows.some((r) => r.userId != null) && (
+                                                <th className="text-right px-2 py-1.5 font-medium">User</th>
+                                            )}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700 bg-white dark:bg-slate-900">
+                                        {sessionRows.map((row) => (
+                                            <tr key={row.sessionId}>
+                                                <td className="px-2 py-1.5 text-slate-800 dark:text-slate-200">
+                                                    {(row.username || '?') + '@' + (row.host || '?') + ':' + (row.port ?? 22)}
+                                                </td>
+                                                <td className="px-2 py-1.5">
+                                                    {row.orphan || (row.clientCount ?? 0) < 1 ? (
+                                                        <span className="text-amber-700 dark:text-amber-300">none</span>
+                                                    ) : (
+                                                        <span className="text-emerald-700 dark:text-emerald-300">{row.clientCount}</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-2 py-1.5 font-mono text-slate-600 dark:text-slate-400">
+                                                    {row.listenPort ?? '—'}
+                                                </td>
+                                                <td className="px-2 py-1.5 font-mono text-slate-600 dark:text-slate-400">
+                                                    {row.pid ?? row.memory?.pid ?? '—'}
+                                                </td>
+                                                <td className="px-2 py-1.5 text-right tabular-nums">{row.memory?.ttydHuman || '—'}</td>
+                                                <td className="px-2 py-1.5 text-right tabular-nums">
+                                                    {row.memory?.childrenHuman || '0 B'}
+                                                    {row.memory?.childProcessCount
+                                                        ? ` (${row.memory.childProcessCount})`
+                                                        : ''}
+                                                </td>
+                                                <td className="px-2 py-1.5 text-right font-medium tabular-nums">
+                                                    {row.memory?.totalHuman || '—'}
+                                                </td>
+                                                {sessionRows.some((r) => r.userId != null) && (
+                                                    <td className="px-2 py-1.5 text-right text-slate-500">{row.userId ?? '—'}</td>
+                                                )}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ) : (
+                            !usageLoading && <p className="text-xs text-slate-500">No active ttyd sessions right now.</p>
+                        )}
+                    </div>
 
                     {loading ? (
                         <p className="text-sm text-slate-600 dark:text-slate-400">Loading…</p>

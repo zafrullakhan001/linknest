@@ -31,6 +31,64 @@ export interface SshGatewaySession {
   x11Display?: string | null;
 }
 
+export interface SshGatewaySessionMemory {
+  pid?: number | null;
+  ttydBytes?: number | null;
+  childrenBytes?: number;
+  childProcessCount?: number;
+  totalBytes?: number | null;
+  ttydHuman?: string | null;
+  childrenHuman?: string | null;
+  totalHuman?: string | null;
+}
+
+export interface SshGatewayUsageMine {
+  sessions: number;
+  maxConnections: number;
+  remaining: number;
+  memoryBytes: number;
+  memoryHuman?: string | null;
+  clientless?: number;
+}
+
+export interface SshGatewayUsageGlobal {
+  sessions: number;
+  portCapacity: number;
+  remainingPorts: number;
+  memoryBytes: number;
+  memoryHuman?: string | null;
+  clientless?: number;
+  note?: string;
+}
+
+export interface SshGatewayHostResources {
+  memoryTotalBytes?: number | null;
+  memoryAvailableBytes?: number | null;
+  memoryUsedBytes?: number | null;
+  memoryTotalHuman?: string | null;
+  memoryAvailableHuman?: string | null;
+  memoryUsedHuman?: string | null;
+  cpuCount?: number | null;
+  loadAverage?: { '1m': number; '5m': number; '15m': number } | null;
+}
+
+export interface SshGatewaySessionStatusRow {
+  sessionId: string;
+  host?: string | null;
+  port?: number | null;
+  username?: string | null;
+  listenPort?: number | null;
+  wsUrl?: string | null;
+  x11?: boolean;
+  createdAt?: number | null;
+  lastClientAt?: number | null;
+  clientCount?: number;
+  orphan?: boolean;
+  pid?: number | null;
+  userId?: number | null;
+  memory?: SshGatewaySessionMemory;
+}
+
 export interface SshGatewayStatus {
   available: boolean;
   ttydPath?: string | null;
@@ -40,6 +98,7 @@ export interface SshGatewayStatus {
   missing?: string[];
   hint?: string | null;
   platform?: string;
+  docker?: boolean;
   maxConnections?: number;
   maxConnectionsCeiling?: number;
   portRange?: [number, number];
@@ -49,16 +108,21 @@ export interface SshGatewayStatus {
     displayReachable?: boolean;
     hint?: string;
   };
-  sessions: Array<{
-    sessionId: string;
-    host?: string;
-    port?: number;
-    username?: string;
-    listenPort?: number;
-    wsUrl?: string;
-    x11?: boolean;
-    createdAt?: number;
-  }>;
+  usage?: {
+    mine: SshGatewayUsageMine;
+    global: SshGatewayUsageGlobal;
+    host?: SshGatewayHostResources;
+    idleSec?: number;
+    sampledAt?: number;
+  };
+  sessions: SshGatewaySessionStatusRow[];
+  /** Present for admins only — every active ttyd on the server. */
+  allSessions?: SshGatewaySessionStatusRow[];
+  proxy?: {
+    preferHttpProxy?: boolean;
+    basePath?: string;
+    exampleWsUrl?: string;
+  };
 }
 
 export interface SshGatewayConfigResponse {
@@ -154,17 +218,26 @@ export const sshGatewayService = {
     if (!res.ok) throw new Error((data as any).error || 'Failed to stop SSH gateway');
   },
 
-  /** Kill all ttyd gateways for the signed-in user (orphans left after UI closed). */
-  async stopAll(): Promise<{ stopped: number }> {
+  /** Kill all ttyd gateways for the signed-in user (orphans left after UI closed).
+   *  Admins may pass scope: 'all' to kill every gateway on the server. */
+  async stopAll(opts?: { scope?: 'mine' | 'all' }): Promise<{
+    stopped: number;
+    sweptUntracked?: number;
+    scope?: string;
+  }> {
     const res = await fetch(`${GW_BASE}/stop-all`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({}),
+      body: JSON.stringify(opts?.scope === 'all' ? { scope: 'all' } : {}),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error((data as any).error || 'Failed to stop SSH gateways');
-    return { stopped: Number((data as any).stopped) || 0 };
+    return {
+      stopped: Number((data as any).stopped) || 0,
+      sweptUntracked: Number((data as any).sweptUntracked) || 0,
+      scope: typeof (data as any).scope === 'string' ? (data as any).scope : undefined,
+    };
   },
 };
 

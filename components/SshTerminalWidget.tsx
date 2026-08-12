@@ -24,6 +24,7 @@ import {
   buildAutoTargetUrl,
   parseAutoTargetUrl,
   sshGatewayService,
+  type SshGatewayStatus,
 } from '../services/sshGatewayService';
 import type { OpenSshTerminalDetail } from '../utils/sshLink';
 import { buildSshLinkUrl } from '../utils/sshLink';
@@ -1364,6 +1365,9 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
   const [gatewayAvailable, setGatewayAvailable] = useState<boolean | null>(null);
   const [gatewayHint, setGatewayHint] = useState<string | null>(null);
   const [maxSshTabs, setMaxSshTabs] = useState(DEFAULT_MAX_SSH_TABS);
+  const [gatewayUsage, setGatewayUsage] = useState<SshGatewayStatus['usage'] | null>(null);
+  const [gatewaySessions, setGatewaySessions] = useState<SshGatewayStatus['sessions']>([]);
+  const [showGatewayUsage, setShowGatewayUsage] = useState(false);
   const [guiHint, setGuiHint] = useState<string | null>(null);
   const [guiDisplayReady, setGuiDisplayReady] = useState<boolean | null>(null);
 
@@ -1743,6 +1747,8 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     if (!useServer) {
       setGatewayAvailable(false);
       setGatewayHint(null);
+      setGatewayUsage(null);
+      setGatewaySessions([]);
       setGuiDisplayReady(null);
       setGuiHint(null);
       return;
@@ -1768,25 +1774,30 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
         if (typeof st.maxConnections === 'number' && st.maxConnections >= 1) {
           setMaxSshTabs(Math.floor(st.maxConnections));
         }
+        setGatewayUsage(st.usage ?? null);
+        setGatewaySessions(Array.isArray(st.sessions) ? st.sessions : []);
         setGuiDisplayReady(st.gui?.displayReachable ?? null);
         setGuiHint(st.gui?.hint || null);
       } catch {
         if (!cancelled) {
           setGatewayAvailable(false);
           setGatewayHint('Could not reach SSH gateway status API — sign in and refresh, then confirm bin/ttyd.exe is deployed.');
+          setGatewayUsage(null);
+          setGatewaySessions([]);
           setGuiDisplayReady(null);
         }
       }
     };
     void loadStatus();
+    const intervalMs = showGatewayUsage ? 10000 : x11Forward ? 8000 : 20000;
     const t = window.setInterval(() => {
-      if (x11Forward) void loadStatus();
-    }, 8000);
+      void loadStatus();
+    }, intervalMs);
     return () => {
       cancelled = true;
       window.clearInterval(t);
     };
-  }, [useServer, x11Forward]);
+  }, [useServer, x11Forward, showGatewayUsage]);
 
   const allTags = useMemo(() => {
     const set = new Set<string>();
@@ -2111,6 +2122,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     } catch {
       // ignore
     }
+    sshSessionBridge.closeKeeperWindow();
     onClose?.();
   }, [closeTab, onClose]);
 
@@ -2409,6 +2421,12 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       if (sessionHandlesRef.current.size >= maxSshTabs) {
         setNotice(`Maximum of ${maxSshTabs} open sessions. Close a tab first.`);
         return;
+      }
+
+      // Open the keeper immediately while we still have the Connect click gesture
+      // (async awaits below would otherwise get blocked by popup blockers).
+      if (typeof SharedWorker !== 'undefined') {
+        sshSessionBridge.ensureKeeperWindow();
       }
 
       const mode = opts?.mode ?? connectMode;
@@ -2799,83 +2817,26 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
         }
       };
 
-      const useBridge = sshSessionBridge.isAvailable();
-      if (useBridge) {
-        handle.useBridge = true;
-        const unsub = sshSessionBridge.subscribe(tabId, {
-          onMessage: (data) => handleOutputBuffer(data),
-          onReplay: (data) => handleOutputBuffer(data),
-          onStatus: (status, detail) => {
-            if (status === 'open') {
-              onConnected({ sendHello: true });
-              return;
-            }
-            if (status === 'error') {
-              updateTab(tabId, {
-                status: 'error',
-                statusMessage: `WebSocket error — cannot reach ${url}. If Easy mode was used, ttyd may have exited; try Connect again.`,
-              });
-              return;
-            }
-            if (status === 'closed') {
-              if (detail?.intentional) return;
-              handleNaturalClose(detail?.code);
-            }
-          },
-          onOpenError: (message) => {
-            const gw = disposeSessionHandle(tabId, { destroyBridge: true });
-            void stopGatewayFor(gw);
-            failTab(message);
-          },
-        });
-        handle.bridgeUnsub = unsub;
-
-        const gwId = handle.gatewaySessionId;
-        try {
-          const opened = await sshSessionBridge.open(tabId, url, {
-            gatewaySessionId: gwId,
-            meta: {
-              title: tabTitle,
-              connectionId: nextConnectionId,
-              duplicateSource: {
-                kind: 'ssh',
-                connectionId: nextConnectionId ?? null,
-                wsUrl: url,
-                mode: wantAuto ? 'auto' : 'ws',
-                host: sourceHost,
-                port: sourcePort,
-                username: sourceUsername,
-                x11: opts?.x11 ?? x11Forward,
-              },
-            },
-          });
-          sshSessionBridge.updateMeta(tabId, { gatewaySessionId: gwId });
-          // Resumed existing worker session — do not re-send ttyd AuthToken hello.
-          if (opened.resumed && (opened.status === 'open' || opened.status === 'connecting')) {
-            if (opened.status === 'open') onConnected({ sendHello: false });
-          }
-        } catch (err) {
-          const gw = disposeSessionHandle(tabId, { destroyBridge: true });
-          void stopGatewayFor(gw);
-          failTab(err instanceof Error ? err.message : 'Failed to open WebSocket');
-          return;
-        }
-      } else {
+      const openDirectWebSocket = (): boolean => {
         let ws: WebSocket;
         try {
           ws = new WebSocket(url, ['tty']);
         } catch (err) {
-          const gw = disposeSessionHandle(tabId, { destroyBridge: true });
-          void stopGatewayFor(gw);
           failTab(err instanceof Error ? err.message : 'Failed to open WebSocket');
-          return;
+          return false;
         }
 
         ws.binaryType = 'arraybuffer';
         handle.ws = ws;
         handle.useBridge = false;
+        try {
+          handle.bridgeUnsub?.();
+        } catch {
+          // ignore
+        }
+        handle.bridgeUnsub = null;
 
-        ws.onopen = () => onConnected();
+        ws.onopen = () => onConnected({ sendHello: true });
 
         ws.onmessage = (ev) => {
           handleOutputBuffer(ev.data as ArrayBuffer);
@@ -2902,6 +2863,90 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
           }
           handleNaturalClose(typeof ev?.code === 'number' ? ev.code : 0);
         };
+        return true;
+      };
+
+      const bridgeOk = sshSessionBridge.isAvailable() && (await sshSessionBridge.ensureReady());
+      if (bridgeOk) {
+        handle.useBridge = true;
+        const unsub = sshSessionBridge.subscribe(tabId, {
+          onMessage: (data) => handleOutputBuffer(data),
+          onReplay: (data) => handleOutputBuffer(data),
+          onStatus: (status, detail) => {
+            if (status === 'open') {
+              onConnected({ sendHello: true });
+              return;
+            }
+            if (status === 'error') {
+              updateTab(tabId, {
+                status: 'error',
+                statusMessage: `WebSocket error — cannot reach ${url}. If Easy mode was used, ttyd may have exited; try Connect again.`,
+              });
+              return;
+            }
+            if (status === 'closed') {
+              if (detail?.intentional) return;
+              handleNaturalClose(detail?.code);
+            }
+          },
+          onOpenError: (message) => {
+            // Prefer falling back to a page WebSocket over failing the tab.
+            console.warn('[ssh] bridge open error, falling back to direct WebSocket:', message);
+            try {
+              unsub();
+            } catch {
+              // ignore
+            }
+            handle.bridgeUnsub = null;
+            handle.useBridge = false;
+            if (!handle.ws) openDirectWebSocket();
+          },
+        });
+        handle.bridgeUnsub = unsub;
+
+        const gwId = handle.gatewaySessionId;
+        try {
+          const opened = await sshSessionBridge.open(tabId, url, {
+            gatewaySessionId: gwId,
+            meta: {
+              title: tabTitle,
+              connectionId: nextConnectionId,
+              duplicateSource: {
+                kind: 'ssh',
+                connectionId: nextConnectionId ?? null,
+                wsUrl: url,
+                mode: wantAuto ? 'auto' : 'ws',
+                host: sourceHost,
+                port: sourcePort,
+                username: sourceUsername,
+                x11: opts?.x11 ?? x11Forward,
+              },
+            },
+          });
+          sshSessionBridge.updateMeta(tabId, { gatewaySessionId: gwId });
+          // Keep SharedWorker alive across main-page refresh (single-tab reload kills workers otherwise).
+          const keeperOk = sshSessionBridge.ensureKeeperWindow();
+          if (!keeperOk) {
+            setNotice(
+              'Allow pop-ups for LinkNest so the SSH session keeper can keep your shell alive across refresh'
+            );
+          }
+          if (opened.resumed && (opened.status === 'open' || opened.status === 'connecting')) {
+            if (opened.status === 'open') onConnected({ sendHello: false });
+          }
+        } catch (err) {
+          console.warn('[ssh] SharedWorker unavailable, using direct WebSocket:', err);
+          try {
+            unsub();
+          } catch {
+            // ignore
+          }
+          handle.bridgeUnsub = null;
+          handle.useBridge = false;
+          if (!openDirectWebSocket()) return;
+        }
+      } else if (!openDirectWebSocket()) {
+        return;
       }
 
       term.onData((data) => {
@@ -3459,6 +3504,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
           } catch {
             // ignore
           }
+          sshSessionBridge.ensureKeeperWindow();
         }
         return true;
       } catch {
@@ -3484,7 +3530,9 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
         const persisted = loadPersistedLiveTabs();
         if (!persisted?.tabs?.length) return;
 
-        const bridgeLive = sshSessionBridge.isAvailable() ? await sshSessionBridge.list() : [];
+        const bridgeLive = (await sshSessionBridge.ensureReady())
+        ? await sshSessionBridge.list()
+        : [];
         if (cancelled) return;
         const liveMap = new Map(bridgeLive.map((s) => [s.id, s]));
 
@@ -6926,6 +6974,102 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                               )}
                             </p>
                           )}
+                          {useServer && (
+                            <div className="rounded-md border border-amber-200 dark:border-amber-900/50 bg-amber-50/80 dark:bg-amber-950/30 px-2 py-1.5 space-y-1">
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <p className="text-[10px] font-medium text-slate-700 dark:text-slate-200">
+                                  Gateway quota
+                                  {gatewayUsage
+                                    ? `: ${gatewayUsage.mine.sessions}/${gatewayUsage.mine.maxConnections} yours · ${gatewayUsage.global.sessions}/${gatewayUsage.global.portCapacity} global`
+                                    : `: tabs ${tabs.length}/${maxSshTabs}`}
+                                  {gatewayUsage?.mine.memoryHuman
+                                    ? ` · mem ${gatewayUsage.mine.memoryHuman}`
+                                    : ''}
+                                </p>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      if (
+                                        !window.confirm(
+                                          'Stop all leftover ttyd gateways for your account? Open SSH tabs will disconnect.'
+                                        )
+                                      ) {
+                                        return;
+                                      }
+                                      try {
+                                        const r = await sshGatewayService.stopAll();
+                                        setNotice(
+                                          `Stopped ${r.stopped} leftover gateway(s)` +
+                                            (r.sweptUntracked ? ` (+${r.sweptUntracked} untracked)` : '')
+                                        );
+                                        const st = await sshGatewayService.status();
+                                        setGatewayUsage(st.usage ?? null);
+                                        setGatewaySessions(Array.isArray(st.sessions) ? st.sessions : []);
+                                        if (typeof st.maxConnections === 'number' && st.maxConnections >= 1) {
+                                          setMaxSshTabs(Math.floor(st.maxConnections));
+                                        }
+                                      } catch (err) {
+                                        setNotice(err instanceof Error ? err.message : 'Failed to stop leftovers');
+                                      }
+                                    }}
+                                    className="text-[10px] px-1.5 py-0.5 rounded border border-amber-500 bg-amber-100 dark:bg-amber-900/50 text-amber-900 dark:text-amber-100 font-semibold hover:bg-amber-200 dark:hover:bg-amber-900"
+                                  >
+                                    Kill leftovers
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowGatewayUsage((v) => !v)}
+                                    className="text-[10px] px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800"
+                                  >
+                                    {showGatewayUsage ? 'Hide' : 'Details'}
+                                  </button>
+                                </div>
+                              </div>
+                              {showGatewayUsage && (
+                                <div className="text-[10px] text-slate-500 dark:text-slate-400 space-y-1">
+                                  {gatewayUsage ? (
+                                    <>
+                                      <p>
+                                        Your memory: {gatewayUsage.mine.memoryHuman || '0 B'} · Global ttyd memory:{' '}
+                                        {gatewayUsage.global.memoryHuman || '0 B'}
+                                        {typeof gatewayUsage.mine.clientless === 'number' &&
+                                        gatewayUsage.mine.clientless > 0
+                                          ? ` · ${gatewayUsage.mine.clientless} clientless (auto-kill ~${Math.round((gatewayUsage.idleSec || 600) / 60)}m)`
+                                          : ''}
+                                        {gatewayUsage.host?.memoryAvailableHuman
+                                          ? ` · Host free ${gatewayUsage.host.memoryAvailableHuman}`
+                                          : ''}
+                                        {gatewayUsage.host?.cpuCount ? ` · ${gatewayUsage.host.cpuCount} CPU` : ''}
+                                      </p>
+                                      {gatewaySessions.length > 0 ? (
+                                        <ul className="space-y-0.5 max-h-28 overflow-y-auto">
+                                          {gatewaySessions.map((s) => (
+                                            <li key={s.sessionId} className="flex justify-between gap-2 font-mono">
+                                              <span className="truncate">
+                                                {(s.username || '?') + '@' + (s.host || '?')}:{s.port ?? 22}
+                                                {s.orphan ? ' (no client)' : ''}
+                                              </span>
+                                              <span className="shrink-0 tabular-nums">
+                                                {s.memory?.totalHuman || '—'}
+                                              </span>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      ) : (
+                                        <p>No active Easy-mode ttyd sessions for your account.</p>
+                                      )}
+                                    </>
+                                  ) : (
+                                    <p>Loading gateway usage…</p>
+                                  )}
+                                  <p className="text-slate-400">
+                                    Leftovers remain after refresh/reconnect while ttyd keeps listening. Use Kill leftovers to free quota.
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </>
                       ) : (
                         <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
@@ -7160,9 +7304,57 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                       </button>
                     </>
                   )}
-                  <span className="px-1.5 text-[10px] text-slate-500">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!useServer) return;
+                      setShowSettings(true);
+                      setSettingsPane('connection');
+                      setShowGatewayUsage(true);
+                    }}
+                    className="px-1.5 text-[10px] text-slate-500 hover:text-sky-300"
+                    title={
+                      gatewayUsage
+                        ? `Your ttyd ${gatewayUsage.mine.sessions}/${gatewayUsage.mine.maxConnections} (${gatewayUsage.mine.memoryHuman || '0 B'}) · Global ${gatewayUsage.global.sessions}/${gatewayUsage.global.portCapacity} (${gatewayUsage.global.memoryHuman || '0 B'}) — click for details`
+                        : `Open sessions ${tabs.length}/${maxSshTabs}`
+                    }
+                  >
                     {tabs.length}/{maxSshTabs}
-                  </span>
+                    {gatewayUsage ? ` · ${gatewayUsage.mine.memoryHuman || '0 B'}` : ''}
+                  </button>
+                  {useServer && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (
+                          !window.confirm(
+                            'Stop all leftover ttyd gateways for your account? Open SSH tabs will disconnect.'
+                          )
+                        ) {
+                          return;
+                        }
+                        try {
+                          const r = await sshGatewayService.stopAll();
+                          setNotice(
+                            `Stopped ${r.stopped} leftover gateway(s)` +
+                              (r.sweptUntracked ? ` (+${r.sweptUntracked} untracked)` : '')
+                          );
+                          const st = await sshGatewayService.status();
+                          setGatewayUsage(st.usage ?? null);
+                          setGatewaySessions(Array.isArray(st.sessions) ? st.sessions : []);
+                          if (typeof st.maxConnections === 'number' && st.maxConnections >= 1) {
+                            setMaxSshTabs(Math.floor(st.maxConnections));
+                          }
+                        } catch (err) {
+                          setNotice(err instanceof Error ? err.message : 'Failed to stop leftovers');
+                        }
+                      }}
+                      className="px-1.5 h-6 text-[10px] font-semibold rounded border border-amber-600/80 text-amber-200 hover:bg-amber-950/50"
+                      title="Kill leftover ttyd processes that still count against your quota"
+                    >
+                      Kill leftovers
+                    </button>
+                  )}
                 </div>
               </div>
             )}

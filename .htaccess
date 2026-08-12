@@ -64,6 +64,16 @@ AddDefaultCharset UTF-8
     RewriteCond %{REQUEST_URI} ^.*/assets/
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^assets/(.*)$ dist/assets/$1 [L]
+
+    # SSH SharedWorker (Vite public/ → dist/); avoid SPA HTML 404 for worker fetch
+    RewriteCond %{REQUEST_URI} ssh-session-shared-worker\.js$
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule (^|/)ssh-session-shared-worker\.js$ dist/ssh-session-shared-worker.js [L]
+
+    # SSH session keeper helper page
+    RewriteCond %{REQUEST_URI} ssh-session-keepalive\.html$
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule (^|/)ssh-session-keepalive\.html$ dist/ssh-session-keepalive.html [L]
     
     # Block direct access to source files in production
     RewriteCond %{DOCUMENT_ROOT}%{REQUEST_URI}dist/index.html -f

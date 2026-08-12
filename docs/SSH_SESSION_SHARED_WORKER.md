@@ -45,13 +45,18 @@ flowchart LR
 
 | Action | Result |
 |--------|--------|
-| **Refresh** (F5 / reload) with the SSH widget still enabled | Worker keeps sockets; UI restores tabs and reattaches; notice may say sessions were kept alive |
-| **Close SSH widget** (X / nav toggle with confirm) | Worker sessions closed; gateway `stop` called; persisted live-tab list cleared |
+| **Connect** (Easy/Advanced SSH) | Opens a small **SSH session keeper** window and holds the WebSocket in a SharedWorker |
+| **Refresh** (F5 / reload) with the SSH widget still enabled | Keeper window keeps the worker alive; UI restores tabs and reattaches — **no new password** when reattach succeeds |
+| **Close SSH widget** (X / nav toggle with confirm) | Worker sessions closed; keeper window closed; gateway `stop` called; persisted live-tab list cleared |
 | **Close a single tab** `[x]` | That session closed and its gateway stopped |
-| **Close every LinkNest tab** or quit the browser | SharedWorker is gone; SSH must be connected again next time |
-| Browser **without** SharedWorker support | Falls back to per-page WebSockets (sessions die on refresh, same as before) |
+| **Close every LinkNest tab**, close the keeper, or quit the browser | SharedWorker is gone; SSH must be connected again next time |
+| Browser **without** SharedWorker support / worker 404 | Falls back to per-page WebSockets (sessions die on refresh, same as before) |
 
 Open-tab metadata is also stored briefly in **`sessionStorage`** (`linknest.sshTerminal.liveTabs.v1`) so the UI knows which tabs to restore after reload.
+
+### Why a keeper window?
+
+Browsers often **terminate SharedWorkers** when the only page using them reloads (zero clients for a moment). The keeper page stays open so at least one client remains attached and the ttyd WebSocket (and remote shell) stay up. Allow pop-ups for your LinkNest origin if the keeper is blocked.
 
 ---
 
@@ -60,16 +65,20 @@ Open-tab metadata is also stored briefly in **`sessionStorage`** (`linknest.sshT
 - Modern Chromium, Edge, or Firefox (SharedWorker available)
 - Site served over **http(s)** from your LinkNest origin (not a broken `file://` open)
 - Same origin after refresh (same host + path base such as `/linknest`)
+- Worker script reachable at `ssh-session-shared-worker.js` (Vite builds it into `dist/`; Apache `.htaccess` rewrites the root URL to `dist/ssh-session-shared-worker.js`)
 - For Easy mode: ttyd / OpenSSH still running on the server as usual — see [REMOTE_WIDGETS_MANUAL_DEPLOY.md](REMOTE_WIDGETS_MANUAL_DEPLOY.md)
+
+If the worker script cannot be loaded, LinkNest **falls back** to a normal page WebSocket (SSH still connects; sessions will not survive refresh).
 
 ---
 
 ## User tips
 
 1. Leave the **SSH / RDP widget open** (nav still showing it as on) if you only need to refresh the main app.
-2. To fully disconnect: close the widget and confirm **Kill all terminals and close?** when prompted.
-3. After refresh you may see **Reattached after refresh** — scrollback is partial (recent replay only), but the remote shell is the same one when reattach succeeds.
-4. If reattach fails (worker was killed), LinkNest may **reconnect** using the saved connection / Easy settings (new SSH login).
+2. Allow the **SSH session keeper** pop-up. You can **minimize** it, but leave it open (don’t close it) — required so refresh does not drop the shell.
+3. To fully disconnect: close the widget and confirm **Kill all terminals and close?** when prompted.
+4. After refresh you may see **Reattached after refresh** — scrollback is partial (recent replay only), but the remote shell is the same one when reattach succeeds.
+5. If reattach fails (worker/keeper was killed), LinkNest may **reconnect** using the saved connection / Easy settings (new SSH login → password again).
 
 ---
 
