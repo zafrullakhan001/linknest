@@ -93,13 +93,36 @@ API: `POST /api/updater/rollback` with `{ "historyId": "…", "restoreDatabase":
 - PHP `ZipArchive` + cURL
 - Prefer Releases with `linknest-update-vX.Y.Z.zip`; commit updates use source zipball + rebuild when Node exists
 
+### Frontend / SSH & VNC widgets (important)
+
+The browser loads the built UI from **`dist/`** (not raw `components/*.tsx`).
+
+| Install | How widget UI updates arrive |
+|---------|------------------------------|
+| **git** mode + Node.js/npm | Apply a **commit** → updater runs `npm ci` + `npm run build` → new widgets appear |
+| **zip** mode (typical office XAMPP, no Node) | Apply a **GitHub Release** built with `scripts/publish-update-release.ps1` (ZIP includes `dist/`). Applying a commit zipball alone **cannot** refresh the SSH widget UI. |
+
+**Office checklist (SSH Copy ssh://, connection isolation, Help guides, etc.):**
+
+1. On the build PC, checkout/push the branch you track (e.g. `updater`).
+2. Set App Updates **Track branch** to that branch on the office server → Save → Check for updates.
+3. Publish a release that includes `dist/`:
+
+```powershell
+cd C:\xampp\htdocs\linknest
+$env:GITHUB_TOKEN = 'ghp_YOUR_TOKEN'
+.\scripts\publish-update-release.ps1 -Version 2.3.0
+```
+
+4. In office App Updates, select the new **Release** (not only the commit) → Update → hard-refresh (Ctrl+F5).
+
+If the update log says rebuild skipped/failed, the old `dist/` is still serving — that is why the SSH widget looked unchanged.
+
 ---
 
-## Publisher: create a versioned release (optional)
+## Publisher: create a versioned release (required for office widgets)
 
-Mini commit updates do **not** require a Release — push to the tracked branch is enough.
-
-For stable/semver packages (especially ZIP installs without Node):
+Mini commit updates work for **API/PHP** on zip installs, but **widget UI** needs a Release that includes `dist/`.
 
 ```powershell
 cd C:\xampp\htdocs\linknest
@@ -108,7 +131,7 @@ $env:GITHUB_TOKEN = 'ghp_YOUR_TOKEN'
 ```
 
 - Auto release notes from git commits since the previous tag  
-- Uploads `linknest-update-v2.3.0.zip`  
+- Uploads `linknest-update-v2.3.0.zip` (includes built frontend)  
 - See script help for `-SkipPackage`, `-UpdateNotesOnly`, `-NotesFile`, `-DryRun`
 
 ---
@@ -135,7 +158,8 @@ Env (optional): `GITHUB_TOKEN` / `GH_TOKEN`.
 | Stuck at 0% / “already in progress” | Wait ~45s for stale-job clear, or restart Apache; retry |
 | Dubious ownership / hung fetch | Updater injects `safe.directory` + PAT; ensure token is saved |
 | Rollback has no DB option | That snapshot was created with backup unchecked |
-| UI still old | Ctrl+F5; check `BUILD_INFO.json` |
+| UI still old after commit update | Zip mode without Node: apply a **Release** with `dist/` (`publish-update-release.ps1`), then Ctrl+F5 |
+| UI still old | Ctrl+F5; check `BUILD_INFO.json` and that `dist/assets/*.js` timestamps changed |
 
 ---
 

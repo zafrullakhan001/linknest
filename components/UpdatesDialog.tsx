@@ -448,6 +448,24 @@ export const UpdatesPanel: React.FC<{
             <p className="text-[11px] text-slate-500">
               Updates never run automatically — choose a commit/release, then confirm Update.
             </p>
+            {status?.mode === 'zip' && status?.capabilities && !status.capabilities.nodeAvailable && (
+              <div className="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-3 text-sm text-amber-950 dark:text-amber-100 space-y-1">
+                <p className="font-semibold">Widget / UI updates need a Release ZIP on this server</p>
+                <p className="text-[12px] leading-relaxed text-amber-900/90 dark:text-amber-100/90">
+                  This install uses <strong>zip</strong> mode without Node.js. GitHub <strong>commits</strong> only ship source
+                  (SSH widget <code className="text-[11px] px-1 rounded bg-white/70 dark:bg-slate-900/50">.tsx</code> files) —
+                  the browser still loads old <code className="text-[11px] px-1 rounded bg-white/70 dark:bg-slate-900/50">dist/</code>.
+                  On your build PC: set Track branch to <code className="text-[11px] px-1 rounded bg-white/70 dark:bg-slate-900/50">updater</code>,
+                  then run <code className="text-[11px] px-1 rounded bg-white/70 dark:bg-slate-900/50">scripts\publish-update-release.ps1 -Version 2.3.0</code>
+                  and apply that <strong>Release</strong> here (includes built widgets). Or install Node.js on this server and re-apply.
+                </p>
+              </div>
+            )}
+            {status?.mode === 'git' && status?.capabilities?.nodeAvailable && (
+              <p className="text-[11px] text-emerald-700 dark:text-emerald-300">
+                Git mode with Node.js — applying a commit rebuilds <code className="px-1">dist/</code> so SSH/VNC widget UI updates apply.
+              </p>
+            )}
           </CollapsibleSection>
 
           <div className="flex flex-wrap gap-2">

@@ -1258,6 +1258,112 @@ function updaterGitWorkingTreeDirty(): bool {
     return $r['ok'] && $r['stdout'] !== '';
 }
 
+function updaterDistFingerprint(): string {
+    $parts = [];
+    $idx = UPDATER_ROOT . '/dist/index.html';
+    if (is_file($idx)) {
+        $parts[] = 'idx:' . (string)@filesize($idx) . ':' . (string)@filemtime($idx);
+        $hash = @md5_file($idx);
+        if (is_string($hash) && $hash !== '') {
+            $parts[] = $hash;
+        }
+    }
+    $assets = UPDATER_ROOT . '/dist/assets';
+    if (is_dir($assets)) {
+        $files = glob($assets . '/*.{js,css}', GLOB_BRACE) ?: [];
+        sort($files);
+        foreach ($files as $f) {
+            $parts[] = basename($f) . ':' . (string)@filesize($f);
+        }
+    }
+    return $parts === [] ? '' : md5(implode('|', $parts));
+}
+
+/**
+ * True when this apply likely changed React/Vite sources that only affect the UI after npm run build.
+ */
+function updaterFrontendSourcesNeedRebuild(): bool {
+    $markers = [
+        UPDATER_ROOT . '/components',
+        UPDATER_ROOT . '/services',
+        UPDATER_ROOT . '/contexts',
+        UPDATER_ROOT . '/hooks',
+        UPDATER_ROOT . '/utils',
+        UPDATER_ROOT . '/App.tsx',
+        UPDATER_ROOT . '/index.tsx',
+        UPDATER_ROOT . '/package.json',
+        UPDATER_ROOT . '/vite.config.ts',
+    ];
+    $distIdx = UPDATER_ROOT . '/dist/index.html';
+    $distMtime = is_file($distIdx) ? (int)@filemtime($distIdx) : 0;
+    foreach ($markers as $path) {
+        if (is_file($path)) {
+            if ((int)@filemtime($path) > $distMtime + 5) {
+                return true;
+            }
+            continue;
+        }
+        if (!is_dir($path)) {
+            continue;
+        }
+        $it = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS)
+        );
+        foreach ($it as $file) {
+            /** @var SplFileInfo $file */
+            if (!$file->isFile()) {
+                continue;
+            }
+            $ext = strtolower($file->getExtension());
+            if (!in_array($ext, ['tsx', 'ts', 'jsx', 'js', 'css'], true)) {
+                continue;
+            }
+            if ((int)$file->getMTime() > $distMtime + 5) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+function updaterEnsureFrontendBuilt(bool $nodeAvailable, string $distFingerprintBefore): void {
+    $distIdx = UPDATER_ROOT . '/dist/index.html';
+    $hasDist = is_file($distIdx);
+    $distAfter = updaterDistFingerprint();
+    $distChanged = $hasDist && $distAfter !== '' && $distAfter !== $distFingerprintBefore;
+    $needsRebuild = updaterFrontendSourcesNeedRebuild();
+
+    if ($nodeAvailable && is_file(UPDATER_ROOT . '/package.json')) {
+        // Always rebuild after checkout/extract when Node is present so widgets/UI land in dist/.
+        updaterRebuildFrontend();
+        return;
+    }
+
+    if ($distChanged) {
+        updaterAppendLog('Prebuilt dist/ applied from update package (Node not required).');
+        return;
+    }
+
+    if (!$hasDist) {
+        throw new RuntimeException(
+            'Update applied source files but dist/ is missing. '
+            . 'Install Node.js + npm on this server and re-apply, or publish a GitHub Release with '
+            . 'scripts/publish-update-release.ps1 (includes built dist/ for SSH/VNC widgets and UI).'
+        );
+    }
+
+    if ($needsRebuild) {
+        throw new RuntimeException(
+            'This update includes frontend/widget source (e.g. SSH Terminal) but could not rebuild dist/. '
+            . 'Office XAMPP installs usually have no Node.js, so commit zipballs leave the old UI in place. '
+            . 'Fix: on a build PC run scripts/publish-update-release.ps1 -Version X.Y.Z, then in App Updates '
+            . 'apply that Release (not only a commit). Or install Node.js/npm on this server and re-apply the commit.'
+        );
+    }
+
+    updaterAppendLog('No frontend rebuild required (dist/ already matches this update).');
+}
+
 function updaterRebuildFrontend(): void {
     $caps = updaterCapabilities();
     if (!$caps['nodeAvailable']) {
@@ -1344,7 +1450,8 @@ function updaterApplyTarget(array $target, bool $pushHistory = true): void {
         if (!$co['ok']) {
             throw new RuntimeException('git checkout failed: ' . ($co['stderr'] ?: $co['stdout']));
         }
-        updaterRebuildFrontend();
+        $distBefore = updaterDistFingerprint();
+        updaterEnsureFrontendBuilt($caps['nodeAvailable'], $distBefore);
         $commit = updaterRunCommand('git rev-parse HEAD');
         $pkgVer = updaterInstalledVersion();
         $pkgPath = UPDATER_ROOT . '/package.json';
@@ -1393,17 +1500,13 @@ function updaterApplyTarget(array $target, bool $pushHistory = true): void {
         if (is_file($bi)) {
             @copy($bi, UPDATER_ROOT . '/data/BUILD_INFO.pre-update.json');
         }
+        $distBefore = updaterDistFingerprint();
         updaterSetProgress(55, 'Extracting update (preserving data/ and uploads/)...');
         updaterExtractUpdateZip($zipPath);
         @unlink($zipPath);
 
-        if ($caps['nodeAvailable'] && is_file(UPDATER_ROOT . '/package.json')) {
-            try {
-                updaterRebuildFrontend();
-            } catch (Throwable $e) {
-                updaterAppendLog('Rebuild skipped/failed: ' . $e->getMessage());
-            }
-        }
+        updaterSetProgress(70, 'Ensuring frontend / widgets are built into dist/...');
+        updaterEnsureFrontendBuilt($caps['nodeAvailable'], $distBefore);
 
         $pkgVer = (string)($target['version'] ?? updaterInstalledVersion());
         if (is_file(UPDATER_ROOT . '/package.json')) {
