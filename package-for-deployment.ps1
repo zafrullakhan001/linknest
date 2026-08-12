@@ -289,7 +289,7 @@ Write-Host "  Project Root : $ProjectRoot" -ForegroundColor Gray
 Write-Host "  Package Name : $PackageName" -ForegroundColor Gray
 Write-Host "  App Version  : $pkgVersion" -ForegroundColor Gray
 Write-Host "  Mode         : $(if ($AppOnly) { 'APP-ONLY (lean ZIP, no SQLite/ttyd/PHP-upgrade extras)' } else { 'FULL deploy package' })" -ForegroundColor Gray
-Write-Host "  Base Path    : $(if ($BasePathIsRelative) { './ (portable — ArchLinks/ERP3/any folder)' } elseif ($BasePath) { $BasePath } else { '/' })" -ForegroundColor Gray
+Write-Host "  Base Path    : $(if ($BasePathIsRelative) { './ (portable - ArchLinks/ERP3/any folder)' } elseif ($BasePath) { $BasePath } else { '/' })" -ForegroundColor Gray
 Write-Host "  Build ID     : $BuildId" -ForegroundColor Gray
 Write-Host "  Database     : $(if ($IncludeDatabase) { 'INCLUDE live DB from this PC' } else { 'FRESH (no live DB - recommended)' })" -ForegroundColor Gray
 Write-Host "  Uploads      : $(if ($ExcludeUploads) { 'excluded' } else { 'included' })" -ForegroundColor Gray
@@ -485,7 +485,7 @@ if ($BasePathIsRelative) {
         Write-Warn "Portable build: expected relative ./assets/ references in dist/index.html."
     }
     else {
-        Write-OK "Portable relative base (./) verified — works under ArchLinks, ERP3, linknest, …"
+        Write-OK "Portable relative base (./) verified - works under ArchLinks, ERP3, linknest, ..."
     }
 }
 elseif ($BasePath -and ($distHtml -notmatch [regex]::Escape($BasePath))) {
