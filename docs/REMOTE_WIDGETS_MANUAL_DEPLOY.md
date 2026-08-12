@@ -19,6 +19,8 @@ Browsers cannot open raw SSH (`host:22`) or VNC. LinkNest starts local gateways 
 
 Passwords are never saved. Prefer LAN / VPN; do not expose unauthenticated gateways to the public internet.
 
+**Connection isolation:** Each signed-in user has a private SSH/VNC connection list (`user_id`). Admins do not share lists with each other. Guests use browser-only saves, separate from any account.
+
 ---
 
 ## Path A — Online host (internet available)

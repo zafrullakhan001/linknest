@@ -152,7 +152,9 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({
   pendingOpen,
   onPendingOpenConsumed,
 }) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  const authUserKey = isAuthenticated && user?.id != null ? `user:${user.id}` : 'guest';
+  const authUsername = (user?.username || '').trim();
   const useServer = Boolean(isAuthenticated);
 
   const widgetRootRef = useRef<HTMLDivElement>(null);
@@ -267,6 +269,12 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      setConnections([]);
+      setActiveConnectionId(null);
+      setEditingId(null);
+      setFilterQuery('');
+      setFilterTag(null);
+
       if (!useServer) {
         setConnections(loadLocalConnections());
         setStorageReady(true);
@@ -287,6 +295,7 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({
         }
       } catch (err) {
         if (!cancelled) {
+          setConnections([]);
           setNotice(err instanceof Error ? err.message : 'Failed to load saved connections');
         }
       } finally {
@@ -296,7 +305,7 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [useServer]);
+  }, [useServer, authUserKey]);
 
   useEffect(() => {
     try {
@@ -1365,7 +1374,7 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({
             <div className="p-2 border-b border-slate-200 dark:border-slate-700 space-y-2 shrink-0">
               <div className="flex items-center justify-between gap-1">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  Saved{useServer ? ' · cloud' : ' · local'}
+                  Saved{useServer ? ` · ${authUsername || 'account'}` : ' · guest (this browser)'}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-1">

@@ -187,13 +187,18 @@ function vncRowToConnection(array $row): array {
 function handleListVncConnections() {
     $user = requireAuth();
     $db = getDB();
+    $userId = (int)$user['id'];
 
     $stmt = $db->prepare('SELECT id, name, ws_url, tags, notes, color, view_only, scale_viewport, created_at, last_used_at, updated_at FROM user_vnc_connections WHERE user_id = ? ORDER BY COALESCE(last_used_at, created_at) DESC');
-    $stmt->execute([(int)$user['id']]);
+    $stmt->execute([$userId]);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $connections = array_map('vncRowToConnection', $rows);
-    sendJSON(['connections' => $connections]);
+    sendJSON([
+        'connections' => $connections,
+        'ownerUserId' => $userId,
+        'ownerUsername' => (string)($user['username'] ?? ''),
+    ]);
 }
 
 function handleCreateVncConnection() {

@@ -1070,7 +1070,9 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
   pendingOpen,
   onPendingOpenConsumed,
 }) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  const authUserKey = isAuthenticated && user?.id != null ? `user:${user.id}` : 'guest';
+  const authUsername = (user?.username || '').trim();
   const { settings } = useSettings();
   const brandName = (settings.app_name || '').trim() || 'LinkNest';
   const sessionHandlesRef = useRef<Map<string, SessionHandle>>(new Map());
@@ -1418,6 +1420,13 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
+      // Always clear first so a previous account's list never flashes / sticks.
+      setConnections([]);
+      setActiveConnectionId(null);
+      setEditingId(null);
+      setFilterQuery('');
+      setFilterTag(null);
+
       if (!useServer) {
         setConnections(loadLocalConnections());
         setStorageReady(true);
@@ -1433,6 +1442,8 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       } catch (err) {
         console.error('Failed to load SSH connections', err);
         if (!cancelled) {
+          // Do not fall back to guest localStorage while signed in — that leaks other sessions' drafts.
+          setConnections([]);
           setNotice(err instanceof Error ? err.message : 'Failed to load saved connections');
           setStorageReady(true);
         }
@@ -1442,7 +1453,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [useServer]);
+  }, [useServer, authUserKey]);
 
   const stopGatewayFor = useCallback(async (gatewaySessionId: string | null | undefined) => {
     if (!gatewaySessionId) return;
@@ -2317,22 +2328,25 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     return buildSshLinkUrl(a.username, a.host, a.port) || null;
   }, []);
 
-  const copySshUrlForConnection = useCallback(
-    async (c: SavedSshConnection) => {
-      const url = sshUrlForConnection(c);
-      if (!url) {
-        setNotice(`“${c.name}” has no Easy-mode target to build ssh:// from`);
-        return;
-      }
-      try {
-        await navigator.clipboard.writeText(url);
-        setNotice(`Copied ssh:// for “${c.name}”`);
-      } catch {
-        setNotice('Clipboard copy was blocked — select the ssh:// text manually if shown');
-      }
-    },
-    [sshUrlForConnection]
-  );
+  const copySshUrlForConnection = useCallback(async (c: SavedSshConnection) => {
+    if (normalizeConnectionProtocol(c.protocol) === 'rdp') {
+      setNotice('RDP connections use https:// gateway URLs, not ssh://');
+      return;
+    }
+    const url = sshUrlForConnection(c);
+    if (!url) {
+      setNotice(
+        `“${c.name}” is Advanced WebSocket-only. Open Settings → Easy (ssh://), fill host/user/port, Save, then use Copy ssh:// link.`
+      );
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setNotice(`Copied ssh:// for “${c.name}” — paste as a tile link`);
+    } catch {
+      setNotice(`Clipboard blocked. Select and copy: ${url}`);
+    }
+  }, [sshUrlForConnection]);
 
   const connectRdp = useCallback(
     (opts?: { url?: string; connectionId?: string; connectionName?: string }) => {
@@ -3421,8 +3435,17 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
             </div>
             <div className="p-2 border-b border-slate-200 dark:border-slate-700 space-y-2 shrink-0">
               <div className="flex items-center justify-between gap-1">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  Saved{useServer ? ' · cloud' : ' · local'}
+                <p
+                  className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 truncate"
+                  title={
+                    useServer
+                      ? `Private connections for ${authUsername || 'this account'} only`
+                      : 'Guest saves stay in this browser only — not shared with signed-in accounts'
+                  }
+                >
+                  {useServer
+                    ? `Saved · ${authUsername || 'account'}`
+                    : 'Saved · guest (this browser)'}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-1">
@@ -3527,7 +3550,11 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                 <p className="text-[11px] text-slate-400 dark:text-slate-500 px-1.5 py-3 text-center">Loading…</p>
               ) : filteredConnections.length === 0 ? (
                 <p className="text-[11px] text-slate-400 dark:text-slate-500 px-1.5 py-3 text-center leading-relaxed">
-                  No saved connections yet. Open Settings on a host after creating one with <strong>+</strong>, then click <strong>Save</strong> in the form.
+                  No saved connections yet for {useServer ? (authUsername || 'this account') : 'guest (this browser)'}.
+                  Open Settings after creating one with <strong>+</strong>, then click <strong>Save</strong>.
+                  {useServer
+                    ? ' Each signed-in user has a private list — other accounts (including other admins) cannot see these.'
+                    : ' Guest saves stay in this browser only and are separate from signed-in accounts.'}
                 </p>
               ) : (
                 filteredConnections.map((c) => {
@@ -3593,21 +3620,23 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                             )}
                           </button>
 
-                          {sshLink && (
-                            <div className="mt-1.5 flex items-center gap-1 min-w-0">
-                              <p
-                                className="flex-1 min-w-0 text-[9px] font-mono text-slate-500 dark:text-slate-400 truncate"
-                                title={sshLink}
-                              >
-                                {sshLink}
-                              </p>
+                          {!isRdp && (
+                            <div className="mt-1.5 space-y-1">
+                              {sshLink && (
+                                <p
+                                  className="text-[9px] font-mono text-slate-500 dark:text-slate-400 truncate"
+                                  title={sshLink}
+                                >
+                                  {sshLink}
+                                </p>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => void copySshUrlForConnection(c)}
-                                className="shrink-0 h-6 px-1.5 text-[9px] font-semibold rounded border border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/40"
-                                title="Copy ssh:// URL for a space / tile link"
+                                className="w-full h-7 px-2 text-[11px] font-semibold rounded-md bg-sky-600 hover:bg-sky-700 text-white shadow-sm"
+                                title="Copy ssh:// URL to paste as a tile / space link"
                               >
-                                Copy ssh://
+                                Copy ssh:// link
                               </button>
                             </div>
                           )}
@@ -3724,27 +3753,39 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {draftProtocol === 'ssh' &&
-                    connectMode === 'auto' &&
-                    sshHost.trim() &&
-                    sshUsername.trim() && (
+                  {draftProtocol === 'ssh' && (
                       <button
                         type="button"
                         onClick={async () => {
-                          const url = buildSshLinkUrl(
+                          const fromFields = buildSshLinkUrl(
                             sshUsername,
                             sshHost,
                             Number.parseInt(sshPort, 10) || 22
                           );
-                          if (!url) return;
+                          const fromDraft = parseAutoTargetUrl(sshUrlDraft.trim());
+                          const editing = editingId
+                            ? connections.find((c) => c.id === editingId)
+                            : undefined;
+                          const fromEditing = editing ? sshUrlForConnection(editing) : null;
+                          const url =
+                            fromFields ||
+                            (fromDraft
+                              ? buildSshLinkUrl(fromDraft.username, fromDraft.host, fromDraft.port)
+                              : '') ||
+                            fromEditing ||
+                            '';
+                          if (!url) {
+                            setNotice('Fill Easy host + username (or paste ssh://) first, then Copy');
+                            return;
+                          }
                           try {
                             await navigator.clipboard.writeText(url);
-                            setNotice('Copied ssh:// URL');
+                            setNotice('Copied ssh:// URL — paste it as a tile link');
                           } catch {
                             setNotice('Clipboard copy was blocked');
                           }
                         }}
-                        className="px-2.5 py-1.5 text-[11px] font-medium rounded-md border border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/40"
+                        className="px-2.5 py-1.5 text-[11px] font-semibold rounded-md bg-sky-600 hover:bg-sky-700 text-white shadow-sm"
                         title="Copy ssh:// for a tile / space link"
                       >
                         Copy ssh://
@@ -4625,12 +4666,16 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                       {draftProtocol === 'rdp' ? (
                         <>
                           Save an https:// Guacamole (or similar) URL, then Connect to embed it. Passwords stay in the gateway.
-                          {useServer ? ' Saved connections sync to your account.' : ' Guest saves stay in this browser.'}
+                          {useServer
+                            ? ` Saved only for ${authUsername || 'your account'} (private).`
+                            : ' Guest saves stay in this browser and stay separate from signed-in accounts.'}
                         </>
                       ) : (
                         <>
                           Use <strong>Update</strong> / <strong>Save</strong> to keep this connection. Passwords are never saved.
-                          {useServer ? ' Saved connections sync to your account.' : ' Guest saves stay in this browser.'}
+                          {useServer
+                            ? ` Saved only for ${authUsername || 'your account'} (private — not shared with other users or admins).`
+                            : ' Guest saves stay in this browser and stay separate from signed-in accounts.'}
                         </>
                       )}
                     </p>

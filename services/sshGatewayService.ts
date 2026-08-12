@@ -178,9 +178,9 @@ export function parseAutoTargetUrl(raw: string): { username: string; host: strin
   const s = String(raw || '').trim();
   if (!s) return null;
 
-  // Prefer ssh:// (same rules as space links / Easy paste field)
-  if (/^ssh:\/\//i.test(s)) {
-    const without = s.replace(/^ssh:\/\//i, '');
+  // ssh:// and auto:// — username may contain @ (PAM); split on the last @ before host:port
+  if (/^(ssh|auto):\/\//i.test(s)) {
+    const without = s.replace(/^(ssh|auto):\/\//i, '');
     const at = without.lastIndexOf('@');
     if (at <= 0) return null;
     let username: string;
@@ -200,17 +200,5 @@ export function parseAutoTargetUrl(raw: string): { username: string; host: strin
     return { username, host, port };
   }
 
-  const m = /^auto:\/\/([^@]+)@([^:\/]+):(\d+)$/i.exec(s);
-  if (!m) return null;
-  let username: string;
-  try {
-    username = decodeURIComponent(m[1]);
-  } catch {
-    username = m[1];
-  }
-  const host = m[2];
-  const port = Number.parseInt(m[3], 10);
-  if (!username || !host || !Number.isFinite(port) || port < 1 || port > 65535) return null;
-  if (username.length > 256) return null;
-  return { username, host, port };
+  return null;
 }

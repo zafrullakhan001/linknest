@@ -297,13 +297,19 @@ function rowToConnection(array $row): array {
 function handleListSshConnections() {
     $user = requireAuth();
     $db = getDB();
+    $userId = (int)$user['id'];
 
     $stmt = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, appearance, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE user_id = ? ORDER BY COALESCE(last_used_at, created_at) DESC');
-    $stmt->execute([(int)$user['id']]);
+    $stmt->execute([$userId]);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $connections = array_map('rowToConnection', $rows);
-    sendJSON(['connections' => $connections]);
+    // ownerUserId documents strict per-account isolation (admins do not see other users' saves).
+    sendJSON([
+        'connections' => $connections,
+        'ownerUserId' => $userId,
+        'ownerUsername' => (string)($user['username'] ?? ''),
+    ]);
 }
 
 function handleCreateSshConnection() {

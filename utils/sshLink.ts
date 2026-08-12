@@ -26,9 +26,9 @@ export function parseSshLinkUrl(raw: string): ParsedSshLink | null {
   const s = String(raw || '').trim();
   if (!s) return null;
 
-  if (/^ssh:\/\//i.test(s)) {
-    const without = s.replace(/^ssh:\/\//i, '');
-    // Allow PAM usernames with \, +, etc. Stop username at the last @ before host.
+  if (/^(ssh|auto):\/\//i.test(s)) {
+    const without = s.replace(/^(ssh|auto):\/\//i, '');
+    // Allow PAM usernames with \, +, @, etc. Stop username at the last @ before host.
     const at = without.lastIndexOf('@');
     let userRaw = '';
     let hostPortPath = without;
@@ -51,22 +51,9 @@ export function parseSshLinkUrl(raw: string): ParsedSshLink | null {
     const port = m[2] ? Number.parseInt(m[2], 10) : 22;
     if (!host || !Number.isFinite(port) || port < 1 || port > 65535) return null;
     if (username && username.length > 256) return null;
+    // auto:// always has a username; ssh:// may be host-only
+    if (/^auto:/i.test(s) && !username) return null;
     return { host, port, username: username || undefined };
-  }
-
-  const auto = /^auto:\/\/([^@]+)@([^:/]+):(\d+)$/i.exec(s);
-  if (auto) {
-    let username: string;
-    try {
-      username = decodeURIComponent(auto[1]);
-    } catch {
-      username = auto[1];
-    }
-    const host = auto[2];
-    const port = Number.parseInt(auto[3], 10);
-    if (!username || !host || !Number.isFinite(port) || port < 1 || port > 65535) return null;
-    if (username.length > 256) return null;
-    return { host, port, username };
   }
 
   return null;

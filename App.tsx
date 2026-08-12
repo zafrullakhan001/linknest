@@ -1523,8 +1523,9 @@ const AppContent: React.FC = () => {
             </FloatingSnakeGameWidget>
           )}
           {showVncViewer && isWidgetAllowed('vnc-viewer') && (
-            <FloatingVncViewerWidget>
+            <FloatingVncViewerWidget key={`vnc-float-${user?.id ?? 'guest'}`}>
               <VncViewerWidget
+                key={`vnc-${user?.id ?? 'guest'}`}
                 onClose={toggleVncViewer}
                 pendingOpen={vncPendingOpen}
                 onPendingOpenConsumed={() => setVncPendingOpen(null)}
@@ -1532,8 +1533,9 @@ const AppContent: React.FC = () => {
             </FloatingVncViewerWidget>
           )}
           {showSshTerminal && isWidgetAllowed('ssh-terminal') && (
-            <FloatingSshTerminalWidget>
+            <FloatingSshTerminalWidget key={`ssh-float-${user?.id ?? 'guest'}`}>
               <SshTerminalWidget
+                key={`ssh-${user?.id ?? 'guest'}`}
                 onClose={() => setShowSshTerminal(false)}
                 pendingOpen={sshPendingOpen}
                 onPendingOpenConsumed={() => setSshPendingOpen(null)}

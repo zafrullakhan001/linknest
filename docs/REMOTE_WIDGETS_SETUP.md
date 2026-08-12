@@ -15,7 +15,9 @@ Also covered in **Help & About → Help → Remote Widgets**.
 
 **Security:** Passwords are never saved. Prefer LAN / VPN; do not expose unauthenticated gateways publicly.
 
-**Saved connections:** When signed in, VNC hosts sync to your account (name, URL / `auto-vnc://host:port`, tags, color, notes, view-only / scale options). Guests keep saves in the browser. Session passwords are never written to the DB or localStorage.
+**Saved connections:** When signed in, SSH/RDP and VNC saves are **private per account** (filtered by `user_id`). Other users — including other admins — cannot see each other’s lists. Guests use browser-only storage (`Saved · guest`), kept separate from signed-in accounts. Session passwords are never written to the DB or localStorage.
+
+**VNC options:** Saved VNC hosts store name, URL / `auto-vnc://host:port`, tags, color, notes, view-only / scale options.
 
 **PAM / privileged access:** Easy mode accepts long usernames with `\`, `+`, and custom ports (not only 22). Values are passed to OpenSSH with `ssh -l <username> -p <port> <host>` so special characters are not broken by `user@host` parsing. Saved connections percent-encode the username inside `auto://…`.
 
