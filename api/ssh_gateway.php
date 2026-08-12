@@ -6,6 +6,7 @@
  * POST /api/ssh-gateway/stop   { sessionId }
  * POST /api/ssh-gateway/stop-all
  * GET  /api/ssh-gateway/status
+ * GET  /api/ssh-gateway/proxy-check   (admin: diagnose WSS Apache proxy)
  */
 
 require_once __DIR__ . '/config.php';
@@ -49,6 +50,8 @@ if (SSH_GATEWAY_PORT_MIN < 1024 || SSH_GATEWAY_PORT_MAX > 65535 || SSH_GATEWAY_P
 
 if ($method === 'GET' && ($path === '/' || $path === '/status')) {
     handleSshGatewayStatus();
+} elseif ($method === 'GET' && $path === '/proxy-check') {
+    handleSshGatewayProxyCheck();
 } elseif ($method === 'GET' && $path === '/config') {
     handleSshGatewayGetConfig();
 } elseif ($method === 'PUT' && $path === '/config') {
@@ -740,6 +743,116 @@ function handleSshGatewayStatus() {
                 'createdAt' => $s['createdAt'] ?? null,
             ];
         }, $mine),
+        'proxy' => [
+            'preferHttpProxy' => sshGatewayPreferHttpProxy(),
+            'basePath' => sshGatewayHttpProxyBasePath(),
+            'exampleWsUrl' => sshGatewayBuildWsUrl(SSH_GATEWAY_PORT_MIN),
+        ],
+    ]);
+}
+
+/**
+ * Admin diagnostic for HTTPS WSS proxy (ttyd listen + Apache /_ln_sshgw path).
+ */
+function handleSshGatewayProxyCheck() {
+    requireAdmin();
+
+    $port = isset($_GET['port']) ? (int)$_GET['port'] : 0;
+    $sessions = sshGatewayCleanup(sshGatewayLoadSessions());
+    if ($port < 1) {
+        foreach (array_reverse($sessions) as $s) {
+            $lp = (int)($s['listenPort'] ?? 0);
+            if ($lp > 0) {
+                $port = $lp;
+                break;
+            }
+        }
+    }
+    if ($port < 1) {
+        $port = SSH_GATEWAY_PORT_MIN;
+    }
+
+    $ttydListening = false;
+    $fp = @fsockopen('127.0.0.1', $port, $errno, $errstr, 0.5);
+    if ($fp) {
+        fclose($fp);
+        $ttydListening = true;
+    }
+
+    $base = sshGatewayHttpProxyBasePath();
+    $proxyPath = $base . '/_ln_sshgw/' . $port . '/ws';
+    $wsUrl = sshGatewayBuildWsUrl($port);
+
+    // Probe proxy over HTTP on localhost (non-WS) — expect some response from ttyd/Apache, not SPA HTML
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $hostHeader = $_SERVER['HTTP_HOST'] ?? '127.0.0.1';
+    $probeUrls = [
+        'http://127.0.0.1' . $proxyPath,
+        $scheme . '://127.0.0.1' . $proxyPath,
+    ];
+    $probes = [];
+    foreach ($probeUrls as $url) {
+        $body = '';
+        $code = 0;
+        $err = '';
+        if (function_exists('curl_init')) {
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 2,
+                CURLOPT_CONNECTTIMEOUT => 1,
+                CURLOPT_FOLLOWLOCATION => false,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => 0,
+                CURLOPT_HTTPHEADER => ['Host: ' . $hostHeader],
+            ]);
+            $body = (string)curl_exec($ch);
+            $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $err = (string)curl_error($ch);
+            curl_close($ch);
+        }
+        $looksLikeSpa = (bool)preg_match('/<!DOCTYPE html|<div id="root"/i', $body);
+        $probes[] = [
+            'url' => $url,
+            'httpCode' => $code,
+            'error' => $err !== '' ? $err : null,
+            'looksLikeSpaHtml' => $looksLikeSpa,
+            'bodyPreview' => substr(preg_replace('/\s+/', ' ', $body) ?? '', 0, 120),
+        ];
+    }
+
+    $htaccess = dirname(__DIR__) . DIRECTORY_SEPARATOR . '.htaccess';
+    $htaccessHasProxy = is_file($htaccess) && str_contains((string)@file_get_contents($htaccess), '_ln_sshgw');
+
+    $hints = [];
+    if (!$ttydListening) {
+        $hints[] = "ttyd is not listening on 127.0.0.1:{$port}. Start an SSH Easy session first, or check bin/ttyd.exe.";
+    }
+    if (!$htaccessHasProxy) {
+        $hints[] = 'App .htaccess is missing _ln_sshgw proxy rules — deploy the updated .htaccess.';
+    }
+    foreach ($probes as $p) {
+        if (!empty($p['looksLikeSpaHtml'])) {
+            $hints[] = 'Proxy path returned the SPA HTML — Apache is not proxying to ttyd. Enable mod_proxy + mod_proxy_wstunnel and re-run scripts/enable-gateway-wss-proxy.ps1, then restart Apache.';
+            break;
+        }
+    }
+    if ($ttydListening && $htaccessHasProxy && $hints === []) {
+        $hints[] = 'Local ttyd is up and .htaccess has proxy rules. If the browser still fails, a front load balancer may be blocking WebSocket Upgrade for ' . $proxyPath;
+    }
+
+    sendJSON([
+        'preferHttpProxy' => sshGatewayPreferHttpProxy(),
+        'basePath' => $base,
+        'listenPort' => $port,
+        'ttydListeningOnLoopback' => $ttydListening,
+        'proxyPath' => $proxyPath,
+        'browserWsUrl' => $wsUrl,
+        'htaccessHasGatewayProxy' => $htaccessHasProxy,
+        'probes' => $probes,
+        'hints' => $hints,
+        'modulesNeeded' => ['rewrite_module', 'proxy_module', 'proxy_http_module', 'proxy_wstunnel_module'],
+        'enableScript' => 'scripts/enable-gateway-wss-proxy.ps1',
     ]);
 }
 
