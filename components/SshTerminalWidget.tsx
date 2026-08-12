@@ -36,6 +36,7 @@ import {
   categoryLabel,
   categoryKey,
   type SshCategoryMetaMap,
+  type SshColorMode,
   type SshListViewMode,
 } from './SshConnectionSidebarList';
 
@@ -56,6 +57,7 @@ const MODE_STORAGE_KEY = 'linknest.sshTerminal.mode.v1';
 const X11_STORAGE_KEY = 'linknest.sshTerminal.x11.v1';
 const CONNECTIONS_STORAGE_KEY = 'linknest.sshTerminal.savedConnections.v1';
 const LIST_DENSITY_KEY = 'linknest.sshTerminal.listDensity.v1';
+const COLOR_MODE_KEY = 'linknest.sshTerminal.colorMode.v1';
 const CATEGORY_ORDER_KEY = 'linknest.sshTerminal.categoryOrder.v1';
 const CATEGORY_COLLAPSED_KEY = 'linknest.sshTerminal.categoryCollapsed.v1';
 const CATEGORY_META_KEY = 'linknest.sshTerminal.categoryMeta.v1';
@@ -762,6 +764,18 @@ interface SessionTab {
   rdpUrl?: string;
   /** When true, skip this tab for Send all / Ctrl+C / Multi-paste */
   excludeFromMulti?: boolean;
+  /** Snapshot so a running tab can be duplicated into a new session */
+  duplicateSource?: {
+    kind: 'ssh' | 'rdp';
+    connectionId: string | null;
+    wsUrl?: string;
+    rdpUrl?: string;
+    mode?: ConnectMode;
+    host?: string;
+    port?: number;
+    username?: string;
+    x11?: boolean;
+  };
 }
 
 interface SessionHandle {
@@ -870,6 +884,16 @@ function loadListDensity(): SshListViewMode {
     return 'cards';
   } catch {
     return 'cards';
+  }
+}
+
+function loadColorMode(): SshColorMode {
+  try {
+    const raw = localStorage.getItem(COLOR_MODE_KEY);
+    if (raw === 'vivid' || raw === 'calm') return raw;
+    return 'calm';
+  } catch {
+    return 'calm';
   }
 }
 
@@ -1335,6 +1359,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [notice, setNotice] = useState(IDLE_NOTICE);
   const [listDensity, setListDensity] = useState<SshListViewMode>(() => loadListDensity());
+  const [colorMode, setColorMode] = useState<SshColorMode>(() => loadColorMode());
   const [categoryScope, setCategoryScope] = useState(authUserKey);
   const [categoryOrder, setCategoryOrder] = useState<string[]>(() => loadCategoryOrder(authUserKey));
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>(
@@ -1658,6 +1683,14 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       // ignore
     }
   }, [listDensity]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(COLOR_MODE_KEY, colorMode);
+    } catch {
+      // ignore
+    }
+  }, [colorMode]);
 
   useEffect(() => {
     if (categoryScope !== authUserKey) return;
@@ -2106,6 +2139,13 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       const nextName = opts?.connectionName;
       const tabId = `tab_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
       const tabTitle = (nextName || '').trim() || (opts?.host ? `${opts.username || sshUsername}@${opts.host}` : 'Session');
+      const autoFromUrlEarly = parseAutoTargetUrl(url);
+      const wantAutoEarly =
+        mode === 'auto' || Boolean(autoFromUrlEarly) || (Boolean(opts?.host) && Boolean(opts?.username));
+      const sourceHost = (opts?.host ?? autoFromUrlEarly?.host ?? '').trim() || undefined;
+      const sourceUsername = (opts?.username ?? autoFromUrlEarly?.username ?? '').trim() || undefined;
+      const sourcePort =
+        opts?.port ?? autoFromUrlEarly?.port ?? (Number.parseInt(sshPort, 10) || 22);
 
       sessionHandlesRef.current.set(tabId, {
         term: null,
@@ -2122,6 +2162,16 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
           status: 'connecting',
           statusMessage: 'Starting session…',
           excludeFromMulti: false,
+          duplicateSource: {
+            kind: 'ssh',
+            connectionId: nextConnectionId ?? null,
+            wsUrl: url || undefined,
+            mode: wantAutoEarly ? 'auto' : 'ws',
+            host: sourceHost,
+            port: sourcePort,
+            username: sourceUsername,
+            x11: opts?.x11 ?? x11Forward,
+          },
         },
       ]);
       setActiveTabId(tabId);
@@ -2701,6 +2751,11 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
           statusMessage: 'Loading RDP gateway…',
           kind: 'rdp',
           rdpUrl: url,
+          duplicateSource: {
+            kind: 'rdp',
+            connectionId: nextConnectionId ?? null,
+            rdpUrl: url,
+          },
         },
       ]);
       setActiveTabId(tabId);
@@ -2711,6 +2766,73 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       void markLastUsed(nextConnectionId);
     },
     [wsUrl, activeConnectionId, markLastUsed, maxSshTabs]
+  );
+
+  const duplicateTab = useCallback(
+    (tabId: string) => {
+      const tab = tabsRef.current.find((t) => t.id === tabId);
+      if (!tab) return;
+      if (sessionHandlesRef.current.size >= maxSshTabs) {
+        setNotice(`Maximum of ${maxSshTabs} open sessions. Close a tab first.`);
+        return;
+      }
+
+      const src = tab.duplicateSource;
+      const isRdp = (tab.kind || src?.kind || 'ssh') === 'rdp';
+
+      if (isRdp) {
+        const url = (src?.rdpUrl || tab.rdpUrl || '').trim();
+        if (!url) {
+          setNotice('Cannot duplicate — this RDP tab has no gateway URL.');
+          return;
+        }
+        connectRdp({
+          url,
+          connectionId: tab.connectionId || undefined,
+          connectionName: tab.title,
+        });
+        setNotice(`Duplicated “${tab.title}”`);
+        return;
+      }
+
+      const conn =
+        tab.connectionId != null
+          ? connectionsRef.current.find((c) => c.id === tab.connectionId)
+          : undefined;
+      if (conn && normalizeConnectionProtocol(conn.protocol) !== 'rdp') {
+        const auto = parseAutoTargetUrl(conn.wsUrl);
+        void connectTo({
+          wsUrl: conn.wsUrl,
+          connectionId: conn.id,
+          connectionName: conn.name,
+          mode: auto ? 'auto' : 'ws',
+          host: auto?.host,
+          port: auto?.port,
+          username: auto?.username,
+          x11: src?.x11 ?? x11Forward,
+        });
+        setNotice(`Duplicated “${tab.title}”`);
+        return;
+      }
+
+      if (src?.kind === 'ssh') {
+        void connectTo({
+          wsUrl: src.wsUrl,
+          connectionId: src.connectionId,
+          connectionName: tab.title,
+          mode: src.mode,
+          host: src.host,
+          port: src.port,
+          username: src.username,
+          x11: src.x11 ?? x11Forward,
+        });
+        setNotice(`Duplicated “${tab.title}”`);
+        return;
+      }
+
+      setNotice('Cannot duplicate this tab — open it again from Connections or Settings.');
+    },
+    [connectRdp, connectTo, maxSshTabs, x11Forward]
   );
 
   const selectTab = useCallback(
@@ -4784,6 +4906,23 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                   >
                     Tree
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setColorMode((m) => (m === 'calm' ? 'vivid' : 'calm'))}
+                    className={`px-1.5 py-0.5 text-[9px] font-semibold rounded border ${
+                      colorMode === 'calm'
+                        ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900'
+                        : 'border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300'
+                    }`}
+                    title={
+                      colorMode === 'calm'
+                        ? 'Calm colors on — click for vivid rainbow accents'
+                        : 'Vivid colors on — click for calm low-color mode'
+                    }
+                    aria-pressed={colorMode === 'calm'}
+                  >
+                    {colorMode === 'calm' ? 'Calm' : 'Vivid'}
+                  </button>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-1">
@@ -4930,6 +5069,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                   connections={connections}
                   filteredConnections={filteredConnections}
                   view={listDensity}
+                  colorMode={colorMode}
                   activeConnectionId={activeConnectionId}
                   showSettings={showSettings}
                   maxSshTabs={maxSshTabs}
@@ -6093,6 +6233,21 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
+                          duplicateTab(tab.id);
+                        }}
+                        className="p-0.5 rounded opacity-60 hover:opacity-100 hover:bg-slate-700 text-sky-300 mr-0.5"
+                        title="Duplicate this session in a new tab"
+                        aria-label={`Duplicate ${tabLabel}`}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 8.25V6.75A2.25 2.25 0 0014.25 4.5h-7.5A2.25 2.25 0 004.5 6.75v7.5A2.25 2.25 0 006.75 16.5h1.5" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75h7.5A2.25 2.25 0 0119.5 12v7.5a2.25 2.25 0 01-2.25 2.25h-7.5A2.25 2.25 0 017.5 19.5V12a2.25 2.25 0 012.25-2.25z" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
                           void closeTab(tab.id);
                         }}
                         className="p-0.5 rounded opacity-60 hover:opacity-100 hover:bg-slate-700 text-slate-300 mr-0.5"
@@ -6107,6 +6262,16 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                   );
                 })}
                 <div className="ml-auto flex items-center gap-1 shrink-0 pr-0.5">
+                  {activeTabId && (
+                    <button
+                      type="button"
+                      onClick={() => duplicateTab(activeTabId)}
+                      className="px-1.5 h-6 text-[10px] font-semibold rounded border border-sky-700/70 text-sky-200 hover:bg-sky-950/50"
+                      title="Duplicate the active session in a new tab"
+                    >
+                      Duplicate
+                    </button>
+                  )}
                   {(activeTab?.kind || 'ssh') !== 'rdp' && (
                     <>
                       <button
@@ -6303,6 +6468,23 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                         >
                           {tab.status}
                         </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            duplicateTab(tab.id);
+                          }}
+                          className={`shrink-0 px-1.5 py-0.5 rounded border font-semibold leading-none ${
+                            isActive
+                              ? 'border-sky-300/70 bg-sky-600/80 text-white hover:bg-sky-500'
+                              : 'border-sky-700/70 bg-sky-950/50 text-sky-300 hover:bg-sky-900/70 hover:text-sky-100'
+                          }`}
+                          style={{ fontSize: Math.max(10, skipBarFontSize - 1) }}
+                          title={`Duplicate ${tab.title} in a new tab`}
+                          aria-label={`Duplicate ${tab.title}`}
+                        >
+                          ⧉
+                        </button>
                         <button
                           type="button"
                           onClick={(e) => {

@@ -805,6 +805,42 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({
 
   const connect = useCallback(() => void connectTo(), [connectTo]);
 
+  const duplicateTab = useCallback(
+    (tabId: string) => {
+      const tab = tabsRef.current.find((t) => t.id === tabId);
+      if (!tab) return;
+      if (sessionHandlesRef.current.size >= maxVncTabs) {
+        setNotice(`Maximum of ${maxVncTabs} open sessions. Close a tab first.`);
+        return;
+      }
+
+      const conn = tab.connectionId
+        ? connections.find((c) => c.id === tab.connectionId)
+        : undefined;
+      const sourceUrl = (tab.wsUrl || conn?.wsUrl || wsUrl).trim();
+      if (!sourceUrl) {
+        setNotice('Cannot duplicate — this tab has no VNC target URL.');
+        return;
+      }
+      const auto = parseAutoVncTargetUrl(sourceUrl);
+
+      void connectTo({
+        wsUrl: sourceUrl,
+        password: password || undefined,
+        viewOnly: tab.viewOnly,
+        scaleViewport: tab.scaleViewport,
+        connectionId: tab.connectionId ?? null,
+        connectionName: tab.title,
+        color: tab.color,
+        mode: auto ? 'auto' : 'ws',
+        host: auto?.host,
+        port: auto?.port,
+      });
+      setNotice(`Duplicated “${tab.title}”`);
+    },
+    [connectTo, connections, maxVncTabs, password, wsUrl]
+  );
+
   const sendPendingPassword = useCallback(() => {
     const tabId = pendingCredentialsTabId || activeTabId;
     if (!tabId) {
@@ -1879,6 +1915,21 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
+                          duplicateTab(tab.id);
+                        }}
+                        className="p-0.5 rounded opacity-60 hover:opacity-100 hover:bg-slate-700 text-emerald-300 mr-0.5"
+                        title="Duplicate this session in a new tab"
+                        aria-label={`Duplicate ${tab.title}`}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3 h-3" aria-hidden>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 8.25V6.75A2.25 2.25 0 0014.25 4.5h-7.5A2.25 2.25 0 004.5 6.75v7.5A2.25 2.25 0 006.75 16.5h1.5" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75h7.5A2.25 2.25 0 0119.5 12v7.5a2.25 2.25 0 01-2.25 2.25h-7.5A2.25 2.25 0 017.5 19.5V12a2.25 2.25 0 012.25-2.25z" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
                           void closeTab(tab.id);
                         }}
                         className="p-0.5 rounded opacity-60 hover:opacity-100 hover:bg-slate-700 text-slate-300 mr-0.5"
@@ -1893,6 +1944,16 @@ export const VncViewerWidget: React.FC<VncViewerWidgetProps> = ({
                   );
                 })}
                 <div className="ml-auto flex items-center gap-1 shrink-0 pr-0.5">
+                  {activeTabId && (
+                    <button
+                      type="button"
+                      onClick={() => duplicateTab(activeTabId)}
+                      className="px-1.5 h-6 text-[10px] font-semibold rounded border border-emerald-700/70 text-emerald-200 hover:bg-emerald-950/50"
+                      title="Duplicate the active session in a new tab"
+                    >
+                      Duplicate
+                    </button>
+                  )}
                   {activeTab?.status === 'connected' && (
                     <button
                       type="button"

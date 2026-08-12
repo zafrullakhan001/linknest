@@ -29,6 +29,7 @@ import {
 import { parseAutoTargetUrl } from '../services/sshGatewayService';
 
 export type SshListViewMode = 'cards' | 'compact' | 'tree';
+export type SshColorMode = 'vivid' | 'calm';
 export type SshCategoryMetaMap = Record<string, { color: string }>;
 
 const UNCATEGORIZED_KEY = '';
@@ -74,8 +75,9 @@ const EmojiChip: React.FC<{
   tone?: 'neutral' | 'brand' | 'sky' | 'amber' | 'rose' | 'emerald' | 'orange' | 'violet';
   solid?: boolean;
   size?: 'sm' | 'md';
-}> = ({ emoji, label, title, onClick, disabled, tone = 'neutral', solid = false, size = 'sm' }) => {
-  const tones: Record<string, { solid: string; soft: string }> = {
+  calm?: boolean;
+}> = ({ emoji, label, title, onClick, disabled, tone = 'neutral', solid = false, size = 'sm', calm = false }) => {
+  const vivid: Record<string, { solid: string; soft: string }> = {
     neutral: {
       solid: 'bg-slate-700 text-white hover:bg-slate-800 dark:bg-slate-200 dark:text-slate-900',
       soft: 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200/80 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-700',
@@ -109,6 +111,41 @@ const EmojiChip: React.FC<{
       soft: 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-800',
     },
   };
+  const calmTones: Record<string, { solid: string; soft: string }> = {
+    neutral: {
+      solid: 'bg-slate-600 text-white hover:bg-slate-700',
+      soft: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-600 dark:hover:bg-slate-800',
+    },
+    brand: {
+      solid: 'bg-slate-800 text-white hover:bg-slate-900 dark:bg-slate-200 dark:text-slate-900',
+      soft: 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-200 dark:border-slate-600',
+    },
+    sky: {
+      solid: 'bg-slate-700 text-white hover:bg-slate-800',
+      soft: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-600',
+    },
+    amber: {
+      solid: 'bg-slate-600 text-white hover:bg-slate-700',
+      soft: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-600',
+    },
+    rose: {
+      solid: 'bg-rose-700 text-white hover:bg-rose-800',
+      soft: 'bg-white text-rose-700 border-rose-200/80 hover:bg-rose-50 dark:bg-slate-900 dark:text-rose-300 dark:border-rose-900/60',
+    },
+    emerald: {
+      solid: 'bg-slate-700 text-white hover:bg-slate-800',
+      soft: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-600',
+    },
+    orange: {
+      solid: 'bg-slate-600 text-white hover:bg-slate-700',
+      soft: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-600',
+    },
+    violet: {
+      solid: 'bg-slate-700 text-white hover:bg-slate-800',
+      soft: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-600',
+    },
+  };
+  const tones = calm ? calmTones : vivid;
   const palette = tones[tone] || tones.neutral;
   const h = size === 'md' ? 'h-7' : 'h-6';
   const px = label ? (size === 'md' ? 'px-2' : 'px-1.5') : size === 'md' ? 'w-7 px-0' : 'w-6 px-0';
@@ -119,11 +156,11 @@ const EmojiChip: React.FC<{
       disabled={disabled}
       title={title}
       aria-label={title}
-      className={`inline-flex items-center justify-center gap-0.5 ${h} ${px} rounded-lg text-[10px] font-semibold border transition-all disabled:opacity-35 disabled:pointer-events-none ${
+      className={`inline-flex items-center justify-center gap-0.5 ${h} ${px} rounded-md text-[10px] font-semibold border transition-colors disabled:opacity-35 disabled:pointer-events-none ${
         solid ? `${palette.solid} border-transparent` : palette.soft
       }`}
     >
-      <span className="leading-none text-[12px]" aria-hidden>
+      <span className={`leading-none ${calm ? 'text-[11px] opacity-80' : 'text-[12px]'}`} aria-hidden>
         {emoji}
       </span>
       {label ? <span className="leading-none whitespace-nowrap">{label}</span> : null}
@@ -208,6 +245,7 @@ interface SortableConnectionProps {
   onRestore?: () => void;
   onPurge?: () => void;
   libraryScope?: 'active' | 'archived' | 'recycle';
+  colorMode?: SshColorMode;
   onSettings: () => void;
 }
 
@@ -233,6 +271,7 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
   onRestore,
   onPurge,
   libraryScope = 'active',
+  colorMode = 'calm',
   onSettings,
 }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -282,21 +321,31 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
     />
   );
 
+  const calm = colorMode === 'calm';
+
   const badges = (
     <>
       <span
         className={`shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0 rounded-full text-[9px] font-bold tracking-wide ${
-          isRdp
-            ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300'
-            : 'bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-300'
+          calm
+            ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+            : isRdp
+              ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300'
+              : 'bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-300'
         }`}
       >
         <span aria-hidden>{isRdp ? '🖥️' : '💻'}</span>
         {isRdp ? 'RDP' : 'SSH'}
       </span>
       {isLive && (
-        <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0 rounded-full text-[9px] font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+        <span
+          className={`shrink-0 inline-flex items-center gap-1 px-1.5 py-0 rounded-full text-[9px] font-semibold ${
+            calm
+              ? 'bg-slate-800 text-white dark:bg-emerald-900/50 dark:text-emerald-200'
+              : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+          }`}
+        >
+          <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${calm ? 'bg-emerald-400' : 'bg-emerald-500'}`} />
           live{liveCount > 1 ? ` · ${liveCount}` : ''}
         </span>
       )}
@@ -312,6 +361,7 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
       disabled={!canDisconnect}
       tone="rose"
       solid
+      calm={calm}
       size={view === 'tree' ? 'sm' : 'md'}
     />
   ) : (
@@ -323,13 +373,14 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
       disabled={maxReached}
       tone="brand"
       solid
+      calm={calm}
       size={view === 'tree' ? 'sm' : 'md'}
     />
   );
 
   const smallActions = (
     <>
-      <EmojiChip emoji="✏️" title={`Edit ${c.name}`} onClick={onEdit} tone="neutral" size={view === 'tree' ? 'sm' : 'md'} />
+      <EmojiChip emoji="✏️" title={`Edit ${c.name}`} onClick={onEdit} tone="neutral" calm={calm} size={view === 'tree' ? 'sm' : 'md'} />
       {sshLink && (
         <EmojiChip
           emoji="🔗"
@@ -337,7 +388,8 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
           title={`Copy ssh:// URL for ${c.name}`}
           onClick={onCopySsh}
           tone="sky"
-          solid
+          solid={!calm}
+          calm={calm}
           size={view === 'tree' ? 'sm' : 'md'}
         />
       )}
@@ -347,6 +399,7 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
         onClick={onClone}
         disabled={libraryScope !== 'active'}
         tone="violet"
+        calm={calm}
         size={view === 'tree' ? 'sm' : 'md'}
       />
       {libraryScope === 'recycle' || libraryScope === 'archived' ? (
@@ -356,7 +409,8 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
             title={`Restore ${c.name}`}
             onClick={() => onRestore?.()}
             tone="emerald"
-            solid
+            solid={!calm}
+            calm={calm}
             size={view === 'tree' ? 'sm' : 'md'}
           />
           {libraryScope === 'recycle' ? (
@@ -365,6 +419,7 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
               title={`Permanently delete ${c.name}`}
               onClick={() => onPurge?.()}
               tone="rose"
+              calm={calm}
               size={view === 'tree' ? 'sm' : 'md'}
             />
           ) : (
@@ -373,6 +428,7 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
               title={`Move ${c.name} to Recycle Bin`}
               onClick={onDelete}
               tone="rose"
+              calm={calm}
               size={view === 'tree' ? 'sm' : 'md'}
             />
           )}
@@ -383,6 +439,7 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
           title={`Move ${c.name} to Recycle Bin`}
           onClick={onDelete}
           tone="rose"
+          calm={calm}
           size={view === 'tree' ? 'sm' : 'md'}
         />
       )}
@@ -391,7 +448,8 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
         title={`Settings for ${c.name}`}
         onClick={onSettings}
         tone="orange"
-        solid={Boolean(showSettings && active)}
+        solid={Boolean(showSettings && active) && !calm}
+        calm={calm}
         size={view === 'tree' ? 'sm' : 'md'}
       />
     </>
@@ -399,14 +457,33 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
 
   const colorAvatar = (
     <span
-      className="shrink-0 inline-flex items-center justify-center h-6 w-6 rounded-lg text-[13px] shadow-sm ring-1 ring-black/5 dark:ring-white/10"
-      style={{ backgroundColor: hexToRgba(color, 0.22), color }}
+      className={`shrink-0 inline-flex items-center justify-center h-6 w-6 rounded-md text-[13px] ${
+        calm ? 'ring-1 ring-slate-200 dark:ring-slate-600 bg-slate-50 dark:bg-slate-900' : 'shadow-sm ring-1 ring-black/5 dark:ring-white/10'
+      }`}
+      style={calm ? { color: '#64748b' } : { backgroundColor: hexToRgba(color, 0.22), color }}
       title={isRdp ? 'RDP connection' : 'SSH connection'}
       aria-hidden
     >
       {isRdp ? '🖥️' : '💻'}
     </span>
   );
+
+  const actionStripClass = calm
+    ? 'flex items-center gap-1 flex-wrap rounded-md bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700/80 p-1'
+    : 'flex items-center gap-1 flex-wrap rounded-lg bg-slate-50/90 dark:bg-slate-900/40 p-1';
+
+  const cardShell = (extra: string) =>
+    `rounded-xl border overflow-hidden transition-colors ${
+      calm ? 'shadow-none' : 'shadow-sm'
+    } ${
+      active
+        ? calm
+          ? 'border-slate-400 bg-slate-50 dark:bg-slate-800/80 dark:border-slate-500'
+          : 'border-brand-400 bg-brand-50/80 dark:bg-brand-900/20 dark:border-brand-600'
+        : calm
+          ? 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800'
+          : 'border-slate-200/90 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-500'
+    } ${extra}`;
 
   if (view === 'tree') {
     return (
@@ -415,7 +492,9 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
         style={style}
         className={`group/tree-node relative flex items-center gap-0.5 min-w-0 py-0.5 pl-0.5 pr-1 rounded-md ${
           active
-            ? 'bg-brand-50 dark:bg-brand-900/25 ring-1 ring-brand-400/60'
+            ? calm
+              ? 'bg-slate-100 dark:bg-slate-800 ring-1 ring-slate-300 dark:ring-slate-600'
+              : 'bg-brand-50 dark:bg-brand-900/25 ring-1 ring-brand-400/60'
             : 'hover:bg-slate-100/80 dark:hover:bg-slate-700/50'
         }`}
       >
@@ -441,14 +520,22 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
         <div className="flex items-center gap-0.5 shrink-0 opacity-90 group-hover/tree-node:opacity-100">
           {sessionButton}
           {sshLink && (
-            <EmojiChip emoji="🔗" title={`Copy ssh:// URL for ${c.name}`} onClick={onCopySsh} tone="sky" solid />
+            <EmojiChip
+              emoji="🔗"
+              title={`Copy ssh:// URL for ${c.name}`}
+              onClick={onCopySsh}
+              tone="sky"
+              solid={!calm}
+              calm={calm}
+            />
           )}
           <EmojiChip
             emoji="⚙️"
             title={`Settings for ${c.name}`}
             onClick={onSettings}
             tone="orange"
-            solid={Boolean(showSettings && active)}
+            solid={Boolean(showSettings && active) && !calm}
+            calm={calm}
           />
         </div>
       </div>
@@ -457,17 +544,12 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
 
   if (view === 'compact') {
     return (
-      <div
-        ref={setNodeRef}
-        style={style}
-        className={`rounded-xl border overflow-hidden shadow-sm ${
-          active
-            ? 'border-brand-400 bg-brand-50/80 dark:bg-brand-900/20 dark:border-brand-600'
-            : 'border-slate-200/90 dark:border-slate-700 bg-white dark:bg-slate-800'
-        }`}
-      >
+      <div ref={setNodeRef} style={style} className={cardShell('')}>
         <div className="flex items-center gap-1 min-w-0 py-1.5 pl-0.5 pr-1.5">
-          <div className="w-1.5 self-stretch rounded-full shrink-0" style={{ backgroundColor: color }} />
+          <div
+            className={`self-stretch rounded-full shrink-0 ${calm ? 'w-1' : 'w-1.5'}`}
+            style={{ backgroundColor: calm ? hexToRgba(color, 0.55) : color }}
+          />
           {dragHandle}
           {selectCheckbox}
           {colorAvatar}
@@ -480,7 +562,7 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
           </button>
         </div>
         <div className="px-1.5 pb-1.5">
-          <div className="flex items-center gap-1 flex-wrap rounded-lg bg-slate-50/90 dark:bg-slate-900/40 p-1">
+          <div className={actionStripClass}>
             {sessionButton}
             {smallActions}
           </div>
@@ -490,17 +572,13 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
   }
 
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`rounded-xl border overflow-hidden transition-colors shadow-sm ${
-        active
-          ? 'border-brand-400 bg-brand-50/80 dark:bg-brand-900/20 dark:border-brand-600'
-          : 'border-slate-200/90 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-500'
-      }`}
-    >
+    <div ref={setNodeRef} style={style} className={cardShell('')}>
       <div className="flex min-w-0">
-        <div className="w-1.5 shrink-0 self-stretch" style={{ backgroundColor: color }} title={color} />
+        <div
+          className={`shrink-0 self-stretch ${calm ? 'w-1' : 'w-1.5'}`}
+          style={{ backgroundColor: calm ? hexToRgba(color, 0.55) : color }}
+          title={color}
+        />
         <div className="flex-1 min-w-0 p-2">
           <div className="flex items-start gap-1">
             {dragHandle}
@@ -533,7 +611,7 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
             </p>
           )}
 
-          <div className="mt-2 flex items-center gap-1 flex-wrap rounded-lg bg-slate-50/90 dark:bg-slate-900/40 p-1">
+          <div className={`mt-2 ${actionStripClass}`}>
             {sessionButton}
             {smallActions}
           </div>
@@ -595,6 +673,7 @@ const SortableCategorySection: React.FC<{
   onDeleteSelected?: () => void;
   onRestoreSelected?: () => void;
   onPurgeSelected?: () => void;
+  colorMode?: SshColorMode;
   children: React.ReactNode;
 }> = ({
   category,
@@ -630,8 +709,10 @@ const SortableCategorySection: React.FC<{
   onDeleteSelected,
   onRestoreSelected,
   onPurgeSelected,
+  colorMode = 'calm',
   children,
 }) => {
+  const calm = colorMode === 'calm';
   const sortable = useSortable({
     id: catHdrId(category),
     disabled: category === UNCATEGORIZED_KEY || filterActive,
@@ -650,16 +731,22 @@ const SortableCategorySection: React.FC<{
       className={
         treeMode
           ? 'rounded-xl overflow-hidden'
-          : 'rounded-xl border border-slate-200/80 dark:border-slate-700/80 overflow-hidden shadow-sm'
+          : calm
+            ? 'rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden'
+            : 'rounded-xl border border-slate-200/80 dark:border-slate-700/80 overflow-hidden shadow-sm'
       }
     >
       <div
-        className={treeMode ? 'rounded-xl' : 'border-l-[3px]'}
+        className={`${treeMode ? 'rounded-xl' : 'border-l-[3px]'} ${
+          calm && !treeMode ? 'bg-slate-50/80 dark:bg-slate-900/40' : ''
+        } ${calm && treeMode ? 'bg-transparent' : ''}`}
         style={{
           borderLeftColor: treeMode ? undefined : accent,
-          background: treeMode
-            ? hexToRgba(accent, 0.08)
-            : `linear-gradient(90deg, ${hexToRgba(accent, 0.16)} 0%, ${hexToRgba(accent, 0.04)} 55%, transparent 100%)`,
+          background: calm
+            ? undefined
+            : treeMode
+              ? hexToRgba(accent, 0.08)
+              : `linear-gradient(90deg, ${hexToRgba(accent, 0.16)} 0%, ${hexToRgba(accent, 0.04)} 55%, transparent 100%)`,
         }}
       >
         <div className="flex items-center gap-1 px-1.5 py-1.5 min-w-0">
@@ -787,8 +874,12 @@ const SortableCategorySection: React.FC<{
                 />
               </svg>
               <span
-                className="shrink-0 inline-flex items-center justify-center h-6 w-6 rounded-lg text-[13px] shadow-sm ring-1 ring-black/5 dark:ring-white/10"
-                style={{ backgroundColor: hexToRgba(accent, 0.28) }}
+                className={`shrink-0 inline-flex items-center justify-center h-6 w-6 rounded-md text-[13px] ${
+                  calm
+                    ? 'bg-slate-100 dark:bg-slate-800 ring-1 ring-slate-200 dark:ring-slate-600'
+                    : 'shadow-sm ring-1 ring-black/5 dark:ring-white/10'
+                }`}
+                style={calm ? undefined : { backgroundColor: hexToRgba(accent, 0.28) }}
                 aria-hidden
               >
                 {collapsed ? '📁' : '📂'}
@@ -797,8 +888,10 @@ const SortableCategorySection: React.FC<{
                 {categoryLabel(category)}
               </span>
               <span
-                className="ml-auto shrink-0 inline-flex items-center justify-center min-w-[1.35rem] h-5 px-1.5 rounded-full text-[10px] font-bold text-white shadow-sm"
-                style={{ backgroundColor: accent }}
+                className={`ml-auto shrink-0 inline-flex items-center justify-center min-w-[1.35rem] h-5 px-1.5 rounded-full text-[10px] font-bold shadow-sm ${
+                  calm ? 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100' : 'text-white'
+                }`}
+                style={calm ? undefined : { backgroundColor: accent }}
               >
                 {itemCount}
               </span>
@@ -826,6 +919,7 @@ const SortableCategorySection: React.FC<{
               disabled={itemCount === 0}
               tone="brand"
               solid
+              calm={calm}
             />
             <EmojiChip
               emoji="▶️"
@@ -834,10 +928,11 @@ const SortableCategorySection: React.FC<{
               onClick={onRunSelected}
               disabled={selectedCount === 0}
               tone="sky"
-              solid
+              solid={!calm}
+              calm={calm}
             />
             {canRename && !renaming && (
-              <EmojiChip emoji="✏️" title="Rename category" onClick={onStartRename} tone="neutral" />
+              <EmojiChip emoji="✏️" title="Rename category" onClick={onStartRename} tone="neutral" calm={calm} />
             )}
             <EmojiChip
               emoji="📋"
@@ -845,6 +940,7 @@ const SortableCategorySection: React.FC<{
               onClick={onCloneCategory}
               disabled={cloningCategory || libraryScope !== 'active'}
               tone="violet"
+              calm={calm}
             />
           </div>
 
@@ -859,6 +955,7 @@ const SortableCategorySection: React.FC<{
                 onClick={onArchiveSelected}
                 disabled={selectedCount === 0}
                 tone="amber"
+                calm={calm}
               />
               <EmojiChip
                 emoji="🗑️"
@@ -866,6 +963,7 @@ const SortableCategorySection: React.FC<{
                 onClick={onDeleteSelected}
                 disabled={selectedCount === 0}
                 tone="rose"
+                calm={calm}
               />
               <span className="mx-0.5 h-4 w-px bg-slate-300/80 dark:bg-slate-600" aria-hidden />
               <span className="text-[9px] font-semibold uppercase tracking-wide text-slate-400 px-0.5">
@@ -878,6 +976,7 @@ const SortableCategorySection: React.FC<{
                 onClick={onArchiveCategory}
                 disabled={itemCount === 0}
                 tone="amber"
+                calm={calm}
               />
               <EmojiChip
                 emoji="🗑️"
@@ -885,6 +984,7 @@ const SortableCategorySection: React.FC<{
                 title="Delete category (connections go to Recycle Bin)"
                 onClick={onDeleteCategory}
                 tone="rose"
+                calm={calm}
               />
             </div>
           )}
@@ -897,7 +997,8 @@ const SortableCategorySection: React.FC<{
                 onClick={onRestoreSelected}
                 disabled={selectedCount === 0}
                 tone="emerald"
-                solid
+                solid={!calm}
+                calm={calm}
               />
               <EmojiChip
                 emoji="🗑️"
@@ -906,6 +1007,7 @@ const SortableCategorySection: React.FC<{
                 onClick={onDeleteSelected}
                 disabled={selectedCount === 0}
                 tone="rose"
+                calm={calm}
               />
             </div>
           )}
@@ -918,7 +1020,8 @@ const SortableCategorySection: React.FC<{
                 onClick={onRestoreSelected}
                 disabled={selectedCount === 0}
                 tone="emerald"
-                solid
+                solid={!calm}
+                calm={calm}
               />
               <EmojiChip
                 emoji="💥"
@@ -927,14 +1030,15 @@ const SortableCategorySection: React.FC<{
                 onClick={onPurgeSelected}
                 disabled={selectedCount === 0}
                 tone="rose"
-                solid
+                solid={!calm}
+                calm={calm}
               />
             </div>
           )}
         </div>
       </div>
       {!collapsed && (
-        <div className={treeMode ? 'pl-2 pr-0.5 pb-1 pt-0.5 border-l border-slate-200 dark:border-slate-600 ml-3' : 'p-1.5 bg-slate-50/50 dark:bg-slate-900/20'}>
+        <div className={treeMode ? 'pl-2 pr-0.5 pb-1 pt-0.5 border-l border-slate-200 dark:border-slate-600 ml-3' : calm ? 'p-1.5 bg-white dark:bg-slate-900/20' : 'p-1.5 bg-slate-50/50 dark:bg-slate-900/20'}>
           {children}
         </div>
       )}
@@ -967,6 +1071,7 @@ export interface SshConnectionSidebarListProps {
   onCreatePrivateSpace: (categories: string[], layout: 'sections' | 'tabs') => void;
   libraryScope?: 'active' | 'archived' | 'recycle';
   onLibraryScopeChange?: (scope: 'active' | 'archived' | 'recycle') => void;
+  colorMode?: SshColorMode;
   recycledCategories?: Array<{ name: string; color?: string; deletedAt: number; connectionIds: string[] }>;
   activeCount?: number;
   archivedCount?: number;
@@ -1022,6 +1127,7 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
   onCreatePrivateSpace,
   libraryScope = 'active',
   onLibraryScopeChange,
+  colorMode = 'calm',
   recycledCategories = [],
   activeCount = 0,
   archivedCount = 0,
@@ -1289,7 +1395,7 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
           </p>
         )}
         {onLibraryScopeChange && (
-          <div className="flex items-center gap-1 flex-wrap p-0.5 rounded-xl bg-slate-100/90 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-700">
+          <div className="flex items-center gap-1 flex-wrap p-0.5 rounded-lg bg-slate-100/90 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-700">
             {(
               [
                 { id: 'active' as const, label: 'Active', emoji: '⚡', count: activeCount, tone: 'brand' },
@@ -1298,8 +1404,10 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
               ] as const
             ).map((tab) => {
               const active = libraryScope === tab.id;
-              const activeCls =
-                tab.tone === 'amber'
+              const calm = colorMode === 'calm';
+              const activeCls = calm
+                ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900 shadow-sm'
+                : tab.tone === 'amber'
                   ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
                   : tab.tone === 'rose'
                     ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
@@ -1309,18 +1417,18 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
                   key={tab.id}
                   type="button"
                   onClick={() => onLibraryScopeChange(tab.id)}
-                  className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-lg border transition-all ${
+                  className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-md border transition-all ${
                     active
                       ? activeCls
                       : 'border-transparent text-slate-500 hover:bg-white/80 dark:hover:bg-slate-800'
                   }`}
                 >
-                  <span aria-hidden>{tab.emoji}</span>
+                  <span aria-hidden className={calm ? 'opacity-70' : ''}>{tab.emoji}</span>
                   {tab.label}
                   {tab.count > 0 ? (
                     <span
                       className={`min-w-[1.1rem] h-4 px-1 rounded-full text-[9px] inline-flex items-center justify-center ${
-                        active ? 'bg-white/25 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                        active ? 'bg-white/25 text-white dark:bg-black/10' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
                       }`}
                     >
                       {tab.count}
@@ -1332,16 +1440,21 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
           </div>
         )}
         {libraryScope === 'recycle' && recycledCategories.length > 0 && (
-          <div className="rounded-xl border border-rose-200 dark:border-rose-900/50 bg-gradient-to-r from-rose-50 to-orange-50/40 dark:from-rose-950/30 dark:to-slate-900/20 px-2 py-1.5 space-y-1.5">
-            <p className="text-[10px] font-bold text-rose-700 dark:text-rose-300">🗂️ Deleted categories</p>
+          <div className={`rounded-lg border px-2 py-1.5 space-y-1.5 ${
+            colorMode === 'calm'
+              ? 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40'
+              : 'border-rose-200 dark:border-rose-900/50 bg-gradient-to-r from-rose-50 to-orange-50/40 dark:from-rose-950/30 dark:to-slate-900/20'
+          }`}>
+            <p className={`text-[10px] font-bold ${colorMode === 'calm' ? 'text-slate-600 dark:text-slate-300' : 'text-rose-700 dark:text-rose-300'}`}>
+              🗂️ Deleted categories
+            </p>
             {recycledCategories.map((rc) => (
               <div
                 key={`${rc.name}-${rc.deletedAt}`}
-                className="flex items-center gap-1.5 min-w-0 rounded-lg bg-white/70 dark:bg-slate-900/40 px-1.5 py-1"
+                className="flex items-center gap-1.5 min-w-0 rounded-md bg-white/70 dark:bg-slate-900/40 px-1.5 py-1"
               >
                 <span
-                  className="inline-flex items-center justify-center h-6 w-6 rounded-lg text-[12px] shrink-0"
-                  style={{ backgroundColor: hexToRgba(rc.color || '#64748b', 0.28) }}
+                  className="inline-flex items-center justify-center h-6 w-6 rounded-md text-[12px] shrink-0 bg-slate-100 dark:bg-slate-800"
                   aria-hidden
                 >
                   📁
@@ -1356,7 +1469,8 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
                   title={`Restore category ${rc.name}`}
                   onClick={() => onRestoreCategory?.(rc.name)}
                   tone="emerald"
-                  solid
+                  solid={colorMode !== 'calm'}
+                  calm={colorMode === 'calm'}
                 />
                 <EmojiChip
                   emoji="💥"
@@ -1364,6 +1478,7 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
                   title={`Permanently delete category ${rc.name}`}
                   onClick={() => onPurgeCategory?.(rc.name)}
                   tone="rose"
+                  calm={colorMode === 'calm'}
                 />
               </div>
             ))}
@@ -1489,6 +1604,7 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
                 onCloneCategory={() => onCloneCategory(cat)}
                 cloningCategory={cloningCategory}
                 libraryScope={libraryScope}
+                colorMode={colorMode}
                 onArchiveCategory={() => onArchiveCategory?.(cat)}
                 onDeleteCategory={() => onDeleteCategory?.(cat)}
                 onArchiveSelected={() =>
@@ -1543,6 +1659,7 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
                             onRestore={() => onRestoreConnection?.(c.id)}
                             onPurge={() => onPurgeConnection?.(c.id)}
                             libraryScope={libraryScope}
+                            colorMode={colorMode}
                             onSettings={() => onSettings(c)}
                           />
                         );
