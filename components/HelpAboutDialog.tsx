@@ -372,7 +372,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 border border-emerald-200 dark:border-emerald-800">
                     <p className="font-medium text-emerald-900 dark:text-emerald-100">Guides tab:</p>
                     <p className="text-sm">
-                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (setup, architecture, App Updates, SSH / VNC Manual Deployment, Remote Widgets, Package for Deployment, and more). Start with App Updates or Architecture for the latest admin workflows.
+                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (setup, architecture, App Updates, SSH / VNC Manual Deployment, SSH Session Shared Worker, Remote Widgets, Package for Deployment, and more). Start with App Updates or Architecture for the latest admin workflows.
                     </p>
                   </div>
                 </div>
@@ -1327,6 +1327,32 @@ package-for-deployment.bat -BasePath "/myapp"`}</pre>
                     </ol>
                   </div>
 
+                  <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-4 space-y-2 border border-indigo-200 dark:border-indigo-800">
+                    <p className="font-medium text-indigo-900 dark:text-indigo-100">SSH sessions across refresh (SharedWorker)</p>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Live SSH connections are held in a <strong>SharedWorker in browser memory</strong> (not on the PHP server),
+                      so a normal page refresh can reattach the same sessions. Closing the SSH <strong>widget</strong> (and confirming)
+                      is what fully disconnects and stops gateways.
+                    </p>
+                    <ul className="list-disc list-inside space-y-1 text-sm ml-0.5 text-slate-700 dark:text-slate-300">
+                      <li>
+                        <strong>Survives:</strong> F5 / reload while the widget stays enabled and at least one LinkNest tab for this site remains available to the browser.
+                      </li>
+                      <li>
+                        <strong>Does not survive:</strong> closing every LinkNest tab, quitting the browser, or closing the SSH widget.
+                      </li>
+                      <li>
+                        After refresh you may see “Reattached” — recent output is replayed; the remote shell continues when reattach succeeds.
+                      </li>
+                      <li>
+                        Browsers without SharedWorker fall back to the old behavior (sessions die on refresh).
+                      </li>
+                    </ul>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Full guide: <strong>Guides → SSH Session Shared Worker</strong>.
+                    </p>
+                  </div>
+
                   <div className="bg-sky-50 dark:bg-sky-900/20 rounded-lg p-4 space-y-2 border border-sky-200 dark:border-sky-800">
                     <p className="font-medium text-sky-900 dark:text-sky-100">VNC Viewer — use after setup</p>
                     <ol className="list-decimal list-inside space-y-1.5 ml-0.5 text-sm">
@@ -1354,6 +1380,7 @@ package-for-deployment.bat -BasePath "/myapp"`}</pre>
 
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     Prefer LAN or VPN. Do not expose unauthenticated ttyd/websockify to the public internet. Writable checklists and troubleshooting: <strong>Guides → SSH / VNC Manual Deployment</strong>.
+                    Refresh behavior: <strong>Guides → SSH Session Shared Worker</strong>.
                   </p>
                 </div>
               </section>
@@ -1460,6 +1487,7 @@ package-for-deployment.bat -BasePath "/myapp"`}</pre>
                     <li>Toggle floating widgets from the navigation bar or press <strong>Ctrl+Shift+Y</strong> for the Widget Quick Access menu</li>
                     <li>Use the Notes and Chat widgets when signed in; Password Generator and Zoom Control are available from the widgets pill</li>
                     <li>For SSH/VNC: follow Help → Remote Widgets — SSH / VNC Manual Deployment (or Guides → SSH / VNC Manual Deployment) before first Connect</li>
+                    <li>SSH page refresh: sessions can stay alive in a browser SharedWorker — close the widget to disconnect (Guides → SSH Session Shared Worker)</li>
                     <li>Monitor system health with URL, keyword, port, and ping checks</li>
                     <li>Set up email notifications with advanced rules and multiple SMTP servers</li>
                     <li>View monitoring history with interactive charts and graphs</li>
@@ -1582,7 +1610,8 @@ package-for-deployment.bat -BasePath "/myapp"`}</pre>
                     <li><strong>In-app App Updates:</strong> Check GitHub commits/releases, preview changes, apply with DB backup, and roll back from Admin (XAMPP installs). Office tip: publish a <strong>portable Release</strong> (default relative base) and apply the same Release on ArchLinks and ERP3 — see Help → In-app App Updates</li>
                     <li><strong>XAMPP PHP upgrade:</strong> PowerShell script to move to PHP 8.5+ with LDAP verification — see Guides → Upgrade PHP in XAMPP</li>
                     <li><strong>Package for Deployment:</strong> <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">package-for-deployment.bat</code> builds a full XAMPP ZIP with SQLite runtime, remote-widget binaries, and optional DB/uploads flags</li>
-                    <li><strong>Guides tab:</strong> Searchable in-app documentation (Architecture, App Updates, Package for Deployment, XAMPP PHP upgrade, SSH / VNC Manual Deployment, Remote Widgets Setup, and more)</li>
+                    <li><strong>Guides tab:</strong> Searchable in-app documentation (Architecture, App Updates, Package for Deployment, XAMPP PHP upgrade, SSH / VNC Manual Deployment, SSH Session Shared Worker, Remote Widgets Setup, and more)</li>
+                    <li><strong>SSH sessions across refresh:</strong> SharedWorker in browser memory keeps live SSH sockets through page reload; close the widget to disconnect — Help → SSH sessions across refresh / Guides → SSH Session Shared Worker</li>
                     <li><strong>SSH / VNC manual deploy:</strong> Online, air-gapped runtime pack, HTTPS WSS proxy, Easy mode, <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">ssh://</code> / <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">vnc://</code> space links — Help and Guides</li>
                     <li><strong>QR sharing:</strong> Branded QR codes for the app URL and spaces (desktop + mobile)</li>
                     <li><strong>Share spaces:</strong> Share with users, accept/reject notifications, and revoke access</li>

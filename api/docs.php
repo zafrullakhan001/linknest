@@ -33,6 +33,7 @@ const DOCS_CATEGORY_MAP = [
     'MULTIPLE_SMTP_SERVERS.md' => 'Features',
     'DATABASE_CLEANUP_UI.md' => 'Features',
     'REMOTE_WIDGETS_SETUP.md' => 'Features',
+    'SSH_SESSION_SHARED_WORKER.md' => 'Features',
     'PYTHON_WORKERS.md' => 'Operations',
     'CLONED_INSTANCE_SCHEDULING.md' => 'Operations',
     'DUPLICATE_TILES_CLEANUP.md' => 'Operations',

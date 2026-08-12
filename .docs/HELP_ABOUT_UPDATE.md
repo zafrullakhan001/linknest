@@ -3,6 +3,16 @@
 ## Overview
 The Help & About dialog has been comprehensively updated to reflect all new features added to LinkNest.
 
+## Latest: SSH Session SharedWorker guide (2026-08)
+
+- Added writable guide: [`docs/SSH_SESSION_SHARED_WORKER.md`](../docs/SSH_SESSION_SHARED_WORKER.md)
+- Registered in Guides API (`api/docs.php`) under **Features**
+- Help tab: **SSH sessions across refresh (SharedWorker)** under Remote Widgets
+- About → What’s New, Tips, and Guides intro cross-link the guide
+- Cross-link from `REMOTE_WIDGETS_SETUP.md`
+
+---
+
 ## Latest: Portable App Updates for ArchLinks / ERP3 (2026-08)
 
 - Expanded [`docs/APP_UPDATES.md`](../docs/APP_UPDATES.md) with **Office playbook** (portable Release, commit vs Release, multi-folder steps, troubleshooting)

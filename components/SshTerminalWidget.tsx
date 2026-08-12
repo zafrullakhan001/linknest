@@ -27,6 +27,13 @@ import {
 } from '../services/sshGatewayService';
 import type { OpenSshTerminalDetail } from '../utils/sshLink';
 import { buildSshLinkUrl } from '../utils/sshLink';
+import {
+  sshSessionBridge,
+  loadPersistedLiveTabs,
+  savePersistedLiveTabs,
+  clearPersistedLiveTabs,
+  type PersistedLiveTab,
+} from '../services/sshSessionBridge';
 import { useSshFloatWindowDrag } from './FloatingSshTerminalWidget';
 import { RdpSessionPane } from './RdpSessionPane';
 import { XtermZoomSafeHost } from './XtermZoomSafeHost';
@@ -788,6 +795,9 @@ interface SessionHandle {
   fit: FitAddon | null;
   ws: WebSocket | null;
   gatewaySessionId: string | null;
+  /** When true, I/O goes through SharedWorker (survives page refresh). */
+  useBridge?: boolean;
+  bridgeUnsub?: (() => void) | null;
 }
 
 const CMD = {
@@ -2010,11 +2020,28 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
 
   /** Tabs whose WebSocket is being closed on purpose (UI close / reconnect) — skip auto-close-on-exit. */
   const intentionalWsCloseRef = useRef(new Set<string>());
+  /** When true, unmount should destroy bridge sessions (widget closed). Refresh leaves them alive. */
+  const destroySessionsOnUnmountRef = useRef(false);
+  const restoreDoneRef = useRef(false);
 
-  const disposeSessionHandle = useCallback((tabId: string, opts?: { keepHost?: boolean }) => {
+  const disposeSessionHandle = useCallback((tabId: string, opts?: { keepHost?: boolean; destroyBridge?: boolean }) => {
     const handle = sessionHandlesRef.current.get(tabId);
-    if (!handle) return;
-    if (handle.ws) {
+    if (!handle) return null;
+
+    try {
+      handle.bridgeUnsub?.();
+    } catch {
+      // ignore
+    }
+    handle.bridgeUnsub = null;
+
+    if (handle.useBridge) {
+      if (opts?.destroyBridge) {
+        sshSessionBridge.close(tabId);
+      } else {
+        sshSessionBridge.detach(tabId);
+      }
+    } else if (handle.ws) {
       intentionalWsCloseRef.current.add(tabId);
       try {
         handle.ws.close();
@@ -2035,7 +2062,9 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       host.innerHTML = '';
     }
     const gw = handle.gatewaySessionId;
-    handle.gatewaySessionId = null;
+    if (opts?.destroyBridge) {
+      handle.gatewaySessionId = null;
+    }
     sessionHandlesRef.current.set(tabId, handle);
     return gw;
   }, []);
@@ -2044,7 +2073,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     async (tabId: string) => {
       const handle = sessionHandlesRef.current.get(tabId);
       const gw = handle?.gatewaySessionId ?? null;
-      disposeSessionHandle(tabId);
+      disposeSessionHandle(tabId, { destroyBridge: true });
       sessionHandlesRef.current.delete(tabId);
       tabHostsRef.current.delete(tabId);
       void stopGatewayFor(gw);
@@ -2068,10 +2097,19 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     if (live.length > 0) {
       const ok = window.confirm('Kill all terminals and close?');
       if (!ok) return;
+      destroySessionsOnUnmountRef.current = true;
       const ids = tabsRef.current.map((t) => t.id);
       for (const id of ids) {
         await closeTab(id);
       }
+    } else {
+      destroySessionsOnUnmountRef.current = true;
+    }
+    clearPersistedLiveTabs();
+    try {
+      sshSessionBridge.closeAll();
+    } catch {
+      // ignore
     }
     onClose?.();
   }, [closeTab, onClose]);
@@ -2128,10 +2166,16 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     if (!id) return;
     const handle = sessionHandlesRef.current.get(id);
     const term = handle?.term;
-    const ws = handle?.ws;
-    if (!term || !ws || ws.readyState !== WebSocket.OPEN) return;
+    if (!term) return;
     const msg = CMD.RESIZE_TERMINAL + JSON.stringify({ columns: term.cols, rows: term.rows });
-    ws.send(encoderRef.current.encode(msg));
+    const bytes = encoderRef.current.encode(msg);
+    if (handle?.useBridge) {
+      sshSessionBridge.send(id, bytes);
+      return;
+    }
+    const ws = handle?.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(bytes);
   }, []);
 
   const fitSessions = useCallback(
@@ -2416,7 +2460,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
         const handle = sessionHandlesRef.current.get(tabId);
         const gw = handle?.gatewaySessionId ?? null;
         if (handle) handle.gatewaySessionId = null;
-        disposeSessionHandle(tabId);
+        disposeSessionHandle(tabId, { destroyBridge: true });
         sessionHandlesRef.current.delete(tabId);
         tabHostsRef.current.delete(tabId);
         void stopGatewayFor(gw);
@@ -2472,6 +2516,18 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
           setSshPort(String(port));
           setSshUsername(username);
           setConnectMode('auto');
+          updateTab(tabId, {
+            duplicateSource: {
+              kind: 'ssh',
+              connectionId: nextConnectionId ?? null,
+              wsUrl: url,
+              mode: 'auto',
+              host,
+              port,
+              username,
+              x11: opts?.x11 ?? x11Forward,
+            },
+          });
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'Failed to start SSH gateway';
           // Orphan ttyd processes can remain after UI tabs are closed and still count toward the max.
@@ -2492,6 +2548,18 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
               setSshPort(String(port));
               setSshUsername(username);
               setConnectMode('auto');
+              updateTab(tabId, {
+                duplicateSource: {
+                  kind: 'ssh',
+                  connectionId: nextConnectionId ?? null,
+                  wsUrl: url,
+                  mode: 'auto',
+                  host,
+                  port,
+                  username,
+                  x11: opts?.x11 ?? x11Forward,
+                },
+              });
               if (cleared.stopped > 0) {
                 setNotice(`Cleared ${cleared.stopped} leftover gateway(s), then connected`);
               }
@@ -2626,29 +2694,36 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       handle.term = term;
       handle.fit = fit;
 
-      let ws: WebSocket;
-      try {
-        ws = new WebSocket(url, ['tty']);
-      } catch (err) {
-        const gw = disposeSessionHandle(tabId);
-        void stopGatewayFor(gw);
-        failTab(err instanceof Error ? err.message : 'Failed to open WebSocket');
-        return;
-      }
+      const sendInput = (data: string) => {
+        const bytes = encoderRef.current.encode(CMD.INPUT + data);
+        if (handle.useBridge) {
+          sshSessionBridge.send(tabId, bytes);
+          return;
+        }
+        if (handle.ws && handle.ws.readyState === WebSocket.OPEN) {
+          handle.ws.send(bytes);
+        }
+      };
 
-      ws.binaryType = 'arraybuffer';
-      handle.ws = ws;
-
-      ws.onopen = () => {
+      let helloSent = false;
+      const onConnected = (opts?: { sendHello?: boolean }) => {
         try {
           fit.fit();
         } catch {
           // ignore
         }
-        const cols = Math.max(term.cols || 80, 2);
-        const rows = Math.max(term.rows || 24, 1);
-        const hello = JSON.stringify({ AuthToken: '', columns: cols, rows });
-        ws.send(encoderRef.current.encode(hello));
+        const wantHello = opts?.sendHello !== false && !helloSent;
+        if (wantHello) {
+          helloSent = true;
+          const cols = Math.max(term.cols || 80, 2);
+          const rows = Math.max(term.rows || 24, 1);
+          const hello = JSON.stringify({ AuthToken: '', columns: cols, rows });
+          if (handle.useBridge) {
+            sshSessionBridge.send(tabId, encoderRef.current.encode(hello));
+          } else if (handle.ws && handle.ws.readyState === WebSocket.OPEN) {
+            handle.ws.send(encoderRef.current.encode(hello));
+          }
+        }
         if (activeTabIdRef.current === tabId) term.focus();
         updateTab(tabId, {
           status: 'connected',
@@ -2666,8 +2741,8 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
         }, 80);
       };
 
-      ws.onmessage = (ev) => {
-        const frame = parseTtydFrame(ev.data as ArrayBuffer | string);
+      const handleOutputBuffer = (buf: ArrayBuffer) => {
+        const frame = parseTtydFrame(buf);
         if (!frame) return;
         const { cmd, payload } = frame;
         if (cmd === CMD.OUTPUT) {
@@ -2681,35 +2756,11 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
         }
       };
 
-      ws.onerror = () => {
-        // Natural close (exit / ttyd stop) follows via onclose and removes the tab.
-        // Connect-time failures use failTab() which already surfaces settings.
-        updateTab(tabId, {
-          status: 'error',
-          statusMessage: `WebSocket error — cannot reach ${url}. If Easy mode was used, ttyd may have exited; try Connect again.`,
-        });
-      };
-
-      ws.onclose = (ev) => {
-        const intentional = intentionalWsCloseRef.current.delete(tabId);
-        if (intentional) {
-          const current = sessionHandlesRef.current.get(tabId);
-          if (current) {
-            current.ws = null;
-            const gw = current.gatewaySessionId ?? null;
-            current.gatewaySessionId = null;
-            void stopGatewayFor(gw);
-          }
-          return;
-        }
-        // Prefer remote SSH close text already shown in the terminal (e.g. "Connection closed by host").
-        // Only blame the WSS proxy when the socket dies with no useful terminal output.
-        const code = typeof ev?.code === 'number' ? ev.code : 0;
+      const handleNaturalClose = (evCode?: number) => {
+        const code = typeof evCode === 'number' ? evCode : 0;
         const abnormal = code === 1006 || code === 0 || (code > 0 && code < 1000);
-        const term = sessionHandlesRef.current.get(tabId)?.term;
         let bufferText = '';
         try {
-          // xterm buffer may hold the remote close reason
           const buf = term?.buffer?.active;
           if (buf) {
             const lines: string[] = [];
@@ -2733,8 +2784,6 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
             statusMessage:
               'Remote SSH closed the session after login/MFA (see terminal). Check SecureAuth code, PAM target, and account access — the WSS tunnel was working.',
           });
-          const current = sessionHandlesRef.current.get(tabId);
-          if (current?.ws === ws) current.ws = null;
           return;
         }
         if (abnormal) {
@@ -2743,21 +2792,120 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
             statusMessage:
               'SSH tunnel closed after connect (often MFA / proxy). Confirm Apache gateway proxy uses HTTP/1.1 only, then Connect again.',
           });
-          const current = sessionHandlesRef.current.get(tabId);
-          if (current?.ws === ws) {
-            current.ws = null;
-          }
           return;
         }
-        // Shell exited / remote closed — drop the tab; do not open settings.
         if (sessionHandlesRef.current.has(tabId)) {
           void closeTab(tabId);
         }
       };
 
+      const useBridge = sshSessionBridge.isAvailable();
+      if (useBridge) {
+        handle.useBridge = true;
+        const unsub = sshSessionBridge.subscribe(tabId, {
+          onMessage: (data) => handleOutputBuffer(data),
+          onReplay: (data) => handleOutputBuffer(data),
+          onStatus: (status, detail) => {
+            if (status === 'open') {
+              onConnected({ sendHello: true });
+              return;
+            }
+            if (status === 'error') {
+              updateTab(tabId, {
+                status: 'error',
+                statusMessage: `WebSocket error — cannot reach ${url}. If Easy mode was used, ttyd may have exited; try Connect again.`,
+              });
+              return;
+            }
+            if (status === 'closed') {
+              if (detail?.intentional) return;
+              handleNaturalClose(detail?.code);
+            }
+          },
+          onOpenError: (message) => {
+            const gw = disposeSessionHandle(tabId, { destroyBridge: true });
+            void stopGatewayFor(gw);
+            failTab(message);
+          },
+        });
+        handle.bridgeUnsub = unsub;
+
+        const gwId = handle.gatewaySessionId;
+        try {
+          const opened = await sshSessionBridge.open(tabId, url, {
+            gatewaySessionId: gwId,
+            meta: {
+              title: tabTitle,
+              connectionId: nextConnectionId,
+              duplicateSource: {
+                kind: 'ssh',
+                connectionId: nextConnectionId ?? null,
+                wsUrl: url,
+                mode: wantAuto ? 'auto' : 'ws',
+                host: sourceHost,
+                port: sourcePort,
+                username: sourceUsername,
+                x11: opts?.x11 ?? x11Forward,
+              },
+            },
+          });
+          sshSessionBridge.updateMeta(tabId, { gatewaySessionId: gwId });
+          // Resumed existing worker session — do not re-send ttyd AuthToken hello.
+          if (opened.resumed && (opened.status === 'open' || opened.status === 'connecting')) {
+            if (opened.status === 'open') onConnected({ sendHello: false });
+          }
+        } catch (err) {
+          const gw = disposeSessionHandle(tabId, { destroyBridge: true });
+          void stopGatewayFor(gw);
+          failTab(err instanceof Error ? err.message : 'Failed to open WebSocket');
+          return;
+        }
+      } else {
+        let ws: WebSocket;
+        try {
+          ws = new WebSocket(url, ['tty']);
+        } catch (err) {
+          const gw = disposeSessionHandle(tabId, { destroyBridge: true });
+          void stopGatewayFor(gw);
+          failTab(err instanceof Error ? err.message : 'Failed to open WebSocket');
+          return;
+        }
+
+        ws.binaryType = 'arraybuffer';
+        handle.ws = ws;
+        handle.useBridge = false;
+
+        ws.onopen = () => onConnected();
+
+        ws.onmessage = (ev) => {
+          handleOutputBuffer(ev.data as ArrayBuffer);
+        };
+
+        ws.onerror = () => {
+          updateTab(tabId, {
+            status: 'error',
+            statusMessage: `WebSocket error — cannot reach ${url}. If Easy mode was used, ttyd may have exited; try Connect again.`,
+          });
+        };
+
+        ws.onclose = (ev) => {
+          const intentional = intentionalWsCloseRef.current.delete(tabId);
+          if (intentional) {
+            const current = sessionHandlesRef.current.get(tabId);
+            if (current) {
+              current.ws = null;
+              const gw = current.gatewaySessionId ?? null;
+              current.gatewaySessionId = null;
+              void stopGatewayFor(gw);
+            }
+            return;
+          }
+          handleNaturalClose(typeof ev?.code === 'number' ? ev.code : 0);
+        };
+      }
+
       term.onData((data) => {
-        if (ws.readyState !== WebSocket.OPEN) return;
-        ws.send(encoderRef.current.encode(CMD.INPUT + data));
+        sendInput(data);
       });
 
       term.onResize(() => {
@@ -2771,19 +2919,18 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       sshPort,
       sshUsername,
       x11Forward,
-      useServer,
-      maxSshTabs,
       activeConnectionId,
-      updateTab,
+      maxSshTabs,
+      useServer,
+      brandName,
       disposeSessionHandle,
       stopGatewayFor,
+      updateTab,
+      markLastUsed,
       waitForTabHost,
       sendResize,
-      markLastUsed,
       closeTab,
-      brandName,
-    ]
-  );
+    ]);
 
   const copyActiveSelection = useCallback(async () => {
     const id = activeTabIdRef.current;
@@ -3090,17 +3237,372 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
 
   useEffect(() => {
     return () => {
+      const destroy = destroySessionsOnUnmountRef.current;
+      if (!destroy) {
+        try {
+          const list = tabsRef.current;
+          if (list.length) {
+            const payload: PersistedLiveTab[] = list.map((t) => {
+              const handle = sessionHandlesRef.current.get(t.id);
+              return {
+                id: t.id,
+                title: t.title,
+                connectionId: t.connectionId,
+                status: t.status,
+                statusMessage: t.statusMessage,
+                kind: t.kind || 'ssh',
+                rdpUrl: t.rdpUrl,
+                excludeFromMulti: t.excludeFromMulti,
+                gatewaySessionId: handle?.gatewaySessionId ?? null,
+                wsUrl: t.duplicateSource?.wsUrl || null,
+                duplicateSource: t.duplicateSource,
+              };
+            });
+            savePersistedLiveTabs({
+              tabs: payload,
+              activeTabId: activeTabIdRef.current,
+              savedAt: Date.now(),
+            });
+          }
+        } catch {
+          // ignore
+        }
+      }
       const ids = Array.from(sessionHandlesRef.current.keys());
       for (const id of ids) {
         const handle = sessionHandlesRef.current.get(id);
         const gw = handle?.gatewaySessionId ?? null;
-        disposeSessionHandle(id);
-        void stopGatewayFor(gw);
+        disposeSessionHandle(id, { destroyBridge: destroy });
+        if (destroy) {
+          void stopGatewayFor(gw);
+        }
       }
       sessionHandlesRef.current.clear();
       tabHostsRef.current.clear();
+      if (destroy) {
+        try {
+          sshSessionBridge.closeAll();
+        } catch {
+          // ignore
+        }
+        clearPersistedLiveTabs();
+      } else {
+        try {
+          sshSessionBridge.detachAll();
+        } catch {
+          // ignore
+        }
+      }
     };
   }, [disposeSessionHandle, stopGatewayFor]);
+
+  const persistLiveTabsNow = useCallback(() => {
+    if (destroySessionsOnUnmountRef.current) {
+      clearPersistedLiveTabs();
+      return;
+    }
+    // Avoid wiping sessionStorage before the one-shot restore effect runs.
+    if (!restoreDoneRef.current) return;
+    const list = tabsRef.current;
+    if (!list.length) {
+      clearPersistedLiveTabs();
+      return;
+    }
+    const payload: PersistedLiveTab[] = list.map((t) => {
+      const handle = sessionHandlesRef.current.get(t.id);
+      return {
+        id: t.id,
+        title: t.title,
+        connectionId: t.connectionId,
+        status: t.status,
+        statusMessage: t.statusMessage,
+        kind: t.kind || 'ssh',
+        rdpUrl: t.rdpUrl,
+        excludeFromMulti: t.excludeFromMulti,
+        gatewaySessionId: handle?.gatewaySessionId ?? null,
+        wsUrl: t.duplicateSource?.wsUrl || null,
+        duplicateSource: t.duplicateSource,
+      };
+    });
+    savePersistedLiveTabs({
+      tabs: payload,
+      activeTabId: activeTabIdRef.current,
+      savedAt: Date.now(),
+    });
+  }, []);
+
+  useEffect(() => {
+    persistLiveTabsNow();
+  }, [tabs, activeTabId, persistLiveTabsNow]);
+
+  useEffect(() => {
+    const onPageHide = () => persistLiveTabsNow();
+    window.addEventListener('pagehide', onPageHide);
+    return () => window.removeEventListener('pagehide', onPageHide);
+  }, [persistLiveTabsNow]);
+
+  const reattachSshFromBridge = useCallback(
+    async (tab: PersistedLiveTab) => {
+      const tabId = tab.id;
+      const hostEl = await waitForTabHost(tabId);
+      if (!hostEl) return false;
+
+      const appearance = (() => {
+        const cid = tab.connectionId ?? null;
+        if (cid && editingIdRef.current === cid) {
+          return mergeConnectionAppearance(appearanceDraftRef.current);
+        }
+        if (cid) {
+          const saved = connectionsRef.current.find((c) => c.id === cid);
+          return mergeConnectionAppearance(saved?.appearance);
+        }
+        return mergeConnectionAppearance(appearanceDraftRef.current);
+      })();
+
+      const term = new Terminal({
+        cursorBlink: true,
+        fontSize: appearance.fontSize,
+        lineHeight: 1.25,
+        letterSpacing: 0,
+        fontFamily: appearance.fontFamily,
+        rightClickSelectsWord: false,
+        theme: buildXtermTheme({
+          background: appearance.bgColor,
+          foreground: appearance.fgColor,
+          cursor: appearance.cursorColor,
+          selectionBackground: appearance.selectionBg,
+          ansi: appearance.ansi,
+        }),
+      });
+      const fit = new FitAddon();
+      term.loadAddon(fit);
+      term.loadAddon(new WebLinksAddon());
+      hostEl.innerHTML = '';
+      term.open(hostEl);
+
+      const handle =
+        sessionHandlesRef.current.get(tabId) ||
+        ({
+          term: null,
+          fit: null,
+          ws: null,
+          gatewaySessionId: tab.gatewaySessionId ?? null,
+          useBridge: true,
+        } as SessionHandle);
+      handle.term = term;
+      handle.fit = fit;
+      handle.useBridge = true;
+      handle.gatewaySessionId = tab.gatewaySessionId ?? handle.gatewaySessionId ?? null;
+      sessionHandlesRef.current.set(tabId, handle);
+
+      const handleOutputBuffer = (buf: ArrayBuffer) => {
+        const frame = parseTtydFrame(buf);
+        if (!frame) return;
+        const { cmd, payload } = frame;
+        if (cmd === CMD.OUTPUT) {
+          term.write(payload);
+        } else if (cmd === CMD.SET_WINDOW_TITLE) {
+          const title = typeof payload === 'string' ? payload : new TextDecoder().decode(payload);
+          updateTab(tabId, {
+            statusMessage: tab.title ? `${tab.title} · ${title}` : title,
+          });
+        }
+      };
+
+      const unsub = sshSessionBridge.subscribe(tabId, {
+        onMessage: (data) => handleOutputBuffer(data),
+        onReplay: (data) => handleOutputBuffer(data),
+        onStatus: (status, detail) => {
+          if (status === 'open') {
+            updateTab(tabId, {
+              status: 'connected',
+              statusMessage: 'Reattached after refresh — session kept alive',
+            });
+            window.setTimeout(() => {
+              try {
+                fit.fit();
+                sendResize(tabId);
+                term.focus();
+              } catch {
+                // ignore
+              }
+            }, 40);
+            return;
+          }
+          if (status === 'closed' && !detail?.intentional) {
+            void closeTab(tabId);
+          }
+        },
+      });
+      handle.bridgeUnsub = unsub;
+
+      term.onData((data) => {
+        sshSessionBridge.send(tabId, encoderRef.current.encode(CMD.INPUT + data));
+      });
+      term.onResize(() => sendResize(tabId));
+
+      try {
+        const info = await sshSessionBridge.attach(tabId);
+        if (info.gatewaySessionId) handle.gatewaySessionId = info.gatewaySessionId;
+        updateTab(tabId, {
+          status: info.status === 'open' ? 'connected' : 'connecting',
+          statusMessage:
+            info.status === 'open'
+              ? 'Reattached after refresh — session kept alive'
+              : 'Reattaching SSH session…',
+        });
+        if (info.status === 'open') {
+          try {
+            fit.fit();
+            sendResize(tabId);
+            term.focus();
+          } catch {
+            // ignore
+          }
+        }
+        return true;
+      } catch {
+        try {
+          unsub();
+          term.dispose();
+        } catch {
+          // ignore
+        }
+        sessionHandlesRef.current.delete(tabId);
+        return false;
+      }
+    },
+    [waitForTabHost, updateTab, sendResize, closeTab]
+  );
+
+  useEffect(() => {
+    if (restoreDoneRef.current) return;
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        const persisted = loadPersistedLiveTabs();
+        if (!persisted?.tabs?.length) return;
+
+        const bridgeLive = sshSessionBridge.isAvailable() ? await sshSessionBridge.list() : [];
+        if (cancelled) return;
+        const liveMap = new Map(bridgeLive.map((s) => [s.id, s]));
+
+        const shellTabs: SessionTab[] = [];
+        const reattachList: PersistedLiveTab[] = [];
+        const reconnectList: PersistedLiveTab[] = [];
+
+        for (const t of persisted.tabs) {
+          const kind = t.kind || t.duplicateSource?.kind || 'ssh';
+          if (kind === 'rdp') {
+            shellTabs.push({
+              id: t.id,
+              title: t.title,
+              connectionId: t.connectionId,
+              status: 'connected',
+              statusMessage: t.statusMessage || 'RDP session',
+              kind: 'rdp',
+              rdpUrl: t.rdpUrl || t.duplicateSource?.rdpUrl,
+              excludeFromMulti: t.excludeFromMulti,
+              duplicateSource: t.duplicateSource as SessionTab['duplicateSource'],
+            });
+            continue;
+          }
+
+          const live = liveMap.get(t.id);
+          if (live && (live.status === 'open' || live.status === 'connecting')) {
+            shellTabs.push({
+              id: t.id,
+              title: t.title,
+              connectionId: t.connectionId,
+              status: 'connecting',
+              statusMessage: 'Reattaching SSH session…',
+              kind: 'ssh',
+              excludeFromMulti: t.excludeFromMulti,
+              duplicateSource: t.duplicateSource as SessionTab['duplicateSource'],
+            });
+            sessionHandlesRef.current.set(t.id, {
+              term: null,
+              fit: null,
+              ws: null,
+              gatewaySessionId: (live.gatewaySessionId as string) || t.gatewaySessionId || null,
+              useBridge: true,
+            });
+            reattachList.push({
+              ...t,
+              gatewaySessionId: (live.gatewaySessionId as string) || t.gatewaySessionId || null,
+              wsUrl: live.wsUrl || t.wsUrl,
+            });
+          } else if (t.duplicateSource || t.connectionId) {
+            reconnectList.push(t);
+          }
+        }
+
+        if (shellTabs.length) {
+          setTabs(shellTabs);
+          const preferred =
+            persisted.activeTabId && shellTabs.some((t) => t.id === persisted.activeTabId)
+              ? persisted.activeTabId
+              : shellTabs[0].id;
+          setActiveTabId(preferred);
+        }
+
+        await new Promise<void>((r) => requestAnimationFrame(() => r()));
+        if (cancelled) return;
+
+        let attached = 0;
+        for (const t of reattachList) {
+          if (cancelled) return;
+          const ok = await reattachSshFromBridge(t);
+          if (ok) attached += 1;
+          else reconnectList.push(t);
+        }
+
+        for (const t of reconnectList) {
+          if (cancelled) return;
+          const src = t.duplicateSource;
+          const kind = t.kind || src?.kind || 'ssh';
+          if (kind === 'rdp') {
+            const url = (src?.rdpUrl || t.rdpUrl || '').trim();
+            if (url) {
+              connectRdp({
+                url,
+                connectionId: src?.connectionId ?? t.connectionId,
+                connectionName: t.title,
+              });
+            }
+            continue;
+          }
+          await connectTo({
+            wsUrl: src?.wsUrl,
+            connectionId: src?.connectionId ?? t.connectionId,
+            connectionName: t.title,
+            host: src?.host,
+            port: src?.port,
+            username: src?.username,
+            mode: (src?.mode as ConnectMode | undefined) || undefined,
+            x11: src?.x11,
+          });
+        }
+
+        if (attached > 0) {
+          setNotice(
+            `Kept ${attached} SSH session${attached === 1 ? '' : 's'} alive across refresh (close the widget to disconnect)`
+          );
+        }
+      } finally {
+        restoreDoneRef.current = true;
+        // Persist whatever we have after restore settles.
+        window.setTimeout(() => persistLiveTabsNow(), 0);
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     try {

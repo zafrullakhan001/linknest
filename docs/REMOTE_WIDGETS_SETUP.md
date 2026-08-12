@@ -13,6 +13,8 @@ Open widgets from the navigation bar or **Ctrl+Shift+Y**. Assign `ssh-terminal` 
 
 Also covered in **Help & About → Help → Remote Widgets**.
 
+**SSH across refresh:** Live SSH tabs can survive a browser page refresh via a SharedWorker in browser memory. Closing the SSH **widget** disconnects. Guide: [`SSH_SESSION_SHARED_WORKER.md`](SSH_SESSION_SHARED_WORKER.md) (Help & About → Guides → SSH Session Shared Worker).
+
 **Security:** Passwords are never saved. Prefer LAN / VPN; do not expose unauthenticated gateways publicly.
 
 **Saved connections:** When signed in, SSH/RDP and VNC saves are **private per account** (filtered by `user_id`). Other users — including other admins — cannot see each other’s lists. Guests use browser-only storage (`Saved · guest`), kept separate from signed-in accounts. Session passwords are never written to the DB or localStorage.

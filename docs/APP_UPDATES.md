@@ -4,6 +4,8 @@ LinkNest can check your GitHub repository for **new commits** on a tracked branc
 
 Also in-app: **Help & About → Help → In-app App Updates** and **Guides → App Updates**.
 
+The App Updates dialog is **movable and resizable** on desktop (drag the header; resize from the bottom-right corner). While an update runs, **progress stays sticky at the top** of the panel so you do not need to scroll to monitor it.
+
 **Scope:** XAMPP / filesystem installs only (not Docker in-container updates).  
 **Who:** Admins only.
 
