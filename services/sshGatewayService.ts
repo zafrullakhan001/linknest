@@ -175,7 +175,32 @@ export function buildAutoTargetUrl(username: string, host: string, port: number)
 }
 
 export function parseAutoTargetUrl(raw: string): { username: string; host: string; port: number } | null {
-  const m = /^auto:\/\/([^@]+)@([^:\/]+):(\d+)$/i.exec(String(raw || '').trim());
+  const s = String(raw || '').trim();
+  if (!s) return null;
+
+  // Prefer ssh:// (same rules as space links / Easy paste field)
+  if (/^ssh:\/\//i.test(s)) {
+    const without = s.replace(/^ssh:\/\//i, '');
+    const at = without.lastIndexOf('@');
+    if (at <= 0) return null;
+    let username: string;
+    try {
+      username = decodeURIComponent(without.slice(0, at));
+    } catch {
+      username = without.slice(0, at);
+    }
+    const hostPort = without.slice(at + 1);
+    const m = /^(\[[^\]]+\]|[^:/?#]+)(?::(\d+))?/i.exec(hostPort);
+    if (!m) return null;
+    const hostPart = m[1];
+    const host = hostPart.startsWith('[') && hostPart.endsWith(']') ? hostPart.slice(1, -1) : hostPart;
+    const port = m[2] ? Number.parseInt(m[2], 10) : 22;
+    if (!username || !host || !Number.isFinite(port) || port < 1 || port > 65535) return null;
+    if (username.length > 256) return null;
+    return { username, host, port };
+  }
+
+  const m = /^auto:\/\/([^@]+)@([^:\/]+):(\d+)$/i.exec(s);
   if (!m) return null;
   let username: string;
   try {

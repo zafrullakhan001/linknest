@@ -82,6 +82,15 @@ export function formatSshConnectionName(parsed: ParsedSshLink): string {
   return `${parsed.host}${portSuffix}`;
 }
 
+/** Build a pasteable ssh:// URL (PAM usernames are percent-encoded). */
+export function buildSshLinkUrl(username: string, host: string, port: number): string {
+  const user = encodeURIComponent(String(username || '').trim());
+  const h = String(host || '').trim();
+  const p = Number(port) || 22;
+  if (!user || !h) return '';
+  return `ssh://${user}@${h}:${p}`;
+}
+
 export function requestOpenSshTerminal(detail: OpenSshTerminalDetail): void {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent(OPEN_SSH_TERMINAL_EVENT, { detail }));

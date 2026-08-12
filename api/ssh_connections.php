@@ -97,6 +97,41 @@ function validateWsUrl(string $url, string $protocol = 'ssh'): ?string {
 
     // auto://user@host:port — LinkNest local ttyd launcher target (not a WebSocket URL)
     // Username is percent-encoded so PAM characters (\ + @ /) round-trip safely.
+    // ssh://user@host:port — accepted and normalized to auto:// for storage.
+    if (preg_match('#^ssh://#i', $trimmed)) {
+        if (mb_strlen($trimmed) > 1024) {
+            return null;
+        }
+        $without = preg_replace('#^ssh://#i', '', $trimmed);
+        $at = strrpos($without, '@');
+        if ($at === false || $at < 1) {
+            return null;
+        }
+        $userRaw = substr($without, 0, $at);
+        $hostPort = substr($without, $at + 1);
+        if (!preg_match('#^([A-Za-z0-9.-]+|\\[[0-9a-fA-F:]+\\])(?::(\\d{1,5}))?$#', $hostPort, $hm)) {
+            return null;
+        }
+        $host = $hm[1];
+        if ($host !== '' && $host[0] === '[') {
+            $host = trim($host, '[]');
+        }
+        $port = isset($hm[2]) ? (int)$hm[2] : 22;
+        if ($port < 1 || $port > 65535 || $host === '') {
+            return null;
+        }
+        $decodedUser = rawurldecode($userRaw);
+        if ($decodedUser === '' || mb_strlen($decodedUser) > 256) {
+            return null;
+        }
+        if (preg_match('/[\x00-\x1F\x7F;|&$`<>(){}\[\]"\'\s]/u', $decodedUser)) {
+            return null;
+        }
+        if (!preg_match('/^[A-Za-z0-9._\-\\\\+@\/%=:,]+$/u', $decodedUser)) {
+            return null;
+        }
+        return 'auto://' . rawurlencode($decodedUser) . '@' . $host . ':' . $port;
+    }
     if (preg_match('#^auto://#i', $trimmed)) {
         if (mb_strlen($trimmed) > 1024) {
             return null;

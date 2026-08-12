@@ -17,6 +17,8 @@ Also covered in **Help & About → Help → Remote Widgets**.
 
 **PAM / privileged access:** Easy mode accepts long usernames with `\`, `+`, and custom ports (not only 22). Values are passed to OpenSSH with `ssh -l <username> -p <port> <host>` so special characters are not broken by `user@host` parsing. Saved connections percent-encode the username inside `auto://…`.
 
+In the SSH widget **Easy** settings you can paste an `ssh://` URL into the **SSH URL** field (Apply / paste / Enter fills host, port, username). Use **Copy** to get a pasteable `ssh://` for a space link. Saving still stores `auto://…` on the server; `ssh://` is accepted when saving and normalized.
+
 Example:
 ```
 Host: pam.example.com
@@ -24,7 +26,7 @@ Port: 4489
 Username: domain\user+target.domain\account+TARGETHOST
 ```
 
-Or as a space link: `ssh://domain%5Cuser%2Btarget@pam.example.com:4489` (percent-encode `\` and `+` in the username).
+Or as a space link / Easy paste: `ssh://domain%5Cuser%2Btarget@pam.example.com:4489` (percent-encode `\` and `+` in the username). Unencoded PAM usernames with multiple `@` also work when pasted — the last `@` separates username from host.
 
 **VNC space links:** Add a tile link like `vnc://192.168.1.50:5900` (default port `5900` if omitted). Clicking it opens the VNC Viewer widget and starts Easy mode (websockify) the same way `ssh://` opens the SSH Terminal.
 

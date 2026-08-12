@@ -22,6 +22,7 @@ import {
   sshGatewayService,
 } from '../services/sshGatewayService';
 import type { OpenSshTerminalDetail } from '../utils/sshLink';
+import { buildSshLinkUrl } from '../utils/sshLink';
 import { RdpSessionPane } from './RdpSessionPane';
 import { XtermZoomSafeHost } from './XtermZoomSafeHost';
 
@@ -764,6 +765,7 @@ function normalizeWsUrl(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return '';
   if (/^auto:\/\//i.test(trimmed)) return trimmed;
+  if (/^ssh:\/\//i.test(trimmed)) return trimmed;
   if (/^wss?:\/\//i.test(trimmed)) return trimmed;
   if (/^https:\/\//i.test(trimmed)) return `wss://${trimmed.slice(8)}`;
   if (/^http:\/\//i.test(trimmed)) return `ws://${trimmed.slice(7)}`;
@@ -1090,6 +1092,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
   const [sshHost, setSshHost] = useState(() => localStorage.getItem(HOST_STORAGE_KEY) || '');
   const [sshPort, setSshPort] = useState(() => localStorage.getItem(PORT_STORAGE_KEY) || '22');
   const [sshUsername, setSshUsername] = useState(() => localStorage.getItem(USER_STORAGE_KEY) || '');
+  const [sshUrlDraft, setSshUrlDraft] = useState('');
   const [x11Forward, setX11Forward] = useState(() => localStorage.getItem(X11_STORAGE_KEY) === 'true');
   const [gatewayAvailable, setGatewayAvailable] = useState<boolean | null>(null);
   const [gatewayHint, setGatewayHint] = useState<string | null>(null);
@@ -1295,6 +1298,37 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       // ignore
     }
   }, [connectMode, sshHost, sshPort, sshUsername, x11Forward]);
+
+  // Keep pasteable ssh:// in sync with Easy fields (PAM usernames are percent-encoded).
+  useEffect(() => {
+    const built = buildSshLinkUrl(sshUsername, sshHost, Number.parseInt(sshPort, 10) || 22);
+    setSshUrlDraft(built);
+  }, [sshHost, sshPort, sshUsername]);
+
+  const applySshUrlPaste = useCallback((raw: string, opts?: { quiet?: boolean }): boolean => {
+    const parsed = parseAutoTargetUrl(raw.trim());
+    if (!parsed) {
+      if (!opts?.quiet) {
+        setNotice('Invalid ssh:// URL. Example: ssh://user@host:22 (encode \\ as %5C, + as %2B)');
+      }
+      return false;
+    }
+    setConnectMode('auto');
+    setDraftProtocol('ssh');
+    setSshHost(parsed.host);
+    setSshPort(String(parsed.port));
+    setSshUsername(parsed.username);
+    setSshUrlDraft(buildSshLinkUrl(parsed.username, parsed.host, parsed.port));
+    setDraftName((prev) =>
+      prev.trim()
+        ? prev
+        : `${parsed.username}@${parsed.host}${parsed.port !== 22 ? `:${parsed.port}` : ''}`
+    );
+    if (!opts?.quiet) {
+      setNotice(`Filled from ssh:// — ${parsed.username}@${parsed.host}:${parsed.port}`);
+    }
+    return true;
+  }, []);
 
   useEffect(() => {
     if (!useServer) {
@@ -2239,7 +2273,66 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     }, 40);
   }, [fitSessions]);
 
-  const connect = useCallback(() => connectTo(), [connectTo]);
+  const connect = useCallback(() => {
+    if (connectMode === 'auto') {
+      const fromDraft = parseAutoTargetUrl(sshUrlDraft.trim());
+      if (fromDraft) {
+        setSshHost(fromDraft.host);
+        setSshPort(String(fromDraft.port));
+        setSshUsername(fromDraft.username);
+        void connectTo({
+          mode: 'auto',
+          host: fromDraft.host,
+          port: fromDraft.port,
+          username: fromDraft.username,
+          wsUrl: buildAutoTargetUrl(fromDraft.username, fromDraft.host, fromDraft.port),
+        });
+        return;
+      }
+    }
+    if (connectMode === 'ws') {
+      const fromWs = parseAutoTargetUrl(wsUrl.trim());
+      if (fromWs) {
+        setConnectMode('auto');
+        setSshHost(fromWs.host);
+        setSshPort(String(fromWs.port));
+        setSshUsername(fromWs.username);
+        void connectTo({
+          mode: 'auto',
+          host: fromWs.host,
+          port: fromWs.port,
+          username: fromWs.username,
+          wsUrl: buildAutoTargetUrl(fromWs.username, fromWs.host, fromWs.port),
+        });
+        return;
+      }
+    }
+    void connectTo();
+  }, [connectMode, connectTo, sshUrlDraft, wsUrl]);
+
+  const sshUrlForConnection = useCallback((c: SavedSshConnection): string | null => {
+    if (normalizeConnectionProtocol(c.protocol) === 'rdp') return null;
+    const a = parseAutoTargetUrl(c.wsUrl);
+    if (!a) return null;
+    return buildSshLinkUrl(a.username, a.host, a.port) || null;
+  }, []);
+
+  const copySshUrlForConnection = useCallback(
+    async (c: SavedSshConnection) => {
+      const url = sshUrlForConnection(c);
+      if (!url) {
+        setNotice(`“${c.name}” has no Easy-mode target to build ssh:// from`);
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(url);
+        setNotice(`Copied ssh:// for “${c.name}”`);
+      } catch {
+        setNotice('Clipboard copy was blocked — select the ssh:// text manually if shown');
+      }
+    },
+    [sshUrlForConnection]
+  );
 
   const connectRdp = useCallback(
     (opts?: { url?: string; connectionId?: string; connectionName?: string }) => {
@@ -2800,18 +2893,32 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       const username = sshUsername.trim();
       const port = Number.parseInt(sshPort, 10) || 22;
       if (!host || !username) {
-        setNotice('Enter host and username before saving.');
-        return;
+        const fromUrl = parseAutoTargetUrl(sshUrlDraft.trim());
+        if (fromUrl) {
+          url = buildAutoTargetUrl(fromUrl.username, fromUrl.host, fromUrl.port);
+          if (!name) name = `${fromUrl.username}@${fromUrl.host}:${fromUrl.port}`;
+        } else {
+          setNotice('Enter host and username (or paste an ssh:// URL) before saving.');
+          return;
+        }
+      } else {
+        url = buildAutoTargetUrl(username, host, port);
+        if (!name) name = `${username}@${host}:${port}`;
       }
-      url = buildAutoTargetUrl(username, host, port);
-      if (!name) name = `${username}@${host}:${port}`;
     } else {
-      url = normalizeWsUrl(wsUrl);
-      if (!url || /^auto:\/\//i.test(url)) {
-        setNotice('Enter a WebSocket URL before saving.');
-        return;
+      const raw = wsUrl.trim();
+      const fromSsh = parseAutoTargetUrl(raw);
+      if (fromSsh) {
+        url = buildAutoTargetUrl(fromSsh.username, fromSsh.host, fromSsh.port);
+        if (!name) name = `${fromSsh.username}@${fromSsh.host}:${fromSsh.port}`;
+      } else {
+        url = normalizeWsUrl(raw);
+        if (!url || /^auto:\/\//i.test(url) || /^ssh:\/\//i.test(url)) {
+          setNotice('Enter a WebSocket URL before saving.');
+          return;
+        }
+        if (!name) name = url.replace(/^wss?:\/\//i, '').split('/')[0] || 'SSH host';
       }
-      if (!name) name = url.replace(/^wss?:\/\//i, '').split('/')[0] || 'SSH host';
     }
     const tags = parseTags(draftTags);
     const notes = draftNotes.trim() || undefined;
@@ -3428,6 +3535,8 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                   const liveTabs = liveTabsForConnection(c.id);
                   const isLive = liveTabs.length > 0;
                   const color = normalizeSshColor(c.color);
+                  const isRdp = normalizeConnectionProtocol(c.protocol) === 'rdp';
+                  const sshLink = !isRdp ? sshUrlForConnection(c) : null;
                   return (
                     <div
                       key={c.id}
@@ -3450,12 +3559,12 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                               <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate">{c.name}</p>
                               <span
                                 className={`shrink-0 px-1 py-0 rounded text-[9px] font-semibold uppercase tracking-wide ${
-                                  normalizeConnectionProtocol(c.protocol) === 'rdp'
+                                  isRdp
                                     ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300'
                                     : 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300'
                                 }`}
                               >
-                                {normalizeConnectionProtocol(c.protocol) === 'rdp' ? 'RDP' : 'SSH'}
+                                {isRdp ? 'RDP' : 'SSH'}
                               </span>
                               {isLive && (
                                 <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0 rounded-full text-[9px] font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
@@ -3483,6 +3592,25 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                               </div>
                             )}
                           </button>
+
+                          {sshLink && (
+                            <div className="mt-1.5 flex items-center gap-1 min-w-0">
+                              <p
+                                className="flex-1 min-w-0 text-[9px] font-mono text-slate-500 dark:text-slate-400 truncate"
+                                title={sshLink}
+                              >
+                                {sshLink}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => void copySshUrlForConnection(c)}
+                                className="shrink-0 h-6 px-1.5 text-[9px] font-semibold rounded border border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/40"
+                                title="Copy ssh:// URL for a space / tile link"
+                              >
+                                Copy ssh://
+                              </button>
+                            </div>
+                          )}
 
                           <div className="flex items-center gap-1 mt-2">
                             <button
@@ -3530,6 +3658,19 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 7.125L16.875 4.5" />
                               </svg>
                             </button>
+                            {sshLink && (
+                              <button
+                                type="button"
+                                onClick={() => void copySshUrlForConnection(c)}
+                                className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-sky-200 dark:border-sky-800 text-sky-600 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/40"
+                                title={`Copy ssh:// URL for ${c.name}`}
+                                aria-label={`Copy ssh:// for ${c.name}`}
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
+                                </svg>
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => void deleteConnection(c.id)}
@@ -3583,6 +3724,32 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
+                  {draftProtocol === 'ssh' &&
+                    connectMode === 'auto' &&
+                    sshHost.trim() &&
+                    sshUsername.trim() && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const url = buildSshLinkUrl(
+                            sshUsername,
+                            sshHost,
+                            Number.parseInt(sshPort, 10) || 22
+                          );
+                          if (!url) return;
+                          try {
+                            await navigator.clipboard.writeText(url);
+                            setNotice('Copied ssh:// URL');
+                          } catch {
+                            setNotice('Clipboard copy was blocked');
+                          }
+                        }}
+                        className="px-2.5 py-1.5 text-[11px] font-medium rounded-md border border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/40"
+                        title="Copy ssh:// for a tile / space link"
+                      >
+                        Copy ssh://
+                      </button>
+                    )}
                   <button
                     type="button"
                     onClick={() => void saveCurrentConnection()}
@@ -4120,7 +4287,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                                   : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
                               }`}
                             >
-                              Easy (host / port)
+                              Easy (ssh://)
                             </button>
                             <button
                               type="button"
@@ -4224,13 +4391,92 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                         </div>
                       ) : connectMode === 'auto' ? (
                         <>
+                          <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                            SSH URL
+                            <div className="mt-1 flex gap-1.5">
+                              <input
+                                type="text"
+                                value={sshUrlDraft}
+                                onChange={(e) => setSshUrlDraft(e.target.value)}
+                                onPaste={(e) => {
+                                  const text = e.clipboardData.getData('text');
+                                  if (/^(ssh|auto):\/\//i.test(text.trim())) {
+                                    e.preventDefault();
+                                    applySshUrlPaste(text);
+                                  }
+                                }}
+                                onBlur={() => {
+                                  const t = sshUrlDraft.trim();
+                                  if (/^(ssh|auto):\/\//i.test(t)) applySshUrlPaste(t, { quiet: true });
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    applySshUrlPaste(sshUrlDraft);
+                                  }
+                                }}
+                                placeholder="ssh://user@host:4422"
+                                title="Paste an ssh:// URL to fill host, port, and username (PAM: encode \ as %5C)"
+                                className="flex-1 min-w-0 h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono"
+                                spellCheck={false}
+                                autoComplete="off"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => applySshUrlPaste(sshUrlDraft)}
+                                className="shrink-0 h-8 px-2 text-[11px] rounded-md border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                                title="Parse SSH URL into host / port / username"
+                              >
+                                Apply
+                              </button>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  const url =
+                                    sshUrlDraft.trim() ||
+                                    buildSshLinkUrl(
+                                      sshUsername,
+                                      sshHost,
+                                      Number.parseInt(sshPort, 10) || 22
+                                    );
+                                  if (!url) {
+                                    setNotice('Enter host and username first to copy ssh://');
+                                    return;
+                                  }
+                                  try {
+                                    await navigator.clipboard.writeText(url);
+                                    setNotice('Copied ssh:// URL');
+                                  } catch {
+                                    setNotice('Clipboard copy was blocked');
+                                  }
+                                }}
+                                className="shrink-0 h-8 px-2 text-[11px] rounded-md border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                                title="Copy ssh:// URL for space links or sharing"
+                              >
+                                Copy
+                              </button>
+                            </div>
+                          </label>
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug">
+                            Paste <code className="font-mono">ssh://user@host:port</code> to fill the fields below.
+                            For PAM, encode <code className="font-mono">\</code> as{' '}
+                            <code className="font-mono">%5C</code> and <code className="font-mono">+</code> as{' '}
+                            <code className="font-mono">%2B</code>.
+                          </p>
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                             <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300 sm:col-span-2">
                               Host
                               <input
                                 type="text"
                                 value={sshHost}
-                                onChange={(e) => setSshHost(e.target.value)}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  if (/^(ssh|auto):\/\//i.test(v.trim())) {
+                                    applySshUrlPaste(v);
+                                    return;
+                                  }
+                                  setSshHost(v);
+                                }}
                                 placeholder="pam.example.com"
                                 className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono"
                                 spellCheck={false}
