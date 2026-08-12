@@ -10,6 +10,7 @@ const MIN_WIDTH = 640;
 const MIN_HEIGHT = 360;
 const MAX_WIDTH = 1400;
 const MAX_HEIGHT = 1000;
+const FOOTER_DRAG_HEIGHT = 32;
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -28,26 +29,6 @@ function getVisualViewportSize() {
     width: vv?.width ?? window.innerWidth,
     height: vv?.height ?? window.innerHeight,
   };
-}
-
-function safeParsePoint(raw: string | null): Point | null {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw);
-    if (
-      typeof parsed === 'object' &&
-      parsed &&
-      typeof parsed.x === 'number' &&
-      typeof parsed.y === 'number' &&
-      Number.isFinite(parsed.x) &&
-      Number.isFinite(parsed.y)
-    ) {
-      return { x: parsed.x, y: parsed.y };
-    }
-  } catch {
-    // ignore
-  }
-  return null;
 }
 
 function safeParseSize(raw: string | null): Size | null {
@@ -70,49 +51,72 @@ function safeParseSize(raw: string | null): Size | null {
   return null;
 }
 
+function centerInViewport(width: number, height: number): Point {
+  const zoom = getCssZoom();
+  const { width: vvW, height: vvH } = getVisualViewportSize();
+  const layoutViewportWidth = vvW / zoom;
+  const layoutViewportHeight = vvH / zoom;
+  return {
+    x: Math.round(Math.max(8, (layoutViewportWidth - width) / 2)),
+    y: Math.round(Math.max(12, (layoutViewportHeight - height) / 2)),
+  };
+}
+
 export const FloatingSshTerminalWidget: React.FC<{
   children: React.ReactNode;
   defaultPosition?: Point;
 }> = ({ children, defaultPosition }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const initialPos = useMemo<Point>(() => {
-    // default is near top-right to avoid overlap with other widgets
-    if (defaultPosition) return defaultPosition;
-    return { x: 24, y: 100 };
-  }, [defaultPosition]);
-
   const initialSize = useMemo<Size>(() => {
     const stored = safeParseSize(localStorage.getItem(SIZE_STORAGE_KEY));
-    if (stored) return stored;
+    if (stored) {
+      return {
+        width: clamp(stored.width, MIN_WIDTH, MAX_WIDTH),
+        height: clamp(stored.height, MIN_HEIGHT, MAX_HEIGHT),
+      };
+    }
     return { width: 720, height: 520 };
   }, []);
+
+  const initialPos = useMemo<Point>(() => {
+    if (defaultPosition) return defaultPosition;
+    return centerInViewport(initialSize.width, initialSize.height);
+  }, [defaultPosition, initialSize.height, initialSize.width]);
 
   const [pos, setPos] = useState<Point>(initialPos);
   const [size, setSize] = useState<Size>(initialSize);
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const dragStartRef = useRef<{ x: number; y: number; posX: number; posY: number } | null>(null);
-  const resizeStartRef = useRef<{ x: number; y: number; width: number; height: number; posX: number; posY: number; direction: string } | null>(null);
+  const resizeStartRef = useRef<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    posX: number;
+    posY: number;
+    direction: string;
+  } | null>(null);
   const dragCleanupRef = useRef<(() => void) | null>(null);
   const latestPosRef = useRef<Point>(initialPos);
   const latestSizeRef = useRef<Size>(initialSize);
   const rafRef = useRef<number | null>(null);
   const pendingPosRef = useRef<Point | null>(null);
 
-  const clampToViewport = (p: Point): Point => {
-    const width = size.width;
-    const height = size.height;
+  const clampToViewport = (p: Point, forSize: Size = size): Point => {
+    const width = forSize.width;
+    const height = forSize.height;
 
     const zoom = getCssZoom();
     const { width: vvW, height: vvH } = getVisualViewportSize();
     const layoutViewportWidth = vvW / zoom;
     const layoutViewportHeight = vvH / zoom;
 
-    // Allow moving "all over" while keeping a small portion visible for recovery
+    // Keep enough of the window visible; footer drag bar stays reachable near the bottom edge.
     const minX = -width + MIN_VISIBLE;
     const maxX = layoutViewportWidth - MIN_VISIBLE;
-    const minY = -height + MIN_VISIBLE;
+    const minY = -(height - FOOTER_DRAG_HEIGHT);
     const maxY = layoutViewportHeight - MIN_VISIBLE;
 
     return {
@@ -134,25 +138,20 @@ export const FloatingSshTerminalWidget: React.FC<{
     });
   };
 
-  // Load last position once
+  // Always center when the widget opens (mount), so a lost top handle never strands it.
   useEffect(() => {
-    const stored = safeParsePoint(localStorage.getItem(STORAGE_KEY));
-    if (stored) {
-      // Defer clamping until after first paint so we can measure size accurately
-      requestAnimationFrame(() => setPos(clampToViewport(stored)));
-      return;
-    }
-
-    // First-time default: top-right-ish (zoom-aware) to avoid overlap with other widgets
     requestAnimationFrame(() => {
       const el = containerRef.current;
-      const width = el?.offsetWidth ?? 450;
-      const height = el?.offsetHeight ?? 600;
-      const zoom = getCssZoom();
-      const { width: vvW, height: vvH } = getVisualViewportSize();
-      const layoutViewportWidth = vvW / zoom;
-      const layoutViewportHeight = vvH / zoom;
-      setPos(clampToViewport({ x: layoutViewportWidth - width - 12, y: 100 }));
+      const width = el?.offsetWidth ?? size.width;
+      const height = el?.offsetHeight ?? size.height;
+      const centered = clampToViewport(centerInViewport(width, height), { width, height });
+      latestPosRef.current = centered;
+      setPos(centered);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(centered));
+      } catch {
+        // ignore storage failures
+      }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -190,11 +189,9 @@ export const FloatingSshTerminalWidget: React.FC<{
   }, []);
 
   const startDrag = (e: React.PointerEvent) => {
-    // Ensure no stale listeners remain
     dragCleanupRef.current?.();
     dragCleanupRef.current = null;
 
-    // Delta-based dragging: avoids any "jump" regardless of where the handle is placed
     dragStartRef.current = { x: e.clientX, y: e.clientY, posX: pos.x, posY: pos.y };
     setIsDragging(true);
 
@@ -225,7 +222,6 @@ export const FloatingSshTerminalWidget: React.FC<{
     window.addEventListener('pointercancel', onUp, { once: true });
     dragCleanupRef.current = () => {
       window.removeEventListener('pointermove', onMove);
-      // pointerup/cancel are {once:true}; no need to remove
     };
 
     e.preventDefault();
@@ -271,10 +267,11 @@ export const FloatingSshTerminalWidget: React.FC<{
         newY = start.posY + (start.height - newHeight);
       }
 
-      latestSizeRef.current = { width: newWidth, height: newHeight };
-      setSize({ width: newWidth, height: newHeight });
-      
-      const newPos = clampToViewport({ x: newX, y: newY });
+      const nextSize = { width: newWidth, height: newHeight };
+      latestSizeRef.current = nextSize;
+      setSize(nextSize);
+
+      const newPos = clampToViewport({ x: newX, y: newY }, nextSize);
       latestPosRef.current = newPos;
       setPos(newPos);
     };
@@ -298,6 +295,8 @@ export const FloatingSshTerminalWidget: React.FC<{
     e.stopPropagation();
   };
 
+  const grabClass = isDragging ? 'cursor-grabbing' : 'cursor-grab';
+
   return (
     <div
       ref={containerRef}
@@ -308,48 +307,70 @@ export const FloatingSshTerminalWidget: React.FC<{
         top: pos.y,
         width: size.width,
         height: size.height,
-        zIndex: 2147483647, // stay above everything
+        zIndex: 2147483647,
       }}
     >
-      <div className="relative w-full h-full">
-        {/* Drag handle (bigger + easier to grab, doesn't change layout) */}
+      <div className="relative w-full h-full flex flex-col rounded-xl overflow-hidden shadow-2xl">
+        {/* Top drag handle */}
         <button
           type="button"
-          className={`absolute -top-3 left-1/2 -translate-x-1/2 w-16 h-7 rounded-full shadow-md border border-blue-300/70 dark:border-blue-600/60 bg-blue-500/90 dark:bg-blue-600/90 backdrop-blur flex items-center justify-center text-white ${
-            isDragging ? 'cursor-grabbing' : 'cursor-grab'
-          }`}
+          className={`absolute -top-3 left-1/2 -translate-x-1/2 z-20 w-16 h-7 rounded-full shadow-md border border-sky-300/70 dark:border-sky-600/60 bg-sky-500/95 dark:bg-sky-600/95 backdrop-blur flex items-center justify-center text-white ${grabClass}`}
           onPointerDown={startDrag}
-          title="Drag SSH terminal (grab here)"
-          aria-label="Drag SSH terminal"
+          title="Drag SSH terminal"
+          aria-label="Drag SSH terminal from top"
         >
           <span className="text-[16px] leading-none tracking-widest flex items-center">⋮⋮⋮</span>
         </button>
 
+        <div className="flex-1 min-h-0 overflow-hidden">{children}</div>
+
+        {/* Footer drag bar — always reachable even if the top handle is off-screen */}
+        <div
+          role="button"
+          tabIndex={0}
+          className={`shrink-0 z-20 flex items-center justify-center gap-2 border-t border-sky-400/40 bg-gradient-to-r from-sky-600 via-sky-500 to-sky-600 text-white shadow-inner ${grabClass} ${
+            isDragging ? 'brightness-110' : 'hover:brightness-105'
+          }`}
+          style={{ height: FOOTER_DRAG_HEIGHT }}
+          onPointerDown={startDrag}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') e.preventDefault();
+          }}
+          title="Drag SSH terminal from the footer"
+          aria-label="Drag SSH terminal from footer"
+        >
+          <span className="text-[14px] leading-none tracking-widest opacity-90" aria-hidden>
+            ⋮⋮⋮
+          </span>
+          <span className="text-[10px] font-semibold tracking-wide uppercase">
+            {isDragging ? 'Moving…' : 'Drag to move'}
+          </span>
+          <span className="text-[14px] leading-none tracking-widest opacity-90" aria-hidden>
+            ⋮⋮⋮
+          </span>
+        </div>
+
         {/* Resize handles */}
         <div
-          className="absolute top-0 right-0 w-3 h-3 cursor-ne-resize opacity-0 hover:opacity-100 transition-opacity"
+          className={`absolute top-0 right-0 w-3 h-3 cursor-ne-resize z-30 ${isResizing ? 'opacity-100' : 'opacity-0 hover:opacity-100'} transition-opacity`}
           onPointerDown={(e) => startResize(e, 'ne')}
-          style={{ background: 'linear-gradient(135deg, transparent 50%, rgba(59, 130, 246, 0.5) 50%)' }}
+          style={{ background: 'linear-gradient(135deg, transparent 50%, rgba(14, 165, 233, 0.55) 50%)' }}
         />
         <div
-          className="absolute bottom-0 right-0 w-3 h-3 cursor-se-resize opacity-0 hover:opacity-100 transition-opacity"
+          className={`absolute bottom-0 right-0 w-3 h-3 cursor-se-resize z-30 ${isResizing ? 'opacity-100' : 'opacity-0 hover:opacity-100'} transition-opacity`}
           onPointerDown={(e) => startResize(e, 'se')}
-          style={{ background: 'linear-gradient(45deg, transparent 50%, rgba(59, 130, 246, 0.5) 50%)' }}
+          style={{ background: 'linear-gradient(45deg, transparent 50%, rgba(14, 165, 233, 0.55) 50%)' }}
         />
         <div
-          className="absolute bottom-0 left-0 w-3 h-3 cursor-sw-resize opacity-0 hover:opacity-100 transition-opacity"
+          className={`absolute bottom-0 left-0 w-3 h-3 cursor-sw-resize z-30 ${isResizing ? 'opacity-100' : 'opacity-0 hover:opacity-100'} transition-opacity`}
           onPointerDown={(e) => startResize(e, 'sw')}
-          style={{ background: 'linear-gradient(-45deg, transparent 50%, rgba(59, 130, 246, 0.5) 50%)' }}
+          style={{ background: 'linear-gradient(-45deg, transparent 50%, rgba(14, 165, 233, 0.55) 50%)' }}
         />
         <div
-          className="absolute top-0 left-0 w-3 h-3 cursor-nw-resize opacity-0 hover:opacity-100 transition-opacity"
+          className={`absolute top-0 left-0 w-3 h-3 cursor-nw-resize z-30 ${isResizing ? 'opacity-100' : 'opacity-0 hover:opacity-100'} transition-opacity`}
           onPointerDown={(e) => startResize(e, 'nw')}
-          style={{ background: 'linear-gradient(-135deg, transparent 50%, rgba(59, 130, 246, 0.5) 50%)' }}
+          style={{ background: 'linear-gradient(-135deg, transparent 50%, rgba(14, 165, 233, 0.55) 50%)' }}
         />
-
-        <div className="w-full h-full overflow-hidden">
-          {children}
-        </div>
       </div>
     </div>
   );
