@@ -2,6 +2,8 @@
 
 LinkNest includes two desktop floating widgets for remote access. Browsers cannot open raw SSH (`host:22`) or VNC; gateways run on the **LinkNest server PC**.
 
+**Manual deployment (all steps):** [`REMOTE_WIDGETS_MANUAL_DEPLOY.md`](REMOTE_WIDGETS_MANUAL_DEPLOY.md) — also in-app under **Help & About → Guides → SSH / VNC Manual Deployment** and summarized under **Help → Remote Widgets**.
+
 | Widget | Client | How you connect |
 |--------|--------|-----------------|
 | **SSH / RDP** | xterm.js + iframe | **SSH Easy:** host / port / username (LinkNest starts ttyd). **SSH Advanced:** ttyd WebSocket URL. **RDP:** paste a Guacamole / web RDP **https://** page URL (embedded in a tab). |

@@ -3,6 +3,16 @@
 ## Overview
 The Help & About dialog has been comprehensively updated to reflect all new features added to LinkNest.
 
+## Latest: SSH / VNC Manual Deployment guide (2026-08)
+
+- Added writable guide: [`docs/REMOTE_WIDGETS_MANUAL_DEPLOY.md`](../docs/REMOTE_WIDGETS_MANUAL_DEPLOY.md)
+- Registered in Guides API (`api/docs.php`) under **Updates & Deploy**
+- Help tab section: **Remote Widgets — SSH / VNC Manual Deployment** (online / air-gapped / HTTPS WSS paths, deps, Admin checklist, SSH/`ssh://`, VNC/`vnc://`, MFA tips)
+- About → What’s New and Tips cross-link the guide
+- Cross-links from `REMOTE_WIDGETS_SETUP.md`, `PACKAGE_FOR_DEPLOYMENT.md`, `AGENTS.md`
+
+---
+
 ## Latest: Package for Deployment + XAMPP PHP docs (2026-08)
 
 - Added in-app guide: [`docs/PACKAGE_FOR_DEPLOYMENT.md`](../docs/PACKAGE_FOR_DEPLOYMENT.md) (Help → **Guides** → Updates & Deploy)
@@ -249,6 +259,7 @@ The Help & About dialog now comprehensively documents all features in LinkNest 2
 - Enterprise SSO/SAML
 - XAMPP PHP runtime upgrade (Guides → Upgrade PHP in XAMPP)
 - Package for Deployment / Windows XAMPP ZIP (Guides → Package for Deployment)
+- SSH / VNC Manual Deployment (Help + Guides → SSH / VNC Manual Deployment)
 - And 50+ other features
 
 Users can now fully understand the capabilities of LinkNest through the built-in help system.

@@ -349,6 +349,8 @@ Default credentials:
 
 - `docs/SETUP.md` - Detailed setup instructions
 - `docs/PACKAGE_FOR_DEPLOYMENT.md` - Windows XAMPP deploy ZIP (`package-for-deployment.bat`)
+- `docs/REMOTE_WIDGETS_MANUAL_DEPLOY.md` - SSH / VNC manual deployment (ttyd, websockify, HTTPS WSS)
+- `docs/REMOTE_WIDGETS_SETUP.md` - SSH / VNC feature overview
 - `docs/XAMPP_PHP_UPGRADE.md` - Upgrade PHP inside Windows XAMPP (8.5+ / future minors)
 - `docs/PRODUCTION.md` - Production deployment guide
 - `docs/DEPLOYMENT_INSTRUCTIONS.md` - Deployment procedures

@@ -372,7 +372,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 border border-emerald-200 dark:border-emerald-800">
                     <p className="font-medium text-emerald-900 dark:text-emerald-100">Guides tab:</p>
                     <p className="text-sm">
-                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (setup, architecture, App Updates, Remote Widgets / SSH &amp; VNC, deployment, and more). Start with App Updates or Architecture for the latest admin workflows.
+                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (setup, architecture, App Updates, SSH / VNC Manual Deployment, Remote Widgets, Package for Deployment, and more). Start with App Updates or Architecture for the latest admin workflows.
                     </p>
                   </div>
                 </div>
@@ -531,7 +531,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Floating Widgets</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Clock (timezones), Weather, Calculator, Password Generator, Phonetic Alphabet, Page Zoom, Theme, Notes, Favorites Organizer, Chat, Snake Game, <strong>VNC Viewer</strong>, and <strong>SSH Terminal</strong>. Toggle from the nav bar or press Ctrl+Shift+Y. Install required gateways first (ttyd / OpenSSH; VcXsrv for SSH GUI; websockify for VNC) — see Remote Widgets below or Guides → Remote Widgets Setup.
+                      Clock (timezones), Weather, Calculator, Password Generator, Phonetic Alphabet, Page Zoom, Theme, Notes, Favorites Organizer, Chat, Snake Game, <strong>VNC Viewer</strong>, and <strong>SSH Terminal</strong>. Toggle from the nav bar or press Ctrl+Shift+Y. Install required gateways first — see Help → Remote Widgets — SSH / VNC Manual Deployment, or Guides → SSH / VNC Manual Deployment.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -1139,15 +1139,34 @@ package-for-deployment.bat -BasePath "/myapp"`}</pre>
                     <polyline points="4 17 10 11 4 5"></polyline>
                     <line x1="12" y1="19" x2="20" y2="19"></line>
                   </svg>
-                  Remote Widgets (SSH Terminal &amp; VNC)
+                  Remote Widgets — SSH / VNC Manual Deployment
                 </h3>
                 <div className="space-y-3 text-slate-700 dark:text-slate-300">
                   <p className="text-sm">
-                    Browsers cannot open raw SSH (<code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 rounded">host:22</code>) or VNC. Gateways run on the <strong>LinkNest server PC</strong>. Full writable guide: <strong>Guides → Remote Widgets Setup</strong>.
+                    Browsers cannot open raw SSH (<code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 rounded">host:22</code>) or VNC. Gateways run on the <strong>LinkNest server PC</strong>.
+                    Full step-by-step guide: <strong>Guides → SSH / VNC Manual Deployment</strong> (also <strong>Guides → Remote Widgets Setup</strong> for feature overview).
                   </p>
 
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2 border border-slate-200 dark:border-slate-700">
+                    <p className="font-medium text-slate-900 dark:text-white">Choose an install path</p>
+                    <ol className="list-decimal list-inside space-y-1.5 text-sm ml-0.5">
+                      <li>
+                        <strong>Online host:</strong> install ttyd (<code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">bin\ttyd.exe</code> or winget), OpenSSH Client, Python 3 + websockify; optional VcXsrv for SSH GUI.
+                      </li>
+                      <li>
+                        <strong>Air-gapped:</strong> on a networked PC run <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">scripts\package-remote-widgets-runtime.bat</code>, copy the ZIP, then on the target (Admin):{' '}
+                        <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">install-remote-widgets-runtime.bat</code> with{' '}
+                        <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">-InstallDir</code> pointing at your app folder.
+                      </li>
+                      <li>
+                        <strong>HTTPS office:</strong> run <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">scripts\enable-gateway-wss-proxy.bat</code> once so Easy mode uses{' '}
+                        <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">wss://…/_ln_sshgw/…</code> on port 443 (avoids Mixed Content).
+                      </li>
+                    </ol>
+                  </div>
+
                   <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 space-y-2 border border-amber-200 dark:border-amber-800">
-                    <p className="font-medium text-amber-900 dark:text-amber-100">Install these before use (Windows LinkNest host)</p>
+                    <p className="font-medium text-amber-900 dark:text-amber-100">Dependencies (Windows LinkNest host)</p>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
@@ -1162,79 +1181,119 @@ package-for-deployment.bat -BasePath "/myapp"`}</pre>
                             <td className="py-2 pr-3 font-medium">ttyd</td>
                             <td className="py-2 pr-3">SSH Easy mode &amp; Advanced gateway</td>
                             <td className="py-2">
-                              <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">winget install tsl0922.ttyd --source winget</code>
-                              <span className="block text-[11px] text-amber-800/80 dark:text-amber-200/70 mt-0.5">Or set full path under Admin → Add-ons → SSH Gateway (e.g. <code className="bg-white dark:bg-slate-900 px-1 rounded">bin\ttyd.exe</code>)</span>
+                              Prefer <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">bin\ttyd.exe</code> from deploy/offline pack, or{' '}
+                              <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">winget install tsl0922.ttyd</code>
+                              <span className="block text-[11px] text-amber-800/80 dark:text-amber-200/70 mt-0.5">Set full path under Admin → Add-ons → SSH Gateway if needed</span>
                             </td>
                           </tr>
                           <tr>
                             <td className="py-2 pr-3 font-medium">OpenSSH Client</td>
                             <td className="py-2 pr-3">SSH connections from the server</td>
                             <td className="py-2">
-                              Windows Optional Features → <em>OpenSSH Client</em>
-                              <span className="block text-[11px] text-amber-800/80 dark:text-amber-200/70 mt-0.5">Default <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">C:\Windows\System32\OpenSSH\ssh.exe</code> — change under Admin → Add-ons → SSH Gateway if yours differs</span>
+                              Windows Optional Features → <em>OpenSSH Client</em>, or offline pack <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">bin\OpenSSH\ssh.exe</code>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="py-2 pr-3 font-medium">Python 3 + websockify</td>
+                            <td className="py-2 pr-3">VNC Easy mode</td>
+                            <td className="py-2">
+                              Install Python 3; run <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">scripts\install-websockify.ps1</code> or use{' '}
+                              <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">bin\python-packages</code> from the offline pack
                             </td>
                           </tr>
                           <tr>
                             <td className="py-2 pr-3 font-medium">Signed-in LinkNest user</td>
-                            <td className="py-2 pr-3">Easy mode (auto-start ttyd)</td>
-                            <td className="py-2">Log in to LinkNest (guests use Advanced WebSocket URL only)</td>
+                            <td className="py-2 pr-3">Easy mode (auto-start gateways)</td>
+                            <td className="py-2">Log in (guests use Advanced WebSocket URL only)</td>
                           </tr>
                           <tr>
                             <td className="py-2 pr-3 font-medium">VcXsrv (or X410)</td>
                             <td className="py-2 pr-3">SSH GUI apps on Windows desktop</td>
                             <td className="py-2">
                               <a href="https://sourceforge.net/projects/vcxsrv/" target="_blank" rel="noreferrer" className="text-brand-600 dark:text-brand-400 underline">VcXsrv</a>
-                              {' '}→ XLaunch → Multiple windows → Start no client
+                              {' '}→ XLaunch → Multiple windows → Start no client → Disable access control
                             </td>
                           </tr>
                           <tr>
                             <td className="py-2 pr-3 font-medium">Linux: X11Forwarding</td>
                             <td className="py-2 pr-3">GUI apps from remote host</td>
                             <td className="py-2">
-                              <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">X11Forwarding yes</code> in sshd_config + restart sshd; optional <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">apt install x11-apps</code>
+                              <code className="bg-white dark:bg-slate-900 px-1 rounded text-[11px]">X11Forwarding yes</code> in sshd_config + restart sshd
                             </td>
                           </tr>
                           <tr>
-                            <td className="py-2 pr-3 font-medium">VNC server + websockify</td>
+                            <td className="py-2 pr-3 font-medium">VNC server on target</td>
                             <td className="py-2 pr-3">VNC Viewer widget</td>
-                            <td className="py-2">VNC on target (e.g. :5900); websockify bridge (e.g. port 6080)</td>
+                            <td className="py-2">RealVNC / TightVNC / TigerVNC / x11vnc (often :5900); Easy mode starts websockify on the LinkNest host</td>
                           </tr>
                         </tbody>
                       </table>
                     </div>
                   </div>
 
+                  <div className="bg-violet-50 dark:bg-violet-900/20 rounded-lg p-4 space-y-2 border border-violet-200 dark:border-violet-800">
+                    <p className="font-medium text-violet-900 dark:text-violet-100">After binaries are in place</p>
+                    <ol className="list-decimal list-inside space-y-1.5 text-sm ml-0.5">
+                      <li>Admin → <strong>Add-ons → SSH Gateway / VNC Gateway</strong> — confirm Ready (or set full executable paths).</li>
+                      <li>Admin → <strong>Roles → Widgets</strong> — enable <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">ssh-terminal</code> and <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">vnc-viewer</code>.</li>
+                      <li>
+                        If the site is <strong>HTTPS</strong>: enable the WSS proxy once; include the proxy conf <strong>once inside the SSL vhost</strong>; force HTTP/1.1; do not double-proxy from <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">.htaccess</code>.
+                      </li>
+                      <li>Hard-refresh the browser and test Easy Connect while signed in.</li>
+                    </ol>
+                  </div>
+
                   <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 border border-emerald-200 dark:border-emerald-800">
-                    <p className="font-medium text-emerald-900 dark:text-emerald-100">SSH Terminal — after dependencies</p>
+                    <p className="font-medium text-emerald-900 dark:text-emerald-100">SSH Terminal — use after setup</p>
                     <ol className="list-decimal list-inside space-y-1.5 ml-0.5 text-sm">
                       <li>Open the widget from the nav (terminal icon) or <strong>Ctrl+Shift+Y</strong></li>
                       <li>
-                        <strong>Easy (host / port)</strong> — enter Host, Port (22), Username → <strong>Connect</strong>. LinkNest starts ttyd; type the SSH password in the terminal.
-                        If Connect says ttyd/ssh missing, set paths in <strong>Admin → Add-ons → SSH Gateway</strong>.
+                        <strong>Easy (ssh://)</strong> — Host / Port / Username, or paste an <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">ssh://</code> URL → Apply → <strong>Connect</strong>. Type password / MFA in the terminal.
                       </li>
                       <li>
-                        <strong>Terminal + GUI (X11)</strong> — start VcXsrv first, pick this session type, Connect, then run e.g. <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">xclock</code>. Windows appear on your desktop (not inside the SSH panel).
+                        <strong>Copy ssh://</strong> on a saved connection (or Settings) → paste as a tile / space link so one click opens the widget.
+                      </li>
+                      <li>
+                        <strong>Terminal + GUI (X11)</strong> — start VcXsrv first, pick this session type, Connect, then run e.g. <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">xclock</code>.
                       </li>
                       <li>
                         <strong>Advanced</strong> — start ttyd yourself, then paste <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">ws://localhost:7681/ws</code>:
                         <pre className="mt-1 p-2 text-[11px] font-mono bg-white dark:bg-slate-900 rounded border border-emerald-200 dark:border-emerald-800 overflow-x-auto whitespace-pre-wrap">ttyd -W -p 7681 -w $env:USERPROFILE C:\Windows\System32\OpenSSH\ssh.exe -tt user@host</pre>
                       </li>
-                      <li>Save connections with name/tags; export/import JSON. Passwords are never stored. Easy/auto sessions stop ttyd on Disconnect.</li>
+                      <li>
+                        <strong>RDP</strong> — paste a Guacamole / web RDP <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">https://</code> URL; credentials stay in the gateway.
+                      </li>
+                      <li>Save connections with name/tags; export/import JSON. Passwords are never stored.</li>
                     </ol>
                   </div>
 
                   <div className="bg-sky-50 dark:bg-sky-900/20 rounded-lg p-4 space-y-2 border border-sky-200 dark:border-sky-800">
-                    <p className="font-medium text-sky-900 dark:text-sky-100">VNC Viewer — after dependencies</p>
+                    <p className="font-medium text-sky-900 dark:text-sky-100">VNC Viewer — use after setup</p>
                     <ol className="list-decimal list-inside space-y-1.5 ml-0.5 text-sm">
                       <li>Run a VNC server on the remote machine</li>
-                      <li><strong>Easy:</strong> in the widget enter host/port (default 5900), or add a space link <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">vnc://host:5900</code> — LinkNest starts websockify</li>
-                      <li><strong>Advanced:</strong> set WebSocket URL (e.g. <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">ws://localhost:6080/websockify</code>), enter VNC password if asked (session only), Connect</li>
+                      <li>
+                        <strong>Easy:</strong> enter host/port (default 5900), or space link <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">vnc://host:5900</code> — LinkNest starts websockify
+                      </li>
+                      <li>
+                        <strong>Advanced:</strong> WebSocket URL (e.g. <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">ws://localhost:6080/websockify</code>), session password if asked, Connect
+                      </li>
                       <li>Save connections with tags; passwords are never saved</li>
                     </ol>
                   </div>
 
+                  <div className="bg-rose-50 dark:bg-rose-900/20 rounded-lg p-4 space-y-2 border border-rose-200 dark:border-rose-800">
+                    <p className="font-medium text-rose-900 dark:text-rose-100">HTTPS / MFA tips</p>
+                    <ul className="list-disc list-inside space-y-1 text-sm ml-0.5">
+                      <li>Include gateway proxy config <strong>once</strong> in the SSL VirtualHost — not only globally, and not twice (double proxy breaks sessions after MFA).</li>
+                      <li>Force HTTP/1.1 on gateway locations; use <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">mod_proxy_wstunnel</code>.</li>
+                      <li>
+                        If password + SecureAuth succeed then <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">Connection closed by …</code>, WSS worked — fix PAM / credentials on the remote host.
+                      </li>
+                    </ul>
+                  </div>
+
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Prefer LAN or VPN. Do not expose unauthenticated ttyd/websockify to the public internet. Enable widgets per role under Admin → Roles → Widgets (<code className="text-[10px]">ssh-terminal</code>, <code className="text-[10px]">vnc-viewer</code>).
+                    Prefer LAN or VPN. Do not expose unauthenticated ttyd/websockify to the public internet. Writable checklists and troubleshooting: <strong>Guides → SSH / VNC Manual Deployment</strong>.
                   </p>
                 </div>
               </section>
@@ -1340,7 +1399,7 @@ package-for-deployment.bat -BasePath "/myapp"`}</pre>
                     <li>Add seasonal decorations to tiles for holidays and special occasions</li>
                     <li>Toggle floating widgets from the navigation bar or press <strong>Ctrl+Shift+Y</strong> for the Widget Quick Access menu</li>
                     <li>Use the Notes and Chat widgets when signed in; Password Generator and Zoom Control are available from the widgets pill</li>
-                    <li>For SSH/VNC: install required dependencies first (ttyd, OpenSSH Client; VcXsrv for GUI; VNC+websockify for VNC) — see Help → Remote Widgets or Guides → Remote Widgets Setup</li>
+                    <li>For SSH/VNC: follow Help → Remote Widgets — SSH / VNC Manual Deployment (or Guides → SSH / VNC Manual Deployment) before first Connect</li>
                     <li>Monitor system health with URL, keyword, port, and ping checks</li>
                     <li>Set up email notifications with advanced rules and multiple SMTP servers</li>
                     <li>View monitoring history with interactive charts and graphs</li>
@@ -1463,7 +1522,8 @@ package-for-deployment.bat -BasePath "/myapp"`}</pre>
                     <li><strong>In-app App Updates:</strong> Check GitHub commits/releases, preview changes, apply with DB backup, and roll back from Admin (XAMPP installs)</li>
                     <li><strong>XAMPP PHP upgrade:</strong> PowerShell script to move to PHP 8.5+ with LDAP verification — see Guides → Upgrade PHP in XAMPP</li>
                     <li><strong>Package for Deployment:</strong> <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">package-for-deployment.bat</code> builds a full XAMPP ZIP with SQLite runtime, remote-widget binaries, and optional DB/uploads flags</li>
-                    <li><strong>Guides tab:</strong> Searchable in-app documentation (Architecture, App Updates, Package for Deployment, XAMPP PHP upgrade, Remote Widgets / SSH &amp; VNC, deployment, and more)</li>
+                    <li><strong>Guides tab:</strong> Searchable in-app documentation (Architecture, App Updates, Package for Deployment, XAMPP PHP upgrade, SSH / VNC Manual Deployment, Remote Widgets Setup, and more)</li>
+                    <li><strong>SSH / VNC manual deploy:</strong> Online, air-gapped runtime pack, HTTPS WSS proxy, Easy mode, <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">ssh://</code> / <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">vnc://</code> space links — Help and Guides</li>
                     <li><strong>QR sharing:</strong> Branded QR codes for the app URL and spaces (desktop + mobile)</li>
                     <li><strong>Share spaces:</strong> Share with users, accept/reject notifications, and revoke access</li>
                     <li><strong>Visitor stats:</strong> Hit counts and unique visitors on Space Info</li>
