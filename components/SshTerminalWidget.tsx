@@ -2055,9 +2055,41 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
           }
           return;
         }
-        // Abnormal proxy closes often report reserved codes (e.g. after MFA through HTTP/2 or double proxy).
+        // Prefer remote SSH close text already shown in the terminal (e.g. "Connection closed by host").
+        // Only blame the WSS proxy when the socket dies with no useful terminal output.
         const code = typeof ev?.code === 'number' ? ev.code : 0;
         const abnormal = code === 1006 || code === 0 || (code > 0 && code < 1000);
+        const term = sessionHandlesRef.current.get(tabId)?.term;
+        let bufferText = '';
+        try {
+          // xterm buffer may hold the remote close reason
+          const buf = term?.buffer?.active;
+          if (buf) {
+            const lines: string[] = [];
+            const start = Math.max(0, buf.baseY + buf.cursorY - 12);
+            const end = buf.baseY + buf.cursorY;
+            for (let i = start; i <= end; i++) {
+              const line = buf.getLine(i)?.translateToString(true)?.trim();
+              if (line) lines.push(line);
+            }
+            bufferText = lines.join('\n');
+          }
+        } catch {
+          // ignore
+        }
+        const remoteClosed = /connection closed by|permission denied|authentication failed|secureauth|access denied/i.test(
+          bufferText
+        );
+        if (remoteClosed) {
+          updateTab(tabId, {
+            status: 'error',
+            statusMessage:
+              'Remote SSH closed the session after login/MFA (see terminal). Check SecureAuth code, PAM target, and account access — the WSS tunnel was working.',
+          });
+          const current = sessionHandlesRef.current.get(tabId);
+          if (current?.ws === ws) current.ws = null;
+          return;
+        }
         if (abnormal) {
           updateTab(tabId, {
             status: 'error',
