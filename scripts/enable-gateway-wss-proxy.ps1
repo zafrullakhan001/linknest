@@ -183,48 +183,59 @@ $includeLine = $includeRel
 $includeMarker = "linknest-gateway-proxy.conf"
 if ($httpdText -notmatch [regex]::Escape($includeMarker)) {
     $httpdText = $httpdText.TrimEnd() + "`r`n`r`n# LinkNest SSH/VNC same-origin WSS proxy (HTTPS Mixed Content fix)`r`nInclude $includeLine`r`n"
-    Write-OK "Added Include to httpd.conf"
+    Write-OK "Added Include to httpd.conf (in memory)"
     $changed = $true
 }
 else {
     Write-OK "Include already present in httpd.conf"
 }
 
-# Also ensure SSL vhost can see it (some setups only enable rewrite in SSL). Prefer dual include.
+# Save httpd.conf FIRST (required). SSL vhost edit is optional.
+if ($changed) {
+    $bak = $httpd + ".bak-gateway-wss-" + (Get-Date -Format "yyyyMMdd-HHmmss")
+    try {
+        Copy-Item $httpd $bak -Force
+        Set-Content -Path $httpd -Value $httpdText -Encoding ASCII -NoNewline
+        Add-Content -Path $httpd -Value ""
+        Write-OK "Backup: $bak"
+        Write-OK "Wrote httpd.conf (proxy modules + Include)"
+    }
+    catch {
+        throw ("Cannot write httpd.conf (Access denied). Re-run PowerShell as Administrator. Detail: {0}" -f $_.Exception.Message)
+    }
+}
+
+# Optional: also Include inside SSL vhost (nice-to-have; global Include usually enough)
 if (Test-Path $sslConf) {
-    $sslText = Get-Content -Raw $sslConf
-    if ($sslText -notmatch [regex]::Escape($includeMarker)) {
-        # Insert before closing </VirtualHost> if present
-        if ($sslText -match "</VirtualHost>") {
-            $sslText = [regex]::Replace(
-                $sslText,
-                "</VirtualHost>",
-                ("    # LinkNest SSH/VNC WSS proxy`r`n    Include {0}`r`n</VirtualHost>" -f $includeLine),
-                1
-            )
-            Set-Content -Path $sslConf -Value $sslText -Encoding ASCII -NoNewline
-            # Preserve final newline
-            Add-Content -Path $sslConf -Value ""
-            Write-OK "Added Include inside httpd-ssl.conf VirtualHost"
+    try {
+        $sslText = Get-Content -Raw $sslConf
+        if ($sslText -notmatch [regex]::Escape($includeMarker)) {
+            if ($sslText -match "</VirtualHost>") {
+                $sslText = [regex]::Replace(
+                    $sslText,
+                    "</VirtualHost>",
+                    ("    # LinkNest SSH/VNC WSS proxy`r`n    Include {0}`r`n</VirtualHost>" -f $includeLine),
+                    1
+                )
+                Set-Content -Path $sslConf -Value $sslText -Encoding ASCII -NoNewline
+                Add-Content -Path $sslConf -Value ""
+                Write-OK "Added Include inside httpd-ssl.conf VirtualHost"
+            }
+            else {
+                Write-Warn "httpd-ssl.conf has no </VirtualHost>; relying on httpd.conf Include"
+            }
         }
         else {
-            Write-Warn "httpd-ssl.conf has no </VirtualHost>; relying on httpd.conf Include"
+            Write-OK "Include already present in httpd-ssl.conf"
         }
     }
-    else {
-        Write-OK "Include already present in httpd-ssl.conf"
+    catch {
+        Write-Warn ("Could not update httpd-ssl.conf (not required if httpd.conf Include is present): {0}" -f $_.Exception.Message)
+        Write-Warn "If WSS still fails on HTTPS only, edit httpd-ssl.conf as Administrator and add: Include $includeLine"
     }
 }
 else {
-    Write-Warn "httpd-ssl.conf not found - ensure your HTTPS vhost Includes linknest-gateway-proxy.conf"
-}
-
-if ($changed) {
-    $bak = $httpd + ".bak-gateway-wss-" + (Get-Date -Format "yyyyMMdd-HHmmss")
-    Copy-Item $httpd $bak -Force
-    Write-OK "Backup: $bak"
-    Set-Content -Path $httpd -Value $httpdText -Encoding ASCII -NoNewline
-    Add-Content -Path $httpd -Value ""
+    Write-Warn "httpd-ssl.conf not found - relying on httpd.conf Include"
 }
 
 # Persist setting so API prefers proxy URLs even behind odd proxies
