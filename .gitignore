@@ -43,6 +43,7 @@ uploads/*
 *.zip.*
 *.zip.[0-9][0-9][0-9]
 linknest-deploy-*/
+linknest-remote-widgets-runtime-*/
 linknest-docker-deploy-*/
 docker-deploy-package/
 *-deployment-*/

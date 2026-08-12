@@ -1,8 +1,9 @@
 @echo off
-REM LinkNest VNC gateway launcher — runs vendored websockify via system Python.
+REM LinkNest VNC gateway launcher — runs vendored websockify via bundled or system Python.
 setlocal
 set "ROOT=%~dp0.."
 set "PACKAGES=%~dp0python-packages"
+set "BUNDLED_PYTHON=%~dp0python\python.exe"
 set "PYTHONPATH=%PACKAGES%;%PYTHONPATH%"
 
 if defined VNC_GATEWAY_PYTHON (
@@ -10,6 +11,10 @@ if defined VNC_GATEWAY_PYTHON (
   exit /b %ERRORLEVEL%
 )
 
+if exist "%BUNDLED_PYTHON%" (
+  "%BUNDLED_PYTHON%" -m websockify %*
+  exit /b %ERRORLEVEL%
+)
 if exist "C:\Program Files\Python312\python.exe" (
   "C:\Program Files\Python312\python.exe" -m websockify %*
   exit /b %ERRORLEVEL%
@@ -27,5 +32,5 @@ where py >nul 2>&1 && (
   exit /b %ERRORLEVEL%
 )
 
-echo websockify launcher: Python not found. Install Python 3 and run: python -m pip install --target="%PACKAGES%" websockify 1>&2
+echo websockify launcher: Python not found. Install Python 3, or deploy bin\python from the remote-widgets runtime package. 1>&2
 exit /b 1

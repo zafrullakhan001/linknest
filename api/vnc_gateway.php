@@ -261,8 +261,11 @@ function vncGatewayPackagesDir(): string {
 }
 
 function vncGatewayDefaultPythonCandidates(): array {
+    $root = realpath(__DIR__ . '/..') ?: (__DIR__ . '/..');
     $candidates = [];
     if (stripos(PHP_OS, 'WIN') === 0) {
+        // Offline / packaged embeddable Python (package-remote-widgets-runtime)
+        $candidates[] = $root . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'python' . DIRECTORY_SEPARATOR . 'python.exe';
         $candidates[] = 'C:\\Program Files\\Python312\\python.exe';
         $candidates[] = 'C:\\Program Files\\Python311\\python.exe';
         $candidates[] = 'C:\\Program Files\\Python310\\python.exe';
@@ -445,6 +448,30 @@ function vncGatewayIsDocker(): bool {
     return is_file('/.dockerenv');
 }
 
+/**
+ * Prefer same-origin Apache proxy (/_ln_vncgw/<port>/…) so HTTPS pages use wss://:443.
+ */
+function vncGatewayPreferHttpProxy(): bool {
+    if (vncGatewayIsDocker()) {
+        return true;
+    }
+    $env = getenv('LINKNEST_GATEWAY_HTTP_PROXY');
+    if ($env === '1' || strcasecmp((string)$env, 'true') === 0 || strcasecmp((string)$env, 'on') === 0) {
+        return true;
+    }
+    if ($env === '0' || strcasecmp((string)$env, 'false') === 0 || strcasecmp((string)$env, 'off') === 0) {
+        return false;
+    }
+    $setting = strtolower(trim((string)getSetting('gateway_http_proxy', 'auto')));
+    if (in_array($setting, ['1', 'on', 'true', 'yes'], true)) {
+        return true;
+    }
+    if (in_array($setting, ['0', 'off', 'false', 'no'], true)) {
+        return false;
+    }
+    return vncGatewayRequestIsHttps();
+}
+
 function vncGatewaySslPaths(): ?array {
     $candidates = [
         ['cert' => '/etc/apache2/ssl/linknest.crt', 'key' => '/etc/apache2/ssl/linknest.key'],
@@ -459,8 +486,7 @@ function vncGatewaySslPaths(): ?array {
 }
 
 function vncGatewayBuildWsUrl(int $listenPort, bool $useSsl = false): string {
-    // Docker HTTPS: proxy via Apache so WSS shares the trusted :8443 cert
-    if (vncGatewayIsDocker()) {
+    if (vncGatewayPreferHttpProxy()) {
         $https = vncGatewayRequestIsHttps();
         $scheme = $https ? 'wss' : 'ws';
         $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
@@ -496,9 +522,9 @@ function vncGatewaySpawnWebsockify(
     bool $useSsl = false
 ): array {
     $target = $vncHost . ':' . $vncPort;
-    $listenHost = vncGatewayIsDocker() ? '127.0.0.1' : '0.0.0.0';
+    $listenHost = vncGatewayPreferHttpProxy() ? '127.0.0.1' : '0.0.0.0';
     $listen = $listenHost . ':' . $listenPort;
-    $sslPaths = ($useSsl && !vncGatewayIsDocker()) ? vncGatewaySslPaths() : null;
+    $sslPaths = ($useSsl && !vncGatewayPreferHttpProxy()) ? vncGatewaySslPaths() : null;
     $sslArgs = [];
     if ($sslPaths !== null) {
         $sslArgs = ['--cert=' . $sslPaths['cert'], '--key=' . $sslPaths['key']];
@@ -760,7 +786,7 @@ function handleVncGatewayStart() {
     $logFile = vncGatewayEnsureDir() . DIRECTORY_SEPARATOR . $sessionId . '.log';
 
     // Docker: Apache proxies /_ln_vncgw/<port>/ — keep websockify plain HTTP on loopback
-    $wantSsl = !vncGatewayIsDocker() && vncGatewayRequestIsHttps() && vncGatewaySslPaths() !== null;
+    $wantSsl = !vncGatewayPreferHttpProxy() && vncGatewayRequestIsHttps() && vncGatewaySslPaths() !== null;
     $spawn = vncGatewaySpawnWebsockify($runner, $listenPort, $host, $vncPort, $logFile, $wantSsl);
     $pid = (int)($spawn['pid'] ?? 0);
     $ready = !empty($spawn['ready']);

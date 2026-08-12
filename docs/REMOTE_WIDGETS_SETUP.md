@@ -60,12 +60,63 @@ Leave a path blank to auto-detect common locations (`bin/ttyd.exe`, WinGet packa
 
 API (admin session): `GET/PUT /api/ssh-gateway/config` with `{ ttydPath, sshPath, x11Display }`.
 
+### Offline / air-gapped install (no internet on target)
+
+On a PC that **can** download (this build machine), create a self-contained binary pack:
+
+```powershell
+.\scripts\package-remote-widgets-runtime.ps1
+# or: .\scripts\package-remote-widgets-runtime.bat
+```
+
+That produces `linknest-remote-widgets-runtime-YYYYMMDD-HHMMSS.zip` containing:
+
+| Component | Path in package |
+|-----------|-----------------|
+| ttyd | `bin/ttyd.exe` (+ Linux `ttyd.x86_64`) |
+| OpenSSH client | `bin/OpenSSH/ssh.exe` |
+| websockify | `bin/python-packages/` (use with system Python 3 on the target) |
+| VcXsrv | `VcXsrv/` (copied from this PC if installed) |
+
+Python is **not** included by default (install on the target). Pass `-IncludePython` only if you need the embeddable runtime in the ZIP.
+
+Copy the ZIP to the restricted server, unzip, then run **as Administrator**:
+
+```bat
+install-remote-widgets-runtime.bat
+REM or: powershell -File .\install-remote-widgets-runtime.ps1 -InstallDir C:\xampp\htdocs\linknest
+```
+
+Refresh **Admin → Add-ons → SSH Gateway / VNC Gateway** — statuses should show Ready/found. Start VcXsrv before using SSH Terminal + GUI.
+
+### HTTPS Mixed Content (office / WSS on port 443)
+
+Browsers block `ws://host:17681` when the UI is served over **https://** (Mixed Content). LinkNest fixes this by proxying WebSockets through Apache on **443**:
+
+`wss://your-host/_ln_sshgw/<port>/ws` → local ttyd on `127.0.0.1:<port>`
+
+On the **LinkNest XAMPP server** (run as Administrator once):
+
+```bat
+scripts\enable-gateway-wss-proxy.bat
+```
+
+Or:
+
+```powershell
+.\scripts\enable-gateway-wss-proxy.ps1 -XamppRoot C:\xampp -InstallDir C:\xampp\htdocs\ERP3 -RestartApache
+```
+
+Then hard-refresh the browser and Connect again. You should see `wss://…/_ln_sshgw/…` in DevTools instead of `ws://…:17681`.
+
+Requires Apache modules: `rewrite`, `proxy`, `proxy_http`, `proxy_wstunnel` (the script enables them).
+
 ### VNC Viewer
 
 | Dependency | Required for | Notes |
 |------------|--------------|-------|
 | **VNC server** on target | Desktop view | RealVNC, TightVNC, TigerVNC, x11vnc, etc. (often port 5900+) |
-| **Python 3** + **websockify** | Easy mode | `powershell -File scripts/install-websockify.ps1` vendors into `bin/python-packages`. Or set paths under **Admin → Add-ons → VNC Gateway**. |
+| **Python 3** + **websockify** | Easy mode | Install Python 3 on the server; websockify is vendored in the offline runtime pack (`bin/python-packages`) or via `scripts/install-websockify.ps1`. Or set paths under **Admin → Add-ons → VNC Gateway**. |
 | **websockify** (manual) | Advanced mode only | Example: listen on `6080`, forward to `localhost:5900` |
 
 #### VNC Easy mode (recommended)

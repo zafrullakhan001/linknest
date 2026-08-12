@@ -222,8 +222,11 @@ function sshGatewayDefaultTtydCandidates(): array {
 }
 
 function sshGatewayDefaultSshCandidates(): array {
+    $root = realpath(__DIR__ . '/..') ?: (__DIR__ . '/..');
     $candidates = [];
     if (stripos(PHP_OS, 'WIN') === 0) {
+        // Offline / packaged OpenSSH (package-remote-widgets-runtime)
+        $candidates[] = $root . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'OpenSSH' . DIRECTORY_SEPARATOR . 'ssh.exe';
         $candidates[] = 'C:\\Windows\\System32\\OpenSSH\\ssh.exe';
         $sysRoot = getenv('SystemRoot') ?: 'C:\\Windows';
         $candidates[] = $sysRoot . '\\System32\\OpenSSH\\ssh.exe';
@@ -488,6 +491,32 @@ function sshGatewayRequestIsHttps(): bool {
         || (isset($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443);
 }
 
+/**
+ * Prefer same-origin Apache proxy (/_ln_sshgw/<port>/…) so HTTPS pages use wss://:443
+ * instead of mixed-content ws://host:17681 (blocked by browsers).
+ */
+function sshGatewayPreferHttpProxy(): bool {
+    if (sshGatewayIsDocker()) {
+        return true;
+    }
+    $env = getenv('LINKNEST_GATEWAY_HTTP_PROXY');
+    if ($env === '1' || strcasecmp((string)$env, 'true') === 0 || strcasecmp((string)$env, 'on') === 0) {
+        return true;
+    }
+    if ($env === '0' || strcasecmp((string)$env, 'false') === 0 || strcasecmp((string)$env, 'off') === 0) {
+        return false;
+    }
+    $setting = strtolower(trim((string)getSetting('gateway_http_proxy', 'auto')));
+    if (in_array($setting, ['1', 'on', 'true', 'yes'], true)) {
+        return true;
+    }
+    if (in_array($setting, ['0', 'off', 'false', 'no'], true)) {
+        return false;
+    }
+    // auto: HTTPS UI must not open plain ws:// on a high port
+    return sshGatewayRequestIsHttps();
+}
+
 /** Apache self-signed certs (Docker) — used so HTTPS UI can open wss:// to ttyd. */
 function sshGatewaySslPaths(): ?array {
     $candidates = [
@@ -503,9 +532,8 @@ function sshGatewaySslPaths(): ?array {
 }
 
 function sshGatewayBuildWsUrl(int $listenPort, ?bool $useSsl = null): string {
-    // Docker HTTPS: browsers reject self-signed wss on ttyd's own port. Proxy via Apache
-    // so the WebSocket stays same-origin with https://host:8443 (already trusted).
-    if (sshGatewayIsDocker()) {
+    // Same-origin proxy via Apache/IIS on :443/:80 — avoids Mixed Content and firewall port blocks.
+    if (sshGatewayPreferHttpProxy()) {
         $https = sshGatewayRequestIsHttps();
         $scheme = $https ? 'wss' : 'ws';
         $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
@@ -778,7 +806,8 @@ function sshGatewaySpawnTtyd(
             $lines[] = 'set "LIBGL_ALWAYS_INDIRECT=1"';
         }
         $line = sshGatewayQuoteCmd($ttyd)
-            . ' -W -i 0.0.0.0 -p ' . (int)$listenPort
+            . ' -W -i ' . (sshGatewayPreferHttpProxy() ? '127.0.0.1' : '0.0.0.0')
+            . ' -p ' . (int)$listenPort
             . ' -w ' . sshGatewayQuoteCmd($cwd)
             . ' ' . sshGatewayQuoteCmd($ssh);
         foreach ($sshArgs as $a) {
@@ -824,11 +853,10 @@ function sshGatewaySpawnTtyd(
         return ['pid' => $pid, 'ready' => $ready, 'launcher' => $bat, 'ssl' => false];
     }
 
-    // Unix: process group + nohup-style detach via proc_open then exit
-    // Docker: bind loopback only — Apache proxies same-origin WSS to ttyd (no TLS on ttyd).
-    $bind = sshGatewayIsDocker() ? '127.0.0.1' : '0.0.0.0';
+    // Proxy mode / Docker: bind loopback only — Apache terminates TLS and proxies WSS.
+    $bind = sshGatewayPreferHttpProxy() ? '127.0.0.1' : '0.0.0.0';
     $cmd = [$ttyd, '-W', '-i', $bind, '-p', (string)$listenPort];
-    $sslPaths = ($useSsl && !sshGatewayIsDocker()) ? sshGatewaySslPaths() : null;
+    $sslPaths = ($useSsl && !sshGatewayPreferHttpProxy()) ? sshGatewaySslPaths() : null;
     if ($sslPaths !== null) {
         $cmd[] = '--ssl';
         $cmd[] = '--ssl-cert';
@@ -962,7 +990,7 @@ function handleSshGatewayStart() {
 
     // On HTTPS pages outside Docker, start ttyd with TLS so the browser can use wss://
     // In Docker, Apache terminates TLS and proxies /_ln_sshgw/<port>/ to plain ttyd.
-    $wantSsl = !sshGatewayIsDocker() && sshGatewayRequestIsHttps() && sshGatewaySslPaths() !== null;
+    $wantSsl = !sshGatewayPreferHttpProxy() && sshGatewayRequestIsHttps() && sshGatewaySslPaths() !== null;
     $spawn = sshGatewaySpawnTtyd($ttyd, $ssh, $listenPort, $cwd, $sshArgs, $x11, $x11Display, $logFile, $wantSsl);
     $pid = (int)($spawn['pid'] ?? 0);
     $ready = !empty($spawn['ready']);

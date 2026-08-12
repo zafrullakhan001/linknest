@@ -84,6 +84,8 @@ AddDefaultCharset UTF-8
     RewriteCond %{REQUEST_URI} !dist/
     RewriteCond %{REQUEST_URI} !assets/
     RewriteCond %{REQUEST_URI} !uploads/
+    RewriteCond %{REQUEST_URI} !/_ln_sshgw/
+    RewriteCond %{REQUEST_URI} !/_ln_vncgw/
     RewriteCond %{REQUEST_URI} !\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d

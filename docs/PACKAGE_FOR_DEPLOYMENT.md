@@ -59,6 +59,10 @@ Pass flags after the `.bat` name (they are forwarded to PowerShell), or call the
 | `-RemoteShare C$` | string | `C$` | Admin share used for the remote copy |
 | `-SkipRemoteDeploy` | switch | off | Package only even if `-RemoteHost` is set |
 
+**Air-gapped SSH/VNC binaries only** (ttyd, OpenSSH, websockify, VcXsrv; Python installed separately on target): run `scripts\package-remote-widgets-runtime.bat` on a networked PC, then on the target run `install-remote-widgets-runtime.bat` from the unzipped folder. See [REMOTE_WIDGETS_SETUP.md](REMOTE_WIDGETS_SETUP.md#offline--air-gapped-install-no-internet-on-target).
+
+**HTTPS Mixed Content (ws:// blocked):** on the office XAMPP host run `scripts\enable-gateway-wss-proxy.bat` so SSH/VNC use `wss://host/_ln_sshgw/…` on port 443. See [REMOTE_WIDGETS_SETUP.md](REMOTE_WIDGETS_SETUP.md#https-mixed-content-office--wss-on-port-443).
+
 ### Examples
 
 ```bat
