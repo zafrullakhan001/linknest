@@ -455,10 +455,13 @@ if ($DryRun) {
 }
 
 if (-not $UpdateNotesOnly) {
-    $tagExists = git rev-parse "refs/tags/$Tag" 2>$null
+    git rev-parse --verify --quiet "refs/tags/$Tag" | Out-Null
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  Creating git tag $Tag" -ForegroundColor Cyan
         git tag -a $Tag -m "LinkNest $Tag"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to create git tag $Tag"
+        }
     } else {
         Write-Host "  Tag $Tag already exists locally" -ForegroundColor Gray
     }
