@@ -118,6 +118,32 @@ $env:GITHUB_TOKEN = 'ghp_YOUR_TOKEN'
 
 If the update log says rebuild skipped/failed, the old `dist/` is still serving — that is why the SSH widget looked unchanged.
 
+### Multi-folder office installs (ArchLinks, ERP3, …)
+
+Publish **one** portable Release (default). Do **not** bake `/linknest` or `/ArchLinks` into the update ZIP unless you only have that one folder.
+
+```powershell
+# Default BasePath is "relative" — same ZIP works for ArchLinks and ERP3
+.\scripts\publish-update-release.ps1 -Version 2.3.2
+```
+
+Optional single-folder bake (avoid unless you need it):
+
+```powershell
+.\scripts\publish-update-release.ps1 -Version 2.3.2 -BasePath "/ArchLinks"
+.\scripts\publish-update-release.ps1 -Version 2.3.2 -BasePath "/ERP3"
+```
+
+On each office instance, apply the **same Release**. After apply, hard-refresh. Assets load as `./assets/…` under that folder; API calls resolve to `/ArchLinks/api` or `/ERP3/api` from the browser path.
+
+If you rebuild manually on a server:
+
+```powershell
+$env:VITE_BASE_PATH = "./"
+Remove-Item Env:VITE_API_BASE -ErrorAction SilentlyContinue
+npm run build:prod
+```
+
 ---
 
 ## Publisher: create a versioned release (required for office widgets)

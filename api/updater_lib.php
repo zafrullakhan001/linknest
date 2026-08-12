@@ -470,8 +470,9 @@ function updaterAugmentGitCommand(string $command): string {
 
 /**
  * @param int $timeoutSec 0 = no timeout
+ * @param array<string, string> $extraEnv extra environment variables for the child process
  */
-function updaterRunCommand(string $command, ?string $cwd = null, int $timeoutSec = 180): array {
+function updaterRunCommand(string $command, ?string $cwd = null, int $timeoutSec = 180, array $extraEnv = []): array {
     $cwd = $cwd ?: UPDATER_ROOT;
     $command = updaterAugmentGitCommand($command);
 
@@ -502,6 +503,12 @@ function updaterRunCommand(string $command, ?string $cwd = null, int $timeoutSec
         $env = is_array($_ENV) ? $_ENV : [];
         $env['GIT_TERMINAL_PROMPT'] = '0';
         $env['GIT_ASKPASS'] = '';
+    }
+
+    foreach ($extraEnv as $k => $v) {
+        if (is_string($k) && preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $k)) {
+            $env[$k] = (string)$v;
+        }
     }
 
     $proc = @proc_open($command, $descriptor, $pipes, $cwd, $env);
@@ -1370,22 +1377,78 @@ function updaterEnsureFrontendBuilt(bool $nodeAvailable, string $distFingerprint
     updaterAppendLog('No frontend rebuild required (dist/ already matches this update).');
 }
 
+/**
+ * Portable Vite env for rebuilds: one dist works under ArchLinks, ERP3, linknest, etc.
+ * Absolute VITE_BASE_PATH from .env is honored only when it looks like /FolderName.
+ *
+ * @return array<string, string>
+ */
+function updaterPortableViteEnv(): array {
+    $readEnvFile = static function (string $path): array {
+        if (!is_file($path)) {
+            return [];
+        }
+        $out = [];
+        $lines = @file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        if (!is_array($lines)) {
+            return [];
+        }
+        foreach ($lines as $line) {
+            $line = trim((string)$line);
+            if ($line === '' || str_starts_with($line, '#') || !str_contains($line, '=')) {
+                continue;
+            }
+            [$k, $v] = array_map('trim', explode('=', $line, 2));
+            $v = trim($v, " \t\"'");
+            if ($k !== '') {
+                $out[$k] = $v;
+            }
+        }
+        return $out;
+    };
+
+    $fileEnv = array_merge(
+        $readEnvFile(UPDATER_ROOT . '/.env'),
+        $readEnvFile(UPDATER_ROOT . '/.env.local')
+    );
+    $raw = trim((string)($fileEnv['VITE_BASE_PATH'] ?? ''));
+
+    // Explicit absolute folder bake (legacy single-instance .env)
+    if ($raw !== '' && $raw !== '/' && !preg_match('#^(?i)(\.\/?|relative|auto|portable)$#', $raw)) {
+        $base = '/' . trim(str_replace('\\', '/', $raw), '/');
+        if (preg_match('#^/[^/]+$#', $base)) {
+            updaterAppendLog('Frontend rebuild using install .env base path ' . $base);
+            return [
+                'VITE_BASE_PATH' => $base,
+                'VITE_API_BASE' => $base . '/api',
+            ];
+        }
+    }
+
+    updaterAppendLog('Frontend rebuild using portable relative base ./ (ArchLinks/ERP3/any folder)');
+    return [
+        'VITE_BASE_PATH' => './',
+        'VITE_API_BASE' => './api',
+    ];
+}
+
 function updaterRebuildFrontend(): void {
     $caps = updaterCapabilities();
     if (!$caps['nodeAvailable']) {
         throw new RuntimeException('Node.js/npm required to rebuild after checkout');
     }
+    $viteEnv = updaterPortableViteEnv();
     updaterSetProgress(55, 'Installing npm dependencies...');
-    $ci = updaterRunCommand('npm ci');
+    $ci = updaterRunCommand('npm ci', null, 600, $viteEnv);
     if (!$ci['ok']) {
         updaterAppendLog('npm ci failed, trying npm install...');
-        $ci = updaterRunCommand('npm install');
+        $ci = updaterRunCommand('npm install', null, 600, $viteEnv);
         if (!$ci['ok']) {
             throw new RuntimeException('npm install failed: ' . ($ci['stderr'] ?: $ci['stdout']));
         }
     }
-    updaterSetProgress(75, 'Building frontend...');
-    $build = updaterRunCommand('npm run build');
+    updaterSetProgress(75, 'Building frontend (portable base for any folder name)...');
+    $build = updaterRunCommand('npm run build:prod', null, 600, $viteEnv);
     if (!$build['ok']) {
         throw new RuntimeException('npm run build failed: ' . ($build['stderr'] ?: $build['stdout']));
     }

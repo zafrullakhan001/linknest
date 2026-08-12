@@ -6,11 +6,32 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   const isProduction = mode === 'production';
 
-  // Make base path configurable via environment variable
-  // Default to empty string (root) if not set, or use VITE_BASE_PATH
-  const basePath = env.VITE_BASE_PATH || '';
-  const base = basePath ? (basePath.endsWith('/') ? basePath : basePath + '/') : '/';
-  const apiBase = basePath ? `${basePath}/api` : '/api';
+  // Make base path configurable via environment variable.
+  // Use "./" | "relative" | "auto" | "portable" for one dist that works under
+  // /ArchLinks, /ERP3, /linknest, or any other subfolder (hash-routed SPA).
+  const rawBase = String(env.VITE_BASE_PATH || '').trim();
+  const isRelativeBase =
+    rawBase === './' ||
+    rawBase === '.' ||
+    /^(relative|auto|portable)$/i.test(rawBase);
+
+  let basePath = '';
+  let base = '/';
+  if (isRelativeBase) {
+    basePath = './';
+    base = './';
+  } else if (rawBase && rawBase !== '/') {
+    basePath = rawBase.endsWith('/') ? rawBase.slice(0, -1) : rawBase;
+    base = basePath.endsWith('/') ? basePath : basePath + '/';
+  }
+
+  // Absolute installs bake /Folder/api; portable uses ./api (rewritten at runtime to
+  // /ArchLinks/api or /ERP3/api from the browser path — see resolveApiBase).
+  const apiBase = isRelativeBase
+    ? './api'
+    : basePath
+      ? `${basePath}/api`
+      : '/api';
 
   /**
    * HTTPS Support Configuration

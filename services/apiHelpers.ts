@@ -1,24 +1,21 @@
 // Helper functions for API calls
 
 export function resolveApiBase(): string {
-  // Prefer Vite-injected env when available
+  // Prefer Vite-injected env when it is an absolute app path (not portable/relative).
   const envBase = (import.meta as any)?.env?.VITE_API_BASE;
-  if (envBase) {
-    return envBase;
+  if (typeof envBase === 'string') {
+    const t = envBase.trim().replace(/\/$/, '');
+    if (t && t !== '/' && t !== './api' && t !== '.' && !t.startsWith('./') && t !== 'auto' && t !== '__AUTO__') {
+      return t;
+    }
   }
 
   // Fallback: dynamically detect base path from current location
+  // Works for /ArchLinks, /ERP3, /linknest, domain root, etc.
   if (typeof window !== 'undefined') {
     let path = (window.location.pathname || '').replace(/\/index\.html?$/i, '');
     path = path.replace(/\/$/, '') || '/';
 
-    // Parent directory of the last path segment, or the segment itself when it is the app root
-    // (e.g. /linknest with no trailing slash used to strip to '' and wrongly fall back to /api)
-    // Examples:
-    // /linknest/ -> /linknest/api
-    // /linknest -> /linknest/api
-    // /linknest/index.html -> /linknest/api
-    // / -> /api
     if (path !== '/' && path.length > 1) {
       const parent = path.replace(/\/[^/]*$/, '');
       const baseDir = parent && parent !== '' ? parent : path;

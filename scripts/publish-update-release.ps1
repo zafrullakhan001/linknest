@@ -25,7 +25,9 @@
     Only update the GitHub Release body (no package, no asset upload). Uses
     auto notes, -Notes, or -NotesFile.
 .PARAMETER BasePath
-    Vite base path for the package (default /linknest).
+    Vite base path for the package. Default: relative (portable).
+    Use "relative" / "auto" / "./" so one ZIP works under /ArchLinks, /ERP3, /linknest, etc.
+    Or pass an absolute folder like "/ArchLinks" for a single-instance bake.
 .PARAMETER Draft
     Create the GitHub release as a draft.
 .PARAMETER DryRun
@@ -51,7 +53,7 @@ param(
     [switch]$SkipBuild,
     [switch]$SkipPackage,
     [switch]$UpdateNotesOnly,
-    [string]$BasePath = "/linknest",
+    [string]$BasePath = "relative",
     [switch]$Draft,
     [switch]$DryRun,
     [string]$Token = "",

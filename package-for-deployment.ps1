@@ -93,7 +93,7 @@ param(
     [switch]$SkipRemoteRuntime,
     [switch]$AppOnly,
     [string]$OutputDir = "",
-    [string]$BasePath = "/linknest",
+    [string]$BasePath = "relative",
     [string]$RemoteHost = "",
     [string]$RemoteUser = "Administrator",
     [string]$RemotePassword = "",
@@ -137,9 +137,20 @@ $TtydLinuxBundled = $false
 $WebsockifyBundled = $false
 $WebsockifyLauncherBundled = $false
 
-# Normalize base path: /linknest (no trailing slash)
-$BasePath = "/" + ($BasePath.Trim().Trim("/").Replace("\", "/"))
-if ($BasePath -eq "/") { $BasePath = "" }
+# Normalize base path:
+#   relative|auto|portable|./  → portable Vite base "./" (works for ArchLinks, ERP3, linknest, …)
+#   /ArchLinks                 → absolute subfolder build
+#   / or empty                 → domain root
+$BasePathRaw = [string]$BasePath
+$BasePathIsRelative = $false
+if ($BasePathRaw -match '^(?i)(\.\/?|relative|auto|portable)$') {
+    $BasePath = "./"
+    $BasePathIsRelative = $true
+}
+else {
+    $BasePath = "/" + ($BasePathRaw.Trim().Trim("/").Replace("\", "/"))
+    if ($BasePath -eq "/") { $BasePath = "" }
+}
 
 if ($OutputDir -ne "") {
     $ZipOutput = Join-Path $OutputDir "$PackageName.zip"
@@ -274,7 +285,7 @@ Write-Host "  Project Root : $ProjectRoot" -ForegroundColor Gray
 Write-Host "  Package Name : $PackageName" -ForegroundColor Gray
 Write-Host "  App Version  : $pkgVersion" -ForegroundColor Gray
 Write-Host "  Mode         : $(if ($AppOnly) { 'APP-ONLY (lean ZIP, no SQLite/ttyd/PHP-upgrade extras)' } else { 'FULL deploy package' })" -ForegroundColor Gray
-Write-Host "  Base Path    : $(if ($BasePath) { $BasePath } else { '/' })" -ForegroundColor Gray
+Write-Host "  Base Path    : $(if ($BasePathIsRelative) { './ (portable — ArchLinks/ERP3/any folder)' } elseif ($BasePath) { $BasePath } else { '/' })" -ForegroundColor Gray
 Write-Host "  Build ID     : $BuildId" -ForegroundColor Gray
 Write-Host "  Database     : $(if ($IncludeDatabase) { 'INCLUDE live DB from this PC' } else { 'FRESH (no live DB - recommended)' })" -ForegroundColor Gray
 Write-Host "  Uploads      : $(if ($ExcludeUploads) { 'excluded' } else { 'included' })" -ForegroundColor Gray
@@ -412,7 +423,12 @@ try {
 
         # Force the subdirectory base path into the process env so Vite
         # cannot silently build for "/" when .env is missing/outdated.
-        if ($BasePath) {
+        # Portable "./" leaves VITE_API_BASE empty so runtime detects /ArchLinks vs /ERP3.
+        if ($BasePathIsRelative) {
+            $env:VITE_BASE_PATH = "./"
+            $env:VITE_API_BASE = "./api"
+        }
+        elseif ($BasePath) {
             $env:VITE_BASE_PATH = $BasePath
             $env:VITE_API_BASE = "$BasePath/api"
         }
@@ -459,8 +475,16 @@ if ($assetJs.Count -lt 1) {
     exit 1
 }
 
-# Confirm base path was baked in when using a subfolder
-if ($BasePath -and ($distHtml -notmatch [regex]::Escape($BasePath))) {
+# Confirm base path was baked in when using a subfolder (absolute builds only)
+if ($BasePathIsRelative) {
+    if ($distHtml -notmatch '\./assets/') {
+        Write-Warn "Portable build: expected relative ./assets/ references in dist/index.html."
+    }
+    else {
+        Write-OK "Portable relative base (./) verified — works under ArchLinks, ERP3, linknest, …"
+    }
+}
+elseif ($BasePath -and ($distHtml -notmatch [regex]::Escape($BasePath))) {
     Write-Warn "Built HTML does not mention '$BasePath'. Assets may break when hosted under that subfolder."
 }
 
@@ -1259,7 +1283,7 @@ $buildInfo = [ordered]@{
     releaseTag  = $(if ($pkgVersion -and $pkgVersion -ne 'unknown') { "v$pkgVersion" } else { $null })
     trackBranch = "main"
     updatedVia  = "package-for-deployment.ps1"
-    basePath    = $(if ($BasePath) { $BasePath } else { '/' })
+    basePath    = $(if ($BasePathIsRelative) { './' } elseif ($BasePath) { $BasePath } else { '/' })
     includeDatabase = [bool]$IncludeDatabase
     sqliteRuntime = $(if ($SqliteRuntimeBundled) { $SqliteVersionShipped } else { $null })
     sqlitePerformance = @(
@@ -1383,11 +1407,18 @@ else {
 
 # Write a small .env template so manual deploys get the correct base path
 # Do NOT copy .env.local (may contain GEMINI_API_KEY / secrets)
-$envBasePath = if ($BasePath) { $BasePath } else { '' }
-$envApiBase = if ($BasePath) { ($BasePath + '/api') } else { '/api' }
+if ($BasePathIsRelative) {
+    $envBasePath = "./"
+    $envApiBase = "./api"
+}
+else {
+    $envBasePath = if ($BasePath) { $BasePath } else { '' }
+    $envApiBase = if ($BasePath) { ($BasePath + '/api') } else { '/api' }
+}
 $envTemplate = @(
     "VITE_BASE_PATH=$envBasePath"
     "VITE_API_BASE=$envApiBase"
+    '# Leave VITE_API_BASE empty with VITE_BASE_PATH=./ so /ArchLinks and /ERP3 both work'
     '# Optional: GEMINI_API_KEY=your_key_here'
 ) -join [Environment]::NewLine
 Set-Content -Path (Join-Path $TempDir ".env") -Value $envTemplate -Encoding ASCII
@@ -1398,7 +1429,7 @@ Write-OK ".env written for target base path (no secrets copied from this PC)"
 # ---------------------------------------------------------------------------
 Write-Header "8 / Generating Deployment Files"
 
-$basePathForBat = if ($BasePath) { $BasePath.TrimStart("/") } else { "linknest" }
+$basePathForBat = if ($BasePathIsRelative) { "ArchLinks" } elseif ($BasePath) { $BasePath.TrimStart("/") } else { "linknest" }
 $hardenBlock = if ($AppOnly) {
     @(
         "echo.",
