@@ -96,19 +96,27 @@ $embeddedConf = @'
 ProxyRequests Off
 ProxyPreserveHost Off
 ProxyTimeout 3600
+Timeout 3600
 
-<IfModule mod_rewrite.c>
-    RewriteEngine On
-    RewriteCond %{HTTP:Upgrade} websocket [NC]
-    RewriteCond %{HTTP:Connection} upgrade [NC]
-    RewriteRule ^/(?:[^/]+/)?_ln_sshgw/(176(?:8[1-9]|9[0-9])|17[7-9][0-9]{2}|18[0-5][0-9]{2}|186(?:[0-7][0-9]|80))/(.*)$ "ws://127.0.0.1:$1/$2" [P,L]
-    RewriteCond %{HTTP:Upgrade} !websocket [NC]
-    RewriteRule ^/(?:[^/]+/)?_ln_sshgw/(176(?:8[1-9]|9[0-9])|17[7-9][0-9]{2}|18[0-5][0-9]{2}|186(?:[0-7][0-9]|80))/(.*)$ "http://127.0.0.1:$1/$2" [P,L]
-    RewriteCond %{HTTP:Upgrade} websocket [NC]
-    RewriteCond %{HTTP:Connection} upgrade [NC]
-    RewriteRule ^/(?:[^/]+/)?_ln_vncgw/(19[0-9]{3})/(.*)$ "ws://127.0.0.1:$1/$2" [P,L]
-    RewriteCond %{HTTP:Upgrade} !websocket [NC]
-    RewriteRule ^/(?:[^/]+/)?_ln_vncgw/(19[0-9]{3})/(.*)$ "http://127.0.0.1:$1/$2" [P,L]
+<IfModule mod_http2.c>
+    <LocationMatch "^/(?:[^/]+/)?_ln_(?:ssh|vnc)gw/">
+        Protocols http/1.1
+    </LocationMatch>
+</IfModule>
+
+<IfModule mod_proxy_wstunnel.c>
+    ProxyPassMatch "^/(?:[^/]+/)?_ln_sshgw/(176(?:8[1-9]|9[0-9])|17[7-9][0-9]{2}|18[0-5][0-9]{2}|186(?:[0-7][0-9]|80))/(.*)$" "ws://127.0.0.1:$1/$2" retry=0 timeout=3600 disablereuse=On
+    ProxyPassMatch "^/(?:[^/]+/)?_ln_vncgw/(19[0-9]{3})/(.*)$" "ws://127.0.0.1:$1/$2" retry=0 timeout=3600 disablereuse=On
+</IfModule>
+
+<IfModule !mod_proxy_wstunnel.c>
+    <IfModule mod_rewrite.c>
+        RewriteEngine On
+        RewriteCond %{HTTP:Upgrade} websocket [NC]
+        RewriteRule ^/(?:[^/]+/)?_ln_sshgw/(176(?:8[1-9]|9[0-9])|17[7-9][0-9]{2}|18[0-5][0-9]{2}|186(?:[0-7][0-9]|80))/(.*)$ "ws://127.0.0.1:$1/$2" [P,L]
+        RewriteCond %{HTTP:Upgrade} websocket [NC]
+        RewriteRule ^/(?:[^/]+/)?_ln_vncgw/(19[0-9]{3})/(.*)$ "ws://127.0.0.1:$1/$2" [P,L]
+    </IfModule>
 </IfModule>
 '@
 

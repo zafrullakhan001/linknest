@@ -928,7 +928,7 @@ function sshGatewaySpawnTtyd(
             $lines[] = 'set "LIBGL_ALWAYS_INDIRECT=1"';
         }
         $line = sshGatewayQuoteCmd($ttyd)
-            . ' -W -i ' . (sshGatewayPreferHttpProxy() ? '127.0.0.1' : '0.0.0.0')
+            . ' -W -m 1 -P 15 -i ' . (sshGatewayPreferHttpProxy() ? '127.0.0.1' : '0.0.0.0')
             . ' -p ' . (int)$listenPort
             . ' -w ' . sshGatewayQuoteCmd($cwd)
             . ' ' . sshGatewayQuoteCmd($ssh);
@@ -977,7 +977,7 @@ function sshGatewaySpawnTtyd(
 
     // Proxy mode / Docker: bind loopback only — Apache terminates TLS and proxies WSS.
     $bind = sshGatewayPreferHttpProxy() ? '127.0.0.1' : '0.0.0.0';
-    $cmd = [$ttyd, '-W', '-i', $bind, '-p', (string)$listenPort];
+    $cmd = [$ttyd, '-W', '-m', '1', '-P', '15', '-i', $bind, '-p', (string)$listenPort];
     $sslPaths = ($useSsl && !sshGatewayPreferHttpProxy()) ? sshGatewaySslPaths() : null;
     if ($sslPaths !== null) {
         $cmd[] = '--ssl';

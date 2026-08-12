@@ -2043,7 +2043,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
         });
       };
 
-      ws.onclose = () => {
+      ws.onclose = (ev) => {
         const intentional = intentionalWsCloseRef.current.delete(tabId);
         if (intentional) {
           const current = sessionHandlesRef.current.get(tabId);
@@ -2052,6 +2052,21 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
             const gw = current.gatewaySessionId ?? null;
             current.gatewaySessionId = null;
             void stopGatewayFor(gw);
+          }
+          return;
+        }
+        // Abnormal proxy closes often report reserved codes (e.g. after MFA through HTTP/2 or double proxy).
+        const code = typeof ev?.code === 'number' ? ev.code : 0;
+        const abnormal = code === 1006 || code === 0 || (code > 0 && code < 1000);
+        if (abnormal) {
+          updateTab(tabId, {
+            status: 'error',
+            statusMessage:
+              'SSH tunnel closed after connect (often MFA / proxy). Confirm Apache gateway proxy uses HTTP/1.1 only, then Connect again.',
+          });
+          const current = sessionHandlesRef.current.get(tabId);
+          if (current?.ws === ws) {
+            current.ws = null;
           }
           return;
         }
