@@ -44,9 +44,14 @@ import {
   categoryAccentColor,
   categoryLabel,
   categoryKey,
+  normalizeSshSidebarChrome,
+  sshSidebarChromeCssVars,
+  DEFAULT_SSH_SIDEBAR_CHROME,
+  CALM_SSH_SIDEBAR_CHROME,
   type SshCategoryMetaMap,
   type SshColorMode,
   type SshListViewMode,
+  type SshSidebarChromeTheme,
 } from './SshConnectionSidebarList';
 
 interface SshTerminalWidgetProps {
@@ -67,6 +72,7 @@ const X11_STORAGE_KEY = 'linknest.sshTerminal.x11.v1';
 const CONNECTIONS_STORAGE_KEY = 'linknest.sshTerminal.savedConnections.v1';
 const LIST_DENSITY_KEY = 'linknest.sshTerminal.listDensity.v1';
 const COLOR_MODE_KEY = 'linknest.sshTerminal.colorMode.v1';
+const SIDEBAR_CHROME_KEY = 'linknest.sshTerminal.sidebarChrome.v1';
 const CATEGORY_ORDER_KEY = 'linknest.sshTerminal.categoryOrder.v1';
 const CATEGORY_COLLAPSED_KEY = 'linknest.sshTerminal.categoryCollapsed.v1';
 const CATEGORY_META_KEY = 'linknest.sshTerminal.categoryMeta.v1';
@@ -913,6 +919,60 @@ function loadColorMode(): SshColorMode {
   }
 }
 
+function loadSidebarChrome(mode: SshColorMode): SshSidebarChromeTheme {
+  try {
+    const raw = localStorage.getItem(SIDEBAR_CHROME_KEY);
+    if (raw) {
+      const parsed = normalizeSshSidebarChrome(JSON.parse(raw));
+      // Migrate older calm themes that used near-black active controls.
+      const active = parsed.controlActiveBg.replace('#', '').toLowerCase();
+      if (
+        mode === 'calm' &&
+        (active === '1e293b' || active === '0f172a' || active === '020617' || active === '000000')
+      ) {
+        return {
+          ...parsed,
+          panelBg: CALM_SSH_SIDEBAR_CHROME.panelBg,
+          controlActiveBg: CALM_SSH_SIDEBAR_CHROME.controlActiveBg,
+          controlActiveFg: CALM_SSH_SIDEBAR_CHROME.controlActiveFg,
+          controlActiveBorder: CALM_SSH_SIDEBAR_CHROME.controlActiveBorder,
+        };
+      }
+      return parsed;
+    }
+  } catch {
+    // ignore
+  }
+  return mode === 'calm' ? { ...CALM_SSH_SIDEBAR_CHROME } : { ...DEFAULT_SSH_SIDEBAR_CHROME };
+}
+
+const SIDEBAR_FONT_PRESETS: Array<{ id: string; label: string; value: string }> = [
+  { id: 'system', label: 'System', value: 'ui-sans-serif, system-ui, sans-serif' },
+  { id: 'segoe', label: 'Segoe UI', value: '"Segoe UI", ui-sans-serif, system-ui, sans-serif' },
+  { id: 'arial', label: 'Arial', value: 'Arial, Helvetica, sans-serif' },
+  { id: 'verdana', label: 'Verdana', value: 'Verdana, Geneva, sans-serif' },
+  { id: 'tahoma', label: 'Tahoma', value: 'Tahoma, Geneva, sans-serif' },
+  { id: 'trebuchet', label: 'Trebuchet MS', value: '"Trebuchet MS", Helvetica, sans-serif' },
+  { id: 'georgia', label: 'Georgia', value: 'Georgia, "Times New Roman", serif' },
+  { id: 'times', label: 'Times New Roman', value: '"Times New Roman", Times, serif' },
+  { id: 'palatino', label: 'Palatino', value: 'Palatino, "Palatino Linotype", "Book Antiqua", serif' },
+  { id: 'garamond', label: 'Garamond', value: 'Garamond, "Times New Roman", serif' },
+  { id: 'consolas', label: 'Consolas', value: 'Consolas, "Courier New", monospace' },
+  { id: 'courier', label: 'Courier New', value: '"Courier New", Courier, monospace' },
+  { id: 'lucida-console', label: 'Lucida Console', value: '"Lucida Console", Monaco, monospace' },
+  // Cursive / script (OS-dependent; falls back to generic cursive)
+  { id: 'segoe-script', label: 'Segoe Script', value: '"Segoe Script", "Apple Chancery", "Comic Sans MS", cursive' },
+  { id: 'comic', label: 'Comic Sans', value: '"Comic Sans MS", "Comic Sans", "Chalkboard SE", cursive' },
+  { id: 'brush', label: 'Brush Script', value: '"Brush Script MT", "Segoe Script", cursive' },
+  { id: 'lucida-hand', label: 'Lucida Handwriting', value: '"Lucida Handwriting", "Apple Chancery", cursive' },
+  { id: 'bradley', label: 'Bradley Hand', value: '"Bradley Hand", "Bradley Hand ITC", "Segoe Script", cursive' },
+  { id: 'snell', label: 'Snell Roundhand', value: '"Snell Roundhand", "Apple Chancery", "Segoe Script", cursive' },
+  { id: 'palace', label: 'Palace Script', value: '"Palace Script MT", "Brush Script MT", cursive' },
+  { id: 'edwardian', label: 'Edwardian Script', value: '"Edwardian Script ITC", "Snell Roundhand", cursive' },
+  { id: 'french-script', label: 'French Script', value: '"French Script MT", "Brush Script MT", cursive' },
+  { id: 'cursive', label: 'Generic cursive', value: 'cursive' },
+];
+
 /** Category prefs are per account so they never leak across signed-in users on the same browser. */
 function categoryAccountStorageKey(base: string, accountKey: string): string {
   return `${base}.${accountKey}`;
@@ -1444,6 +1504,10 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
   const [notice, setNotice] = useState(IDLE_NOTICE);
   const [listDensity, setListDensity] = useState<SshListViewMode>(() => loadListDensity());
   const [colorMode, setColorMode] = useState<SshColorMode>(() => loadColorMode());
+  const [sidebarChrome, setSidebarChrome] = useState<SshSidebarChromeTheme>(() =>
+    loadSidebarChrome(loadColorMode())
+  );
+  const [showSidebarThemeDesigner, setShowSidebarThemeDesigner] = useState(false);
   const [categoryScope, setCategoryScope] = useState(authUserKey);
   const [categoryOrder, setCategoryOrder] = useState<string[]>(() => loadCategoryOrder(authUserKey));
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>(
@@ -1906,6 +1970,41 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     }
   }, [colorMode]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_CHROME_KEY, JSON.stringify(sidebarChrome));
+    } catch {
+      // ignore
+    }
+  }, [sidebarChrome]);
+
+  const patchSidebarChrome = useCallback((patch: Partial<SshSidebarChromeTheme>) => {
+    setSidebarChrome((prev) => normalizeSshSidebarChrome({ ...prev, ...patch }));
+  }, []);
+
+  const sidebarToggleClass = useCallback(
+    (active: boolean) =>
+      active
+        ? 'border font-semibold'
+        : 'border font-semibold opacity-80 hover:opacity-100',
+    []
+  );
+
+  const sidebarToggleStyle = useCallback(
+    (active: boolean): React.CSSProperties =>
+      active
+        ? {
+            backgroundColor: 'var(--ssh-side-ctrl-active-bg)',
+            color: 'var(--ssh-side-ctrl-active-fg)',
+            borderColor: 'var(--ssh-side-ctrl-active-border)',
+          }
+        : {
+            backgroundColor: 'var(--ssh-side-ctrl-bg)',
+            color: 'var(--ssh-side-ctrl-fg)',
+            borderColor: 'var(--ssh-side-ctrl-border)',
+          },
+    []
+  );
   useEffect(() => {
     if (categoryScope !== authUserKey) return;
     try {
@@ -5746,10 +5845,10 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       <div className="flex-1 min-h-0 flex">
         {panelOpen && (
           <aside
-            className={`relative shrink-0 border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex flex-col min-h-0 ${
+            className={`relative shrink-0 border-r flex flex-col min-h-0 ssh-sidebar-chrome ${
               isResizingPanel ? 'select-none' : ''
-            }`}
-            style={{ width: panelWidth }}
+            } ${colorMode === 'calm' ? 'ssh-sidebar-calm' : ''}`}
+            style={{ width: panelWidth, ...sshSidebarChromeCssVars(sidebarChrome) }}
           >
             <div
               role="separator"
@@ -5763,10 +5862,14 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
             >
               <span className="absolute top-1/2 right-0 -translate-y-1/2 translate-x-1/2 w-1 h-8 rounded-full bg-slate-300 dark:bg-slate-600 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
             </div>
-            <div className="p-2 border-b border-slate-200 dark:border-slate-700 space-y-2 shrink-0">
+            <div
+              className="p-2 border-b space-y-2 shrink-0"
+              style={{ borderColor: 'var(--ssh-side-border)' }}
+            >
               <div className="flex items-center justify-between gap-1">
                 <p
-                  className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 truncate"
+                  className="text-[11px] font-semibold uppercase tracking-wide truncate"
+                  style={{ color: 'var(--ssh-side-header)' }}
                   title={
                     useServer
                       ? `Private connections for ${authUsername || 'this account'} only`
@@ -5777,15 +5880,12 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                     ? `Saved · ${authUsername || 'account'}`
                     : 'Saved · guest (this browser)'}
                 </p>
-                <div className="flex items-center gap-0.5 shrink-0">
+                <div className="flex items-center gap-0.5 shrink-0 flex-wrap justify-end">
                   <button
                     type="button"
                     onClick={() => setListDensity('cards')}
-                    className={`px-1.5 py-0.5 text-[9px] font-semibold rounded border ${
-                      listDensity === 'cards'
-                        ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900'
-                        : 'border-slate-200 dark:border-slate-600 text-slate-500'
-                    }`}
+                    className={`px-1.5 py-0.5 text-[9px] rounded ${sidebarToggleClass(listDensity === 'cards')}`}
+                    style={sidebarToggleStyle(listDensity === 'cards')}
                     title="Card view"
                   >
                     Cards
@@ -5793,11 +5893,8 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                   <button
                     type="button"
                     onClick={() => setListDensity('compact')}
-                    className={`px-1.5 py-0.5 text-[9px] font-semibold rounded border ${
-                      listDensity === 'compact'
-                        ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900'
-                        : 'border-slate-200 dark:border-slate-600 text-slate-500'
-                    }`}
+                    className={`px-1.5 py-0.5 text-[9px] rounded ${sidebarToggleClass(listDensity === 'compact')}`}
+                    style={sidebarToggleStyle(listDensity === 'compact')}
                     title="Compact row view"
                   >
                     Compact
@@ -5805,23 +5902,34 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                   <button
                     type="button"
                     onClick={() => setListDensity('tree')}
-                    className={`px-1.5 py-0.5 text-[9px] font-semibold rounded border ${
-                      listDensity === 'tree'
-                        ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900'
-                        : 'border-slate-200 dark:border-slate-600 text-slate-500'
-                    }`}
+                    className={`px-1.5 py-0.5 text-[9px] rounded ${sidebarToggleClass(listDensity === 'tree')}`}
+                    style={sidebarToggleStyle(listDensity === 'tree')}
                     title="Tree view — categories as folders"
                   >
                     Tree
                   </button>
                   <button
                     type="button"
-                    onClick={() => setColorMode((m) => (m === 'calm' ? 'vivid' : 'calm'))}
-                    className={`px-1.5 py-0.5 text-[9px] font-semibold rounded border ${
-                      colorMode === 'calm'
-                        ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900'
-                        : 'border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300'
-                    }`}
+                    onClick={() => {
+                      setColorMode((m) => {
+                        const next = m === 'calm' ? 'vivid' : 'calm';
+                        // Apply calm/vivid chrome presets only when user hasn't heavily customized —
+                        // always refresh active-control colors so Calm never stays black.
+                        setSidebarChrome((prev) => {
+                          const preset = next === 'calm' ? CALM_SSH_SIDEBAR_CHROME : DEFAULT_SSH_SIDEBAR_CHROME;
+                          return normalizeSshSidebarChrome({
+                            ...prev,
+                            panelBg: preset.panelBg,
+                            controlActiveBg: preset.controlActiveBg,
+                            controlActiveFg: preset.controlActiveFg,
+                            controlActiveBorder: preset.controlActiveBorder,
+                          });
+                        });
+                        return next;
+                      });
+                    }}
+                    className={`px-1.5 py-0.5 text-[9px] rounded ${sidebarToggleClass(colorMode === 'calm')}`}
+                    style={sidebarToggleStyle(colorMode === 'calm')}
                     title={
                       colorMode === 'calm'
                         ? 'Calm colors on — click for vivid rainbow accents'
@@ -5831,13 +5939,156 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                   >
                     {colorMode === 'calm' ? 'Calm' : 'Vivid'}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowSidebarThemeDesigner((v) => !v)}
+                    className={`px-1.5 py-0.5 text-[9px] rounded ${sidebarToggleClass(showSidebarThemeDesigner)}`}
+                    style={sidebarToggleStyle(showSidebarThemeDesigner)}
+                    title="Design left panel fonts and control colors"
+                    aria-expanded={showSidebarThemeDesigner}
+                  >
+                    Theme
+                  </button>
                 </div>
               </div>
+              {showSidebarThemeDesigner && (
+                <div
+                  className="rounded-lg border p-2 space-y-2 text-[10px] shadow-sm"
+                  style={{
+                    backgroundColor: 'var(--ssh-side-ctrl-bg)',
+                    borderColor: 'var(--ssh-side-ctrl-border)',
+                    color: 'var(--ssh-side-row)',
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-semibold" style={{ color: 'var(--ssh-side-header)' }}>
+                      Left panel theme
+                    </p>
+                    <div className="flex gap-1">
+                      <button
+                        type="button"
+                        className="px-1.5 py-0.5 rounded border"
+                        style={sidebarToggleStyle(false)}
+                        onClick={() =>
+                          setSidebarChrome(
+                            colorMode === 'calm'
+                              ? { ...CALM_SSH_SIDEBAR_CHROME }
+                              : { ...DEFAULT_SSH_SIDEBAR_CHROME }
+                          )
+                        }
+                      >
+                        Reset
+                      </button>
+                      <button
+                        type="button"
+                        className="px-1.5 py-0.5 rounded border"
+                        style={sidebarToggleStyle(false)}
+                        onClick={() => setShowSidebarThemeDesigner(false)}
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {(
+                      [
+                        ['panelBg', 'Panel BG'],
+                        ['panelBorder', 'Panel border'],
+                        ['headerFg', 'Header text'],
+                        ['controlBg', 'Control BG'],
+                        ['controlFg', 'Control text'],
+                        ['controlBorder', 'Control border'],
+                        ['controlActiveBg', 'Active BG'],
+                        ['controlActiveFg', 'Active text'],
+                        ['controlActiveBorder', 'Active border'],
+                        ['accentBg', 'Connect BG'],
+                        ['accentFg', 'Connect text'],
+                        ['rowFg', 'Row text'],
+                        ['mutedFg', 'Muted text'],
+                      ] as Array<[keyof SshSidebarChromeTheme, string]>
+                    ).map(([key, label]) => (
+                      <label key={key} className="flex items-center justify-between gap-1 min-w-0">
+                        <span className="truncate" style={{ color: 'var(--ssh-side-muted)' }}>
+                          {label}
+                        </span>
+                        <input
+                          type="color"
+                          value={
+                            /^#[0-9a-fA-F]{6}$/.test(String(sidebarChrome[key]))
+                              ? String(sidebarChrome[key])
+                              : '#64748b'
+                          }
+                          onChange={(e) => patchSidebarChrome({ [key]: e.target.value })}
+                          className="h-5 w-7 cursor-pointer rounded border-0 bg-transparent p-0"
+                          title={label}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                  <label className="flex items-center justify-between gap-2">
+                    <span style={{ color: 'var(--ssh-side-muted)' }}>Font</span>
+                    <select
+                      value={
+                        SIDEBAR_FONT_PRESETS.find((p) => p.value === sidebarChrome.fontFamily)?.id ||
+                        'system'
+                      }
+                      onChange={(e) => {
+                        const preset = SIDEBAR_FONT_PRESETS.find((p) => p.id === e.target.value);
+                        if (preset) patchSidebarChrome({ fontFamily: preset.value });
+                      }}
+                      className="h-6 max-w-[9.5rem] rounded border px-1 text-[10px]"
+                      style={{
+                        backgroundColor: 'var(--ssh-side-ctrl-bg)',
+                        color: 'var(--ssh-side-ctrl-fg)',
+                        borderColor: 'var(--ssh-side-ctrl-border)',
+                      }}
+                    >
+                      {SIDEBAR_FONT_PRESETS.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex items-center justify-between gap-2">
+                    <span style={{ color: 'var(--ssh-side-muted)' }}>
+                      Size {sidebarChrome.fontSizePx}px
+                    </span>
+                    <input
+                      type="range"
+                      min={10}
+                      max={18}
+                      step={1}
+                      value={sidebarChrome.fontSizePx}
+                      onChange={(e) =>
+                        patchSidebarChrome({ fontSizePx: Number.parseInt(e.target.value, 10) || 12 })
+                      }
+                      className="w-28"
+                    />
+                  </label>
+                  <p
+                    className="text-[11px] truncate rounded border px-1.5 py-1"
+                    style={{
+                      borderColor: 'var(--ssh-side-ctrl-border)',
+                      color: 'var(--ssh-side-row)',
+                      fontFamily: 'var(--ssh-side-font)',
+                    }}
+                    title="Preview"
+                  >
+                    Preview: Saved connections · zafar@host:22
+                  </p>
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-1">
                 <button
                   type="button"
                   onClick={startNewDraft}
-                  className="p-1.5 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800"
+                  className="p-1.5 rounded-md border hover:opacity-90"
+                  style={{
+                    backgroundColor: 'var(--ssh-side-ctrl-bg)',
+                    color: 'var(--ssh-side-ctrl-fg)',
+                    borderColor: 'var(--ssh-side-ctrl-border)',
+                  }}
                   title="New connection draft"
                   aria-label="New connection draft"
                 >
@@ -5868,7 +6119,12 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                     setDraftCategory(cat);
                     setNotice(`Category “${cat}” ready — assign it when saving a connection, or drag cards into it`);
                   }}
-                  className="p-1.5 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800"
+                  className="p-1.5 rounded-md border hover:opacity-90"
+                  style={{
+                    backgroundColor: 'var(--ssh-side-ctrl-bg)',
+                    color: 'var(--ssh-side-ctrl-fg)',
+                    borderColor: 'var(--ssh-side-ctrl-border)',
+                  }}
                   title="Add category"
                   aria-label="Add category"
                 >
@@ -5880,7 +6136,12 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                   type="button"
                   onClick={exportConnectionsJson}
                   disabled={connections.length === 0}
-                  className="p-1.5 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 disabled:opacity-40"
+                  className="p-1.5 rounded-md border hover:opacity-90 disabled:opacity-40"
+                  style={{
+                    backgroundColor: 'var(--ssh-side-ctrl-bg)',
+                    color: 'var(--ssh-side-ctrl-fg)',
+                    borderColor: 'var(--ssh-side-ctrl-border)',
+                  }}
                   title="Export connections, categories, colors & order as JSON"
                   aria-label="Export connections and categories as JSON"
                 >
@@ -5891,7 +6152,12 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="p-1.5 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800"
+                  className="p-1.5 rounded-md border hover:opacity-90"
+                  style={{
+                    backgroundColor: 'var(--ssh-side-ctrl-bg)',
+                    color: 'var(--ssh-side-ctrl-fg)',
+                    borderColor: 'var(--ssh-side-ctrl-border)',
+                  }}
                   title="Import connections & categories from JSON"
                   aria-label="Import connections and categories from JSON"
                 >
@@ -5917,7 +6183,11 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                     else void connect();
                   }}
                   disabled={tabs.length >= maxSshTabs}
-                  className="px-2 py-1 text-[10px] font-semibold rounded-md bg-brand-600 hover:bg-brand-700 text-white disabled:opacity-50"
+                  className="px-2 py-1 text-[10px] font-semibold rounded-md disabled:opacity-50 hover:opacity-90"
+                  style={{
+                    backgroundColor: 'var(--ssh-side-accent-bg)',
+                    color: 'var(--ssh-side-accent-fg)',
+                  }}
                   title={tabs.length >= maxSshTabs ? `Maximum ${maxSshTabs} sessions` : 'Open a new session tab'}
                 >
                   {status === 'connected' || status === 'connecting' ? 'New tab' : 'Connect'}
@@ -5928,18 +6198,20 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                 value={filterQuery}
                 onChange={(e) => setFilterQuery(e.target.value)}
                 placeholder="Filter name, URL, tag…"
-                className="w-full h-7 px-2 text-[11px] rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+                className="w-full h-7 px-2 text-[11px] rounded-md border"
+                style={{
+                  backgroundColor: 'var(--ssh-side-ctrl-bg)',
+                  color: 'var(--ssh-side-row)',
+                  borderColor: 'var(--ssh-side-ctrl-border)',
+                }}
               />
               {allTags.length > 0 && (
                 <div className="flex flex-wrap gap-1 max-h-16 overflow-y-auto">
                   <button
                     type="button"
                     onClick={() => setFilterTag(null)}
-                    className={`px-1.5 py-0.5 text-[10px] rounded-full border ${
-                      !filterTag
-                        ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900'
-                        : 'border-slate-200 dark:border-slate-600 text-slate-500'
-                    }`}
+                    className="px-1.5 py-0.5 text-[10px] rounded-full border"
+                    style={sidebarToggleStyle(!filterTag)}
                   >
                     All
                   </button>
@@ -5948,11 +6220,16 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                       key={tag}
                       type="button"
                       onClick={() => setFilterTag((t) => (t === tag ? null : tag))}
-                      className={`px-1.5 py-0.5 text-[10px] rounded-full border ${
+                      className="px-1.5 py-0.5 text-[10px] rounded-full border"
+                      style={
                         filterTag === tag
-                          ? 'bg-brand-600 text-white border-brand-600'
-                          : 'border-slate-200 dark:border-slate-600 text-slate-500 hover:border-brand-400'
-                      }`}
+                          ? {
+                              backgroundColor: 'var(--ssh-side-accent-bg)',
+                              color: 'var(--ssh-side-accent-fg)',
+                              borderColor: 'var(--ssh-side-accent-bg)',
+                            }
+                          : sidebarToggleStyle(false)
+                      }
                     >
                       #{tag}
                     </button>

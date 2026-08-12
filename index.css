@@ -7841,3 +7841,41 @@ body {
 .dark .docs-reader .mermaid-tool-btn:hover {
   background: rgb(51 65 85);
 }
+
+/* SSH / RDP left panel chrome — font size must scale past Tailwind text-[Npx] locks */
+aside.ssh-sidebar-chrome {
+  --ssh-side-fs: 12px;
+  font-size: var(--ssh-side-fs);
+  font-family: var(--ssh-side-font, ui-sans-serif, system-ui, sans-serif);
+}
+aside.ssh-sidebar-chrome .text-\[8px\] {
+  font-size: calc(var(--ssh-side-fs) * 8 / 12) !important;
+}
+aside.ssh-sidebar-chrome .text-\[9px\] {
+  font-size: calc(var(--ssh-side-fs) * 9 / 12) !important;
+}
+aside.ssh-sidebar-chrome .text-\[10px\] {
+  font-size: calc(var(--ssh-side-fs) * 10 / 12) !important;
+}
+aside.ssh-sidebar-chrome .text-\[11px\] {
+  font-size: calc(var(--ssh-side-fs) * 11 / 12) !important;
+}
+aside.ssh-sidebar-chrome .text-\[12px\] {
+  font-size: var(--ssh-side-fs) !important;
+}
+aside.ssh-sidebar-chrome .text-\[13px\] {
+  font-size: calc(var(--ssh-side-fs) * 13 / 12) !important;
+}
+aside.ssh-sidebar-chrome .text-xs {
+  font-size: calc(var(--ssh-side-fs) * 0.92) !important;
+}
+aside.ssh-sidebar-chrome .text-sm {
+  font-size: calc(var(--ssh-side-fs) * 1.08) !important;
+}
+aside.ssh-sidebar-chrome input,
+aside.ssh-sidebar-chrome select,
+aside.ssh-sidebar-chrome button,
+aside.ssh-sidebar-chrome label,
+aside.ssh-sidebar-chrome p {
+  font-family: inherit;
+}

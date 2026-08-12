@@ -32,6 +32,113 @@ export type SshListViewMode = 'cards' | 'compact' | 'tree';
 export type SshColorMode = 'vivid' | 'calm';
 export type SshCategoryMetaMap = Record<string, { color: string }>;
 
+/** Persisted chrome for the SSH/RDP left connections panel (fonts + control colors). */
+export type SshSidebarChromeTheme = {
+  panelBg: string;
+  panelBorder: string;
+  headerFg: string;
+  controlBg: string;
+  controlFg: string;
+  controlBorder: string;
+  controlActiveBg: string;
+  controlActiveFg: string;
+  controlActiveBorder: string;
+  accentBg: string;
+  accentFg: string;
+  rowFg: string;
+  mutedFg: string;
+  fontFamily: string;
+  fontSizePx: number;
+};
+
+export const DEFAULT_SSH_SIDEBAR_CHROME: SshSidebarChromeTheme = {
+  panelBg: '#f8fafc',
+  panelBorder: '#e2e8f0',
+  headerFg: '#64748b',
+  controlBg: '#ffffff',
+  controlFg: '#64748b',
+  controlBorder: '#e2e8f0',
+  controlActiveBg: '#e2e8f0',
+  controlActiveFg: '#0f172a',
+  controlActiveBorder: '#cbd5e1',
+  accentBg: '#0284c7',
+  accentFg: '#ffffff',
+  rowFg: '#1e293b',
+  mutedFg: '#94a3b8',
+  fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+  fontSizePx: 12,
+};
+
+/** Soft calm defaults — no near-black control fills. */
+export const CALM_SSH_SIDEBAR_CHROME: SshSidebarChromeTheme = {
+  panelBg: '#ffffff',
+  panelBorder: '#e2e8f0',
+  headerFg: '#64748b',
+  controlBg: '#ffffff',
+  controlFg: '#64748b',
+  controlBorder: '#e2e8f0',
+  controlActiveBg: '#f1f5f9',
+  controlActiveFg: '#334155',
+  controlActiveBorder: '#cbd5e1',
+  accentBg: '#0ea5e9',
+  accentFg: '#ffffff',
+  rowFg: '#334155',
+  mutedFg: '#94a3b8',
+  fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+  fontSizePx: 12,
+};
+
+export function normalizeSshSidebarChrome(raw: unknown): SshSidebarChromeTheme {
+  const base = DEFAULT_SSH_SIDEBAR_CHROME;
+  if (!raw || typeof raw !== 'object') return { ...base };
+  const o = raw as Record<string, unknown>;
+  const str = (k: keyof SshSidebarChromeTheme, fallback: string) =>
+    typeof o[k] === 'string' && String(o[k]).trim() ? String(o[k]).trim() : fallback;
+  const n = Number(o.fontSizePx);
+  return {
+    panelBg: str('panelBg', base.panelBg),
+    panelBorder: str('panelBorder', base.panelBorder),
+    headerFg: str('headerFg', base.headerFg),
+    controlBg: str('controlBg', base.controlBg),
+    controlFg: str('controlFg', base.controlFg),
+    controlBorder: str('controlBorder', base.controlBorder),
+    controlActiveBg: str('controlActiveBg', base.controlActiveBg),
+    controlActiveFg: str('controlActiveFg', base.controlActiveFg),
+    controlActiveBorder: str('controlActiveBorder', base.controlActiveBorder),
+    accentBg: str('accentBg', base.accentBg),
+    accentFg: str('accentFg', base.accentFg),
+    rowFg: str('rowFg', base.rowFg),
+    mutedFg: str('mutedFg', base.mutedFg),
+    fontFamily: str('fontFamily', base.fontFamily),
+    fontSizePx: Number.isFinite(n) ? Math.min(18, Math.max(10, Math.round(n))) : base.fontSizePx,
+  };
+}
+
+export function sshSidebarChromeCssVars(theme: SshSidebarChromeTheme): React.CSSProperties {
+  return {
+    ['--ssh-side-bg' as string]: theme.panelBg,
+    ['--ssh-side-border' as string]: theme.panelBorder,
+    ['--ssh-side-header' as string]: theme.headerFg,
+    ['--ssh-side-ctrl-bg' as string]: theme.controlBg,
+    ['--ssh-side-ctrl-fg' as string]: theme.controlFg,
+    ['--ssh-side-ctrl-border' as string]: theme.controlBorder,
+    ['--ssh-side-ctrl-active-bg' as string]: theme.controlActiveBg,
+    ['--ssh-side-ctrl-active-fg' as string]: theme.controlActiveFg,
+    ['--ssh-side-ctrl-active-border' as string]: theme.controlActiveBorder,
+    ['--ssh-side-accent-bg' as string]: theme.accentBg,
+    ['--ssh-side-accent-fg' as string]: theme.accentFg,
+    ['--ssh-side-row' as string]: theme.rowFg,
+    ['--ssh-side-muted' as string]: theme.mutedFg,
+    ['--ssh-side-font' as string]: theme.fontFamily,
+    ['--ssh-side-fs' as string]: `${theme.fontSizePx}px`,
+    backgroundColor: theme.panelBg,
+    borderColor: theme.panelBorder,
+    fontFamily: theme.fontFamily,
+    fontSize: theme.fontSizePx,
+    color: theme.rowFg,
+  };
+}
+
 const UNCATEGORIZED_KEY = '';
 const UNCATEGORIZED_LABEL = 'Uncategorized';
 const CAT_HDR_PREFIX = 'cathdr:';
@@ -113,36 +220,36 @@ const EmojiChip: React.FC<{
   };
   const calmTones: Record<string, { solid: string; soft: string }> = {
     neutral: {
-      solid: 'bg-slate-600 text-white hover:bg-slate-700',
-      soft: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-600 dark:hover:bg-slate-800',
+      solid: 'bg-slate-500 text-white hover:bg-slate-600',
+      soft: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-800/60 dark:text-slate-300 dark:border-slate-600 dark:hover:bg-slate-800',
     },
     brand: {
-      solid: 'bg-slate-800 text-white hover:bg-slate-900 dark:bg-slate-200 dark:text-slate-900',
-      soft: 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-200 dark:border-slate-600',
+      solid: 'bg-sky-600 text-white hover:bg-sky-700',
+      soft: 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-800/60 dark:text-slate-200 dark:border-slate-600',
     },
     sky: {
-      solid: 'bg-slate-700 text-white hover:bg-slate-800',
-      soft: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-600',
+      solid: 'bg-sky-500 text-white hover:bg-sky-600',
+      soft: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-800/60 dark:text-slate-300 dark:border-slate-600',
     },
     amber: {
-      solid: 'bg-slate-600 text-white hover:bg-slate-700',
-      soft: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-600',
+      solid: 'bg-slate-500 text-white hover:bg-slate-600',
+      soft: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-800/60 dark:text-slate-300 dark:border-slate-600',
     },
     rose: {
-      solid: 'bg-rose-700 text-white hover:bg-rose-800',
-      soft: 'bg-white text-rose-700 border-rose-200/80 hover:bg-rose-50 dark:bg-slate-900 dark:text-rose-300 dark:border-rose-900/60',
+      solid: 'bg-rose-500 text-white hover:bg-rose-600',
+      soft: 'bg-white text-rose-700 border-rose-200/80 hover:bg-rose-50 dark:bg-slate-800/60 dark:text-rose-300 dark:border-rose-900/60',
     },
     emerald: {
-      solid: 'bg-slate-700 text-white hover:bg-slate-800',
-      soft: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-600',
+      solid: 'bg-emerald-500 text-white hover:bg-emerald-600',
+      soft: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-800/60 dark:text-slate-300 dark:border-slate-600',
     },
     orange: {
-      solid: 'bg-slate-600 text-white hover:bg-slate-700',
-      soft: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-600',
+      solid: 'bg-orange-500 text-white hover:bg-orange-600',
+      soft: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-800/60 dark:text-slate-300 dark:border-slate-600',
     },
     violet: {
-      solid: 'bg-slate-700 text-white hover:bg-slate-800',
-      soft: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-600',
+      solid: 'bg-violet-500 text-white hover:bg-violet-600',
+      soft: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-800/60 dark:text-slate-300 dark:border-slate-600',
     },
   };
   const tones = calm ? calmTones : vivid;
@@ -341,7 +448,7 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
         <span
           className={`shrink-0 inline-flex items-center gap-1 px-1.5 py-0 rounded-full text-[9px] font-semibold ${
             calm
-              ? 'bg-slate-800 text-white dark:bg-emerald-900/50 dark:text-emerald-200'
+              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200'
               : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
           }`}
         >
@@ -458,7 +565,7 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
   const colorAvatar = (
     <span
       className={`shrink-0 inline-flex items-center justify-center h-6 w-6 rounded-md text-[13px] ${
-        calm ? 'ring-1 ring-slate-200 dark:ring-slate-600 bg-slate-50 dark:bg-slate-900' : 'shadow-sm ring-1 ring-black/5 dark:ring-white/10'
+        calm ? 'ring-1 ring-slate-200 dark:ring-slate-600 bg-slate-50 dark:bg-slate-800/70' : 'shadow-sm ring-1 ring-black/5 dark:ring-white/10'
       }`}
       style={calm ? { color: '#64748b' } : { backgroundColor: hexToRgba(color, 0.22), color }}
       title={isRdp ? 'RDP connection' : 'SSH connection'}
@@ -1395,7 +1502,7 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
           </p>
         )}
         {onLibraryScopeChange && (
-          <div className="flex items-center gap-1 flex-wrap p-0.5 rounded-lg bg-slate-100/90 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-700">
+          <div className="flex items-center gap-1 flex-wrap p-0.5 rounded-lg border border-slate-200/70 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40">
             {(
               [
                 { id: 'active' as const, label: 'Active', emoji: '⚡', count: activeCount, tone: 'brand' },
@@ -1406,7 +1513,7 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
               const active = libraryScope === tab.id;
               const calm = colorMode === 'calm';
               const activeCls = calm
-                ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900 shadow-sm'
+                ? 'bg-slate-100 text-slate-800 border-slate-300 dark:bg-slate-700/70 dark:text-slate-100 dark:border-slate-500 shadow-none'
                 : tab.tone === 'amber'
                   ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
                   : tab.tone === 'rose'
@@ -1428,7 +1535,11 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
                   {tab.count > 0 ? (
                     <span
                       className={`min-w-[1.1rem] h-4 px-1 rounded-full text-[9px] inline-flex items-center justify-center ${
-                        active ? 'bg-white/25 text-white dark:bg-black/10' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                        active
+                          ? calm
+                            ? 'bg-slate-200 text-slate-700 dark:bg-slate-600 dark:text-slate-100'
+                            : 'bg-white/25 text-white dark:bg-black/10'
+                          : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
                       }`}
                     >
                       {tab.count}
