@@ -59,6 +59,7 @@ const LIST_DENSITY_KEY = 'linknest.sshTerminal.listDensity.v1';
 const CATEGORY_ORDER_KEY = 'linknest.sshTerminal.categoryOrder.v1';
 const CATEGORY_COLLAPSED_KEY = 'linknest.sshTerminal.categoryCollapsed.v1';
 const CATEGORY_META_KEY = 'linknest.sshTerminal.categoryMeta.v1';
+const RECYCLED_CATEGORIES_KEY = 'linknest.sshTerminal.recycledCategories.v1';
 const PANEL_OPEN_KEY = 'linknest.sshTerminal.panelOpen.v1';
 const PANEL_WIDTH_KEY = 'linknest.sshTerminal.panelWidth.v1';
 const CMD_BAR_HEIGHT_KEY = 'linknest.sshTerminal.cmdBarHeight.v1';
@@ -822,7 +823,41 @@ function loadLocalConnections(): SavedSshConnection[] {
         sortOrder: normalizeSshSortOrder(c.sortOrder ?? index),
         createdAt: typeof c.createdAt === 'number' ? c.createdAt : Date.now(),
         lastUsedAt: typeof c.lastUsedAt === 'number' ? c.lastUsedAt : undefined,
+        archivedAt:
+          c.archivedAt == null ? null : Number(c.archivedAt) > 0 ? Number(c.archivedAt) : null,
+        deletedAt: c.deletedAt == null ? null : Number(c.deletedAt) > 0 ? Number(c.deletedAt) : null,
       }));
+  } catch {
+    return [];
+  }
+}
+
+export type SshLibraryScope = 'active' | 'archived' | 'recycle';
+
+export interface SshRecycledCategory {
+  name: string;
+  color?: string;
+  deletedAt: number;
+  connectionIds: string[];
+}
+
+function loadRecycledCategories(accountKey: string): SshRecycledCategory[] {
+  try {
+    const raw = localStorage.getItem(categoryAccountStorageKey(RECYCLED_CATEGORIES_KEY, accountKey));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item) => item && typeof item.name === 'string' && item.name.trim())
+      .map((item) => ({
+        name: normalizeSshCategory(item.name),
+        color: item.color ? normalizeSshColor(item.color) : undefined,
+        deletedAt: typeof item.deletedAt === 'number' ? item.deletedAt : Date.now(),
+        connectionIds: Array.isArray(item.connectionIds)
+          ? item.connectionIds.map(String).filter(Boolean)
+          : [],
+      }))
+      .filter((item) => item.name);
   } catch {
     return [];
   }
@@ -830,7 +865,9 @@ function loadLocalConnections(): SavedSshConnection[] {
 
 function loadListDensity(): SshListViewMode {
   try {
-    return localStorage.getItem(LIST_DENSITY_KEY) === 'compact' ? 'compact' : 'cards';
+    const raw = localStorage.getItem(LIST_DENSITY_KEY);
+    if (raw === 'compact' || raw === 'tree' || raw === 'cards') return raw;
+    return 'cards';
   } catch {
     return 'cards';
   }
@@ -900,6 +937,41 @@ function loadCategoryMeta(accountKey: string): SshCategoryMetaMap {
   } catch {
     return {};
   }
+}
+
+function normalizeImportedCategoryMeta(raw: unknown): SshCategoryMetaMap {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out: SshCategoryMetaMap = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const key = k === '__uncategorized__' ? '' : normalizeSshCategory(k);
+    if (k !== '' && k !== '__uncategorized__' && !key) continue;
+    if (!v || typeof v !== 'object' || Array.isArray(v)) continue;
+    out[key] = { color: normalizeSshColor((v as { color?: unknown }).color) };
+  }
+  return out;
+}
+
+function normalizeImportedCollapsedCategories(raw: unknown): Record<string, boolean> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out: Record<string, boolean> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const key = k === '' ? '__uncategorized__' : String(k);
+    out[key] = Boolean(v);
+  }
+  return out;
+}
+
+function normalizeImportedCategoryOrder(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of raw) {
+    const k = normalizeSshCategory(item);
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    out.push(k);
+  }
+  return out;
 }
 
 function persistLocalConnections(list: SavedSshConnection[]) {
@@ -1269,6 +1341,10 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     () => loadCollapsedCategories(authUserKey)
   );
   const [categoryMeta, setCategoryMeta] = useState<SshCategoryMetaMap>(() => loadCategoryMeta(authUserKey));
+  const [recycledCategories, setRecycledCategories] = useState<SshRecycledCategory[]>(() =>
+    loadRecycledCategories(authUserKey)
+  );
+  const [libraryScope, setLibraryScope] = useState<SshLibraryScope>('active');
   const [creatingPrivateSpace, setCreatingPrivateSpace] = useState(false);
   const [cloningCategory, setCloningCategory] = useState(false);
 
@@ -1494,6 +1570,15 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     const q = filterQuery.trim().toLowerCase();
     return connections
       .filter((c) => {
+        const deleted = Boolean(c.deletedAt && c.deletedAt > 0);
+        const archived = Boolean(c.archivedAt && c.archivedAt > 0);
+        if (libraryScope === 'recycle') {
+          if (!deleted) return false;
+        } else if (libraryScope === 'archived') {
+          if (deleted || !archived) return false;
+        } else if (deleted || archived) {
+          return false;
+        }
         if (filterTag && !c.tags.includes(filterTag)) return false;
         if (!q) return true;
         const cat = normalizeSshCategory(c.category).toLowerCase();
@@ -1525,7 +1610,25 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
         if (so !== 0) return so;
         return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
       });
-  }, [connections, filterQuery, filterTag]);
+  }, [connections, filterQuery, filterTag, libraryScope]);
+
+  const libraryCounts = useMemo(() => {
+    let active = 0;
+    let archived = 0;
+    let recycle = 0;
+    for (const c of connections) {
+      const deleted = Boolean(c.deletedAt && c.deletedAt > 0);
+      const archivedFlag = Boolean(c.archivedAt && c.archivedAt > 0);
+      if (deleted) recycle += 1;
+      else if (archivedFlag) archived += 1;
+      else active += 1;
+    }
+    return {
+      active,
+      archived,
+      recycle: recycle + recycledCategories.length,
+    };
+  }, [connections, recycledCategories.length]);
 
   const knownCategories = useMemo(() => mergeCategoryOrder(categoryOrder, connections), [categoryOrder, connections]);
 
@@ -1543,7 +1646,9 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     setCategoryOrder(loadCategoryOrder(authUserKey));
     setCollapsedCategories(loadCollapsedCategories(authUserKey));
     setCategoryMeta(loadCategoryMeta(authUserKey));
+    setRecycledCategories(loadRecycledCategories(authUserKey));
     setCategoryScope(authUserKey);
+    setLibraryScope('active');
   }, [authUserKey, categoryScope]);
 
   useEffect(() => {
@@ -1589,6 +1694,18 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       // ignore
     }
   }, [categoryMeta, categoryScope, authUserKey]);
+
+  useEffect(() => {
+    if (categoryScope !== authUserKey) return;
+    try {
+      localStorage.setItem(
+        categoryAccountStorageKey(RECYCLED_CATEGORIES_KEY, authUserKey),
+        JSON.stringify(recycledCategories)
+      );
+    } catch {
+      // ignore
+    }
+  }, [recycledCategories, categoryScope, authUserKey]);
 
   const updateConnectionsLocal = useCallback((next: SavedSshConnection[]) => {
     setConnections(next);
@@ -3491,24 +3608,63 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
   };
 
   const exportConnectionsJson = () => {
+    const metaOut: SshCategoryMetaMap = { ...categoryMeta };
+    // Ensure every ordered / used category has a color entry for round-trip fidelity.
+    for (const cat of mergeCategoryOrder(categoryOrder, connections)) {
+      if (!metaOut[cat]) {
+        metaOut[cat] = { color: categoryAccentColor(cat, categoryMeta) };
+      }
+    }
+    if (connections.some((c) => !normalizeSshCategory(c.category)) && !metaOut['']) {
+      metaOut[''] = { color: categoryAccentColor('', categoryMeta) };
+    }
+
+    const collapsedOut: Record<string, boolean> = {};
+    for (const [k, v] of Object.entries(collapsedCategories)) {
+      collapsedOut[k || '__uncategorized__'] = Boolean(v);
+    }
+
     const payload = {
-      version: 1,
+      version: 2,
       type: 'linknest-ssh-connections',
       exportedAt: new Date().toISOString(),
-      connections: connections.map(({ id, name, wsUrl: u, protocol, tags, notes, color, appearance, category, sortOrder, createdAt, lastUsedAt }) => ({
-        id,
-        name,
-        wsUrl: u,
-        protocol: normalizeConnectionProtocol(protocol),
-        tags,
-        notes,
-        color: normalizeSshColor(color),
-        appearance: normalizeSshAppearance(appearance) || undefined,
-        category: normalizeSshCategory(category),
-        sortOrder: normalizeSshSortOrder(sortOrder),
-        createdAt,
-        lastUsedAt,
-      })),
+      categoryOrder: mergeCategoryOrder(categoryOrder, connections),
+      categoryMeta: metaOut,
+      collapsedCategories: collapsedOut,
+      recycledCategories,
+      connections: connections.map(
+        ({
+          id,
+          name,
+          wsUrl: u,
+          protocol,
+          tags,
+          notes,
+          color,
+          appearance,
+          category,
+          sortOrder,
+          createdAt,
+          lastUsedAt,
+          archivedAt,
+          deletedAt,
+        }) => ({
+          id,
+          name,
+          wsUrl: u,
+          protocol: normalizeConnectionProtocol(protocol),
+          tags,
+          notes,
+          color: normalizeSshColor(color),
+          appearance: normalizeSshAppearance(appearance) || undefined,
+          category: normalizeSshCategory(category),
+          sortOrder: normalizeSshSortOrder(sortOrder),
+          createdAt,
+          lastUsedAt,
+          archivedAt: archivedAt && archivedAt > 0 ? archivedAt : null,
+          deletedAt: deletedAt && deletedAt > 0 ? deletedAt : null,
+        })
+      ),
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -3519,7 +3675,42 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    setNotice(`Exported ${connections.length} connection${connections.length === 1 ? '' : 's'}`);
+    const catCount = payload.categoryOrder.length;
+    setNotice(
+      `Exported ${connections.length} connection${connections.length === 1 ? '' : 's'}` +
+        (catCount ? ` and ${catCount} categor${catCount === 1 ? 'y' : 'ies'}` : '')
+    );
+  };
+
+  const applyImportedCategoryPrefs = (
+    parsed: Record<string, unknown> | null,
+    importedConnections: SavedSshConnection[]
+  ) => {
+    if (!parsed || Array.isArray(parsed)) {
+      setCategoryOrder((prev) => mergeCategoryOrder(prev, importedConnections));
+      return;
+    }
+
+    const importedOrder = normalizeImportedCategoryOrder(parsed.categoryOrder);
+    setCategoryOrder((prev) => mergeCategoryOrder([...importedOrder, ...prev], importedConnections));
+
+    const importedMeta = normalizeImportedCategoryMeta(parsed.categoryMeta);
+    if (Object.keys(importedMeta).length > 0) {
+      setCategoryMeta((prev) => ({ ...prev, ...importedMeta }));
+    } else {
+      setCategoryMeta((prev) => {
+        const next = { ...prev };
+        for (const cat of mergeCategoryOrder([], importedConnections)) {
+          if (!next[cat]) next[cat] = { color: categoryAccentColor(cat, prev) };
+        }
+        return next;
+      });
+    }
+
+    const importedCollapsed = normalizeImportedCollapsedCategories(parsed.collapsedCategories);
+    if (Object.keys(importedCollapsed).length > 0) {
+      setCollapsedCategories((prev) => ({ ...prev, ...importedCollapsed }));
+    }
   };
 
   const importConnectionsJson = async (file: File) => {
@@ -3532,7 +3723,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
           ? parsed.connections
           : null;
       if (!list) {
-        setNotice('Invalid JSON: expected { connections: [...] } or an array.');
+        setNotice('Invalid JSON: expected { connections: [...], categoryOrder?, categoryMeta? } or an array.');
         return;
       }
 
@@ -3571,18 +3762,84 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
           sortOrder: normalizeSshSortOrder(item.sortOrder ?? item.sort_order ?? incoming.length),
           createdAt: typeof item.createdAt === 'number' ? item.createdAt : Date.now(),
           lastUsedAt: typeof item.lastUsedAt === 'number' ? item.lastUsedAt : undefined,
+          archivedAt:
+            item.archivedAt == null
+              ? null
+              : Number(item.archivedAt) > 0
+                ? Number(item.archivedAt)
+                : null,
+          deletedAt:
+            item.deletedAt == null
+              ? null
+              : Number(item.deletedAt) > 0
+                ? Number(item.deletedAt)
+                : null,
         });
       }
 
-      if (incoming.length === 0) {
-        setNotice('No valid connections found in that file.');
+      const parsedObj =
+        parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+          ? (parsed as Record<string, unknown>)
+          : null;
+      if (parsedObj && Array.isArray(parsedObj.recycledCategories)) {
+        const fromFile: SshRecycledCategory[] = [];
+        for (const item of parsedObj.recycledCategories) {
+          if (!item || typeof item !== 'object') continue;
+          const row = item as Record<string, unknown>;
+          if (typeof row.name !== 'string' || !row.name.trim()) continue;
+          fromFile.push({
+            name: normalizeSshCategory(row.name),
+            color: row.color ? normalizeSshColor(String(row.color)) : undefined,
+            deletedAt: typeof row.deletedAt === 'number' ? row.deletedAt : Date.now(),
+            connectionIds: Array.isArray(row.connectionIds)
+              ? row.connectionIds.map(String).filter(Boolean)
+              : [],
+          });
+        }
+        if (fromFile.length > 0) {
+          setRecycledCategories((prev) => {
+            const byName = new Map(prev.map((r) => [r.name, r]));
+            for (const r of fromFile) {
+              const existing = byName.get(r.name);
+              if (!existing) {
+                byName.set(r.name, r);
+                continue;
+              }
+              byName.set(r.name, {
+                ...existing,
+                color: r.color || existing.color,
+                deletedAt: Math.max(existing.deletedAt, r.deletedAt),
+                connectionIds: Array.from(new Set([...existing.connectionIds, ...r.connectionIds])),
+              });
+            }
+            return Array.from(byName.values());
+          });
+        }
+      }
+      const fileCategoryOrder = normalizeImportedCategoryOrder(parsedObj?.categoryOrder);
+      // Allow importing category prefs even when the file has empty categories and no connections.
+      if (incoming.length === 0 && fileCategoryOrder.length === 0 && !parsedObj?.categoryMeta) {
+        setNotice('No valid connections or categories found in that file.');
         return;
       }
 
       if (useServer) {
-        const merged = await sshConnectionService.bulkUpsert(incoming);
-        setConnections(merged);
-        setNotice(`Imported / merged ${incoming.length} connection(s)`);
+        let merged = connections;
+        if (incoming.length > 0) {
+          merged = await sshConnectionService.bulkUpsert(incoming);
+          setConnections(merged);
+        }
+        applyImportedCategoryPrefs(parsedObj, incoming.length > 0 ? merged : incoming);
+        const catBits = fileCategoryOrder.length
+          ? `, ${fileCategoryOrder.length} categor${fileCategoryOrder.length === 1 ? 'y' : 'ies'}`
+          : parsedObj?.categoryMeta
+            ? ', category colors'
+            : '';
+        setNotice(
+          incoming.length > 0
+            ? `Imported / merged ${incoming.length} connection(s)${catBits}`
+            : `Imported category preferences${catBits}`
+        );
         return;
       }
 
@@ -3600,30 +3857,57 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
           byKey.set(key, {
             ...urlOnly,
             name: item.name,
+            protocol: item.protocol,
             tags: item.tags,
             notes: item.notes,
             color: normalizeSshColor(item.color || urlOnly.color),
             appearance: item.appearance || urlOnly.appearance,
+            category: normalizeSshCategory(item.category),
+            sortOrder: normalizeSshSortOrder(item.sortOrder),
             lastUsedAt: item.lastUsedAt || urlOnly.lastUsedAt,
+            archivedAt: item.archivedAt ?? urlOnly.archivedAt ?? null,
+            deletedAt: item.deletedAt ?? urlOnly.deletedAt ?? null,
           });
           updated += 1;
         } else if (existing) {
           byKey.set(key, {
             ...existing,
+            protocol: item.protocol,
             tags: item.tags,
             notes: item.notes,
             color: normalizeSshColor(item.color || existing.color),
             appearance: item.appearance || existing.appearance,
+            category: normalizeSshCategory(item.category),
+            sortOrder: normalizeSshSortOrder(item.sortOrder),
             lastUsedAt: item.lastUsedAt || existing.lastUsedAt,
+            archivedAt: item.archivedAt ?? existing.archivedAt ?? null,
+            deletedAt: item.deletedAt ?? existing.deletedAt ?? null,
           });
           updated += 1;
         } else {
-          byKey.set(key, { ...item, id: newId(), color: normalizeSshColor(item.color) });
+          byKey.set(key, {
+            ...item,
+            id: newId(),
+            color: normalizeSshColor(item.color),
+            category: normalizeSshCategory(item.category),
+            sortOrder: normalizeSshSortOrder(item.sortOrder),
+          });
           added += 1;
         }
       }
-      updateConnectionsLocal(Array.from(byKey.values()));
-      setNotice(`Imported ${added} new, updated ${updated}`);
+      const nextList = Array.from(byKey.values());
+      if (incoming.length > 0) {
+        updateConnectionsLocal(nextList);
+      }
+      applyImportedCategoryPrefs(parsedObj, incoming.length > 0 ? nextList : incoming);
+      const catBits = fileCategoryOrder.length
+        ? ` · ${fileCategoryOrder.length} categor${fileCategoryOrder.length === 1 ? 'y' : 'ies'}`
+        : '';
+      setNotice(
+        incoming.length > 0
+          ? `Imported ${added} new, updated ${updated}${catBits}`
+          : `Imported category preferences${catBits}`
+      );
     } catch (err) {
       setNotice(err instanceof Error ? err.message : 'Failed to import JSON');
     }
@@ -3663,37 +3947,54 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     [tabs, closeTab]
   );
 
-  const deleteConnection = async (id: string) => {
+  const patchConnectionLocal = useCallback(
+    (id: string, patch: Partial<SavedSshConnection>) => {
+      const next = connections.map((c) => (c.id === id ? { ...c, ...patch } : c));
+      if (useServer) setConnections(next);
+      else updateConnectionsLocal(next);
+      return next;
+    },
+    [connections, updateConnectionsLocal, useServer]
+  );
+
+  const softDeleteConnection = async (id: string, opts?: { skipConfirm?: boolean }) => {
     const target = connections.find((c) => c.id === id);
     if (!target) return;
+    if (target.deletedAt) return;
 
     const live = liveTabsForConnection(id);
     const related = tabsForConnection(id);
-    if (live.length > 0) {
-      const ok = window.confirm(
-        `“${target.name}” has ${live.length} live terminal session${live.length === 1 ? '' : 's'}.\n\nDisconnect and delete this saved connection?`
-      );
-      if (!ok) return;
+    if (!opts?.skipConfirm) {
+      if (live.length > 0) {
+        const ok = window.confirm(
+          `“${target.name}” has ${live.length} live terminal session${live.length === 1 ? '' : 's'}.\n\nDisconnect and move to Recycle Bin?`
+        );
+        if (!ok) return;
+        await disconnectConnectionSessions(id);
+      } else if (related.length > 0) {
+        const ok = window.confirm(
+          `“${target.name}” has ${related.length} open tab${related.length === 1 ? '' : 's'}.\n\nClose those tabs and move to Recycle Bin?`
+        );
+        if (!ok) return;
+        await disconnectConnectionSessions(id);
+      } else if (!window.confirm(`Move “${target.name}” to Recycle Bin?`)) {
+        return;
+      }
+    } else if (live.length > 0 || related.length > 0) {
       await disconnectConnectionSessions(id);
-    } else if (related.length > 0) {
-      const ok = window.confirm(
-        `“${target.name}” has ${related.length} open tab${related.length === 1 ? '' : 's'} (not connected).\n\nClose those tabs and delete this saved connection?`
-      );
-      if (!ok) return;
-      await disconnectConnectionSessions(id);
-    } else if (!window.confirm(`Delete saved connection “${target.name}”?`)) {
-      return;
     }
 
+    const now = Date.now();
     try {
       if (useServer) {
-        await sshConnectionService.remove(id);
-      }
-      const next = connections.filter((c) => c.id !== id);
-      if (useServer) {
-        setConnections(next);
+        const updated = await sshConnectionService.remove(id);
+        if (updated) {
+          setConnections((prev) => prev.map((c) => (c.id === id ? updated : c)));
+        } else {
+          patchConnectionLocal(id, { deletedAt: now, archivedAt: null });
+        }
       } else {
-        updateConnectionsLocal(next);
+        patchConnectionLocal(id, { deletedAt: now, archivedAt: null });
       }
       if (editingId === id) {
         setEditingId(null);
@@ -3704,9 +4005,377 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
         setDraftColor(SSH_CONNECTION_COLORS[0]);
       }
       if (activeConnectionId === id) setActiveConnectionId(null);
-      setNotice(`Deleted “${target.name}”`);
+      setNotice(`Moved “${target.name}” to Recycle Bin`);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : 'Failed to delete connection');
+    }
+  };
+
+  const archiveConnection = async (id: string, opts?: { skipConfirm?: boolean }) => {
+    const target = connections.find((c) => c.id === id);
+    if (!target || target.deletedAt) return;
+    if (target.archivedAt) return;
+    if (!opts?.skipConfirm && !window.confirm(`Archive “${target.name}”?`)) return;
+    const now = Date.now();
+    try {
+      if (useServer) {
+        const updated = await sshConnectionService.update(id, { archivedAt: now, deletedAt: null });
+        setConnections((prev) => prev.map((c) => (c.id === id ? updated : c)));
+      } else {
+        patchConnectionLocal(id, { archivedAt: now, deletedAt: null });
+      }
+      setNotice(`Archived “${target.name}”`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to archive connection');
+    }
+  };
+
+  const restoreConnection = async (id: string, opts?: { skipNotice?: boolean }) => {
+    const target = connections.find((c) => c.id === id);
+    if (!target) return;
+    try {
+      if (useServer) {
+        const updated = await sshConnectionService.update(id, { deletedAt: null, archivedAt: null });
+        setConnections((prev) => prev.map((c) => (c.id === id ? updated : c)));
+      } else {
+        patchConnectionLocal(id, { deletedAt: null, archivedAt: null });
+      }
+      setRecycledCategories((prev) =>
+        prev.map((rc) => ({
+          ...rc,
+          connectionIds: rc.connectionIds.filter((cid) => cid !== id),
+        }))
+      );
+      if (!opts?.skipNotice) setNotice(`Restored “${target.name}”`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to restore connection');
+    }
+  };
+
+  const restoreSelectedConnections = async (ids: string[]) => {
+    const unique = Array.from(new Set(ids)).filter(Boolean);
+    if (unique.length === 0) return;
+    const idSet = new Set(unique);
+    try {
+      if (useServer) {
+        const updatedList = [...connections];
+        for (const id of idSet) {
+          const updated = await sshConnectionService.update(id, { deletedAt: null, archivedAt: null });
+          const idx = updatedList.findIndex((c) => c.id === id);
+          if (idx >= 0) updatedList[idx] = updated;
+        }
+        setConnections(updatedList);
+      } else {
+        updateConnectionsLocal(
+          connections.map((c) =>
+            idSet.has(c.id) ? { ...c, deletedAt: null, archivedAt: null } : c
+          )
+        );
+      }
+      setRecycledCategories((prev) =>
+        prev.map((rc) => ({
+          ...rc,
+          connectionIds: rc.connectionIds.filter((cid) => !idSet.has(cid)),
+        }))
+      );
+      setNotice(`Restored ${unique.length} connection${unique.length === 1 ? '' : 's'}`);
+      setLibraryScope('active');
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to restore connections');
+    }
+  };
+
+  const purgeSelectedConnections = async (ids: string[]) => {
+    const unique = Array.from(new Set(ids)).filter(Boolean);
+    if (unique.length === 0) return;
+    if (
+      !window.confirm(
+        `Permanently delete ${unique.length} connection${unique.length === 1 ? '' : 's'}? This cannot be undone.`
+      )
+    ) {
+      return;
+    }
+    const idSet = new Set(unique);
+    try {
+      if (useServer) {
+        for (const id of idSet) {
+          await sshConnectionService.remove(id, { permanent: true });
+        }
+      }
+      const next = connections.filter((c) => !idSet.has(c.id));
+      if (useServer) setConnections(next);
+      else updateConnectionsLocal(next);
+      setRecycledCategories((prev) =>
+        prev.map((rc) => ({
+          ...rc,
+          connectionIds: rc.connectionIds.filter((cid) => !idSet.has(cid)),
+        }))
+      );
+      setNotice(`Permanently deleted ${unique.length} connection${unique.length === 1 ? '' : 's'}`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to permanently delete connections');
+    }
+  };
+
+  const purgeConnection = async (id: string, opts?: { skipConfirm?: boolean }) => {
+    const target = connections.find((c) => c.id === id);
+    if (!target) return;
+    if (!opts?.skipConfirm && !window.confirm(`Permanently delete “${target.name}”? This cannot be undone.`)) {
+      return;
+    }
+    try {
+      if (useServer) {
+        await sshConnectionService.remove(id, { permanent: true });
+      }
+      const next = connections.filter((c) => c.id !== id);
+      if (useServer) setConnections(next);
+      else updateConnectionsLocal(next);
+      setRecycledCategories((prev) =>
+        prev.map((rc) => ({
+          ...rc,
+          connectionIds: rc.connectionIds.filter((cid) => cid !== id),
+        }))
+      );
+      setNotice(`Permanently deleted “${target.name}”`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to permanently delete connection');
+    }
+  };
+
+  /** Soft-delete (recycle bin). Kept name for existing call sites. */
+  const deleteConnection = async (id: string) => softDeleteConnection(id);
+
+  const archiveConnectionsInCategory = async (catRaw: string, onlyIds?: string[]) => {
+    const cat = categoryKey(catRaw);
+    const targets = connections.filter((c) => {
+      if (categoryKey(c.category) !== cat) return false;
+      if (c.deletedAt || c.archivedAt) return false;
+      if (onlyIds && !onlyIds.includes(c.id)) return false;
+      return true;
+    });
+    if (targets.length === 0) {
+      setNotice('No active connections to archive');
+      return;
+    }
+    const label = onlyIds ? 'selected connection(s)' : `category “${categoryLabel(cat)}”`;
+    if (!window.confirm(`Archive ${targets.length} ${label}?`)) return;
+    const now = Date.now();
+    try {
+      if (useServer) {
+        const updatedList = [...connections];
+        for (const t of targets) {
+          const updated = await sshConnectionService.update(t.id, { archivedAt: now, deletedAt: null });
+          const idx = updatedList.findIndex((c) => c.id === t.id);
+          if (idx >= 0) updatedList[idx] = updated;
+        }
+        setConnections(updatedList);
+      } else {
+        const ids = new Set(targets.map((t) => t.id));
+        updateConnectionsLocal(
+          connections.map((c) =>
+            ids.has(c.id) ? { ...c, archivedAt: now, deletedAt: null } : c
+          )
+        );
+      }
+      setNotice(`Archived ${targets.length} connection${targets.length === 1 ? '' : 's'}`);
+      setLibraryScope('archived');
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to archive connections');
+    }
+  };
+
+  const deleteConnectionsInCategory = async (catRaw: string, onlyIds?: string[]) => {
+    const cat = categoryKey(catRaw);
+    const targets = connections.filter((c) => {
+      if (categoryKey(c.category) !== cat) return false;
+      if (c.deletedAt) return false;
+      if (onlyIds && !onlyIds.includes(c.id)) return false;
+      return true;
+    });
+    if (targets.length === 0) {
+      setNotice('No connections to delete');
+      return;
+    }
+    const label = onlyIds ? 'selected connection(s)' : `all connections in “${categoryLabel(cat)}”`;
+    if (!window.confirm(`Move ${targets.length} ${label} to Recycle Bin?`)) return;
+    const now = Date.now();
+    try {
+      for (const t of targets) {
+        const live = liveTabsForConnection(t.id);
+        if (live.length > 0 || tabsForConnection(t.id).length > 0) {
+          await disconnectConnectionSessions(t.id);
+        }
+      }
+      if (useServer) {
+        const updatedList = [...connections];
+        for (const t of targets) {
+          const updated = await sshConnectionService.remove(t.id);
+          if (updated) {
+            const idx = updatedList.findIndex((c) => c.id === t.id);
+            if (idx >= 0) updatedList[idx] = updated;
+          } else {
+            const idx = updatedList.findIndex((c) => c.id === t.id);
+            if (idx >= 0) updatedList[idx] = { ...updatedList[idx], deletedAt: now, archivedAt: null };
+          }
+        }
+        setConnections(updatedList);
+      } else {
+        const ids = new Set(targets.map((t) => t.id));
+        updateConnectionsLocal(
+          connections.map((c) =>
+            ids.has(c.id) ? { ...c, deletedAt: now, archivedAt: null } : c
+          )
+        );
+      }
+      setNotice(`Moved ${targets.length} connection${targets.length === 1 ? '' : 's'} to Recycle Bin`);
+      setLibraryScope('recycle');
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to delete connections');
+    }
+  };
+
+  const deleteCategory = async (catRaw: string) => {
+    const cat = categoryKey(catRaw);
+    if (!cat) {
+      setNotice('Uncategorized cannot be deleted as a category — delete its connections instead');
+      return;
+    }
+    const targets = connections.filter(
+      (c) => categoryKey(c.category) === cat && !c.deletedAt
+    );
+    if (
+      !window.confirm(
+        `Delete category “${cat}”${targets.length ? ` and move its ${targets.length} connection(s) to Recycle Bin` : ''}? You can restore both from Recycle Bin.`
+      )
+    ) {
+      return;
+    }
+    const now = Date.now();
+    const ids = targets.map((t) => t.id);
+    try {
+      for (const t of targets) {
+        if (liveTabsForConnection(t.id).length > 0 || tabsForConnection(t.id).length > 0) {
+          await disconnectConnectionSessions(t.id);
+        }
+      }
+      if (useServer) {
+        const updatedList = [...connections];
+        for (const t of targets) {
+          const updated = await sshConnectionService.remove(t.id);
+          const idx = updatedList.findIndex((c) => c.id === t.id);
+          if (idx < 0) continue;
+          updatedList[idx] = updated || { ...updatedList[idx], deletedAt: now, archivedAt: null };
+        }
+        setConnections(updatedList);
+      } else {
+        const idSet = new Set(ids);
+        updateConnectionsLocal(
+          connections.map((c) =>
+            idSet.has(c.id) ? { ...c, deletedAt: now, archivedAt: null } : c
+          )
+        );
+      }
+      setRecycledCategories((prev) => {
+        const without = prev.filter((r) => r.name !== cat);
+        return [
+          {
+            name: cat,
+            color: categoryMeta[cat]?.color || categoryAccentColor(cat, categoryMeta),
+            deletedAt: now,
+            connectionIds: ids,
+          },
+          ...without,
+        ];
+      });
+      setCategoryOrder((prev) => prev.filter((c) => normalizeSshCategory(c) !== cat));
+      setCollapsedCategories((prev) => {
+        const next = { ...prev };
+        delete next[cat];
+        return next;
+      });
+      if (normalizeSshCategory(draftCategory) === cat) setDraftCategory('');
+      setNotice(`Category “${cat}” moved to Recycle Bin`);
+      setLibraryScope('recycle');
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to delete category');
+    }
+  };
+
+  const archiveCategory = async (catRaw: string) => {
+    await archiveConnectionsInCategory(catRaw);
+  };
+
+  const restoreCategoryFromBin = async (catName: string) => {
+    const cat = normalizeSshCategory(catName);
+    if (!cat) return;
+    const tombstone = recycledCategories.find((r) => r.name === cat);
+    const ids = new Set(
+      (tombstone?.connectionIds || []).length
+        ? tombstone!.connectionIds
+        : connections.filter((c) => categoryKey(c.category) === cat && c.deletedAt).map((c) => c.id)
+    );
+    try {
+      if (useServer) {
+        const updatedList = [...connections];
+        for (const id of ids) {
+          const updated = await sshConnectionService.update(id, { deletedAt: null, archivedAt: null });
+          const idx = updatedList.findIndex((c) => c.id === id);
+          if (idx >= 0) updatedList[idx] = updated;
+        }
+        setConnections(updatedList);
+      } else {
+        updateConnectionsLocal(
+          connections.map((c) =>
+            ids.has(c.id) ? { ...c, deletedAt: null, archivedAt: null } : c
+          )
+        );
+      }
+      setCategoryOrder((prev) => mergeCategoryOrder(prev, [{ category: cat } as SavedSshConnection]));
+      if (tombstone?.color) {
+        setCategoryMeta((prev) => ({ ...prev, [cat]: { color: normalizeSshColor(tombstone.color) } }));
+      }
+      setRecycledCategories((prev) => prev.filter((r) => r.name !== cat));
+      setCollapsedCategories((prev) => ({ ...prev, [cat]: false }));
+      setLibraryScope('active');
+      setNotice(`Restored category “${cat}” and ${ids.size} connection${ids.size === 1 ? '' : 's'}`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to restore category');
+    }
+  };
+
+  const purgeCategoryFromBin = async (catName: string) => {
+    const cat = normalizeSshCategory(catName);
+    if (!cat) return;
+    const tombstone = recycledCategories.find((r) => r.name === cat);
+    const ids = new Set([
+      ...(tombstone?.connectionIds || []),
+      ...connections.filter((c) => categoryKey(c.category) === cat && c.deletedAt).map((c) => c.id),
+    ]);
+    if (
+      !window.confirm(
+        `Permanently delete category “${cat}” and ${ids.size} connection${ids.size === 1 ? '' : 's'}? This cannot be undone.`
+      )
+    ) {
+      return;
+    }
+    try {
+      if (useServer) {
+        for (const id of ids) {
+          await sshConnectionService.remove(id, { permanent: true });
+        }
+        setConnections((prev) => prev.filter((c) => !ids.has(c.id)));
+      } else {
+        updateConnectionsLocal(connections.filter((c) => !ids.has(c.id)));
+      }
+      setRecycledCategories((prev) => prev.filter((r) => r.name !== cat));
+      setCategoryMeta((prev) => {
+        const next = { ...prev };
+        delete next[cat];
+        return next;
+      });
+      setNotice(`Permanently deleted category “${cat}”`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to permanently delete category');
     }
   };
 
@@ -4103,6 +4772,18 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                   >
                     Compact
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setListDensity('tree')}
+                    className={`px-1.5 py-0.5 text-[9px] font-semibold rounded border ${
+                      listDensity === 'tree'
+                        ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900'
+                        : 'border-slate-200 dark:border-slate-600 text-slate-500'
+                    }`}
+                    title="Tree view — categories as folders"
+                  >
+                    Tree
+                  </button>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-1">
@@ -4153,8 +4834,8 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                   onClick={exportConnectionsJson}
                   disabled={connections.length === 0}
                   className="p-1.5 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 disabled:opacity-40"
-                  title="Export connections as JSON"
-                  aria-label="Export connections as JSON"
+                  title="Export connections, categories, colors & order as JSON"
+                  aria-label="Export connections and categories as JSON"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
@@ -4164,8 +4845,8 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   className="p-1.5 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800"
-                  title="Import connections from JSON"
-                  aria-label="Import connections from JSON"
+                  title="Import connections & categories from JSON"
+                  aria-label="Import connections and categories from JSON"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
@@ -4236,7 +4917,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
             <div className="flex-1 min-h-0 overflow-y-auto p-1.5 space-y-1">
               {!storageReady ? (
                 <p className="text-[11px] text-slate-400 dark:text-slate-500 px-1.5 py-3 text-center">Loading…</p>
-              ) : filteredConnections.length === 0 && knownCategories.length === 0 ? (
+              ) : connections.length === 0 && recycledCategories.length === 0 ? (
                 <p className="text-[11px] text-slate-400 dark:text-slate-500 px-1.5 py-3 text-center leading-relaxed">
                   No saved connections yet for {useServer ? (authUsername || 'this account') : 'guest (this browser)'}.
                   Open Settings after creating one with <strong>+</strong>, then click <strong>Save</strong>.
@@ -4261,6 +4942,15 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                     const key = cat || '__uncategorized__';
                     setCollapsedCategories((prev) => ({ ...prev, [key]: !prev[key] }));
                   }}
+                  onSetCategoriesCollapsed={(keys, collapsed) => {
+                    setCollapsedCategories((prev) => {
+                      const next = { ...prev };
+                      for (const cat of keys) {
+                        next[cat || '__uncategorized__'] = collapsed;
+                      }
+                      return next;
+                    });
+                  }}
                   onCategoryOrderChange={(next) => setCategoryOrder(mergeCategoryOrder(next, connections))}
                   onCategoryColorChange={(cat, color) => {
                     const key = normalizeSshCategory(cat);
@@ -4276,6 +4966,22 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                   cloningCategory={cloningCategory}
                   onCloneCategory={(cat) => void cloneCategory(cat)}
                   onCreatePrivateSpace={(cats, layout) => void createPrivateSpaceFromCategories(cats, layout)}
+                  libraryScope={libraryScope}
+                  onLibraryScopeChange={setLibraryScope}
+                  recycledCategories={recycledCategories}
+                  activeCount={libraryCounts.active}
+                  archivedCount={libraryCounts.archived}
+                  recycleCount={libraryCounts.recycle}
+                  onArchiveCategory={(cat) => void archiveCategory(cat)}
+                  onDeleteCategory={(cat) => void deleteCategory(cat)}
+                  onArchiveSelected={(cat, ids) => void archiveConnectionsInCategory(cat, ids)}
+                  onDeleteSelected={(cat, ids) => void deleteConnectionsInCategory(cat, ids)}
+                  onRestoreSelected={(ids) => void restoreSelectedConnections(ids)}
+                  onPurgeSelected={(ids) => void purgeSelectedConnections(ids)}
+                  onRestoreCategory={(cat) => void restoreCategoryFromBin(cat)}
+                  onPurgeCategory={(cat) => void purgeCategoryFromBin(cat)}
+                  onRestoreConnection={(id) => void restoreConnection(id)}
+                  onPurgeConnection={(id) => void purgeConnection(id)}
                   onConnectionsChange={(next) => setConnections(next)}
                   onReorderCommit={(next) => void persistConnectionOrder(next)}
                   liveCountFor={(id) => liveTabsForConnection(id).length}

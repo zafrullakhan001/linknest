@@ -63,6 +63,10 @@ export interface SavedSshConnection {
   sortOrder?: number;
   createdAt: number;
   lastUsedAt?: number;
+  /** When set, connection is archived (hidden from active list) */
+  archivedAt?: number | null;
+  /** When set, connection is in recycle bin (soft-deleted) */
+  deletedAt?: number | null;
 }
 
 export function normalizeSshColor(raw: unknown): string {
@@ -155,6 +159,14 @@ function mapRow(row: any): SavedSshConnection {
         : row.last_used_at != null
           ? Number(row.last_used_at) || undefined
           : undefined,
+    archivedAt:
+      row.archivedAt == null && row.archived_at == null
+        ? null
+        : Number(row.archivedAt ?? row.archived_at) || null,
+    deletedAt:
+      row.deletedAt == null && row.deleted_at == null
+        ? null
+        : Number(row.deletedAt ?? row.deleted_at) || null,
   };
 }
 
@@ -215,6 +227,8 @@ export const sshConnectionService = {
       category?: string;
       sortOrder?: number;
       lastUsedAt?: number;
+      archivedAt?: number | null;
+      deletedAt?: number | null;
     }
   ): Promise<SavedSshConnection> {
     const body: Record<string, unknown> = { ...patch };
@@ -224,6 +238,12 @@ export const sshConnectionService = {
     if (patch.sortOrder !== undefined) body.sortOrder = normalizeSshSortOrder(patch.sortOrder);
     if (patch.appearance !== undefined) {
       body.appearance = patch.appearance === null ? null : normalizeSshAppearance(patch.appearance) || null;
+    }
+    if (patch.archivedAt !== undefined) {
+      body.archivedAt = patch.archivedAt && patch.archivedAt > 0 ? patch.archivedAt : null;
+    }
+    if (patch.deletedAt !== undefined) {
+      body.deletedAt = patch.deletedAt && patch.deletedAt > 0 ? patch.deletedAt : null;
     }
     const res = await fetch(`${SSH_BASE}/${encodeURIComponent(id)}`, {
       method: 'PUT',
@@ -236,13 +256,17 @@ export const sshConnectionService = {
     return mapRow(data.connection);
   },
 
-  async remove(id: string): Promise<void> {
-    const res = await fetch(`${SSH_BASE}/${encodeURIComponent(id)}`, {
+  /** Soft-delete by default (recycle bin). Pass permanent:true to purge. */
+  async remove(id: string, opts?: { permanent?: boolean }): Promise<SavedSshConnection | null> {
+    const qs = opts?.permanent ? '?permanent=1' : '';
+    const res = await fetch(`${SSH_BASE}/${encodeURIComponent(id)}${qs}`, {
       method: 'DELETE',
       credentials: 'include',
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error((data as any).error || 'Failed to delete SSH connection');
+    if (opts?.permanent) return null;
+    return data.connection ? mapRow(data.connection) : null;
   },
 
   async reorder(

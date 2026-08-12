@@ -522,6 +522,12 @@ function ensureSshConnectionColorColumn(PDO $db): void {
         if (!in_array('sort_order', $names, true)) {
             $db->exec('ALTER TABLE user_ssh_connections ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
         }
+        if (!in_array('archived_at', $names, true)) {
+            $db->exec('ALTER TABLE user_ssh_connections ADD COLUMN archived_at INTEGER');
+        }
+        if (!in_array('deleted_at', $names, true)) {
+            $db->exec('ALTER TABLE user_ssh_connections ADD COLUMN deleted_at INTEGER');
+        }
         $ensured = true;
     } catch (PDOException $e) {
         error_log('ensureSshConnectionColorColumn warning: ' . $e->getMessage());
@@ -1975,6 +1981,18 @@ function initDatabase() {
 
         try {
             $db->exec('ALTER TABLE user_ssh_connections ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
+        } catch (PDOException $e) {
+            // Column already exists
+        }
+
+        try {
+            $db->exec('ALTER TABLE user_ssh_connections ADD COLUMN archived_at INTEGER');
+        } catch (PDOException $e) {
+            // Column already exists
+        }
+
+        try {
+            $db->exec('ALTER TABLE user_ssh_connections ADD COLUMN deleted_at INTEGER');
         } catch (PDOException $e) {
             // Column already exists
         }

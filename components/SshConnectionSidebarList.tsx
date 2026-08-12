@@ -28,7 +28,7 @@ import {
 } from '../services/sshConnectionService';
 import { parseAutoTargetUrl } from '../services/sshGatewayService';
 
-export type SshListViewMode = 'cards' | 'compact';
+export type SshListViewMode = 'cards' | 'compact' | 'tree';
 export type SshCategoryMetaMap = Record<string, { color: string }>;
 
 const UNCATEGORIZED_KEY = '';
@@ -47,6 +47,89 @@ function categoryLabel(key: string): string {
 function catHdrId(cat: string): string {
   return `${CAT_HDR_PREFIX}${cat || '__uncategorized__'}`;
 }
+
+function hexToRgba(hex: string, alpha: number): string {
+  const raw = (hex || '').replace('#', '').trim();
+  const full =
+    raw.length === 3
+      ? raw
+          .split('')
+          .map((c) => c + c)
+          .join('')
+      : raw;
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) return `rgba(100, 116, 139, ${alpha})`;
+  const n = parseInt(full, 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+const EmojiChip: React.FC<{
+  emoji: string;
+  label?: string;
+  title: string;
+  onClick?: () => void;
+  disabled?: boolean;
+  tone?: 'neutral' | 'brand' | 'sky' | 'amber' | 'rose' | 'emerald' | 'orange' | 'violet';
+  solid?: boolean;
+  size?: 'sm' | 'md';
+}> = ({ emoji, label, title, onClick, disabled, tone = 'neutral', solid = false, size = 'sm' }) => {
+  const tones: Record<string, { solid: string; soft: string }> = {
+    neutral: {
+      solid: 'bg-slate-700 text-white hover:bg-slate-800 dark:bg-slate-200 dark:text-slate-900',
+      soft: 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200/80 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-700',
+    },
+    brand: {
+      solid: 'bg-brand-600 text-white hover:bg-brand-700 shadow-sm shadow-brand-600/25',
+      soft: 'bg-brand-50 text-brand-700 border-brand-200 hover:bg-brand-100 dark:bg-brand-950/40 dark:text-brand-300 dark:border-brand-800',
+    },
+    sky: {
+      solid: 'bg-sky-600 text-white hover:bg-sky-700 shadow-sm shadow-sky-600/25',
+      soft: 'bg-sky-50 text-sky-700 border-sky-200 hover:bg-sky-100 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800',
+    },
+    amber: {
+      solid: 'bg-amber-500 text-white hover:bg-amber-600 shadow-sm shadow-amber-500/25',
+      soft: 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800',
+    },
+    rose: {
+      solid: 'bg-rose-600 text-white hover:bg-rose-700 shadow-sm shadow-rose-600/25',
+      soft: 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900',
+    },
+    emerald: {
+      solid: 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm shadow-emerald-600/25',
+      soft: 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800',
+    },
+    orange: {
+      solid: 'bg-orange-500 text-white hover:bg-orange-600 shadow-sm shadow-orange-500/25',
+      soft: 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100 dark:bg-orange-950/40 dark:text-orange-300 dark:border-orange-800',
+    },
+    violet: {
+      solid: 'bg-violet-600 text-white hover:bg-violet-700 shadow-sm shadow-violet-600/25',
+      soft: 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-800',
+    },
+  };
+  const palette = tones[tone] || tones.neutral;
+  const h = size === 'md' ? 'h-7' : 'h-6';
+  const px = label ? (size === 'md' ? 'px-2' : 'px-1.5') : size === 'md' ? 'w-7 px-0' : 'w-6 px-0';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      aria-label={title}
+      className={`inline-flex items-center justify-center gap-0.5 ${h} ${px} rounded-lg text-[10px] font-semibold border transition-all disabled:opacity-35 disabled:pointer-events-none ${
+        solid ? `${palette.solid} border-transparent` : palette.soft
+      }`}
+    >
+      <span className="leading-none text-[12px]" aria-hidden>
+        {emoji}
+      </span>
+      {label ? <span className="leading-none whitespace-nowrap">{label}</span> : null}
+    </button>
+  );
+};
 
 function parseCatHdr(id: string): string | null {
   if (!id.startsWith(CAT_HDR_PREFIX)) return null;
@@ -122,6 +205,9 @@ interface SortableConnectionProps {
   onClone: () => void;
   onCopySsh: () => void;
   onDelete: () => void;
+  onRestore?: () => void;
+  onPurge?: () => void;
+  libraryScope?: 'active' | 'archived' | 'recycle';
   onSettings: () => void;
 }
 
@@ -144,6 +230,9 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
   onClone,
   onCopySsh,
   onDelete,
+  onRestore,
+  onPurge,
+  libraryScope = 'active',
   onSettings,
 }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -164,7 +253,7 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
       type="button"
       className={`shrink-0 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 touch-none ${
         dragDisabled ? 'opacity-30 cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'
-      } ${view === 'compact' ? 'h-6 w-5' : 'h-7 w-6'}`}
+      } ${view === 'compact' || view === 'tree' ? 'h-6 w-5' : 'h-7 w-6'}`}
       title={dragDisabled ? 'Clear filter to rearrange' : 'Drag to reorder'}
       aria-label="Drag to reorder"
       disabled={dragDisabled}
@@ -196,12 +285,13 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
   const badges = (
     <>
       <span
-        className={`shrink-0 px-1 py-0 rounded text-[9px] font-semibold uppercase tracking-wide ${
+        className={`shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0 rounded-full text-[9px] font-bold tracking-wide ${
           isRdp
-            ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300'
-            : 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300'
+            ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300'
+            : 'bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-300'
         }`}
       >
+        <span aria-hidden>{isRdp ? '🖥️' : '💻'}</span>
         {isRdp ? 'RDP' : 'SSH'}
       </span>
       {isLive && (
@@ -213,137 +303,174 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
     </>
   );
 
-  const btnSm =
-    'inline-flex items-center justify-center h-7 w-7 rounded-md border shrink-0';
-
   const sessionButton = isLive ? (
-    <button
-      type="button"
+    <EmojiChip
+      emoji="⏹️"
+      label={view === 'tree' ? undefined : 'Stop'}
+      title={`Disconnect ${c.name}`}
       onClick={onDisconnect}
       disabled={!canDisconnect}
-      className={
-        view === 'compact'
-          ? 'inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-md bg-red-600 hover:bg-red-700 text-white text-[11px] font-semibold shadow-sm disabled:opacity-40 shrink-0'
-          : 'inline-flex items-center justify-center gap-1 h-7 px-2 rounded-md bg-red-600 hover:bg-red-700 text-white text-[10px] font-semibold shadow-sm disabled:opacity-40 shrink-0'
-      }
-      title={`Disconnect ${c.name}`}
-      aria-label={`Disconnect ${c.name}`}
-    >
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={view === 'compact' ? 'w-4 h-4' : 'w-3.5 h-3.5'} aria-hidden>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 7.5A2.25 2.25 0 017.5 5.25h9a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-9a2.25 2.25 0 01-2.25-2.25v-9z" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 9l6 6M15 9l-6 6" />
-      </svg>
-      <span>Disconnect</span>
-    </button>
+      tone="rose"
+      solid
+      size={view === 'tree' ? 'sm' : 'md'}
+    />
   ) : (
-    <button
-      type="button"
+    <EmojiChip
+      emoji="▶️"
+      label={view === 'compact' ? 'Connect' : view === 'tree' ? undefined : undefined}
+      title={maxReached ? 'Maximum sessions reached' : `Connect to ${c.name}`}
       onClick={onConnect}
       disabled={maxReached}
-      className={
-        view === 'compact'
-          ? 'inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-md bg-brand-600 hover:bg-brand-700 text-white text-[11px] font-semibold shadow-sm disabled:opacity-40 shrink-0'
-          : 'inline-flex items-center justify-center h-7 w-7 rounded-md bg-brand-600 hover:bg-brand-700 text-white disabled:opacity-40 shrink-0'
-      }
-      title={maxReached ? 'Maximum sessions reached' : `Connect to ${c.name}`}
-      aria-label={`Connect to ${c.name}`}
-    >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 20 20"
-        fill="currentColor"
-        className={view === 'compact' ? 'w-4 h-4' : 'w-3.5 h-3.5'}
-        aria-hidden
-      >
-        <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-      </svg>
-      {view === 'compact' && <span>Connect</span>}
-    </button>
+      tone="brand"
+      solid
+      size={view === 'tree' ? 'sm' : 'md'}
+    />
   );
 
   const smallActions = (
     <>
-      <button
-        type="button"
-        onClick={onEdit}
-        className={`${btnSm} border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700`}
-        title={`Edit ${c.name}`}
-        aria-label={`Edit ${c.name}`}
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 7.125L16.875 4.5" />
-        </svg>
-      </button>
+      <EmojiChip emoji="✏️" title={`Edit ${c.name}`} onClick={onEdit} tone="neutral" size={view === 'tree' ? 'sm' : 'md'} />
       {sshLink && (
-        <button
-          type="button"
-          onClick={onCopySsh}
-          className="inline-flex items-center justify-center h-7 min-w-[2.1rem] px-1 rounded-md bg-sky-600 hover:bg-sky-700 text-white shadow-sm shrink-0"
+        <EmojiChip
+          emoji="🔗"
+          label="SSH"
           title={`Copy ssh:// URL for ${c.name}`}
-          aria-label={`Copy ssh:// for ${c.name}`}
-        >
-          <span className="text-[9px] font-bold tracking-wide leading-none">SSH</span>
-        </button>
+          onClick={onCopySsh}
+          tone="sky"
+          solid
+          size={view === 'tree' ? 'sm' : 'md'}
+        />
       )}
-      <button
-        type="button"
-        onClick={onClone}
-        className={`${btnSm} border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700`}
+      <EmojiChip
+        emoji="📋"
         title={`Clone ${c.name}`}
-        aria-label={`Clone ${c.name}`}
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5" aria-hidden>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 8.25V6.75A2.25 2.25 0 0014.25 4.5h-7.5A2.25 2.25 0 004.5 6.75v7.5A2.25 2.25 0 006.75 16.5h1.5" />
-          <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75h7.5A2.25 2.25 0 0119.5 12v7.5a2.25 2.25 0 01-2.25 2.25h-7.5A2.25 2.25 0 017.5 19.5V12a2.25 2.25 0 012.25-2.25z" />
-        </svg>
-      </button>
-      <button
-        type="button"
-        onClick={onDelete}
-        className={`${btnSm} border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20`}
-        title={`Delete ${c.name}`}
-        aria-label={`Delete ${c.name}`}
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-        </svg>
-      </button>
-      <button
-        type="button"
-        onClick={onSettings}
-        className={`${btnSm} ml-auto transition-colors ${
-          showSettings && active
-            ? 'bg-orange-500 border-orange-600 text-white shadow-sm shadow-orange-500/30'
-            : 'border-orange-300 dark:border-orange-700 text-orange-600 dark:text-orange-300 hover:bg-orange-50 dark:hover:bg-orange-950/40'
-        }`}
+        onClick={onClone}
+        disabled={libraryScope !== 'active'}
+        tone="violet"
+        size={view === 'tree' ? 'sm' : 'md'}
+      />
+      {libraryScope === 'recycle' || libraryScope === 'archived' ? (
+        <>
+          <EmojiChip
+            emoji="♻️"
+            title={`Restore ${c.name}`}
+            onClick={() => onRestore?.()}
+            tone="emerald"
+            solid
+            size={view === 'tree' ? 'sm' : 'md'}
+          />
+          {libraryScope === 'recycle' ? (
+            <EmojiChip
+              emoji="💥"
+              title={`Permanently delete ${c.name}`}
+              onClick={() => onPurge?.()}
+              tone="rose"
+              size={view === 'tree' ? 'sm' : 'md'}
+            />
+          ) : (
+            <EmojiChip
+              emoji="🗑️"
+              title={`Move ${c.name} to Recycle Bin`}
+              onClick={onDelete}
+              tone="rose"
+              size={view === 'tree' ? 'sm' : 'md'}
+            />
+          )}
+        </>
+      ) : (
+        <EmojiChip
+          emoji="🗑️"
+          title={`Move ${c.name} to Recycle Bin`}
+          onClick={onDelete}
+          tone="rose"
+          size={view === 'tree' ? 'sm' : 'md'}
+        />
+      )}
+      <EmojiChip
+        emoji="⚙️"
         title={`Settings for ${c.name}`}
-        aria-label={`Settings for ${c.name}`}
-        aria-pressed={showSettings && active}
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
-          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-        </svg>
-      </button>
+        onClick={onSettings}
+        tone="orange"
+        solid={Boolean(showSettings && active)}
+        size={view === 'tree' ? 'sm' : 'md'}
+      />
     </>
   );
+
+  const colorAvatar = (
+    <span
+      className="shrink-0 inline-flex items-center justify-center h-6 w-6 rounded-lg text-[13px] shadow-sm ring-1 ring-black/5 dark:ring-white/10"
+      style={{ backgroundColor: hexToRgba(color, 0.22), color }}
+      title={isRdp ? 'RDP connection' : 'SSH connection'}
+      aria-hidden
+    >
+      {isRdp ? '🖥️' : '💻'}
+    </span>
+  );
+
+  if (view === 'tree') {
+    return (
+      <div
+        ref={setNodeRef}
+        style={style}
+        className={`group/tree-node relative flex items-center gap-0.5 min-w-0 py-0.5 pl-0.5 pr-1 rounded-md ${
+          active
+            ? 'bg-brand-50 dark:bg-brand-900/25 ring-1 ring-brand-400/60'
+            : 'hover:bg-slate-100/80 dark:hover:bg-slate-700/50'
+        }`}
+      >
+        <span className="absolute left-0 top-0 bottom-0 w-px bg-slate-200 dark:bg-slate-600 ml-[11px]" aria-hidden />
+        <span className="absolute left-[11px] top-1/2 w-2.5 h-px bg-slate-200 dark:bg-slate-600" aria-hidden />
+        <div className="w-4 shrink-0" aria-hidden />
+        {dragHandle}
+        {selectCheckbox}
+        {colorAvatar}
+        <button
+          type="button"
+          className="flex-1 min-w-0 text-left py-0.5"
+          onClick={onEdit}
+          onDoubleClick={onConnect}
+          title={`${c.name} — ${hostLine(c)}`}
+        >
+          <div className="flex items-center gap-1 min-w-0">
+            <span className="text-[11px] font-medium text-slate-800 dark:text-slate-100 truncate">{c.name}</span>
+            {badges}
+          </div>
+          <p className="text-[9px] font-mono text-slate-400 truncate leading-tight">{hostLine(c)}</p>
+        </button>
+        <div className="flex items-center gap-0.5 shrink-0 opacity-90 group-hover/tree-node:opacity-100">
+          {sessionButton}
+          {sshLink && (
+            <EmojiChip emoji="🔗" title={`Copy ssh:// URL for ${c.name}`} onClick={onCopySsh} tone="sky" solid />
+          )}
+          <EmojiChip
+            emoji="⚙️"
+            title={`Settings for ${c.name}`}
+            onClick={onSettings}
+            tone="orange"
+            solid={Boolean(showSettings && active)}
+          />
+        </div>
+      </div>
+    );
+  }
 
   if (view === 'compact') {
     return (
       <div
         ref={setNodeRef}
         style={style}
-        className={`rounded-md border overflow-hidden ${
+        className={`rounded-xl border overflow-hidden shadow-sm ${
           active
             ? 'border-brand-400 bg-brand-50/80 dark:bg-brand-900/20 dark:border-brand-600'
-            : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800'
+            : 'border-slate-200/90 dark:border-slate-700 bg-white dark:bg-slate-800'
         }`}
       >
-        <div className="flex items-center gap-1 min-w-0 py-1 pl-0.5 pr-1.5">
-          <div className="w-1 self-stretch rounded-sm shrink-0" style={{ backgroundColor: color }} />
+        <div className="flex items-center gap-1 min-w-0 py-1.5 pl-0.5 pr-1.5">
+          <div className="w-1.5 self-stretch rounded-full shrink-0" style={{ backgroundColor: color }} />
           {dragHandle}
           {selectCheckbox}
+          {colorAvatar}
           <button type="button" className="flex-1 min-w-0 text-left py-0.5" onClick={onEdit} title={c.name}>
             <div className="flex items-center gap-1 min-w-0">
               <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-100 truncate">{c.name}</span>
@@ -353,7 +480,7 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
           </button>
         </div>
         <div className="px-1.5 pb-1.5">
-          <div className="flex items-center gap-1 flex-wrap">
+          <div className="flex items-center gap-1 flex-wrap rounded-lg bg-slate-50/90 dark:bg-slate-900/40 p-1">
             {sessionButton}
             {smallActions}
           </div>
@@ -366,18 +493,19 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
     <div
       ref={setNodeRef}
       style={style}
-      className={`rounded-lg border overflow-hidden transition-colors ${
+      className={`rounded-xl border overflow-hidden transition-colors shadow-sm ${
         active
           ? 'border-brand-400 bg-brand-50/80 dark:bg-brand-900/20 dark:border-brand-600'
-          : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-500'
+          : 'border-slate-200/90 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-500'
       }`}
     >
       <div className="flex min-w-0">
         <div className="w-1.5 shrink-0 self-stretch" style={{ backgroundColor: color }} title={color} />
         <div className="flex-1 min-w-0 p-2">
-          <div className="flex items-start gap-0.5">
+          <div className="flex items-start gap-1">
             {dragHandle}
             {selectCheckbox}
+            {colorAvatar}
             <button type="button" className="flex-1 min-w-0 text-left" onClick={onEdit} title={`Edit ${c.name}`}>
               <div className="flex items-center gap-1.5 min-w-0">
                 <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate">{c.name}</p>
@@ -389,7 +517,7 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
                   {c.tags.map((t) => (
                     <span
                       key={t}
-                      className="px-1 py-0 text-[9px] rounded bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300"
+                      className="px-1.5 py-0 text-[9px] rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300"
                     >
                       #{t}
                     </span>
@@ -405,7 +533,7 @@ const SortableConnectionCard: React.FC<SortableConnectionProps> = ({
             </p>
           )}
 
-          <div className="mt-2 flex items-center gap-1 flex-wrap">
+          <div className="mt-2 flex items-center gap-1 flex-wrap rounded-lg bg-slate-50/90 dark:bg-slate-900/40 p-1">
             {sessionButton}
             {smallActions}
           </div>
@@ -426,7 +554,7 @@ const CategoryDropZone: React.FC<{
   return (
     <div
       ref={setNodeRef}
-      className={`space-y-1 min-h-[8px] rounded-md ${isOver ? 'ring-1 ring-brand-400 bg-brand-50/40 dark:bg-brand-900/10' : ''}`}
+      className={`space-y-0.5 min-h-[8px] rounded-md ${isOver ? 'ring-1 ring-brand-400 bg-brand-50/40 dark:bg-brand-900/10' : ''}`}
     >
       {children}
     </div>
@@ -440,6 +568,7 @@ const SortableCategorySection: React.FC<{
   collapsed: boolean;
   filterActive: boolean;
   canRename: boolean;
+  treeMode?: boolean;
   selectedCount: number;
   allSelected: boolean;
   spaceSelected: boolean;
@@ -459,6 +588,13 @@ const SortableCategorySection: React.FC<{
   onRunSelected: () => void;
   onCloneCategory: () => void;
   cloningCategory?: boolean;
+  libraryScope?: 'active' | 'archived' | 'recycle';
+  onArchiveCategory?: () => void;
+  onDeleteCategory?: () => void;
+  onArchiveSelected?: () => void;
+  onDeleteSelected?: () => void;
+  onRestoreSelected?: () => void;
+  onPurgeSelected?: () => void;
   children: React.ReactNode;
 }> = ({
   category,
@@ -467,6 +603,7 @@ const SortableCategorySection: React.FC<{
   collapsed,
   filterActive,
   canRename,
+  treeMode = false,
   selectedCount,
   allSelected,
   spaceSelected,
@@ -486,6 +623,13 @@ const SortableCategorySection: React.FC<{
   onRunSelected,
   onCloneCategory,
   cloningCategory = false,
+  libraryScope = 'active',
+  onArchiveCategory,
+  onDeleteCategory,
+  onArchiveSelected,
+  onDeleteSelected,
+  onRestoreSelected,
+  onPurgeSelected,
   children,
 }) => {
   const sortable = useSortable({
@@ -503,13 +647,22 @@ const SortableCategorySection: React.FC<{
     <div
       ref={sortable.setNodeRef}
       style={style}
-      className="rounded-lg border border-slate-200/80 dark:border-slate-700/80 overflow-hidden"
+      className={
+        treeMode
+          ? 'rounded-xl overflow-hidden'
+          : 'rounded-xl border border-slate-200/80 dark:border-slate-700/80 overflow-hidden shadow-sm'
+      }
     >
       <div
-        className="bg-slate-100/90 dark:bg-slate-900/60 border-l-[3px]"
-        style={{ borderLeftColor: accent }}
+        className={treeMode ? 'rounded-xl' : 'border-l-[3px]'}
+        style={{
+          borderLeftColor: treeMode ? undefined : accent,
+          background: treeMode
+            ? hexToRgba(accent, 0.08)
+            : `linear-gradient(90deg, ${hexToRgba(accent, 0.16)} 0%, ${hexToRgba(accent, 0.04)} 55%, transparent 100%)`,
+        }}
       >
-        <div className="flex items-center gap-1 px-1.5 py-1 min-w-0">
+        <div className="flex items-center gap-1 px-1.5 py-1.5 min-w-0">
           <button
             type="button"
             className={`shrink-0 inline-flex items-center justify-center h-6 w-5 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 touch-none ${
@@ -542,7 +695,7 @@ const SortableCategorySection: React.FC<{
                 e.stopPropagation();
                 onToggleColorPicker();
               }}
-              className="h-4 w-4 rounded-full border border-white/80 dark:border-slate-700 shadow-sm ring-1 ring-black/10"
+              className="h-5 w-5 rounded-full border-2 border-white dark:border-slate-800 shadow-md ring-1 ring-black/10"
               style={{ backgroundColor: accent }}
               title="Category color"
               aria-label="Change category color"
@@ -550,7 +703,7 @@ const SortableCategorySection: React.FC<{
             />
             {colorPickerOpen && (
               <div
-                className="absolute left-0 top-5 z-30 p-1.5 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-lg grid grid-cols-4 gap-1 w-[104px]"
+                className="absolute left-0 top-6 z-30 p-1.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-lg grid grid-cols-4 gap-1 w-[112px]"
                 onClick={(e) => e.stopPropagation()}
               >
                 {SSH_CONNECTION_COLORS.map((swatch) => (
@@ -603,13 +756,13 @@ const SortableCategorySection: React.FC<{
                     onCancelRename();
                   }
                 }}
-                className="flex-1 min-w-0 h-6 px-1.5 text-[11px] rounded border border-brand-400 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+                className="flex-1 min-w-0 h-6 px-1.5 text-[11px] rounded-lg border border-brand-400 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
                 maxLength={64}
                 aria-label="Rename category"
               />
               <button
                 type="submit"
-                className="h-6 px-1.5 text-[10px] font-semibold rounded bg-brand-600 text-white"
+                className="h-6 px-1.5 text-[10px] font-semibold rounded-lg bg-brand-600 text-white"
               >
                 Save
               </button>
@@ -618,7 +771,7 @@ const SortableCategorySection: React.FC<{
             <button
               type="button"
               onClick={onToggleCollapse}
-              className="flex-1 min-w-0 flex items-center gap-1 text-left py-0.5"
+              className="flex-1 min-w-0 flex items-center gap-1.5 text-left py-0.5"
               aria-expanded={!collapsed}
             >
               <svg
@@ -633,75 +786,158 @@ const SortableCategorySection: React.FC<{
                   clipRule="evenodd"
                 />
               </svg>
-              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">
+              <span
+                className="shrink-0 inline-flex items-center justify-center h-6 w-6 rounded-lg text-[13px] shadow-sm ring-1 ring-black/5 dark:ring-white/10"
+                style={{ backgroundColor: hexToRgba(accent, 0.28) }}
+                aria-hidden
+              >
+                {collapsed ? '📁' : '📂'}
+              </span>
+              <span className="text-[11px] font-bold truncate text-slate-800 dark:text-slate-100">
                 {categoryLabel(category)}
               </span>
-              <span className="ml-auto text-[10px] tabular-nums text-slate-400 shrink-0">{itemCount}</span>
+              <span
+                className="ml-auto shrink-0 inline-flex items-center justify-center min-w-[1.35rem] h-5 px-1.5 rounded-full text-[10px] font-bold text-white shadow-sm"
+                style={{ backgroundColor: accent }}
+              >
+                {itemCount}
+              </span>
             </button>
           )}
         </div>
 
-        <div className="flex items-center gap-0.5 px-1.5 pb-1.5 flex-wrap">
-          <label className="inline-flex items-center gap-1 h-6 px-1 rounded border border-slate-200 dark:border-slate-600 text-[9px] text-slate-600 dark:text-slate-300 cursor-pointer hover:bg-white/70 dark:hover:bg-slate-800">
-            <input
-              type="checkbox"
-              checked={allSelected && itemCount > 0}
+        <div className={`px-1.5 ${treeMode ? 'pb-1.5' : 'pb-2'} space-y-1`}>
+          <div className="flex items-center gap-1 flex-wrap">
+            <label className="inline-flex items-center gap-1 h-6 px-1.5 rounded-lg bg-white/80 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-600 text-[9px] font-semibold text-slate-600 dark:text-slate-300 cursor-pointer hover:bg-white dark:hover:bg-slate-800">
+              <input
+                type="checkbox"
+                checked={allSelected && itemCount > 0}
+                disabled={itemCount === 0}
+                onChange={onToggleSelectAll}
+                className="h-3 w-3 rounded border-slate-300 text-brand-600"
+              />
+              All
+            </label>
+            <EmojiChip
+              emoji="▶️"
+              label="All"
+              title="Connect all in this category"
+              onClick={onRunAll}
               disabled={itemCount === 0}
-              onChange={onToggleSelectAll}
-              className="h-3 w-3 rounded border-slate-300 text-brand-600"
+              tone="brand"
+              solid
             />
-            All
-          </label>
-          <button
-            type="button"
-            onClick={onRunAll}
-            disabled={itemCount === 0}
-            className="inline-flex items-center gap-0.5 h-6 px-1.5 rounded-md bg-brand-600 hover:bg-brand-700 text-white text-[9px] font-semibold disabled:opacity-40"
-            title="Connect all in this category"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3" aria-hidden>
-              <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-            </svg>
-            Run all
-          </button>
-          <button
-            type="button"
-            onClick={onRunSelected}
-            disabled={selectedCount === 0}
-            className="inline-flex items-center gap-0.5 h-6 px-1.5 rounded-md border border-brand-300 dark:border-brand-700 text-brand-700 dark:text-brand-300 text-[9px] font-semibold hover:bg-brand-50 dark:hover:bg-brand-950/40 disabled:opacity-40"
-            title="Connect selected in this category"
-          >
-            Run selected{selectedCount > 0 ? ` (${selectedCount})` : ''}
-          </button>
-          {canRename && !renaming && (
-            <button
-              type="button"
-              onClick={onStartRename}
-              className="inline-flex items-center justify-center h-6 w-6 rounded border border-slate-200 dark:border-slate-600 text-slate-500 hover:bg-white dark:hover:bg-slate-800"
-              title="Rename category"
-              aria-label="Rename category"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3 h-3">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
-              </svg>
-            </button>
+            <EmojiChip
+              emoji="▶️"
+              label={selectedCount > 0 ? `Sel ${selectedCount}` : 'Sel'}
+              title="Connect selected in this category"
+              onClick={onRunSelected}
+              disabled={selectedCount === 0}
+              tone="sky"
+              solid
+            />
+            {canRename && !renaming && (
+              <EmojiChip emoji="✏️" title="Rename category" onClick={onStartRename} tone="neutral" />
+            )}
+            <EmojiChip
+              emoji="📋"
+              title={`Clone category “${categoryLabel(category)}” and all its connections`}
+              onClick={onCloneCategory}
+              disabled={cloningCategory || libraryScope !== 'active'}
+              tone="violet"
+            />
+          </div>
+
+          {libraryScope === 'active' && (
+            <div className="flex items-center gap-1 flex-wrap">
+              <span className="text-[9px] font-semibold uppercase tracking-wide text-slate-400 px-0.5">
+                Sel
+              </span>
+              <EmojiChip
+                emoji="📦"
+                title="Archive selected connections"
+                onClick={onArchiveSelected}
+                disabled={selectedCount === 0}
+                tone="amber"
+              />
+              <EmojiChip
+                emoji="🗑️"
+                title="Move selected connections to Recycle Bin"
+                onClick={onDeleteSelected}
+                disabled={selectedCount === 0}
+                tone="rose"
+              />
+              <span className="mx-0.5 h-4 w-px bg-slate-300/80 dark:bg-slate-600" aria-hidden />
+              <span className="text-[9px] font-semibold uppercase tracking-wide text-slate-400 px-0.5">
+                Cat
+              </span>
+              <EmojiChip
+                emoji="📦"
+                label="Archive"
+                title="Archive entire category"
+                onClick={onArchiveCategory}
+                disabled={itemCount === 0}
+                tone="amber"
+              />
+              <EmojiChip
+                emoji="🗑️"
+                label="Delete"
+                title="Delete category (connections go to Recycle Bin)"
+                onClick={onDeleteCategory}
+                tone="rose"
+              />
+            </div>
           )}
-          <button
-            type="button"
-            onClick={onCloneCategory}
-            disabled={cloningCategory}
-            className="inline-flex items-center justify-center h-6 w-6 rounded border border-slate-200 dark:border-slate-600 text-slate-500 hover:bg-white dark:hover:bg-slate-800 disabled:opacity-40"
-            title={`Clone category “${categoryLabel(category)}” and all its connections`}
-            aria-label={`Clone category ${categoryLabel(category)}`}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3 h-3" aria-hidden>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 8.25V6.75A2.25 2.25 0 0014.25 4.5h-7.5A2.25 2.25 0 004.5 6.75v7.5A2.25 2.25 0 006.75 16.5h1.5" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75h7.5A2.25 2.25 0 0119.5 12v7.5a2.25 2.25 0 01-2.25 2.25h-7.5A2.25 2.25 0 017.5 19.5V12a2.25 2.25 0 012.25-2.25z" />
-            </svg>
-          </button>
+          {libraryScope === 'archived' && (
+            <div className="flex items-center gap-1 flex-wrap">
+              <EmojiChip
+                emoji="♻️"
+                label="Restore"
+                title="Restore selected from archive"
+                onClick={onRestoreSelected}
+                disabled={selectedCount === 0}
+                tone="emerald"
+                solid
+              />
+              <EmojiChip
+                emoji="🗑️"
+                label="Bin"
+                title="Move selected to Recycle Bin"
+                onClick={onDeleteSelected}
+                disabled={selectedCount === 0}
+                tone="rose"
+              />
+            </div>
+          )}
+          {libraryScope === 'recycle' && (
+            <div className="flex items-center gap-1 flex-wrap">
+              <EmojiChip
+                emoji="♻️"
+                label="Restore"
+                title="Restore selected from Recycle Bin"
+                onClick={onRestoreSelected}
+                disabled={selectedCount === 0}
+                tone="emerald"
+                solid
+              />
+              <EmojiChip
+                emoji="💥"
+                label="Purge"
+                title="Permanently delete selected"
+                onClick={onPurgeSelected}
+                disabled={selectedCount === 0}
+                tone="rose"
+                solid
+              />
+            </div>
+          )}
         </div>
       </div>
-      {!collapsed && <div className="p-1">{children}</div>}
+      {!collapsed && (
+        <div className={treeMode ? 'pl-2 pr-0.5 pb-1 pt-0.5 border-l border-slate-200 dark:border-slate-600 ml-3' : 'p-1.5 bg-slate-50/50 dark:bg-slate-900/20'}>
+          {children}
+        </div>
+      )}
     </div>
   );
 };
@@ -719,6 +955,7 @@ export interface SshConnectionSidebarListProps {
   categoryMeta: SshCategoryMetaMap;
   collapsedCategories: Record<string, boolean>;
   onToggleCategory: (category: string) => void;
+  onSetCategoriesCollapsed: (categoryKeys: string[], collapsed: boolean) => void;
   onCategoryOrderChange: (next: string[]) => void;
   onCategoryColorChange: (category: string, color: string) => void;
   onCategoryRename: (from: string, to: string) => void;
@@ -728,6 +965,22 @@ export interface SshConnectionSidebarListProps {
   cloningCategory?: boolean;
   onCloneCategory: (category: string) => void;
   onCreatePrivateSpace: (categories: string[], layout: 'sections' | 'tabs') => void;
+  libraryScope?: 'active' | 'archived' | 'recycle';
+  onLibraryScopeChange?: (scope: 'active' | 'archived' | 'recycle') => void;
+  recycledCategories?: Array<{ name: string; color?: string; deletedAt: number; connectionIds: string[] }>;
+  activeCount?: number;
+  archivedCount?: number;
+  recycleCount?: number;
+  onArchiveCategory?: (category: string) => void;
+  onDeleteCategory?: (category: string) => void;
+  onArchiveSelected?: (category: string, ids: string[]) => void;
+  onDeleteSelected?: (category: string, ids: string[]) => void;
+  onRestoreSelected?: (ids: string[]) => void;
+  onPurgeSelected?: (ids: string[]) => void;
+  onRestoreCategory?: (category: string) => void;
+  onPurgeCategory?: (category: string) => void;
+  onRestoreConnection?: (id: string) => void;
+  onPurgeConnection?: (id: string) => void;
   /** Optimistic local update while dragging */
   onConnectionsChange: (next: SavedSshConnection[]) => void;
   /** Persist category/sort after a drag completes */
@@ -757,6 +1010,7 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
   categoryMeta,
   collapsedCategories,
   onToggleCategory,
+  onSetCategoriesCollapsed,
   onCategoryOrderChange,
   onCategoryColorChange,
   onCategoryRename,
@@ -766,6 +1020,22 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
   cloningCategory = false,
   onCloneCategory,
   onCreatePrivateSpace,
+  libraryScope = 'active',
+  onLibraryScopeChange,
+  recycledCategories = [],
+  activeCount = 0,
+  archivedCount = 0,
+  recycleCount = 0,
+  onArchiveCategory,
+  onDeleteCategory,
+  onArchiveSelected,
+  onDeleteSelected,
+  onRestoreSelected,
+  onPurgeSelected,
+  onRestoreCategory,
+  onPurgeCategory,
+  onRestoreConnection,
+  onPurgeConnection,
   onConnectionsChange,
   onReorderCommit,
   liveCountFor,
@@ -797,7 +1067,11 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
       if (seen.has(k)) continue;
       if (!filterActive || fromConns.includes(k) || k === UNCATEGORIZED_KEY) {
         const hasFiltered = filteredConnections.some((c) => categoryKey(c.category) === k);
-        const keepEmpty = !filterActive && categoryOrder.includes(k) && k !== UNCATEGORIZED_KEY;
+        const keepEmpty =
+          !filterActive &&
+          libraryScope === 'active' &&
+          categoryOrder.includes(k) &&
+          k !== UNCATEGORIZED_KEY;
         if (hasFiltered || keepEmpty) {
           seen.add(k);
           ordered.push(k);
@@ -815,7 +1089,7 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
       ordered.unshift(UNCATEGORIZED_KEY);
     }
     return ordered;
-  }, [filteredConnections, categoryOrder, filterActive]);
+  }, [filteredConnections, categoryOrder, filterActive, libraryScope]);
 
   const itemsByCategory = useMemo(() => {
     const map: Record<string, SavedSshConnection[]> = {};
@@ -1014,7 +1288,100 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
             Clear filter to drag-and-drop rearrange.
           </p>
         )}
-        {canCreatePrivateSpace && (
+        {onLibraryScopeChange && (
+          <div className="flex items-center gap-1 flex-wrap p-0.5 rounded-xl bg-slate-100/90 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-700">
+            {(
+              [
+                { id: 'active' as const, label: 'Active', emoji: '⚡', count: activeCount, tone: 'brand' },
+                { id: 'archived' as const, label: 'Archived', emoji: '📦', count: archivedCount, tone: 'amber' },
+                { id: 'recycle' as const, label: 'Recycle', emoji: '🗑️', count: recycleCount, tone: 'rose' },
+              ] as const
+            ).map((tab) => {
+              const active = libraryScope === tab.id;
+              const activeCls =
+                tab.tone === 'amber'
+                  ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
+                  : tab.tone === 'rose'
+                    ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                    : 'bg-brand-600 text-white border-brand-600 shadow-sm';
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => onLibraryScopeChange(tab.id)}
+                  className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-lg border transition-all ${
+                    active
+                      ? activeCls
+                      : 'border-transparent text-slate-500 hover:bg-white/80 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <span aria-hidden>{tab.emoji}</span>
+                  {tab.label}
+                  {tab.count > 0 ? (
+                    <span
+                      className={`min-w-[1.1rem] h-4 px-1 rounded-full text-[9px] inline-flex items-center justify-center ${
+                        active ? 'bg-white/25 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                      }`}
+                    >
+                      {tab.count}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {libraryScope === 'recycle' && recycledCategories.length > 0 && (
+          <div className="rounded-xl border border-rose-200 dark:border-rose-900/50 bg-gradient-to-r from-rose-50 to-orange-50/40 dark:from-rose-950/30 dark:to-slate-900/20 px-2 py-1.5 space-y-1.5">
+            <p className="text-[10px] font-bold text-rose-700 dark:text-rose-300">🗂️ Deleted categories</p>
+            {recycledCategories.map((rc) => (
+              <div
+                key={`${rc.name}-${rc.deletedAt}`}
+                className="flex items-center gap-1.5 min-w-0 rounded-lg bg-white/70 dark:bg-slate-900/40 px-1.5 py-1"
+              >
+                <span
+                  className="inline-flex items-center justify-center h-6 w-6 rounded-lg text-[12px] shrink-0"
+                  style={{ backgroundColor: hexToRgba(rc.color || '#64748b', 0.28) }}
+                  aria-hidden
+                >
+                  📁
+                </span>
+                <span className="flex-1 min-w-0 text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">
+                  {rc.name}
+                  <span className="text-slate-400 font-normal"> · {rc.connectionIds.length}</span>
+                </span>
+                <EmojiChip
+                  emoji="♻️"
+                  label="Restore"
+                  title={`Restore category ${rc.name}`}
+                  onClick={() => onRestoreCategory?.(rc.name)}
+                  tone="emerald"
+                  solid
+                />
+                <EmojiChip
+                  emoji="💥"
+                  label="Purge"
+                  title={`Permanently delete category ${rc.name}`}
+                  onClick={() => onPurgeCategory?.(rc.name)}
+                  tone="rose"
+                />
+              </div>
+            ))}
+          </div>
+        )}
+        {filteredConnections.length === 0 &&
+          !(libraryScope === 'recycle' && recycledCategories.length > 0) && (
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 px-1.5 py-3 text-center">
+              {libraryScope === 'archived'
+                ? 'No archived connections.'
+                : libraryScope === 'recycle'
+                  ? 'Recycle Bin is empty.'
+                  : filterActive
+                    ? 'No connections match this filter.'
+                    : 'No active connections in this view.'}
+            </p>
+          )}
+        {canCreatePrivateSpace && libraryScope === 'active' && (
           <div className="rounded-md border border-violet-200 dark:border-violet-900/50 bg-violet-50/80 dark:bg-violet-950/30 px-1.5 py-1.5 space-y-1">
             <p className="text-[9px] text-violet-700 dark:text-violet-300 leading-snug">
               Check categories below, then create a private space with their SSH links.
@@ -1052,6 +1419,26 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
             </button>
           </div>
         )}
+        {categories.length > 0 && (
+          <div className="flex items-center gap-1 px-0.5">
+            <button
+              type="button"
+              onClick={() => onSetCategoriesCollapsed(categories, false)}
+              className="flex-1 h-6 px-1.5 text-[9px] font-semibold rounded border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/60"
+              title="Expand all categories"
+            >
+              Expand all
+            </button>
+            <button
+              type="button"
+              onClick={() => onSetCategoriesCollapsed(categories, true)}
+              className="flex-1 h-6 px-1.5 text-[9px] font-semibold rounded border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/60"
+              title="Collapse all categories"
+            >
+              Collapse all
+            </button>
+          </div>
+        )}
         <SortableContext items={namedCategoryIds} strategy={verticalListSortingStrategy}>
           {categories.map((cat) => {
             const items = itemsByCategory[cat] || [];
@@ -1069,6 +1456,7 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
                 collapsed={collapsed}
                 filterActive={filterActive}
                 canRename={cat !== UNCATEGORIZED_KEY}
+                treeMode={view === 'tree'}
                 selectedCount={selectedInCat.length}
                 allSelected={allSelected}
                 spaceSelected={spaceCategoryIds.has(cat)}
@@ -1100,12 +1488,33 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
                 onRunSelected={() => onConnectMany(selectedInCat)}
                 onCloneCategory={() => onCloneCategory(cat)}
                 cloningCategory={cloningCategory}
+                libraryScope={libraryScope}
+                onArchiveCategory={() => onArchiveCategory?.(cat)}
+                onDeleteCategory={() => onDeleteCategory?.(cat)}
+                onArchiveSelected={() =>
+                  onArchiveSelected?.(
+                    cat,
+                    items.filter((c) => selectedIds.has(c.id)).map((c) => c.id)
+                  )
+                }
+                onDeleteSelected={() =>
+                  onDeleteSelected?.(
+                    cat,
+                    items.filter((c) => selectedIds.has(c.id)).map((c) => c.id)
+                  )
+                }
+                onRestoreSelected={() =>
+                  onRestoreSelected?.(items.filter((c) => selectedIds.has(c.id)).map((c) => c.id))
+                }
+                onPurgeSelected={() =>
+                  onPurgeSelected?.(items.filter((c) => selectedIds.has(c.id)).map((c) => c.id))
+                }
               >
                 <CategoryDropZone category={cat}>
                   <SortableContext items={items.map((c) => c.id)} strategy={verticalListSortingStrategy}>
                     {items.length === 0 ? (
                       <p className="text-[10px] text-slate-400 dark:text-slate-500 px-1.5 py-2 text-center">
-                        Drop connections here
+                        {view === 'tree' ? 'Empty folder — drop connections here' : 'Drop connections here'}
                       </p>
                     ) : (
                       items.map((c) => {
@@ -1131,6 +1540,9 @@ export const SshConnectionSidebarList: React.FC<SshConnectionSidebarListProps> =
                             onClone={() => onClone(c)}
                             onCopySsh={() => onCopySsh(c)}
                             onDelete={() => onDelete(c.id)}
+                            onRestore={() => onRestoreConnection?.(c.id)}
+                            onPurge={() => onPurgeConnection?.(c.id)}
+                            libraryScope={libraryScope}
                             onSettings={() => onSettings(c)}
                           />
                         );

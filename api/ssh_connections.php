@@ -320,7 +320,13 @@ function rowToConnection(array $row): array {
         'sortOrder' => normalizeSshSortOrder($row['sort_order'] ?? 0),
         'createdAt' => (int)$row['created_at'],
         'lastUsedAt' => $row['last_used_at'] !== null ? (int)$row['last_used_at'] : null,
+        'archivedAt' => isset($row['archived_at']) && $row['archived_at'] !== null ? (int)$row['archived_at'] : null,
+        'deletedAt' => isset($row['deleted_at']) && $row['deleted_at'] !== null ? (int)$row['deleted_at'] : null,
     ];
+}
+
+function sshConnectionSelectColumns(): string {
+    return 'id, name, ws_url, tags, notes, color, protocol, appearance, category, sort_order, created_at, last_used_at, updated_at, archived_at, deleted_at';
 }
 
 function handleListSshConnections() {
@@ -328,7 +334,7 @@ function handleListSshConnections() {
     $db = getDB();
     $userId = (int)$user['id'];
 
-    $stmt = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, appearance, category, sort_order, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE user_id = ? ORDER BY category ASC, sort_order ASC, name COLLATE NOCASE ASC');
+    $stmt = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, appearance, category, sort_order, created_at, last_used_at, updated_at, archived_at, deleted_at FROM user_ssh_connections WHERE user_id = ? ORDER BY category ASC, sort_order ASC, name COLLATE NOCASE ASC');
     $stmt->execute([$userId]);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -523,6 +529,26 @@ function handleUpdateSshConnection(string $id) {
         $params[] = $last > 0 ? $last : null;
     }
 
+    if (array_key_exists('archivedAt', $data) || array_key_exists('archived_at', $data)) {
+        $rawArchived = array_key_exists('archivedAt', $data) ? $data['archivedAt'] : $data['archived_at'];
+        $fields[] = 'archived_at = ?';
+        if ($rawArchived === null || $rawArchived === '' || $rawArchived === false || (int)$rawArchived <= 0) {
+            $params[] = null;
+        } else {
+            $params[] = (int)$rawArchived;
+        }
+    }
+
+    if (array_key_exists('deletedAt', $data) || array_key_exists('deleted_at', $data)) {
+        $rawDeleted = array_key_exists('deletedAt', $data) ? $data['deletedAt'] : $data['deleted_at'];
+        $fields[] = 'deleted_at = ?';
+        if ($rawDeleted === null || $rawDeleted === '' || $rawDeleted === false || (int)$rawDeleted <= 0) {
+            $params[] = null;
+        } else {
+            $params[] = (int)$rawDeleted;
+        }
+    }
+
     if (empty($fields)) {
         sendJSON(['error' => 'No fields to update'], 400);
     }
@@ -537,7 +563,7 @@ function handleUpdateSshConnection(string $id) {
     $stmt = $db->prepare($sql);
     $stmt->execute($params);
 
-    $fetch = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, appearance, category, sort_order, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE id = ? AND user_id = ?');
+    $fetch = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, appearance, category, sort_order, created_at, last_used_at, updated_at, archived_at, deleted_at FROM user_ssh_connections WHERE id = ? AND user_id = ?');
     $fetch->execute([$id, (int)$user['id']]);
     $row = $fetch->fetch(PDO::FETCH_ASSOC);
     sendJSON(['connection' => rowToConnection($row)]);
@@ -546,12 +572,30 @@ function handleUpdateSshConnection(string $id) {
 function handleDeleteSshConnection(string $id) {
     $user = requireAuth();
     $db = getDB();
-    $stmt = $db->prepare('DELETE FROM user_ssh_connections WHERE id = ? AND user_id = ?');
-    $stmt->execute([$id, (int)$user['id']]);
+    $userId = (int)$user['id'];
+    $permanent = isset($_GET['permanent']) && (string)$_GET['permanent'] === '1';
+
+    if ($permanent) {
+        $stmt = $db->prepare('DELETE FROM user_ssh_connections WHERE id = ? AND user_id = ?');
+        $stmt->execute([$id, $userId]);
+        if ($stmt->rowCount() === 0) {
+            sendJSON(['error' => 'Connection not found'], 404);
+        }
+        sendJSON(['success' => true, 'permanent' => true]);
+        return;
+    }
+
+    $now = time();
+    $stmt = $db->prepare('UPDATE user_ssh_connections SET deleted_at = ?, archived_at = NULL, updated_at = ? WHERE id = ? AND user_id = ?');
+    $stmt->execute([$now, $now, $id, $userId]);
     if ($stmt->rowCount() === 0) {
         sendJSON(['error' => 'Connection not found'], 404);
     }
-    sendJSON(['success' => true]);
+
+    $fetch = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, appearance, category, sort_order, created_at, last_used_at, updated_at, archived_at, deleted_at FROM user_ssh_connections WHERE id = ? AND user_id = ?');
+    $fetch->execute([$id, $userId]);
+    $row = $fetch->fetch(PDO::FETCH_ASSOC);
+    sendJSON(['success' => true, 'permanent' => false, 'connection' => rowToConnection($row)]);
 }
 
 function handleBulkUpsertSshConnections() {
@@ -578,8 +622,8 @@ function handleBulkUpsertSshConnections() {
         $byUrl[(string)$row['ws_url']] = (string)$row['id'];
     }
 
-    $insert = $db->prepare('INSERT INTO user_ssh_connections (id, user_id, name, ws_url, tags, notes, color, protocol, appearance, category, sort_order, created_at, last_used_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    $update = $db->prepare('UPDATE user_ssh_connections SET name = ?, tags = ?, notes = ?, color = ?, protocol = ?, appearance = COALESCE(?, appearance), category = ?, sort_order = ?, last_used_at = COALESCE(?, last_used_at), updated_at = ? WHERE id = ? AND user_id = ?');
+    $insert = $db->prepare('INSERT INTO user_ssh_connections (id, user_id, name, ws_url, tags, notes, color, protocol, appearance, category, sort_order, created_at, last_used_at, updated_at, archived_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $update = $db->prepare('UPDATE user_ssh_connections SET name = ?, tags = ?, notes = ?, color = ?, protocol = ?, appearance = COALESCE(?, appearance), category = ?, sort_order = ?, last_used_at = COALESCE(?, last_used_at), archived_at = ?, deleted_at = ?, updated_at = ? WHERE id = ? AND user_id = ?');
 
     $db->beginTransaction();
     try {
@@ -629,6 +673,23 @@ function handleBulkUpsertSshConnections() {
             if ($createdAt <= 0) {
                 $createdAt = $now;
             }
+            $archivedAt = null;
+            if (array_key_exists('archivedAt', $item) || array_key_exists('archived_at', $item)) {
+                $rawArchived = array_key_exists('archivedAt', $item) ? $item['archivedAt'] : $item['archived_at'];
+                if ($rawArchived !== null && $rawArchived !== '' && (int)$rawArchived > 0) {
+                    $archivedAt = (int)$rawArchived;
+                }
+            }
+            $deletedAt = null;
+            if (array_key_exists('deletedAt', $item) || array_key_exists('deleted_at', $item)) {
+                $rawDeleted = array_key_exists('deletedAt', $item) ? $item['deletedAt'] : $item['deleted_at'];
+                if ($rawDeleted !== null && $rawDeleted !== '' && (int)$rawDeleted > 0) {
+                    $deletedAt = (int)$rawDeleted;
+                }
+            }
+            if ($deletedAt !== null) {
+                $archivedAt = null;
+            }
 
             if (isset($byUrl[$wsUrl])) {
                 $update->execute([
@@ -641,6 +702,8 @@ function handleBulkUpsertSshConnections() {
                     $category,
                     $sortOrder,
                     $lastUsed,
+                    $archivedAt,
+                    $deletedAt,
                     $now,
                     $byUrl[$wsUrl],
                     $userId,
@@ -670,6 +733,8 @@ function handleBulkUpsertSshConnections() {
                     $createdAt,
                     $lastUsed,
                     $now,
+                    $archivedAt,
+                    $deletedAt,
                 ]);
                 $byUrl[$wsUrl] = $id;
             }
@@ -682,7 +747,7 @@ function handleBulkUpsertSshConnections() {
         sendJSON(['error' => 'Failed to import connections'], 500);
     }
 
-    $stmt = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, appearance, category, sort_order, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE user_id = ? ORDER BY category ASC, sort_order ASC, name COLLATE NOCASE ASC');
+    $stmt = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, appearance, category, sort_order, created_at, last_used_at, updated_at, archived_at, deleted_at FROM user_ssh_connections WHERE user_id = ? ORDER BY category ASC, sort_order ASC, name COLLATE NOCASE ASC');
     $stmt->execute([$userId]);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     sendJSON(['connections' => array_map('rowToConnection', $rows)]);
@@ -725,7 +790,7 @@ function handleReorderSshConnections() {
         sendJSON(['error' => 'Failed to reorder connections'], 500);
     }
 
-    $fetch = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, appearance, category, sort_order, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE user_id = ? ORDER BY category ASC, sort_order ASC, name COLLATE NOCASE ASC');
+    $fetch = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, appearance, category, sort_order, created_at, last_used_at, updated_at, archived_at, deleted_at FROM user_ssh_connections WHERE user_id = ? ORDER BY category ASC, sort_order ASC, name COLLATE NOCASE ASC');
     $fetch->execute([$userId]);
     sendJSON(['connections' => array_map('rowToConnection', $fetch->fetchAll(PDO::FETCH_ASSOC))]);
 }
