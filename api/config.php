@@ -117,7 +117,7 @@ define('SYSTEM_TOKEN', 'linknest_secret_token_123'); // Change this for producti
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 83);
+    define('LINKNEST_SCHEMA_VERSION', 84);
 }
 
 /**
@@ -515,6 +515,12 @@ function ensureSshConnectionColorColumn(PDO $db): void {
         }
         if (!in_array('appearance', $names, true)) {
             $db->exec('ALTER TABLE user_ssh_connections ADD COLUMN appearance TEXT');
+        }
+        if (!in_array('category', $names, true)) {
+            $db->exec("ALTER TABLE user_ssh_connections ADD COLUMN category TEXT NOT NULL DEFAULT ''");
+        }
+        if (!in_array('sort_order', $names, true)) {
+            $db->exec('ALTER TABLE user_ssh_connections ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
         }
         $ensured = true;
     } catch (PDOException $e) {
@@ -1935,6 +1941,8 @@ function initDatabase() {
             color TEXT DEFAULT \'#0ea5e9\',
             protocol TEXT DEFAULT \'ssh\',
             appearance TEXT,
+            category TEXT NOT NULL DEFAULT \'\',
+            sort_order INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL,
             last_used_at INTEGER,
             updated_at INTEGER NOT NULL,
@@ -1955,6 +1963,18 @@ function initDatabase() {
 
         try {
             $db->exec('ALTER TABLE user_ssh_connections ADD COLUMN appearance TEXT');
+        } catch (PDOException $e) {
+            // Column already exists
+        }
+
+        try {
+            $db->exec("ALTER TABLE user_ssh_connections ADD COLUMN category TEXT NOT NULL DEFAULT ''");
+        } catch (PDOException $e) {
+            // Column already exists
+        }
+
+        try {
+            $db->exec('ALTER TABLE user_ssh_connections ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
         } catch (PDOException $e) {
             // Column already exists
         }

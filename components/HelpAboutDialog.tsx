@@ -549,7 +549,8 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">In-app App Updates</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Admins can check GitHub commits/releases, preview changes, apply updates with database backup, and roll back from the App Updates UI (XAMPP/filesystem installs).
+                      Admins can check GitHub commits/releases, preview changes, apply updates with database backup, and roll back (XAMPP installs).
+                      For ArchLinks + ERP3, publish one portable Release and apply it on each instance — Help → In-app App Updates.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -662,26 +663,85 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
                     <path fillRule="evenodd" d="M4.5 2A1.5 1.5 0 003 3.5v13A1.5 1.5 0 004.5 18h11a1.5 1.5 0 001.5-1.5V7.621a1.5 1.5 0 00-.44-1.06l-4.12-4.122A1.5 1.5 0 0011.378 2H4.5zm5.75 7.75a.75.75 0 00-1.5 0v2.546l-.72-.72a.75.75 0 00-1.06 1.06l2 2a.75.75 0 001.06 0l2-2a.75.75 0 10-1.06-1.06l-.72.72V9.75z" clipRule="evenodd" />
                   </svg>
-                  In-app App Updates
+                  In-app App Updates (office / ArchLinks / ERP3)
                 </h3>
                 <div className="space-y-3 text-slate-700 dark:text-slate-300">
-                  <p>
-                    On XAMPP / filesystem installs, admins can update {appName} from GitHub without manually copying a deploy ZIP. Open the bell in the nav or <strong>Admin → Tools → App Updates</strong>.
+                  <p className="text-sm">
+                    On XAMPP / filesystem installs, admins update {appName} from GitHub without copying a deploy ZIP by hand.
+                    Open the bell in the nav or <strong>Admin → Tools → App Updates</strong>. Full guide:{' '}
+                    <strong>Guides → App Updates</strong>.
                   </p>
-                  <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
-                    <p className="font-medium text-brand-900 dark:text-brand-100">What you can do:</p>
-                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
-                      <li>Track a branch (e.g. <code className="bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded text-xs">main</code>) and see new commits ahead of your install</li>
-                      <li>Apply versioned GitHub Releases (<code className="bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded text-xs">vX.Y.Z</code>)</li>
-                      <li>Preview changed files, approximate size, and ETA before updating</li>
-                      <li>Back up the database before apply (on by default) and keep rollback snapshots</li>
-                      <li>Restore a previous snapshot (optionally with the linked DB backup)</li>
-                      <li>See <strong>local only</strong> commits made on this machine that are not yet pushed</li>
+
+                  <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 border border-emerald-200 dark:border-emerald-800">
+                    <p className="font-medium text-emerald-900 dark:text-emerald-100">
+                      Recommended: one portable Release for every folder (ArchLinks, ERP3, …)
+                    </p>
+                    <ol className="list-decimal list-inside space-y-1.5 text-sm ml-0.5">
+                      <li>
+                        On the <strong>build PC</strong>, push your branch (e.g. <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">updater</code>), then:
+                        <pre className="mt-1 p-2 text-[11px] font-mono bg-white dark:bg-slate-900 rounded border border-emerald-200 dark:border-emerald-800 overflow-x-auto whitespace-pre-wrap">{`$env:GITHUB_TOKEN = 'ghp_…'
+.\\scripts\\publish-update-release.ps1 -Version 2.3.2
+# default BasePath = relative (portable) — do NOT use /linknest`}</pre>
+                      </li>
+                      <li>
+                        On <strong>each</strong> office instance (ArchLinks, then ERP3): App Updates → Track branch → Check → select the{' '}
+                        <strong>Release</strong> (not only a commit) → Back up DB → Update → <strong>Ctrl+F5</strong>.
+                      </li>
+                      <li>
+                        Same Release works under any folder name. Assets use <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">./assets/…</code>;
+                        API resolves to <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">/ArchLinks/api</code> or{' '}
+                        <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">/ERP3/api</code> from the browser path.
+                      </li>
+                    </ol>
+                  </div>
+
+                  <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 space-y-2 border border-amber-200 dark:border-amber-800">
+                    <p className="font-medium text-amber-900 dark:text-amber-100">Commits vs Releases (widgets / UI)</p>
+                    <ul className="list-disc list-inside space-y-1 text-sm ml-0.5">
+                      <li>
+                        The browser loads <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">dist/</code>, not raw{' '}
+                        <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">.tsx</code>. <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">dist/</code> is gitignored.
+                      </li>
+                      <li>
+                        Office <strong>zip</strong> mode without Node: applying a <strong>commit</strong> updates PHP/API but can leave the{' '}
+                        <strong>SSH / VNC widget UI old</strong>. Prefer a <strong>Release</strong> that includes built <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">dist/</code>.
+                      </li>
+                      <li>
+                        Never publish office Releases with <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">-BasePath &quot;/linknest&quot;</code> if you also run ArchLinks or ERP3 — you will get 404s under the wrong folder.
+                      </li>
                     </ul>
                   </div>
-                  <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
-                    <p className="text-sm text-amber-800 dark:text-amber-200">
-                      <strong>Note:</strong> Private repos need a GitHub classic PAT with <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">repo</code> scope. Docker in-container updates are out of scope — use your image rebuild process instead. Full details are in Guides → App Updates.
+
+                  <div className="bg-sky-50 dark:bg-sky-900/20 rounded-lg p-4 space-y-2 border border-sky-200 dark:border-sky-800">
+                    <p className="font-medium text-sky-900 dark:text-sky-100">Optional repair rebuild on a server (Node required)</p>
+                    <pre className="p-2 text-[11px] font-mono bg-white dark:bg-slate-900 rounded border border-sky-200 dark:border-sky-800 overflow-x-auto whitespace-pre-wrap">{`cd D:\\Apache\\htdocs\\ArchLinks
+$env:VITE_BASE_PATH = "./"
+$env:VITE_API_BASE = "./api"
+npm ci
+npm run build:prod`}</pre>
+                    <p className="text-xs text-sky-800 dark:text-sky-200">
+                      Use the same <code className="bg-white dark:bg-slate-800 px-1 rounded">./</code> commands under ERP3. Do not set{' '}
+                      <code className="bg-white dark:bg-slate-800 px-1 rounded">/linknest</code> as the base on those hosts.
+                    </p>
+                  </div>
+
+                  <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-brand-900 dark:text-brand-100">What else App Updates can do</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>Track a branch and list commits ahead of the installed SHA</li>
+                      <li>Preview changed files, size estimate, and ETA before updating</li>
+                      <li>Back up the database before apply (on by default) and keep rollback snapshots</li>
+                      <li>Restore a previous snapshot (optionally with the linked DB backup)</li>
+                      <li>Show <strong>local only</strong> commits on this machine that are not yet pushed</li>
+                    </ul>
+                  </div>
+
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
+                    <p className="text-sm">
+                      <strong>Private repos:</strong> classic GitHub PAT with <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">repo</code> scope.
+                      Docker in-container updates are out of scope. Troubleshooting (404 assets, old widgets,{' '}
+                      <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">utils/</code> missing):{' '}
+                      <strong>Guides → App Updates</strong>.
                     </p>
                   </div>
                 </div>
@@ -1388,7 +1448,7 @@ package-for-deployment.bat -BasePath "/myapp"`}</pre>
                     <li>Assign space editor privileges to people or teams with fine-tune permission control (admin only)</li>
                     <li>Manage roles and assign them to users and groups for streamlined access control (admin only)</li>
                     <li>Track tile changes with version control — view, compare, and restore versions</li>
-                    <li>Apply App Updates from the admin bell, with DB backup and rollback (admin, XAMPP installs)</li>
+                    <li>Apply App Updates from the admin bell, with DB backup and rollback (admin, XAMPP installs). For ArchLinks + ERP3 use one portable Release — Help → In-app App Updates / Guides → App Updates</li>
                     <li>Upgrade XAMPP PHP (e.g. to 8.5) with <code className="text-xs">scripts/upgrade-xampp-php.ps1</code> — see Guides → Upgrade PHP in XAMPP (admin / server ops)</li>
                     <li>Build a Windows XAMPP deploy ZIP with <code className="text-xs">package-for-deployment.bat</code> (options: <code className="text-xs">-IncludeDatabase</code>, <code className="text-xs">-ExcludeUploads</code>, <code className="text-xs">-BasePath</code>, <code className="text-xs">-OutputDir</code>, …) — Guides → Package for Deployment</li>
                     <li>Configure optional Analytics and Monitorv2 add-ons under Admin → Add-ons</li>
@@ -1519,7 +1579,7 @@ package-for-deployment.bat -BasePath "/myapp"`}</pre>
                 <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 text-sm text-slate-700 dark:text-slate-300">
                   <ul className="list-disc list-inside space-y-1 ml-2">
                     <li><strong>Mobile Link Preview:</strong> Phone action on Quick Links opens an in-app device mockup (phone / tablet / watch) or a device-sized window for DevTools testing</li>
-                    <li><strong>In-app App Updates:</strong> Check GitHub commits/releases, preview changes, apply with DB backup, and roll back from Admin (XAMPP installs)</li>
+                    <li><strong>In-app App Updates:</strong> Check GitHub commits/releases, preview changes, apply with DB backup, and roll back from Admin (XAMPP installs). Office tip: publish a <strong>portable Release</strong> (default relative base) and apply the same Release on ArchLinks and ERP3 — see Help → In-app App Updates</li>
                     <li><strong>XAMPP PHP upgrade:</strong> PowerShell script to move to PHP 8.5+ with LDAP verification — see Guides → Upgrade PHP in XAMPP</li>
                     <li><strong>Package for Deployment:</strong> <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">package-for-deployment.bat</code> builds a full XAMPP ZIP with SQLite runtime, remote-widget binaries, and optional DB/uploads flags</li>
                     <li><strong>Guides tab:</strong> Searchable in-app documentation (Architecture, App Updates, Package for Deployment, XAMPP PHP upgrade, SSH / VNC Manual Deployment, Remote Widgets Setup, and more)</li>

@@ -539,6 +539,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
   // Ref to store bind password for immediate access (avoids React state timing issues)
   const ldapBindPasswordRef = useRef<string>('');
+  // Per-server bind passwords — SecurePasswordInput can lag behind React state; Test/Save read these first
+  const ldapServerBindPasswordsRef = useRef<Record<number, string>>({});
 
   // Add User modal state
   const [addUserModal, setAddUserModal] = useState(false);
@@ -1122,6 +1124,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }
   };
 
+  const syncLdapServerBindPasswordRefs = (
+    servers: Array<{ bind_password?: string }>
+  ) => {
+    const next: Record<number, string> = {};
+    servers.forEach((s, i) => {
+      next[i] = String(s.bind_password ?? '');
+    });
+    ldapServerBindPasswordsRef.current = next;
+  };
+
   const loadSettings = async () => {
     try {
       setSettingsLoading(true);
@@ -1145,18 +1157,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         try {
           const parsed = JSON.parse(trimmedServersJson);
           if (Array.isArray(parsed)) {
-            setLdapServers(parsed.map((s: any) => ({
+            const normalized = parsed.map((s: any) => ({
               ...s,
               required_groups: s.required_groups ?? '',
               denied_groups: s.denied_groups ?? '',
               bind_password: s.bind_password ?? '',
-            })));
+            }));
+            setLdapServers(normalized);
+            syncLdapServerBindPasswordRefs(normalized);
           } else {
             setLdapServers([]);
+            syncLdapServerBindPasswordRefs([]);
           }
         } catch (e) {
           console.error('Failed to parse LDAP servers:', e);
           setLdapServers([]);
+          syncLdapServerBindPasswordRefs([]);
         }
       } else if (loadedSettings.ldap_server) {
         // Legacy single-server install (ldap_servers never saved) — migrate into UI state once
@@ -1191,8 +1207,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           login_domain: loadedSettings.ldap_login_domain || ''
         };
         setLdapServers([oldServer]);
+        syncLdapServerBindPasswordRefs([oldServer]);
       } else {
         setLdapServers([]);
+        syncLdapServerBindPasswordRefs([]);
       }
       // Update ref with loaded password
       ldapBindPasswordRef.current = loadedSettings.ldap_bind_password || '';
@@ -1209,6 +1227,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setError(err.message || 'Failed to load settings');
     } finally {
       setSettingsLoading(false);
+    }
+  };
+
+  /** Persist current LDAP server list (including bind passwords) to the database. */
+  const persistLdapServers = async (
+    servers: typeof ldapServers,
+    options?: { closeEditor?: boolean }
+  ) => {
+    const serversForSave = servers.map((s, idx) => {
+      const fromRef = String(ldapServerBindPasswordsRef.current[idx] ?? '').trim();
+      const fromState = String(s.bind_password || '').trim();
+      const pw = fromRef || fromState;
+      if (/^[\*\u2022\u00B7\u25CF\u25E6•·]+$/.test(pw)) {
+        throw new Error('A bind password looks masked (asterisks). Clear the field, re-type the real password, then save.');
+      }
+      return {
+        ...s,
+        bind_dn: String(s.bind_dn || '').trim(),
+        // Prefer typed/ref password; blank keeps the previously stored secret on the server
+        bind_password: pw,
+      };
+    });
+
+    await settingsService.updateSettings({
+      ldap_enabled: settings.ldap_enabled === '1' ? '1' : (settings.ldap_enabled || '0'),
+      ldap_servers: JSON.stringify(serversForSave),
+    });
+    await refreshSettings();
+    await loadSettings();
+    if (options?.closeEditor) {
+      setEditingServerIndex(null);
+      setShowServerForm(false);
     }
   };
 
@@ -6734,7 +6784,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               <span aria-hidden>🌐</span> LDAP Servers
                             </h4>
                             <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-slate-500 dark:text-slate-400 mt-1`}>
-                              Configure multiple LDAP servers. Users will select their server from a dropdown during login.
+                              Configure multiple LDAP servers. Use Save Server to store each connection (including bind password) immediately — then Test Connection can use those credentials right away.
                             </p>
                           </div>
                           <button
@@ -6948,9 +6998,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                           <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Bind Password</label>
                                           <SecurePasswordInput
                                             value={server.bind_password}
+                                            showToggle
                                             onChange={(e) => {
+                                              const password = e.target.value;
+                                              ldapServerBindPasswordsRef.current[index] = password;
                                               const updated = [...ldapServers];
-                                              updated[index].bind_password = e.target.value;
+                                              updated[index] = { ...updated[index], bind_password: password };
                                               setLdapServers(updated);
                                             }}
                                             className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
@@ -6958,11 +7011,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                             autoComplete="new-password"
                                           />
                                           <p className="text-[10px] text-slate-500 mt-1">
-                                            Password is never shown after entry. Leave blank when saving to keep the previously stored password.
+                                            Use the eye icon to verify. Leave blank when saving to keep the previously stored password.
                                           </p>
                                           {!!server.bind_dn && !String(server.bind_password || '').trim() && (
                                             <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">
-                                              Bind DN is set but password is empty. Re-enter the service account password, Save Settings, then test again.
+                                              Bind DN is set but password is empty. Enter the service account password, then Save Server (or Test Connection with the password filled in).
                                             </p>
                                           )}
                                         </div>
@@ -7301,17 +7354,43 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                         Cancel
                                       </button>
                                       <button
-                                        onClick={() => {
+                                        type="button"
+                                        disabled={settingsSaving}
+                                        onClick={async () => {
                                           if (!server.server || !server.name) {
                                             alert('Please provide at least a server name and host');
                                             return;
                                           }
-                                          setEditingServerIndex(null);
-                                          setShowServerForm(false);
+                                          try {
+                                            setSettingsSaving(true);
+                                            setError('');
+                                            // Merge latest typed bind password into this server before persist
+                                            const password = String(
+                                              ldapServerBindPasswordsRef.current[index] ?? server.bind_password ?? ''
+                                            ).trim();
+                                            const serversToSave = ldapServers.map((s, i) =>
+                                              i === index
+                                                ? { ...s, bind_password: password || String(s.bind_password || '') }
+                                                : {
+                                                    ...s,
+                                                    bind_password: String(
+                                                      ldapServerBindPasswordsRef.current[i] ?? s.bind_password ?? ''
+                                                    ),
+                                                  }
+                                            );
+                                            setLdapServers(serversToSave);
+                                            syncLdapServerBindPasswordRefs(serversToSave);
+                                            await persistLdapServers(serversToSave, { closeEditor: true });
+                                            alert('LDAP server saved. Bind credentials are stored and ready to test.');
+                                          } catch (err: any) {
+                                            setError(err.message || 'Failed to save LDAP server');
+                                          } finally {
+                                            setSettingsSaving(false);
+                                          }
                                         }}
-                                        className="px-4 py-2 text-sm bg-sky-600 hover:bg-sky-500 text-white rounded-lg transition-colors flex items-center gap-1.5"
+                                        className="px-4 py-2 text-sm bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white rounded-lg transition-colors flex items-center gap-1.5"
                                       >
-                                        <span aria-hidden>💾</span> Save Server
+                                        <span aria-hidden>💾</span> {settingsSaving ? 'Saving...' : 'Save Server'}
                                       </button>
                                     </div>
                                   </div>
@@ -7408,6 +7487,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                           };
                                           const updated = [...ldapServers, clonedServer];
                                           setLdapServers(updated);
+                                          syncLdapServerBindPasswordRefs(updated);
                                           setEditingServerIndex(updated.length - 1);
                                           setShowServerForm(true);
                                         }}
@@ -7425,6 +7505,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                           if (confirm(`Are you sure you want to remove "${server.name || `Server ${index + 1}`}"?`)) {
                                             const updated = ldapServers.filter((_, i) => i !== index);
                                             setLdapServers(updated);
+                                            syncLdapServerBindPasswordRefs(updated);
                                             if (editingServerIndex === index) {
                                               setEditingServerIndex(null);
                                               setShowServerForm(false);
@@ -7542,6 +7623,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>Bind Password</label>
                           <SecurePasswordInput
                             value={settings.ldap_bind_password || ''}
+                            showToggle
                             onChange={(e) => {
                               const password = e.target.value;
                               ldapBindPasswordRef.current = password;
@@ -7552,10 +7634,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             placeholder="Enter service account password"
                             autoComplete="new-password"
                           />
-                          <p className="text-[10px] text-slate-500 mt-1">Password is never shown after entry for security.</p>
+                          <p className="text-[10px] text-slate-500 mt-1">Use the eye icon to verify the password.</p>
                           {!!(settings.ldap_bind_dn || '').trim() && !(settings.ldap_bind_password || '').trim() && (
                             <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">
-                              Bind DN is set but password is empty — re-enter password and Save Settings.
+                              Bind DN is set but password is empty — re-enter password and save.
                             </p>
                           )}
                         </div>
@@ -7930,26 +8012,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 return;
                               }
 
-                              const bindPassword = String(server.bind_password || '').trim();
+                              const bindPassword = String(
+                                ldapServerBindPasswordsRef.current[serverIndex] ||
+                                server.bind_password ||
+                                ''
+                              ).trim();
                               if (isMaskedPassword(bindPassword)) {
                                 setLdapTestResult({
                                   success: false,
-                                  message: 'Bind password looks masked (asterisks). Clear the field, re-type the real password, Save Settings, then test again.'
-                                });
-                                setLdapTestLoading(false);
-                                return;
-                              }
-                              if (String(server.bind_dn || '').trim() && !bindPassword) {
-                                setLdapTestResult({
-                                  success: false,
-                                  message: 'Bind DN is set but password is empty. Re-enter the service account password, Save Settings, then test again.'
+                                  message: 'Bind password looks masked (asterisks). Clear the field, re-type the real password, then test again.'
                                 });
                                 setLdapTestLoading(false);
                                 return;
                               }
 
                               // Handle username format - strip @domain if it matches the server's login_domain
-                              // Also try to extract domain from server hostname or base DN if login_domain not set
                               if (testUsername && testUsername.includes('@')) {
                                 let domainToMatch = server.login_domain;
 
@@ -7987,10 +8064,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 ldap_server: server.server,
                                 ldap_port: server.port,
                                 ldap_protocol: server.protocol,
-                                ldap_tls: server.tls === '1',
+                                ldap_tls: server.tls === '1' ? '1' : '0',
                                 ldap_timeout: server.timeout,
                                 ldap_bind_dn: String(server.bind_dn || '').trim(),
                                 ldap_bind_password: bindPassword,
+                                ldap_server_index: String(serverIndex),
                                 ldap_user_search_base: server.user_search_base,
                                 ldap_user_filter: server.user_filter,
                                 ldap_user_attributes: server.user_attributes,
@@ -8012,24 +8090,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               if (isMaskedPassword(bindPassword) || bindPassword.includes('•') || bindPassword.includes('â€¢')) {
                                 setLdapTestResult({
                                   success: false,
-                                  message: 'Password field contains invalid/masked characters. Clear the field, re-enter the real password, Save Settings, then test again.'
+                                  message: 'Password field contains invalid/masked characters. Clear the field, re-enter the real password, then test again.'
                                 });
                                 setLdapTestLoading(false);
                                 return;
                               }
-                              if ((settings.ldap_bind_dn || '').trim() && !bindPassword) {
-                                setLdapTestResult({
-                                  success: false,
-                                  message: 'Bind DN is set but password is empty. Re-enter the password, Save Settings, then test again.'
-                                });
-                                setLdapTestLoading(false);
-                                return;
-                              }
+                              // Empty password with Bind DN: ldap_test.php will use the stored flat ldap_bind_password
 
                               testSettings = {
                                 ...settings,
                                 ldap_bind_dn: (settings.ldap_bind_dn || '').trim(),
-                                ldap_bind_password: bindPassword
+                                ldap_bind_password: bindPassword,
+                                ldap_server_index: '0'
                               };
                             }
 
@@ -8557,8 +8629,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             // Save LDAP servers as JSON. Empty list purges ALL ldap_* rows in DB.
                             let settingsToSave: Partial<AppSettings>;
                             if (ldapServers.length > 0) {
-                              const serversForSave = ldapServers.map((s) => {
-                                const pw = String(s.bind_password || '').trim();
+                              const serversForSave = ldapServers.map((s, idx) => {
+                                const pw = String(
+                                  ldapServerBindPasswordsRef.current[idx] || s.bind_password || ''
+                                ).trim();
                                 if (/^[\*\u2022\u00B7\u25CF\u25E6•·]+$/.test(pw)) {
                                   throw new Error('A bind password looks masked (asterisks). Clear the field, re-type the real password, then save.');
                                 }

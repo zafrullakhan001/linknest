@@ -85,7 +85,7 @@ function ldapTestResolveBindPassword($pass): string {
     if (function_exists('isMaskedPasswordPlaceholder') && isMaskedPasswordPlaceholder($pass)) {
         throw new Exception(
             'Bind password looks like a masked placeholder (asterisks). ' .
-            'Click the eye icon to verify the password, re-type it if needed, Save Settings, then test again.'
+            'Clear the field, re-type the real password, Save Server, then test again.'
         );
     }
     if (!isLikelyEncryptedPassword($pass)) {
@@ -97,6 +97,54 @@ function ldapTestResolveBindPassword($pass): string {
         // Unusual plaintext that only *looked* encrypted — bind with the raw value
         return $pass;
     }
+}
+
+/**
+ * Load a stored bind password from ldap_servers (or legacy flat key) when the test
+ * form left the password blank ("keep existing").
+ */
+function ldapTestLoadStoredBindPassword(int $serverIndex, string $hostHint = ''): string {
+    try {
+        $db = getDB();
+        $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'ldap_servers' LIMIT 1");
+        $stmt->execute();
+        $row = $stmt->fetch();
+        if ($row && !empty($row['value'])) {
+            $servers = json_decode($row['value'], true);
+            if (is_array($servers)) {
+                $candidate = null;
+                if ($serverIndex >= 0 && isset($servers[$serverIndex]) && is_array($servers[$serverIndex])) {
+                    $candidate = $servers[$serverIndex];
+                } elseif ($hostHint !== '') {
+                    foreach ($servers as $server) {
+                        if (!is_array($server)) {
+                            continue;
+                        }
+                        if (strcasecmp((string)($server['server'] ?? ''), $hostHint) === 0) {
+                            $candidate = $server;
+                            break;
+                        }
+                    }
+                }
+                if ($candidate !== null) {
+                    $stored = $candidate['bind_password'] ?? '';
+                    if (is_string($stored) && trim($stored) !== '') {
+                        return ldapTestResolveBindPassword($stored);
+                    }
+                }
+            }
+        }
+        // Legacy flat key fallback
+        $flatStmt = $db->prepare("SELECT value FROM settings WHERE key = 'ldap_bind_password' LIMIT 1");
+        $flatStmt->execute();
+        $flatRow = $flatStmt->fetch();
+        if ($flatRow && is_string($flatRow['value'] ?? null) && trim((string)$flatRow['value']) !== '') {
+            return ldapTestResolveBindPassword($flatRow['value']);
+        }
+    } catch (Exception $e) {
+        error_log('ldap_test: failed loading stored bind password: ' . $e->getMessage());
+    }
+    return '';
 }
 
 try {
@@ -152,14 +200,20 @@ try {
     // First, bind with service account (if configured) or anonymously
     $serviceBindDn = trim((string)($data['ldap_bind_dn'] ?? ''));
     $serviceBindPass = ldapTestResolveBindPassword($data['ldap_bind_password'] ?? '');
+    // If the UI left password blank (keep existing / already saved via Save Server), load from DB
+    if ($serviceBindDn !== '' && $serviceBindPass === '') {
+        $serverIndex = isset($data['ldap_server_index']) ? (int)$data['ldap_server_index'] : -1;
+        $hostHint = trim((string)($data['ldap_server'] ?? ''));
+        $serviceBindPass = ldapTestLoadStoredBindPassword($serverIndex, $hostHint);
+    }
     $passLen = strlen($serviceBindPass);
     
     $bound = false;
     
     if ($serviceBindDn !== '' && $serviceBindPass === '') {
         throw new Exception(
-            "Bind DN is set but bind password is empty.\n" .
-            "Re-enter the service account password (use the eye icon to verify), click Save Settings, then test again.\n" .
+            "Bind DN is set but bind password is empty (not in the form and not found in saved settings).\n" .
+            "Enter the service account password and click Save Server, then test again.\n" .
             "If the password field was blank after deploy, the old encryption key may not have transferred — retyping and saving fixes it."
         );
     }
@@ -191,7 +245,7 @@ try {
             $msg .= "\n• Prefer BIND DN as user@domain.com or DOMAIN\\username (not only CN=... unless that DN is exact).";
             $msg .= "\n• Use the eye icon to confirm the saved password has no extra spaces.";
             $msg .= "\n• Account must be enabled and allowed to bind (not locked / expired).";
-            $msg .= "\n• After changing the password here, click Save Settings before Test Connection.";
+            $msg .= "\n• After changing the password here, click Save Server before Test Connection.";
             throw new Exception($msg);
         }
     } else {

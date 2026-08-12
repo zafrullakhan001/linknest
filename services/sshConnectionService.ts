@@ -57,6 +57,10 @@ export interface SavedSshConnection {
   notes?: string;
   color?: string;
   appearance?: SshConnectionAppearance;
+  /** Folder/group label; empty = Uncategorized */
+  category?: string;
+  /** Manual order within a category (lower = higher in list) */
+  sortOrder?: number;
   createdAt: number;
   lastUsedAt?: number;
 }
@@ -69,6 +73,18 @@ export function normalizeSshColor(raw: unknown): string {
 
 export function normalizeConnectionProtocol(raw: unknown): RemoteConnectionProtocol {
   return String(raw || '').trim().toLowerCase() === 'rdp' ? 'rdp' : 'ssh';
+}
+
+export function normalizeSshCategory(raw: unknown): string {
+  const cat = String(raw ?? '').trim();
+  if (!cat) return '';
+  return cat.length > 64 ? cat.slice(0, 64) : cat;
+}
+
+export function normalizeSshSortOrder(raw: unknown): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(1_000_000, Math.max(0, Math.round(n)));
 }
 
 export function normalizeSshAppearance(raw: unknown): SshConnectionAppearance | undefined {
@@ -130,6 +146,8 @@ function mapRow(row: any): SavedSshConnection {
     notes: row.notes != null && String(row.notes) ? String(row.notes) : undefined,
     color: normalizeSshColor(row.color),
     appearance: normalizeSshAppearance(row.appearance),
+    category: normalizeSshCategory(row.category),
+    sortOrder: normalizeSshSortOrder(row.sortOrder ?? row.sort_order ?? 0),
     createdAt: typeof row.createdAt === 'number' ? row.createdAt : Number(row.created_at) || Date.now(),
     lastUsedAt:
       typeof row.lastUsedAt === 'number'
@@ -158,6 +176,8 @@ export const sshConnectionService = {
     notes?: string;
     color?: string;
     appearance?: SshConnectionAppearance;
+    category?: string;
+    sortOrder?: number;
   }): Promise<SavedSshConnection> {
     const appearance = normalizeSshAppearance(input.appearance);
     const res = await fetch(SSH_BASE, {
@@ -173,6 +193,8 @@ export const sshConnectionService = {
         notes: input.notes || '',
         color: normalizeSshColor(input.color),
         appearance: appearance || null,
+        category: normalizeSshCategory(input.category),
+        sortOrder: input.sortOrder !== undefined ? normalizeSshSortOrder(input.sortOrder) : undefined,
       }),
     });
     const data = await res.json();
@@ -190,12 +212,16 @@ export const sshConnectionService = {
       notes?: string;
       color?: string;
       appearance?: SshConnectionAppearance | null;
+      category?: string;
+      sortOrder?: number;
       lastUsedAt?: number;
     }
   ): Promise<SavedSshConnection> {
     const body: Record<string, unknown> = { ...patch };
     if (patch.color !== undefined) body.color = normalizeSshColor(patch.color);
     if (patch.protocol !== undefined) body.protocol = normalizeConnectionProtocol(patch.protocol);
+    if (patch.category !== undefined) body.category = normalizeSshCategory(patch.category);
+    if (patch.sortOrder !== undefined) body.sortOrder = normalizeSshSortOrder(patch.sortOrder);
     if (patch.appearance !== undefined) {
       body.appearance = patch.appearance === null ? null : normalizeSshAppearance(patch.appearance) || null;
     }
@@ -219,6 +245,27 @@ export const sshConnectionService = {
     if (!res.ok) throw new Error((data as any).error || 'Failed to delete SSH connection');
   },
 
+  async reorder(
+    items: Array<{ id: string; category: string; sortOrder: number }>
+  ): Promise<SavedSshConnection[]> {
+    const res = await fetch(`${SSH_BASE}/reorder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        items: items.map((item) => ({
+          id: item.id,
+          category: normalizeSshCategory(item.category),
+          sortOrder: normalizeSshSortOrder(item.sortOrder),
+        })),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to reorder SSH connections');
+    const list = Array.isArray(data.connections) ? data.connections : [];
+    return list.map(mapRow);
+  },
+
   async bulkUpsert(connections: SavedSshConnection[]): Promise<SavedSshConnection[]> {
     const res = await fetch(`${SSH_BASE}/bulk`, {
       method: 'POST',
@@ -229,6 +276,8 @@ export const sshConnectionService = {
           ...c,
           protocol: normalizeConnectionProtocol(c.protocol),
           color: normalizeSshColor(c.color),
+          category: normalizeSshCategory(c.category),
+          sortOrder: normalizeSshSortOrder(c.sortOrder),
           appearance: normalizeSshAppearance(c.appearance) || null,
         })),
       }),

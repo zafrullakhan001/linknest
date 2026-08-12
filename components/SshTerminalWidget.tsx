@@ -14,6 +14,8 @@ import {
   SSH_CONNECTION_COLORS,
   normalizeSshColor,
   normalizeSshAppearance,
+  normalizeSshCategory,
+  normalizeSshSortOrder,
   normalizeConnectionProtocol,
 } from '../services/sshConnectionService';
 import {
@@ -25,6 +27,13 @@ import type { OpenSshTerminalDetail } from '../utils/sshLink';
 import { buildSshLinkUrl } from '../utils/sshLink';
 import { RdpSessionPane } from './RdpSessionPane';
 import { XtermZoomSafeHost } from './XtermZoomSafeHost';
+import {
+  SshConnectionSidebarList,
+  mergeCategoryOrder,
+  categoryAccentColor,
+  type SshCategoryMetaMap,
+  type SshListViewMode,
+} from './SshConnectionSidebarList';
 
 interface SshTerminalWidgetProps {
   onClose?: () => void;
@@ -42,6 +51,10 @@ const USER_STORAGE_KEY = 'linknest.sshTerminal.username.v1';
 const MODE_STORAGE_KEY = 'linknest.sshTerminal.mode.v1';
 const X11_STORAGE_KEY = 'linknest.sshTerminal.x11.v1';
 const CONNECTIONS_STORAGE_KEY = 'linknest.sshTerminal.savedConnections.v1';
+const LIST_DENSITY_KEY = 'linknest.sshTerminal.listDensity.v1';
+const CATEGORY_ORDER_KEY = 'linknest.sshTerminal.categoryOrder.v1';
+const CATEGORY_COLLAPSED_KEY = 'linknest.sshTerminal.categoryCollapsed.v1';
+const CATEGORY_META_KEY = 'linknest.sshTerminal.categoryMeta.v1';
 const PANEL_OPEN_KEY = 'linknest.sshTerminal.panelOpen.v1';
 const PANEL_WIDTH_KEY = 'linknest.sshTerminal.panelWidth.v1';
 const CMD_BAR_HEIGHT_KEY = 'linknest.sshTerminal.cmdBarHeight.v1';
@@ -792,7 +805,7 @@ function loadLocalConnections(): SavedSshConnection[] {
     if (!Array.isArray(parsed)) return [];
     return parsed
       .filter((c) => c && typeof c.id === 'string' && typeof c.wsUrl === 'string' && typeof c.name === 'string')
-      .map((c) => ({
+      .map((c, index) => ({
         id: c.id,
         name: String(c.name),
         wsUrl: String(c.wsUrl),
@@ -801,11 +814,68 @@ function loadLocalConnections(): SavedSshConnection[] {
         notes: typeof c.notes === 'string' && c.notes ? c.notes : undefined,
         color: normalizeSshColor(c.color),
         appearance: normalizeSshAppearance(c.appearance),
+        category: normalizeSshCategory(c.category),
+        sortOrder: normalizeSshSortOrder(c.sortOrder ?? index),
         createdAt: typeof c.createdAt === 'number' ? c.createdAt : Date.now(),
         lastUsedAt: typeof c.lastUsedAt === 'number' ? c.lastUsedAt : undefined,
       }));
   } catch {
     return [];
+  }
+}
+
+function loadListDensity(): SshListViewMode {
+  try {
+    return localStorage.getItem(LIST_DENSITY_KEY) === 'compact' ? 'compact' : 'cards';
+  } catch {
+    return 'cards';
+  }
+}
+
+function loadCategoryOrder(): string[] {
+  try {
+    const raw = localStorage.getItem(CATEGORY_ORDER_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((c) => normalizeSshCategory(c)).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function loadCollapsedCategories(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(CATEGORY_COLLAPSED_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out: Record<string, boolean> = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      out[k] = Boolean(v);
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function loadCategoryMeta(): SshCategoryMetaMap {
+  try {
+    const raw = localStorage.getItem(CATEGORY_META_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out: SshCategoryMetaMap = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      const key = k === '__uncategorized__' ? '' : normalizeSshCategory(k);
+      if (k !== '' && k !== '__uncategorized__' && !key) continue;
+      if (!v || typeof v !== 'object') continue;
+      out[key] = { color: normalizeSshColor((v as { color?: unknown }).color) };
+    }
+    return out;
+  } catch {
+    return {};
   }
 }
 
@@ -1164,10 +1234,17 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
   const [draftName, setDraftName] = useState('');
   const [draftTags, setDraftTags] = useState('');
   const [draftNotes, setDraftNotes] = useState('');
+  const [draftCategory, setDraftCategory] = useState('');
   const [draftColor, setDraftColor] = useState<string>(SSH_CONNECTION_COLORS[0]);
   const [draftProtocol, setDraftProtocol] = useState<RemoteConnectionProtocol>('ssh');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [notice, setNotice] = useState(IDLE_NOTICE);
+  const [listDensity, setListDensity] = useState<SshListViewMode>(() => loadListDensity());
+  const [categoryOrder, setCategoryOrder] = useState<string[]>(() => loadCategoryOrder());
+  const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>(
+    () => loadCollapsedCategories()
+  );
+  const [categoryMeta, setCategoryMeta] = useState<SshCategoryMetaMap>(() => loadCategoryMeta());
 
   const useServer = Boolean(isAuthenticated);
 
@@ -1393,10 +1470,12 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       .filter((c) => {
         if (filterTag && !c.tags.includes(filterTag)) return false;
         if (!q) return true;
+        const cat = normalizeSshCategory(c.category).toLowerCase();
         return (
           c.name.toLowerCase().includes(q) ||
           c.wsUrl.toLowerCase().includes(q) ||
           (c.notes || '').toLowerCase().includes(q) ||
+          cat.includes(q) ||
           c.tags.some((t) => t.includes(q)) ||
           (() => {
             const a = parseAutoTargetUrl(c.wsUrl);
@@ -1409,13 +1488,88 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
           })()
         );
       })
-      .sort((a, b) => (b.lastUsedAt || b.createdAt) - (a.lastUsedAt || a.createdAt));
+      .sort((a, b) => {
+        const catCmp = normalizeSshCategory(a.category).localeCompare(
+          normalizeSshCategory(b.category),
+          undefined,
+          { sensitivity: 'base' }
+        );
+        if (catCmp !== 0) return catCmp;
+        const so = normalizeSshSortOrder(a.sortOrder) - normalizeSshSortOrder(b.sortOrder);
+        if (so !== 0) return so;
+        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      });
   }, [connections, filterQuery, filterTag]);
+
+  const knownCategories = useMemo(() => mergeCategoryOrder(categoryOrder, connections), [categoryOrder, connections]);
+
+  useEffect(() => {
+    setCategoryOrder((prev) => {
+      const merged = mergeCategoryOrder(prev, connections);
+      if (merged.length === prev.length && merged.every((v, i) => v === prev[i])) return prev;
+      return merged;
+    });
+  }, [connections]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LIST_DENSITY_KEY, listDensity);
+    } catch {
+      // ignore
+    }
+  }, [listDensity]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CATEGORY_ORDER_KEY, JSON.stringify(categoryOrder));
+    } catch {
+      // ignore
+    }
+  }, [categoryOrder]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CATEGORY_COLLAPSED_KEY, JSON.stringify(collapsedCategories));
+    } catch {
+      // ignore
+    }
+  }, [collapsedCategories]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CATEGORY_META_KEY, JSON.stringify(categoryMeta));
+    } catch {
+      // ignore
+    }
+  }, [categoryMeta]);
 
   const updateConnectionsLocal = useCallback((next: SavedSshConnection[]) => {
     setConnections(next);
     persistLocalConnections(next);
   }, []);
+
+  const persistConnectionOrder = useCallback(
+    async (next: SavedSshConnection[]) => {
+      setConnections(next);
+      if (!useServer) {
+        persistLocalConnections(next);
+        return;
+      }
+      try {
+        const saved = await sshConnectionService.reorder(
+          next.map((c) => ({
+            id: c.id,
+            category: normalizeSshCategory(c.category),
+            sortOrder: normalizeSshSortOrder(c.sortOrder),
+          }))
+        );
+        setConnections(saved);
+      } catch (err) {
+        setNotice(err instanceof Error ? err.message : 'Failed to save connection order');
+      }
+    },
+    [useServer]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -2768,6 +2922,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       setDraftName(c.name);
       setDraftTags(c.tags.join(', '));
       setDraftNotes(c.notes || '');
+      setDraftCategory(normalizeSshCategory(c.category));
       setDraftColor(normalizeSshColor(c.color));
       setEditingId(c.id);
       const protocol = normalizeConnectionProtocol(c.protocol);
@@ -2816,6 +2971,104 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       }
     },
     [connectTo, connectRdp, loadAppearanceIntoForm]
+  );
+
+  const connectMany = useCallback(
+    (list: SavedSshConnection[]) => {
+      if (!list.length) {
+        setNotice('No connections selected');
+        return;
+      }
+      const openCount = sessionHandlesRef.current.size;
+      const slots = Math.max(0, maxSshTabs - openCount);
+      if (slots <= 0) {
+        setNotice(`Maximum of ${maxSshTabs} open sessions. Close a tab first.`);
+        return;
+      }
+      const toRun = list.slice(0, slots);
+      const skipped = list.length - toRun.length;
+      toRun.forEach((c, index) => {
+        const protocol = normalizeConnectionProtocol(c.protocol);
+        if (protocol === 'rdp') {
+          connectRdp({
+            url: c.wsUrl,
+            connectionId: c.id,
+            connectionName: c.name,
+          });
+          return;
+        }
+        const auto = parseAutoTargetUrl(c.wsUrl);
+        void connectTo({
+          wsUrl: c.wsUrl,
+          connectionId: c.id,
+          connectionName: c.name,
+          mode: auto ? 'auto' : 'ws',
+          host: auto?.host,
+          port: auto?.port,
+          username: auto?.username,
+        });
+        if (index === toRun.length - 1) {
+          setActiveConnectionId(c.id);
+        }
+      });
+      setNotice(
+        skipped > 0
+          ? `Opened ${toRun.length} session${toRun.length === 1 ? '' : 's'}; skipped ${skipped} (tab limit ${maxSshTabs})`
+          : `Opening ${toRun.length} session${toRun.length === 1 ? '' : 's'}…`
+      );
+    },
+    [connectTo, connectRdp, maxSshTabs]
+  );
+
+  const renameCategory = useCallback(
+    async (fromRaw: string, toRaw: string) => {
+      const from = normalizeSshCategory(fromRaw);
+      const to = normalizeSshCategory(toRaw);
+      if (!from || !to || from === to) return;
+      if (connections.some((c) => normalizeSshCategory(c.category) === to)) {
+        // Allow merge into existing category name
+      }
+      const next = connections.map((c) =>
+        normalizeSshCategory(c.category) === from ? { ...c, category: to } : c
+      );
+      setConnections(next);
+      setCategoryOrder((prev) => {
+        const without = prev.filter((c) => normalizeSshCategory(c) !== from && normalizeSshCategory(c) !== to);
+        const insertAt = Math.max(
+          0,
+          prev.findIndex((c) => normalizeSshCategory(c) === from)
+        );
+        const merged = [...without];
+        merged.splice(insertAt === -1 ? merged.length : insertAt, 0, to);
+        return mergeCategoryOrder(merged, next);
+      });
+      setCollapsedCategories((prev) => {
+        const out = { ...prev };
+        if (Object.prototype.hasOwnProperty.call(out, from)) {
+          out[to] = out[from];
+          delete out[from];
+        }
+        return out;
+      });
+      setCategoryMeta((prev) => {
+        const out = { ...prev };
+        if (out[from]) {
+          out[to] = out[from];
+          delete out[from];
+        } else if (!out[to]) {
+          out[to] = { color: categoryAccentColor(from, prev) };
+        }
+        return out;
+      });
+      if (normalizeSshCategory(draftCategory) === from) setDraftCategory(to);
+      try {
+        await persistConnectionOrder(next);
+        setNotice(`Renamed category to “${to}”`);
+      } catch (err) {
+        setNotice(err instanceof Error ? err.message : 'Failed to rename category');
+      }
+    },
+    [connections, draftCategory, persistConnectionOrder]
   );
 
   // Handle open from ssh:// space links (App → pendingOpen)
@@ -2936,9 +3189,21 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     }
     const tags = parseTags(draftTags);
     const notes = draftNotes.trim() || undefined;
+    const category = normalizeSshCategory(draftCategory);
     const color = normalizeSshColor(draftColor);
     const protocol = draftProtocol;
     const appearance = snapshotDraftAppearance();
+    const nextSortOrder = (() => {
+      if (editingId) {
+        const existing = connections.find((c) => c.id === editingId);
+        if (existing && normalizeSshCategory(existing.category) === category) {
+          return normalizeSshSortOrder(existing.sortOrder);
+        }
+      }
+      const siblings = connections.filter((c) => normalizeSshCategory(c.category) === category);
+      const max = siblings.reduce((m, c) => Math.max(m, normalizeSshSortOrder(c.sortOrder)), -1);
+      return max + 1;
+    })();
 
     setSaving(true);
     try {
@@ -2952,6 +3217,8 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
             color,
             protocol,
             appearance,
+            category,
+            sortOrder: nextSortOrder,
           });
           setConnections((prev) => prev.map((c) => (c.id === editingId ? updated : c)));
           setActiveConnectionId(editingId);
@@ -2965,6 +3232,8 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
             color,
             protocol,
             appearance,
+            category,
+            sortOrder: nextSortOrder,
           });
           setConnections((prev) => [created, ...prev]);
           setActiveConnectionId(created.id);
@@ -2984,6 +3253,8 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                   notes,
                   color,
                   appearance,
+                  category,
+                  sortOrder: nextSortOrder,
                 }
               : c
           )
@@ -3000,12 +3271,20 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
           notes,
           color,
           appearance,
+          category,
+          sortOrder: nextSortOrder,
           createdAt: Date.now(),
         };
         updateConnectionsLocal([created, ...connections]);
         setActiveConnectionId(created.id);
         setEditingId(created.id);
         setNotice(`Saved “${name}”`);
+      }
+      if (category) {
+        setCategoryOrder((prev) => mergeCategoryOrder(prev, [{ category } as SavedSshConnection]));
+        setCategoryMeta((prev) =>
+          prev[category] ? prev : { ...prev, [category]: { color: categoryAccentColor(category, prev) } }
+        );
       }
       setWsUrl(url);
     } catch (err) {
@@ -3021,6 +3300,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
     setDraftName('');
     setDraftTags('');
     setDraftNotes('');
+    setDraftCategory('');
     setDraftProtocol('ssh');
     setDraftColor(SSH_CONNECTION_COLORS[Math.floor(Math.random() * SSH_CONNECTION_COLORS.length)]);
     loadAppearanceIntoForm(defaultConnectionAppearance());
@@ -3034,7 +3314,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
       version: 1,
       type: 'linknest-ssh-connections',
       exportedAt: new Date().toISOString(),
-      connections: connections.map(({ id, name, wsUrl: u, protocol, tags, notes, color, appearance, createdAt, lastUsedAt }) => ({
+      connections: connections.map(({ id, name, wsUrl: u, protocol, tags, notes, color, appearance, category, sortOrder, createdAt, lastUsedAt }) => ({
         id,
         name,
         wsUrl: u,
@@ -3043,6 +3323,8 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
         notes,
         color: normalizeSshColor(color),
         appearance: normalizeSshAppearance(appearance) || undefined,
+        category: normalizeSshCategory(category),
+        sortOrder: normalizeSshSortOrder(sortOrder),
         createdAt,
         lastUsedAt,
       })),
@@ -3104,6 +3386,8 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
           notes: typeof item.notes === 'string' && item.notes.trim() ? item.notes.trim() : undefined,
           color: normalizeSshColor(item.color),
           appearance: normalizeSshAppearance(item.appearance),
+          category: normalizeSshCategory(item.category),
+          sortOrder: normalizeSshSortOrder(item.sortOrder ?? item.sort_order ?? incoming.length),
           createdAt: typeof item.createdAt === 'number' ? item.createdAt : Date.now(),
           lastUsedAt: typeof item.lastUsedAt === 'number' ? item.lastUsedAt : undefined,
         });
@@ -3235,12 +3519,67 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
         setDraftName('');
         setDraftTags('');
         setDraftNotes('');
+        setDraftCategory('');
         setDraftColor(SSH_CONNECTION_COLORS[0]);
       }
       if (activeConnectionId === id) setActiveConnectionId(null);
       setNotice(`Deleted “${target.name}”`);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : 'Failed to delete connection');
+    }
+  };
+
+  const cloneConnection = async (c: SavedSshConnection) => {
+    const baseName = (c.name || 'Connection').trim() || 'Connection';
+    const name = `${baseName} (copy)`;
+    const tags = Array.isArray(c.tags) ? [...c.tags] : [];
+    const notes = c.notes || undefined;
+    const color = normalizeSshColor(c.color);
+    const protocol = normalizeConnectionProtocol(c.protocol);
+    const appearance = normalizeSshAppearance(c.appearance) || undefined;
+    const category = normalizeSshCategory(c.category);
+    const siblings = connections.filter((x) => normalizeSshCategory(x.category) === category);
+    const sortOrder =
+      siblings.reduce((m, x) => Math.max(m, normalizeSshSortOrder(x.sortOrder)), -1) + 1;
+
+    try {
+      let created: SavedSshConnection;
+      if (useServer) {
+        created = await sshConnectionService.create({
+          name,
+          wsUrl: c.wsUrl,
+          tags,
+          notes,
+          color,
+          protocol,
+          appearance: appearance || undefined,
+          category,
+          sortOrder,
+        });
+        setConnections((prev) => [created, ...prev]);
+      } else {
+        created = {
+          id: `ssh_local_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+          name,
+          wsUrl: c.wsUrl,
+          protocol,
+          tags,
+          notes,
+          color,
+          appearance: appearance || undefined,
+          category,
+          sortOrder,
+          createdAt: Date.now(),
+          lastUsedAt: undefined,
+        };
+        updateConnectionsLocal([created, ...connections]);
+      }
+      setActiveConnectionId(created.id);
+      setEditingId(created.id);
+      applyConnection(created, false);
+      setNotice(`Cloned “${baseName}” → “${name}”`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to clone connection');
     }
   };
 
@@ -3447,6 +3786,32 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                     ? `Saved · ${authUsername || 'account'}`
                     : 'Saved · guest (this browser)'}
                 </p>
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setListDensity('cards')}
+                    className={`px-1.5 py-0.5 text-[9px] font-semibold rounded border ${
+                      listDensity === 'cards'
+                        ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900'
+                        : 'border-slate-200 dark:border-slate-600 text-slate-500'
+                    }`}
+                    title="Card view"
+                  >
+                    Cards
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setListDensity('compact')}
+                    className={`px-1.5 py-0.5 text-[9px] font-semibold rounded border ${
+                      listDensity === 'compact'
+                        ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900'
+                        : 'border-slate-200 dark:border-slate-600 text-slate-500'
+                    }`}
+                    title="Compact row view"
+                  >
+                    Compact
+                  </button>
+                </div>
               </div>
               <div className="flex flex-wrap items-center gap-1">
                 <button
@@ -3458,6 +3823,37 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const name = window.prompt('New category name');
+                    if (name == null) return;
+                    const cat = normalizeSshCategory(name);
+                    if (!cat) {
+                      setNotice('Category name cannot be empty');
+                      return;
+                    }
+                    setCategoryOrder((prev) => mergeCategoryOrder(prev, [{ category: cat } as SavedSshConnection]));
+                    setCollapsedCategories((prev) => ({ ...prev, [cat]: false }));
+                    setCategoryMeta((prev) =>
+                      prev[cat]
+                        ? prev
+                        : {
+                            ...prev,
+                            [cat]: { color: categoryAccentColor(cat, prev) },
+                          }
+                    );
+                    setDraftCategory(cat);
+                    setNotice(`Category “${cat}” ready — assign it when saving a connection, or drag cards into it`);
+                  }}
+                  className="p-1.5 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800"
+                  title="Add category"
+                  aria-label="Add category"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v2.25m8.69-6.44l2.12 2.12a1.5 1.5 0 001.061.44H19.5a2.25 2.25 0 012.25 2.25v2.25" />
                   </svg>
                 </button>
                 <button
@@ -3548,7 +3944,7 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
             <div className="flex-1 min-h-0 overflow-y-auto p-1.5 space-y-1">
               {!storageReady ? (
                 <p className="text-[11px] text-slate-400 dark:text-slate-500 px-1.5 py-3 text-center">Loading…</p>
-              ) : filteredConnections.length === 0 ? (
+              ) : filteredConnections.length === 0 && knownCategories.length === 0 ? (
                 <p className="text-[11px] text-slate-400 dark:text-slate-500 px-1.5 py-3 text-center leading-relaxed">
                   No saved connections yet for {useServer ? (authUsername || 'this account') : 'guest (this browser)'}.
                   Open Settings after creating one with <strong>+</strong>, then click <strong>Save</strong>.
@@ -3557,183 +3953,49 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                     : ' Guest saves stay in this browser only and are separate from signed-in accounts.'}
                 </p>
               ) : (
-                filteredConnections.map((c) => {
-                  const active = activeConnectionId === c.id;
-                  const liveTabs = liveTabsForConnection(c.id);
-                  const isLive = liveTabs.length > 0;
-                  const color = normalizeSshColor(c.color);
-                  const isRdp = normalizeConnectionProtocol(c.protocol) === 'rdp';
-                  const sshLink = !isRdp ? sshUrlForConnection(c) : null;
-                  return (
-                    <div
-                      key={c.id}
-                      className={`rounded-lg border overflow-hidden transition-colors ${
-                        active
-                          ? 'border-brand-400 bg-brand-50/80 dark:bg-brand-900/20 dark:border-brand-600'
-                          : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-500'
-                      }`}
-                    >
-                      <div className="flex min-w-0">
-                        <div className="w-1.5 shrink-0 self-stretch" style={{ backgroundColor: color }} title={color} />
-                        <div className="flex-1 min-w-0 p-2">
-                          <button
-                            type="button"
-                            className="w-full text-left"
-                            onClick={() => applyConnection(c, false)}
-                            title={`Edit ${c.name}`}
-                          >
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate">{c.name}</p>
-                              <span
-                                className={`shrink-0 px-1 py-0 rounded text-[9px] font-semibold uppercase tracking-wide ${
-                                  isRdp
-                                    ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300'
-                                    : 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300'
-                                }`}
-                              >
-                                {isRdp ? 'RDP' : 'SSH'}
-                              </span>
-                              {isLive && (
-                                <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0 rounded-full text-[9px] font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                  live{liveTabs.length > 1 ? ` · ${liveTabs.length}` : ''}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[10px] font-mono text-slate-400 truncate mt-0.5">
-                              {(() => {
-                                const a = parseAutoTargetUrl(c.wsUrl);
-                                return a ? `${a.username}@${a.host}:${a.port}` : c.wsUrl;
-                              })()}
-                            </p>
-                            {c.tags.length > 0 && (
-                              <div className="flex flex-wrap gap-0.5 mt-1">
-                                {c.tags.map((t) => (
-                                  <span
-                                    key={t}
-                                    className="px-1 py-0 text-[9px] rounded bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300"
-                                  >
-                                    #{t}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </button>
-
-                          {!isRdp && (
-                            <div className="mt-1.5 space-y-1">
-                              {sshLink && (
-                                <p
-                                  className="text-[9px] font-mono text-slate-500 dark:text-slate-400 truncate"
-                                  title={sshLink}
-                                >
-                                  {sshLink}
-                                </p>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => void copySshUrlForConnection(c)}
-                                className="w-full h-7 px-2 text-[11px] font-semibold rounded-md bg-sky-600 hover:bg-sky-700 text-white shadow-sm"
-                                title="Copy ssh:// URL to paste as a tile / space link"
-                              >
-                                Copy ssh:// link
-                              </button>
-                            </div>
-                          )}
-
-                          <div className="flex items-center gap-1 mt-2">
-                            <button
-                              type="button"
-                              onClick={() => applyConnection(c, true)}
-                              disabled={tabs.length >= maxSshTabs}
-                              className="inline-flex items-center justify-center h-7 w-7 rounded-md bg-brand-600 hover:bg-brand-700 text-white disabled:opacity-40"
-                              title={
-                                tabs.length >= maxSshTabs
-                                  ? `Maximum ${maxSshTabs} sessions`
-                                  : `Connect to ${c.name}`
-                              }
-                              aria-label={`Connect to ${c.name}`}
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-                              </svg>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void disconnectConnectionSessions(c.id)}
-                              disabled={!isLive && tabsForConnection(c.id).length === 0}
-                              className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-35 disabled:cursor-not-allowed"
-                              title={
-                                isLive
-                                  ? `Disconnect live session${liveTabs.length === 1 ? '' : 's'} for ${c.name}`
-                                  : `No open session for ${c.name}`
-                              }
-                              aria-label={`Disconnect ${c.name}`}
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 7.5A2.25 2.25 0 017.5 5.25h9a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-9a2.25 2.25 0 01-2.25-2.25v-9z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 9l6 6M15 9l-6 6" />
-                              </svg>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => applyConnection(c, false)}
-                              className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
-                              title={`Edit ${c.name}`}
-                              aria-label={`Edit ${c.name}`}
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 7.125L16.875 4.5" />
-                              </svg>
-                            </button>
-                            {sshLink && (
-                              <button
-                                type="button"
-                                onClick={() => void copySshUrlForConnection(c)}
-                                className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-sky-200 dark:border-sky-800 text-sky-600 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/40"
-                                title={`Copy ssh:// URL for ${c.name}`}
-                                aria-label={`Copy ssh:// for ${c.name}`}
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
-                                </svg>
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => void deleteConnection(c.id)}
-                              className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
-                              title={`Delete ${c.name}`}
-                              aria-label={`Delete ${c.name}`}
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                              </svg>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => applyConnection(c, false)}
-                              className={`ml-auto inline-flex items-center justify-center h-7 w-7 rounded-md border transition-colors ${
-                                showSettings && activeConnectionId === c.id
-                                  ? 'bg-orange-500 border-orange-600 text-white shadow-sm shadow-orange-500/30'
-                                  : 'border-orange-300 dark:border-orange-700 text-orange-600 dark:text-orange-300 hover:bg-orange-50 dark:hover:bg-orange-950/40'
-                              }`}
-                              title={`Settings for ${c.name}`}
-                              aria-label={`Settings for ${c.name}`}
-                              aria-pressed={showSettings && activeConnectionId === c.id}
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                              </svg>
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
+                <SshConnectionSidebarList
+                  connections={connections}
+                  filteredConnections={filteredConnections}
+                  view={listDensity}
+                  activeConnectionId={activeConnectionId}
+                  showSettings={showSettings}
+                  maxSshTabs={maxSshTabs}
+                  tabsCount={tabs.length}
+                  filterActive={Boolean(filterQuery.trim() || filterTag)}
+                  categoryOrder={knownCategories}
+                  categoryMeta={categoryMeta}
+                  collapsedCategories={collapsedCategories}
+                  onToggleCategory={(cat) => {
+                    const key = cat || '__uncategorized__';
+                    setCollapsedCategories((prev) => ({ ...prev, [key]: !prev[key] }));
+                  }}
+                  onCategoryOrderChange={(next) => setCategoryOrder(mergeCategoryOrder(next, connections))}
+                  onCategoryColorChange={(cat, color) => {
+                    const key = normalizeSshCategory(cat);
+                    setCategoryMeta((prev) => ({
+                      ...prev,
+                      [key]: { color: normalizeSshColor(color) },
+                    }));
+                  }}
+                  onCategoryRename={(from, to) => void renameCategory(from, to)}
+                  onConnectMany={connectMany}
+                  onConnectionsChange={(next) => setConnections(next)}
+                  onReorderCommit={(next) => void persistConnectionOrder(next)}
+                  liveCountFor={(id) => liveTabsForConnection(id).length}
+                  canDisconnect={(id) =>
+                    liveTabsForConnection(id).length > 0 || tabsForConnection(id).length > 0
+                  }
+                  sshUrlFor={(c) =>
+                    normalizeConnectionProtocol(c.protocol) === 'rdp' ? null : sshUrlForConnection(c)
+                  }
+                  onConnect={(c) => applyConnection(c, true)}
+                  onDisconnect={(id) => void disconnectConnectionSessions(id)}
+                  onEdit={(c) => applyConnection(c, false)}
+                  onClone={(c) => void cloneConnection(c)}
+                  onCopySsh={(c) => void copySshUrlForConnection(c)}
+                  onDelete={(id) => void deleteConnection(id)}
+                  onSettings={(c) => applyConnection(c, false)}
+                />
               )}
             </div>
           </aside>
@@ -4362,6 +4624,22 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
                           />
                         </label>
                         <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                          Category
+                          <input
+                            type="text"
+                            list="ssh-connection-categories"
+                            value={draftCategory}
+                            onChange={(e) => setDraftCategory(e.target.value)}
+                            placeholder="Production / Lab / …"
+                            className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                          />
+                          <datalist id="ssh-connection-categories">
+                            {knownCategories.map((cat) => (
+                              <option key={cat} value={cat} />
+                            ))}
+                          </datalist>
+                        </label>
+                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300 sm:col-span-2">
                           Tags (comma-separated)
                           <input
                             type="text"

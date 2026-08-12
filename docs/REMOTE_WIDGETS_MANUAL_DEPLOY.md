@@ -21,6 +21,8 @@ Passwords are never saved. Prefer LAN / VPN; do not expose unauthenticated gatew
 
 **Connection isolation:** Each signed-in user has a private SSH/VNC connection list (`user_id`). Admins do not share lists with each other. Guests use browser-only saves, separate from any account.
 
+**Updating office installs (ArchLinks / ERP3):** Widget UI lives in `dist/`. Use a portable App Updates **Release** (not only a commit) so both folders get the same build — see [`APP_UPDATES.md`](APP_UPDATES.md#office-playbook-archlinks--erp3--any-folder--recommended) and Help & About → In-app App Updates.
+
 ---
 
 ## Path A — Online host (internet available)

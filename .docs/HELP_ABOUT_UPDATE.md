@@ -3,6 +3,15 @@
 ## Overview
 The Help & About dialog has been comprehensively updated to reflect all new features added to LinkNest.
 
+## Latest: Portable App Updates for ArchLinks / ERP3 (2026-08)
+
+- Expanded [`docs/APP_UPDATES.md`](../docs/APP_UPDATES.md) with **Office playbook** (portable Release, commit vs Release, multi-folder steps, troubleshooting)
+- Help tab: **In-app App Updates (office / ArchLinks / ERP3)** — publish once with relative base, apply same Release on every folder
+- Cross-links from Tips, feature cards, About → What’s New, and Remote Widgets manual deploy guide
+- Default publish `-BasePath` is `relative` (not `/linknest`) so one ZIP does not break sibling instances
+
+---
+
 ## Latest: SSH / VNC Manual Deployment guide (2026-08)
 
 - Added writable guide: [`docs/REMOTE_WIDGETS_MANUAL_DEPLOY.md`](../docs/REMOTE_WIDGETS_MANUAL_DEPLOY.md)

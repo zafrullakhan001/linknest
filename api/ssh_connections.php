@@ -20,6 +20,8 @@ switch ($method) {
     case 'POST':
         if ($path === '/bulk') {
             handleBulkUpsertSshConnections();
+        } elseif ($path === '/reorder') {
+            handleReorderSshConnections();
         } elseif ($path === '' || $path === '/') {
             handleCreateSshConnection();
         } else {
@@ -74,6 +76,31 @@ function normalizeWsUrl(string $raw): string {
 
 function normalizeProtocol($raw): string {
     return strtolower(trim((string)$raw)) === 'rdp' ? 'rdp' : 'ssh';
+}
+
+function normalizeSshCategory($raw): string {
+    $cat = trim((string)$raw);
+    if ($cat === '') {
+        return '';
+    }
+    if (mb_strlen($cat) > 64) {
+        $cat = mb_substr($cat, 0, 64);
+    }
+    return $cat;
+}
+
+function normalizeSshSortOrder($raw): int {
+    if (!is_numeric($raw)) {
+        return 0;
+    }
+    $n = (int)$raw;
+    if ($n < 0) {
+        return 0;
+    }
+    if ($n > 1000000) {
+        return 1000000;
+    }
+    return $n;
 }
 
 function validateWsUrl(string $url, string $protocol = 'ssh'): ?string {
@@ -289,6 +316,8 @@ function rowToConnection(array $row): array {
         'notes' => $notes !== '' ? $notes : null,
         'color' => normalizeSshColor($row['color'] ?? '#0ea5e9'),
         'appearance' => $appearance,
+        'category' => normalizeSshCategory($row['category'] ?? ''),
+        'sortOrder' => normalizeSshSortOrder($row['sort_order'] ?? 0),
         'createdAt' => (int)$row['created_at'],
         'lastUsedAt' => $row['last_used_at'] !== null ? (int)$row['last_used_at'] : null,
     ];
@@ -299,7 +328,7 @@ function handleListSshConnections() {
     $db = getDB();
     $userId = (int)$user['id'];
 
-    $stmt = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, appearance, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE user_id = ? ORDER BY COALESCE(last_used_at, created_at) DESC');
+    $stmt = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, appearance, category, sort_order, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE user_id = ? ORDER BY category ASC, sort_order ASC, name COLLATE NOCASE ASC');
     $stmt->execute([$userId]);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -345,6 +374,7 @@ function handleCreateSshConnection() {
         sendJSON(['error' => 'Notes are too long (max 1000 chars)'], 400);
     }
     $color = normalizeSshColor($data['color'] ?? '#0ea5e9');
+    $category = normalizeSshCategory($data['category'] ?? '');
     $appearance = array_key_exists('appearance', $data) ? normalizeSshAppearance($data['appearance']) : null;
     $appearanceJson = $appearance !== null ? json_encode($appearance, JSON_UNESCAPED_UNICODE) : null;
 
@@ -354,11 +384,21 @@ function handleCreateSshConnection() {
 
     $db = getDB();
     $now = time();
-    $stmt = $db->prepare('INSERT INTO user_ssh_connections (id, user_id, name, ws_url, tags, notes, color, protocol, appearance, created_at, last_used_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)');
+    $userId = (int)$user['id'];
+
+    if (array_key_exists('sortOrder', $data) || array_key_exists('sort_order', $data)) {
+        $sortOrder = normalizeSshSortOrder($data['sortOrder'] ?? $data['sort_order']);
+    } else {
+        $maxStmt = $db->prepare('SELECT COALESCE(MAX(sort_order), -1) FROM user_ssh_connections WHERE user_id = ? AND category = ?');
+        $maxStmt->execute([$userId, $category]);
+        $sortOrder = ((int)$maxStmt->fetchColumn()) + 1;
+    }
+
+    $stmt = $db->prepare('INSERT INTO user_ssh_connections (id, user_id, name, ws_url, tags, notes, color, protocol, appearance, category, sort_order, created_at, last_used_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)');
     try {
         $stmt->execute([
             $id,
-            (int)$user['id'],
+            $userId,
             $name,
             $wsUrl,
             json_encode($tags, JSON_UNESCAPED_UNICODE),
@@ -366,6 +406,8 @@ function handleCreateSshConnection() {
             $color,
             $protocol,
             $appearanceJson,
+            $category,
+            $sortOrder,
             $now,
             $now,
         ]);
@@ -386,6 +428,8 @@ function handleCreateSshConnection() {
             'notes' => $notes !== '' ? $notes : null,
             'color' => $color,
             'appearance' => $appearance,
+            'category' => $category,
+            'sortOrder' => $sortOrder,
             'createdAt' => $now,
             'lastUsedAt' => null,
         ]
@@ -463,6 +507,16 @@ function handleUpdateSshConnection(string $id) {
         $params[] = $appearance !== null ? json_encode($appearance, JSON_UNESCAPED_UNICODE) : null;
     }
 
+    if (array_key_exists('category', $data)) {
+        $fields[] = 'category = ?';
+        $params[] = normalizeSshCategory($data['category']);
+    }
+
+    if (array_key_exists('sortOrder', $data) || array_key_exists('sort_order', $data)) {
+        $fields[] = 'sort_order = ?';
+        $params[] = normalizeSshSortOrder($data['sortOrder'] ?? $data['sort_order']);
+    }
+
     if (isset($data['lastUsedAt']) || isset($data['last_used_at'])) {
         $last = isset($data['lastUsedAt']) ? (int)$data['lastUsedAt'] : (int)$data['last_used_at'];
         $fields[] = 'last_used_at = ?';
@@ -483,7 +537,7 @@ function handleUpdateSshConnection(string $id) {
     $stmt = $db->prepare($sql);
     $stmt->execute($params);
 
-    $fetch = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, appearance, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE id = ? AND user_id = ?');
+    $fetch = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, appearance, category, sort_order, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE id = ? AND user_id = ?');
     $fetch->execute([$id, (int)$user['id']]);
     $row = $fetch->fetch(PDO::FETCH_ASSOC);
     sendJSON(['connection' => rowToConnection($row)]);
@@ -524,11 +578,12 @@ function handleBulkUpsertSshConnections() {
         $byUrl[(string)$row['ws_url']] = (string)$row['id'];
     }
 
-    $insert = $db->prepare('INSERT INTO user_ssh_connections (id, user_id, name, ws_url, tags, notes, color, protocol, appearance, created_at, last_used_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    $update = $db->prepare('UPDATE user_ssh_connections SET name = ?, tags = ?, notes = ?, color = ?, protocol = ?, appearance = COALESCE(?, appearance), last_used_at = COALESCE(?, last_used_at), updated_at = ? WHERE id = ? AND user_id = ?');
+    $insert = $db->prepare('INSERT INTO user_ssh_connections (id, user_id, name, ws_url, tags, notes, color, protocol, appearance, category, sort_order, created_at, last_used_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $update = $db->prepare('UPDATE user_ssh_connections SET name = ?, tags = ?, notes = ?, color = ?, protocol = ?, appearance = COALESCE(?, appearance), category = ?, sort_order = ?, last_used_at = COALESCE(?, last_used_at), updated_at = ? WHERE id = ? AND user_id = ?');
 
     $db->beginTransaction();
     try {
+        $bulkIndex = 0;
         foreach ($list as $item) {
             if (!is_array($item)) {
                 continue;
@@ -556,6 +611,12 @@ function handleBulkUpsertSshConnections() {
                 $notes = mb_substr($notes, 0, 1000);
             }
             $color = normalizeSshColor($item['color'] ?? '#0ea5e9');
+            $category = normalizeSshCategory($item['category'] ?? '');
+            if (array_key_exists('sortOrder', $item) || array_key_exists('sort_order', $item)) {
+                $sortOrder = normalizeSshSortOrder($item['sortOrder'] ?? $item['sort_order']);
+            } else {
+                $sortOrder = $bulkIndex;
+            }
             $appearance = array_key_exists('appearance', $item) ? normalizeSshAppearance($item['appearance']) : null;
             $appearanceJson = $appearance !== null ? json_encode($appearance, JSON_UNESCAPED_UNICODE) : null;
             $lastUsed = null;
@@ -577,6 +638,8 @@ function handleBulkUpsertSshConnections() {
                     $color,
                     $protocol,
                     $appearanceJson,
+                    $category,
+                    $sortOrder,
                     $lastUsed,
                     $now,
                     $byUrl[$wsUrl],
@@ -602,12 +665,15 @@ function handleBulkUpsertSshConnections() {
                     $color,
                     $protocol,
                     $appearanceJson,
+                    $category,
+                    $sortOrder,
                     $createdAt,
                     $lastUsed,
                     $now,
                 ]);
                 $byUrl[$wsUrl] = $id;
             }
+            $bulkIndex++;
         }
         $db->commit();
     } catch (Throwable $e) {
@@ -616,8 +682,50 @@ function handleBulkUpsertSshConnections() {
         sendJSON(['error' => 'Failed to import connections'], 500);
     }
 
-    $stmt = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, appearance, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE user_id = ? ORDER BY COALESCE(last_used_at, created_at) DESC');
+    $stmt = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, appearance, category, sort_order, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE user_id = ? ORDER BY category ASC, sort_order ASC, name COLLATE NOCASE ASC');
     $stmt->execute([$userId]);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     sendJSON(['connections' => array_map('rowToConnection', $rows)]);
+}
+
+function handleReorderSshConnections() {
+    $user = requireAuth();
+    $data = getJSONInput();
+    $items = isset($data['items']) && is_array($data['items']) ? $data['items'] : null;
+    if ($items === null) {
+        sendJSON(['error' => 'items array is required'], 400);
+    }
+    if (count($items) > 500) {
+        sendJSON(['error' => 'Too many items (max 500)'], 400);
+    }
+
+    $db = getDB();
+    $userId = (int)$user['id'];
+    $now = time();
+    $stmt = $db->prepare('UPDATE user_ssh_connections SET category = ?, sort_order = ?, updated_at = ? WHERE id = ? AND user_id = ?');
+
+    $db->beginTransaction();
+    try {
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $id = isset($item['id']) ? (string)$item['id'] : '';
+            if ($id === '' || !preg_match('/^[A-Za-z0-9_-]{1,64}$/', $id)) {
+                continue;
+            }
+            $category = normalizeSshCategory($item['category'] ?? '');
+            $sortOrder = normalizeSshSortOrder($item['sortOrder'] ?? $item['sort_order'] ?? 0);
+            $stmt->execute([$category, $sortOrder, $now, $id, $userId]);
+        }
+        $db->commit();
+    } catch (Throwable $e) {
+        $db->rollBack();
+        error_log('SSH reorder failed: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to reorder connections'], 500);
+    }
+
+    $fetch = $db->prepare('SELECT id, name, ws_url, tags, notes, color, protocol, appearance, category, sort_order, created_at, last_used_at, updated_at FROM user_ssh_connections WHERE user_id = ? ORDER BY category ASC, sort_order ASC, name COLLATE NOCASE ASC');
+    $fetch->execute([$userId]);
+    sendJSON(['connections' => array_map('rowToConnection', $fetch->fetchAll(PDO::FETCH_ASSOC))]);
 }

@@ -131,6 +131,8 @@ export interface AppSettings {
   ldap_servers?: string; // JSON string of LDAP servers array
   ldap_bind_dn?: string;
   ldap_bind_password?: string;
+  /** Test-only: which ldap_servers entry to load stored bind password from when form password is blank */
+  ldap_server_index?: string;
   ldap_user_search_base?: string;
   ldap_user_filter?: string;
   ldap_user_attributes?: string;
