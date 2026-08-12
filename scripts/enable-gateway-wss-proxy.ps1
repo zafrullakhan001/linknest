@@ -11,19 +11,20 @@
     on port 443 (no firewall hole for 17681+).
 
 .PARAMETER XamppRoot
-    XAMPP root (default C:\xampp)
+    Apache/XAMPP root (default: inferred from InstallDir, else C:\xampp)
 
 .PARAMETER InstallDir
-    LinkNest install (default %XamppRoot%\htdocs\linknest)
+    LinkNest install (default: parent of scripts\, or %XamppRoot%\htdocs\linknest)
 
 .PARAMETER RestartApache
     Restart Apache2.4 after changes
 
 .EXAMPLE
     .\scripts\enable-gateway-wss-proxy.ps1 -RestartApache
+    .\scripts\enable-gateway-wss-proxy.ps1 -XamppRoot D:\Apache -InstallDir D:\Apache\htdocs\ArchLinks -RestartApache
 #>
 param(
-    [string]$XamppRoot = "C:\xampp",
+    [string]$XamppRoot = "",
     [string]$InstallDir = "",
     [switch]$RestartApache
 )
@@ -37,13 +38,49 @@ function Write-Step([string]$m) { Write-Host "   ->   $m" -ForegroundColor White
 function Write-Err([string]$m) { Write-Host "  [XX]  $m" -ForegroundColor Red }
 
 if ([string]::IsNullOrWhiteSpace($InstallDir)) {
-    $InstallDir = Join-Path $XamppRoot "htdocs\linknest"
+    $here = $PSScriptRoot
+    if ([string]::IsNullOrWhiteSpace($here)) {
+        $here = Split-Path -Parent $MyInvocation.MyCommand.Path
+    }
+    $parent = Split-Path -Parent $here
+    if (Test-Path (Join-Path $parent "api")) {
+        $InstallDir = $parent
+    }
 }
 
-$httpd = Join-Path $XamppRoot "apache\conf\httpd.conf"
-$sslConf = Join-Path $XamppRoot "apache\conf\extra\httpd-ssl.conf"
-$extraDir = Join-Path $XamppRoot "apache\conf\extra"
+if ([string]::IsNullOrWhiteSpace($XamppRoot)) {
+    if (-not [string]::IsNullOrWhiteSpace($InstallDir)) {
+        $htdocs = Split-Path -Parent $InstallDir
+        if ((Split-Path -Leaf $htdocs) -ieq "htdocs") {
+            $XamppRoot = Split-Path -Parent $htdocs
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($XamppRoot)) {
+        $XamppRoot = "C:\xampp"
+    }
+}
+
+$InstallDir = if ($InstallDir) { [IO.Path]::GetFullPath($InstallDir) } else { Join-Path $XamppRoot "htdocs\linknest" }
+$XamppRoot = [IO.Path]::GetFullPath($XamppRoot)
+
+$httpdCandidates = @(
+    (Join-Path $XamppRoot "apache\conf\httpd.conf"),
+    (Join-Path $XamppRoot "conf\httpd.conf")
+)
+$httpd = $httpdCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $httpd) {
+    throw "httpd.conf not found under $XamppRoot (tried apache\conf and conf)"
+}
+$confDir = Split-Path -Parent $httpd
+$extraDir = Join-Path $confDir "extra"
+$sslConf = Join-Path $extraDir "httpd-ssl.conf"
 $destConf = Join-Path $extraDir "linknest-gateway-proxy.conf"
+# Include path relative to ServerRoot (usually apache\ or the Apache root)
+$includeRel = if ($httpd -match '[\\/]apache[\\/]conf[\\/]') {
+    "conf/extra/linknest-gateway-proxy.conf"
+} else {
+    "conf/extra/linknest-gateway-proxy.conf"
+}
 
 $srcCandidates = @(
     (Join-Path $InstallDir "apache\linknest-gateway-proxy.conf"),
@@ -98,10 +135,10 @@ foreach ($m in $modules) {
     $changed = $true
 }
 
-$includeLine = "Include conf/extra/linknest-gateway-proxy.conf"
+$includeLine = $includeRel
 $includeMarker = "linknest-gateway-proxy.conf"
 if ($httpdText -notmatch [regex]::Escape($includeMarker)) {
-    $httpdText = $httpdText.TrimEnd() + "`r`n`r`n# LinkNest SSH/VNC same-origin WSS proxy (HTTPS Mixed Content fix)`r`n" + $includeLine + "`r`n"
+    $httpdText = $httpdText.TrimEnd() + "`r`n`r`n# LinkNest SSH/VNC same-origin WSS proxy (HTTPS Mixed Content fix)`r`nInclude $includeLine`r`n"
     Write-OK "Added Include to httpd.conf"
     $changed = $true
 }
@@ -118,7 +155,7 @@ if (Test-Path $sslConf) {
             $sslText = [regex]::Replace(
                 $sslText,
                 "</VirtualHost>",
-                "    # LinkNest SSH/VNC WSS proxy`r`n    Include conf/extra/linknest-gateway-proxy.conf`r`n</VirtualHost>",
+                ("    # LinkNest SSH/VNC WSS proxy`r`n    Include {0}`r`n</VirtualHost>" -f $includeLine),
                 1
             )
             Set-Content -Path $sslConf -Value $sslText -Encoding ASCII -NoNewline
@@ -148,7 +185,13 @@ if ($changed) {
 
 # Persist setting so API prefers proxy URLs even behind odd proxies
 $db = Join-Path $InstallDir "data\linknest.db"
-$phpExe = Join-Path $XamppRoot "php\php.exe"
+$phpCandidates = @(
+    (Join-Path $XamppRoot "php\php.exe"),
+    (Join-Path $XamppRoot "php.exe"),
+    "C:\xampp\php\php.exe"
+)
+$phpExe = $phpCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $phpExe) { $phpExe = Join-Path $XamppRoot "php\php.exe" }
 if ((Test-Path $phpExe) -and (Test-Path (Split-Path $db -Parent))) {
     Write-Step "Setting gateway_http_proxy=on in SQLite..."
     $tmp = Join-Path $env:TEMP ("ln-gw-proxy-" + [guid]::NewGuid().ToString("N") + ".php")
@@ -176,8 +219,12 @@ try {
 }
 
 # Config test
-$httpdExe = Join-Path $XamppRoot "apache\bin\httpd.exe"
-if (Test-Path $httpdExe) {
+$httpdExeCandidates = @(
+    (Join-Path $XamppRoot "apache\bin\httpd.exe"),
+    (Join-Path $XamppRoot "bin\httpd.exe")
+)
+$httpdExe = $httpdExeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if ($httpdExe) {
     Write-Step "httpd -t ..."
     $prev = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
@@ -192,14 +239,24 @@ if (Test-Path $httpdExe) {
 }
 
 if ($RestartApache) {
-    Write-Step "Restarting Apache2.4..."
-    try {
-        Restart-Service Apache2.4 -ErrorAction Stop
-        Write-OK "Apache2.4 restarted"
+    Write-Step "Restarting Apache..."
+    $restarted = $false
+    foreach ($svcName in @("Apache2.4", "Apache2.4*", "apache2", "httpd")) {
+        $svc = Get-Service -Name $svcName -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($svc) {
+            try {
+                Restart-Service -Name $svc.Name -ErrorAction Stop
+                Write-OK ("Restarted service {0}" -f $svc.Name)
+                $restarted = $true
+                break
+            }
+            catch {
+                Write-Warn ("Service restart failed ({0}): {1}" -f $svc.Name, $_.Exception.Message)
+            }
+        }
     }
-    catch {
-        Write-Warn ("Service restart failed: {0}" -f $_.Exception.Message)
-        Write-Warn "Restart Apache from XAMPP Control Panel"
+    if (-not $restarted) {
+        Write-Warn "Could not restart Apache service automatically - restart it from your control panel"
     }
 }
 
