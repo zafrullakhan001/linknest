@@ -11,6 +11,7 @@ error_reporting(E_ALL);
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/user_notes_helper.php';
+require_once __DIR__ . '/user_audit_helper.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -224,7 +225,14 @@ function handleRegister() {
     
     if ($stmt->execute([$username, $email, $passwordHash, 'local', generateUuid(), time()])) {
         $userId = $db->lastInsertId();
-        
+        logUserAudit('user.registered', [
+            'actor_id' => (int) $userId,
+            'actor_username' => $username,
+            'target_user_id' => (int) $userId,
+            'target_username' => $username,
+            'details' => ['email' => $email, 'source' => 'self_register'],
+        ]);
+
         // Don't auto-login, user needs approval
         sendJSON([
             'success' => true,
@@ -1066,10 +1074,18 @@ function handleApproveUser($userId) {
     requireAdmin(); // Only admins can approve users
     
     $db = getDB();
+    $stmt = $db->prepare('SELECT id, username FROM users WHERE id = ? AND is_admin = 0 AND is_approved = 0');
+    $stmt->execute([$userId]);
+    $pendingUser = $stmt->fetch();
+
     $stmt = $db->prepare('UPDATE users SET is_approved = 1 WHERE id = ? AND is_admin = 0');
     $stmt->execute([$userId]);
     
     if ($stmt->rowCount() > 0) {
+        logUserAudit('user.approved', [
+            'target_user_id' => (int) $userId,
+            'target_username' => $pendingUser['username'] ?? null,
+        ]);
         sendJSON(['success' => true, 'message' => 'User approved successfully']);
     } else {
         sendJSON(['error' => 'User not found or already approved'], 404);
@@ -1104,6 +1120,11 @@ function handleBulkApproveUsers() {
     
     // Create placeholders for IN clause
     $placeholders = str_repeat('?,', count($validIds) - 1) . '?';
+
+    $affected = fetchUsersForAudit($db, $validIds);
+    $toApprove = array_values(array_filter($affected, static function ($u) {
+        return empty($u['is_admin']) && empty($u['is_approved']);
+    }));
     
     // Update all users in a single query
     $stmt = $db->prepare("UPDATE users SET is_approved = 1 WHERE id IN ($placeholders) AND is_admin = 0 AND is_approved = 0");
@@ -1112,6 +1133,7 @@ function handleBulkApproveUsers() {
     $approvedCount = $stmt->rowCount();
     
     if ($approvedCount > 0) {
+        logUserAuditForUsers('user.approved', $toApprove, ['bulk' => true]);
         sendJSON([
             'success' => true, 
             'message' => "Successfully approved $approvedCount user(s)",
@@ -1128,7 +1150,7 @@ function handleRejectUser($userId) {
     $db = getDB();
     
     // Check if user exists and is pending
-    $checkStmt = $db->prepare('SELECT id FROM users WHERE id = ? AND is_admin = 0 AND is_approved = 0');
+    $checkStmt = $db->prepare('SELECT id, username FROM users WHERE id = ? AND is_admin = 0 AND is_approved = 0');
     $checkStmt->execute([$userId]);
     $user = $checkStmt->fetch();
     
@@ -1187,6 +1209,10 @@ function handleRejectUser($userId) {
     $stmt->execute([$userId]);
     
     if ($stmt->rowCount() > 0) {
+        logUserAudit('user.rejected', [
+            'target_user_id' => (int) $userId,
+            'target_username' => $user['username'] ?? null,
+        ]);
         sendJSON(['success' => true, 'message' => 'User rejected and removed']);
     } else {
         sendJSON(['error' => 'Failed to reject user'], 500);
@@ -1249,7 +1275,7 @@ function handleResetPassword($userId) {
     $db = getDB();
     
     // Check if user exists and is eligible for local password change
-    $stmt = $db->prepare('SELECT id, is_admin, auth_source FROM users WHERE id = ?');
+    $stmt = $db->prepare('SELECT id, username, is_admin, auth_source FROM users WHERE id = ?');
     $stmt->execute([$userId]);
     $user = $stmt->fetch();
     
@@ -1276,6 +1302,10 @@ function handleResetPassword($userId) {
     $stmt->execute([$passwordHash, $userId]);
     
     if ($stmt->rowCount() > 0) {
+        logUserAudit('user.password_reset', [
+            'target_user_id' => (int) $userId,
+            'target_username' => $user['username'] ?? null,
+        ]);
         sendJSON(['success' => true, 'message' => 'Password changed successfully']);
     } else {
         sendJSON(['error' => 'Failed to change password'], 500);
@@ -1288,7 +1318,7 @@ function handleDeleteUser($userId) {
     $db = getDB();
     
     // Check if user exists
-    $stmt = $db->prepare('SELECT id, is_admin FROM users WHERE id = ?');
+    $stmt = $db->prepare('SELECT id, username, is_admin FROM users WHERE id = ?');
     $stmt->execute([$userId]);
     $user = $stmt->fetch();
     
@@ -1352,6 +1382,10 @@ function handleDeleteUser($userId) {
     $stmt->execute([$userId]);
     
     if ($stmt->rowCount() > 0) {
+        logUserAudit('user.deleted', [
+            'target_user_id' => (int) $userId,
+            'target_username' => $user['username'] ?? null,
+        ]);
         sendJSON(['success' => true, 'message' => 'User deleted successfully']);
     } else {
         sendJSON(['error' => 'Failed to delete user'], 500);
@@ -1364,7 +1398,7 @@ function handleToggleAuthSource($userId) {
     $db = getDB();
     
     // Check if user exists
-    $stmt = $db->prepare('SELECT id, auth_source FROM users WHERE id = ?');
+    $stmt = $db->prepare('SELECT id, username, auth_source FROM users WHERE id = ?');
     $stmt->execute([$userId]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
     
@@ -1395,6 +1429,11 @@ function handleToggleAuthSource($userId) {
     $updatedUser = $stmt->fetch(PDO::FETCH_ASSOC);
     
     if ($updatedUser && $updatedUser['auth_source'] === $newAuthSource) {
+        logUserAudit('user.auth_source_changed', [
+            'target_user_id' => (int) $userId,
+            'target_username' => $user['username'] ?? null,
+            'details' => ['from' => $currentAuthSource, 'to' => $newAuthSource],
+        ]);
         sendJSON(['success' => true, 'message' => "Auth source updated to {$newAuthSource}", 'auth_source' => $newAuthSource]);
     } else {
         // Even if rowCount is 0, check if the value is already what we want
@@ -1412,7 +1451,7 @@ function handleToggleAdmin($userId) {
     $db = getDB();
     
     // Check if user exists
-    $stmt = $db->prepare('SELECT id, is_admin FROM users WHERE id = ?');
+    $stmt = $db->prepare('SELECT id, username, is_admin FROM users WHERE id = ?');
     $stmt->execute([$userId]);
     $user = $stmt->fetch();
     
@@ -1439,6 +1478,10 @@ function handleToggleAdmin($userId) {
     
     if ($stmt->rowCount() > 0) {
         $action = $newAdminStatus ? 'promoted to admin' : 'demoted from admin';
+        logUserAudit($newAdminStatus ? 'user.promoted' : 'user.demoted', [
+            'target_user_id' => (int) $userId,
+            'target_username' => $user['username'] ?? null,
+        ]);
         sendJSON(['success' => true, 'message' => "User {$action} successfully", 'is_admin' => (bool)$newAdminStatus]);
     } else {
         sendJSON(['error' => 'Failed to update admin status'], 500);
@@ -1476,6 +1519,11 @@ function handleChangeAdminPassword() {
     $stmt->execute([$passwordHash, $user['id']]);
     
     if ($stmt->rowCount() > 0) {
+        logUserAudit('user.password_changed', [
+            'target_user_id' => (int) $user['id'],
+            'target_username' => $user['username'] ?? null,
+            'details' => ['self' => true],
+        ]);
         sendJSON(['success' => true, 'message' => 'Admin password changed successfully']);
     } else {
         sendJSON(['error' => 'Failed to change password'], 500);
@@ -1574,7 +1622,7 @@ function handleToggleDisable($userId) {
     $db = getDB();
     
     // Check if user exists
-    $stmt = $db->prepare('SELECT id, is_disabled, is_admin FROM users WHERE id = ?');
+    $stmt = $db->prepare('SELECT id, username, is_disabled, is_admin FROM users WHERE id = ?');
     $stmt->execute([$userId]);
     $user = $stmt->fetch();
     
@@ -1595,6 +1643,10 @@ function handleToggleDisable($userId) {
     
     if ($stmt->rowCount() > 0) {
         $action = $newDisabledStatus ? 'disabled' : 'enabled';
+        logUserAudit($newDisabledStatus ? 'user.disabled' : 'user.enabled', [
+            'target_user_id' => (int) $userId,
+            'target_username' => $user['username'] ?? null,
+        ]);
         sendJSON(['success' => true, 'message' => "User {$action} successfully", 'is_disabled' => (bool)$newDisabledStatus]);
     } else {
         sendJSON(['error' => 'Failed to update disabled status'], 500);
@@ -1635,7 +1687,7 @@ function handleUpdateUser($userId) {
     $db = getDB();
     
     // Check if user exists
-    $stmt = $db->prepare('SELECT id, username, email, notes FROM users WHERE id = ?');
+    $stmt = $db->prepare('SELECT id, username, email, notes, auth_source FROM users WHERE id = ?');
     $stmt->execute([$userId]);
     $user = $stmt->fetch();
     
@@ -1664,6 +1716,25 @@ function handleUpdateUser($userId) {
     $stmt->execute([$username, $email, $authSource, $finalNotes, $userId]);
     
     if ($stmt->rowCount() >= 0) {
+        $changes = [];
+        if (($user['username'] ?? '') !== $username) {
+            $changes['username'] = ['from' => $user['username'] ?? '', 'to' => $username];
+        }
+        if (($user['email'] ?? '') !== $email) {
+            $changes['email'] = ['from' => $user['email'] ?? '', 'to' => $email];
+        }
+        $oldAuth = $user['auth_source'] ?? 'local';
+        if ($oldAuth !== $authSource) {
+            $changes['auth_source'] = ['from' => $oldAuth, 'to' => $authSource];
+        }
+        if ($notesProvided && (($user['notes'] ?? null) !== $finalNotes)) {
+            $changes['notes'] = true;
+        }
+        logUserAudit('user.updated', [
+            'target_user_id' => (int) $userId,
+            'target_username' => $username,
+            'details' => empty($changes) ? ['unchanged' => true] : $changes,
+        ]);
         sendJSON([
             'success' => true,
             'message' => 'User updated successfully',
@@ -1708,9 +1779,25 @@ function handleBulkSetAuthSource() {
 
     $db = getDB();
     $placeholders = str_repeat('?,', count($validIds) - 1) . '?';
+    $affected = fetchUsersForAudit($db, $validIds);
     // Include admin accounts — local admins may retag any user, including other admins.
     $stmt = $db->prepare("UPDATE users SET auth_source = ? WHERE id IN ($placeholders)");
     $stmt->execute(array_merge([$authSource], $validIds));
+
+    foreach ($affected as $u) {
+        $old = strtolower(trim((string) ($u['auth_source'] ?? 'local')));
+        if ($old === '') {
+            $old = 'local';
+        }
+        if ($old === $authSource) {
+            continue;
+        }
+        logUserAudit('user.auth_source_changed', [
+            'target_user_id' => (int) $u['id'],
+            'target_username' => $u['username'] ?? null,
+            'details' => ['from' => $old, 'to' => $authSource, 'bulk' => true],
+        ]);
+    }
 
     sendJSON([
         'success' => true,
@@ -1748,6 +1835,10 @@ function handleBulkDisableUsers() {
     
     // Create placeholders for IN clause
     $placeholders = str_repeat('?,', count($validIds) - 1) . '?';
+
+    $stmt = $db->prepare("SELECT id, username FROM users WHERE id IN ($placeholders) AND is_admin = 0 AND IFNULL(is_disabled, 0) = 0");
+    $stmt->execute($validIds);
+    $toDisable = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     
     // Update all users in a single query (exclude admins)
     $stmt = $db->prepare("UPDATE users SET is_disabled = 1 WHERE id IN ($placeholders) AND is_admin = 0");
@@ -1756,6 +1847,7 @@ function handleBulkDisableUsers() {
     $disabledCount = $stmt->rowCount();
     
     if ($disabledCount > 0) {
+        logUserAuditForUsers('user.disabled', $toDisable, ['bulk' => true]);
         sendJSON([
             'success' => true, 
             'message' => "Successfully disabled $disabledCount user(s)",
@@ -1794,6 +1886,10 @@ function handleBulkPromoteUsers() {
     
     // Create placeholders for IN clause
     $placeholders = str_repeat('?,', count($validIds) - 1) . '?';
+
+    $stmt = $db->prepare("SELECT id, username FROM users WHERE id IN ($placeholders) AND is_admin = 0");
+    $stmt->execute($validIds);
+    $toPromote = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     
     // Promote users to admin and approve them
     $stmt = $db->prepare("UPDATE users SET is_admin = 1, is_approved = 1 WHERE id IN ($placeholders)");
@@ -1802,6 +1898,7 @@ function handleBulkPromoteUsers() {
     $promotedCount = $stmt->rowCount();
     
     if ($promotedCount > 0) {
+        logUserAuditForUsers('user.promoted', $toPromote, ['bulk' => true]);
         sendJSON([
             'success' => true, 
             'message' => "Successfully promoted $promotedCount user(s) to admin",
@@ -1842,12 +1939,17 @@ function handleBulkDemoteUsers() {
     $db = getDB();
     $placeholders = str_repeat('?,', count($validIds) - 1) . '?';
 
+    $stmt = $db->prepare("SELECT id, username FROM users WHERE id IN ($placeholders) AND is_admin = 1");
+    $stmt->execute($validIds);
+    $toDemote = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
     $stmt = $db->prepare("UPDATE users SET is_admin = 0 WHERE id IN ($placeholders) AND is_admin = 1");
     $stmt->execute($validIds);
 
     $demotedCount = $stmt->rowCount();
 
     if ($demotedCount > 0) {
+        logUserAuditForUsers('user.demoted', $toDemote, ['bulk' => true]);
         sendJSON([
             'success' => true,
             'message' => "Successfully demoted $demotedCount user(s) from admin",
@@ -1889,7 +1991,7 @@ function handleBulkToggleApproval() {
     
     // Toggle approval status for non-admin users
     // First get current approval status to toggle
-    $stmt = $db->prepare("SELECT id, is_approved FROM users WHERE id IN ($placeholders) AND is_admin = 0");
+    $stmt = $db->prepare("SELECT id, username, is_approved FROM users WHERE id IN ($placeholders) AND is_admin = 0");
     $stmt->execute($validIds);
     $users = $stmt->fetchAll();
     
@@ -1907,8 +2009,18 @@ function handleBulkToggleApproval() {
         
         if ($newStatus) {
             $approvedCount++;
+            logUserAudit('user.approved', [
+                'target_user_id' => (int) $user['id'],
+                'target_username' => $user['username'] ?? null,
+                'details' => ['bulk' => true],
+            ]);
         } else {
             $unapprovedCount++;
+            logUserAudit('user.unapproved', [
+                'target_user_id' => (int) $user['id'],
+                'target_username' => $user['username'] ?? null,
+                'details' => ['bulk' => true],
+            ]);
         }
     }
     
@@ -2963,6 +3075,11 @@ function handleAddLocalUser() {
     
     if ($stmt->execute([$username, $email, $passwordHash, 'local', generateUuid(), $notes, time()])) {
         $userId = $db->lastInsertId();
+        logUserAudit('user.created', [
+            'target_user_id' => (int) $userId,
+            'target_username' => $username,
+            'details' => ['email' => $email, 'source' => 'local', 'notes' => $notes ? true : false],
+        ]);
         sendJSON([
             'success' => true,
             'message' => 'Local user created successfully. User is pending admin approval.',
@@ -3103,6 +3220,11 @@ function handleAddLdapUser() {
         
         if ($stmt->execute([$username, $email, $passwordHash, 'ldap', generateUuid(), $notes, time()])) {
             $userId = $db->lastInsertId();
+            logUserAudit('user.created', [
+                'target_user_id' => (int) $userId,
+                'target_username' => $username,
+                'details' => ['email' => $email, 'source' => 'ldap', 'notes' => $notes ? true : false],
+            ]);
             sendJSON([
                 'success' => true,
                 'message' => 'LDAP user added successfully. User is pending admin approval.',
@@ -3258,6 +3380,7 @@ function handleBulkImportLocalUsers() {
             if ($stmt->execute([$username, $email, $passwordHash, 'local', generateUuid(), $notes, time()])) {
                 $results['success'][] = [
                     'line' => $line,
+                    'id' => (int) $db->lastInsertId(),
                     'username' => $username,
                     'email' => $email
                 ];
@@ -3278,6 +3401,12 @@ function handleBulkImportLocalUsers() {
     }
     
     $totalProcessed = count($results['success']) + count($results['errors']) + count($results['skipped']);
+
+    logUserAuditBulkCreated('local_csv', $results['success'], [
+        'skipped' => count($results['skipped']),
+        'errors' => count($results['errors']),
+        'total' => $totalProcessed,
+    ]);
     
     sendJSON([
         'success' => true,
@@ -3772,6 +3901,7 @@ function handleBulkImportLdapUsers() {
             if ($stmt->execute([$username, $email, $passwordHash, 'ldap', generateUuid(), time()])) {
                 $results['success'][] = [
                     'index' => $index + 1,
+                    'id' => (int) $db->lastInsertId(),
                     'username' => $username,
                     'email' => $email
                 ];
@@ -3794,6 +3924,12 @@ function handleBulkImportLdapUsers() {
     @ldap_close($ldap);
     
     $totalProcessed = count($results['success']) + count($results['errors']) + count($results['skipped']);
+
+    logUserAuditBulkCreated('ldap', $results['success'], [
+        'skipped' => count($results['skipped']),
+        'errors' => count($results['errors']),
+        'total' => $totalProcessed,
+    ]);
     
     sendJSON([
         'success' => true,
@@ -3964,6 +4100,7 @@ function handleBulkImportSamlUsers() {
             if ($stmt->rowCount() > 0) {
                 $results['success'][] = [
                     'line' => $line,
+                    'id' => (int) $db->lastInsertId(),
                     'username' => $username,
                     'email' => $email
                 ];
@@ -3984,6 +4121,12 @@ function handleBulkImportSamlUsers() {
     }
     
     $totalProcessed = count($results['success']) + count($results['errors']) + count($results['skipped']);
+
+    logUserAuditBulkCreated('saml_csv', $results['success'], [
+        'skipped' => count($results['skipped']),
+        'errors' => count($results['errors']),
+        'total' => $totalProcessed,
+    ]);
     
     sendJSON([
         'success' => true,
@@ -4042,6 +4185,13 @@ function handleStartImpersonation($targetUserId) {
     
     // Set impersonation session variables
     $_SESSION['impersonating_user_id'] = $targetUserId;
+
+    logUserAudit('user.impersonate_start', [
+        'actor_id' => (int) $adminUser['id'],
+        'actor_username' => $adminUser['username'] ?? null,
+        'target_user_id' => (int) $targetUser['id'],
+        'target_username' => $targetUser['username'] ?? null,
+    ]);
     
     // Fetch the target user data
     $userData = [
@@ -4069,8 +4219,18 @@ function handleStopImpersonation() {
         sendJSON(['error' => 'Not currently impersonating any user'], 400);
     }
     
+    $impersonatedUserId = $_SESSION['impersonating_user_id'] ?? null;
+
     // Get the admin user ID before clearing impersonation
     $adminUserId = $_SESSION['impersonating_admin_id'];
+
+    $impersonatedUsername = null;
+    if ($impersonatedUserId) {
+        $dbPeek = getDB();
+        $nameStmt = $dbPeek->prepare('SELECT username FROM users WHERE id = ?');
+        $nameStmt->execute([$impersonatedUserId]);
+        $impersonatedUsername = $nameStmt->fetchColumn() ?: null;
+    }
     
     // Restore original user session
     unset($_SESSION['impersonating_user_id']);
@@ -4091,6 +4251,13 @@ function handleStopImpersonation() {
             'is_approved' => (bool)$adminUser['is_approved'],
             'impersonating' => false
         ];
+        
+        logUserAudit('user.impersonate_stop', [
+            'actor_id' => (int) $adminUser['id'],
+            'actor_username' => $adminUser['username'] ?? null,
+            'target_user_id' => $impersonatedUserId ? (int) $impersonatedUserId : null,
+            'target_username' => $impersonatedUsername,
+        ]);
         
         sendJSON([
             'success' => true,
@@ -4799,6 +4966,11 @@ function handleAutoDetectAuthSources() {
                             'old_source' => $currentSource,
                             'new_source' => $detectedSource
                         ];
+                        logUserAudit('user.auth_source_changed', [
+                            'target_user_id' => (int) $user['id'],
+                            'target_username' => $user['username'] ?? null,
+                            'details' => ['from' => $currentSource, 'to' => $detectedSource, 'auto_detect' => true],
+                        ]);
                     } else {
                         $results['unchanged']++;
                     }
@@ -4819,6 +4991,15 @@ function handleAutoDetectAuthSources() {
                 }
             }
         }
+        
+        logUserAudit('user.auth_source_auto_detect', [
+            'details' => [
+                'updated' => $results['updated'],
+                'unchanged' => $results['unchanged'],
+                'errors' => $results['errors'],
+                'total' => $results['total'],
+            ],
+        ]);
         
         sendJSON([
             'success' => true,

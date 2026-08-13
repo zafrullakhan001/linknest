@@ -124,7 +124,7 @@ define('SYSTEM_TOKEN', 'linknest_secret_token_123'); // Change this for producti
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 85);
+    define('LINKNEST_SCHEMA_VERSION', 86);
 }
 
 function getSchemaPatchFlagPath(): string {
@@ -624,6 +624,37 @@ function ensureSshConnectionColorColumn(PDO $db): void {
     }
 }
 
+/**
+ * User-management audit trail. Safe to call on every connection.
+ */
+function ensureUserAuditLogTable($db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $db->exec('CREATE TABLE IF NOT EXISTS user_audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at INTEGER NOT NULL,
+            actor_id INTEGER,
+            actor_username TEXT,
+            action TEXT NOT NULL,
+            target_user_id INTEGER,
+            target_username TEXT,
+            details TEXT,
+            ip_address TEXT,
+            user_agent TEXT
+        )');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_user_audit_log_created_at ON user_audit_log(created_at DESC)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_user_audit_log_action ON user_audit_log(action)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_user_audit_log_target ON user_audit_log(target_user_id)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_user_audit_log_actor ON user_audit_log(actor_id)');
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureUserAuditLogTable warning: ' . $e->getMessage());
+    }
+}
+
 // Initialize database
 function initDatabase() {
     $initLock = null;
@@ -651,6 +682,7 @@ function initDatabase() {
                 ensureTabSectionEmojiColumns($db);
                 ensurePublicGuestRole($db);
                 ensureRoleLinkActionDefaults($db);
+                ensureUserAuditLogTable($db);
                 markSchemaPatchesApplied();
             }
             return $db;
@@ -673,6 +705,7 @@ function initDatabase() {
                 ensureTabSectionEmojiColumns($db);
                 ensurePublicGuestRole($db);
                 ensureRoleLinkActionDefaults($db);
+                ensureUserAuditLogTable($db);
                 markSchemaPatchesApplied();
             }
             releaseDatabaseInitLock($initLock);
@@ -2881,6 +2914,8 @@ function initDatabase() {
             updated_at INTEGER NOT NULL
         )');
 
+        ensureUserAuditLogTable($db);
+
         // Tile visit / hit tracking (visitor hits + unique visitors per tile)
         $db->exec('CREATE TABLE IF NOT EXISTS tile_visits (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2973,6 +3008,15 @@ function createDatabaseIndexes($db) {
             $db->exec('CREATE INDEX IF NOT EXISTS idx_tile_visits_tile_id ON tile_visits(tile_id)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_tile_visits_tile_visitor ON tile_visits(tile_id, visitor_key)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_tile_visits_visited_at ON tile_visits(tile_id, visited_at)');
+        } catch (PDOException $e) {
+            // Table might not exist yet, ignore
+        }
+
+        try {
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_user_audit_log_created_at ON user_audit_log(created_at DESC)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_user_audit_log_action ON user_audit_log(action)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_user_audit_log_target ON user_audit_log(target_user_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_user_audit_log_actor ON user_audit_log(actor_id)');
         } catch (PDOException $e) {
             // Table might not exist yet, ignore
         }

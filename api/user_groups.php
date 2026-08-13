@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/user_audit_helper.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
@@ -379,9 +380,10 @@ function handleAddMembersToGroup($groupId) {
     $db = getDB();
     
     // Verify group exists
-    $groupCheck = $db->prepare('SELECT id FROM user_groups WHERE id = ?');
+    $groupCheck = $db->prepare('SELECT id, name FROM user_groups WHERE id = ?');
     $groupCheck->execute([$groupId]);
-    if (!$groupCheck->fetch()) {
+    $group = $groupCheck->fetch();
+    if (!$group) {
         sendJSON(['error' => 'User group not found'], 404);
     }
     
@@ -395,9 +397,10 @@ function handleAddMembersToGroup($groupId) {
         
         foreach ($data['userIds'] as $userId) {
             // Verify user exists
-            $userCheck = $db->prepare('SELECT id FROM users WHERE id = ?');
+            $userCheck = $db->prepare('SELECT id, username FROM users WHERE id = ?');
             $userCheck->execute([$userId]);
-            if (!$userCheck->fetch()) {
+            $member = $userCheck->fetch();
+            if (!$member) {
                 $skipped++;
                 continue;
             }
@@ -405,6 +408,11 @@ function handleAddMembersToGroup($groupId) {
             $stmt->execute([$userId, $groupId, $currentTime]);
             if ($stmt->rowCount() > 0) {
                 $added++;
+                logUserAudit('user.group_added', [
+                    'target_user_id' => (int) $userId,
+                    'target_username' => $member['username'] ?? null,
+                    'details' => ['group' => $group['name'] ?? null, 'group_id' => (int) $groupId],
+                ]);
             } else {
                 $skipped++; // Already a member
             }
@@ -425,9 +433,20 @@ function handleAddMembersToGroup($groupId) {
 function handleRemoveMemberFromGroup($groupId, $userId) {
     requireAdmin();
     $db = getDB();
+
+    $users = fetchUsersForAudit($db, [(int) $userId]);
+    $groupNames = fetchAuditNames($db, 'user_groups', [(int) $groupId]);
     
     $stmt = $db->prepare('DELETE FROM user_group_members WHERE group_id = ? AND user_id = ?');
     $stmt->execute([$groupId, $userId]);
+
+    if ($stmt->rowCount() > 0) {
+        logUserAudit('user.group_removed', [
+            'target_user_id' => (int) $userId,
+            'target_username' => $users[0]['username'] ?? null,
+            'details' => ['group' => $groupNames[0] ?? null, 'group_id' => (int) $groupId],
+        ]);
+    }
     
     sendJSON(['success' => true]);
 }
@@ -510,12 +529,13 @@ function handleBulkAssignGroupsToUsers() {
     
     // Validate all user IDs
     $placeholders = implode(',', array_fill(0, count($data['userIds']), '?'));
-    $userStmt = $db->prepare("SELECT id FROM users WHERE id IN ($placeholders)");
+    $userStmt = $db->prepare("SELECT id, username FROM users WHERE id IN ($placeholders)");
     $userStmt->execute($data['userIds']);
-    $validUserIds = [];
+    $validUsers = [];
     while ($row = $userStmt->fetch()) {
-        $validUserIds[] = (int)$row['id'];
+        $validUsers[] = ['id' => (int)$row['id'], 'username' => $row['username']];
     }
+    $validUserIds = array_column($validUsers, 'id');
     
     if (empty($validUserIds)) {
         sendJSON(['error' => 'No valid user IDs provided'], 400);
@@ -567,6 +587,23 @@ function handleBulkAssignGroupsToUsers() {
         }
         
         $db->commit();
+
+        $groupNames = fetchAuditNames($db, 'user_groups', $validGroupIds);
+        $userById = [];
+        foreach ($validUsers as $u) {
+            $userById[$u['id']] = $u['username'];
+        }
+        foreach ($validUserIds as $uid) {
+            logUserAudit('user.group_added', [
+                'target_user_id' => (int) $uid,
+                'target_username' => $userById[$uid] ?? null,
+                'details' => [
+                    'mode' => $mode,
+                    'groups' => $groupNames,
+                    'bulk' => true,
+                ],
+            ]);
+        }
         
         $response = [
             'success' => true,

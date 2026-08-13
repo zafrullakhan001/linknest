@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/user_audit_helper.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
@@ -821,10 +822,18 @@ function handleAssignRolesToUser($userId) {
     $db = getDB();
     
     // Verify user exists
-    $userCheck = $db->prepare('SELECT id FROM users WHERE id = ?');
+    $userCheck = $db->prepare('SELECT id, username FROM users WHERE id = ?');
     $userCheck->execute([$userId]);
-    if (!$userCheck->fetch()) {
+    $targetUser = $userCheck->fetch();
+    if (!$targetUser) {
         sendJSON(['error' => 'User not found'], 404);
+    }
+
+    $oldNames = [];
+    $oldStmt = $db->prepare('SELECT r.name FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = ? ORDER BY r.name');
+    $oldStmt->execute([$userId]);
+    while ($row = $oldStmt->fetch()) {
+        $oldNames[] = $row['name'];
     }
     
     $currentTime = time();
@@ -852,6 +861,15 @@ function handleAssignRolesToUser($userId) {
         }
         
         $db->commit();
+        $assignedNames = fetchAuditNames($db, 'roles', $data['roleIds']);
+        logUserAudit('user.roles_assigned', [
+            'target_user_id' => (int) $userId,
+            'target_username' => $targetUser['username'] ?? null,
+            'details' => [
+                'previous' => $oldNames,
+                'assigned' => $assignedNames,
+            ],
+        ]);
         sendJSON(['success' => true]);
     } catch (PDOException $e) {
         $db->rollBack();
@@ -881,12 +899,13 @@ function handleBulkAssignRolesToUsers() {
     try {
         // Verify all users exist
         $placeholders = str_repeat('?,', count($data['userIds']) - 1) . '?';
-        $userCheck = $db->prepare("SELECT id FROM users WHERE id IN ($placeholders)");
+        $userCheck = $db->prepare("SELECT id, username FROM users WHERE id IN ($placeholders)");
         $userCheck->execute($data['userIds']);
-        $validUserIds = [];
+        $validUsers = [];
         while ($row = $userCheck->fetch()) {
-            $validUserIds[] = (int)$row['id'];
+            $validUsers[] = ['id' => (int)$row['id'], 'username' => $row['username']];
         }
+        $validUserIds = array_column($validUsers, 'id');
         
         if (empty($validUserIds)) {
             $db->rollBack();
@@ -938,6 +957,23 @@ function handleBulkAssignRolesToUsers() {
         }
         
         $db->commit();
+
+        $roleNames = fetchAuditNames($db, 'roles', $validRoleIds);
+        $userById = [];
+        foreach ($validUsers as $u) {
+            $userById[$u['id']] = $u['username'];
+        }
+        foreach ($validUserIds as $uid) {
+            logUserAudit('user.roles_assigned', [
+                'target_user_id' => (int) $uid,
+                'target_username' => $userById[$uid] ?? null,
+                'details' => [
+                    'mode' => $mode,
+                    'roles' => $roleNames,
+                    'bulk' => true,
+                ],
+            ]);
+        }
         
         $response = [
             'success' => true,
@@ -1177,12 +1213,13 @@ function handleBulkRemoveRolesFromUsers() {
     try {
         // Verify all users exist
         $placeholders = str_repeat('?,', count($data['userIds']) - 1) . '?';
-        $userCheck = $db->prepare("SELECT id FROM users WHERE id IN ($placeholders)");
+        $userCheck = $db->prepare("SELECT id, username FROM users WHERE id IN ($placeholders)");
         $userCheck->execute($data['userIds']);
-        $validUserIds = [];
+        $validUsers = [];
         while ($row = $userCheck->fetch()) {
-            $validUserIds[] = (int)$row['id'];
+            $validUsers[] = ['id' => (int)$row['id'], 'username' => $row['username']];
         }
+        $validUserIds = array_column($validUsers, 'id');
         
         if (empty($validUserIds)) {
             $db->rollBack();
@@ -1219,6 +1256,22 @@ function handleBulkRemoveRolesFromUsers() {
         }
         
         $db->commit();
+
+        $roleNames = fetchAuditNames($db, 'roles', $validRoleIds);
+        $userById = [];
+        foreach ($validUsers as $u) {
+            $userById[$u['id']] = $u['username'];
+        }
+        foreach ($validUserIds as $uid) {
+            logUserAudit('user.roles_removed', [
+                'target_user_id' => (int) $uid,
+                'target_username' => $userById[$uid] ?? null,
+                'details' => [
+                    'roles' => $roleNames,
+                    'bulk' => true,
+                ],
+            ]);
+        }
         
         $response = [
             'success' => true,
@@ -1240,9 +1293,20 @@ function handleBulkRemoveRolesFromUsers() {
 function handleRemoveRoleFromUser($userId, $roleId) {
     requireAdmin();
     $db = getDB();
+
+    $users = fetchUsersForAudit($db, [(int) $userId]);
+    $roleNames = fetchAuditNames($db, 'roles', [(int) $roleId]);
     
     $stmt = $db->prepare('DELETE FROM user_roles WHERE user_id = ? AND role_id = ?');
     $stmt->execute([$userId, $roleId]);
+
+    if ($stmt->rowCount() > 0) {
+        logUserAudit('user.roles_removed', [
+            'target_user_id' => (int) $userId,
+            'target_username' => $users[0]['username'] ?? null,
+            'details' => ['roles' => $roleNames],
+        ]);
+    }
     
     sendJSON(['success' => true]);
 }

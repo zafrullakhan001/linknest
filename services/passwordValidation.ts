@@ -36,6 +36,46 @@ export function validatePassword(password: string): PasswordValidationResult {
 
 export const PASSWORD_RULE_TEXT = `At least ${MIN_LENGTH} characters, 1 uppercase, 1 number, 1 special character (!@#$%^&* etc.)`;
 
+const UPPERCASE = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+const LOWERCASE = 'abcdefghijkmnopqrstuvwxyz';
+const NUMBERS = '23456789';
+const SPECIAL = '!@#$%^&*_+-=';
+const ALL_CHARS = UPPERCASE + LOWERCASE + NUMBERS + SPECIAL;
+
+function randomInt(max: number): number {
+  if (max <= 0) return 0;
+  const buf = new Uint32Array(1);
+  crypto.getRandomValues(buf);
+  return buf[0] % max;
+}
+
+function pickChar(set: string): string {
+  return set.charAt(randomInt(set.length));
+}
+
+/**
+ * Cryptographically random password that always satisfies validatePassword().
+ */
+export function generateStrongPassword(length = 16): string {
+  const size = Math.max(length, MIN_LENGTH);
+  const chars: string[] = [
+    pickChar(UPPERCASE),
+    pickChar(LOWERCASE),
+    pickChar(NUMBERS),
+    pickChar(SPECIAL),
+  ];
+  while (chars.length < size) {
+    chars.push(pickChar(ALL_CHARS));
+  }
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = randomInt(i + 1);
+    const tmp = chars[i];
+    chars[i] = chars[j];
+    chars[j] = tmp;
+  }
+  return chars.join('');
+}
+
 export interface PasswordCriteria {
   length: boolean;
   upper: boolean;

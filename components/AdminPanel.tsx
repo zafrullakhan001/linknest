@@ -11,7 +11,7 @@ import { Tile } from '../types';
 import { TitleEmojiPicker } from './TitleEmojiPicker';
 import { SecurePasswordInput } from './SecurePasswordInput';
 import { PasswordCriteriaList } from './PasswordCriteriaList';
-import { validatePassword } from '../services/passwordValidation';
+import { validatePassword, generateStrongPassword } from '../services/passwordValidation';
 import { accessService, TilePermission } from '../services/accessService';
 import { groupTilePermissionsService, GroupTilePermission } from '../services/groupTilePermissionsService';
 import { APP_TABS, getDisabledTabsFromSettings, setToSortedJsonArray, type AppTabId } from '../services/tabVisibilityService';
@@ -34,6 +34,7 @@ import { UpdatesPanel } from './UpdatesDialog';
 import { DevicePresetsAdmin } from './DevicePresetsAdmin';
 import { LinkCheckExceptionsAdmin } from './LinkCheckExceptionsAdmin';
 import { IframeBlockDomainsAdmin } from './IframeBlockDomainsAdmin';
+import { UserAuditLog } from './UserAuditLog';
 import {
   AccessManagerPanel,
   AccessSubTab,
@@ -86,6 +87,7 @@ interface AdminPanelProps {
 type AdminNavTabId =
   | 'pending'
   | 'all'
+  | 'userAudit'
   | 'settings'
   | 'database'
   | 'spaces'
@@ -115,6 +117,7 @@ const ADMIN_NAV_SECTIONS: Array<{
     items: [
       { id: 'pending', label: 'Pending Users', emoji: '⏳' },
       { id: 'all', label: 'All Users', emoji: '👥' },
+      { id: 'userAudit', label: 'User Audit Log', emoji: '📋' },
     ],
   },
   {
@@ -290,7 +293,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     const savedTab = localStorage.getItem('adminPanelActiveTab');
     if (savedTab === 'footer') return 'settings';
     const validTabs: Array<AdminNavTabId | 'footer'> = [
-      'pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'saml', 'footer',
+      'pending', 'all', 'userAudit', 'settings', 'database', 'spaces', 'ldap', 'saml', 'footer',
       'tabVisibility', 'devicePresets', 'linkCheckExceptions', 'iframeBlockDomains', 'access', 'clone', 'browser', 'broadcast',
       'maintenanceScripts', 'maintenance', 'widgets', 'addons', 'appUpdates', 'loadTest',
     ];
@@ -321,6 +324,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [newPassword, setNewPassword] = useState('');
   const [resetConfirmPassword, setResetConfirmPassword] = useState('');
   const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
+  const [generatedPasswordCopied, setGeneratedPasswordCopied] = useState(false);
   const [editUserModal, setEditUserModal] = useState<{ open: boolean; userId: number | null; username: string; email: string; auth_source: string; notes: string }>({ open: false, userId: null, username: '', email: '', auth_source: 'local', notes: '' });
   const [editUsername, setEditUsername] = useState('');
   const [editEmail, setEditEmail] = useState('');
@@ -3629,6 +3633,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }
   };
 
+  const handleGenerateResetPassword = async () => {
+    const password = generateStrongPassword(16);
+    setNewPassword(password);
+    setResetConfirmPassword(password);
+    setError('');
+    setGeneratedPasswordCopied(false);
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(password);
+        setGeneratedPasswordCopied(true);
+        window.setTimeout(() => setGeneratedPasswordCopied(false), 2500);
+      }
+    } catch {
+      // Clipboard may be blocked; fields are still filled
+    }
+  };
+
   const handleResetPassword = async () => {
     if (!resetPasswordModal.userId || !newPassword.trim()) {
       setError('Please enter a new password');
@@ -3651,6 +3672,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setResetPasswordModal({ open: false, userId: null, username: '' });
       setNewPassword('');
       setResetConfirmPassword('');
+      setGeneratedPasswordCopied(false);
       alert('Password changed successfully!');
     } catch (err: any) {
       setError(err.message || 'Failed to change password');
@@ -5545,6 +5567,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 </div>
                 </div>
               )}
+
+              {/* User Audit Log Tab */}
+              {activeTab === 'userAudit' && <UserAuditLog />}
 
               {/* Database Tab */}
               {activeTab === 'database' && (
@@ -16875,6 +16900,7 @@ node .\\load-tests\\generate-report.js`}
                     setResetPasswordModal({ open: false, userId: null, username: '' });
                     setNewPassword('');
                     setResetConfirmPassword('');
+                    setGeneratedPasswordCopied(false);
                     setError('');
                   }}
                   className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
@@ -16895,9 +16921,23 @@ node .\\load-tests\\generate-report.js`}
               )}
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  New Password
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    New Password
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleGenerateResetPassword}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-900/50 border border-sky-200/70 dark:border-sky-800/40 transition-colors"
+                    title="Generate a random password that meets the rules"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                      <path d="M13.5 4.938a7 7 0 11-9.437 9.14 1 1 0 011.045-.326 5.5 5.5 0 107.43-7.43 1 1 0 01-.326-1.045z" />
+                      <path fillRule="evenodd" d="M11 2a1 1 0 011-1h.01a1 1 0 110 2H12a1 1 0 01-1-1zm.01 5a1 1 0 100 2h.01a1 1 0 100-2H11.01zM14 6a1 1 0 011-1h.01a1 1 0 110 2H15a1 1 0 01-1-1zm2.01 3a1 1 0 100 2h.01a1 1 0 100-2H16.01zM16 12a1 1 0 011-1h.01a1 1 0 110 2H17a1 1 0 01-1-1zM4.343 2.343a1 1 0 011.414 0l.707.707A1 1 0 115.05 4.464l-.707-.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                    Generate
+                  </button>
+                </div>
                 <SecurePasswordInput
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
@@ -16906,6 +16946,11 @@ node .\\load-tests\\generate-report.js`}
                   placeholder="Min 8 chars, 1 upper, 1 number, 1 special"
                 />
                 <PasswordCriteriaList password={newPassword} />
+                {generatedPasswordCopied && (
+                  <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
+                    Generated password copied to clipboard
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
@@ -16931,6 +16976,7 @@ node .\\load-tests\\generate-report.js`}
                     setResetPasswordModal({ open: false, userId: null, username: '' });
                     setNewPassword('');
                     setResetConfirmPassword('');
+                    setGeneratedPasswordCopied(false);
                     setError('');
                   }}
                   className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"

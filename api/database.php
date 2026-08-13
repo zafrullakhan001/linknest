@@ -105,7 +105,8 @@ function handleGetDatabaseInfo() {
                     'user_preferences',
                     'user_custom_timezones',
                     'user_alarms',
-                    'clones'
+                    'clones',
+                    'user_audit_log',
                 ];
                 $tableCounts = [];
                 foreach ($tables as $table) {
@@ -169,7 +170,8 @@ function handleExportDatabase() {
             'tile_arrangements', 'category_arrangements', 'rich_text_content',
             'user_tile_favorites', 'user_link_favorites', 'user_tile_permissions',
             'style_profiles', 'user_preferences', 'user_custom_timezones', 'user_alarms', 'monitors', 'monitor_logs',
-            'browser_list', 'browser_list_metadata', 'roles', 'user_roles', 'role_tile_permissions', 'role_link_permissions', 'role_tab_permissions'
+            'browser_list', 'browser_list_metadata', 'roles', 'user_roles', 'role_tile_permissions', 'role_link_permissions', 'role_tab_permissions',
+            'user_audit_log'
         ];
 
         foreach ($tables as $table) {
@@ -229,6 +231,14 @@ function handleImportDatabase() {
                 if ($table === 'users') {
                     $db->exec('DELETE FROM sqlite_sequence WHERE name = "users"');
                 }
+            } catch (PDOException $e) {
+                // Table might not exist, ignore
+            }
+        }
+
+        if (isset($data['tables']['user_audit_log'])) {
+            try {
+                $db->exec('DELETE FROM user_audit_log');
             } catch (PDOException $e) {
                 // Table might not exist, ignore
             }
