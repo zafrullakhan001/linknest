@@ -4753,3 +4753,88 @@ function setSetting(string $key, string $value): void {
         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at');
     $stmt->execute([$key, $value, $now]);
 }
+
+/**
+ * Domain part of an email or UPN (e.g. Zafrulla.Khan@AdventHealth.com -> adventhealth.com).
+ */
+function emailDomainFromAddress($email): ?string {
+    $email = strtolower(trim((string)$email));
+    if ($email === '' || strpos($email, '@') === false) {
+        return null;
+    }
+    $parts = explode('@', $email);
+    $domain = rtrim(trim((string)end($parts)), '.');
+    if ($domain === '' || $domain === 'localhost') {
+        return null;
+    }
+    return $domain;
+}
+
+/**
+ * Email domains learned from LDAP mail / UPN attributes (may differ from AD DC= domain).
+ */
+function getStoredLdapMailDomains(): array {
+    try {
+        $db = getDB();
+        $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'ldap_mail_domains'");
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row || $row['value'] === '' || $row['value'] === null) {
+            return [];
+        }
+        $decoded = json_decode((string)$row['value'], true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+        $domains = [];
+        foreach ($decoded as $domain) {
+            $domain = strtolower(trim((string)$domain));
+            $domain = ltrim($domain, '@');
+            $domain = rtrim($domain, '.');
+            if ($domain === '' || $domain === 'localhost' || strpos($domain, '.') === false) {
+                continue;
+            }
+            $domains[$domain] = true;
+        }
+        return array_keys($domains);
+    } catch (Exception $e) {
+        return [];
+    }
+}
+
+/**
+ * Remember mail/UPN domains returned by LDAP so auto-detect can match users
+ * whose email domain differs from the directory Base DN (e.g. mail @AdventHealth.com
+ * vs DC=multihosp,DC=net).
+ *
+ * @param string|array $emails One or more email/UPN values
+ * @return string[] All stored LDAP mail domains after merge
+ */
+function rememberLdapMailDomainsFromEmails($emails): array {
+    $stored = [];
+    foreach (getStoredLdapMailDomains() as $domain) {
+        $stored[$domain] = true;
+    }
+
+    $changed = false;
+    foreach ((array)$emails as $email) {
+        $domain = emailDomainFromAddress($email);
+        if ($domain === null || strpos($domain, '.') === false) {
+            continue;
+        }
+        if (!isset($stored[$domain])) {
+            $stored[$domain] = true;
+            $changed = true;
+        }
+    }
+
+    if ($changed) {
+        try {
+            setSetting('ldap_mail_domains', json_encode(array_keys($stored)));
+        } catch (Exception $e) {
+            error_log('Failed to persist ldap_mail_domains: ' . $e->getMessage());
+        }
+    }
+
+    return array_keys($stored);
+}

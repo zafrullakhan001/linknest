@@ -1118,7 +1118,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   };
 
   const handleAutoDetectAuthSources = async () => {
-    if (!confirm('This will auto-detect authentication sources for all users.\n\nPriority:\n1. LDAP — email/username domain matches the LDAP domain CN (DC=) or login domain\n2. SAML — user has a SAML NameID, or email matches the SAML IdP domain\n3. Local — everyone else\n\nContinue?')) {
+    if (!confirm('This will auto-detect authentication sources for all users.\n\nPriority:\n1. LDAP — email matches the directory Base DN, login domain, or the mail domain returned by LDAP (e.g. @AdventHealth.com from Test Connection)\n2. LDAP directory lookup — username or email found in LDAP\n3. SAML — NameID or IdP domain\n4. Local — everyone else\n\nContinue?')) {
       return;
     }
 

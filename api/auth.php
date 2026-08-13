@@ -649,6 +649,10 @@ function handleLogin() {
                     }
                 }
                 
+                if (!empty($ldapEmail)) {
+                    rememberLdapMailDomainsFromEmails($ldapEmail);
+                }
+                
                 // Extract display name
                 if ($displayNameAttr && isset($userEntry[$displayNameAttr]) && is_array($userEntry[$displayNameAttr]) && isset($userEntry[$displayNameAttr][0])) {
                     $ldapDisplayName = $userEntry[$displayNameAttr][0];
@@ -4357,6 +4361,18 @@ function collectLdapDomainCandidates($settings) {
         addAuthDomainCandidate($candidates, domainFromLdapHostname($server['server'] ?? ''));
     }
 
+    foreach (getStoredLdapMailDomains() as $mailDomain) {
+        addAuthDomainCandidate($candidates, $mailDomain);
+    }
+    if (!empty($settings['ldap_mail_domains'])) {
+        $fromSettings = json_decode((string)$settings['ldap_mail_domains'], true);
+        if (is_array($fromSettings)) {
+            foreach ($fromSettings as $mailDomain) {
+                addAuthDomainCandidate($candidates, $mailDomain);
+            }
+        }
+    }
+
     return array_keys($candidates);
 }
 
@@ -4465,15 +4481,157 @@ function userMatchesSamlDomains($user, array $samlDomains) {
     return userMatchesLdapDomains($user, $samlDomains);
 }
 
+function extractEmailFromLdapEntry(array $entry, $emailAttr = null): string {
+    $emailAttr = $emailAttr ? strtolower(trim((string)$emailAttr)) : '';
+    if ($emailAttr !== '' && isset($entry[$emailAttr][0]) && is_string($entry[$emailAttr][0])) {
+        return trim($entry[$emailAttr][0]);
+    }
+    if (isset($entry['mail'][0]) && is_string($entry['mail'][0])) {
+        return trim($entry['mail'][0]);
+    }
+    if (isset($entry['userprincipalname'][0]) && is_string($entry['userprincipalname'][0])) {
+        $upn = trim($entry['userprincipalname'][0]);
+        if (strpos($upn, '@') !== false) {
+            return $upn;
+        }
+    }
+    return '';
+}
+
+function ldapDirectoryEntryMatchesAppUser(array $entry, array $user, $emailAttr = null): bool {
+    $appUser = strtolower(trim((string)($user['username'] ?? '')));
+    $appEmail = strtolower(trim((string)($user['email'] ?? '')));
+    $appSam = $appUser;
+    if (strpos($appUser, '@') !== false) {
+        $appSam = strtolower(explode('@', $appUser)[0]);
+    }
+
+    $sam = isset($entry['samaccountname'][0]) ? strtolower(trim((string)$entry['samaccountname'][0])) : '';
+    $cn = isset($entry['cn'][0]) ? strtolower(trim((string)$entry['cn'][0])) : '';
+    $mail = strtolower(extractEmailFromLdapEntry($entry, $emailAttr));
+    $upn = isset($entry['userprincipalname'][0]) ? strtolower(trim((string)$entry['userprincipalname'][0])) : '';
+
+    if ($appSam !== '' && ($appSam === $sam || $appUser === $sam || $appSam === $cn || $appUser === $cn)) {
+        return true;
+    }
+    if ($appEmail !== '' && ($appEmail === $mail || $appEmail === $upn)) {
+        return true;
+    }
+    if ($appUser !== '' && ($appUser === $mail || $appUser === $upn)) {
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Look up an app user in connected LDAP servers by sAMAccountName / mail / UPN.
+ * When found, the LDAP mail domain is remembered for later auto-detect passes.
+ *
+ * @param array $ldapBinds Results from ldapConnectAndServiceBind()
+ */
+function lookupUserInLdapDirectory(array $user, array $ldapBinds): bool {
+    $username = trim((string)($user['username'] ?? ''));
+    $email = trim((string)($user['email'] ?? ''));
+    if ($username === '' && $email === '') {
+        return false;
+    }
+
+    $emailDomain = emailDomainFromAddress($email);
+    if ($emailDomain === 'localhost' || $emailDomain === 'demo.local') {
+        $email = '';
+    }
+
+    foreach ($ldapBinds as $conn) {
+        if (empty($conn['ok']) || empty($conn['ldap'])) {
+            continue;
+        }
+        $ldap = $conn['ldap'];
+        $serverConfig = $conn['server_config'] ?? [];
+        $searchBase = trim((string)($serverConfig['user_search_base'] ?? ''));
+        if ($searchBase === '') {
+            continue;
+        }
+
+        $clauses = [];
+        $sam = $username;
+        if (strpos($username, '@') !== false) {
+            $sam = explode('@', $username)[0];
+        }
+        if ($sam !== '') {
+            $safeSam = ldapEscapeFilterValue($sam);
+            $clauses[] = '(sAMAccountName=' . $safeSam . ')';
+            $clauses[] = '(cn=' . $safeSam . ')';
+            $filterTemplate = trim((string)($serverConfig['user_filter'] ?? ''));
+            if ($filterTemplate !== '' && strpos($filterTemplate, '{username}') !== false) {
+                $clauses[] = str_replace('{username}', $safeSam, $filterTemplate);
+            }
+        }
+        if ($username !== '' && strpos($username, '@') !== false) {
+            $safeUser = ldapEscapeFilterValue($username);
+            $clauses[] = '(userPrincipalName=' . $safeUser . ')';
+            $clauses[] = '(mail=' . $safeUser . ')';
+        }
+        if ($email !== '' && strpos($email, '@') !== false) {
+            $safeEmail = ldapEscapeFilterValue($email);
+            $clauses[] = '(mail=' . $safeEmail . ')';
+            $clauses[] = '(userPrincipalName=' . $safeEmail . ')';
+        }
+        $clauses = array_values(array_unique($clauses));
+        if (empty($clauses)) {
+            continue;
+        }
+        $filter = count($clauses) === 1 ? $clauses[0] : '(|' . implode('', $clauses) . ')';
+
+        $emailAttr = !empty($serverConfig['email_attribute']) ? $serverConfig['email_attribute'] : null;
+        $attributes = ['sAMAccountName', 'mail', 'userPrincipalName', 'cn', 'dn'];
+        if ($emailAttr && !in_array($emailAttr, $attributes, true)) {
+            $attributes[] = $emailAttr;
+        }
+
+        $searchScope = strtolower((string)($serverConfig['search_scope'] ?? 'sub'));
+        $timeout = (int)($conn['timeout'] ?? 10);
+        if ($searchScope === 'base') {
+            $result = @ldap_read($ldap, $searchBase, $filter, $attributes, 0, 1, $timeout);
+        } elseif ($searchScope === 'one') {
+            $result = @ldap_list($ldap, $searchBase, $filter, $attributes, 0, 1, $timeout);
+        } else {
+            $result = @ldap_search($ldap, $searchBase, $filter, $attributes, 0, 1, $timeout);
+        }
+        if ($result === false) {
+            continue;
+        }
+        $entries = @ldap_get_entries($ldap, $result);
+        if ($entries === false || empty($entries['count'])) {
+            continue;
+        }
+
+        $entry = $entries[0];
+        $ldapEmail = extractEmailFromLdapEntry($entry, $emailAttr);
+        if ($ldapEmail !== '') {
+            rememberLdapMailDomainsFromEmails($ldapEmail);
+        }
+        if (ldapDirectoryEntryMatchesAppUser($entry, $user, $emailAttr)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 /**
  * Auto-detect authentication source for a single user.
- * Priority: LDAP (domain CN / email match) > SAML (nameid or IdP domain) > Local
+ * Priority:
+ *  1. LDAP domain CN / login domain / learned LDAP mail domains (from Test Connection)
+ *  2. LDAP directory lookup by username or mail attribute
+ *  3. SAML (nameid or IdP domain)
+ *  4. Local
  *
  * @param array $user User record from database
  * @param array|null $authSettings Combined LDAP/SAML settings (fetched if not provided)
+ * @param array|null $ldapBinds Optional connected LDAP binds from ldapConnectAndServiceBind()
  * @return string Detected auth source: 'ldap', 'saml', or 'local'
  */
-function detectUserAuthSource($user, $authSettings = null) {
+function detectUserAuthSource($user, $authSettings = null, $ldapBinds = null) {
     if ($authSettings === null) {
         $db = getDB();
         $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'ldap_%' OR key LIKE 'saml_%' OR key IN ('idp_entity_id', 'idp_sso_url', 'sp_entity_id')");
@@ -4488,6 +4646,9 @@ function detectUserAuthSource($user, $authSettings = null) {
     if ($ldapEnabled) {
         $ldapDomains = collectLdapDomainCandidates($authSettings);
         if (userMatchesLdapDomains($user, $ldapDomains)) {
+            return 'ldap';
+        }
+        if (is_array($ldapBinds) && !empty($ldapBinds) && lookupUserInLdapDirectory($user, $ldapBinds)) {
             return 'ldap';
         }
     }
@@ -4552,39 +4713,62 @@ function handleAutoDetectAuthSources() {
             'errors' => 0,
             'details' => []
         ];
-        
-        foreach ($users as $user) {
-            try {
-                $detectedSource = detectUserAuthSource($user, $settings);
+
+        $ldapBinds = [];
+        $ldapEnabled = !empty($settings['ldap_enabled']) && $settings['ldap_enabled'] == '1';
+        if ($ldapEnabled) {
+            foreach (getLdapServers($settings) as $serverConfig) {
+                try {
+                    $conn = ldapConnectAndServiceBind($serverConfig);
+                    if (!empty($conn['ok']) && !empty($conn['ldap'])) {
+                        $ldapBinds[] = $conn;
+                    }
+                } catch (Exception $e) {
+                    error_log('Auto-detect LDAP bind skipped: ' . $e->getMessage());
+                }
+            }
+        }
+
+        try {
+            foreach ($users as $user) {
+                try {
+                    $detectedSource = detectUserAuthSource($user, $settings, $ldapBinds);
                 
-                $currentSource = $user['auth_source'] ?? null;
+                    $currentSource = $user['auth_source'] ?? null;
                 
-                // Normalize current source
-                $currentSource = ($currentSource === null || $currentSource === '' || $currentSource === 'local') ? 'local' : $currentSource;
+                    // Normalize current source
+                    $currentSource = ($currentSource === null || $currentSource === '' || $currentSource === 'local') ? 'local' : $currentSource;
                 
-                if ($detectedSource !== $currentSource) {
-                    // Update the auth_source
-                    $updateStmt = $db->prepare('UPDATE users SET auth_source = ? WHERE id = ?');
-                    $updateStmt->execute([$detectedSource, $user['id']]);
+                    if ($detectedSource !== $currentSource) {
+                        // Update the auth_source
+                        $updateStmt = $db->prepare('UPDATE users SET auth_source = ? WHERE id = ?');
+                        $updateStmt->execute([$detectedSource, $user['id']]);
                     
-                    $results['updated']++;
+                        $results['updated']++;
+                        $results['details'][] = [
+                            'user_id' => $user['id'],
+                            'username' => $user['username'],
+                            'old_source' => $currentSource,
+                            'new_source' => $detectedSource
+                        ];
+                    } else {
+                        $results['unchanged']++;
+                    }
+                } catch (Exception $e) {
+                    $results['errors']++;
                     $results['details'][] = [
                         'user_id' => $user['id'],
                         'username' => $user['username'],
-                        'old_source' => $currentSource,
-                        'new_source' => $detectedSource
+                        'error' => $e->getMessage()
                     ];
-                } else {
-                    $results['unchanged']++;
+                    error_log("Auto-detect error for user {$user['id']} ({$user['username']}): " . $e->getMessage());
                 }
-            } catch (Exception $e) {
-                $results['errors']++;
-                $results['details'][] = [
-                    'user_id' => $user['id'],
-                    'username' => $user['username'],
-                    'error' => $e->getMessage()
-                ];
-                error_log("Auto-detect error for user {$user['id']} ({$user['username']}): " . $e->getMessage());
+            }
+        } finally {
+            foreach ($ldapBinds as $conn) {
+                if (!empty($conn['ldap'])) {
+                    @ldap_close($conn['ldap']);
+                }
             }
         }
         

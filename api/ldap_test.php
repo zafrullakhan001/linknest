@@ -346,9 +346,12 @@ try {
             if ($userBind) {
                 // Extract user info
                 $email = '';
-                if (isset($userEntry['mail']) && is_array($userEntry['mail']) && isset($userEntry['mail'][0])) {
+                $customEmailAttr = strtolower(trim((string)($data['ldap_email_attribute'] ?? '')));
+                if ($customEmailAttr !== '' && isset($userEntry[$customEmailAttr][0])) {
+                    $email = $userEntry[$customEmailAttr][0];
+                } elseif (isset($userEntry['mail'][0])) {
                     $email = $userEntry['mail'][0];
-                } elseif (isset($userEntry['userprincipalname']) && is_array($userEntry['userprincipalname']) && isset($userEntry['userprincipalname'][0])) {
+                } elseif (isset($userEntry['userprincipalname'][0])) {
                     $email = $userEntry['userprincipalname'][0];
                 }
                 
@@ -359,18 +362,29 @@ try {
                     $displayName = $userEntry['cn'][0];
                 }
                 
+                $mailDomains = [];
+                if ($email !== '') {
+                    $mailDomains = rememberLdapMailDomainsFromEmails($email);
+                }
+                
                 $message = "Successfully authenticated user '$testUsername'";
                 if ($displayName) {
                     $message .= " ($displayName)";
                 }
                 if ($email) {
                     $message .= " - Email: $email";
+                    $mailDomain = emailDomainFromAddress($email);
+                    if ($mailDomain) {
+                        $message .= "\nLearned LDAP mail domain for auto-detect: @" . $mailDomain;
+                    }
                 }
                 $message .= " - DN: $userDn";
                 
                 sendJSON([
                     'success' => true,
-                    'message' => $message
+                    'message' => $message,
+                    'email' => $email,
+                    'ldap_mail_domains' => $mailDomains
                 ]);
             } else {
                 throw new Exception("User authentication failed: " . ldap_error($ldap));
