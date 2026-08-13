@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
-import { POPULAR_EMOJIS } from '../types';
+import React, { useRef, useState } from 'react';
+import { EmojiPickerPopover } from './EmojiPickerPanel';
 
 interface TitleEmojiPickerProps {
   value?: string;
   onChange: (emoji: string) => void;
-  size?: 'sm' | 'md';
+  size?: 'sm' | 'md' | 'lg';
   title?: string;
 }
 
@@ -16,12 +16,14 @@ export const TitleEmojiPicker: React.FC<TitleEmojiPickerProps> = ({
   title = 'Choose emoji',
 }) => {
   const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
   const emoji = (value || '').trim();
-  const btnSize = size === 'sm' ? 'w-7 h-7 text-sm' : 'w-9 h-9 text-lg';
+  const btnSize = size === 'lg' ? 'w-16 h-14 text-2xl' : size === 'sm' ? 'w-7 h-7 text-sm' : 'w-9 h-9 text-lg';
 
   return (
     <div className="relative shrink-0">
       <button
+        ref={btnRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={`${btnSize} rounded-lg border-2 flex items-center justify-center transition-all ${
@@ -31,6 +33,7 @@ export const TitleEmojiPicker: React.FC<TitleEmojiPickerProps> = ({
         }`}
         title={title}
         aria-label={title}
+        aria-expanded={open}
       >
         <span aria-hidden>{emoji || '😀'}</span>
       </button>
@@ -48,39 +51,13 @@ export const TitleEmojiPicker: React.FC<TitleEmojiPickerProps> = ({
           ×
         </button>
       ) : null}
-      {open ? (
-        <>
-          <div className="fixed inset-0 z-[40]" onClick={() => setOpen(false)} />
-          <div className="absolute top-full left-0 mt-1.5 w-72 max-h-64 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[50] flex flex-col overflow-hidden">
-            <div className="p-2 border-b border-slate-100 dark:border-slate-700">
-              <input
-                type="text"
-                value={emoji}
-                onChange={(e) => onChange(e.target.value)}
-                placeholder="Type or paste emoji…"
-                className="w-full text-sm px-2 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-              />
-            </div>
-            <div className="flex-1 overflow-y-auto p-2">
-              <div className="flex flex-wrap gap-1">
-                {POPULAR_EMOJIS.slice(0, 120).map((item, i) => (
-                  <button
-                    key={`${item}-${i}`}
-                    type="button"
-                    onClick={() => {
-                      onChange(item);
-                      setOpen(false);
-                    }}
-                    className="text-xl p-1.5 rounded-lg hover:bg-brand-100 dark:hover:bg-brand-900/30 hover:scale-110 transition-all"
-                  >
-                    {item}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </>
-      ) : null}
+      <EmojiPickerPopover
+        open={open}
+        onClose={() => setOpen(false)}
+        onSelect={onChange}
+        anchorRef={btnRef}
+        currentValue={emoji}
+      />
     </div>
   );
 };

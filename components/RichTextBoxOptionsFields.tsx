@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { POPULAR_EMOJIS } from '../types';
+import React from 'react';
+import { TitleEmojiPicker } from './TitleEmojiPicker';
 import type { BoxAlign } from './RichTextBoxedView';
 
 export type BoxFontWeight = 'normal' | 'bold';
@@ -243,7 +243,6 @@ export const RichTextBoxOptionsFields: React.FC<RichTextBoxOptionsFieldsProps> =
   onBoxImportanceChange,
   accent = 'emerald',
 }) => {
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const focusRing =
     accent === 'emerald'
       ? 'focus:border-emerald-500 focus:ring-emerald-500/40'
@@ -299,56 +298,12 @@ export const RichTextBoxOptionsFields: React.FC<RichTextBoxOptionsFieldsProps> =
                 Header emoji
               </label>
               <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setShowEmojiPicker((v) => !v)}
-                  className="w-12 h-10 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xl flex items-center justify-center hover:border-brand-400 transition-colors"
+                <TitleEmojiPicker
+                  value={boxHeaderEmoji}
+                  onChange={onBoxHeaderEmojiChange}
+                  size="md"
                   title="Pick header emoji"
-                >
-                  {boxHeaderEmoji || '😀'}
-                </button>
-                {boxHeaderEmoji && (
-                  <button
-                    type="button"
-                    onClick={() => onBoxHeaderEmojiChange('')}
-                    className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-slate-500 text-white text-[10px] leading-none"
-                    title="Clear emoji"
-                  >
-                    ×
-                  </button>
-                )}
-                {showEmojiPicker && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setShowEmojiPicker(false)} />
-                    <div className="absolute top-full left-0 mt-2 w-64 h-56 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-20 flex flex-col overflow-hidden">
-                      <div className="p-2 border-b border-slate-100 dark:border-slate-700">
-                        <input
-                          type="text"
-                          value={boxHeaderEmoji}
-                          onChange={(e) => onBoxHeaderEmojiChange(e.target.value)}
-                          placeholder="Type emoji..."
-                          className="w-full text-sm px-2 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
-                          autoFocus
-                        />
-                      </div>
-                      <div className="flex-1 overflow-y-auto p-2 grid grid-cols-8 gap-1">
-                        {POPULAR_EMOJIS.slice(0, 96).map((emoji) => (
-                          <button
-                            key={emoji}
-                            type="button"
-                            onClick={() => {
-                              onBoxHeaderEmojiChange(emoji);
-                              setShowEmojiPicker(false);
-                            }}
-                            className="w-7 h-7 flex items-center justify-center text-base hover:bg-brand-100 dark:hover:bg-brand-900/30 rounded-md"
-                          >
-                            {emoji}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
+                />
               </div>
             </div>
             <div>

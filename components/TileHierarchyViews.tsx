@@ -134,6 +134,53 @@ const OverflowMenu: React.FC<{
   );
 };
 
+export const HierarchyExpandControls: React.FC<{
+  canExpand: boolean;
+  canCollapse: boolean;
+  onExpandAll: () => void;
+  onCollapseAll: () => void;
+}> = ({ canExpand, canCollapse, onExpandAll, onCollapseAll }) => {
+  const btnClass = (enabled: boolean) =>
+    `inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+      enabled
+        ? 'text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white'
+        : 'text-slate-400 dark:text-slate-600 cursor-not-allowed'
+    }`;
+
+  return (
+    <div
+      className="inline-flex items-center gap-0.5 p-0.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-100/80 dark:bg-slate-900/60"
+      role="group"
+      aria-label="Expand or collapse all tabs and sections"
+    >
+      <button
+        type="button"
+        onClick={onExpandAll}
+        disabled={!canExpand}
+        className={btnClass(canExpand)}
+        title="Expand all tabs and sections to show links"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+        </svg>
+        <span className="hidden sm:inline">Expand all</span>
+      </button>
+      <button
+        type="button"
+        onClick={onCollapseAll}
+        disabled={!canCollapse}
+        className={btnClass(canCollapse)}
+        title="Collapse all tabs and sections"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" />
+        </svg>
+        <span className="hidden sm:inline">Collapse all</span>
+      </button>
+    </div>
+  );
+};
+
 export const HierarchyViewSwitcher: React.FC<{
   value: HierarchyViewMode;
   onChange: (mode: HierarchyViewMode) => void;

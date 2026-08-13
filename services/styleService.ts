@@ -81,6 +81,7 @@ export interface SpaceStyles {
   categoryFontFamily: string;
   categoryFontWeight: string;
   categoryFontStyle: string;
+  categoryTextTransform: string; // 'none' | 'capitalize' | 'lowercase' | 'uppercase'
 
   // Tile/Space font styling
   tileFontFamily: string;
@@ -354,6 +355,7 @@ export const DEFAULT_STYLES: SpaceStyles = {
   categoryFontFamily: 'inherit',
   categoryFontWeight: 'bold',
   categoryFontStyle: 'normal',
+  categoryTextTransform: 'uppercase',
   tileFontFamily: 'inherit',
   tileFontSize: 14,
   tileFontWeight: 'bold',
@@ -561,6 +563,56 @@ export const DEFAULT_STYLES: SpaceStyles = {
     xl: 4
   }
 };
+
+export type CategoryTextTransform = 'none' | 'capitalize' | 'lowercase' | 'uppercase';
+
+export function normalizeCategoryTextTransform(value: unknown): CategoryTextTransform {
+  if (value === 'none' || value === 'capitalize' || value === 'lowercase' || value === 'uppercase') {
+    return value;
+  }
+  return 'uppercase';
+}
+
+/** Convert a category name to the selected Style Manager text case. */
+export function applyCategoryTextCase(value: string, transform?: string | null): string {
+  const mode = normalizeCategoryTextTransform(transform);
+  const text = value.trim();
+  if (!text || mode === 'none') {
+    return text || value;
+  }
+
+  if (mode === 'lowercase') {
+    return text.toLowerCase();
+  }
+  if (mode === 'uppercase') {
+    return text.toUpperCase();
+  }
+
+  // Title Case: lowercase first so ALL CAPS names become "Title Case" instead of staying uppercase.
+  return text
+    .toLowerCase()
+    .replace(/(^|[^\p{L}\p{N}])(\p{L})/gu, (_match, sep: string, ch: string) => sep + ch.toUpperCase());
+}
+
+/** Map stored category names that do not already match the selected case. Skips collisions. */
+export function buildCategoryCaseRenameMap(
+  names: string[],
+  transform?: string | null
+): Map<string, string> {
+  const renameMap = new Map<string, string>();
+  const existing = new Set(names);
+  const reservedTargets = new Set<string>();
+
+  for (const name of names) {
+    const converted = applyCategoryTextCase(name, transform);
+    if (!converted || converted === name) continue;
+    if (existing.has(converted) || reservedTargets.has(converted)) continue;
+    renameMap.set(name, converted);
+    reservedTargets.add(converted);
+  }
+
+  return renameMap;
+}
 
 // LocalStorage key for caching styles
 const STYLES_CACHE_KEY = 'linknest_styles_cache';
@@ -1402,6 +1454,7 @@ export const styleService = {
         font-family: ${styles.categoryFontFamily} !important;
         font-weight: ${styles.categoryFontWeight} !important;
         font-style: ${styles.categoryFontStyle} !important;
+        text-transform: ${normalizeCategoryTextTransform(styles.categoryTextTransform)} !important;
       }
       
       .linknest-tile h3 {

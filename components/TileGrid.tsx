@@ -1,7 +1,9 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
-import { Tile, LinkSection, ThemeColor, THEME_COLORS, COLOR_STYLES, POPULAR_EMOJIS, TileVisibility, TileMessage, Link, CelebrationConfig } from '../types';
+import { Tile, LinkSection, ThemeColor, THEME_COLORS, COLOR_STYLES, TileVisibility, TileMessage, Link, CelebrationConfig } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
+import { useStyles } from '../contexts/StyleContext';
+import { applyCategoryTextCase, buildCategoryCaseRenameMap } from '../services/styleService';
 import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite, saveTile, createTile, getTiles, getTile, cloneCategory, toggleCategoryFavorite, getRecycleBin, restoreTile, purgeRecycleBin, permanentDeleteTile, permanentDeleteCategory, deleteTile, getArchive, archiveTile, unarchiveTile, purgeArchive, archiveCategory, unarchiveCategory, getFavoriteLinks, resolveFavoriteLinks, FavoriteLink, csvToJson, uploadTileHeaderImage, uploadTileEmojiImage } from '../services/storageService';
 import {
   exportTileToFileAsync,
@@ -47,6 +49,7 @@ import { RecycleBinOverview } from './RecycleBinOverview';
 import { TileInfoDialog } from './TileInfoDialog';
 import { FormSection, FormLabel, SpaceModalHeader, EditModalTabButton } from './SpaceFormChrome';
 import { SearchTagsInput } from './SearchTagsInput';
+import { EmojiPickerPopover } from './EmojiPickerPanel';
 import { TileFireworks } from './TileFireworks';
 import { TileConfetti } from './TileConfetti';
 import { TileSnowfall } from './TileSnowfall';
@@ -768,26 +771,29 @@ const Category: React.FC<CategoryProps> = ({
   animationClass
 }) => {
   const { user } = useAuth();
+  const { styles } = useStyles();
+  const displayName = applyCategoryTextCase(categoryName, styles.categoryTextTransform);
   const [isEditing, setIsEditing] = useState(false);
-  const [editedName, setEditedName] = useState(categoryName);
+  const [editedName, setEditedName] = useState(displayName);
 
-  // Update editedName when categoryName changes (e.g., after rename)
+  // Update editedName when categoryName or the selected text case changes
   useEffect(() => {
-    setEditedName(categoryName);
-  }, [categoryName]);
+    setEditedName(displayName);
+  }, [displayName]);
 
   const handleSave = () => {
     const trimmedName = editedName.trim();
-    if (trimmedName && trimmedName !== categoryName && onRenameCategory) {
-      onRenameCategory(categoryName, trimmedName);
+    const standardizedName = applyCategoryTextCase(trimmedName || categoryName, styles.categoryTextTransform);
+    if (standardizedName && standardizedName !== categoryName && onRenameCategory) {
+      onRenameCategory(categoryName, standardizedName);
     }
     setIsEditing(false);
-    setEditedName(categoryName);
+    setEditedName(standardizedName || displayName);
   };
 
   const handleCancel = () => {
     setIsEditing(false);
-    setEditedName(categoryName);
+    setEditedName(displayName);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -891,7 +897,7 @@ const Category: React.FC<CategoryProps> = ({
           </div>
         ) : (
           <>
-            <h2 className="linknest-category-header text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">{categoryName}</h2>
+            <h2 className="linknest-category-header text-sm font-bold text-slate-700 dark:text-slate-300 tracking-wide">{displayName}</h2>
             {isAuthenticated && onRenameCategory && user?.is_admin && (
               <button
                 onClick={(e) => {
@@ -2246,6 +2252,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   onHelpClick = () => { }
 }) => {
   const { settings } = useSettings();
+  const { styles } = useStyles();
   const { user } = useAuth();
   const isMobile = useMobile(768); // Use mobile view below 768px width
 
@@ -2623,6 +2630,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
   // Emoji Picker State
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const emojiPickerAnchorRef = useRef<HTMLButtonElement | null>(null);
 
   // View Mode State
   const [viewMode, setViewMode] = useState<'grid' | 'categories'>(() => {
@@ -3290,6 +3298,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
   // Category order state
   const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
+  const categoryCaseNormalizeLockRef = useRef(false);
+  const categoryCaseNormalizeFailedKeyRef = useRef<string | null>(null);
   const [categoryMetadata, setCategoryMetadata] = useState<Record<string, { visibleFrom?: string | null; expiresAt?: string | null }>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [editingCategorySchedule, setEditingCategorySchedule] = useState<string | null>(null);
@@ -4540,7 +4550,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       headerImageZoom: newHeaderImage.trim() ? newHeaderImageZoom : null,
       headerImageFit: newHeaderImage.trim() ? newHeaderImageFit : null,
       themeColor: newColor,
-      group: tileType === 'space' ? (newGroup.trim() || 'General') : (newGroup.trim() || 'General'),
+      group: applyCategoryTextCase(newGroup.trim() || 'General', styles.categoryTextTransform),
       sections: tileType === 'space' ? [
         {
           id: generateId(),
@@ -5357,7 +5367,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       headerImageZoom: newHeaderImage.trim() ? newHeaderImageZoom : null,
       headerImageFit: newHeaderImage.trim() ? newHeaderImageFit : null,
       themeColor: newColor,
-      group: newGroup.trim() || 'General',
+      group: applyCategoryTextCase(newGroup.trim() || 'General', styles.categoryTextTransform),
       visibility: newVisibility,
       allowedUsers: (newVisibility === 'private') ? finalAllowedUsers : undefined,
       allowedGroups: (newVisibility === 'private') ? newAllowedGroups : undefined,
@@ -6095,9 +6105,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
   const handleRenameCategory = useCallback(async (oldName: string, newName: string) => {
     if (!isAuthenticated) return;
-    if (!newName.trim() || newName.trim() === oldName) return;
-
-    const trimmedNewName = newName.trim();
+    const trimmedNewName = applyCategoryTextCase(newName.trim(), styles.categoryTextTransform);
+    if (!trimmedNewName || trimmedNewName === oldName) return;
     const sourceTiles = activeTab === 'staging' ? stagingTiles : tiles;
 
     try {
@@ -6153,7 +6162,96 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       console.error('Failed to rename category:', error);
       alert('Failed to rename category. Please try again.');
     }
-  }, [tiles, stagingTiles, activeTab, isAuthenticated, onUpdateTiles, categoryOrder, categoryMetadata, buildArrangementAndScope]);
+  }, [tiles, stagingTiles, activeTab, isAuthenticated, onUpdateTiles, categoryOrder, categoryMetadata, buildArrangementAndScope, styles.categoryTextTransform]);
+
+  // Convert stored category names when they do not match the Style Manager text case.
+  useEffect(() => {
+    if (!isAuthenticated || !user?.is_admin) return;
+    if (categoryCaseNormalizeLockRef.current) return;
+    if (activeTab === 'recycle-bin' || activeTab === 'archive' || activeTab === 'monitoring' || activeTab === 'monitorv2') return;
+
+    const transform = styles.categoryTextTransform || 'uppercase';
+    if (transform === 'none') return;
+
+    const sourceTiles = activeTab === 'staging' ? stagingTiles : tiles;
+    const names = Array.from(new Set([
+      ...categoryOrder,
+      ...sourceTiles.map((tile) => tile.group || 'General')
+    ]));
+    const renameMap = buildCategoryCaseRenameMap(names, transform);
+    if (renameMap.size === 0) {
+      categoryCaseNormalizeFailedKeyRef.current = null;
+      return;
+    }
+
+    const failedKey = `${transform}:${Array.from(renameMap.entries()).map(([from, to]) => `${from}->${to}`).join('|')}`;
+    if (categoryCaseNormalizeFailedKeyRef.current === failedKey) return;
+
+    const applyName = (name: string) => renameMap.get(name) || name;
+    const updatedTiles = sourceTiles.map((tile) => {
+      const group = tile.group || 'General';
+      const next = applyName(group);
+      return next === group ? tile : { ...tile, group: next };
+    });
+    const newCategoryOrder = categoryOrder.map(applyName);
+    const newMetadata: Record<string, { visibleFrom?: string | null; expiresAt?: string | null }> = {};
+    Object.entries(categoryMetadata).forEach(([key, value]) => {
+      newMetadata[applyName(key)] = value;
+    });
+
+    categoryCaseNormalizeLockRef.current = true;
+
+    if (activeTab === 'staging') {
+      setStagingTiles(updatedTiles);
+    } else {
+      onUpdateTiles(updatedTiles);
+    }
+    setCategoryOrder(newCategoryOrder);
+    setCategoryMetadata(newMetadata);
+    setSelectedCategoryFilter((current) => (current ? applyName(current) : current));
+
+    const persist = async () => {
+      try {
+        const { arrangement, scope } = buildArrangementAndScope(updatedTiles);
+        await saveTileArrangement(arrangement, scope);
+        if (newCategoryOrder.length > 0) {
+          const categoryArrangement = newCategoryOrder.map((category, index) => ({
+            categoryName: category,
+            position: index,
+            visibleFrom: newMetadata[category]?.visibleFrom || null,
+            expiresAt: newMetadata[category]?.expiresAt || null
+          }));
+          await saveCategoryArrangement(categoryArrangement);
+        }
+        categoryCaseNormalizeFailedKeyRef.current = null;
+      } catch (error) {
+        console.error('Failed to convert category names to the selected text case:', error);
+        categoryCaseNormalizeFailedKeyRef.current = failedKey;
+        if (activeTab === 'staging') {
+          setStagingTiles(stagingTiles);
+        } else {
+          onUpdateTiles(tiles);
+        }
+        setCategoryOrder(categoryOrder);
+        setCategoryMetadata(categoryMetadata);
+      } finally {
+        categoryCaseNormalizeLockRef.current = false;
+      }
+    };
+
+    void persist();
+  }, [
+    activeTab,
+    buildArrangementAndScope,
+    categoryMetadata,
+    categoryOrder,
+    isAuthenticated,
+    onUpdateTiles,
+    stagingTiles,
+    styles.categoryTextTransform,
+    tiles,
+    user?.is_admin
+  ]);
 
   const handleArchiveCategory = useCallback(async (categoryName: string) => {
     if (!isAuthenticated) return;
@@ -7489,7 +7587,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             </svg>
             Show All Categories
             <span className="px-2 py-0.5 text-xs bg-slate-200 dark:bg-slate-700 rounded-full">
-              Filtering: {selectedCategoryFilter}
+              Filtering: {applyCategoryTextCase(selectedCategoryFilter, styles.categoryTextTransform)}
             </span>
           </button>
         </div>
@@ -7862,7 +7960,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         <path d="M2 3.75A.75.75 0 012.75 3h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 3.75zm0 4.167a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75zm0 4.166a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75zm0 4.167a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" />
                       </svg>
                     </div>
-                    <h3 className="text-xl font-bold text-slate-900 dark:text-white truncate flex-1" title={groupName}>{groupName}</h3>
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white truncate flex-1" title={applyCategoryTextCase(groupName, styles.categoryTextTransform)}>{applyCategoryTextCase(groupName, styles.categoryTextTransform)}</h3>
                     {isAuthenticated && (
                       <button
                         onClick={(e) => {
@@ -9034,7 +9132,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         <FormLabel emoji="✨">Icon</FormLabel>
                         <button
                           type="button"
-                          onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                          onClick={(e) => {
+                            emojiPickerAnchorRef.current = e.currentTarget;
+                            setShowEmojiPicker(!showEmojiPicker);
+                          }}
                           className="w-full h-12 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-brand-500/50 overflow-hidden"
                         >
                           {newEmojiImage ? (
@@ -9052,35 +9153,20 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           )}
                         </button>
 
-                        {/* Emoji Picker Popover */}
-                        {showEmojiPicker && (
-                          <>
-                            <div className="fixed inset-0 z-[10001]" onClick={() => setShowEmojiPicker(false)}></div>
-                            <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[10002] flex flex-col overflow-hidden">
-                              <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
-                                <input
-                                  type="text"
-                                  value={newEmoji}
-                                  onChange={(e) => setNewEmoji(e.target.value)}
-                                  placeholder="Type emoji..."
-                                  className="w-full text-sm px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/50 text-slate-900 dark:text-white"
-                                  autoFocus
-                                />
-                              </div>
-                              <div className="flex-1 overflow-y-auto p-2 grid grid-cols-8 gap-1">
-                                {POPULAR_EMOJIS.map((emoji) => (
-                                  <button
-                                    key={emoji}
-                                    onClick={() => { setNewEmoji(emoji); setNewEmojiImage(''); setNewEmojiImageOpacity(100); setNewEmojiImageOffsetX(0); setNewEmojiImageOffsetY(0); setNewEmojiImageZoom(100); setShowEmojiPicker(false); }}
-                                    className="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
-                                  >
-                                    {emoji}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          </>
-                        )}
+                        <EmojiPickerPopover
+                          open={showEmojiPicker}
+                          onClose={() => setShowEmojiPicker(false)}
+                          onSelect={(emoji) => {
+                            setNewEmoji(emoji);
+                            setNewEmojiImage('');
+                            setNewEmojiImageOpacity(100);
+                            setNewEmojiImageOffsetX(0);
+                            setNewEmojiImageOffsetY(0);
+                            setNewEmojiImageZoom(100);
+                          }}
+                          anchorRef={emojiPickerAnchorRef}
+                          currentValue={newEmoji}
+                        />
                         <div className="mt-1.5 flex flex-col gap-1">
                           <label className={`inline-flex items-center justify-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border cursor-pointer transition-colors ${emojiImageUploading ? 'opacity-60 pointer-events-none' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'} text-slate-700 dark:text-slate-200`}>
                             <input
@@ -11507,7 +11593,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Icon</label>
                         <button
                           type="button"
-                          onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                          onClick={(e) => {
+                            emojiPickerAnchorRef.current = e.currentTarget;
+                            setShowEmojiPicker(!showEmojiPicker);
+                          }}
                           className="w-full h-12 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-brand-500/50 overflow-hidden"
                         >
                           {newEmojiImage ? (
@@ -11525,35 +11614,20 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           )}
                         </button>
 
-                        {/* Emoji Picker Popover */}
-                        {showEmojiPicker && (
-                          <>
-                            <div className="fixed inset-0 z-[10001]" onClick={() => setShowEmojiPicker(false)}></div>
-                            <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[10002] flex flex-col overflow-hidden">
-                              <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
-                                <input
-                                  type="text"
-                                  value={newEmoji}
-                                  onChange={(e) => setNewEmoji(e.target.value)}
-                                  placeholder="Type emoji..."
-                                  className="w-full text-sm px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/50 text-slate-900 dark:text-white"
-                                  autoFocus
-                                />
-                              </div>
-                              <div className="flex-1 overflow-y-auto p-2 grid grid-cols-8 gap-1">
-                                {POPULAR_EMOJIS.map((emoji) => (
-                                  <button
-                                    key={emoji}
-                                    onClick={() => { setNewEmoji(emoji); setNewEmojiImage(''); setNewEmojiImageOpacity(100); setNewEmojiImageOffsetX(0); setNewEmojiImageOffsetY(0); setNewEmojiImageZoom(100); setShowEmojiPicker(false); }}
-                                    className="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
-                                  >
-                                    {emoji}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          </>
-                        )}
+                        <EmojiPickerPopover
+                          open={showEmojiPicker}
+                          onClose={() => setShowEmojiPicker(false)}
+                          onSelect={(emoji) => {
+                            setNewEmoji(emoji);
+                            setNewEmojiImage('');
+                            setNewEmojiImageOpacity(100);
+                            setNewEmojiImageOffsetX(0);
+                            setNewEmojiImageOffsetY(0);
+                            setNewEmojiImageZoom(100);
+                          }}
+                          anchorRef={emojiPickerAnchorRef}
+                          currentValue={newEmoji}
+                        />
                         <div className="mt-1.5 flex flex-col gap-1">
                           <label className={`inline-flex items-center justify-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border cursor-pointer transition-colors ${emojiImageUploading ? 'opacity-60 pointer-events-none' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'} text-slate-700 dark:text-slate-200`}>
                             <input

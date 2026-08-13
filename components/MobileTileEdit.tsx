@@ -4,6 +4,7 @@ import { User } from '../services/authService';
 import { AppSettings } from '../services/settingsService';
 import { MobileRichTextEditor } from './MobileRichTextEditor';
 import { TitleEmojiPicker } from './TitleEmojiPicker';
+import { HierarchyExpandControls } from './TileHierarchyViews';
 
 interface MobileTileEditProps {
     tile: Tile;
@@ -25,7 +26,7 @@ interface MobileTileEditProps {
     onPublishedChange: (published: boolean) => void;
     onAllowedUsersChange: (users: number[]) => void;
     onTabsChange: (tabs: Tab[]) => void;
-    onSave: () => void;
+    onSave: (tabs?: Tab[]) => void;
     onCancel: () => void;
     isAuthenticated?: boolean;
     usersList?: Array<{ id: number; username: string; email: string; auth_source?: string }>;
@@ -137,6 +138,25 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
             return next;
         });
     };
+
+    const allSectionIds = editTabs.flatMap((t) => (t.sections || []).map((s) => s.id));
+
+    const expandAllToSections = () => {
+        setExpandedTabs(new Set(editTabs.map((t) => t.id)));
+        setExpandedSections(new Set(allSectionIds));
+    };
+
+    const collapseAllTabsAndSections = () => {
+        setExpandedTabs(new Set());
+        setExpandedSections(new Set());
+    };
+
+    const allTabsExpandedToSections =
+        editTabs.length > 0 &&
+        editTabs.every((t) => expandedTabs.has(t.id)) &&
+        (allSectionIds.length === 0 || allSectionIds.every((id) => expandedSections.has(id)));
+    const canExpandAllToSections = editTabs.length > 0 && !allTabsExpandedToSections;
+    const canCollapseAll = expandedTabs.size > 0 || expandedSections.size > 0;
 
     const handleAddTab = () => {
         const newTab: Tab = {
@@ -306,6 +326,128 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         });
     };
 
+    const emptyNewLinkFormState = (): NonNullable<(typeof newLinkState)[string]> => ({
+        label: '',
+        url: '',
+        icon: '',
+        textColor: '',
+        visibility: 'public',
+        allowedUsers: [],
+        notes: '',
+        tooltip: '',
+        browser: 'default',
+        richTextContent: ''
+    });
+
+    const applyMobileLinkState = (
+        link: Link,
+        state: NonNullable<(typeof editLinkState)[string]>
+    ): Link => ({
+        ...link,
+        label: state.label || 'New Link',
+        url: state.url,
+        icon: state.icon || '🔗',
+        textColor: state.textColor || undefined,
+        visibility: state.visibility || 'public',
+        allowedUsers: state.allowedUsers || [],
+        notes: state.notes || undefined,
+        tooltip: state.tooltip || undefined,
+        browser: state.browser || 'default',
+        richTextContent: state.richTextContent || undefined
+    });
+
+    const flushPendingLinkChanges = (): Tab[] => {
+        let nextTabs = editTabs;
+        let changed = false;
+
+        if (editingLink) {
+            const { tabId, sectionId, linkId } = editingLink;
+            const state = editLinkState[linkId];
+            if (state && state.url.trim()) {
+                nextTabs = nextTabs.map(tab =>
+                    tab.id !== tabId
+                        ? tab
+                        : {
+                            ...tab,
+                            sections: tab.sections?.map(section =>
+                                section.id !== sectionId
+                                    ? section
+                                    : {
+                                        ...section,
+                                        links: section.links?.map(link =>
+                                            link.id === linkId ? applyMobileLinkState(link, state) : link
+                                        ) || []
+                                    }
+                            )
+                        }
+                );
+                changed = true;
+            }
+        }
+
+        Object.entries(newLinkState).forEach(([sectionId, state]) => {
+            if (!state?.url?.trim()) return;
+            const tab = nextTabs.find(t => t.sections?.some(s => s.id === sectionId));
+            if (!tab) return;
+            const newLink: Link = {
+                id: `link_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                label: state.label || 'New Link',
+                url: state.url,
+                icon: state.icon || '🔗',
+                textColor: state.textColor || undefined,
+                visibility: state.visibility || 'public',
+                allowedUsers: state.allowedUsers || [],
+                notes: state.notes || undefined,
+                tooltip: state.tooltip || undefined,
+                browser: state.browser || 'default',
+                richTextContent: state.richTextContent || undefined
+            };
+            nextTabs = nextTabs.map(t =>
+                t.id !== tab.id
+                    ? t
+                    : {
+                        ...t,
+                        sections: t.sections?.map(section =>
+                            section.id !== sectionId
+                                ? section
+                                : { ...section, links: [...(section.links || []), newLink] }
+                        )
+                    }
+            );
+            changed = true;
+        });
+
+        if (changed) {
+            onTabsChange(nextTabs);
+            if (editingLink) {
+                setEditingLink(null);
+                setEditLinkState({});
+            }
+            setNewLinkState(prev => {
+                const next = { ...prev };
+                Object.entries(prev).forEach(([sectionId, state]) => {
+                    if (state?.url?.trim()) {
+                        next[sectionId] = emptyNewLinkFormState();
+                    }
+                });
+                return next;
+            });
+            setShowAddLinkForm(prev => {
+                const next = { ...prev };
+                Object.entries(newLinkState).forEach(([sectionId, state]) => {
+                    if (state?.url?.trim()) next[sectionId] = false;
+                });
+                return next;
+            });
+        }
+
+        return nextTabs;
+    };
+
+    const handleSavePage = () => {
+        onSave(flushPendingLinkChanges());
+    };
+
     const handleCloneLink = (tabId: string, sectionId: string, linkId: string) => {
         const updatedTabs = editTabs.map(tab =>
             tab.id === tabId
@@ -423,7 +565,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                 Cancel
                             </button>
                             <button
-                                onClick={onSave}
+                                onClick={handleSavePage}
                                 className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-semibold active:bg-brand-700 touch-manipulation"
                                 style={{ minHeight: '44px' }}
                             >
@@ -473,13 +615,12 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                     Emoji & Page Title
                                 </label>
                                 <div className="flex gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                                        className="w-14 h-14 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl text-2xl flex items-center justify-center active:border-brand-400 dark:active:border-brand-500 touch-manipulation"
-                                    >
-                                        {editEmoji || '✨'}
-                                    </button>
+                                    <TitleEmojiPicker
+                                        value={editEmoji}
+                                        onChange={onEmojiChange}
+                                        size="lg"
+                                        title="Choose page emoji"
+                                    />
                                     <input
                                         type="text"
                                         value={editTitle}
@@ -740,6 +881,14 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                         >
                             + Add Tab
                         </button>
+                    </div>
+                    <div className="px-4 py-2 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+                        <HierarchyExpandControls
+                            canExpand={canExpandAllToSections}
+                            canCollapse={canCollapseAll}
+                            onExpandAll={expandAllToSections}
+                            onCollapseAll={collapseAllTabsAndSections}
+                        />
                     </div>
 
                     {/* Search */}

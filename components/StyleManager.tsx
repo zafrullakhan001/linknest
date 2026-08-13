@@ -1680,7 +1680,7 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                 {/* Categories Typography */}
                 <div className="mb-6">
                   <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Categories</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pl-4 border-l-2 border-indigo-200 dark:border-indigo-800">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pl-4 border-l-2 border-indigo-200 dark:border-indigo-800">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Family</label>
                       <select
@@ -1735,8 +1735,21 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                         <option value="oblique">Oblique</option>
                       </select>
                     </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Text Case</label>
+                      <select
+                        value={styles.categoryTextTransform || 'uppercase'}
+                        onChange={(e) => updateStyle('categoryTextTransform', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="none">None</option>
+                        <option value="capitalize">Title Case</option>
+                        <option value="lowercase">Small Case</option>
+                        <option value="uppercase">Capital Case</option>
+                      </select>
+                    </div>
                   </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 pl-4">Note: Font size is controlled in the Category Header section above.</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 pl-4">Note: Font size is controlled in the Category Header section above. Category names are converted to the selected case automatically.</p>
                 </div>
 
                 {/* Page Title Typography */}

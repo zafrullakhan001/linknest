@@ -7,7 +7,8 @@ import { useSettings, resolvePageTitle } from '../contexts/SettingsContext';
 import { useAuth } from '../contexts/AuthContext';
 import { getTiles, createTile, saveTile, deleteTile, bulkImportTiles, getCategoryArrangement, saveCategoryArrangement } from '../services/storageService';
 import { exportAllCategoriesToFileAsync, parseSpaceExportObject, normalizeImportedTiles, restoreImportedTileAssets } from '../services/spaceTransferService';
-import { Tile, POPULAR_EMOJIS } from '../types';
+import { Tile } from '../types';
+import { TitleEmojiPicker } from './TitleEmojiPicker';
 import { SecurePasswordInput } from './SecurePasswordInput';
 import { PasswordCriteriaList } from './PasswordCriteriaList';
 import { validatePassword } from '../services/passwordValidation';
@@ -448,7 +449,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [faviconRemoveBg, setFaviconRemoveBg] = useState(false);
   const [faviconBgMode, setFaviconBgMode] = useState<'auto' | 'custom'>('auto');
   const [faviconBgColor, setFaviconBgColor] = useState('#ffffff');
-  const [showQrEmojiPicker, setShowQrEmojiPicker] = useState(false);
   const [samlConfigModalOpen, setSamlConfigModalOpen] = useState(false);
 
   /** Update local branding form state and live-preview the nav/hero before Save. */
@@ -12001,48 +12001,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     {(settings.qr_branding_mode || 'favicon') === 'favicon' ? 'Fallback emoji' : 'QR emoji'}
                                   </label>
                                   <div className="flex items-center gap-3">
-                                    <div className="relative">
-                                      <button
-                                        type="button"
-                                        onClick={() => setShowQrEmojiPicker((v) => !v)}
-                                        className="w-14 h-14 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-3xl flex items-center justify-center hover:border-brand-400 transition-colors"
-                                        title="Pick emoji"
-                                      >
-                                        {settings.qr_branding_emoji || '❤️'}
-                                      </button>
-                                      {showQrEmojiPicker && (
-                                        <>
-                                          <div className="fixed inset-0 z-10" onClick={() => setShowQrEmojiPicker(false)} />
-                                          <div className="absolute top-full left-0 mt-2 w-72 h-64 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-20 flex flex-col overflow-hidden">
-                                            <div className="p-2 border-b border-slate-100 dark:border-slate-700">
-                                              <input
-                                                type="text"
-                                                value={settings.qr_branding_emoji || ''}
-                                                onChange={(e) => setSettings({ ...settings, qr_branding_emoji: e.target.value })}
-                                                placeholder="Type or paste emoji..."
-                                                className="w-full text-sm px-2 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
-                                                autoFocus
-                                              />
-                                            </div>
-                                            <div className="flex-1 overflow-y-auto p-2 grid grid-cols-8 gap-1">
-                                              {Array.from(new Set(['❤️', '💙', '💚', '💛', '🧡', '💜', '🖤', '🤍', ...POPULAR_EMOJIS])).slice(0, 120).map((emoji) => (
-                                                <button
-                                                  key={emoji}
-                                                  type="button"
-                                                  onClick={() => {
-                                                    setSettings({ ...settings, qr_branding_emoji: emoji });
-                                                    setShowQrEmojiPicker(false);
-                                                  }}
-                                                  className={`w-7 h-7 flex items-center justify-center text-base rounded-md hover:bg-brand-100 dark:hover:bg-brand-900/30 ${settings.qr_branding_emoji === emoji ? 'bg-brand-100 dark:bg-brand-900/40 ring-1 ring-brand-400' : ''}`}
-                                                >
-                                                  {emoji}
-                                                </button>
-                                              ))}
-                                            </div>
-                                          </div>
-                                        </>
-                                      )}
-                                    </div>
+                                    <TitleEmojiPicker
+                                      value={settings.qr_branding_emoji || '❤️'}
+                                      onChange={(emoji) => setSettings({ ...settings, qr_branding_emoji: emoji || '❤️' })}
+                                      size="lg"
+                                      title="Pick emoji"
+                                    />
                                     <div className="flex-1 min-w-0">
                                       <p className="text-xs text-slate-600 dark:text-slate-400">
                                         {(settings.qr_branding_mode || 'favicon') === 'favicon'

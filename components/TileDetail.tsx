@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Tile, Link, LinkSection, Tab, LinkVisibility, TileVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, POPULAR_EMOJIS, LINK_EMOJIS, ALL_LINK_EMOJIS, TileMessage } from '../types';
+import { Tile, Link, LinkSection, Tab, LinkVisibility, TileVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, TileMessage } from '../types';
 import { linkHealthService, LinkHealthMap } from '../services/linkHealthService';
 import { performanceAnalyticsService, type AnalyticsMetric } from '../services/performanceAnalyticsService';
 import { authService, UserListItem, User } from '../services/authService';
@@ -38,9 +38,11 @@ import { QRCodeDialog } from './QRCodeDialog';
 import { MobilePreviewDialog } from './MobilePreviewDialog';
 import { BrandedQRCode } from './BrandedQRCode';
 import { TitleEmojiPicker } from './TitleEmojiPicker';
+import { EmojiPickerPanel } from './EmojiPickerPanel';
 import { MobileTileEdit } from './MobileTileEdit';
 import { useMobile } from '../hooks/useMobile';
 import {
+    HierarchyExpandControls,
     HierarchyViewSwitcher,
     TileHierarchyViews,
     readHierarchyViewPreference,
@@ -132,144 +134,20 @@ interface TileDetailProps {
     user?: User | null;
 }
 // Enhanced emoji categories with more emojis
-const EMOJI_CATEGORIES = {
-    servers: ['🖥️', '💾', '🖨️', '📡', '🔄', '⚙️', '🔧', '🛠️', '📦', '🗄️', '🗃️', '📊', '📈', '📉', '🔌', '🔋', '⚡', '🌐', '🌍', '🌎', '🖱️', '⌨️', '🖲️', '💿', '💽', '📀', '📼', '📷', '📸', '📹', '🎥'],
-    cloud: ['☁️', '🌥️', '⛅', '🌤️', '☀️', '🌦️', '🌧️', '⛈️', '🌩️', '🌨️', '❄️', '☂️', '☔', '🌈', '🌊', '💧', '💨', '🌪️', '🌀', '🌫️'],
-    onprem: ['🏢', '🏭', '🏗️', '🏛️', '🏘️', '🏠', '🏡', '🏚️', '🏙️', '🌆', '🌇', '🌃', '🌉', '🌁', '🗼', '🗽', '⛪', '🕌', '🕍', '🛕'],
-    hospital: ['🏥', '⚕️', '🩺', '💊', '💉', '🩹', '🩼', '🦽', '🦼', '🚑', '🚨', '🏨', '👨‍⚕️', '👩‍⚕️', '🧑‍⚕️', '👨‍🔬', '👩‍🔬', '🧑‍🔬', '🔬', '🧪', '🫀', '🫁', '🧠', '🦷', '🦴'],
-    technology: ['💻', '⌨️', '🖱️', '🖲️', '🖨️', '🖥️', '📱', '📲', '💾', '💿', '📀', '📼', '📷', '📸', '📹', '🎥', '📽️', '🎞️', '📺', '📻', '📟', '☎️', '📞', '📠', '📧'],
-    network: ['🌐', '📡', '📶', '📞', '☎️', '📠', '📧', '📨', '📩', '📤', '📥', '📦', '📪', '📫', '📬', '📭', '📮', '🗳️', '📯', '📜', '🔗', '⛓️', '🔌', '💡', '⚡'],
-    security: ['🔐', '🔒', '🔓', '🔑', '🗝️', '🛡️', '⚔️', '🗡️', '🔪', '🛠️', '🔧', '🔩', '⚙️', '⛓️', '🔗', '🔫', '💣', '🧨', '🎯', '🚨', '🚔', '🚓', '👮', '🕵️', '🦹'],
-    data: ['📊', '📈', '📉', '📋', '📌', '📍', '🗂️', '📁', '📂', '🗂️', '🗄️', '🗃️', '📑', '📃', '📄', '📜', '📰', '📓', '📔', '📒', '📕', '📗', '📘', '📙', '📚'],
-    communication: ['💬', '💭', '🗨️', '🗯️', '💢', '👤', '👥', '🗣️', '👂', '👃', '👀', '👁️', '👄', '💋', '💌', '💍', '💎', '🎁', '🎉', '🎊'],
-    popular: ['😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃', '😉', '😊', '😇', '🥰', '😍', '🤩', '😘', '😗', '😚', '😙', '😋', '😛', '😜', '🤪', '😝'],
-    objects: ['📱', '⌚', '📷', '📹', '🎥', '📺', '📻', '🔊', '🔉', '🔈', '🔇', '📢', '📣', '📯', '🔔', '🔕', '📻', '📡', '💻', '🖥️', '🖨️', '⌨️', '🖱️', '🖲️', '🖱️'],
-    symbols: ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟', '☮️', '✝️', '☪️', '🕉️', '☸️', '✡️']
-};
-
-// Emoji Picker Tabs Component
 const EmojiPickerTabs: React.FC<{
     linkId: string;
     editLinkState: any;
     updateEditLinkState: (linkId: string, field: string, value: any) => void;
     setShowLinkEmojiPicker: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
 }> = ({ linkId, editLinkState, updateEditLinkState, setShowLinkEmojiPicker }) => {
-    const [activeTab, setActiveTab] = useState<string>('popular');
-    const [searchTerm, setSearchTerm] = useState('');
-
-    const categories = [
-        { id: 'popular', name: 'Popular', emojis: EMOJI_CATEGORIES.popular },
-        { id: 'servers', name: 'Servers', emojis: EMOJI_CATEGORIES.servers },
-        { id: 'cloud', name: 'Cloud', emojis: EMOJI_CATEGORIES.cloud },
-        { id: 'technology', name: 'Tech', emojis: EMOJI_CATEGORIES.technology },
-        { id: 'network', name: 'Network', emojis: EMOJI_CATEGORIES.network },
-        { id: 'security', name: 'Security', emojis: EMOJI_CATEGORIES.security },
-        { id: 'data', name: 'Data', emojis: EMOJI_CATEGORIES.data },
-        { id: 'hospital', name: 'Medical', emojis: EMOJI_CATEGORIES.hospital },
-        { id: 'onprem', name: 'On-Prem', emojis: EMOJI_CATEGORIES.onprem },
-        { id: 'communication', name: 'Chat', emojis: EMOJI_CATEGORIES.communication },
-        { id: 'objects', name: 'Objects', emojis: EMOJI_CATEGORIES.objects },
-        { id: 'symbols', name: 'Symbols', emojis: EMOJI_CATEGORIES.symbols }
-    ];
-
-    // Get all emojis for search
-    const allEmojis = categories.flatMap(cat => cat.emojis);
-    const uniqueEmojis = Array.from(new Set(allEmojis));
-
-    const filteredEmojis = searchTerm
-        ? uniqueEmojis.filter(emoji => emoji.includes(searchTerm))
-        : categories.find(cat => cat.id === activeTab)?.emojis || [];
-
     return (
-        <div className="flex flex-col h-full max-h-[400px]">
-            {/* Search - Update search term when typing in parent input */}
-            <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-gradient-to-r from-slate-50 to-white dark:from-slate-900/50 dark:to-slate-800">
-                <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => {
-                        setSearchTerm(e.target.value);
-                        if (e.target.value) {
-                            setActiveTab('');
-                        }
-                    }}
-                    placeholder="Search emojis..."
-                    className="w-full text-sm px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 text-slate-900 dark:text-white"
-                />
-            </div>
-
-            {/* Tabs */}
-            {!searchTerm && (
-                <div className="flex border-b border-slate-200 dark:border-slate-700 overflow-x-auto">
-                    {categories.map(category => (
-                        <button
-                            key={category.id}
-                            onClick={() => {
-                                setActiveTab(category.id);
-                                setSearchTerm('');
-                            }}
-                            className={`px-3 py-2 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${activeTab === category.id
-                                ? 'border-brand-500 text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/20'
-                                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600'
-                                }`}
-                        >
-                            {category.name}
-                        </button>
-                    ))}
-                </div>
-            )}
-
-            {/* Emoji Grid */}
-            <div className="flex-1 overflow-y-auto p-3">
-                {filteredEmojis.length > 0 ? (
-                    <div className="flex flex-wrap gap-1.5">
-                        {filteredEmojis.map((emoji, idx) => (
-                            <button
-                                key={idx}
-                                type="button"
-                                onClick={() => {
-                                    updateEditLinkState(linkId, 'icon', emoji);
-                                    setShowLinkEmojiPicker(prev => ({ ...prev, [linkId]: false }));
-                                }}
-                                className="text-2xl hover:bg-brand-100 dark:hover:bg-brand-900/30 p-2 rounded-lg transition-all hover:scale-110"
-                            >
-                                {emoji}
-                            </button>
-                        ))}
-                    </div>
-                ) : searchTerm ? (
-                    <div className="text-center py-8 text-sm text-slate-500 dark:text-slate-400">
-                        No emojis found. Try a different search term.
-                    </div>
-                ) : null}
-            </div>
-
-            {/* Footer with links to more emojis */}
-            <div className="p-2 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
-                <a
-                    href="https://emojipedia.org"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 flex items-center gap-1.5"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                    </svg>
-                    Get more emojis from Emojipedia
-                </a>
-                <a
-                    href="https://emojidb.org/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 flex items-center gap-1.5"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                    </svg>
-                    Get more emojis from EmojiDB
-                </a>
-            </div>
-        </div>
+        <EmojiPickerPanel
+            currentValue={editLinkState?.icon || ''}
+            onSelect={(emoji) => {
+                updateEditLinkState(linkId, 'icon', emoji);
+                setShowLinkEmojiPicker(prev => ({ ...prev, [linkId]: false }));
+            }}
+        />
     );
 };
 
@@ -2203,9 +2081,112 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     };
 
+    const applyEditLinkFormToLink = (link: Link, state: NonNullable<(typeof editLinkState)[string]>): Link => ({
+        ...link,
+        label: state.label,
+        url: normalizeStoredLinkUrl(state.url),
+        icon: state.icon?.trim() || undefined,
+        textColor: state.textColor?.trim() || undefined,
+        visibility: state.visibility || 'public',
+        published: state.published !== false,
+        allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
+        allowedGroups: state.allowedGroups && state.allowedGroups.length > 0 ? state.allowedGroups : undefined,
+        notes: state.notes?.trim() || undefined,
+        tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
+        browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
+        richTextContent: state.richTextContent?.trim() || undefined,
+        animation: linkAnimationForSave(state.animation)
+    });
 
+    const buildLinkFromNewLinkState = (state: NonNullable<(typeof newLinkState)[string]>): Link => ({
+        id: generateId(),
+        label: state.label,
+        url: normalizeStoredLinkUrl(state.url),
+        icon: state.icon?.trim() || undefined,
+        textColor: state.textColor?.trim() || undefined,
+        visibility: state.visibility || 'public',
+        published: state.published !== false,
+        allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
+        allowedGroups: state.allowedGroups && state.allowedGroups.length > 0 ? state.allowedGroups : undefined,
+        notes: state.notes?.trim() || undefined,
+        tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
+        browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
+        richTextContent: state.richTextContent?.trim() || undefined,
+        animation: linkAnimationForSave(state.animation),
+        hasRoleAccess: tile.hasRoleAccess === true || undefined,
+    });
 
-    const handleSaveChanges = () => {
+    const emptyNewLinkFormState = (): NonNullable<(typeof newLinkState)[string]> => ({
+        label: '',
+        url: '',
+        icon: '',
+        textColor: '',
+        visibility: 'public',
+        published: true,
+        allowedUsers: [],
+        allowedGroups: [],
+        notes: '',
+        tooltip: '',
+        browser: 'default',
+        richTextContent: '',
+        animation: 'inherit'
+    });
+
+    const commitPendingLinkForms = (tabs: Tab[], sections: LinkSection[]): { tabs: Tab[]; sections: LinkSection[]; didChange: boolean } => {
+        const pendingEdits = Object.entries(editLinkState).filter(([, state]) =>
+            !!state && !!state.label?.trim() && !!state.url?.trim()
+        );
+        const pendingNewBySection = Object.fromEntries(
+            Object.entries(newLinkState).filter(([, state]) =>
+                !!state && !!state.label?.trim() && !!state.url?.trim()
+            )
+        );
+
+        if (pendingEdits.length === 0 && Object.keys(pendingNewBySection).length === 0) {
+            return { tabs, sections, didChange: false };
+        }
+
+        const pendingByLinkId: Record<string, NonNullable<(typeof editLinkState)[string]>> = {};
+        for (const [linkId, state] of pendingEdits) {
+            pendingByLinkId[linkId] = state;
+        }
+
+        const patchSection = (s: LinkSection): LinkSection => {
+            let links = (s.links || []).map(l => {
+                const state = pendingByLinkId[l.id];
+                return state ? applyEditLinkFormToLink(l, state) : l;
+            });
+            const newState = pendingNewBySection[s.id];
+            if (newState) {
+                const maxPosition = Math.max(
+                    -1,
+                    ...links.map(i => i.position || 0),
+                    ...(s.richTextContent || []).map(i => i.position || 0)
+                );
+                links = [...links, { ...buildLinkFromNewLinkState(newState), position: maxPosition + 1 }];
+            }
+            return { ...s, links, richTextContent: s.richTextContent || [] };
+        };
+
+        if (tabs.length > 0) {
+            return {
+                tabs: tabs.map(tab => ({
+                    ...tab,
+                    sections: (tab.sections || []).map(patchSection)
+                })),
+                sections,
+                didChange: true
+            };
+        }
+
+        return {
+            tabs,
+            sections: sections.map(patchSection),
+            didChange: true
+        };
+    };
+
+    const handleSaveChanges = (tabsOverride?: Tab[]) => {
 
         // Check if user has edit permission
         if (!tile.canEdit) {
@@ -2215,9 +2196,41 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             return;
         }
 
+        const incomingTabs = Array.isArray(tabsOverride) ? tabsOverride : editTabs;
+        const { tabs: tabsToSave, sections: sectionsToSave, didChange } = commitPendingLinkForms(incomingTabs, editSections);
+
+        if (didChange) {
+            if (tabsToSave.length > 0) {
+                setEditTabs(tabsToSave);
+            } else {
+                setEditSections(sectionsToSave);
+            }
+            setEditingLinkId(null);
+            setEditLinkState({});
+            setNewLinkState(prev => {
+                const next = { ...prev };
+                Object.keys(next).forEach(sectionId => {
+                    const state = next[sectionId];
+                    if (state?.label?.trim() && state?.url?.trim()) {
+                        next[sectionId] = emptyNewLinkFormState();
+                    }
+                });
+                return next;
+            });
+            setShowAddLinkForm(prev => {
+                const next = { ...prev };
+                Object.entries(newLinkState).forEach(([sectionId, state]) => {
+                    if (state?.label?.trim() && state?.url?.trim()) {
+                        next[sectionId] = false;
+                    }
+                });
+                return next;
+            });
+        }
+
         // Use tabs if we have them, otherwise use sections (backward compatibility)
-        // Deep clone editTabs to ensure richTextContent and positions are included
-        const clonedTabs = editTabs.length > 0 ? editTabs.map(tab => ({
+        // Deep clone to ensure richTextContent and positions are included
+        const clonedTabs = tabsToSave.length > 0 ? tabsToSave.map(tab => ({
             ...tab,
             sections: tab.sections.map(section => ({
                 ...section,
@@ -2227,7 +2240,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             }))
         })) : undefined;
 
-        const clonedSections = editTabs.length === 0 ? editSections.map(section => ({
+        const clonedSections = tabsToSave.length === 0 ? sectionsToSave.map(section => ({
             ...section,
             links: section.links ? [...section.links] : [],
             richTextContent: section.richTextContent ? section.richTextContent.map(rt => ({ ...rt })) : []
@@ -2299,6 +2312,30 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             return next;
         });
     };
+
+    const allSectionIds = editTabs.length > 0
+        ? editTabs.flatMap((t) => (t.sections || []).map((s) => s.id))
+        : editSections.map((s) => s.id);
+
+    const expandAllToSections = () => {
+        if (editTabs.length > 0) {
+            setExpandedTabs(new Set(editTabs.map((t) => t.id)));
+        }
+        setExpandedSections(new Set(allSectionIds));
+    };
+
+    const collapseAllTabsAndSections = () => {
+        setExpandedTabs(new Set());
+        setExpandedSections(new Set());
+    };
+
+    const allTabsExpandedToSections =
+        (editTabs.length === 0 || editTabs.every((t) => expandedTabs.has(t.id))) &&
+        (allSectionIds.length === 0 || allSectionIds.every((id) => expandedSections.has(id))) &&
+        (editTabs.length > 0 || allSectionIds.length > 0);
+    const canExpandAllToSections =
+        (editTabs.length > 0 || allSectionIds.length > 0) && !allTabsExpandedToSections;
+    const canCollapseAll = expandedTabs.size > 0 || expandedSections.size > 0;
 
     // Tab Management
     const handleAddTab = () => {
@@ -3335,24 +3372,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         return {
                             ...s,
                             links: s.links.map(l =>
-                                l.id === linkId
-                                    ? {
-                                        ...l,
-                                        label: state.label,
-                                        url: normalizeStoredLinkUrl(state.url),
-                                        icon: state.icon?.trim() || undefined,
-                                        textColor: state.textColor?.trim() || undefined,
-                                        visibility: state.visibility || 'public',
-                                        published: state.published !== false,
-                                        allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
-                                        allowedGroups: state.allowedGroups && state.allowedGroups.length > 0 ? state.allowedGroups : undefined,
-                                        notes: state.notes?.trim() || undefined,
-                                        tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
-                                        browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
-                                        richTextContent: state.richTextContent?.trim() || undefined,
-                                        animation: linkAnimationForSave(state.animation)
-                                    }
-                                    : l
+                                l.id === linkId ? applyEditLinkFormToLink(l, state) : l
                             ),
                             richTextContent: s.richTextContent || [] // Preserve richTextContent
                         };
@@ -3367,22 +3387,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 return {
                     ...s,
                     links: s.links.map(l =>
-                        l.id === linkId
-                            ? {
-                                ...l,
-                                label: state.label,
-                                url: normalizeStoredLinkUrl(state.url),
-                                visibility: state.visibility || 'public',
-                                published: state.published !== false,
-                                allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
-                                allowedGroups: state.allowedGroups && state.allowedGroups.length > 0 ? state.allowedGroups : undefined,
-                                notes: state.notes?.trim() || undefined,
-                                tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
-                                browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
-                                richTextContent: state.richTextContent?.trim() || undefined,
-                                animation: linkAnimationForSave(state.animation)
-                            }
-                            : l
+                        l.id === linkId ? applyEditLinkFormToLink(l, state) : l
                     ),
                     richTextContent: s.richTextContent || [] // Preserve richTextContent
                 };
@@ -6378,7 +6383,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     onPublishedChange={setEditPublished}
                     onAllowedUsersChange={setEditAllowedUsers}
                     onTabsChange={setEditTabs}
-                    onSave={handleSaveChanges}
+                    onSave={(tabs) => handleSaveChanges(tabs)}
                     onCancel={() => {
                         const confirmed = window.confirm('Are you sure you want to cancel? All unsaved changes will be lost.');
                         if (confirmed) {
@@ -6470,43 +6475,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     <div>
                                         <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2.5">Emoji & Page Title</label>
                                         <div className="flex gap-3">
-                                            <div className="relative">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                                                    className="w-16 h-14 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl text-2xl flex items-center justify-center hover:border-brand-400 dark:hover:border-brand-500 hover:shadow-md transition-all focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
-                                                >
-                                                    {editEmoji || '✨'}
-                                                </button>
-                                                {showEmojiPicker && (
-                                                    <>
-                                                        <div className="fixed inset-0 z-10" onClick={() => setShowEmojiPicker(false)}></div>
-                                                        <div className="absolute top-full left-0 mt-2 w-72 h-72 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-20 flex flex-col overflow-hidden">
-                                                            <div className="p-3 border-b border-slate-100 dark:border-slate-700 bg-gradient-to-r from-slate-50 to-white dark:from-slate-900/50 dark:to-slate-800">
-                                                                <input
-                                                                    type="text"
-                                                                    value={editEmoji}
-                                                                    onChange={(e) => setEditEmoji(e.target.value)}
-                                                                    placeholder="Type emoji..."
-                                                                    className="w-full text-sm px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 text-slate-900 dark:text-white"
-                                                                    autoFocus
-                                                                />
-                                                            </div>
-                                                            <div className="flex-1 overflow-y-auto p-3 grid grid-cols-8 gap-1.5">
-                                                                {POPULAR_EMOJIS.map((emoji) => (
-                                                                    <button
-                                                                        key={emoji}
-                                                                        onClick={() => { setEditEmoji(emoji); setShowEmojiPicker(false); }}
-                                                                        className="w-9 h-9 flex items-center justify-center text-xl hover:bg-brand-100 dark:hover:bg-brand-900/30 rounded-lg transition-all hover:scale-110"
-                                                                    >
-                                                                        {emoji}
-                                                                    </button>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                    </>
-                                                )}
-                                            </div>
+                                            <TitleEmojiPicker
+                                                value={editEmoji}
+                                                onChange={setEditEmoji}
+                                                size="lg"
+                                                title="Choose page emoji"
+                                            />
                                             <div className="flex-1">
                                                 <input
                                                     type="text"
@@ -7385,6 +7359,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     <h3 className="text-lg font-bold text-slate-800 dark:text-white truncate">Manage Tabs & Sections</h3>
                                 </div>
                                 <div className="flex items-center gap-2 flex-wrap justify-end">
+                                    <HierarchyExpandControls
+                                        canExpand={canExpandAllToSections}
+                                        canCollapse={canCollapseAll}
+                                        onExpandAll={expandAllToSections}
+                                        onCollapseAll={collapseAllTabsAndSections}
+                                    />
                                     <HierarchyViewSwitcher value={hierarchyView} onChange={changeHierarchyView} />
                                     <button
                                         onClick={handleAddTab}
@@ -8410,7 +8390,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     {showLinkEmojiPicker[link.id] && (
                                                                                                         <>
                                                                                                             <div className="fixed inset-0 z-[9998]" onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: false }))}></div>
-                                                                                                            <div className="fixed z-[9999] bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl w-96 max-h-[500px] flex flex-col overflow-hidden" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
+                                                                                                            <div className="fixed z-[10051] bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl w-[26rem] max-w-[calc(100vw-1.5rem)] h-[min(420px,72vh)] flex flex-col overflow-hidden" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
                                                                                                                 <EmojiPickerTabs linkId={link.id} editLinkState={editLinkState[link.id]} updateEditLinkState={updateEditLinkState} setShowLinkEmojiPicker={setShowLinkEmojiPicker} />
                                                                                                             </div>
                                                                                                         </>
@@ -8912,7 +8892,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 {showLinkEmojiPicker[section.id] && (
                                                                                     <>
                                                                                         <div className="fixed inset-0 z-[9998]" onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [section.id]: false }))}></div>
-                                                                                        <div className="fixed z-[9999] bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl w-96 max-h-[500px] flex flex-col overflow-hidden" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
+                                                                                        <div className="fixed z-[10051] bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl w-[26rem] max-w-[calc(100vw-1.5rem)] h-[min(420px,72vh)] flex flex-col overflow-hidden" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
                                                                                             <EmojiPickerTabs linkId={section.id} editLinkState={newLinkState[section.id]} updateEditLinkState={(id, field, value) => updateNewLinkState(id, field, value)} setShowLinkEmojiPicker={setShowLinkEmojiPicker} />
                                                                                         </div>
                                                                                     </>
