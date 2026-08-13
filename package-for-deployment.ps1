@@ -920,7 +920,7 @@ $scriptsSrc = Join-Path $ProjectRoot "scripts"
 $scriptsDst = Join-Path $TempDir "scripts"
 if (Test-Path $scriptsSrc) {
     $copied = Copy-TreeReliable -Source $scriptsSrc -Destination $scriptsDst `
-        -ExcludeDirs @("__pycache__", "node_modules") `
+        -ExcludeDirs @("__pycache__", "node_modules", "data") `
         -ExcludeFiles @(".env", "*.local", "*.pem", "*.key")
     Write-OK ("scripts/ copied ({0} files)" -f $copied)
     # Ensure in-app updater publisher is present
@@ -2724,6 +2724,19 @@ Write-Header "9 / Creating ZIP Archive"
 
 if (Test-Path $ZipOutput) { Remove-Item $ZipOutput -Force }
 
+# Empty folders become ZIP entries like "scripts\data\" on Windows. The in-app
+# updater (v2.3.4 and earlier) treats those as files and fails with
+# "Failed writing scripts/data/". Only pack files; parents are created on extract.
+Write-Step "Removing empty directories from staging..."
+Get-ChildItem -LiteralPath $TempDir -Directory -Recurse -Force -ErrorAction SilentlyContinue |
+    Sort-Object { $_.FullName.Length } -Descending |
+    ForEach-Object {
+        $children = @(Get-ChildItem -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue)
+        if ($children.Count -eq 0) {
+            Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
+        }
+    }
+
 Write-Step "Compressing -> $ZipOutput ..."
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 [System.IO.Compression.ZipFile]::CreateFromDirectory(
@@ -2854,6 +2867,11 @@ try {
             Write-Err "ZIP missing bin/OpenSSH/ssh.exe"
             $zipBad = $true
         }
+    }
+    $emptyDirHits = @($names | Where-Object { $_ -eq 'scripts/data/' -or $_ -eq 'scripts/data' })
+    if ($emptyDirHits.Count -gt 0) {
+        Write-Err "ZIP contains empty scripts/data/ (breaks in-app extract on Windows)"
+        $zipBad = $true
     }
     if ($zipBad) {
         $zipCheck.Dispose()

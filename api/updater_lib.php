@@ -1234,19 +1234,27 @@ function updaterExtractUpdateZip(string $zipPath): void {
         if ($stat === false) {
             continue;
         }
-        $entry = $stat['name'];
+        $entry = (string)$stat['name'];
         $rel = updaterResolveExtractRelative($entry);
         if ($rel === null) {
             continue;
         }
-        if (str_ends_with($entry, '/')) {
-            $dir = UPDATER_ROOT . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, rtrim($rel, '/'));
-            if (!is_dir($dir)) {
+        // .NET ZipFile.CreateFromDirectory on Windows stores folders as "scripts\data\"
+        // (backslash, often no forward slash). Treat those as directories, not files.
+        $entryNorm = str_replace('\\', '/', $entry);
+        $rel = str_replace('\\', '/', $rel);
+        $isDir = str_ends_with($entryNorm, '/') || str_ends_with($rel, '/');
+        if ($isDir) {
+            $dir = UPDATER_ROOT . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, trim($rel, '/'));
+            if ($dir !== '' && !is_dir($dir)) {
                 @mkdir($dir, 0755, true);
             }
             continue;
         }
         $target = UPDATER_ROOT . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel);
+        if (is_dir($target)) {
+            continue;
+        }
         $parent = dirname($target);
         if (!is_dir($parent)) {
             @mkdir($parent, 0755, true);
