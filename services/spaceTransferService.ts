@@ -368,6 +368,7 @@ const normalizeImportedSection = (section: any): LinkSection => {
     title: String(section.title || ''),
     position: typeof section.position === 'number' ? section.position : undefined,
     textColor: typeof section.textColor === 'string' ? section.textColor : undefined,
+    emoji: typeof section.emoji === 'string' ? section.emoji : undefined,
     forceStackedView:
       typeof section.forceStackedView === 'boolean' ? section.forceStackedView : undefined,
     visibility: section.visibility || 'public',
@@ -597,6 +598,7 @@ export const normalizeImportedTiles = (
           title: String(tab.title || 'New Tab'),
           position: typeof tab.position === 'number' ? tab.position : 0,
           textColor: typeof tab.textColor === 'string' ? tab.textColor : undefined,
+          emoji: typeof tab.emoji === 'string' ? tab.emoji : undefined,
           visibility: tab.visibility || 'public',
           allowedUsers: asNumberArray(tab.allowedUsers),
           allowedGroups: asNumberArray(tab.allowedGroups),

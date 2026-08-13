@@ -63,6 +63,8 @@ export interface RichTextContent {
 export interface LinkSection {
   id: string;
   title: string;
+  /** Optional emoji shown to the left of the section title. */
+  emoji?: string;
   links: Link[];
   richTextContent?: RichTextContent[]; // Rich text content items in this section
   textColor?: string; // Optional custom text color for section title (hex color code)
@@ -79,6 +81,8 @@ export interface LinkSection {
 export interface Tab {
   id: string;
   title: string;
+  /** Optional emoji shown to the left of the tab title. */
+  emoji?: string;
   position: number;
   sections: LinkSection[];
   textColor?: string; // Optional custom text color for tab title (hex color code)

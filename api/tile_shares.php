@@ -436,6 +436,7 @@ function buildTilePreviewFromRow(PDO $db, array $row): array {
         $tab = [
             'id' => $tabRow['id'],
             'title' => $tabRow['title'],
+            'emoji' => contentEmojiFromRow($tabRow),
             'position' => (int)$tabRow['position'],
             'sections' => []
         ];
@@ -447,6 +448,7 @@ function buildTilePreviewFromRow(PDO $db, array $row): array {
             $section = [
                 'id' => $secRow['id'],
                 'title' => $secRow['title'],
+                'emoji' => contentEmojiFromRow($secRow),
                 'position' => (int)$secRow['position'],
                 'links' => []
             ];
@@ -470,6 +472,7 @@ function buildTilePreviewFromRow(PDO $db, array $row): array {
             $section = [
                 'id' => $secRow['id'],
                 'title' => $secRow['title'],
+                'emoji' => contentEmojiFromRow($secRow),
                 'position' => (int)$secRow['position'],
                 'links' => []
             ];

@@ -117,7 +117,7 @@ define('SYSTEM_TOKEN', 'linknest_secret_token_123'); // Change this for producti
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 84);
+    define('LINKNEST_SCHEMA_VERSION', 85);
 }
 
 /**
@@ -494,6 +494,68 @@ function decodeSearchTagsFromRow(array $row): array {
     return is_array($decoded) ? sanitizeSearchTagsArray($decoded) : [];
 }
 
+/**
+ * Sanitize a short emoji string for tab/section titles (ZWJ sequences allowed).
+ * @param mixed $value
+ */
+function sanitizeContentEmoji($value): ?string {
+    if (!is_string($value) && !is_numeric($value)) {
+        return null;
+    }
+    $emoji = trim((string)$value);
+    if ($emoji === '') {
+        return null;
+    }
+    if (function_exists('mb_strlen') && function_exists('mb_substr')) {
+        if (mb_strlen($emoji) > 16) {
+            $emoji = mb_substr($emoji, 0, 16);
+        }
+    } elseif (strlen($emoji) > 64) {
+        $emoji = substr($emoji, 0, 64);
+    }
+    return $emoji;
+}
+
+/** Read emoji from a tabs/sections DB row. */
+function contentEmojiFromRow(array $row): ?string {
+    if (!isset($row['emoji']) || $row['emoji'] === null || $row['emoji'] === '') {
+        return null;
+    }
+    return sanitizeContentEmoji((string)$row['emoji']);
+}
+
+/** Read emoji from API payload (tab/section). */
+function contentEmojiFromInput($data): ?string {
+    if (!is_array($data)) {
+        return null;
+    }
+    return sanitizeContentEmoji($data['emoji'] ?? null);
+}
+
+/** Ensure tabs.emoji and sections.emoji exist even when user_version already matches SCHEMA_VERSION. */
+function ensureTabSectionEmojiColumns(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        foreach (['tabs', 'sections'] as $table) {
+            $exists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name=" . $db->quote($table))->fetchColumn();
+            if (!$exists) {
+                continue;
+            }
+            $columns = $db->query("PRAGMA table_info({$table})")->fetchAll(PDO::FETCH_ASSOC);
+            $names = array_column($columns, 'name');
+            if (!in_array('emoji', $names, true)) {
+                $db->exec("ALTER TABLE {$table} ADD COLUMN emoji TEXT");
+            }
+        }
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureTabSectionEmojiColumns warning: ' . $e->getMessage());
+    }
+}
+
 /** Ensure SSH connection color column exists (identification strip in SSH Terminal). */
 function ensureSshConnectionColorColumn(PDO $db): void {
     static $ensured = false;
@@ -557,6 +619,7 @@ function initDatabase() {
             ensureTilesHeaderImageColumns($db);
             ensureTilesSearchTagsColumn($db);
             ensureSshConnectionColorColumn($db);
+            ensureTabSectionEmojiColumns($db);
             ensurePublicGuestRole($db);
             ensureRoleLinkActionDefaults($db);
             return $db;
@@ -575,6 +638,7 @@ function initDatabase() {
             ensureTilesHeaderImageColumns($db);
             ensureTilesSearchTagsColumn($db);
             ensureSshConnectionColorColumn($db);
+            ensureTabSectionEmojiColumns($db);
             ensurePublicGuestRole($db);
             ensureRoleLinkActionDefaults($db);
             releaseDatabaseInitLock($initLock);
@@ -1140,6 +1204,7 @@ function initDatabase() {
             id TEXT PRIMARY KEY,
             tile_id TEXT NOT NULL,
             title TEXT NOT NULL,
+            emoji TEXT,
             position INTEGER DEFAULT 0,
             visible_from TEXT,
             expires_at TEXT,
@@ -1152,6 +1217,7 @@ function initDatabase() {
             $hasPosition = false;
             $hasScheduling = false;
             $hasTextColor = false;
+            $hasEmoji = false;
             foreach ($columns as $column) {
                 if ($column['name'] === 'position') {
                     $hasPosition = true;
@@ -1161,6 +1227,9 @@ function initDatabase() {
                 }
                 if ($column['name'] === 'text_color') {
                     $hasTextColor = true;
+                }
+                if ($column['name'] === 'emoji') {
+                    $hasEmoji = true;
                 }
             }
             if (!$hasPosition) {
@@ -1172,6 +1241,9 @@ function initDatabase() {
             }
             if (!$hasTextColor) {
                 $db->exec('ALTER TABLE tabs ADD COLUMN text_color TEXT');
+            }
+            if (!$hasEmoji) {
+                $db->exec('ALTER TABLE tabs ADD COLUMN emoji TEXT');
             }
         } catch (PDOException $e) {
             error_log('Tabs migration warning: ' . $e->getMessage());
@@ -1237,6 +1309,7 @@ function initDatabase() {
             tile_id TEXT NOT NULL,
             tab_id TEXT,
             title TEXT,
+            emoji TEXT,
             visible_from TEXT,
             expires_at TEXT,
             FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE,
@@ -1276,6 +1349,23 @@ function initDatabase() {
             }
         } catch (PDOException $e) {
             error_log('Sections text_color migration warning: ' . $e->getMessage());
+        }
+
+        // Migrate existing sections table to add emoji column if it doesn't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(sections)")->fetchAll();
+            $hasEmoji = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'emoji') {
+                    $hasEmoji = true;
+                    break;
+                }
+            }
+            if (!$hasEmoji) {
+                $db->exec('ALTER TABLE sections ADD COLUMN emoji TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Sections emoji migration warning: ' . $e->getMessage());
         }
         
         // Migrate existing sections table to add force_stacked_view column if it doesn't exist

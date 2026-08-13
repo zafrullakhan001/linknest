@@ -879,6 +879,7 @@ function handleGetTiles() {
                     $tab = [
                         'id' => $tabRow['id'],
                         'title' => $tabRow['title'],
+                        'emoji' => contentEmojiFromRow($tabRow),
                         'position' => (int)($tabRow['position'] ?? 0),
                         'textColor' => (!empty($tabRow['text_color']) && trim($tabRow['text_color']) !== '') ? trim($tabRow['text_color']) : null,
                         'visibleFrom' => $tabRow['visible_from'] ?? null,
@@ -902,6 +903,7 @@ function handleGetTiles() {
                             $section = [
                                 'id' => $sectionRow['id'],
                                 'title' => $sectionRow['title'],
+                                'emoji' => contentEmojiFromRow($sectionRow),
                                 'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
                                 'visibleFrom' => $sectionRow['visible_from'] ?? null,
                                 'expiresAt' => $sectionRow['expires_at'] ?? null,
@@ -1014,6 +1016,7 @@ function handleGetTiles() {
                     $section = [
                         'id' => $sectionRow['id'],
                         'title' => $sectionRow['title'],
+                                'emoji' => contentEmojiFromRow($sectionRow),
                         'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
                         'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
                         'visibility' => $sectionRow['visibility'] ?? 'public',
@@ -1414,6 +1417,7 @@ function handleGetTile($tileId) {
         $tab = [
             'id' => $tabRow['id'],
             'title' => $tabRow['title'],
+                        'emoji' => contentEmojiFromRow($tabRow),
             'position' => (int)($tabRow['position'] ?? 0),
             'textColor' => $tabColor,
             'visibleFrom' => $tabRow['visible_from'] ?? null,
@@ -1439,6 +1443,7 @@ function handleGetTile($tileId) {
             $section = [
                 'id' => $sectionRow['id'],
                 'title' => $sectionRow['title'],
+                                'emoji' => contentEmojiFromRow($sectionRow),
                 'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
                 'visibleFrom' => $sectionRow['visible_from'] ?? null,
                 'expiresAt' => $sectionRow['expires_at'] ?? null,
@@ -1564,6 +1569,7 @@ function handleGetTile($tileId) {
                 $section = [
                     'id' => $sectionRow['id'],
                     'title' => $sectionRow['title'],
+                                'emoji' => contentEmojiFromRow($sectionRow),
                     'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
                     'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
                     'visibility' => $sectionRow['visibility'] ?? 'public',
@@ -1908,13 +1914,14 @@ function handleCreateTile() {
             $tabAllowedUsers = isset($tab['allowedUsers']) && is_array($tab['allowedUsers']) ? json_encode($tab['allowedUsers']) : null;
             $tabAllowedGroups = isset($tab['allowedGroups']) && is_array($tab['allowedGroups']) ? json_encode($tab['allowedGroups']) : null;
             $tabPublished = resolvePublishedFlag($tab, $user, true);
-            $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, visible_from, expires_at, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, emoji, visible_from, expires_at, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             $tabStmt->execute([
                 $tabId,
                 $tileId,
                 $tab['title'] ?? 'New Tab',
                 $tab['position'] ?? $tabIndex,
                 $tabColor,
+                contentEmojiFromInput($tab),
                 $tab['visibleFrom'] ?? null,
                 $tab['expiresAt'] ?? null,
                 $tabVisibility,
@@ -1932,13 +1939,14 @@ function handleCreateTile() {
                     $secAllowedUsers = isset($section['allowedUsers']) && is_array($section['allowedUsers']) ? json_encode($section['allowedUsers']) : null;
                     $secAllowedGroups = isset($section['allowedGroups']) && is_array($section['allowedGroups']) ? json_encode($section['allowedGroups']) : null;
                     $secPublished = resolvePublishedFlag($section, $user, true);
-                    $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view, position, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                    $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, emoji, visible_from, expires_at, force_stacked_view, position, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                     $sectionStmt->execute([
                         $sectionId,
                         $tileId,
                         $tabId,
                         $section['title'] ?? '',
                         $section['textColor'] ?? null,
+                        contentEmojiFromInput($section),
                         $section['visibleFrom'] ?? null,
                         $section['expiresAt'] ?? null,
                         isset($section['forceStackedView']) && $section['forceStackedView'] === true ? 1 : 0,
@@ -2044,13 +2052,14 @@ function handleCreateTile() {
             $secVisibility = $section['visibility'] ?? 'public';
             $secAllowedUsers = isset($section['allowedUsers']) && is_array($section['allowedUsers']) ? json_encode($section['allowedUsers']) : null;
             $secAllowedGroups = isset($section['allowedGroups']) && is_array($section['allowedGroups']) ? json_encode($section['allowedGroups']) : null;
-            $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view, position, visibility, allowed_users, allowed_groups) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, emoji, visible_from, expires_at, force_stacked_view, position, visibility, allowed_users, allowed_groups) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             $sectionStmt->execute([
                 $sectionId,
                 $tileId,
                 $defaultTabId,
                 $section['title'] ?? '',
                 $section['textColor'] ?? null,
+                contentEmojiFromInput($section),
                 $section['visibleFrom'] ?? null,
                 $section['expiresAt'] ?? null,
                 isset($section['forceStackedView']) && $section['forceStackedView'] === true ? 1 : 0,
@@ -2544,13 +2553,14 @@ function handleCloneTile($tileId) {
             foreach ($legacySections as $sectionIndex => $section) {
                 $newSectionId = uniqid('section_', true);
                 $sectionPosition = isset($section['position']) ? (int)$section['position'] : $sectionIndex;
-                $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, emoji, visible_from, expires_at, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                 $sectionInsertStmt->execute([
                     $newSectionId,
                     $newTileId,
                     $defaultTabId,
                     $section['title'],
                     isset($section['text_color']) ? $section['text_color'] : null,
+                    contentEmojiFromRow($section),
                     $section['visible_from'] ?? null,
                     $section['expires_at'] ?? null,
                     isset($section['force_stacked_view']) && $section['force_stacked_view'] == 1 ? 1 : 0,
@@ -2621,13 +2631,14 @@ function handleCloneTile($tileId) {
         // Clone tabs and their sections/links
         foreach ($tabs as $tab) {
             $newTabId = uniqid('tab_', true);
-            $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+            $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, emoji, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
             $tabInsertStmt->execute([
                 $newTabId,
                 $newTileId,
                 $tab['title'],
                 $tab['position'] ?? 0,
                 (!empty($tab['text_color']) && trim($tab['text_color']) !== '') ? trim($tab['text_color']) : null,
+                contentEmojiFromRow($tab),
                 $tab['visible_from'] ?? null,
                 $tab['expires_at'] ?? null
             ]);
@@ -2640,13 +2651,14 @@ function handleCloneTile($tileId) {
             foreach ($sections as $sectionIndex => $section) {
                 $newSectionId = uniqid('section_', true);
                 $sectionPosition = isset($section['position']) ? (int)$section['position'] : $sectionIndex;
-                $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, emoji, visible_from, expires_at, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                 $sectionInsertStmt->execute([
                     $newSectionId,
                     $newTileId,
                     $newTabId,
                     $section['title'],
                     isset($section['text_color']) ? $section['text_color'] : null,
+                    contentEmojiFromRow($section),
                     $section['visible_from'] ?? null,
                     $section['expires_at'] ?? null,
                     isset($section['force_stacked_view']) && $section['force_stacked_view'] == 1 ? 1 : 0,
@@ -3036,13 +3048,14 @@ function handleCloneCategory($categoryName) {
                     foreach ($legacySections as $sectionIndex => $section) {
                         $newSectionId = uniqid('section_', true);
                         $sectionPosition = isset($section['position']) ? (int)$section['position'] : $sectionIndex;
-                        $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                        $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, emoji, visible_from, expires_at, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                         $sectionInsertStmt->execute([
                             $newSectionId,
                             $newTileId,
                             $defaultTabId,
                             $section['title'],
                             isset($section['text_color']) ? $section['text_color'] : null,
+                            contentEmojiFromRow($section),
                             $section['visible_from'] ?? null,
                             $section['expires_at'] ?? null,
                             isset($section['force_stacked_view']) && $section['force_stacked_view'] == 1 ? 1 : 0,
@@ -3082,13 +3095,14 @@ function handleCloneCategory($categoryName) {
                 // Clone tabs and their sections/links
                 foreach ($tabs as $tab) {
                     $newTabId = uniqid('tab_', true);
-                    $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+                    $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, emoji, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
                     $tabInsertStmt->execute([
                         $newTabId,
                         $newTileId,
                         $tab['title'],
                         $tab['position'] ?? 0,
                         (!empty($tab['text_color']) && trim($tab['text_color']) !== '') ? trim($tab['text_color']) : null,
+                        contentEmojiFromRow($tab),
                         $tab['visible_from'] ?? null,
                         $tab['expires_at'] ?? null
                     ]);
@@ -3101,13 +3115,14 @@ function handleCloneCategory($categoryName) {
                     foreach ($sections as $sectionIndex => $section) {
                         $newSectionId = uniqid('section_', true);
                         $sectionPosition = isset($section['position']) ? (int)$section['position'] : $sectionIndex;
-                        $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                        $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, emoji, visible_from, expires_at, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                         $sectionInsertStmt->execute([
                             $newSectionId,
                             $newTileId,
                             $newTabId,
                             $section['title'],
                             isset($section['text_color']) ? $section['text_color'] : null,
+                            contentEmojiFromRow($section),
                             $section['visible_from'] ?? null,
                             $section['expires_at'] ?? null,
                             isset($section['force_stacked_view']) && $section['force_stacked_view'] == 1 ? 1 : 0,
@@ -4421,6 +4436,7 @@ function handleGetRecycleBin() {
             $tab = [
                 'id' => $tabRow['id'],
                 'title' => $tabRow['title'],
+                        'emoji' => contentEmojiFromRow($tabRow),
                 'position' => (int)($tabRow['position'] ?? 0),
                 'textColor' => (!empty($tabRow['text_color']) && trim($tabRow['text_color']) !== '') ? trim($tabRow['text_color']) : null,
                 'visibleFrom' => $tabRow['visible_from'] ?? null,
@@ -4439,6 +4455,7 @@ function handleGetRecycleBin() {
                 $section = [
                     'id' => $sectionRow['id'],
                     'title' => $sectionRow['title'],
+                                'emoji' => contentEmojiFromRow($sectionRow),
                     'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
                     'visibleFrom' => $sectionRow['visible_from'] ?? null,
                     'expiresAt' => $sectionRow['expires_at'] ?? null,
@@ -4797,6 +4814,7 @@ function handleGetArchive() {
                 $tab = [
                     'id' => $tabRow['id'],
                     'title' => $tabRow['title'],
+                        'emoji' => contentEmojiFromRow($tabRow),
                     'position' => isset($tabRow['position']) ? (int)$tabRow['position'] : 0,
                     'textColor' => (!empty($tabRow['text_color']) && trim($tabRow['text_color']) !== '') ? trim($tabRow['text_color']) : null,
                     'visibleFrom' => $tabRow['visible_from'] ?? null,
@@ -4815,6 +4833,7 @@ function handleGetArchive() {
                     $section = [
                         'id' => $sectionRow['id'],
                         'title' => $sectionRow['title'],
+                                'emoji' => contentEmojiFromRow($sectionRow),
                         'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
                         'visibleFrom' => $sectionRow['visible_from'] ?? null,
                         'expiresAt' => $sectionRow['expires_at'] ?? null,
@@ -5305,6 +5324,7 @@ function getTileForVersion($tileId, $db) {
         $tab = [
             'id' => $tabRow['id'],
             'title' => $tabRow['title'],
+                        'emoji' => contentEmojiFromRow($tabRow),
             'position' => (int)($tabRow['position'] ?? 0),
             'textColor' => (!empty($tabRow['text_color']) && trim($tabRow['text_color']) !== '') ? trim($tabRow['text_color']) : null,
             'visibleFrom' => $tabRow['visible_from'] ?? null,
@@ -5325,6 +5345,7 @@ function getTileForVersion($tileId, $db) {
             $section = [
                 'id' => $sectionRow['id'],
                 'title' => $sectionRow['title'],
+                                'emoji' => contentEmojiFromRow($sectionRow),
                     'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
                 'visibleFrom' => $sectionRow['visible_from'] ?? null,
                 'expiresAt' => $sectionRow['expires_at'] ?? null,
@@ -6150,13 +6171,14 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                 $tabAllowedUsers = isset($tab['allowedUsers']) && is_array($tab['allowedUsers']) ? json_encode($tab['allowedUsers']) : null;
                 $tabAllowedGroups = isset($tab['allowedGroups']) && is_array($tab['allowedGroups']) ? json_encode($tab['allowedGroups']) : null;
                 $tabPublished = resolvePublishedFlag($tab, $user, true);
-                $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, visible_from, expires_at, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, emoji, visible_from, expires_at, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                 $tabStmt->execute([
                     $tabId,
                     $tileId,
                     $tab['title'] ?? 'New Tab',
                     $tab['position'] ?? $tabIndex,
                     $tabColor,
+                    contentEmojiFromInput($tab),
                     $tab['visibleFrom'] ?? null,
                     $tab['expiresAt'] ?? null,
                     $tabVisibility,
@@ -6173,13 +6195,14 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                         $secAllowedUsers = isset($section['allowedUsers']) && is_array($section['allowedUsers']) ? json_encode($section['allowedUsers']) : null;
                         $secAllowedGroups = isset($section['allowedGroups']) && is_array($section['allowedGroups']) ? json_encode($section['allowedGroups']) : null;
                         $secPublished = resolvePublishedFlag($section, $user, true);
-                        $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view, position, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                        $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, emoji, visible_from, expires_at, force_stacked_view, position, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                         $sectionStmt->execute([
                             $sectionId,
                             $tileId,
                             $tabId,
                             $section['title'] ?? '',
                             $section['textColor'] ?? null,
+                            contentEmojiFromInput($section),
                             $section['visibleFrom'] ?? null,
                             $section['expiresAt'] ?? null,
                             isset($section['forceStackedView']) && $section['forceStackedView'] === true ? 1 : 0,
@@ -6245,13 +6268,14 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
             foreach ($data['sections'] as $sectionIndex => $section) {
                 $sectionId = $section['id'] ?? uniqid('section_', true);
                 $sectionPosition = isset($section['position']) ? (int)$section['position'] : $sectionIndex;
-                $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?)');
+                $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, emoji, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
                 $sectionStmt->execute([
                     $sectionId,
                     $tileId,
                     $defaultTabId,
                     $section['title'] ?? '',
                     $section['textColor'] ?? null,
+                    contentEmojiFromInput($section),
                     isset($section['forceStackedView']) && $section['forceStackedView'] === true ? 1 : 0,
                     $sectionPosition
                 ]);

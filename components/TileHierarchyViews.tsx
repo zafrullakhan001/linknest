@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Tab, LinkSection, Link, RichTextContent } from '../types';
 import { exportSectionLinksToFile, exportTabToFile } from '../services/sectionTabTransferService';
+import { TitleEmojiPicker } from './TitleEmojiPicker';
 
 export type HierarchyViewMode = 'cards' | 'tree' | 'compact';
 
@@ -219,7 +220,9 @@ export interface TileHierarchyViewsProps {
   onMoveSection: (tabId: string, sectionId: string, direction: 'up' | 'down') => void;
   onMoveItem: (tabId: string, sectionId: string, itemId: string, direction: 'up' | 'down') => void;
   onUpdateTabColor: (tabId: string, color: string) => void;
+  onUpdateTabEmoji: (tabId: string, emoji: string) => void;
   onUpdateSectionColor: (tabId: string, sectionId: string, color: string) => void;
+  onUpdateSectionEmoji: (tabId: string, sectionId: string, emoji: string) => void;
   onToggleForceStacked: (tabId: string, sectionId: string, value: boolean) => void;
   onImportTab: (afterTabId: string) => void;
   onImportSection: (tabId: string, sectionId: string) => void;
@@ -300,7 +303,9 @@ const TabNode: React.FC<
   onMoveSection,
   onMoveItem,
   onUpdateTabColor,
+  onUpdateTabEmoji,
   onUpdateSectionColor,
+  onUpdateSectionEmoji,
   onToggleForceStacked,
   onImportTab,
   onImportSection,
@@ -360,6 +365,7 @@ const TabNode: React.FC<
               className={`text-sm font-semibold truncate ${isCompact ? 'text-slate-800 dark:text-slate-100' : 'text-slate-900 dark:text-white'}`}
               style={tab.textColor ? { color: tab.textColor } : undefined}
             >
+              {tab.emoji ? <span className="mr-1" aria-hidden>{tab.emoji}</span> : null}
               {tab.title || 'Untitled tab'}
             </span>
             <span className="text-[10px] text-slate-400 shrink-0">
@@ -372,6 +378,12 @@ const TabNode: React.FC<
             )}
           </div>
         </button>
+        <TitleEmojiPicker
+          value={tab.emoji || ''}
+          onChange={(emoji) => onUpdateTabEmoji(tab.id, emoji)}
+          size="sm"
+          title="Tab emoji"
+        />
         <input
           type="color"
           value={tab.textColor && tab.textColor.trim() ? tab.textColor : '#000000'}
@@ -423,6 +435,7 @@ const TabNode: React.FC<
               onMoveSection={onMoveSection}
               onMoveItem={onMoveItem}
               onUpdateSectionColor={onUpdateSectionColor}
+              onUpdateSectionEmoji={onUpdateSectionEmoji}
               onToggleForceStacked={onToggleForceStacked}
               onImportSection={onImportSection}
               onScheduleSection={onScheduleSection}
@@ -473,6 +486,7 @@ const SectionNode: React.FC<{
   onMoveSection: (tabId: string, sectionId: string, direction: 'up' | 'down') => void;
   onMoveItem: (tabId: string, sectionId: string, itemId: string, direction: 'up' | 'down') => void;
   onUpdateSectionColor: (tabId: string, sectionId: string, color: string) => void;
+  onUpdateSectionEmoji: (tabId: string, sectionId: string, emoji: string) => void;
   onToggleForceStacked: (tabId: string, sectionId: string, value: boolean) => void;
   onImportSection: (tabId: string, sectionId: string) => void;
   onScheduleSection: (tabId: string, sectionId: string) => void;
@@ -503,6 +517,7 @@ const SectionNode: React.FC<{
   onMoveSection,
   onMoveItem,
   onUpdateSectionColor,
+  onUpdateSectionEmoji,
   onToggleForceStacked,
   onImportSection,
   onScheduleSection,
@@ -546,6 +561,7 @@ const SectionNode: React.FC<{
               className="text-sm font-medium truncate text-slate-800 dark:text-slate-100"
               style={section.textColor ? { color: section.textColor } : undefined}
             >
+              {section.emoji ? <span className="mr-1" aria-hidden>{section.emoji}</span> : null}
               {section.title || 'Untitled section'}
             </span>
             <span className="text-[10px] text-slate-400 shrink-0">
@@ -558,6 +574,12 @@ const SectionNode: React.FC<{
             )}
           </div>
         </button>
+        <TitleEmojiPicker
+          value={section.emoji || ''}
+          onChange={(emoji) => onUpdateSectionEmoji(tab.id, section.id, emoji)}
+          size="sm"
+          title="Section emoji"
+        />
         <input
           type="color"
           value={section.textColor && section.textColor.trim() ? section.textColor : '#000000'}

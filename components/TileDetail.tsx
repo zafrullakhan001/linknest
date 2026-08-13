@@ -37,6 +37,7 @@ import { LinkNotesDialog } from './LinkNotesDialog';
 import { QRCodeDialog } from './QRCodeDialog';
 import { MobilePreviewDialog } from './MobilePreviewDialog';
 import { BrandedQRCode } from './BrandedQRCode';
+import { TitleEmojiPicker } from './TitleEmojiPicker';
 import { MobileTileEdit } from './MobileTileEdit';
 import { useMobile } from '../hooks/useMobile';
 import {
@@ -2441,6 +2442,24 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setEditTabs(editTabs.map(t => t.id === tabId ? { ...t, textColor: normalizedColor } : t));
     };
 
+    const handleUpdateTabEmoji = (tabId: string, emoji: string) => {
+        const normalized = emoji.trim() || undefined;
+        setEditTabs(editTabs.map(t => t.id === tabId ? { ...t, emoji: normalized } : t));
+    };
+
+    const handleUpdateSectionEmoji = (tabId: string, sectionId: string, emoji: string) => {
+        const normalized = emoji.trim() || undefined;
+        setEditTabs(editTabs.map(t => {
+            if (t.id !== tabId) return t;
+            return {
+                ...t,
+                sections: t.sections.map(s =>
+                    s.id === sectionId ? { ...s, emoji: normalized } : s
+                )
+            };
+        }));
+    };
+
     const handleUpdateSectionColor = (tabId: string, sectionId: string, textColor: string) => {
         const normalizedColor = textColor && textColor.trim() ? textColor : undefined;
         setEditTabs(editTabs.map(t => {
@@ -2505,10 +2524,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             title: `${tabToClone.title} (Copy)`,
             position: tabToClone.position + 1,
             textColor: tabToClone.textColor,
+            emoji: tabToClone.emoji,
             sections: tabToClone.sections.map((section, index) => ({
                 id: generateId(),
                 title: section.title,
                 textColor: section.textColor,
+                emoji: section.emoji,
                 position: section.position ?? index,
                 links: section.links.map(link => ({
                     id: generateId(),
@@ -2882,6 +2903,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 id: generateId(),
                 title: `${sectionToClone.title} (Copy)`,
                 textColor: sectionToClone.textColor,
+                emoji: sectionToClone.emoji,
                 position: (sectionToClone.position ?? 0) + 1,
                 links: sectionToClone.links.map(link => ({
                     id: generateId(),
@@ -5393,6 +5415,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 style={tab.textColor && isActive ? { color: tab.textColor } : undefined}
                                             >
                                                 <span className="flex items-center gap-2">
+                                                    {tab.emoji ? (
+                                                        <span className="shrink-0 leading-none" aria-hidden>{tab.emoji}</span>
+                                                    ) : null}
                                                     {tab.title}
                                                     {(tile.canEdit === true || !!user?.is_admin) && (
                                                         <VisibilityProtectionBadge visibility={tab.visibility} />
@@ -5452,7 +5477,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             style={{ animationDelay: isQrLayout ? undefined : `${sectionIndex * 120}ms` }}
                                             data-view-layout={sectionLinkLayout}
                                             data-qr-print-section={isQrLayout ? section.id : undefined}
-                                            data-qr-print-title={isQrLayout ? (section.title || '') : undefined}
+                                            data-qr-print-title={isQrLayout ? (`${section.emoji ? `${section.emoji} ` : ''}${section.title || ''}`) : undefined}
                                             className={`linknest-content-section bg-white/80 dark:bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-200/80 dark:border-slate-700/50 shadow-sm relative ${
                                                 isQrLayout
                                                     ? 'p-4 overflow-hidden col-span-full'
@@ -5475,6 +5500,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         style={section.textColor ? { color: section.textColor } : undefined}
                                                     >
                                                         <span className={`w-1.5 rounded-full shrink-0 ${styles.base} shadow-sm ${sectionLinkLayout === 'compact' ? 'h-5' : 'h-7'}`}></span>
+                                                        {section.emoji ? (
+                                                            <span className="shrink-0 leading-none" aria-hidden>{section.emoji}</span>
+                                                        ) : null}
                                                         <span className="truncate">{section.title}</span>
                                                         {(tile.canEdit === true || !!user?.is_admin) && (
                                                             <VisibilityProtectionBadge visibility={section.visibility} />
@@ -7452,6 +7480,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     <span className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400 text-[10px] font-bold flex items-center justify-center">
                                                         {index + 1}
                                                     </span>
+                                                    {tab.emoji ? <span aria-hidden>{tab.emoji}</span> : null}
                                                     {tab.title || 'Untitled'}
                                                 </button>
                                             ))}
@@ -7505,7 +7534,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 onMoveSection={handleMoveSection}
                                                 onMoveItem={handleMoveItem}
                                                 onUpdateTabColor={handleUpdateTabColor}
+                                                onUpdateTabEmoji={handleUpdateTabEmoji}
                                                 onUpdateSectionColor={handleUpdateSectionColor}
+                                                onUpdateSectionEmoji={handleUpdateSectionEmoji}
                                                 onToggleForceStacked={handleToggleForceStacked}
                                                 onImportTab={openTabJsonImport}
                                                 onImportSection={openSectionLinksImport}
@@ -7602,6 +7633,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         </button>
                                                     </div>
                                                     <div className="text-slate-400 dark:text-slate-500 font-mono text-sm">Tab #{tabIndex + 1}</div>
+                                                    <TitleEmojiPicker
+                                                        value={tab.emoji || ''}
+                                                        onChange={(emoji) => handleUpdateTabEmoji(tab.id, emoji)}
+                                                        title="Tab emoji"
+                                                    />
                                                     <input
                                                         type="text"
                                                         value={tab.title}
@@ -7807,6 +7843,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 cursor-pointer"
                                                                         />
                                                                     </div>
+                                                                    <TitleEmojiPicker
+                                                                        value={section.emoji || ''}
+                                                                        onChange={(emoji) => handleUpdateSectionEmoji(tab.id, section.id, emoji)}
+                                                                        size="sm"
+                                                                        title="Section emoji"
+                                                                    />
                                                                     <input
                                                                         type="text"
                                                                         value={section.title}
@@ -8680,7 +8722,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                 className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 cursor-pointer"
                                                                                             />
                                                                                         </div>
-                                                                                        <div className="w-8 h-8 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-sm">🔗</div>
+                                                                                        <div className="w-8 h-8 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-sm">{link.icon || '🔗'}</div>
                                                                                         <div className="flex-1 min-w-0">
                                                                                             <div className="flex items-center gap-2">
                                                                                                 <div
@@ -9374,6 +9416,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         </svg>
                                                     </button>
                                                     <div className="text-slate-400 dark:text-slate-500 font-mono text-sm">#{index + 1}</div>
+                                                    <TitleEmojiPicker
+                                                        value={section.emoji || ''}
+                                                        onChange={(emoji) => {
+                                                            const newSections = editSections.map(s => s.id === section.id ? { ...s, emoji: emoji.trim() || undefined } : s);
+                                                            setEditSections(newSections);
+                                                        }}
+                                                        size="sm"
+                                                        title="Section emoji"
+                                                    />
                                                     <input
                                                         type="text"
                                                         value={section.title}

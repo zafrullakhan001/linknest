@@ -3,6 +3,7 @@ import { Tile, Tab, LinkSection, Link, LinkVisibility, TileVisibility, ThemeColo
 import { User } from '../services/authService';
 import { AppSettings } from '../services/settingsService';
 import { MobileRichTextEditor } from './MobileRichTextEditor';
+import { TitleEmojiPicker } from './TitleEmojiPicker';
 
 interface MobileTileEditProps {
     tile: Tile;
@@ -771,6 +772,16 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                         <span className="w-8 h-8 rounded-full bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 text-xs font-bold flex items-center justify-center">
                                             {tabIndex + 1}
                                         </span>
+                                        <span onClick={(e) => e.stopPropagation()}>
+                                            <TitleEmojiPicker
+                                                value={tab.emoji || ''}
+                                                onChange={(emoji) => {
+                                                    onTabsChange(editTabs.map(t => t.id === tab.id ? { ...t, emoji: emoji.trim() || undefined } : t));
+                                                }}
+                                                size="sm"
+                                                title="Tab emoji"
+                                            />
+                                        </span>
                                         <span className="font-semibold text-slate-900 dark:text-white">
                                             {tab.title || 'Untitled Tab'}
                                         </span>
@@ -808,7 +819,19 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                     className="w-full px-3 py-2 flex items-center justify-between text-left active:bg-slate-50 dark:active:bg-slate-700 touch-manipulation"
                                                     style={{ minHeight: '44px' }}
                                                 >
-                                                    <span className="text-sm font-medium text-slate-900 dark:text-white">
+                                                    <span className="text-sm font-medium text-slate-900 dark:text-white flex items-center gap-2">
+                                                        <span onClick={(e) => e.stopPropagation()}>
+                                                            <TitleEmojiPicker
+                                                                value={section.emoji || ''}
+                                                                onChange={(emoji) => {
+                                                                    onTabsChange(editTabs.map(t => t.id === tab.id
+                                                                        ? { ...t, sections: (t.sections || []).map(s => s.id === section.id ? { ...s, emoji: emoji.trim() || undefined } : s) }
+                                                                        : t));
+                                                                }}
+                                                                size="sm"
+                                                                title="Section emoji"
+                                                            />
+                                                        </span>
                                                         #{sectionIndex + 1} {section.title || 'Untitled Section'}
                                                     </span>
                                                     <svg

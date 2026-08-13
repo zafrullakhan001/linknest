@@ -174,6 +174,7 @@ function normalizeImportedSection(raw: unknown, index: number): LinkSection {
     title: String(s.title ?? `Section ${index + 1}`),
     position: typeof s.position === 'number' ? s.position : index,
     textColor: typeof s.textColor === 'string' ? s.textColor : undefined,
+    emoji: typeof s.emoji === 'string' ? s.emoji : undefined,
     forceStackedView: typeof s.forceStackedView === 'boolean' ? s.forceStackedView : undefined,
     visibility:
       s.visibility === 'authenticated' || s.visibility === 'private' || s.visibility === 'public'
@@ -216,6 +217,7 @@ export const parseTabExport = (data: unknown): Tab => {
     title: String(t.title ?? 'Imported Tab'),
     position: typeof t.position === 'number' ? t.position : 0,
     textColor: typeof t.textColor === 'string' ? t.textColor : undefined,
+    emoji: typeof t.emoji === 'string' ? t.emoji : undefined,
     visibility:
       t.visibility === 'authenticated' || t.visibility === 'private' || t.visibility === 'public'
         ? t.visibility
