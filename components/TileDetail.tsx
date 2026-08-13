@@ -2060,8 +2060,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const allUsers = Array.from(new Set(tileVersions.map(v => v.username))).sort();
 
     const cleanupEmptyVersions = async () => {
+        if (!isAuthenticated || !tile.canEdit) {
+            return;
+        }
         try {
-            const API_BASE = (import.meta as any).env?.VITE_API_BASE || '/api';
+            const API_BASE = resolveApiBase();
             const response = await fetch(`${API_BASE}/tiles/${tile.id}/versions/cleanup-empty`, {
                 method: 'POST',
                 credentials: 'include',
@@ -2087,12 +2090,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     }, [showVersions, isEditing]);
 
-    // Auto-cleanup empty versions when tile is opened
+    // Auto-cleanup empty versions only for editors (guests must not POST this)
     useEffect(() => {
-        if (tile.id) {
+        if (tile.id && isAuthenticated && tile.canEdit) {
             cleanupEmptyVersions();
         }
-    }, [tile.id]);
+    }, [tile.id, isAuthenticated, tile.canEdit]);
 
     // Function to update link browser for admin users
     const handleUpdateLinkBrowser = async (linkId: string, browserId: string) => {

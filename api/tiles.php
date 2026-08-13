@@ -6751,17 +6751,23 @@ function handleDeleteEmptyVersions($tileId) {
 
 function handleCleanupEmptyVersions($tileId) {
     try {
-        $user = requireAuth();
-        $db = getDB();
-        
-        // Check view permission (cleanup can run on view)
-        if (!canUserViewTile($user['id'], $tileId, $db)) {
-            sendJSON(['error' => 'Permission denied'], 403);
+        // Guests and viewers must not get 401 here: TileDetail used to POST this on every
+        // space open. A 401 on office (ERP3) shows in the console and can stall the session
+        // so link-health / broken-link indicators never load.
+        $user = getAuthenticatedUser();
+        if (!$user) {
+            sendJSON(['success' => true, 'deleted' => 0, 'skipped' => true]);
             return;
         }
-        
+        $db = getDB();
+        if (!canUserEditTile($user['id'], $tileId, $db)) {
+            sendJSON(['success' => true, 'deleted' => 0, 'skipped' => true]);
+            return;
+        }
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
         $deleted = deleteEmptyDiffVersions($tileId, $db);
-        
         sendJSON(['success' => true, 'deleted' => $deleted]);
     } catch (Exception $e) {
         error_log("Cleanup empty versions error: " . $e->getMessage());
