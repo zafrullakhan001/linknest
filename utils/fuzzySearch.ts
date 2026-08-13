@@ -124,6 +124,16 @@ export interface SearchMatchScore {
   score: number;
   kind: SearchMatchKind;
   token?: string;
+  source?: string;
+  sourceName?: string;
+  snippet?: string;
+  extraCount?: number;
+}
+
+export interface LabeledSearchField {
+  text?: string | null;
+  sourceLabel: string;
+  sourceName?: string;
 }
 
 const EMPTY_SCORE: SearchMatchScore = { matched: false, score: 0, kind: 'none' };
@@ -205,24 +215,86 @@ export function scoreTextAgainstQuery(text: string, query: string, fuzzy = true)
   return best;
 }
 
+export function excerptAroundMatch(text: string, query: string, radius = 28): string | undefined {
+  const cleaned = String(text || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return undefined;
+  const hay = cleaned.toLowerCase();
+  const needle = query.toLowerCase();
+  const index = hay.indexOf(needle);
+  if (index < 0) {
+    return cleaned.length > 56 ? `${cleaned.slice(0, 56)}…` : cleaned;
+  }
+  const start = Math.max(0, index - radius);
+  const end = Math.min(cleaned.length, index + needle.length + radius);
+  return `${start > 0 ? '…' : ''}${cleaned.slice(start, end)}${end < cleaned.length ? '…' : ''}`;
+}
+
+function attachFieldMeta(score: SearchMatchScore, field: LabeledSearchField, word: string): SearchMatchScore {
+  if (!score.matched) return score;
+  return {
+    ...score,
+    source: field.sourceLabel,
+    sourceName: field.sourceName,
+    snippet: excerptAroundMatch(field.text || '', word)
+  };
+}
+
+export function scoreLabeledFieldsAgainstWords(
+  fields: LabeledSearchField[],
+  words: string[],
+  mode: 'and' | 'or',
+  fuzzy = false
+): SearchMatchScore {
+  if (words.length === 0) return { matched: true, score: 100, kind: 'exact' };
+
+  const usableFields = fields.filter((field) => (field.text || '').trim());
+  if (usableFields.length === 0) return EMPTY_SCORE;
+
+  const matchedFieldKeys = new Set<string>();
+  const bestForWord = (word: string): SearchMatchScore => {
+    let best = EMPTY_SCORE;
+    usableFields.forEach((field) => {
+      const next = attachFieldMeta(scoreTextAgainstQuery(field.text || '', word, fuzzy), field, word);
+      if (next.matched) {
+        matchedFieldKeys.add(`${field.sourceLabel}|${field.sourceName || ''}`);
+      }
+      if (next.score > best.score) best = next;
+    });
+    return best;
+  };
+
+  const wordScores = words.map(bestForWord);
+  const extraCount = Math.max(0, matchedFieldKeys.size - 1);
+
+  if (mode === 'and') {
+    if (wordScores.some((item) => !item.matched)) return EMPTY_SCORE;
+    const strongest = wordScores.reduce((current, item) => (item.score > current.score ? item : current), wordScores[0]);
+    const average = wordScores.reduce((sum, item) => sum + item.score, 0) / wordScores.length;
+    return {
+      ...strongest,
+      matched: true,
+      score: clampScore(average),
+      extraCount
+    };
+  }
+
+  const best = wordScores.reduce((current, item) => (item.score > current.score ? item : current), EMPTY_SCORE);
+  if (!best.matched) return EMPTY_SCORE;
+  return { ...best, extraCount };
+}
+
 export function scoreFieldsAgainstWords(
   fields: Array<string | undefined | null>,
   words: string[],
   mode: 'and' | 'or',
   fuzzy = false
 ): SearchMatchScore {
-  if (words.length === 0) return { matched: true, score: 100, kind: 'exact' };
-  const text = fields.filter(Boolean).join('\n');
-  const scores = words.map((word) => scoreTextAgainstQuery(text, word, fuzzy));
-
-  if (mode === 'and') {
-    if (scores.some((item) => !item.matched)) return EMPTY_SCORE;
-    const weakest = scores.reduce((current, item) => (item.score < current.score ? item : current), scores[0]);
-    const average = scores.reduce((sum, item) => sum + item.score, 0) / scores.length;
-    return { ...weakest, matched: true, score: clampScore(average) };
-  }
-
-  return scores.reduce((current, item) => (item.score > current.score ? item : current), EMPTY_SCORE);
+  return scoreLabeledFieldsAgainstWords(
+    fields.map((text) => ({ text, sourceLabel: 'Text' })),
+    words,
+    mode,
+    fuzzy
+  );
 }
 
 function queryMatchesToken(query: string, token: string): boolean {

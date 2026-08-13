@@ -36,7 +36,7 @@ import { getDisplayUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
 import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
 import { MobileTileView } from './MobileTileView';
-import { SearchResultFilterControl, SearchWordModeControl, FuzzySearchControl, SearchIncludeUrlsControl, RefineSearchInput, SearchStatsBar, MatchScoreBadge, collectMatchingSearchLinks, collectMatchingSearchTags, parseSearchResultFilter, parseSearchWordMode, parseSearchFuzzy, parseSearchIncludeUrls, getSearchWords, tileMatchesSearch, filterGroupedTilesBySearch, matchingLinkMatchesSearch, scoreTileSearch, scoreLinkSearch, scoreTagSearch, combineSearchScores, type SearchResultFilter, type SearchWordMode, type SearchStatsSummary } from './SearchResultFilterControl';
+import { SearchResultFilterControl, SearchWordModeControl, FuzzySearchControl, SearchIncludeUrlsControl, RefineSearchInput, SearchStatsBar, MatchScoreBadge, collectMatchingSearchLinks, collectMatchingSearchTags, parseSearchResultFilter, parseSearchWordMode, parseSearchFuzzy, parseSearchIncludeUrls, getSearchWords, tileMatchesSearch, filterGroupedTilesBySearch, matchingLinkMatchesSearch, scoreTileSearch, scoreLinkSearch, scoreTagSearch, combineSearchScores, type SearchResultFilter, type SearchWordMode, type SearchStatsSummary, type SearchMatchScore } from './SearchResultFilterControl';
 import type { StagingOfflineKitHandle } from './StagingOfflineKit';
 import { FormSection, FormLabel, SpaceModalHeader, EditModalTabButton } from './SpaceFormChrome';
 import { SearchTagsInput } from './SearchTagsInput';
@@ -1143,6 +1143,7 @@ interface SortableTileProps {
   tileIndex: number;
   animationClass?: string;
   ownerLookup?: Record<number, string>; // userId -> username for Private tab
+  searchMatch?: SearchMatchScore;
 }
 
 const SortableTile: React.FC<SortableTileProps> = ({
@@ -1173,7 +1174,8 @@ const SortableTile: React.FC<SortableTileProps> = ({
   groupIndex,
   tileIndex,
   animationClass = '',
-  ownerLookup
+  ownerLookup,
+  searchMatch
 }) => {
   const { user } = useAuth();
   const ownerUsername = (tile.userId != null && tile.userId !== user?.id)
@@ -2031,6 +2033,11 @@ const SortableTile: React.FC<SortableTileProps> = ({
           <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 truncate" title={`Owner: ${ownerUsername}`}>
             by {ownerUsername}
           </p>
+        )}
+        {searchMatch?.matched && (
+          <div className="mt-1.5">
+            <MatchScoreBadge match={searchMatch} />
+          </div>
         )}
       </div>
 
@@ -4414,18 +4421,27 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       .sort((a, b) => (b.match?.score || 0) - (a.match?.score || 0));
   }, [groupedTiles, searchTerm, searchWordMode, searchFuzzy, searchIncludeUrls, refineSearchTerm]);
 
+  const tileSearchMatches = useMemo(() => {
+    const matches: Record<string, SearchMatchScore> = {};
+    if (!searchTerm.trim()) return matches;
+    const searchWords = getSearchWords(searchTerm);
+    const refineWords = getSearchWords(refineSearchTerm);
+    Object.values(groupedTiles).flat().forEach((tile) => {
+      const primary = scoreTileSearch(tile, searchWords, searchWordMode, searchFuzzy, searchIncludeUrls);
+      const refine = refineWords.length
+        ? scoreTileSearch(tile, refineWords, searchWordMode, searchFuzzy, searchIncludeUrls)
+        : undefined;
+      matches[tile.id] = combineSearchScores(primary, refine);
+    });
+    return matches;
+  }, [searchTerm, refineSearchTerm, groupedTiles, searchWordMode, searchFuzzy, searchIncludeUrls]);
+
   const searchStats = useMemo<SearchStatsSummary | null>(() => {
     if (!searchTerm.trim()) return null;
     const searchWords = getSearchWords(searchTerm);
     const refineWords = getSearchWords(refineSearchTerm);
     const resultTiles = Object.values(groupedTiles).flat();
-    const tileScores = resultTiles.map((tile) => {
-      const primary = scoreTileSearch(tile, searchWords, searchWordMode, searchFuzzy, searchIncludeUrls);
-      const refine = refineWords.length
-        ? scoreTileSearch(tile, refineWords, searchWordMode, searchFuzzy, searchIncludeUrls)
-        : undefined;
-      return combineSearchScores(primary, refine);
-    });
+    const tileScores = resultTiles.map((tile) => tileSearchMatches[tile.id]).filter(Boolean);
     const allScores = [...tileScores, ...matchingSearchLinks.map((link) => link.match).filter(Boolean)];
     const matchedScores = allScores.filter((item) => item && item.matched);
     const exactCount = matchedScores.filter((item) => item.kind === 'exact' || item.kind === 'contains').length;
@@ -4482,7 +4498,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         tileCount: item.tileCount
       }))
     };
-  }, [searchTerm, refineSearchTerm, groupedTiles, matchingSearchLinks, searchWordMode, searchFuzzy, searchIncludeUrls]);
+  }, [searchTerm, refineSearchTerm, groupedTiles, matchingSearchLinks, tileSearchMatches, searchWordMode, searchFuzzy, searchIncludeUrls]);
 
   const isSearching = Boolean(searchTerm.trim());
   const hideSearchTiles = isSearching && searchResultFilter === 'links';
@@ -8188,6 +8204,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         tileIndex={tileIndex}
                         animationClass={`${getTileAnimationClass(currentAnimation)} ${getTileDecorationClass(currentDecoration)}`.trim()}
                         ownerLookup={activeTab === 'private' && isAuthenticated ? Object.fromEntries(privateTabUsers.map(u => [u.id, u.username])) : undefined}
+                        searchMatch={isSearching ? tileSearchMatches[tile.id] : undefined}
                       />
                     );
                   })}

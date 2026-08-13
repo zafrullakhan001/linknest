@@ -1,6 +1,8 @@
 import React from 'react';
 import { Tile, LinkSection } from '../types';
-import { fuzzyTextIncludes, scoreFieldsAgainstWords, matchKindLabel, type SearchMatchScore, type SearchMatchKind } from '../utils/fuzzySearch';
+import { fuzzyTextIncludes, scoreFieldsAgainstWords, scoreLabeledFieldsAgainstWords, matchKindLabel, type SearchMatchScore, type SearchMatchKind, type LabeledSearchField } from '../utils/fuzzySearch';
+
+export type { SearchMatchScore };
 
 export type SearchResultFilter = 'both' | 'tiles' | 'links';
 export type SearchWordMode = 'and' | 'or';
@@ -82,36 +84,59 @@ export function fieldsMatchSearch(
 }
 
 export function getTileSearchFields(tile: Tile, includeUrls = true): Array<string | undefined | null> {
-  const fields: Array<string | undefined | null> = [
-    tile.title,
-    tile.description,
-    tile.emoji,
-    ...(tile.searchTags ?? []),
-    includeUrls ? tile.hyperlinkUrl : undefined
+  return getTileLabeledFields(tile, includeUrls).map((field) => field.text);
+}
+
+export function getTileLabeledFields(tile: Tile, includeUrls = true): LabeledSearchField[] {
+  const fields: LabeledSearchField[] = [
+    { text: tile.title, sourceLabel: 'Title' },
+    { text: tile.description, sourceLabel: 'Description' },
+    { text: tile.emoji, sourceLabel: 'Emoji' },
+    ...(tile.searchTags ?? []).map((tag) => ({ text: tag, sourceLabel: 'Tag', sourceName: tag })),
+    { text: includeUrls ? tile.hyperlinkUrl : undefined, sourceLabel: 'Hyperlink URL' }
   ];
 
-  const addLinkFields = (link: { label?: string; url?: string; notes?: string; tooltip?: string }) => {
-    fields.push(...linkSearchFields(link, includeUrls));
+  const addLinkFields = (link: { label?: string; url?: string; notes?: string; tooltip?: string; richTextContent?: string }) => {
+    const linkName = (link.label || '').replace(/<[^>]*>/g, '').trim() || 'Untitled link';
+    fields.push({ text: link.label, sourceLabel: 'Link name', sourceName: linkName });
+    if (includeUrls) fields.push({ text: link.url, sourceLabel: 'Link URL', sourceName: linkName });
+    fields.push({ text: link.notes, sourceLabel: 'Link notes', sourceName: linkName });
+    fields.push({ text: link.tooltip, sourceLabel: 'Link tooltip', sourceName: linkName });
+    fields.push({ text: link.richTextContent, sourceLabel: 'Link content', sourceName: linkName });
   };
 
   (tile.searchLinks ?? []).forEach(addLinkFields);
 
   (tile.tabs ?? []).forEach((tab) => {
-    fields.push(tab.title);
+    fields.push({ text: tab.title, sourceLabel: 'Tab' });
     (tab.sections ?? []).forEach((section) => {
-      fields.push(section.title);
+      fields.push({ text: section.title, sourceLabel: 'Section' });
       (section.links ?? []).forEach(addLinkFields);
-      (section.richTextContent ?? []).forEach((rt) => fields.push(rt.content));
+      (section.richTextContent ?? []).forEach((rt) => {
+        fields.push({ text: rt.content, sourceLabel: 'Section content', sourceName: section.title });
+      });
     });
   });
 
   (tile.sections ?? []).forEach((section) => {
-    fields.push(section.title);
+    fields.push({ text: section.title, sourceLabel: 'Section' });
     (section.links ?? []).forEach(addLinkFields);
-    (section.richTextContent ?? []).forEach((rt) => fields.push(rt.content));
+    (section.richTextContent ?? []).forEach((rt) => {
+      fields.push({ text: rt.content, sourceLabel: 'Section content', sourceName: section.title });
+    });
   });
 
   return fields;
+}
+
+export function getLinkLabeledFields(link: SearchMatchingLink, includeUrls = true): LabeledSearchField[] {
+  return [
+    { text: link.label, sourceLabel: 'Link name' },
+    { text: includeUrls ? link.url : undefined, sourceLabel: 'Link URL' },
+    { text: link.notes, sourceLabel: 'Link notes' },
+    { text: link.tooltip, sourceLabel: 'Link tooltip' },
+    { text: link.richTextContent, sourceLabel: 'Link content' }
+  ];
 }
 
 export function tileMatchesSearch(tile: Tile, words: string[], mode: SearchWordMode, fuzzy = false, includeUrls = true): boolean {
@@ -120,11 +145,11 @@ export function tileMatchesSearch(tile: Tile, words: string[], mode: SearchWordM
 }
 
 export function scoreTileSearch(tile: Tile, words: string[], mode: SearchWordMode, fuzzy = false, includeUrls = true): SearchMatchScore {
-  return scoreFieldsAgainstWords(getTileSearchFields(tile, includeUrls), words, mode, fuzzy);
+  return scoreLabeledFieldsAgainstWords(getTileLabeledFields(tile, includeUrls), words, mode, fuzzy);
 }
 
 export function scoreLinkSearch(link: SearchMatchingLink, words: string[], mode: SearchWordMode, fuzzy = false, includeUrls = true): SearchMatchScore {
-  return scoreFieldsAgainstWords(linkSearchFields(link, includeUrls), words, mode, fuzzy);
+  return scoreLabeledFieldsAgainstWords(getLinkLabeledFields(link, includeUrls), words, mode, fuzzy);
 }
 
 export interface MatchingSearchTag {
@@ -439,12 +464,24 @@ export interface SearchStatsSummary {
 export function combineSearchScores(primary: SearchMatchScore, refine?: SearchMatchScore): SearchMatchScore {
   if (!refine || !refine.matched) return primary;
   if (!primary.matched) return primary;
+  const weaker = refine.score < primary.score ? refine : primary;
   return {
     matched: true,
     score: Math.round((primary.score + refine.score) / 2),
-    kind: refine.score < primary.score ? refine.kind : primary.kind,
-    token: refine.score < primary.score ? refine.token : primary.token
+    kind: weaker.kind,
+    token: weaker.token,
+    source: primary.source,
+    sourceName: primary.sourceName,
+    snippet: primary.snippet,
+    extraCount: (primary.extraCount || 0) + (refine.source && refine.source !== primary.source ? 1 : 0)
   };
+}
+
+export function formatMatchReason(match?: SearchMatchScore): string {
+  if (!match?.matched || !match.source) return '';
+  const name = match.sourceName ? ` in “${match.sourceName}”` : '';
+  const extra = match.extraCount ? ` +${match.extraCount} more` : '';
+  return `${match.source}${name}${extra}`;
 }
 
 function scoreBadgeClasses(score: number): string {
@@ -453,19 +490,40 @@ function scoreBadgeClasses(score: number): string {
   return 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300';
 }
 
-export const MatchScoreBadge: React.FC<{ match?: SearchMatchScore; className?: string }> = ({
+export const MatchScoreBadge: React.FC<{ match?: SearchMatchScore; className?: string; showReason?: boolean }> = ({
   match,
-  className = ''
+  className = '',
+  showReason = true
 }) => {
   if (!match?.matched) return null;
   const label = matchKindLabel(match.kind);
+  const reason = formatMatchReason(match);
+  const title = [
+    `${label} match${match.token ? ` for “${match.token}”` : ''}`,
+    `${match.score}% probability`,
+    reason,
+    match.snippet
+  ].filter(Boolean).join(' · ');
+
   return (
     <span
-      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${scoreBadgeClasses(match.score)} ${className}`}
-      title={`${label} match${match.token ? ` for “${match.token}”` : ''} · ${match.score}% probability`}
+      className={`inline-flex flex-col items-start gap-0.5 max-w-full ${className}`}
+      title={title}
     >
-      {match.score}%
-      <span className="font-medium opacity-80 hidden sm:inline">{label}</span>
+      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${scoreBadgeClasses(match.score)}`}>
+        {match.score}%
+        <span className="font-medium opacity-80 hidden sm:inline">{label}</span>
+      </span>
+      {showReason && reason && (
+        <span className={`text-[10px] leading-snug line-clamp-3 ${
+          /notes|tooltip|content|tag/i.test(match.source || '')
+            ? 'text-amber-700 dark:text-amber-300'
+            : 'text-slate-500 dark:text-slate-400'
+        }`}>
+          <span className="font-medium">Matched: {reason}</span>
+          {match.snippet ? <span className="block mt-0.5 opacity-90">“{match.snippet}”</span> : null}
+        </span>
+      )}
     </span>
   );
 };

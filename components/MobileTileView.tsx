@@ -12,7 +12,7 @@ import { tryHandleVncLinkClick } from '../utils/vncLink';
 import { QRCodeDialog } from './QRCodeDialog';
 import { UpdatesDialog } from './UpdatesDialog';
 import { ThemeModeMenu } from './ThemeModeMenu';
-import { SearchResultFilterControl, SearchWordModeControl, FuzzySearchControl, SearchIncludeUrlsControl, RefineSearchInput, SearchStatsBar, MatchScoreBadge, getSearchWords, tileMatchesSearch, type SearchResultFilter, type SearchMatchingLink, type SearchWordMode, type SearchStatsSummary } from './SearchResultFilterControl';
+import { SearchResultFilterControl, SearchWordModeControl, FuzzySearchControl, SearchIncludeUrlsControl, RefineSearchInput, SearchStatsBar, MatchScoreBadge, getSearchWords, tileMatchesSearch, scoreTileSearch, combineSearchScores, type SearchResultFilter, type SearchMatchingLink, type SearchWordMode, type SearchStatsSummary, type SearchMatchScore } from './SearchResultFilterControl';
 
 function stripHtml(html: string): string {
   if (!html || typeof html !== 'string') return '';
@@ -527,6 +527,21 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
     // We check both to handle cases where groupedTiles is stale on refresh
     // Include publicFavorites for public-favorites tab
   }, [searchTerm, searchWordMode, searchFuzzy, searchIncludeUrls, refineSearchTerm, groupedTiles, activeTab, tiles, isAuthenticated, user, publicFavorites]);
+
+  const tileSearchMatches = useMemo(() => {
+    const matches: Record<string, SearchMatchScore> = {};
+    if (!searchTerm.trim()) return matches;
+    const searchWords = getSearchWords(searchTerm);
+    const refineWords = getSearchWords(refineSearchTerm);
+    filteredTiles.forEach((tile) => {
+      const primary = scoreTileSearch(tile, searchWords, searchWordMode, searchFuzzy, searchIncludeUrls);
+      const refine = refineWords.length
+        ? scoreTileSearch(tile, refineWords, searchWordMode, searchFuzzy, searchIncludeUrls)
+        : undefined;
+      matches[tile.id] = combineSearchScores(primary, refine);
+    });
+    return matches;
+  }, [filteredTiles, searchTerm, refineSearchTerm, searchWordMode, searchFuzzy, searchIncludeUrls]);
 
   const getTileStyles = (tile: Tile) => {
     const styles = COLOR_STYLES[tile.themeColor] || COLOR_STYLES['blue'];
@@ -1229,6 +1244,11 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                     >
                       {tile.title || 'Untitled'}
                     </p>
+                    {searchTerm.trim() && tileSearchMatches[tile.id]?.matched && (
+                      <div className="mt-1 px-0.5">
+                        <MatchScoreBadge match={tileSearchMatches[tile.id]} />
+                      </div>
+                    )}
                   </div>
                 </div>
               );
