@@ -36,6 +36,7 @@ import { getDisplayUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
 import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
 import { MobileTileView } from './MobileTileView';
+import { SearchResultFilterControl, SearchWordModeControl, FuzzySearchControl, RefineSearchInput, SearchStatsBar, MatchScoreBadge, collectMatchingSearchLinks, parseSearchResultFilter, parseSearchWordMode, parseSearchFuzzy, getSearchWords, tileMatchesSearch, filterGroupedTilesBySearch, matchingLinkMatchesSearch, scoreTileSearch, scoreLinkSearch, combineSearchScores, type SearchResultFilter, type SearchWordMode, type SearchStatsSummary } from './SearchResultFilterControl';
 import type { StagingOfflineKitHandle } from './StagingOfflineKit';
 import { FormSection, FormLabel, SpaceModalHeader, EditModalTabButton } from './SpaceFormChrome';
 import { SearchTagsInput } from './SearchTagsInput';
@@ -2328,6 +2329,25 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingTile, setEditingTile] = useState<Tile | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchResultFilter, setSearchResultFilter] = useState<SearchResultFilter>(() => {
+    if (typeof window !== 'undefined') {
+      return parseSearchResultFilter(localStorage.getItem('linknest_search_result_filter'));
+    }
+    return 'both';
+  });
+  const [searchWordMode, setSearchWordMode] = useState<SearchWordMode>(() => {
+    if (typeof window !== 'undefined') {
+      return parseSearchWordMode(localStorage.getItem('linknest_search_word_mode'));
+    }
+    return 'and';
+  });
+  const [refineSearchTerm, setRefineSearchTerm] = useState('');
+  const [searchFuzzy, setSearchFuzzy] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return parseSearchFuzzy(localStorage.getItem('linknest_search_fuzzy'));
+    }
+    return false;
+  });
   const [yourAppsFilter, setYourAppsFilter] = useState<'authenticated' | 'assigned'>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('linknest_your_apps_filter');
@@ -3825,6 +3845,30 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     }
   }, [privateSubTab, activeTab]);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('linknest_search_result_filter', searchResultFilter);
+    }
+  }, [searchResultFilter]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('linknest_search_word_mode', searchWordMode);
+    }
+  }, [searchWordMode]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('linknest_search_fuzzy', searchFuzzy ? '1' : '0');
+    }
+  }, [searchFuzzy]);
+
+  useEffect(() => {
+    if (!searchTerm.trim() && refineSearchTerm) {
+      setRefineSearchTerm('');
+    }
+  }, [searchTerm, refineSearchTerm]);
+
   // Load pending invitations count when on Private tab (for Sharing sub-tab badge)
   const loadPendingInvitationsCount = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -4262,86 +4306,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       return groups;
     }
 
-    const searchLower = searchTerm.toLowerCase();
-
-    const linkMatchesSearch = (link: { label?: string; url?: string; notes?: string; tooltip?: string }) =>
-      (link.label || '').toLowerCase().includes(searchLower) ||
-      (link.url || '').toLowerCase().includes(searchLower) ||
-      (link.notes || '').toLowerCase().includes(searchLower) ||
-      (link.tooltip || '').toLowerCase().includes(searchLower);
-
-    // Global search: check title, description, tab titles, section titles, link labels, link URLs, notes, and tooltips
-    const filtered = filteredTiles.filter(t => {
-      // Check tile-level properties (but NOT the group/category name to avoid irrelevant results when searching)
-      if (
-        t.title.toLowerCase().includes(searchLower) ||
-        t.description.toLowerCase().includes(searchLower) ||
-        (t.searchTags ?? []).some(tag => tag.toLowerCase().includes(searchLower))
-      ) {
-        return true;
-      }
-
-      // Summary-mode home grid: searchable links without nested tabs/sections
-      if ((t.searchLinks ?? []).some(linkMatchesSearch)) {
-        return true;
-      }
-
-      // Check tabs, sections and links within the tile (full graph when present)
-
-      // 1. Check Tabs
-      if (t.tabs && t.tabs.length > 0) {
-        for (const tab of t.tabs) {
-          if (tab.title.toLowerCase().includes(searchLower)) return true;
-
-          if (tab.sections && tab.sections.length > 0) {
-            for (const section of tab.sections) {
-              if (section.title.toLowerCase().includes(searchLower)) return true;
-
-              if (section.links && section.links.length > 0) {
-                for (const link of section.links) {
-                  if (linkMatchesSearch(link)) {
-                    return true;
-                  }
-                }
-              }
-
-              if (section.richTextContent && section.richTextContent.length > 0) {
-                for (const rt of section.richTextContent) {
-                  if (rt.content.toLowerCase().includes(searchLower)) {
-                    return true;
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-
-      // 2. Check Sections (backward compatibility)
-      if (t.sections && t.sections.length > 0) {
-        for (const section of t.sections) {
-          if (section.title.toLowerCase().includes(searchLower)) return true;
-
-          if (section.links && section.links.length > 0) {
-            for (const link of section.links) {
-              if (linkMatchesSearch(link)) {
-                return true;
-              }
-            }
-          }
-
-          if (section.richTextContent && section.richTextContent.length > 0) {
-            for (const rt of section.richTextContent) {
-              if (rt.content.toLowerCase().includes(searchLower)) {
-                return true;
-              }
-            }
-          }
-        }
-      }
-
-      return false;
-    });
+    const searchWords = getSearchWords(searchTerm);
+    const filtered = filteredTiles.filter(t => tileMatchesSearch(t, searchWords, searchWordMode, searchFuzzy));
 
     const groups: Record<string, Tile[]> = {};
 
@@ -4405,15 +4371,78 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     }
 
     return groups;
-  }, [tiles, searchTerm, categoryOrder, categoryMetadata, activeTab, isAuthenticated, user, recycleBinTiles, archiveTiles, publicFavorites, yourAppsFilter, privateOwnerFilter, stagingTiles, stagingTilesLoading]);
+  }, [tiles, searchTerm, searchWordMode, searchFuzzy, categoryOrder, categoryMetadata, activeTab, isAuthenticated, user, recycleBinTiles, archiveTiles, publicFavorites, yourAppsFilter, privateOwnerFilter, stagingTiles, stagingTilesLoading]);
 
   // Apply selected category filter to the grouped tiles
   const groupedTiles = useMemo(() => {
-    if (selectedCategoryFilter && baseGroupedTiles[selectedCategoryFilter]) {
-      return { [selectedCategoryFilter]: baseGroupedTiles[selectedCategoryFilter] };
-    }
-    return baseGroupedTiles;
-  }, [baseGroupedTiles, selectedCategoryFilter]);
+    const categoryGroups = selectedCategoryFilter && baseGroupedTiles[selectedCategoryFilter]
+      ? { [selectedCategoryFilter]: baseGroupedTiles[selectedCategoryFilter] }
+      : baseGroupedTiles;
+
+    if (!refineSearchTerm.trim()) return categoryGroups;
+    return filterGroupedTilesBySearch(categoryGroups, refineSearchTerm, searchWordMode, searchFuzzy);
+  }, [baseGroupedTiles, selectedCategoryFilter, refineSearchTerm, searchWordMode, searchFuzzy]);
+
+  const matchingSearchLinks = useMemo(() => {
+    const links = collectMatchingSearchLinks(groupedTiles, searchTerm, searchWordMode, searchFuzzy);
+    const searchWords = getSearchWords(searchTerm);
+    const refineWords = getSearchWords(refineSearchTerm);
+    const refined = refineWords.length
+      ? links.filter((link) => matchingLinkMatchesSearch(link, refineWords, searchWordMode, searchFuzzy))
+      : links;
+
+    return refined
+      .map((link) => {
+        const primary = scoreLinkSearch(link, searchWords, searchWordMode, searchFuzzy);
+        const refine = refineWords.length
+          ? scoreLinkSearch(link, refineWords, searchWordMode, searchFuzzy)
+          : undefined;
+        return { ...link, match: combineSearchScores(primary, refine) };
+      })
+      .sort((a, b) => (b.match?.score || 0) - (a.match?.score || 0));
+  }, [groupedTiles, searchTerm, searchWordMode, searchFuzzy, refineSearchTerm]);
+
+  const searchStats = useMemo<SearchStatsSummary | null>(() => {
+    if (!searchTerm.trim()) return null;
+    const searchWords = getSearchWords(searchTerm);
+    const refineWords = getSearchWords(refineSearchTerm);
+    const resultTiles = Object.values(groupedTiles).flat();
+    const tileScores = resultTiles.map((tile) => {
+      const primary = scoreTileSearch(tile, searchWords, searchWordMode, searchFuzzy);
+      const refine = refineWords.length
+        ? scoreTileSearch(tile, refineWords, searchWordMode, searchFuzzy)
+        : undefined;
+      return combineSearchScores(primary, refine);
+    });
+    const allScores = [...tileScores, ...matchingSearchLinks.map((link) => link.match).filter(Boolean)];
+    const matchedScores = allScores.filter((item) => item && item.matched);
+    const exactCount = matchedScores.filter((item) => item.kind === 'exact' || item.kind === 'contains').length;
+    const similarCount = matchedScores.filter((item) => item.kind === 'phonetic' || item.kind === 'fuzzy').length;
+    const avgScore = matchedScores.length
+      ? Math.round(matchedScores.reduce((sum, item) => sum + item.score, 0) / matchedScores.length)
+      : 0;
+    const bestScore = matchedScores.reduce((best, item) => Math.max(best, item.score), 0);
+
+    return {
+      query: searchTerm.trim(),
+      refineQuery: refineSearchTerm.trim(),
+      categoryCount: Object.keys(groupedTiles).length,
+      tileCount: resultTiles.length,
+      linkCount: matchingSearchLinks.length,
+      exactCount,
+      similarCount,
+      avgScore,
+      bestScore
+    };
+  }, [searchTerm, refineSearchTerm, groupedTiles, matchingSearchLinks, searchWordMode, searchFuzzy]);
+
+  const isSearching = Boolean(searchTerm.trim());
+  const hideSearchTiles = isSearching && searchResultFilter === 'links';
+  const hideSearchLinks = isSearching && searchResultFilter === 'tiles';
+  const showSearchResultFilter = isSearching && activeTab !== 'monitoring' && activeTab !== 'monitorv2';
+  const showSearchWordMode = showSearchResultFilter && (
+    getSearchWords(searchTerm).length > 1 || getSearchWords(refineSearchTerm).length > 1
+  );
 
   // Helper function to format browser name for display
   const formatBrowserName = (browserId: string | null | undefined): string => {
@@ -6872,6 +6901,16 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         tiles={tiles}
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
+        searchResultFilter={searchResultFilter}
+        onSearchResultFilterChange={setSearchResultFilter}
+        searchWordMode={searchWordMode}
+        onSearchWordModeChange={setSearchWordMode}
+        searchFuzzy={searchFuzzy}
+        onSearchFuzzyChange={setSearchFuzzy}
+        refineSearchTerm={refineSearchTerm}
+        onRefineSearchChange={setRefineSearchTerm}
+        matchingSearchLinks={matchingSearchLinks}
+        searchStats={searchStats}
         onTileClick={handleTileClick}
         activeTab={activeTab}
         groupedTiles={groupedTiles}
@@ -6938,7 +6977,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
               />
               {searchTerm && (
                 <button
-                  onClick={() => setSearchTerm('')}
+                  onClick={() => {
+                    setSearchTerm('');
+                    setRefineSearchTerm('');
+                  }}
                   className="absolute inset-y-0 right-0 flex items-center pr-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
@@ -7025,8 +7067,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       </div>
 
       {/* Tabs — horizontal swipe/scroll, text labels stay (no wrap, no icon-only) */}
+      <div className="flex items-center border-b border-slate-200 dark:border-slate-700">
       <div
-        className="flex items-center gap-1 sm:gap-2 border-b border-slate-200 dark:border-slate-700 overflow-x-auto overflow-y-hidden flex-nowrap overscroll-x-contain touch-pan-x [-ms-overflow-style:none] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5"
+        className="flex items-center gap-1 sm:gap-2 overflow-x-auto overflow-y-hidden flex-nowrap overscroll-x-contain touch-pan-x [-ms-overflow-style:none] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 flex-1 min-w-0"
         role="tablist"
         aria-label="Space views"
       >
@@ -7263,6 +7306,30 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
               </button>
             )}
           </>
+        )}
+      </div>
+        {showSearchResultFilter && (
+          <div className="flex items-center gap-1.5 flex-shrink-0 pl-2 pr-0.5">
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap hidden sm:inline">Show</span>
+            <SearchResultFilterControl
+              value={searchResultFilter}
+              onChange={setSearchResultFilter}
+            />
+            {showSearchWordMode && (
+              <SearchWordModeControl
+                value={searchWordMode}
+                onChange={setSearchWordMode}
+              />
+            )}
+            <FuzzySearchControl
+              enabled={searchFuzzy}
+              onChange={setSearchFuzzy}
+            />
+            <RefineSearchInput
+              value={refineSearchTerm}
+              onChange={setRefineSearchTerm}
+            />
+          </div>
         )}
       </div>
 
@@ -7524,6 +7591,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             </div>
           </div>
         </>
+      )}
+
+      {isSearching && searchStats && !(activeTab === 'private' && privateSubTab !== 'spaces') && (
+        <SearchStatsBar stats={searchStats} />
       )}
 
       {/* Compact Stats Bar - hide when on Private sub-tabs Sharing/Blocked */}
@@ -7917,7 +7988,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       )}
 
       {/* Categories View */}
-      {viewMode === 'categories' && activeTab !== 'monitoring' && activeTab !== 'monitorv2' && !(activeTab === 'private' && privateSubTab !== 'spaces') && (
+      {viewMode === 'categories' && activeTab !== 'monitoring' && activeTab !== 'monitorv2' && !(activeTab === 'private' && privateSubTab !== 'spaces') && !hideSearchTiles && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-20 mt-6">
           {Object.keys(groupedTiles).map((groupName) => {
             const groupTiles = groupedTiles[groupName];
@@ -7984,7 +8055,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       )}
 
       {/* Tiles Grid - Full Width with More Columns */}
-      <div className={activeTab === 'monitoring' || activeTab === 'monitorv2' || viewMode === 'categories' || (activeTab === 'private' && privateSubTab !== 'spaces') ? 'hidden' : ''}>
+      <div className={activeTab === 'monitoring' || activeTab === 'monitorv2' || viewMode === 'categories' || (activeTab === 'private' && privateSubTab !== 'spaces') || hideSearchTiles ? 'hidden' : ''}>
         {Object.keys(groupedTiles).map((groupName, groupIndex) => {
           const groupTiles = groupedTiles[groupName];
           // Use the actual display order (which respects categoryOrder)
@@ -8101,7 +8172,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             <p className="text-base font-semibold text-slate-700 dark:text-slate-300 mb-1">No spaces found</p>
             <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">Try adjusting your search terms</p>
             <button
-              onClick={() => setSearchTerm('')}
+              onClick={() => {
+                setSearchTerm('');
+                setRefineSearchTerm('');
+              }}
               className="text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 text-sm font-medium underline"
             >
               Clear search
@@ -8112,101 +8186,28 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
       {/* Matching Links Section - Shown when searching */}
       {
-        activeTab !== 'monitoring' && activeTab !== 'monitorv2' && searchTerm.trim() && (() => {
-          const searchLower = searchTerm.toLowerCase();
-          type MatchingLink = {
-            id: string;
-            label: string;
-            url: string;
-            icon?: string;
-            browser?: string | null;
-            health?: any;
-            richTextContent?: string;
-            tile: {
-              id: string;
-              title: string;
-              emoji: string;
-              themeColor: string;
-              browser?: string | null;
-            };
-          };
-
-          // Collect all links that match the search term across both tabs and sections
-          // Use a Map to ensure unique links based on label and URL
-          const uniqueLinksMap = new Map<string, MatchingLink>();
-
-          Object.values(groupedTiles).forEach((groupTiles: Tile[]) => {
-            groupTiles.forEach(tile => {
-              const addMatchingLink = (link: {
-                id: string;
-                label: string;
-                url: string;
-                icon?: string;
-                browser?: string | null;
-                health?: any;
-                richTextContent?: string;
-                notes?: string;
-                tooltip?: string;
-              }) => {
-                const uniqueKey = `${(link.label || '').toLowerCase()}|${(link.url || '').toLowerCase()}`;
-                if (uniqueLinksMap.has(uniqueKey)) return;
-
-                const matches =
-                  (link.label || '').toLowerCase().includes(searchLower) ||
-                  (link.url || '').toLowerCase().includes(searchLower) ||
-                  (link.notes || '').toLowerCase().includes(searchLower) ||
-                  (link.tooltip || '').toLowerCase().includes(searchLower);
-
-                if (!matches) return;
-
-                uniqueLinksMap.set(uniqueKey, {
-                  id: link.id,
-                  label: link.label,
-                  url: link.url,
-                  icon: link.icon,
-                  browser: link.browser,
-                  health: link.health,
-                  richTextContent: link.richTextContent,
-                  tile: {
-                    id: tile.id,
-                    title: tile.title,
-                    emoji: tile.emoji || '✨',
-                    themeColor: tile.themeColor || 'blue',
-                    browser: tile.browser
-                  }
-                });
-              };
-
-              // Helper to process a list of sections
-              const processSections = (sections: LinkSection[]) => {
-                sections.forEach(section => {
-                  section.links?.forEach(addMatchingLink);
-                });
-              };
-
-              // Summary-mode searchable links
-              if (tile.searchLinks && tile.searchLinks.length > 0) {
-                tile.searchLinks.forEach(addMatchingLink);
-              }
-
-              // Process deprecated sections
-              if (tile.sections) {
-                processSections(tile.sections);
-              }
-              // Process sections within tabs
-              if (tile.tabs) {
-                tile.tabs.forEach(tab => {
-                  if (tab.sections) {
-                    processSections(tab.sections);
-                  }
-                });
-              }
-            });
-          });
-
-          // Convert back to array
-          const matchingLinks = Array.from(uniqueLinksMap.values());
-          if (matchingLinks.length === 0) return null;
+        activeTab !== 'monitoring' && activeTab !== 'monitorv2' && searchTerm.trim() && !hideSearchLinks && (() => {
+          const matchingLinks = matchingSearchLinks;
+          if (matchingLinks.length === 0) {
+            if (searchResultFilter !== 'links') return null;
+            return (
+              <div className="text-center py-12">
+                <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-slate-400">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                  </svg>
+                </div>
+                <p className="text-base font-semibold text-slate-700 dark:text-slate-300 mb-1">No matching links</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">Try a different search or show tiles as well</p>
+                <button
+                  onClick={() => setSearchResultFilter('both')}
+                  className="text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 text-sm font-medium underline"
+                >
+                  Show both
+                </button>
+              </div>
+            );
+          }
 
           return (
             <div className="mb-8">
@@ -8307,6 +8308,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         <div className="flex items-center gap-1.5 mt-1 overflow-hidden">
                           <span className="text-xs shrink-0">{link.tile.emoji}</span>
                           <span className="text-xs text-slate-400 dark:text-slate-500 line-clamp-1" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{stripHtml(link.tile.title)}</span>
+                        </div>
+                        <div className="mt-1.5">
+                          <MatchScoreBadge match={link.match} />
                         </div>
                       </div>
 

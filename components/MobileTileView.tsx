@@ -12,6 +12,7 @@ import { tryHandleVncLinkClick } from '../utils/vncLink';
 import { QRCodeDialog } from './QRCodeDialog';
 import { UpdatesDialog } from './UpdatesDialog';
 import { ThemeModeMenu } from './ThemeModeMenu';
+import { SearchResultFilterControl, SearchWordModeControl, FuzzySearchControl, RefineSearchInput, SearchStatsBar, MatchScoreBadge, getSearchWords, tileMatchesSearch, type SearchResultFilter, type SearchMatchingLink, type SearchWordMode, type SearchStatsSummary } from './SearchResultFilterControl';
 
 function stripHtml(html: string): string {
   if (!html || typeof html !== 'string') return '';
@@ -69,6 +70,16 @@ interface MobileTileViewProps {
   tiles: Tile[];
   searchTerm: string;
   onSearchChange: (term: string) => void;
+  searchResultFilter?: SearchResultFilter;
+  onSearchResultFilterChange?: (value: SearchResultFilter) => void;
+  searchWordMode?: SearchWordMode;
+  onSearchWordModeChange?: (value: SearchWordMode) => void;
+  searchFuzzy?: boolean;
+  onSearchFuzzyChange?: (enabled: boolean) => void;
+  refineSearchTerm?: string;
+  onRefineSearchChange?: (value: string) => void;
+  matchingSearchLinks?: SearchMatchingLink[];
+  searchStats?: SearchStatsSummary | null;
   onTileClick: (tileId: string) => void;
   activeTab: string;
   groupedTiles: Record<string, Tile[]>;
@@ -88,6 +99,16 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
   tiles,
   searchTerm,
   onSearchChange,
+  searchResultFilter = 'both',
+  onSearchResultFilterChange,
+  searchWordMode = 'and',
+  onSearchWordModeChange,
+  searchFuzzy = false,
+  onSearchFuzzyChange,
+  refineSearchTerm = '',
+  onRefineSearchChange,
+  matchingSearchLinks = [],
+  searchStats = null,
   onTileClick,
   activeTab,
   groupedTiles,
@@ -491,49 +512,17 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
       return allTiles;
     }
 
-    // Apply search filter
-    const searchLower = searchTerm.toLowerCase();
-    return allTiles.filter(tile => {
-      const titleMatch = tile.title?.toLowerCase().includes(searchLower);
-      const descriptionMatch = tile.description?.toLowerCase().includes(searchLower);
-      const emojiMatch = tile.emoji?.toLowerCase().includes(searchLower);
-      const groupMatch = tile.group?.toLowerCase().includes(searchLower);
-      const tagsMatch = (tile.searchTags ?? []).some(tag => tag.toLowerCase().includes(searchLower));
-      const linksMatch = (tile.searchLinks ?? []).some(link =>
-        (link.label || '').toLowerCase().includes(searchLower) ||
-        (link.url || '').toLowerCase().includes(searchLower) ||
-        (link.notes || '').toLowerCase().includes(searchLower) ||
-        (link.tooltip || '').toLowerCase().includes(searchLower)
-      );
-
-      // Full nested graph (when present)
-      const nestedLinksMatch = (tile.tabs ?? []).some(tab =>
-        (tab.title || '').toLowerCase().includes(searchLower) ||
-        (tab.sections ?? []).some(section =>
-          (section.title || '').toLowerCase().includes(searchLower) ||
-          (section.links ?? []).some(link =>
-            (link.label || '').toLowerCase().includes(searchLower) ||
-            (link.url || '').toLowerCase().includes(searchLower) ||
-            (link.notes || '').toLowerCase().includes(searchLower) ||
-            (link.tooltip || '').toLowerCase().includes(searchLower)
-          )
-        )
-      ) || (tile.sections ?? []).some(section =>
-        (section.title || '').toLowerCase().includes(searchLower) ||
-        (section.links ?? []).some(link =>
-          (link.label || '').toLowerCase().includes(searchLower) ||
-          (link.url || '').toLowerCase().includes(searchLower) ||
-          (link.notes || '').toLowerCase().includes(searchLower) ||
-          (link.tooltip || '').toLowerCase().includes(searchLower)
-        )
-      );
-
-      return titleMatch || descriptionMatch || emojiMatch || groupMatch || tagsMatch || linksMatch || nestedLinksMatch;
+    const searchWords = getSearchWords(searchTerm);
+    const refineWords = getSearchWords(refineSearchTerm);
+    return allTiles.filter((tile) => {
+      if (!tileMatchesSearch(tile, searchWords, searchWordMode, searchFuzzy)) return false;
+      if (refineWords.length === 0) return true;
+      return tileMatchesSearch(tile, refineWords, searchWordMode, searchFuzzy);
     });
     // Dependencies: tiles array reference changes when data loads, groupedTiles updates accordingly
     // We check both to handle cases where groupedTiles is stale on refresh
     // Include publicFavorites for public-favorites tab
-  }, [searchTerm, groupedTiles, activeTab, tiles, isAuthenticated, user, publicFavorites]);
+  }, [searchTerm, searchWordMode, searchFuzzy, refineSearchTerm, groupedTiles, activeTab, tiles, isAuthenticated, user, publicFavorites]);
 
   const getTileStyles = (tile: Tile) => {
     const styles = COLOR_STYLES[tile.themeColor] || COLOR_STYLES['blue'];
@@ -929,10 +918,42 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
             </button>
           )}
         </div>
+        {searchTerm.trim() && onSearchResultFilterChange && (
+          <div className="mt-2 flex justify-end gap-1.5 flex-wrap">
+            <SearchResultFilterControl
+              value={searchResultFilter}
+              onChange={onSearchResultFilterChange}
+            />
+            {(getSearchWords(searchTerm).length > 1 || getSearchWords(refineSearchTerm).length > 1) && onSearchWordModeChange && (
+              <SearchWordModeControl
+                value={searchWordMode}
+                onChange={onSearchWordModeChange}
+              />
+            )}
+            {onSearchFuzzyChange && (
+              <FuzzySearchControl
+                enabled={searchFuzzy}
+                onChange={onSearchFuzzyChange}
+              />
+            )}
+            {onRefineSearchChange && (
+              <RefineSearchInput
+                value={refineSearchTerm}
+                onChange={onRefineSearchChange}
+                className="w-full"
+              />
+            )}
+          </div>
+        )}
       </div>
 
       {/* Tiles Grid - 3 columns like mobile apps */}
       <div className="px-4 py-6">
+        {searchTerm.trim() && searchStats && (
+          <div className="mb-4">
+            <SearchStatsBar stats={searchStats} />
+          </div>
+        )}
         {/* Show localStorage warning for guest users on favorites tab */}
         {!isAuthenticated && activeTab === 'public-favorites' && !localStorageAvailable && (
           <div className="mb-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
@@ -1018,14 +1039,70 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
           </div>
         )}
 
-        {isFavoritesTab && filteredTiles.length > 0 && (
+        {searchTerm.trim() && searchResultFilter !== 'tiles' && matchingSearchLinks.length > 0 && (
+          <div className="mb-8">
+            <div className="flex items-center gap-2 mb-3">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-500">
+                <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
+                <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01-.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
+              </svg>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">Matching Links</h2>
+              <span className="text-xs text-slate-500 dark:text-slate-400">({matchingSearchLinks.length})</span>
+            </div>
+            <div className="space-y-2">
+              {matchingSearchLinks.map((link) => {
+                let host = link.url;
+                try {
+                  host = new URL(link.url).hostname.replace(/^www\./, '');
+                } catch {
+                  host = getDisplayUrl(link.url);
+                }
+                return (
+                  <button
+                    key={link.id}
+                    type="button"
+                    onClick={() => {
+                      if (tryHandleSshLinkClick(link.url || '')) return;
+                      if (tryHandleVncLinkClick(link.url || '')) return;
+                      window.open(link.url, '_blank', 'noopener,noreferrer');
+                    }}
+                    className="group relative flex items-center gap-3 p-3.5 w-full text-left bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl active:scale-[0.99] transition-all shadow-sm"
+                  >
+                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center shrink-0 text-lg border border-slate-200 dark:border-slate-700">
+                      {link.icon || '🔗'}
+                    </div>
+                    <div className="flex-1 min-w-0 overflow-hidden">
+                      <div className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-2">
+                        {stripHtml(link.label)}
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" title={link.url}>
+                        {host}
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-1 overflow-hidden">
+                        <span className="text-xs shrink-0">{link.tile.emoji}</span>
+                        <span className="text-xs text-slate-400 dark:text-slate-500 line-clamp-1">
+                          {stripHtml(link.tile.title)}
+                        </span>
+                      </div>
+                      <div className="mt-1.5">
+                        <MatchScoreBadge match={link.match} />
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {isFavoritesTab && filteredTiles.length > 0 && searchResultFilter !== 'links' && (
           <div className="flex items-center gap-2 mb-3">
             <h2 className="text-base font-bold text-slate-900 dark:text-white">Favorite Spaces</h2>
             <span className="text-xs text-slate-500 dark:text-slate-400">({filteredTiles.length})</span>
           </div>
         )}
 
-        {filteredTiles.length > 0 ? (
+        {filteredTiles.length > 0 && !(searchTerm.trim() && searchResultFilter === 'links') ? (
           <div className="grid grid-cols-3 gap-6">
             {filteredTiles.map((tile, index) => {
               const tileStyles = getTileStyles(tile);
@@ -1147,7 +1224,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
               );
             })}
           </div>
-        ) : favoriteLinks.length === 0 && !isLoadingFavoriteLinks ? (
+        ) : favoriteLinks.length === 0 && !isLoadingFavoriteLinks && !(searchTerm.trim() && searchResultFilter !== 'tiles' && matchingSearchLinks.length > 0) ? (
           <div className="text-center py-16 animate-fadeIn">
             {!isAuthenticated && activeTab === 'public-favorites' ? (
               <>
@@ -1192,7 +1269,9 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                     <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
                   </svg>
                 </div>
-                <p className="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-2">No spaces found</p>
+                <p className="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                  {searchTerm.trim() && searchResultFilter === 'links' ? 'No matching links' : 'No spaces found'}
+                </p>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">Try adjusting your search terms</p>
                 {searchTerm && (
                   <button
