@@ -376,6 +376,23 @@ export const authService = {
     return data.users || [];
   },
 
+  async bulkSetAuthSource(userIds: number[], authSource: 'local' | 'ldap' | 'saml'): Promise<{ updated_count: number; auth_source: string }> {
+    const response = await fetch(`${API_BASE}/auth/bulk-set-auth-source`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ user_ids: userIds, auth_source: authSource })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to update auth source');
+    }
+
+    return { updated_count: data.updated_count || userIds.length, auth_source: data.auth_source || authSource };
+  },
+
   async toggleAuthSource(userId: number): Promise<{ auth_source: string }> {
     const response = await fetch(`${API_BASE}/auth/toggle-auth-source/${userId}`, {
       method: 'PUT',

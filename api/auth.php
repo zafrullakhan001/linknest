@@ -59,6 +59,8 @@ switch ($method) {
             handleBulkImportSamlUsers();
         } elseif ($path === '/auto-detect-auth-sources') {
             handleAutoDetectAuthSources();
+        } elseif ($path === '/bulk-set-auth-source') {
+            handleBulkSetAuthSource();
         } elseif (preg_match('#^/impersonate/(\d+)$#', $path, $matches)) {
             handleStartImpersonation((int)$matches[1]);
         } elseif ($path === '/stop-impersonation') {
@@ -1670,6 +1672,46 @@ function handleUpdateUser($userId) {
     } else {
         sendJSON(['error' => 'Failed to update user'], 500);
     }
+}
+
+function handleBulkSetAuthSource() {
+    requireAdmin();
+
+    $input = json_decode(file_get_contents('php://input'), true);
+
+    if (!isset($input['user_ids']) || !is_array($input['user_ids']) || empty($input['user_ids'])) {
+        sendJSON(['error' => 'Invalid request: user_ids array is required'], 400);
+    }
+
+    $authSource = isset($input['auth_source']) ? strtolower(trim((string)$input['auth_source'])) : '';
+    if (!in_array($authSource, ['local', 'ldap', 'saml'], true)) {
+        sendJSON(['error' => 'Invalid authentication source. Must be local, ldap, or saml'], 400);
+    }
+
+    $validIds = [];
+    foreach ($input['user_ids'] as $id) {
+        $id = (int)$id;
+        if ($id > 0) {
+            $validIds[] = $id;
+        }
+    }
+
+    if (empty($validIds)) {
+        sendJSON(['error' => 'No valid user IDs provided'], 400);
+    }
+
+    $db = getDB();
+    $placeholders = str_repeat('?,', count($validIds) - 1) . '?';
+    // Include admin accounts — local admins may retag any user, including other admins.
+    $stmt = $db->prepare("UPDATE users SET auth_source = ? WHERE id IN ($placeholders)");
+    $stmt->execute(array_merge([$authSource], $validIds));
+
+    sendJSON([
+        'success' => true,
+        'message' => 'Set auth source to ' . $authSource . ' for ' . count($validIds) . ' user(s)',
+        'updated_count' => count($validIds),
+        'auth_source' => $authSource
+    ]);
 }
 
 function handleBulkDisableUsers() {

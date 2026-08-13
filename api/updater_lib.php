@@ -15,6 +15,8 @@ define('UPDATER_HISTORY_FILE', UPDATER_ROOT . '/data/updater-history.json');
 define('UPDATER_SNAPSHOTS_DIR', UPDATER_ROOT . '/data/updater-snapshots');
 define('UPDATER_TMP_DIR', UPDATER_ROOT . '/data/tmp');
 define('UPDATER_HISTORY_MAX', 10);
+/** If GitHub compare vs a stored SHA is this far ahead, retry against the Release tag. */
+define('UPDATER_STALE_BASE_AHEAD', 25);
 
 /** Top-level paths allowed when extracting an update ZIP (never data/, uploads/, .env*). */
 const UPDATER_ZIP_ALLOW_PREFIXES = [
@@ -129,19 +131,26 @@ function updaterReadBuildInfo(): array {
 }
 
 function updaterInstalledVersion(): string {
+    $candidates = [];
     $info = updaterReadBuildInfo();
     if (!empty($info['appVersion']) && is_string($info['appVersion'])) {
-        return updaterNormalizeVersion($info['appVersion']);
+        $candidates[] = updaterNormalizeVersion($info['appVersion']);
     }
     $pkgPath = UPDATER_ROOT . '/package.json';
     if (is_file($pkgPath)) {
         $raw = @file_get_contents($pkgPath);
         $pkg = $raw !== false ? json_decode($raw, true) : null;
         if (is_array($pkg) && !empty($pkg['version'])) {
-            return updaterNormalizeVersion((string)$pkg['version']);
+            $candidates[] = updaterNormalizeVersion((string)$pkg['version']);
         }
     }
-    return '0.0.0';
+    $best = '0.0.0';
+    foreach ($candidates as $v) {
+        if (updaterCompareSemver($v, $best) > 0) {
+            $best = $v;
+        }
+    }
+    return $best;
 }
 
 function updaterWriteBuildInfo(array $patch): void {
@@ -240,23 +249,59 @@ function updaterLooksLikeGitSha(string $value): bool {
     return (bool)preg_match('/^[a-f0-9]{7,40}$/i', $raw);
 }
 
+function updaterIsZipInstall(array $info): bool {
+    $via = strtolower(trim((string)($info['updatedVia'] ?? '')));
+    return in_array($via, ['zip', 'package-for-deployment.ps1'], true)
+        || (!empty($info['releaseTag']) && !is_dir(UPDATER_ROOT . '/.git'));
+}
+
+function updaterNormalizeReleaseTag(string $value): ?string {
+    $v = trim($value);
+    if ($v === '' || !preg_match('/^v?\d+\.\d+\.\d+/i', $v)) {
+        return null;
+    }
+    return str_starts_with(strtolower($v), 'v') ? $v : ('v' . $v);
+}
+
 /**
- * Installed commit SHA (BUILD_INFO, then local git HEAD).
- * ZIP applies used to store the tag name in gitCommit; that is not a SHA.
- * Do not use leftover .git HEAD on zip installs — it stays on the pre-release commit.
+ * Applied Release tag (BUILD_INFO.releaseTag, else v{appVersion}).
+ */
+function updaterInstalledReleaseTag(): ?string {
+    $info = updaterReadBuildInfo();
+    $fromField = updaterNormalizeReleaseTag((string)($info['releaseTag'] ?? ''));
+    if ($fromField) {
+        return $fromField;
+    }
+    $ver = updaterInstalledVersion();
+    if ($ver !== '' && $ver !== '0.0.0') {
+        return updaterNormalizeReleaseTag($ver);
+    }
+    return null;
+}
+
+/**
+ * Installed commit SHA.
+ * Git checkouts: HEAD is the source of truth (BUILD_INFO.json in the repo is often stale).
+ * Zip installs: BUILD_INFO only — leftover .git HEAD stays on the pre-release commit.
  */
 function updaterInstalledCommit(): ?string {
     $info = updaterReadBuildInfo();
+    $zipInstall = updaterIsZipInstall($info);
+    $caps = updaterCapabilities();
+
+    if (!$zipInstall && $caps['gitAvailable']) {
+        $r = updaterRunCommand('git rev-parse HEAD');
+        if ($r['ok'] && updaterLooksLikeGitSha($r['stdout'])) {
+            return strtolower($r['stdout']);
+        }
+    }
+
     if (!empty($info['gitCommit']) && is_string($info['gitCommit']) && updaterLooksLikeGitSha($info['gitCommit'])) {
         return strtolower(trim($info['gitCommit']));
     }
-    $via = strtolower(trim((string)($info['updatedVia'] ?? '')));
-    $zipInstall = in_array($via, ['zip', 'package-for-deployment.ps1'], true)
-        || (!empty($info['releaseTag']) && !is_dir(UPDATER_ROOT . '/.git'));
     if ($zipInstall) {
         return null;
     }
-    $caps = updaterCapabilities();
     if ($caps['gitAvailable']) {
         $r = updaterRunCommand('git rev-parse HEAD');
         if ($r['ok'] && updaterLooksLikeGitSha($r['stdout'])) {
@@ -274,14 +319,20 @@ function updaterInstalledBaseRef(): ?string {
     if ($sha) {
         return $sha;
     }
-    $info = updaterReadBuildInfo();
-    foreach (['releaseTag', 'gitCommit'] as $key) {
-        $v = trim((string)($info[$key] ?? ''));
-        if ($v !== '' && preg_match('/^v?\d+\.\d+\.\d+/i', $v)) {
-            return str_starts_with(strtolower($v), 'v') ? $v : ('v' . $v);
-        }
+    return updaterInstalledReleaseTag();
+}
+
+function updaterShaPrefixMatch(string $a, string $b): bool {
+    $a = strtolower(preg_replace('/[^a-f0-9]/i', '', $a) ?? '');
+    $b = strtolower(preg_replace('/[^a-f0-9]/i', '', $b) ?? '');
+    if ($a === '' || $b === '') {
+        return false;
     }
-    return null;
+    $n = min(strlen($a), strlen($b), 40);
+    if ($n < 7) {
+        return false;
+    }
+    return substr($a, 0, $n) === substr($b, 0, $n);
 }
 
 /**
@@ -875,10 +926,79 @@ function updaterMergeCommitLists(array ...$lists): array {
     return array_values($bySha);
 }
 
+/**
+ * @return array<string, mixed>|null GitHub compare JSON
+ */
+function updaterGithubCompare(string $base, string $head): ?array {
+    $base = trim($base);
+    $head = trim($head);
+    if ($base === '' || $head === '') {
+        return null;
+    }
+    try {
+        $repo = updaterRepoSlug();
+        $url = 'https://api.github.com/repos/' . $repo . '/compare/'
+            . rawurlencode($base) . '...' . rawurlencode($head);
+        $payload = updaterHttpJson($url);
+        return is_array($payload) ? $payload : null;
+    } catch (Throwable $e) {
+        error_log('updater compare failed (' . $base . '...' . $head . '): ' . $e->getMessage());
+        return null;
+    }
+}
+
+/**
+ * @param array<string, mixed> $payload
+ * @return list<array{sha:string,shortSha:string,message:string,body:string,author:string,date:string,htmlUrl:string,kind:string,localOnly:bool}>
+ */
+function updaterMapGithubCompareCommits(array $payload): array {
+    $out = [];
+    if (empty($payload['commits']) || !is_array($payload['commits'])) {
+        return $out;
+    }
+    $list = array_reverse($payload['commits']);
+    foreach ($list as $c) {
+        if (!is_array($c)) {
+            continue;
+        }
+        $sha = (string)($c['sha'] ?? '');
+        if ($sha === '') {
+            continue;
+        }
+        $msg = (string)($c['commit']['message'] ?? '');
+        $subject = trim(explode("\n", $msg)[0]);
+        $out[] = [
+            'sha' => $sha,
+            'shortSha' => substr($sha, 0, 7),
+            'message' => $subject,
+            'body' => $msg,
+            'author' => (string)($c['commit']['author']['name'] ?? $c['author']['login'] ?? ''),
+            'date' => (string)($c['commit']['author']['date'] ?? ''),
+            'htmlUrl' => (string)($c['html_url'] ?? ''),
+            'kind' => 'commit',
+            'localOnly' => false,
+        ];
+    }
+    return $out;
+}
+
+function updaterCompareLooksStale(?array $payload): bool {
+    if (!is_array($payload)) {
+        return true;
+    }
+    $status = strtolower((string)($payload['status'] ?? ''));
+    if ($status === 'diverged') {
+        return true;
+    }
+    return (int)($payload['ahead_by'] ?? 0) >= UPDATER_STALE_BASE_AHEAD;
+}
+
 function updaterFetchCommitsAhead(bool $force = false): array {
     $ttl = updaterCheckIntervalMinutes() * 60;
     $branch = updaterTrackBranch();
-    $base = updaterInstalledBaseRef();
+    $shaBase = updaterInstalledCommit();
+    $tagBase = updaterInstalledReleaseTag();
+    $base = $shaBase ?: $tagBase;
 
     if (!$force && is_file(UPDATER_COMMITS_CACHE_FILE)) {
         $raw = @file_get_contents(UPDATER_COMMITS_CACHE_FILE);
@@ -887,7 +1007,8 @@ function updaterFetchCommitsAhead(bool $force = false): array {
             is_array($cache)
             && isset($cache['fetchedAt'], $cache['commits'])
             && ($cache['branch'] ?? '') === $branch
-            && ($cache['base'] ?? null) === $base
+            && ($cache['shaBase'] ?? null) === $shaBase
+            && ($cache['tagBase'] ?? null) === $tagBase
             && (time() - (int)$cache['fetchedAt']) < $ttl
         ) {
             return $cache;
@@ -906,46 +1027,56 @@ function updaterFetchCommitsAhead(bool $force = false): array {
     if ($caps['gitAvailable']) {
         updaterEnsureGitSafeDirectory();
         updaterRunCommand('git fetch origin ' . escapeshellarg($branch) . ' --prune', null, 120);
+        if ($tagBase) {
+            updaterRunCommand('git fetch origin --tags --force', null, 60);
+        }
     }
 
     $compareOk = false;
+    $payload = null;
     if ($base) {
-        $url = 'https://api.github.com/repos/' . $repo . '/compare/'
-            . rawurlencode($base) . '...' . rawurlencode($branch);
-        try {
-            $payload = updaterHttpJson($url);
-            $compareOk = true;
-            $aheadBy = (int)($payload['ahead_by'] ?? 0);
-            if (!empty($payload['commits']) && is_array($payload['commits'])) {
-                $list = array_reverse($payload['commits']);
-                foreach ($list as $c) {
-                    if (!is_array($c)) {
-                        continue;
-                    }
-                    $sha = (string)($c['sha'] ?? '');
-                    if ($sha === '') {
-                        continue;
-                    }
-                    $msg = (string)($c['commit']['message'] ?? '');
-                    $subject = trim(explode("\n", $msg)[0]);
-                    $remoteCommits[] = [
-                        'sha' => $sha,
-                        'shortSha' => substr($sha, 0, 7),
-                        'message' => $subject,
-                        'body' => $msg,
-                        'author' => (string)($c['commit']['author']['name'] ?? $c['author']['login'] ?? ''),
-                        'date' => (string)($c['commit']['author']['date'] ?? ''),
-                        'htmlUrl' => (string)($c['html_url'] ?? ''),
-                        'kind' => 'commit',
-                        'localOnly' => false,
-                    ];
-                }
-                if (!empty($remoteCommits)) {
-                    $headSha = $remoteCommits[0]['sha'];
+        $payload = updaterGithubCompare($base, $branch);
+        if (!$payload && $tagBase && strtolower((string)$base) !== strtolower($tagBase)) {
+            $payload = updaterGithubCompare($tagBase, $branch);
+            if ($payload) {
+                $base = $tagBase;
+            }
+        }
+        // Zipballs stamp a stale SHA from BUILD_INFO.json in git. If that SHA
+        // is not the applied Release, compare returns the whole branch history.
+        if (
+            $payload
+            && $tagBase
+            && $shaBase
+            && strtolower((string)$base) !== strtolower($tagBase)
+            && updaterCompareLooksStale($payload)
+        ) {
+            $viaTag = updaterGithubCompare($tagBase, $branch);
+            if (is_array($viaTag)) {
+                $shaAhead = (int)($payload['ahead_by'] ?? 0);
+                $tagAhead = (int)($viaTag['ahead_by'] ?? 0);
+                $tagStatus = strtolower((string)($viaTag['status'] ?? ''));
+                if ($tagStatus !== 'diverged' && $tagAhead < $shaAhead) {
+                    $payload = $viaTag;
+                    $base = $tagBase;
                 }
             }
-        } catch (Throwable $e) {
-            error_log('updater compare failed: ' . $e->getMessage());
+        }
+        if (is_array($payload)) {
+            $compareOk = true;
+            $aheadBy = (int)($payload['ahead_by'] ?? 0);
+            $remoteCommits = updaterMapGithubCompareCommits($payload);
+            if ($shaBase) {
+                $remoteCommits = array_values(array_filter(
+                    $remoteCommits,
+                    static function ($c) use ($shaBase) {
+                        return empty($c['sha']) || !updaterShaPrefixMatch((string)$c['sha'], $shaBase);
+                    }
+                ));
+            }
+            if (!empty($remoteCommits)) {
+                $headSha = $remoteCommits[0]['sha'];
+            }
         }
     }
 
@@ -1037,6 +1168,21 @@ function updaterFetchCommitsAhead(bool $force = false): array {
         return strcmp((string)($b['sha'] ?? ''), (string)($a['sha'] ?? ''));
     });
 
+    // Zip apply used to record a stale SHA while commitMessage is the applied tip.
+    // If HEAD's subject matches the installed message, this install is current.
+    $installedMsg = trim(explode("\n", (string)(updaterReadBuildInfo()['commitMessage'] ?? ''))[0]);
+    if ($installedMsg !== '' && !empty($commits)) {
+        $tipSha = (string)($commits[0]['sha'] ?? '');
+        $tipMsg = trim((string)($commits[0]['message'] ?? ''));
+        if (
+            $tipMsg !== ''
+            && strcasecmp($installedMsg, $tipMsg) === 0
+            && (!$shaBase || !updaterShaPrefixMatch($shaBase, $tipSha))
+        ) {
+            $commits = [];
+        }
+    }
+
     $aheadBy = count($commits);
     $headSha = $commits[0]['sha'] ?? $headSha;
 
@@ -1052,6 +1198,8 @@ function updaterFetchCommitsAhead(bool $force = false): array {
         'repo' => $repo,
         'branch' => $branch,
         'base' => $base,
+        'shaBase' => $shaBase,
+        'tagBase' => $tagBase,
         'aheadBy' => $aheadBy,
         'headSha' => $headSha,
         'commits' => $commits,
@@ -1633,6 +1781,8 @@ function updaterApplyTarget(array $target, bool $pushHistory = true): void {
             updaterDownloadZipball($url, $zipPath);
         }
 
+        $prevInfo = updaterReadBuildInfo();
+        $prevReleaseTag = updaterNormalizeReleaseTag((string)($prevInfo['releaseTag'] ?? ''));
         $bi = UPDATER_ROOT . '/BUILD_INFO.json';
         if (is_file($bi)) {
             @copy($bi, UPDATER_ROOT . '/data/BUILD_INFO.pre-update.json');
@@ -1652,16 +1802,21 @@ function updaterApplyTarget(array $target, bool $pushHistory = true): void {
                 $pkgVer = updaterNormalizeVersion((string)$pkg['version']);
             }
         }
-        $extractedInfo = updaterReadBuildInfo();
-        $shaFromZip = null;
-        if (!empty($extractedInfo['gitCommit']) && updaterLooksLikeGitSha((string)$extractedInfo['gitCommit'])) {
-            $shaFromZip = strtolower(trim((string)$extractedInfo['gitCommit']));
+        // Record the applied ref — never trust BUILD_INFO.gitCommit from inside
+        // the zip/zipball (that file in git is often an old SHA).
+        $appliedSha = null;
+        if (updaterLooksLikeGitSha($ref)) {
+            $appliedSha = strlen($ref) >= 40 ? strtolower($ref) : updaterResolveRefCommitSha($ref);
+            if (!$appliedSha) {
+                $appliedSha = strtolower($ref);
+            }
+        } else {
+            $appliedSha = updaterResolveRefCommitSha((string)($target['tag'] ?? $ref));
         }
-        $sha = $shaFromZip ?: updaterResolveRefCommitSha((string)($target['tag'] ?? $ref));
         updaterWriteBuildInfo([
             'appVersion' => $pkgVer,
-            'releaseTag' => $target['tag'] ?? null,
-            'gitCommit' => $sha ?: $ref,
+            'releaseTag' => $target['tag'] ?? $prevReleaseTag,
+            'gitCommit' => $appliedSha ?: $ref,
             'commitMessage' => $target['message'] ?? null,
             'trackBranch' => updaterTrackBranch(),
             'updatedVia' => 'zip',

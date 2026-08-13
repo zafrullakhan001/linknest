@@ -179,6 +179,17 @@ const ADMIN_SUBTAB_INACTIVE =
 const ADMIN_TOGGLE_TRACK =
   'w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-sky-300 dark:peer-focus:ring-sky-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[\'\'] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-sky-600';
 
+function authSourceSelectClass(source?: string): string {
+  const normalized = (source || 'local').toLowerCase();
+  const color =
+    normalized === 'saml'
+      ? 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400'
+      : normalized === 'ldap'
+        ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400'
+        : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300';
+  return `px-2 py-0.5 rounded-full text-xs font-semibold border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-500/50 disabled:opacity-50 disabled:cursor-not-allowed ${color}`;
+}
+
 /** Common Windows / web-safe fonts for branding (sans, serif, mono, cursive/script, display). */
 const BRANDING_FONT_FAMILIES: { value: string; label: string; group: string }[] = [
   { value: 'inherit', label: 'Inherit (Default)', group: 'Default' },
@@ -3459,6 +3470,49 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }
   };
 
+  const handleSetAuthSource = async (userIds: number[], authSource: 'local' | 'ldap' | 'saml', confirmBulk = false) => {
+    if (userIds.length === 0) {
+      return;
+    }
+
+    if (confirmBulk) {
+      const selectedAdmins = allUsers.filter((u) => userIds.includes(u.id) && u.is_admin);
+      const adminNote = selectedAdmins.length > 0
+        ? `\n\nThis includes ${selectedAdmins.length} admin account(s).`
+        : '';
+      if (!confirm(`Set authentication source to ${authSource.toUpperCase()} for ${userIds.length} user(s)?${adminNote}`)) {
+        return;
+      }
+    }
+
+    try {
+      if (userIds.length === 1) {
+        setProcessing(userIds[0]);
+      } else {
+        setBulkProcessing(true);
+      }
+      setError('');
+      const result = await authService.bulkSetAuthSource(userIds, authSource);
+      const idSet = new Set(userIds);
+      setAllUsers((prevUsers) =>
+        prevUsers.map((u) => (idSet.has(u.id) ? { ...u, auth_source: result.auth_source } : u))
+      );
+      setUserActionsDialog((prev) =>
+        prev.open && prev.user && idSet.has(prev.user.id)
+          ? { ...prev, user: { ...prev.user, auth_source: result.auth_source } }
+          : prev
+      );
+      if (confirmBulk) {
+        setSelectedUserIds(new Set());
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to update auth source');
+    } finally {
+      setProcessing(null);
+      setBulkProcessing(false);
+    }
+  };
+
   const handleBulkToggleApproval = async () => {
     if (selectedUserIds.size === 0) {
       return;
@@ -3578,7 +3632,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       return;
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editEmail)) {
+    const emailLower = editEmail.trim().toLowerCase();
+    const isLocalhostEmail = emailLower.includes('@localhost');
+    if (!isLocalhostEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editEmail.trim())) {
       setError('Please enter a valid email address');
       return;
     }
@@ -4672,6 +4728,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     <div className={`flex items-center gap-2 ${isMobile ? 'flex-wrap w-full' : 'flex-wrap'}`}>
                       {selectedUserIds.size > 0 && (
                         <>
+                          <select
+                            value=""
+                            disabled={bulkProcessing}
+                            onChange={(e) => {
+                              const source = e.target.value as 'local' | 'ldap' | 'saml';
+                              if (source === 'local' || source === 'ldap' || source === 'saml') {
+                                handleSetAuthSource(Array.from(selectedUserIds), source, true);
+                              }
+                            }}
+                            className={`${isMobile ? 'px-3 py-2 text-xs' : 'px-4 py-2 text-sm'} bg-indigo-50 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-200 border border-indigo-300 dark:border-indigo-700 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg font-medium transition-colors cursor-pointer`}
+                            style={isMobile ? { minHeight: '44px' } : {}}
+                            title="Set authentication source for all selected users, including admins"
+                          >
+                            <option value="" disabled>
+                              Set Auth Source ({selectedUserIds.size})
+                            </option>
+                            <option value="local">Local</option>
+                            <option value="ldap">LDAP</option>
+                            <option value="saml">SAML</option>
+                          </select>
                           <button
                             onClick={handleBulkDisable}
                             disabled={bulkProcessing}
@@ -4957,19 +5033,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                                 Admin
                                               </span>
                                             )}
-                                            {user.auth_source === 'saml' ? (
-                                              <span className="px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 text-xs font-semibold whitespace-nowrap">
-                                                SAML
-                                              </span>
-                                            ) : user.auth_source === 'ldap' ? (
-                                              <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-xs font-semibold whitespace-nowrap">
-                                                LDAP
-                                              </span>
-                                            ) : (
-                                              <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold whitespace-nowrap">
-                                                Local
-                                              </span>
-                                            )}
+                                            <select
+                                              value={(['local', 'ldap', 'saml'].includes((user.auth_source || 'local').toLowerCase()) ? (user.auth_source || 'local').toLowerCase() : 'local') as 'local' | 'ldap' | 'saml'}
+                                              disabled={processing === user.id || bulkProcessing}
+                                              onChange={(e) => {
+                                                e.stopPropagation();
+                                                handleSetAuthSource([user.id], e.target.value as 'local' | 'ldap' | 'saml');
+                                              }}
+                                              onClick={(e) => e.stopPropagation()}
+                                              className={authSourceSelectClass(user.auth_source)}
+                                              title="Change authentication source"
+                                            >
+                                              <option value="local">Local</option>
+                                              <option value="ldap">LDAP</option>
+                                              <option value="saml">SAML</option>
+                                            </select>
                                           </div>
                                         </div>
                                       </div>
@@ -5157,19 +5235,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                         Admin
                                       </span>
                                     )}
-                                    {user.auth_source === 'saml' ? (
-                                      <span className="px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 text-xs font-semibold whitespace-nowrap">
-                                        SAML
-                                      </span>
-                                    ) : user.auth_source === 'ldap' ? (
-                                      <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-xs font-semibold whitespace-nowrap">
-                                        LDAP
-                                      </span>
-                                    ) : (
-                                      <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold whitespace-nowrap">
-                                        Local
-                                      </span>
-                                    )}
+                                    <select
+                                      value={(['local', 'ldap', 'saml'].includes((user.auth_source || 'local').toLowerCase()) ? (user.auth_source || 'local').toLowerCase() : 'local') as 'local' | 'ldap' | 'saml'}
+                                      disabled={processing === user.id || bulkProcessing}
+                                      onChange={(e) => {
+                                        e.stopPropagation();
+                                        handleSetAuthSource([user.id], e.target.value as 'local' | 'ldap' | 'saml');
+                                      }}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className={authSourceSelectClass(user.auth_source)}
+                                      title="Change authentication source"
+                                    >
+                                      <option value="local">Local</option>
+                                      <option value="ldap">LDAP</option>
+                                      <option value="saml">SAML</option>
+                                    </select>
                                   </div>
                                 </div>
                               </div>
@@ -18776,34 +18856,22 @@ node .\\load-tests\\generate-report.js`}
                   </button>
                 )}
 
-                {/* Toggle Auth Source — available for all users, including other admins */}
-                <button
-                  onClick={async () => {
-                    const targetId = userActionsDialog.user.id;
-                    setUserActionsDialog({ open: false, user: null });
-                    try {
-                      setProcessing(targetId);
-                      setError('');
-                      const result = await authService.toggleAuthSource(targetId);
-                      setAllUsers(prevUsers =>
-                        prevUsers.map(u =>
-                          u.id === targetId ? { ...u, auth_source: result.auth_source } : u
-                        )
-                      );
-                    } catch (err: any) {
-                      setError(err.message || 'Failed to toggle auth source');
-                    } finally {
-                      setProcessing(null);
-                    }
-                  }}
-                  disabled={processing === userActionsDialog.user.id}
-                  className="w-full px-4 py-3 text-left text-sm font-medium bg-purple-50 dark:bg-purple-900/10 text-purple-700 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 rounded-xl transition-all"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                    <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-                  </svg>
-                  Toggle Auth Source ({(userActionsDialog.user.auth_source || 'local').toUpperCase()})
-                </button>
+                {/* Auth source — available for all users, including other admins */}
+                <label className="block w-full px-4 py-3 rounded-xl bg-purple-50 dark:bg-purple-900/10">
+                  <span className="block text-xs font-medium text-purple-700 dark:text-purple-400 mb-1.5">Authentication Source</span>
+                  <select
+                    value={(['local', 'ldap', 'saml'].includes((userActionsDialog.user.auth_source || 'local').toLowerCase()) ? (userActionsDialog.user.auth_source || 'local').toLowerCase() : 'local') as 'local' | 'ldap' | 'saml'}
+                    disabled={processing === userActionsDialog.user.id || bulkProcessing}
+                    onChange={(e) => {
+                      handleSetAuthSource([userActionsDialog.user.id], e.target.value as 'local' | 'ldap' | 'saml');
+                    }}
+                    className="w-full bg-white dark:bg-slate-800 border border-purple-200 dark:border-purple-800 rounded-lg px-3 py-2 text-sm font-medium text-slate-900 dark:text-white disabled:opacity-50"
+                  >
+                    <option value="local">Local</option>
+                    <option value="ldap">LDAP</option>
+                    <option value="saml">SAML</option>
+                  </select>
+                </label>
 
                 {!userActionsDialog.user.is_admin && (
                   <>

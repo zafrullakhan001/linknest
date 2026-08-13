@@ -86,7 +86,7 @@ Then Ctrl+F5. Do **not** set `VITE_BASE_PATH=/linknest` on ArchLinks/ERP3.
 
 | Source | When it appears | Apply |
 |--------|-----------------|--------|
-| **Commits** on track branch (default `main`) | Pushes **after** the applied Release SHA (zip) or git HEAD (git mode) | Checkout / zipball that commit + rebuild |
+| **Commits** on track branch (default `main`) | Pushes **after** the applied Release tag / git HEAD — not the stale SHA inside `BUILD_INFO.json` | Checkout / zipball that commit + rebuild |
 | **GitHub Releases** (`vX.Y.Z`) | Tag newer than installed `appVersion` | Tag checkout or `linknest-update-*.zip` |
 
 Both **preserve** `data/` and `uploads/` (except when you explicitly restore a DB snapshot). Before each update, the current install is recorded in **rollback history** (last **10** entries).
@@ -216,6 +216,7 @@ Env (optional): `GITHUB_TOKEN` / `GH_TOKEN`.
 |---------|-----|
 | `GitHub returned 404` | Save a `repo`-scoped PAT |
 | No commits listed | Confirm track branch; ensure installed `gitCommit` is an ancestor of that branch |
+| Shows 100+ commits after applying the latest Release | Stale `BUILD_INFO.gitCommit` from the zipball. Check for updates again (compares against the Release tag). Apply this updater fix, then **Check for updates**. |
 | Stuck at 0% / “already in progress” | Wait ~45s for stale-job clear, or restart Apache; retry |
 | Dubious ownership / hung fetch | Updater injects `safe.directory` + PAT; ensure token is saved |
 | Rollback has no DB option | That snapshot was created with backup unchecked |
