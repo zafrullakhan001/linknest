@@ -572,6 +572,23 @@ export const authService = {
     return { promoted_count: data.promoted_count || 0 };
   },
 
+  async bulkDemoteUsers(userIds: number[]): Promise<{ demoted_count: number }> {
+    const response = await fetch(`${API_BASE}/auth/bulk-demote`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ user_ids: userIds })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to demote users');
+    }
+
+    return { demoted_count: data.demoted_count || 0 };
+  },
+
   async bulkToggleApproval(userIds: number[]): Promise<{ approved_count: number; unapproved_count: number }> {
     const response = await fetch(`${API_BASE}/auth/bulk-toggle-approval`, {
       method: 'POST',

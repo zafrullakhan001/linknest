@@ -49,6 +49,8 @@ switch ($method) {
             handleBulkDisableUsers();
         } elseif ($path === '/bulk-promote') {
             handleBulkPromoteUsers();
+        } elseif ($path === '/bulk-demote') {
+            handleBulkDemoteUsers();
         } elseif ($path === '/bulk-toggle-approval') {
             handleBulkToggleApproval();
         } elseif ($path === '/bulk-import-local') {
@@ -1807,6 +1809,52 @@ function handleBulkPromoteUsers() {
         ]);
     } else {
         sendJSON(['error' => 'No users were promoted'], 404);
+    }
+}
+
+function handleBulkDemoteUsers() {
+    $currentUser = requireAdmin();
+
+    $input = json_decode(file_get_contents('php://input'), true);
+
+    if (!isset($input['user_ids']) || !is_array($input['user_ids']) || empty($input['user_ids'])) {
+        sendJSON(['error' => 'Invalid request: user_ids array is required'], 400);
+    }
+
+    $excludeIds = [(int)$currentUser['id']];
+    if (!empty($currentUser['impersonating_admin_id'])) {
+        $excludeIds[] = (int)$currentUser['impersonating_admin_id'];
+    }
+
+    $validIds = [];
+    foreach ($input['user_ids'] as $id) {
+        $id = (int)$id;
+        if ($id > 0 && !in_array($id, $excludeIds, true)) {
+            $validIds[] = $id;
+        }
+    }
+    $validIds = array_values(array_unique($validIds));
+
+    if (empty($validIds)) {
+        sendJSON(['error' => 'No users can be demoted. You cannot demote yourself from admin.'], 400);
+    }
+
+    $db = getDB();
+    $placeholders = str_repeat('?,', count($validIds) - 1) . '?';
+
+    $stmt = $db->prepare("UPDATE users SET is_admin = 0 WHERE id IN ($placeholders) AND is_admin = 1");
+    $stmt->execute($validIds);
+
+    $demotedCount = $stmt->rowCount();
+
+    if ($demotedCount > 0) {
+        sendJSON([
+            'success' => true,
+            'message' => "Successfully demoted $demotedCount user(s) from admin",
+            'demoted_count' => $demotedCount
+        ]);
+    } else {
+        sendJSON(['error' => 'No admin users were demoted. Selected users may not have the admin role.'], 404);
     }
 }
 

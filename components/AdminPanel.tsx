@@ -3470,6 +3470,44 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }
   };
 
+  const handleBulkDemote = async () => {
+    if (selectedUserIds.size === 0) {
+      return;
+    }
+
+    const currentUserId = user?.id;
+    const demotableAdmins = allUsers.filter(
+      (u) => selectedUserIds.has(u.id) && u.is_admin && u.id !== currentUserId
+    );
+
+    if (demotableAdmins.length === 0) {
+      setError('No admin users in the selection can be demoted. You cannot demote yourself.');
+      return;
+    }
+
+    const selfSelected = currentUserId != null && selectedUserIds.has(currentUserId);
+    const confirmMsg = selfSelected
+      ? `Are you sure you want to demote ${demotableAdmins.length} admin user(s) from the admin role?\n\nYour own account will not be demoted.`
+      : `Are you sure you want to demote ${demotableAdmins.length} admin user(s) from the admin role?`;
+
+    if (!confirm(confirmMsg)) {
+      return;
+    }
+
+    try {
+      setBulkProcessing(true);
+      setError('');
+      const userIdsArray = Array.from(selectedUserIds) as number[];
+      await authService.bulkDemoteUsers(userIdsArray);
+      await loadData();
+      setSelectedUserIds(new Set());
+    } catch (err: any) {
+      setError(err.message || 'Failed to demote users');
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
+
   const handleSetAuthSource = async (userIds: number[], authSource: 'local' | 'ldap' | 'saml', confirmBulk = false) => {
     if (userIds.length === 0) {
       return;
@@ -4791,6 +4829,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
                                 </svg>
                                 Promote Selected ({selectedUserIds.size})
+                              </>
+                            )}
+                          </button>
+                          <button
+                            onClick={handleBulkDemote}
+                            disabled={bulkProcessing}
+                            className={`${isMobile ? 'px-3 py-2 text-xs' : 'px-4 py-2 text-sm'} bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors flex items-center gap-2 touch-manipulation`}
+                            style={isMobile ? { minHeight: '44px' } : {}}
+                          >
+                            {bulkProcessing ? (
+                              <>
+                                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Processing...
+                              </>
+                            ) : (
+                              <>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-11.25a.75.75 0 00-1.5 0v4.59L7.3 9.24a.75.75 0 00-1.1 1.02l3.25 3.5a.75.75 0 001.1 0l3.25-3.5a.75.75 0 10-1.1-1.02l-1.95 2.1V6.75z" clipRule="evenodd" />
+                                </svg>
+                                Demote Selected ({selectedUserIds.size})
                               </>
                             )}
                           </button>
