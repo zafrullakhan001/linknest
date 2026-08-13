@@ -1,11 +1,12 @@
-import { getAppBasePath } from './apiHelpers';
+import { getAppBasePath, getAppStorageScope } from './apiHelpers';
 
 /**
  * Public Favorites Service
  * Manages favorites stored in browser localStorage for public (non-authenticated) users.
  * These favorites are completely separate from internal favorites stored in the database.
  *
- * Keys are scoped by install path so /ArchLinks and /ERP3 (same origin) do not share lists.
+ * Keys are scoped by install folder so /ArchLinks and /ERP3 (same origin) do not share lists.
+ * Do not migrate or delete the old unscoped keys — that would let one instance steal the other.
  */
 
 const STORAGE_KEY = 'linknest_public_favorites';
@@ -20,45 +21,41 @@ const PUBLIC_FAVORITE_BASE_KEYS = [
   ACTIVE_TAB_KEY
 ] as const;
 
-let didMigrateLegacyKeys = false;
+let didNormalizeScopeCase = false;
 
-const scopedStorageKey = (baseKey: string): string => {
-  const scope = getAppBasePath();
-  return scope ? `${baseKey}:${scope}` : baseKey;
+const canonicalKey = (baseKey: string): string => {
+  const scope = getAppStorageScope();
+  return `${baseKey}:${scope || '__root__'}`;
 };
 
 /**
- * Copy unscoped keys into this instance once, then drop the shared keys so other
- * folders on the same host (e.g. /ERP3) no longer read the same favorites.
+ * Copy this folder's previous mixed-case key (e.g. :/ERP3) into the lowercase
+ * canonical key. Never reads or deletes the old shared unscoped keys.
  */
-const migrateLegacyPublicFavoriteKeys = (): void => {
-  if (didMigrateLegacyKeys) return;
-  didMigrateLegacyKeys = true;
-
-  if (typeof window === 'undefined') return;
-
-  const scope = getAppBasePath();
-  if (!scope) return;
-
+const normalizeThisInstanceKeys = (): void => {
+  if (didNormalizeScopeCase || typeof window === 'undefined') return;
+  didNormalizeScopeCase = true;
+  const path = getAppBasePath();
+  if (!path) return;
   try {
     for (const baseKey of PUBLIC_FAVORITE_BASE_KEYS) {
-      const scopedKey = `${baseKey}:${scope}`;
-      if (localStorage.getItem(scopedKey) !== null) continue;
-      const legacy = localStorage.getItem(baseKey);
-      if (legacy === null) continue;
-      localStorage.setItem(scopedKey, legacy);
-    }
-    for (const baseKey of PUBLIC_FAVORITE_BASE_KEYS) {
-      localStorage.removeItem(baseKey);
+      const canon = canonicalKey(baseKey);
+      if (localStorage.getItem(canon) !== null) continue;
+      const alt = `${baseKey}:${path}`;
+      if (alt === canon) continue;
+      const value = localStorage.getItem(alt);
+      if (value !== null) {
+        localStorage.setItem(canon, value);
+      }
     }
   } catch {
-    // localStorage may be blocked; callers already handle that
+    // localStorage may be blocked
   }
 };
 
 const storageKey = (baseKey: string): string => {
-  migrateLegacyPublicFavoriteKeys();
-  return scopedStorageKey(baseKey);
+  normalizeThisInstanceKeys();
+  return canonicalKey(baseKey);
 };
 
 export interface PublicFavoriteLinkDetail {

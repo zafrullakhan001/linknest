@@ -1,3 +1,5 @@
+import { resolveApiBase } from './apiHelpers';
+
 export interface User {
   id: number;
   username: string;
@@ -89,9 +91,7 @@ export interface UserListItem {
   is_admin?: boolean;
 }
 
-// API_BASE uses relative URLs (starting with /) which are protocol-agnostic
-// This ensures the app works with both HTTP and HTTPS automatically
-const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+const API_BASE = resolveApiBase();
 
 /** Format LDAP API errors with diagnostic details for admins */
 function formatLdapError(data: { error?: string; details?: Record<string, unknown> }): string {

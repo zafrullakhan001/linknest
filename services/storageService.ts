@@ -1,24 +1,6 @@
 import { Tile } from '../types';
+import { resolveApiBase } from './apiHelpers';
 
-/** Resolve API base for subpath deploys (e.g. /linknest) when VITE_API_BASE is unset. */
-function resolveApiBase(): string {
-  const envBase = (import.meta as any)?.env?.VITE_API_BASE;
-  if (envBase) {
-    return envBase;
-  }
-  if (typeof window !== 'undefined') {
-    const path = window.location.pathname || '';
-    if (path !== '/' && path.length > 1) {
-      const cleanPath = path.replace(/\/[^/]*$/, '').replace(/\/$/, '');
-      if (cleanPath && cleanPath !== '/') {
-        return `${cleanPath}/api`;
-      }
-    }
-  }
-  return '/api';
-}
-
-// Relative URLs — protocol-agnostic; re-resolve at call sites when needed for subpaths
 const API_BASE = resolveApiBase();
 
 // Transform API response to Tile format

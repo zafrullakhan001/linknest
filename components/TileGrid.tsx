@@ -13,6 +13,7 @@ import {
   restoreImportedTileAssets
 } from '../services/spaceTransferService';
 import { authService, UserListItem } from '../services/authService';
+import { resolveApiBase } from '../services/apiHelpers';
 import { useAuth } from '../contexts/AuthContext';
 import { userPreferencesService } from '../services/userPreferencesService';
 import { getPublicFavorites, togglePublicFavorite, isPublicFavorite, getPublicActiveTab, setPublicActiveTab, exportPublicFavorites, importPublicFavorites, clearPublicFavorites, getPublicLinkFavorites, togglePublicLinkFavorite, clearPublicLinkFavorites, getPublicLinkFavoriteDetails, syncPublicLinkFavoriteDetails, upsertPublicLinkFavoriteDetail, removePublicLinkFavoriteDetail } from '../services/publicFavoritesService';
@@ -228,26 +229,6 @@ const HeaderImageTilePreview: React.FC<{
     </div>
   );
 };
-
-// Resolve API base dynamically
-function resolveApiBase(): string {
-  const envBase = (import.meta as any)?.env?.VITE_API_BASE;
-  if (envBase) {
-    return envBase;
-  }
-
-  if (typeof window !== 'undefined') {
-    const path = window.location.pathname || '';
-    if (path !== '/' && path.length > 1) {
-      const cleanPath = path.replace(/\/[^/]*$/, '').replace(/\/$/, '');
-      if (cleanPath && cleanPath !== '/') {
-        return `${cleanPath}/api`;
-      }
-    }
-  }
-
-  return '/api';
-}
 
 /**
  * Tooltips for navigation tabs and inline filters.
@@ -6647,7 +6628,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       if (oldestTile.userId) {
         try {
           // Fetch owner info
-          const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+          const API_BASE = resolveApiBase();
           const response = await fetch(`${API_BASE}/auth/user/${oldestTile.userId}`, {
             credentials: 'include'
           });
