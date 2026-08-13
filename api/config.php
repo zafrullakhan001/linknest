@@ -5,17 +5,43 @@ ini_set('log_errors', 1);
 // PHP 8.5+: keep runtime clean; deprecations (e.g. curl_close) must not surface as API failures.
 error_reporting(E_ALL & ~E_DEPRECATED & ~E_STRICT);
 
-// Set timezone to match system time
-// On Windows, ALWAYS use the Windows system timezone to match the system clock
-// This overrides php.ini settings to ensure times match what the user sees on their system
-if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
-    // On Windows, detect and use the actual Windows system timezone
+// Set timezone once per request. On Windows, tzutil/w32tm are cached to disk —
+// shell_exec on every API call added tens-to-hundreds of ms to home-page boot.
+(function () {
+    static $applied = false;
+    if ($applied) {
+        return;
+    }
+    $applied = true;
+
+    if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
+        $tz = ini_get('date.timezone');
+        date_default_timezone_set(!empty($tz) ? $tz : (@date_default_timezone_get() ?: 'UTC'));
+        return;
+    }
+
+    $cacheFile = __DIR__ . '/../data/cache/windows_timezone.txt';
+    $cacheDir = dirname($cacheFile);
+    if (!is_dir($cacheDir)) {
+        @mkdir($cacheDir, 0755, true);
+    }
+    if (is_file($cacheFile) && (time() - (int)@filemtime($cacheFile)) < 86400) {
+        $cachedTz = trim((string)@file_get_contents($cacheFile));
+        if ($cachedTz !== '') {
+            try {
+                date_default_timezone_set($cachedTz);
+                return;
+            } catch (Throwable $e) {
+                // stale/invalid cache — detect again
+            }
+        }
+    }
+
+    $phpTz = @date_default_timezone_get() ?: 'UTC';
     try {
-        // Get Windows timezone using tzutil (Windows Vista+)
         $output = @shell_exec('tzutil /g 2>nul');
         if ($output) {
             $winTz = trim($output);
-            // Common Windows to PHP timezone mappings
             $tzMap = [
                 'Eastern Standard Time' => 'America/New_York',
                 'Central Standard Time' => 'America/Chicago',
@@ -36,46 +62,27 @@ if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
                 'US Pacific Standard Time' => 'America/Los_Angeles',
             ];
             if (isset($tzMap[$winTz])) {
-                date_default_timezone_set($tzMap[$winTz]);
+                $phpTz = $tzMap[$winTz];
             } else {
-                // Try to use offset-based detection for unmapped timezones
                 $offsetHours = @shell_exec('w32tm /tz 2>nul');
                 if ($offsetHours && preg_match('/Bias: -?(\d+)/', $offsetHours, $matches)) {
                     $biasMinutes = (int)$matches[1];
-                    $offsetHours = -$biasMinutes / 60;
-                    // Create timezone from offset (e.g., Etc/GMT+5 for GMT-5)
-                    // Note: PHP uses inverted sign for Etc/GMT timezones
-                    $tzName = sprintf('Etc/GMT%+d', (int)-$offsetHours);
-                    @date_default_timezone_set($tzName);
-                } else {
-                    // Fallback: log warning and use PHP's detected timezone
-                    $detectedTz = @date_default_timezone_get();
-                    error_log("Warning: Could not map Windows timezone '$winTz' to PHP timezone. Using: " . ($detectedTz ?: 'UTC'));
-                    date_default_timezone_set($detectedTz ?: 'UTC');
+                    $phpTz = sprintf('Etc/GMT%+d', (int)-(-$biasMinutes / 60));
                 }
             }
-        } else {
-            // tzutil not available, try using PHP's detected timezone
-            $detectedTz = @date_default_timezone_get();
-            error_log("Warning: Could not detect Windows timezone using tzutil. Using: " . ($detectedTz ?: 'UTC'));
-            date_default_timezone_set($detectedTz ?: 'UTC');
         }
-    } catch (Exception $e) {
-        // If detection fails completely, fall back to PHP's detected timezone
-        $detectedTz = @date_default_timezone_get();
-        error_log("Error detecting Windows timezone: " . $e->getMessage() . ". Using: " . ($detectedTz ?: 'UTC'));
-        date_default_timezone_set($detectedTz ?: 'UTC');
+    } catch (Throwable $e) {
+        error_log('Error detecting Windows timezone: ' . $e->getMessage() . '. Using: ' . $phpTz);
     }
-} else {
-    // Non-Windows: respect php.ini or auto-detect
-    $tz = ini_get('date.timezone');
-    if (empty($tz)) {
-        $detectedTz = @date_default_timezone_get();
-        date_default_timezone_set($detectedTz ?: 'UTC');
-    } else {
-        date_default_timezone_set($tz);
+
+    try {
+        date_default_timezone_set($phpTz);
+    } catch (Throwable $e) {
+        date_default_timezone_set('UTC');
+        $phpTz = 'UTC';
     }
-}
+    @file_put_contents($cacheFile, $phpTz, LOCK_EX);
+})();
 
 // Start output buffering to prevent any accidental output
 if (!ob_get_level()) {
@@ -118,6 +125,27 @@ define('SYSTEM_TOKEN', 'linknest_secret_token_123'); // Change this for producti
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
     define('LINKNEST_SCHEMA_VERSION', 85);
+}
+
+function getSchemaPatchFlagPath(): string {
+    $dir = (defined('DB_DIR') ? DB_DIR : (__DIR__ . '/../data')) . DIRECTORY_SEPARATOR . 'cache';
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0755, true);
+    }
+    return $dir . DIRECTORY_SEPARATOR . 'schema_patches_v' . (int)LINKNEST_SCHEMA_VERSION . '.ok';
+}
+
+function schemaPatchesAlreadyApplied(): bool {
+    static $cached = null;
+    if ($cached !== null) {
+        return $cached;
+    }
+    $cached = is_file(getSchemaPatchFlagPath());
+    return $cached;
+}
+
+function markSchemaPatchesApplied(): void {
+    @file_put_contents(getSchemaPatchFlagPath(), (string)time());
 }
 
 /**
@@ -616,12 +644,15 @@ function initDatabase() {
             $currentVersion = 0;
         }
         if ($currentVersion >= (int)LINKNEST_SCHEMA_VERSION) {
-            ensureTilesHeaderImageColumns($db);
-            ensureTilesSearchTagsColumn($db);
-            ensureSshConnectionColorColumn($db);
-            ensureTabSectionEmojiColumns($db);
-            ensurePublicGuestRole($db);
-            ensureRoleLinkActionDefaults($db);
+            if (!schemaPatchesAlreadyApplied()) {
+                ensureTilesHeaderImageColumns($db);
+                ensureTilesSearchTagsColumn($db);
+                ensureSshConnectionColorColumn($db);
+                ensureTabSectionEmojiColumns($db);
+                ensurePublicGuestRole($db);
+                ensureRoleLinkActionDefaults($db);
+                markSchemaPatchesApplied();
+            }
             return $db;
         }
 
@@ -635,12 +666,15 @@ function initDatabase() {
             $currentVersion = 0;
         }
         if ($currentVersion >= (int)LINKNEST_SCHEMA_VERSION) {
-            ensureTilesHeaderImageColumns($db);
-            ensureTilesSearchTagsColumn($db);
-            ensureSshConnectionColorColumn($db);
-            ensureTabSectionEmojiColumns($db);
-            ensurePublicGuestRole($db);
-            ensureRoleLinkActionDefaults($db);
+            if (!schemaPatchesAlreadyApplied()) {
+                ensureTilesHeaderImageColumns($db);
+                ensureTilesSearchTagsColumn($db);
+                ensureSshConnectionColorColumn($db);
+                ensureTabSectionEmojiColumns($db);
+                ensurePublicGuestRole($db);
+                ensureRoleLinkActionDefaults($db);
+                markSchemaPatchesApplied();
+            }
             releaseDatabaseInitLock($initLock);
             $initLock = null;
             return $db;

@@ -46,12 +46,16 @@ if (!empty($path)) {
     $apiPos = strpos($parsedPath, '/api');
     if ($apiPos !== false) {
         $path = substr($parsedPath, $apiPos + 4); // +4 for '/api'
-        error_log("api/index.php: Extracted path after /api: $path");
+        if ($apiDebugLog) {
+            error_log("api/index.php: Extracted path after /api: $path");
+        }
     } else {
         // If path doesn't contain /api, it might be a direct request
         // Check if it's just the endpoint name (e.g., /styles, /settings)
         $path = $parsedPath;
-        error_log("api/index.php: No /api found, using parsed path: $path");
+        if ($apiDebugLog) {
+            error_log("api/index.php: No /api found, using parsed path: $path");
+        }
     }
     
     // Ensure path starts with / for routing
@@ -65,7 +69,9 @@ if (empty($path)) {
     $path = '/';
 }
 
-error_log("api/index.php: Final normalized path: $path");
+if ($apiDebugLog) {
+    error_log("api/index.php: Final normalized path: $path");
+}
 
 // Start session once for all API requests so clone, chat, broadcast, auth, roles have cookies
 if (session_status() === PHP_SESSION_NONE) {
@@ -147,16 +153,20 @@ if ($path === '/') {
 } elseif (strpos($path, '/widgets') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 8); // Remove '/widgets'
     require __DIR__ . '/widgets.php';
-} elseif (strpos($path, '/clone') === 0) {
-    error_log("api/index.php: Matched /clone route");
+    } elseif (strpos($path, '/clone') === 0) {
+    if ($apiDebugLog) {
+        error_log("api/index.php: Matched /clone route");
+    }
     $remainingPath = substr($path, 6); // Remove '/clone'
     if (empty($remainingPath) || $remainingPath === '/') {
         $_SERVER['PATH_INFO'] = '/';
     } else {
         $_SERVER['PATH_INFO'] = $remainingPath;
     }
-    error_log("api/index.php: Setting PATH_INFO to: " . $_SERVER['PATH_INFO']);
-    error_log("api/index.php: Requiring clone.php");
+    if ($apiDebugLog) {
+        error_log("api/index.php: Setting PATH_INFO to: " . $_SERVER['PATH_INFO']);
+        error_log("api/index.php: Requiring clone.php");
+    }
     require __DIR__ . '/clone.php';
 } elseif (strpos($path, '/browsers') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 9); // Remove '/browsers'
@@ -219,7 +229,9 @@ if ($path === '/') {
     require __DIR__ . '/ssh_gateway.php';
     exit;
 } elseif (strpos($path, '/notes') === 0) {
-    error_log("api/index.php: Matched /notes route, path: $path");
+    if ($apiDebugLog) {
+        error_log("api/index.php: Matched /notes route, path: $path");
+    }
     $remainingPath = substr($path, 6); // Remove '/notes'
     // Set PATH_INFO - use '/' for root endpoint, or ensure sub-paths start with /
     if (empty($remainingPath) || $remainingPath === '/') {
@@ -227,8 +239,10 @@ if ($path === '/') {
     } else {
         $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
     }
-    error_log("api/index.php: Setting PATH_INFO to: " . $_SERVER['PATH_INFO']);
-    error_log("api/index.php: Requiring notes.php");
+    if ($apiDebugLog) {
+        error_log("api/index.php: Setting PATH_INFO to: " . $_SERVER['PATH_INFO']);
+        error_log("api/index.php: Requiring notes.php");
+    }
     require __DIR__ . '/notes.php';
     exit; // Prevent any further execution
 } elseif (strpos($path, '/broadcast') === 0) {

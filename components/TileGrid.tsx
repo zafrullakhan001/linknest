@@ -29,24 +29,13 @@ const Monitorv2Dashboard = lazy(() =>
 import { getDisabledTabsFromSettings } from '../services/tabVisibilityService';
 import { rolesService } from '../services/rolesService';
 import { FaTimes } from 'react-icons/fa';
-import { LinkInfoDialog } from './LinkInfoDialog';
-import { LinkNotesDialog } from './LinkNotesDialog';
 import { useMobile } from '../hooks/useMobile';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { getDisplayUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
 import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
 import { MobileTileView } from './MobileTileView';
-import { StagingOverview } from './StagingOverview';
-import { StagingOfflineKit, StagingOfflineKitHandle } from './StagingOfflineKit';
-import { YourAppsOverview } from './YourAppsOverview';
-import { PrivateOverview } from './PrivateOverview';
-import { ScheduledOverview } from './ScheduledOverview';
-import { ExpiredOverview } from './ExpiredOverview';
-import { ArchiveOverview } from './ArchiveOverview';
-import { MonitoringOverview } from './MonitoringOverview';
-import { RecycleBinOverview } from './RecycleBinOverview';
-import { TileInfoDialog } from './TileInfoDialog';
+import type { StagingOfflineKitHandle } from './StagingOfflineKit';
 import { FormSection, FormLabel, SpaceModalHeader, EditModalTabButton } from './SpaceFormChrome';
 import { SearchTagsInput } from './SearchTagsInput';
 import { EmojiPickerPopover } from './EmojiPickerPanel';
@@ -70,8 +59,21 @@ import { TileStars } from './TileStars';
 import { TileRainbow } from './TileRainbow';
 import { SharedTileNotifications } from './SharedTileNotifications';
 import { BlockedUsersSection } from './BlockedUsersSection';
-import { ShareTileDialog } from './ShareTileDialog';
 import { removeSharedTile, blockUser, getPendingInvitations, getBlockedUsers } from '../services/tileShareService';
+
+const LinkInfoDialog = lazy(() => import('./LinkInfoDialog').then(m => ({ default: m.LinkInfoDialog })));
+const LinkNotesDialog = lazy(() => import('./LinkNotesDialog').then(m => ({ default: m.LinkNotesDialog })));
+const StagingOverview = lazy(() => import('./StagingOverview').then(m => ({ default: m.StagingOverview })));
+const StagingOfflineKit = lazy(() => import('./StagingOfflineKit').then(m => ({ default: m.StagingOfflineKit })));
+const YourAppsOverview = lazy(() => import('./YourAppsOverview').then(m => ({ default: m.YourAppsOverview })));
+const PrivateOverview = lazy(() => import('./PrivateOverview').then(m => ({ default: m.PrivateOverview })));
+const ScheduledOverview = lazy(() => import('./ScheduledOverview').then(m => ({ default: m.ScheduledOverview })));
+const ExpiredOverview = lazy(() => import('./ExpiredOverview').then(m => ({ default: m.ExpiredOverview })));
+const ArchiveOverview = lazy(() => import('./ArchiveOverview').then(m => ({ default: m.ArchiveOverview })));
+const MonitoringOverview = lazy(() => import('./MonitoringOverview').then(m => ({ default: m.MonitoringOverview })));
+const RecycleBinOverview = lazy(() => import('./RecycleBinOverview').then(m => ({ default: m.RecycleBinOverview })));
+const TileInfoDialog = lazy(() => import('./TileInfoDialog').then(m => ({ default: m.TileInfoDialog })));
+const ShareTileDialog = lazy(() => import('./ShareTileDialog').then(m => ({ default: m.ShareTileDialog })));
 
 
 
@@ -7286,7 +7288,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
       {/* Staging overview + AI Offline Kit (admin) */}
       {activeTab === 'staging' && isAuthenticated && user?.is_admin && (
-        <>
+        <Suspense fallback={null}>
           <StagingOverview
             spaceCount={stagingTiles.length}
             onDownloadTemplates={handleDownloadBothStagingTemplates}
@@ -7299,16 +7301,18 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             onCsvFileChange={handleStagingCsvToJson}
             onJsonFileChange={handleStagingImportJson}
           />
-        </>
+        </Suspense>
       )}
 
       {/* Your Apps overview + filter actions */}
       {activeTab === 'your-apps' && isAuthenticated && (
         <>
-          <YourAppsOverview
-            spaceCount={Object.values(groupedTiles).reduce((acc: number, group: Tile[]) => acc + group.length, 0)}
-            onSelectFilter={setYourAppsFilter}
-          />
+          <Suspense fallback={null}>
+            <YourAppsOverview
+              spaceCount={Object.values(groupedTiles).reduce((acc: number, group: Tile[]) => acc + group.length, 0)}
+              onSelectFilter={setYourAppsFilter}
+            />
+          </Suspense>
           <div className="flex items-center gap-2 py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 overflow-x-auto">
             <button
               onClick={() => setYourAppsFilter('authenticated')}
@@ -7339,15 +7343,17 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       {/* Private overview + sub-tabs: Spaces | Sharing | Blocked + Filter (when Spaces) */}
       {activeTab === 'private' && isAuthenticated && (
         <>
-          <PrivateOverview
-            spaceCount={
-              privateSubTab === 'spaces'
-                ? Object.values(groupedTiles).reduce((acc: number, group: Tile[]) => acc + group.length, 0)
-                : 0
-            }
-            pendingInvitationsCount={pendingInvitationsCount}
-            onSelectSubTab={setPrivateSubTab}
-          />
+          <Suspense fallback={null}>
+            <PrivateOverview
+              spaceCount={
+                privateSubTab === 'spaces'
+                  ? Object.values(groupedTiles).reduce((acc: number, group: Tile[]) => acc + group.length, 0)
+                  : 0
+              }
+              pendingInvitationsCount={pendingInvitationsCount}
+              onSelectSubTab={setPrivateSubTab}
+            />
+          </Suspense>
           <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
             <div className="flex items-center gap-1">
               <button
@@ -7423,22 +7429,28 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
       {/* Scheduled overview */}
       {activeTab === 'scheduled' && isAuthenticated && (
-        <ScheduledOverview
-          spaceCount={Object.values(groupedTiles).reduce((acc: number, group: Tile[]) => acc + group.length, 0)}
-        />
+        <Suspense fallback={null}>
+          <ScheduledOverview
+            spaceCount={Object.values(groupedTiles).reduce((acc: number, group: Tile[]) => acc + group.length, 0)}
+          />
+        </Suspense>
       )}
 
       {/* Expired overview */}
       {activeTab === 'expired' && isAuthenticated && (
-        <ExpiredOverview
-          spaceCount={Object.values(groupedTiles).reduce((acc: number, group: Tile[]) => acc + group.length, 0)}
-        />
+        <Suspense fallback={null}>
+          <ExpiredOverview
+            spaceCount={Object.values(groupedTiles).reduce((acc: number, group: Tile[]) => acc + group.length, 0)}
+          />
+        </Suspense>
       )}
 
       {/* Archive overview + actions */}
       {activeTab === 'archive' && isAuthenticated && (
         <>
-          <ArchiveOverview spaceCount={archiveTiles.length} />
+          <Suspense fallback={null}>
+            <ArchiveOverview spaceCount={archiveTiles.length} />
+          </Suspense>
           <div className="flex items-center justify-between py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
             <div className="text-sm text-slate-600 dark:text-slate-400">
               {isLoadingArchive ? (
@@ -7487,7 +7499,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       {/* Recycle Bin overview + actions */}
       {activeTab === 'recycle-bin' && isAuthenticated && (
         <>
-          <RecycleBinOverview spaceCount={recycleBinTiles.length} />
+          <Suspense fallback={null}>
+            <RecycleBinOverview spaceCount={recycleBinTiles.length} />
+          </Suspense>
           <div className="flex items-center justify-between py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
             <div className="text-sm text-slate-600 dark:text-slate-400">
               {isLoadingRecycleBin ? (
@@ -7911,12 +7925,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       })()}
 
       {activeTab === 'monitoring' && (
-        <>
+        <Suspense fallback={<div className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">Loading monitoring…</div>}>
           <MonitoringOverview hasMonitorv2={!isTabDisabledBySettings('monitorv2')} />
-          <Suspense fallback={<div className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">Loading monitoring…</div>}>
-            <MonitoringDashboard />
-          </Suspense>
-        </>
+          <MonitoringDashboard />
+        </Suspense>
       )}
       {activeTab === 'monitorv2' && (
         <Suspense fallback={<div className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">Loading monitoring…</div>}>
@@ -12906,40 +12918,50 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
       {/* Link Info Dialog */}
       {linkInfoDialog && (
-        <LinkInfoDialog
-          isOpen={!!linkInfoDialog}
-          onClose={() => setLinkInfoDialog(null)}
-          linkLabel={linkInfoDialog.link.label}
-          linkIcon={linkInfoDialog.link.icon}
-          richTextContent={linkInfoDialog.link.richTextContent || ''}
-          linkUrl={linkInfoDialog.link.url}
-          browser={linkInfoDialog.link.browser}
-        />
+        <Suspense fallback={null}>
+          <LinkInfoDialog
+            isOpen={!!linkInfoDialog}
+            onClose={() => setLinkInfoDialog(null)}
+            linkLabel={linkInfoDialog.link.label}
+            linkIcon={linkInfoDialog.link.icon}
+            richTextContent={linkInfoDialog.link.richTextContent || ''}
+            linkUrl={linkInfoDialog.link.url}
+            browser={linkInfoDialog.link.browser}
+          />
+        </Suspense>
       )}
 
       {/* Favorite Link Notes Dialog */}
-      <LinkNotesDialog
-        isOpen={!!favNotesDialogState}
-        onClose={() => setFavNotesDialogState(null)}
-        linkLabel={favNotesDialogState?.linkLabel || ''}
-        notes={favNotesDialogState?.notes || ''}
-      />
+      {favNotesDialogState && (
+        <Suspense fallback={null}>
+          <LinkNotesDialog
+            isOpen={!!favNotesDialogState}
+            onClose={() => setFavNotesDialogState(null)}
+            linkLabel={favNotesDialogState.linkLabel || ''}
+            notes={favNotesDialogState.notes || ''}
+          />
+        </Suspense>
+      )}
 
       {/* Tile/Category Info Dialog */}
       {shareTileDialog && (
-        <ShareTileDialog
-          tile={shareTileDialog}
-          onClose={() => setShareTileDialog(null)}
-          onShared={() => { getTiles().then(t => onUpdateTiles(t, false)); }}
-        />
+        <Suspense fallback={null}>
+          <ShareTileDialog
+            tile={shareTileDialog}
+            onClose={() => setShareTileDialog(null)}
+            onShared={() => { getTiles().then(t => onUpdateTiles(t, false)); }}
+          />
+        </Suspense>
       )}
       {tileInfoDialog && (
-        <TileInfoDialog
-          isOpen={!!tileInfoDialog}
-          onClose={handleCloseTileInfoDialog}
-          tile={tileInfoDialog.tile}
-          categoryInfo={tileInfoDialog.categoryInfo}
-        />
+        <Suspense fallback={null}>
+          <TileInfoDialog
+            isOpen={!!tileInfoDialog}
+            onClose={handleCloseTileInfoDialog}
+            tile={tileInfoDialog.tile}
+            categoryInfo={tileInfoDialog.categoryInfo}
+          />
+        </Suspense>
       )}
     </div >
   );

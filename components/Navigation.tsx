@@ -1,12 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, lazy, Suspense } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { useMobile } from '../hooks/useMobile';
 import { getDisabledTabsFromSettings } from '../services/tabVisibilityService';
 import { getUpdaterStatus } from '../services/updaterService';
 import { ProfileMenu } from './ProfileMenu';
-import { QRCodeDialog } from './QRCodeDialog';
-import { UpdatesDialog } from './UpdatesDialog';
+
+const QRCodeDialog = lazy(() => import('./QRCodeDialog').then(m => ({ default: m.QRCodeDialog })));
+const UpdatesDialog = lazy(() => import('./UpdatesDialog').then(m => ({ default: m.UpdatesDialog })));
 
 interface NavigationProps {
   darkMode: boolean;
@@ -466,20 +467,26 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
         </div>
       </div>
 
-      <QRCodeDialog
-        isOpen={showAppQrDialog}
-        onClose={() => setShowAppQrDialog(false)}
-        url={appShareUrl}
-        label={appShareLabel}
-      />
-      <UpdatesDialog
-        isOpen={showUpdatesDialog}
-        onClose={() => setShowUpdatesDialog(false)}
-        onUpdateAvailabilityChange={(available, count) => {
-          setUpdateAvailable(available);
-          setUpdateCount(count);
-        }}
-      />
+      <Suspense fallback={null}>
+        {showAppQrDialog && (
+          <QRCodeDialog
+            isOpen={showAppQrDialog}
+            onClose={() => setShowAppQrDialog(false)}
+            url={appShareUrl}
+            label={appShareLabel}
+          />
+        )}
+        {showUpdatesDialog && (
+          <UpdatesDialog
+            isOpen={showUpdatesDialog}
+            onClose={() => setShowUpdatesDialog(false)}
+            onUpdateAvailabilityChange={(available, count) => {
+              setUpdateAvailable(available);
+              setUpdateCount(count);
+            }}
+          />
+        )}
+      </Suspense>
     </nav>
   );
 };

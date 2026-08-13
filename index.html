@@ -106,8 +106,22 @@
       }
     })();
   </script>
-  <!-- Browser Launcher Pro Integration Script -->
-  <script type="module" src="land/browser-launcher-integration.js?v=2.0"></script>
+  <!-- Browser Launcher Pro — load after first paint so it does not compete with the app bundle -->
+  <script>
+    (function () {
+      var load = function () {
+        var s = document.createElement('script');
+        s.type = 'module';
+        s.src = 'land/browser-launcher-integration.js?v=2.0';
+        document.head.appendChild(s);
+      };
+      if ('requestIdleCallback' in window) {
+        requestIdleCallback(load, { timeout: 4000 });
+      } else {
+        window.addEventListener('load', function () { setTimeout(load, 1); });
+      }
+    })();
+  </script>
 </head>
 
 <body>

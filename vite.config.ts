@@ -77,12 +77,13 @@ export default defineConfig(({ mode }) => {
       modulePreload: {
         polyfill: true,
         resolveDependencies: (filename, deps) => {
-          // Preload critical chunks
+          // Preload critical chunks for the home grid
           if (filename.includes('index')) {
             return deps.filter(dep =>
               dep.includes('react-vendor') ||
               dep.includes('vendor') ||
-              dep.includes('index')
+              dep.includes('index') ||
+              dep.includes('tile-grid')
             );
           }
           return deps;
@@ -141,6 +142,15 @@ export default defineConfig(({ mode }) => {
                 id.includes('internmap') ||
                 id.includes('delaunator') ||
                 id.includes('robust-predicates')
+              ) {
+                return;
+              }
+              // Keep SSH/VNC/QR libraries with their lazy widgets — not the home-page vendor chunk
+              if (
+                id.includes('@xterm') ||
+                id.includes('@novnc') ||
+                id.includes('qrcode.react') ||
+                id.includes('qrcode')
               ) {
                 return;
               }

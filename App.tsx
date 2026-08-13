@@ -8,36 +8,9 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SettingsProvider, useSettings, readBrandingCache } from './contexts/SettingsContext';
 import { StyleProvider, useStyles } from './contexts/StyleContext';
 import { AuthModal } from './components/AuthModal';
-import { TimezoneDisplay } from './components/TimezoneDisplay';
-import { HelpAboutDialog } from './components/HelpAboutDialog';
 import { getDisabledTabsFromSettings } from './services/tabVisibilityService';
-import { FloatingClock } from './components/FloatingClock';
-import { FloatingPhoneticAlphabet } from './components/FloatingPhoneticAlphabet';
-import { PhoneticAlphabet } from './components/PhoneticAlphabet';
-import { FloatingNotesWidget } from './components/FloatingNotesWidget';
-import { NotesWidget } from './components/NotesWidget';
-import { FloatingWeatherWidget } from './components/FloatingWeatherWidget';
-import { WeatherWidget } from './components/WeatherWidget';
-import { FloatingCalculatorWidget } from './components/FloatingCalculatorWidget';
-import { CalculatorWidget } from './components/CalculatorWidget';
-import { FloatingPasswordGeneratorWidget } from './components/FloatingPasswordGeneratorWidget';
-import { PasswordGeneratorWidget } from './components/PasswordGeneratorWidget';
-import { BroadcastBanner } from './components/BroadcastBanner';
 import { MaintenancePage } from './components/MaintenancePage';
-import { FloatingPageZoomControl } from './components/FloatingPageZoomControl';
-import { PageZoomWidget } from './components/PageZoomControl';
-import { FloatingThemeWidget } from './components/FloatingThemeWidget';
-import { ThemeWidget } from './components/ThemeWidget';
-import { FloatingFavOrganizerWidget } from './components/FloatingFavOrganizerWidget';
-import { FavOrganizerWidget } from './components/FavOrganizerWidget';
-import { FloatingChatWidget } from './components/FloatingChatWidget';
-import { ChatWidget } from './components/ChatWidget';
-import { FloatingSnakeGameWidget } from './components/FloatingSnakeGameWidget';
-import { SnakeGameWidget } from './components/SnakeGameWidget';
-import { FloatingVncViewerWidget } from './components/FloatingVncViewerWidget';
-import { VncViewerWidget } from './components/VncViewerWidget';
-import { FloatingSshTerminalWidget } from './components/FloatingSshTerminalWidget';
-import { SshTerminalWidget } from './components/SshTerminalWidget';
+import { BroadcastBanner } from './components/BroadcastBanner';
 import {
   OPEN_SSH_TERMINAL_EVENT,
   type OpenSshTerminalDetail,
@@ -47,13 +20,10 @@ import {
   type OpenVncViewerDetail,
 } from './utils/vncLink';
 import { themeService } from './services/themeService';
-import { getMessages, ChatMessage } from './services/chatService';
-import { WidgetQuickAccess } from './components/WidgetQuickAccess';
-import { FloatingWidgetQuickAccess } from './components/FloatingWidgetQuickAccess';
+import { getMessages } from './services/chatService';
 import { useMobile } from './hooks/useMobile';
 import { getAllowedWidgets } from './services/widgetService';
 import { performanceAnalyticsService } from './services/performanceAnalyticsService';
-import { CelebrationEffects } from './components/CelebrationEffects';
 
 // Lazy load heavy components for better initial load performance
 const TileGrid = lazy(() => import('./components/TileGrid').then(m => ({ default: m.TileGrid })));
@@ -61,6 +31,44 @@ const TileDetail = lazy(() => import('./components/TileDetail').then(m => ({ def
 const AdminPanel = lazy(() => import('./components/AdminPanel').then(m => ({ default: m.AdminPanel })));
 const StyleManager = lazy(() => import('./components/StyleManager').then(m => ({ default: m.StyleManager })));
 const PageBackgroundDialog = lazy(() => import('./components/PageBackgroundDialog').then(m => ({ default: m.PageBackgroundDialog })));
+const HelpAboutDialog = lazy(() => import('./components/HelpAboutDialog').then(m => ({ default: m.HelpAboutDialog })));
+const CelebrationEffects = lazy(() => import('./components/CelebrationEffects').then(m => ({ default: m.CelebrationEffects })));
+const WidgetQuickAccess = lazy(() => import('./components/WidgetQuickAccess').then(m => ({ default: m.WidgetQuickAccess })));
+const FloatingWidgetQuickAccess = lazy(() => import('./components/FloatingWidgetQuickAccess').then(m => ({ default: m.FloatingWidgetQuickAccess })));
+const FloatingClock = lazy(() => import('./components/FloatingClock').then(m => ({ default: m.FloatingClock })));
+const TimezoneDisplay = lazy(() => import('./components/TimezoneDisplay').then(m => ({ default: m.TimezoneDisplay })));
+const FloatingPhoneticAlphabet = lazy(() => import('./components/FloatingPhoneticAlphabet').then(m => ({ default: m.FloatingPhoneticAlphabet })));
+const PhoneticAlphabet = lazy(() => import('./components/PhoneticAlphabet').then(m => ({ default: m.PhoneticAlphabet })));
+const FloatingNotesWidget = lazy(() => import('./components/FloatingNotesWidget').then(m => ({ default: m.FloatingNotesWidget })));
+const NotesWidget = lazy(() => import('./components/NotesWidget').then(m => ({ default: m.NotesWidget })));
+const FloatingWeatherWidget = lazy(() => import('./components/FloatingWeatherWidget').then(m => ({ default: m.FloatingWeatherWidget })));
+const WeatherWidget = lazy(() => import('./components/WeatherWidget').then(m => ({ default: m.WeatherWidget })));
+const FloatingCalculatorWidget = lazy(() => import('./components/FloatingCalculatorWidget').then(m => ({ default: m.FloatingCalculatorWidget })));
+const CalculatorWidget = lazy(() => import('./components/CalculatorWidget').then(m => ({ default: m.CalculatorWidget })));
+const FloatingPasswordGeneratorWidget = lazy(() => import('./components/FloatingPasswordGeneratorWidget').then(m => ({ default: m.FloatingPasswordGeneratorWidget })));
+const PasswordGeneratorWidget = lazy(() => import('./components/PasswordGeneratorWidget').then(m => ({ default: m.PasswordGeneratorWidget })));
+const FloatingPageZoomControl = lazy(() => import('./components/FloatingPageZoomControl').then(m => ({ default: m.FloatingPageZoomControl })));
+const PageZoomWidget = lazy(() => import('./components/PageZoomControl').then(m => ({ default: m.PageZoomWidget })));
+const FloatingThemeWidget = lazy(() => import('./components/FloatingThemeWidget').then(m => ({ default: m.FloatingThemeWidget })));
+const ThemeWidget = lazy(() => import('./components/ThemeWidget').then(m => ({ default: m.ThemeWidget })));
+const FloatingFavOrganizerWidget = lazy(() => import('./components/FloatingFavOrganizerWidget').then(m => ({ default: m.FloatingFavOrganizerWidget })));
+const FavOrganizerWidget = lazy(() => import('./components/FavOrganizerWidget').then(m => ({ default: m.FavOrganizerWidget })));
+const FloatingChatWidget = lazy(() => import('./components/FloatingChatWidget').then(m => ({ default: m.FloatingChatWidget })));
+const ChatWidget = lazy(() => import('./components/ChatWidget').then(m => ({ default: m.ChatWidget })));
+const FloatingSnakeGameWidget = lazy(() => import('./components/FloatingSnakeGameWidget').then(m => ({ default: m.FloatingSnakeGameWidget })));
+const SnakeGameWidget = lazy(() => import('./components/SnakeGameWidget').then(m => ({ default: m.SnakeGameWidget })));
+const FloatingVncViewerWidget = lazy(() => import('./components/FloatingVncViewerWidget').then(m => ({ default: m.FloatingVncViewerWidget })));
+const VncViewerWidget = lazy(() => import('./components/VncViewerWidget').then(m => ({ default: m.VncViewerWidget })));
+const FloatingSshTerminalWidget = lazy(() => import('./components/FloatingSshTerminalWidget').then(m => ({ default: m.FloatingSshTerminalWidget })));
+const SshTerminalWidget = lazy(() => import('./components/SshTerminalWidget').then(m => ({ default: m.SshTerminalWidget })));
+
+function hasLikelySession(): boolean {
+  try {
+    return /(?:^|; )PHPSESSID=/.test(document.cookie);
+  } catch {
+    return false;
+  }
+}
 
 // Loading fallback component
 const LoadingFallback: React.FC = () => (
@@ -106,7 +114,7 @@ const AppContent: React.FC = () => {
   const [databasePath, setDatabasePath] = useState<string>('');
   const [databasePathAbsolute, setDatabasePathAbsolute] = useState<string>('');
   const { user, isAuthenticated, loading: authLoading } = useAuth();
-  const { updateStyles, styles, isLoading: stylesLoading } = useStyles();
+  const { updateStyles, styles } = useStyles();
   const { settings, loading: settingsLoading } = useSettings();
   const disabledTabs = useMemo(() => getDisabledTabsFromSettings(settings), [settings?.disabled_tabs]);
   const isMobile = useMobile(768); // Hide widgets on mobile devices (below 768px width)
@@ -288,12 +296,15 @@ const AppContent: React.FC = () => {
       }
     };
 
-    // Check immediately
-    checkUnreadMessages();
-
-    // Then poll every 5 seconds
-    const interval = setInterval(checkUnreadMessages, 5000);
-    return () => clearInterval(interval);
+    // Check shortly after first paint, then poll
+    const startDelay = window.setTimeout(() => {
+      checkUnreadMessages();
+    }, 4000);
+    const interval = setInterval(checkUnreadMessages, 15000);
+    return () => {
+      window.clearTimeout(startDelay);
+      clearInterval(interval);
+    };
   }, [isAuthenticated, showChat, user]);
 
   // Initialize theme service on mount
@@ -301,21 +312,29 @@ const AppContent: React.FC = () => {
     themeService.initialize();
   }, []);
 
-  // Performance Analytics: ensure we capture the user's best-available location
-  // (browser geolocation with IP fallback). This unblocks regional dashboards.
+  // Performance Analytics: capture location after first paint so it never delays the grid
   useEffect(() => {
-    // Don't prompt guests unless anonymous tracking is enabled server-side
-    void (async () => {
-      try {
-        const cfg = await performanceAnalyticsService.getConfig();
-        if (!cfg.enabled) return;
-        // Request browser geolocation for accurate performance analytics
-        // Works for both authenticated and anonymous users
-        await performanceAnalyticsService.ensureLocation(cfg, { allowPrompt: true });
-      } catch {
-        // ignore - analytics must never affect app UX
-      }
-    })();
+    const run = () => {
+      void (async () => {
+        try {
+          const cfg = await performanceAnalyticsService.getConfig();
+          if (!cfg.enabled) return;
+          await performanceAnalyticsService.ensureLocation(cfg, { allowPrompt: true });
+        } catch {
+          // ignore - analytics must never affect app UX
+        }
+      })();
+    };
+    const idle = (window as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback;
+    if (typeof idle === 'function') {
+      const id = idle(run, { timeout: 4000 });
+      return () => {
+        const cancel = (window as Window & { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback;
+        if (typeof cancel === 'function') cancel(id);
+      };
+    }
+    const t = window.setTimeout(run, 2000);
+    return () => window.clearTimeout(t);
   }, [isAuthenticated]);
 
   // Fetch allowed widgets when user logs in or auth state changes
@@ -701,11 +720,15 @@ const AppContent: React.FC = () => {
   // Check guest access setting
   const guestAccessEnabled = settings.guest_access_enabled !== '0'; // Default to enabled if not set
 
-  // Load data on mount
+  // Load tiles as soon as we know session state — do not wait for settings/styles APIs
   useEffect(() => {
     // Reset auth required flag when user logs in
     if (isAuthenticated) {
       setAuthRequired(false);
+    }
+
+    if (authLoading && hasLikelySession()) {
+      return;
     }
 
     // Don't load data if guest access is disabled and user is not authenticated
@@ -716,12 +739,15 @@ const AppContent: React.FC = () => {
       return;
     }
 
+    let cancelled = false;
     const loadData = async () => {
       try {
         const stored = await getTiles();
+        if (cancelled) return;
         setTiles(stored);
         setAuthRequired(false);
       } catch (error: any) {
+        if (cancelled) return;
         // If guest access is disabled and we get a 401, set auth required flag
         if (error?.message?.includes('Authentication required') || (error?.response?.status === 401)) {
           if (!isAuthenticated) {
@@ -735,14 +761,20 @@ const AppContent: React.FC = () => {
         setTiles([]);
         setAuthRequired(false);
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
-    if (!settingsLoading && (guestAccessEnabled || isAuthenticated)) {
+    if (guestAccessEnabled || isAuthenticated || settingsLoading) {
       loadData();
     }
-  }, [isAuthenticated, guestAccessEnabled, settingsLoading]); // Reload when auth state or guest access changes
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, guestAccessEnabled, settingsLoading, authLoading]);
 
   // Allow widgets (e.g. SSH → create private space) to refresh the dashboard tile list
   useEffect(() => {
@@ -755,8 +787,11 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('linknest-tiles-refresh', onRefresh);
   }, []);
 
-  // Load database path on mount
+  // Load database path only when the footer would show it
   useEffect(() => {
+    if (!showFooterDetails && !isMobile) {
+      return;
+    }
     const loadDatabasePath = async () => {
       try {
         const paths = await settingsService.getDatabasePath();
@@ -770,7 +805,7 @@ const AppContent: React.FC = () => {
     };
 
     loadDatabasePath();
-  }, []);
+  }, [showFooterDetails, isMobile]);
 
   // Fetch full tile when opening #/tile/id (home list is card summary only)
   useEffect(() => {
@@ -954,10 +989,9 @@ const AppContent: React.FC = () => {
     }
   };
 
-  // Only show loading if settings are loading OR if we're authenticated and loading tiles
-  // When guest access is disabled, also wait for auth to finish so we don't flash login before session is restored
-  // Keep Navigation mounted during load so the top bar does not pop in after the spinner
-  if (settingsLoading || stylesLoading || (authLoading && !guestAccessEnabled) || (loading && (isAuthenticated || guestAccessEnabled))) {
+  // Keep Navigation mounted during load so the top bar does not pop in after the spinner.
+  // Do not wait for settings/styles APIs — branding/styles are applied from cache before paint.
+  if ((authLoading && hasLikelySession()) || (loading && (isAuthenticated || guestAccessEnabled))) {
     return (
       <div className={`linknest-app-container min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 flex flex-col font-sans ${!isMobile ? 'pt-16' : ''}`}>
         {!isMobile && (
@@ -1283,7 +1317,9 @@ const AppContent: React.FC = () => {
       <BroadcastBanner />
       <div className="flex-grow relative min-h-0 flex flex-col">
         <div ref={celebrationContainerRef} className={`absolute inset-0 w-full overflow-hidden pointer-events-none ${styles?.celebrationShowOnForeground ? 'z-[9999]' : 'z-0'}`} aria-hidden>
-          <CelebrationEffects containerRef={celebrationContainerRef} styles={styles} />
+          <Suspense fallback={null}>
+            <CelebrationEffects containerRef={celebrationContainerRef} styles={styles} />
+          </Suspense>
         </div>
         <main className={`flex-grow mx-auto px-4 py-8 w-full linknest-page-content relative z-10 ${route === '#/admin' ? 'max-w-admin' : 'container max-w-6xl-plus'} ${styles?.backgroundRaised ? 'linknest-page-background' : ''} ${!guestAccessEnabled && !isAuthenticated ? 'flex items-center justify-center' : ''}`}>
           <div className="relative min-h-0">
@@ -1451,7 +1487,7 @@ const AppContent: React.FC = () => {
         </footer>
       {/* Hide all widgets on mobile view */}
       {!isMobile && (
-        <>
+        <Suspense fallback={null}>
           {showClock && isWidgetAllowed('clock') && (
             <FloatingClock>
               <TimezoneDisplay onClose={toggleClock} />
@@ -1553,7 +1589,7 @@ const AppContent: React.FC = () => {
               />
             </FloatingSshTerminalWidget>
           )}
-        </>
+        </Suspense>
       )}
       <AuthModal
         isOpen={authModalOpen}
@@ -1568,20 +1604,27 @@ const AppContent: React.FC = () => {
           />
         </Suspense>
       )}
-      <Suspense fallback={null}>
-        <PageBackgroundDialog
-          isOpen={pageBackgroundDialogOpen}
-          onClose={() => setPageBackgroundDialogOpen(false)}
-          styles={styles}
-          onApply={updateStyles}
-        />
-      </Suspense>
-      <HelpAboutDialog
-        isOpen={helpAboutOpen}
-        onClose={() => setHelpAboutOpen(false)}
-      />
+      {pageBackgroundDialogOpen && (
+        <Suspense fallback={null}>
+          <PageBackgroundDialog
+            isOpen={pageBackgroundDialogOpen}
+            onClose={() => setPageBackgroundDialogOpen(false)}
+            styles={styles}
+            onApply={updateStyles}
+          />
+        </Suspense>
+      )}
+      {helpAboutOpen && (
+        <Suspense fallback={null}>
+          <HelpAboutDialog
+            isOpen={helpAboutOpen}
+            onClose={() => setHelpAboutOpen(false)}
+          />
+        </Suspense>
+      )}
       {/* Hide widget quick access on mobile view */}
       {!isMobile && showWidgetQuickAccess && (
+        <Suspense fallback={null}>
         <FloatingWidgetQuickAccess>
           <WidgetQuickAccess
             onClose={() => setShowWidgetQuickAccess(false)}
@@ -1765,6 +1808,7 @@ const AppContent: React.FC = () => {
             ].filter(widget => isWidgetAllowed(widget.id))}
           />
         </FloatingWidgetQuickAccess>
+        </Suspense>
       )}
     </div>
   );

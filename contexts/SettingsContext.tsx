@@ -23,6 +23,8 @@ const BRANDING_HYDRATE_KEYS = [
   'hero_bg_from', 'hero_bg_to', 'hero_bg_from_dark', 'hero_bg_to_dark', 'hero_bg_angle',
   'hero_overlay_color', 'hero_overlay_to', 'hero_overlay_opacity', 'hero_icon_bg_from', 'hero_icon_bg_to',
   'auth_wash_from', 'auth_wash_to', 'favicon',
+  'guest_access_enabled', 'maintenance_enabled', 'maintenance_message',
+  'disabled_tabs', 'footer_text', 'show_database_path_in_footer', 'semi_pwa_enabled',
 ] as const;
 
 /** Branding keys that can be live-previewed before Save Settings */
@@ -438,7 +440,7 @@ function updatePwaIcons(faviconUrl: string, appName: string) {
 export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [settings, setSettings] = useState<AppSettings>(getInitialSettings);
   const [previewOverrides, setPreviewOverrides] = useState<Partial<AppSettings>>({});
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !readBrandingCache());
 
   const effectiveSettings = useMemo(
     () => ({ ...settings, ...previewOverrides }),
@@ -467,11 +469,20 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
       setPreviewOverrides({});
       cacheBrandingSnapshot(loadedSettings);
 
+      document.title = resolvePageTitle(loadedSettings);
+      updatePwaIcons(loadedSettings.favicon, loadedSettings.app_name);
+      markBrandingReady();
+      setLoading(false);
+
       const semiPwaEnabled = loadedSettings.semi_pwa_enabled === '1' || loadedSettings.semi_pwa_enabled === 'true';
       const swPath = getSwPath();
-      if ('serviceWorker' in navigator) {
-        if (semiPwaEnabled) {
-          try {
+      if (!('serviceWorker' in navigator)) {
+        return;
+      }
+      // Service worker register/update is slow and must not block first paint
+      void (async () => {
+        try {
+          if (semiPwaEnabled) {
             const reg = await navigator.serviceWorker.register(swPath, { scope: getSwScope() });
             const askWaitingToActivate = (worker: ServiceWorker | null) => {
               if (worker) worker.postMessage({ type: 'SKIP_WAITING' });
@@ -491,30 +502,24 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
               sessionStorage.setItem('linknest_pwa_logged', '1');
               console.log('[LinkNest PWA] Semi-PWA is ON. Normal load = from cache. Hard refresh (Ctrl+F5 / Cmd+Shift+R) = from database/server — look for "[LinkNest PWA] Database/network fetch" in console.');
             }
-          } catch (e) {
-            console.warn('[LinkNest PWA] Service worker registration failed:', e);
+          } else {
+            if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('linknest_pwa_logged');
+            const scope = getSwScope();
+            const reg = await navigator.serviceWorker.getRegistration(scope);
+            if (reg) await reg.unregister();
+            try {
+              const cacheNames = await caches.keys();
+              const linknestCache = cacheNames.filter((n) => n.startsWith('linknest-pwa'));
+              await Promise.all(linknestCache.map((n) => caches.delete(n)));
+            } catch (_) { /* ignore */ }
           }
-        } else {
-          if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('linknest_pwa_logged');
-          const scope = getSwScope();
-          const reg = await navigator.serviceWorker.getRegistration(scope);
-          if (reg) await reg.unregister();
-          try {
-            const cacheNames = await caches.keys();
-            const linknestCache = cacheNames.filter((n) => n.startsWith('linknest-pwa'));
-            await Promise.all(linknestCache.map((n) => caches.delete(n)));
-          } catch (_) { /* ignore */ }
-          console.log('[LinkNest PWA] Disabled. Using normal (database/server) fetch for all requests.');
+        } catch (e) {
+          console.warn('[LinkNest PWA] Service worker registration failed:', e);
         }
-      }
-
-      document.title = resolvePageTitle(loadedSettings);
-      updatePwaIcons(loadedSettings.favicon, loadedSettings.app_name);
-      markBrandingReady();
+      })();
     } catch (error) {
       console.error('Failed to load settings:', error);
       markBrandingReady();
-    } finally {
       setLoading(false);
     }
   };

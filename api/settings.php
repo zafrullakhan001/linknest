@@ -466,6 +466,19 @@ function handleGetSettings() {
         }
     }
 
+    $user = getAuthenticatedUser();
+    $isAdmin = $user && !empty($user['is_admin']);
+
+    // Logged-in non-admins get the same public payload as guests
+    if ($hasSessionUser && !$isAdmin) {
+        $cached = responseCacheGet('settings_public');
+        if (is_array($cached)) {
+            responseCacheHitHeader(true);
+            sendJSON(['settings' => $cached]);
+            return;
+        }
+    }
+
     $db = getDB();
     $stmt = $db->prepare('SELECT key, value FROM settings');
     $stmt->execute();
@@ -478,9 +491,6 @@ function handleGetSettings() {
 
     // Only admins need plaintext LDAP secrets (AdminPanel). Public/home callers
     // must not pay for openssl decrypt on every GET /settings — and must not receive secrets.
-    $user = getAuthenticatedUser();
-    $isAdmin = $user && !empty($user['is_admin']);
-
     if (!$isAdmin) {
         if (isset($settings['ldap_bind_password'])) {
             $settings['ldap_bind_password'] = '';
