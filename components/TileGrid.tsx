@@ -36,7 +36,7 @@ import { getDisplayUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
 import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
 import { MobileTileView } from './MobileTileView';
-import { SearchResultFilterControl, SearchWordModeControl, FuzzySearchControl, RefineSearchInput, SearchStatsBar, MatchScoreBadge, collectMatchingSearchLinks, parseSearchResultFilter, parseSearchWordMode, parseSearchFuzzy, getSearchWords, tileMatchesSearch, filterGroupedTilesBySearch, matchingLinkMatchesSearch, scoreTileSearch, scoreLinkSearch, combineSearchScores, type SearchResultFilter, type SearchWordMode, type SearchStatsSummary } from './SearchResultFilterControl';
+import { SearchResultFilterControl, SearchWordModeControl, FuzzySearchControl, RefineSearchInput, SearchStatsBar, MatchScoreBadge, collectMatchingSearchLinks, collectMatchingSearchTags, parseSearchResultFilter, parseSearchWordMode, parseSearchFuzzy, getSearchWords, tileMatchesSearch, filterGroupedTilesBySearch, matchingLinkMatchesSearch, scoreTileSearch, scoreLinkSearch, scoreTagSearch, combineSearchScores, type SearchResultFilter, type SearchWordMode, type SearchStatsSummary } from './SearchResultFilterControl';
 import type { StagingOfflineKitHandle } from './StagingOfflineKit';
 import { FormSection, FormLabel, SpaceModalHeader, EditModalTabButton } from './SpaceFormChrome';
 import { SearchTagsInput } from './SearchTagsInput';
@@ -4423,6 +4423,30 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       : 0;
     const bestScore = matchedScores.reduce((best, item) => Math.max(best, item.score), 0);
 
+    const matchingTags = collectMatchingSearchTags(resultTiles, searchWords, searchWordMode, searchFuzzy)
+      .map((item) => {
+        if (!refineWords.length) return item;
+        const refineMatch = scoreTagSearch(item.tag, refineWords, searchWordMode, searchFuzzy);
+        if (!refineMatch.matched) return null;
+        return { ...item, match: combineSearchScores(item.match, refineMatch) };
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+    const tagScores = matchingTags.map((item) => item.match);
+    const tagExactCount = tagScores.filter((item) => item.kind === 'exact' || item.kind === 'contains').length;
+    const tagSimilarCount = tagScores.filter((item) => item.kind === 'phonetic' || item.kind === 'fuzzy').length;
+    const tagAvgScore = tagScores.length
+      ? Math.round(tagScores.reduce((sum, item) => sum + item.score, 0) / tagScores.length)
+      : 0;
+    const tagBestScore = tagScores.reduce((best, item) => Math.max(best, item.score), 0);
+    const tagTileIds = new Set<string>();
+    resultTiles.forEach((tile) => {
+      const tags = tile.searchTags ?? [];
+      if (tags.some((tag) => matchingTags.some((matched) => matched.tag.toLowerCase() === tag.toLowerCase()))) {
+        tagTileIds.add(tile.id);
+      }
+    });
+
     return {
       query: searchTerm.trim(),
       refineQuery: refineSearchTerm.trim(),
@@ -4432,7 +4456,19 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       exactCount,
       similarCount,
       avgScore,
-      bestScore
+      bestScore,
+      tagCount: matchingTags.length,
+      tagTileCount: tagTileIds.size,
+      tagExactCount,
+      tagSimilarCount,
+      tagAvgScore,
+      tagBestScore,
+      matchedTags: matchingTags.slice(0, 10).map((item) => ({
+        tag: item.tag,
+        score: item.match.score,
+        kind: item.match.kind,
+        tileCount: item.tileCount
+      }))
     };
   }, [searchTerm, refineSearchTerm, groupedTiles, matchingSearchLinks, searchWordMode, searchFuzzy]);
 

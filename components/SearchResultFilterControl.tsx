@@ -1,6 +1,6 @@
 import React from 'react';
 import { Tile, LinkSection } from '../types';
-import { fuzzyTextIncludes, scoreFieldsAgainstWords, matchKindLabel, type SearchMatchScore } from '../utils/fuzzySearch';
+import { fuzzyTextIncludes, scoreFieldsAgainstWords, matchKindLabel, type SearchMatchScore, type SearchMatchKind } from '../utils/fuzzySearch';
 
 export type SearchResultFilter = 'both' | 'tiles' | 'links';
 export type SearchWordMode = 'and' | 'or';
@@ -118,6 +118,43 @@ export function scoreLinkSearch(link: SearchMatchingLink, words: string[], mode:
     mode,
     fuzzy
   );
+}
+
+export interface MatchingSearchTag {
+  tag: string;
+  tileCount: number;
+  match: SearchMatchScore;
+}
+
+export function collectMatchingSearchTags(
+  tiles: Tile[],
+  words: string[],
+  mode: SearchWordMode,
+  fuzzy = false
+): MatchingSearchTag[] {
+  if (words.length === 0) return [];
+
+  const byTag = new Map<string, MatchingSearchTag>();
+  tiles.forEach((tile) => {
+    (tile.searchTags ?? []).forEach((tag) => {
+      const match = scoreFieldsAgainstWords([tag], words, mode, fuzzy);
+      if (!match.matched) return;
+      const key = tag.toLowerCase();
+      const existing = byTag.get(key);
+      if (existing) {
+        existing.tileCount += 1;
+        if (match.score > existing.match.score) existing.match = match;
+      } else {
+        byTag.set(key, { tag, tileCount: 1, match });
+      }
+    });
+  });
+
+  return Array.from(byTag.values()).sort((a, b) => b.match.score - a.match.score || b.tileCount - a.tileCount);
+}
+
+export function scoreTagSearch(tag: string, words: string[], mode: SearchWordMode, fuzzy = false): SearchMatchScore {
+  return scoreFieldsAgainstWords([tag], words, mode, fuzzy);
 }
 
 export function collectMatchingSearchLinks(
@@ -357,6 +394,13 @@ export interface SearchStatsSummary {
   similarCount: number;
   avgScore: number;
   bestScore: number;
+  tagCount: number;
+  tagTileCount: number;
+  tagExactCount: number;
+  tagSimilarCount: number;
+  tagAvgScore: number;
+  tagBestScore: number;
+  matchedTags: Array<{ tag: string; score: number; kind: SearchMatchKind; tileCount: number }>;
 }
 
 export function combineSearchScores(primary: SearchMatchScore, refine?: SearchMatchScore): SearchMatchScore {
@@ -407,6 +451,29 @@ export const SearchStatsBar: React.FC<{ stats: SearchStatsSummary }> = ({ stats 
         <span className="font-semibold text-brand-600 dark:text-brand-400">Avg {stats.avgScore}%</span>
         <span>Best {stats.bestScore}%</span>
       </div>
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600 dark:text-slate-300">
+        <span className="font-semibold text-violet-700 dark:text-violet-300">Tags</span>
+        <span>{stats.tagCount} matching {stats.tagCount === 1 ? 'tag' : 'tags'}</span>
+        <span>{stats.tagTileCount} {stats.tagTileCount === 1 ? 'tile' : 'tiles'} with tags</span>
+        <span className="text-emerald-600 dark:text-emerald-400">{stats.tagExactCount} exact</span>
+        <span className="text-amber-600 dark:text-amber-400">{stats.tagSimilarCount} similar</span>
+        <span className="font-semibold text-violet-600 dark:text-violet-300">Avg {stats.tagAvgScore}%</span>
+        <span>Best {stats.tagBestScore}%</span>
+      </div>
+      {stats.matchedTags.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {stats.matchedTags.map((item) => (
+            <span
+              key={item.tag}
+              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${scoreBadgeClasses(item.score)}`}
+              title={`${item.tag} · ${matchKindLabel(item.kind)} · ${item.score}% · ${item.tileCount} ${item.tileCount === 1 ? 'tile' : 'tiles'}`}
+            >
+              {item.tag}
+              <span className="opacity-70">{item.score}%</span>
+            </span>
+          ))}
+        </div>
+      )}
       <div className="mt-2 flex items-center gap-2">
         <div className="flex-1 h-1.5 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
           <div className={`h-full rounded-full ${barColor}`} style={{ width: `${Math.max(stats.avgScore, 4)}%` }} />
