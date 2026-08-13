@@ -44,6 +44,17 @@ export function parseSearchFuzzy(value: string | null | undefined): boolean {
   return value === '1' || value === 'true';
 }
 
+export function parseSearchIncludeUrls(value: string | null | undefined): boolean {
+  return value !== '0' && value !== 'false';
+}
+
+function linkSearchFields(
+  link: { label?: string; url?: string; notes?: string; tooltip?: string; richTextContent?: string },
+  includeUrls: boolean
+): Array<string | undefined | null> {
+  return [link.label, includeUrls ? link.url : undefined, link.notes, link.tooltip, link.richTextContent];
+}
+
 export function getSearchWords(searchTerm: string): string[] {
   return searchTerm.toLowerCase().split(/\s+/).filter(Boolean);
 }
@@ -70,16 +81,17 @@ export function fieldsMatchSearch(
   return textMatchesSearch(fields.filter(Boolean).join('\n'), words, mode, fuzzy);
 }
 
-export function getTileSearchFields(tile: Tile): Array<string | undefined | null> {
+export function getTileSearchFields(tile: Tile, includeUrls = true): Array<string | undefined | null> {
   const fields: Array<string | undefined | null> = [
     tile.title,
     tile.description,
     tile.emoji,
-    ...(tile.searchTags ?? [])
+    ...(tile.searchTags ?? []),
+    includeUrls ? tile.hyperlinkUrl : undefined
   ];
 
   const addLinkFields = (link: { label?: string; url?: string; notes?: string; tooltip?: string }) => {
-    fields.push(link.label, link.url, link.notes, link.tooltip);
+    fields.push(...linkSearchFields(link, includeUrls));
   };
 
   (tile.searchLinks ?? []).forEach(addLinkFields);
@@ -102,22 +114,17 @@ export function getTileSearchFields(tile: Tile): Array<string | undefined | null
   return fields;
 }
 
-export function tileMatchesSearch(tile: Tile, words: string[], mode: SearchWordMode, fuzzy = false): boolean {
+export function tileMatchesSearch(tile: Tile, words: string[], mode: SearchWordMode, fuzzy = false, includeUrls = true): boolean {
   if (words.length === 0) return true;
-  return fieldsMatchSearch(getTileSearchFields(tile), words, mode, fuzzy);
+  return fieldsMatchSearch(getTileSearchFields(tile, includeUrls), words, mode, fuzzy);
 }
 
-export function scoreTileSearch(tile: Tile, words: string[], mode: SearchWordMode, fuzzy = false): SearchMatchScore {
-  return scoreFieldsAgainstWords(getTileSearchFields(tile), words, mode, fuzzy);
+export function scoreTileSearch(tile: Tile, words: string[], mode: SearchWordMode, fuzzy = false, includeUrls = true): SearchMatchScore {
+  return scoreFieldsAgainstWords(getTileSearchFields(tile, includeUrls), words, mode, fuzzy);
 }
 
-export function scoreLinkSearch(link: SearchMatchingLink, words: string[], mode: SearchWordMode, fuzzy = false): SearchMatchScore {
-  return scoreFieldsAgainstWords(
-    [link.label, link.url, link.notes, link.tooltip, link.richTextContent],
-    words,
-    mode,
-    fuzzy
-  );
+export function scoreLinkSearch(link: SearchMatchingLink, words: string[], mode: SearchWordMode, fuzzy = false, includeUrls = true): SearchMatchScore {
+  return scoreFieldsAgainstWords(linkSearchFields(link, includeUrls), words, mode, fuzzy);
 }
 
 export interface MatchingSearchTag {
@@ -161,7 +168,8 @@ export function collectMatchingSearchLinks(
   groups: Record<string, Tile[]>,
   searchTerm: string,
   wordMode: SearchWordMode = 'and',
-  fuzzy = false
+  fuzzy = false,
+  includeUrls = true
 ): SearchMatchingLink[] {
   const words = getSearchWords(searchTerm);
   if (words.length === 0) return [];
@@ -185,7 +193,7 @@ export function collectMatchingSearchLinks(
         if (uniqueLinksMap.has(uniqueKey)) return;
 
         const matches = fieldsMatchSearch(
-          [link.label, link.url, link.notes, link.tooltip],
+          linkSearchFields(link, includeUrls),
           words,
           wordMode,
           fuzzy
@@ -244,14 +252,15 @@ export function filterGroupedTilesBySearch(
   groups: Record<string, Tile[]>,
   searchTerm: string,
   mode: SearchWordMode,
-  fuzzy = false
+  fuzzy = false,
+  includeUrls = true
 ): Record<string, Tile[]> {
   const words = getSearchWords(searchTerm);
   if (words.length === 0) return groups;
 
   const next: Record<string, Tile[]> = {};
   Object.entries(groups).forEach(([name, groupTiles]) => {
-    const matched = groupTiles.filter((tile) => tileMatchesSearch(tile, words, mode, fuzzy));
+    const matched = groupTiles.filter((tile) => tileMatchesSearch(tile, words, mode, fuzzy, includeUrls));
     if (matched.length > 0) next[name] = matched;
   });
   return next;
@@ -261,14 +270,10 @@ export function matchingLinkMatchesSearch(
   link: SearchMatchingLink,
   words: string[],
   mode: SearchWordMode,
-  fuzzy = false
+  fuzzy = false,
+  includeUrls = true
 ): boolean {
-  return fieldsMatchSearch(
-    [link.label, link.url, link.notes, link.tooltip, link.richTextContent],
-    words,
-    mode,
-    fuzzy
-  );
+  return fieldsMatchSearch(linkSearchFields(link, includeUrls), words, mode, fuzzy);
 }
 
 interface SearchResultFilterControlProps {
@@ -374,6 +379,34 @@ export const FuzzySearchControl: React.FC<FuzzySearchControlProps> = ({
       aria-pressed={enabled}
     >
       Fuzzy
+    </button>
+  );
+};
+
+interface SearchIncludeUrlsControlProps {
+  enabled: boolean;
+  onChange: (enabled: boolean) => void;
+  className?: string;
+}
+
+export const SearchIncludeUrlsControl: React.FC<SearchIncludeUrlsControlProps> = ({
+  enabled,
+  onChange,
+  className = ''
+}) => {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!enabled)}
+      className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all whitespace-nowrap flex-shrink-0 ${
+        enabled
+          ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 border-brand-200 dark:border-brand-800 shadow-sm'
+          : 'bg-white/90 dark:bg-slate-800/90 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:text-slate-900 dark:hover:text-slate-200'
+      } ${className}`}
+      title={enabled ? 'URLs are included in search. Click to ignore URLs.' : 'URLs are ignored. Click to include URLs in search.'}
+      aria-pressed={enabled}
+    >
+      {enabled ? 'URLs on' : 'URLs off'}
     </button>
   );
 };

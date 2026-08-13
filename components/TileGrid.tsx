@@ -36,7 +36,7 @@ import { getDisplayUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
 import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
 import { MobileTileView } from './MobileTileView';
-import { SearchResultFilterControl, SearchWordModeControl, FuzzySearchControl, RefineSearchInput, SearchStatsBar, MatchScoreBadge, collectMatchingSearchLinks, collectMatchingSearchTags, parseSearchResultFilter, parseSearchWordMode, parseSearchFuzzy, getSearchWords, tileMatchesSearch, filterGroupedTilesBySearch, matchingLinkMatchesSearch, scoreTileSearch, scoreLinkSearch, scoreTagSearch, combineSearchScores, type SearchResultFilter, type SearchWordMode, type SearchStatsSummary } from './SearchResultFilterControl';
+import { SearchResultFilterControl, SearchWordModeControl, FuzzySearchControl, SearchIncludeUrlsControl, RefineSearchInput, SearchStatsBar, MatchScoreBadge, collectMatchingSearchLinks, collectMatchingSearchTags, parseSearchResultFilter, parseSearchWordMode, parseSearchFuzzy, parseSearchIncludeUrls, getSearchWords, tileMatchesSearch, filterGroupedTilesBySearch, matchingLinkMatchesSearch, scoreTileSearch, scoreLinkSearch, scoreTagSearch, combineSearchScores, type SearchResultFilter, type SearchWordMode, type SearchStatsSummary } from './SearchResultFilterControl';
 import type { StagingOfflineKitHandle } from './StagingOfflineKit';
 import { FormSection, FormLabel, SpaceModalHeader, EditModalTabButton } from './SpaceFormChrome';
 import { SearchTagsInput } from './SearchTagsInput';
@@ -2348,6 +2348,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
     }
     return false;
   });
+  const [searchIncludeUrls, setSearchIncludeUrls] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return parseSearchIncludeUrls(localStorage.getItem('linknest_search_include_urls'));
+    }
+    return true;
+  });
   const [yourAppsFilter, setYourAppsFilter] = useState<'authenticated' | 'assigned'>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('linknest_your_apps_filter');
@@ -3864,6 +3870,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
   }, [searchFuzzy]);
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('linknest_search_include_urls', searchIncludeUrls ? '1' : '0');
+    }
+  }, [searchIncludeUrls]);
+
+  useEffect(() => {
     if (!searchTerm.trim() && refineSearchTerm) {
       setRefineSearchTerm('');
     }
@@ -4307,7 +4319,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     }
 
     const searchWords = getSearchWords(searchTerm);
-    const filtered = filteredTiles.filter(t => tileMatchesSearch(t, searchWords, searchWordMode, searchFuzzy));
+    const filtered = filteredTiles.filter(t => tileMatchesSearch(t, searchWords, searchWordMode, searchFuzzy, searchIncludeUrls));
 
     const groups: Record<string, Tile[]> = {};
 
@@ -4371,7 +4383,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     }
 
     return groups;
-  }, [tiles, searchTerm, searchWordMode, searchFuzzy, categoryOrder, categoryMetadata, activeTab, isAuthenticated, user, recycleBinTiles, archiveTiles, publicFavorites, yourAppsFilter, privateOwnerFilter, stagingTiles, stagingTilesLoading]);
+  }, [tiles, searchTerm, searchWordMode, searchFuzzy, searchIncludeUrls, categoryOrder, categoryMetadata, activeTab, isAuthenticated, user, recycleBinTiles, archiveTiles, publicFavorites, yourAppsFilter, privateOwnerFilter, stagingTiles, stagingTilesLoading]);
 
   // Apply selected category filter to the grouped tiles
   const groupedTiles = useMemo(() => {
@@ -4380,27 +4392,27 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       : baseGroupedTiles;
 
     if (!refineSearchTerm.trim()) return categoryGroups;
-    return filterGroupedTilesBySearch(categoryGroups, refineSearchTerm, searchWordMode, searchFuzzy);
-  }, [baseGroupedTiles, selectedCategoryFilter, refineSearchTerm, searchWordMode, searchFuzzy]);
+    return filterGroupedTilesBySearch(categoryGroups, refineSearchTerm, searchWordMode, searchFuzzy, searchIncludeUrls);
+  }, [baseGroupedTiles, selectedCategoryFilter, refineSearchTerm, searchWordMode, searchFuzzy, searchIncludeUrls]);
 
   const matchingSearchLinks = useMemo(() => {
-    const links = collectMatchingSearchLinks(groupedTiles, searchTerm, searchWordMode, searchFuzzy);
+    const links = collectMatchingSearchLinks(groupedTiles, searchTerm, searchWordMode, searchFuzzy, searchIncludeUrls);
     const searchWords = getSearchWords(searchTerm);
     const refineWords = getSearchWords(refineSearchTerm);
     const refined = refineWords.length
-      ? links.filter((link) => matchingLinkMatchesSearch(link, refineWords, searchWordMode, searchFuzzy))
+      ? links.filter((link) => matchingLinkMatchesSearch(link, refineWords, searchWordMode, searchFuzzy, searchIncludeUrls))
       : links;
 
     return refined
       .map((link) => {
-        const primary = scoreLinkSearch(link, searchWords, searchWordMode, searchFuzzy);
+        const primary = scoreLinkSearch(link, searchWords, searchWordMode, searchFuzzy, searchIncludeUrls);
         const refine = refineWords.length
-          ? scoreLinkSearch(link, refineWords, searchWordMode, searchFuzzy)
+          ? scoreLinkSearch(link, refineWords, searchWordMode, searchFuzzy, searchIncludeUrls)
           : undefined;
         return { ...link, match: combineSearchScores(primary, refine) };
       })
       .sort((a, b) => (b.match?.score || 0) - (a.match?.score || 0));
-  }, [groupedTiles, searchTerm, searchWordMode, searchFuzzy, refineSearchTerm]);
+  }, [groupedTiles, searchTerm, searchWordMode, searchFuzzy, searchIncludeUrls, refineSearchTerm]);
 
   const searchStats = useMemo<SearchStatsSummary | null>(() => {
     if (!searchTerm.trim()) return null;
@@ -4408,9 +4420,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     const refineWords = getSearchWords(refineSearchTerm);
     const resultTiles = Object.values(groupedTiles).flat();
     const tileScores = resultTiles.map((tile) => {
-      const primary = scoreTileSearch(tile, searchWords, searchWordMode, searchFuzzy);
+      const primary = scoreTileSearch(tile, searchWords, searchWordMode, searchFuzzy, searchIncludeUrls);
       const refine = refineWords.length
-        ? scoreTileSearch(tile, refineWords, searchWordMode, searchFuzzy)
+        ? scoreTileSearch(tile, refineWords, searchWordMode, searchFuzzy, searchIncludeUrls)
         : undefined;
       return combineSearchScores(primary, refine);
     });
@@ -4470,7 +4482,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         tileCount: item.tileCount
       }))
     };
-  }, [searchTerm, refineSearchTerm, groupedTiles, matchingSearchLinks, searchWordMode, searchFuzzy]);
+  }, [searchTerm, refineSearchTerm, groupedTiles, matchingSearchLinks, searchWordMode, searchFuzzy, searchIncludeUrls]);
 
   const isSearching = Boolean(searchTerm.trim());
   const hideSearchTiles = isSearching && searchResultFilter === 'links';
@@ -6943,6 +6955,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         onSearchWordModeChange={setSearchWordMode}
         searchFuzzy={searchFuzzy}
         onSearchFuzzyChange={setSearchFuzzy}
+        searchIncludeUrls={searchIncludeUrls}
+        onSearchIncludeUrlsChange={setSearchIncludeUrls}
         refineSearchTerm={refineSearchTerm}
         onRefineSearchChange={setRefineSearchTerm}
         matchingSearchLinks={matchingSearchLinks}
@@ -7360,6 +7374,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             <FuzzySearchControl
               enabled={searchFuzzy}
               onChange={setSearchFuzzy}
+            />
+            <SearchIncludeUrlsControl
+              enabled={searchIncludeUrls}
+              onChange={setSearchIncludeUrls}
             />
             <RefineSearchInput
               value={refineSearchTerm}

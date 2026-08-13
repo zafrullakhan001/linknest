@@ -12,7 +12,7 @@ import { tryHandleVncLinkClick } from '../utils/vncLink';
 import { QRCodeDialog } from './QRCodeDialog';
 import { UpdatesDialog } from './UpdatesDialog';
 import { ThemeModeMenu } from './ThemeModeMenu';
-import { SearchResultFilterControl, SearchWordModeControl, FuzzySearchControl, RefineSearchInput, SearchStatsBar, MatchScoreBadge, getSearchWords, tileMatchesSearch, type SearchResultFilter, type SearchMatchingLink, type SearchWordMode, type SearchStatsSummary } from './SearchResultFilterControl';
+import { SearchResultFilterControl, SearchWordModeControl, FuzzySearchControl, SearchIncludeUrlsControl, RefineSearchInput, SearchStatsBar, MatchScoreBadge, getSearchWords, tileMatchesSearch, type SearchResultFilter, type SearchMatchingLink, type SearchWordMode, type SearchStatsSummary } from './SearchResultFilterControl';
 
 function stripHtml(html: string): string {
   if (!html || typeof html !== 'string') return '';
@@ -76,6 +76,8 @@ interface MobileTileViewProps {
   onSearchWordModeChange?: (value: SearchWordMode) => void;
   searchFuzzy?: boolean;
   onSearchFuzzyChange?: (enabled: boolean) => void;
+  searchIncludeUrls?: boolean;
+  onSearchIncludeUrlsChange?: (enabled: boolean) => void;
   refineSearchTerm?: string;
   onRefineSearchChange?: (value: string) => void;
   matchingSearchLinks?: SearchMatchingLink[];
@@ -105,6 +107,8 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
   onSearchWordModeChange,
   searchFuzzy = false,
   onSearchFuzzyChange,
+  searchIncludeUrls = true,
+  onSearchIncludeUrlsChange,
   refineSearchTerm = '',
   onRefineSearchChange,
   matchingSearchLinks = [],
@@ -515,14 +519,14 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
     const searchWords = getSearchWords(searchTerm);
     const refineWords = getSearchWords(refineSearchTerm);
     return allTiles.filter((tile) => {
-      if (!tileMatchesSearch(tile, searchWords, searchWordMode, searchFuzzy)) return false;
+      if (!tileMatchesSearch(tile, searchWords, searchWordMode, searchFuzzy, searchIncludeUrls)) return false;
       if (refineWords.length === 0) return true;
-      return tileMatchesSearch(tile, refineWords, searchWordMode, searchFuzzy);
+      return tileMatchesSearch(tile, refineWords, searchWordMode, searchFuzzy, searchIncludeUrls);
     });
     // Dependencies: tiles array reference changes when data loads, groupedTiles updates accordingly
     // We check both to handle cases where groupedTiles is stale on refresh
     // Include publicFavorites for public-favorites tab
-  }, [searchTerm, searchWordMode, searchFuzzy, refineSearchTerm, groupedTiles, activeTab, tiles, isAuthenticated, user, publicFavorites]);
+  }, [searchTerm, searchWordMode, searchFuzzy, searchIncludeUrls, refineSearchTerm, groupedTiles, activeTab, tiles, isAuthenticated, user, publicFavorites]);
 
   const getTileStyles = (tile: Tile) => {
     const styles = COLOR_STYLES[tile.themeColor] || COLOR_STYLES['blue'];
@@ -934,6 +938,12 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
               <FuzzySearchControl
                 enabled={searchFuzzy}
                 onChange={onSearchFuzzyChange}
+              />
+            )}
+            {onSearchIncludeUrlsChange && (
+              <SearchIncludeUrlsControl
+                enabled={searchIncludeUrls}
+                onChange={onSearchIncludeUrlsChange}
               />
             )}
             {onRefineSearchChange && (
