@@ -20,6 +20,15 @@ import {
   type OpenVncViewerDetail,
 } from './utils/vncLink';
 import { themeService } from './services/themeService';
+import {
+  getMsUntilNextThemeChange,
+  getThemeMode,
+  getThemeSchedule,
+  persistAppliedTheme,
+  resolveDarkMode,
+  shouldBeDarkNow,
+  subscribeThemePreference,
+} from './services/themePreferenceService';
 import { getMessages } from './services/chatService';
 import { useMobile } from './hooks/useMobile';
 import { getAllowedWidgets } from './services/widgetService';
@@ -388,133 +397,66 @@ const AppContent: React.FC = () => {
     return allowedWidgetIds.has(widgetId);
   }, [isAuthenticated, user, allowedWidgetIds, widgetsLoading]);
 
-  // Theme State — keep in sync with index.html bootstrap + auto-switch defaults
+  // Theme State — keep in sync with index.html bootstrap + browser-only preferences
   const [darkMode, setDarkMode] = useState(() => {
-    const autoSwitch = localStorage.getItem('linknest_auto_switch');
-    const autoEnabled = autoSwitch === null || autoSwitch === 'true';
-    let isDark: boolean;
-    if (autoEnabled) {
-      const hour = new Date().getHours();
-      isDark = hour >= 18 || hour < 7;
-    } else {
-      const saved = localStorage.getItem('linknest_theme');
-      isDark = saved ? saved === 'dark' : true; // Default to dark
-    }
+    const isDark = resolveDarkMode();
     if (typeof document !== 'undefined') {
       document.documentElement.classList.toggle('dark', isDark);
     }
     return isDark;
   });
+  const [themeMode, setThemeModeState] = useState(() => getThemeMode());
+  const [themeSchedule, setThemeScheduleState] = useState(() => getThemeSchedule());
 
-  // Auto-switch preference (default: enabled)
-  const [autoSwitchEnabled, setAutoSwitchEnabled] = useState(() => {
-    const saved = localStorage.getItem('linknest_auto_switch');
-    return saved !== null ? saved === 'true' : true; // Default to enabled
-  });
-
-  // Ref to track current darkMode state for auto-switch logic
   const darkModeRef = useRef(darkMode);
   useEffect(() => {
     darkModeRef.current = darkMode;
   }, [darkMode]);
 
-  // Function to determine if it should be dark mode based on time
-  const shouldBeDarkMode = useCallback(() => {
-    const now = new Date();
-    const hour = now.getHours();
-    // Day mode: 7am-5pm (7:00 to 17:59) = light mode
-    // Night mode: 6pm-6am (18:00 to 6:59) = dark mode
-    return hour >= 18 || hour < 7;
+  useEffect(() => {
+    return subscribeThemePreference(() => {
+      setThemeModeState(getThemeMode());
+      setThemeScheduleState(getThemeSchedule());
+      setDarkMode(resolveDarkMode());
+    });
   }, []);
 
-  // Apply theme to DOM
   useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('linknest_theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('linknest_theme', 'light');
-    }
+    document.documentElement.classList.toggle('dark', darkMode);
+    persistAppliedTheme(darkMode);
   }, [darkMode]);
 
-  // Auto-switch theme based on time
   useEffect(() => {
-    if (!autoSwitchEnabled) {
-      return; // Don't auto-switch if disabled
+    if (themeMode !== 'automatic') {
+      return;
     }
 
-    // Function to check and update theme
     const checkAndUpdateTheme = () => {
-      const shouldBeDark = shouldBeDarkMode();
-      // Use ref to get current state to avoid stale closure
+      const shouldBeDark = shouldBeDarkNow(new Date(), themeSchedule);
       if (shouldBeDark !== darkModeRef.current) {
         setDarkMode(shouldBeDark);
       }
     };
 
-    // Check immediately on mount
     checkAndUpdateTheme();
 
-    // Calculate milliseconds until next hour change (at 7am or 6pm)
-    const getNextCheckTime = () => {
-      const now = new Date();
-      const hour = now.getHours();
-      let nextHour: number;
-
-      if (hour < 7) {
-        // Before 7am, next change is at 7am
-        nextHour = 7;
-      } else if (hour < 18) {
-        // Between 7am and 6pm, next change is at 6pm
-        nextHour = 18;
-      } else {
-        // After 6pm, next change is at 7am next day
-        nextHour = 7;
-      }
-
-      const nextCheck = new Date();
-      nextCheck.setHours(nextHour, 0, 0, 0);
-
-      // If we've passed the hour today, set for tomorrow
-      if (nextCheck <= now) {
-        nextCheck.setDate(nextCheck.getDate() + 1);
-      }
-
-      return nextCheck.getTime() - now.getTime();
-    };
-
-    // Set timeout for next hour change
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: number;
     const scheduleNextCheck = () => {
-      const delay = getNextCheckTime();
-      timeoutId = setTimeout(() => {
+      const delay = getMsUntilNextThemeChange(new Date(), themeSchedule);
+      timeoutId = window.setTimeout(() => {
         checkAndUpdateTheme();
-        // Schedule subsequent checks every hour
-        const intervalId = setInterval(() => {
-          checkAndUpdateTheme();
-        }, 60 * 60 * 1000); // Check every hour
-
-        // Store interval ID to clear on cleanup
-        (timeoutId as any).intervalId = intervalId;
+        scheduleNextCheck();
       }, delay);
     };
-
     scheduleNextCheck();
 
-    // Also check periodically (every minute) as a backup
-    const intervalId = setInterval(() => {
-      checkAndUpdateTheme();
-    }, 60 * 1000); // Check every minute
+    const intervalId = window.setInterval(checkAndUpdateTheme, 60 * 1000);
 
     return () => {
-      clearTimeout(timeoutId);
-      clearInterval(intervalId);
-      if ((timeoutId as any)?.intervalId) {
-        clearInterval((timeoutId as any).intervalId);
-      }
+      window.clearTimeout(timeoutId);
+      window.clearInterval(intervalId);
     };
-  }, [autoSwitchEnabled, shouldBeDarkMode]);
+  }, [themeMode, themeSchedule]);
 
   // Listen for style manager open event
   useEffect(() => {
@@ -628,13 +570,6 @@ const AppContent: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown, true); // Use capture phase to intercept before browser
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, []);
-
-  const toggleTheme = () => {
-    // When user manually toggles, disable auto-switch
-    setAutoSwitchEnabled(false);
-    localStorage.setItem('linknest_auto_switch', 'false');
-    setDarkMode(!darkMode);
-  };
 
   const toggleClock = () => {
     setShowClock(!showClock);
@@ -997,7 +932,6 @@ const AppContent: React.FC = () => {
         {!isMobile && (
           <Navigation
             darkMode={darkMode}
-            toggleTheme={toggleTheme}
             showClock={showClock}
             toggleClock={toggleClock}
             showPhoneticAlphabet={showPhoneticAlphabet}
@@ -1123,7 +1057,6 @@ const AppContent: React.FC = () => {
           isAuthenticated={isAuthenticated}
           onAuthRequired={() => setAuthModalOpen(true)}
           darkMode={darkMode}
-          toggleTheme={toggleTheme}
           onHelpClick={() => setHelpAboutOpen(true)}
         />
       </Suspense>
@@ -1229,7 +1162,6 @@ const AppContent: React.FC = () => {
           isAuthenticated={isAuthenticated}
           onAuthRequired={() => setAuthModalOpen(true)}
           darkMode={darkMode}
-          toggleTheme={toggleTheme}
           onHelpClick={() => setHelpAboutOpen(true)}
         />
       </Suspense>
@@ -1242,7 +1174,6 @@ const AppContent: React.FC = () => {
       {!isMobile && (
         <Navigation
           darkMode={darkMode}
-          toggleTheme={toggleTheme}
           showClock={showClock}
           toggleClock={toggleClock}
           showPhoneticAlphabet={showPhoneticAlphabet}

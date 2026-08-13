@@ -86,7 +86,6 @@ interface TileGridProps {
   isAuthenticated?: boolean;
   onAuthRequired?: () => void;
   darkMode?: boolean;
-  toggleTheme?: () => void;
   onHelpClick?: () => void;
 }
 
@@ -2250,7 +2249,6 @@ export const TileGrid: React.FC<TileGridProps> = ({
   isAuthenticated = false,
   onAuthRequired,
   darkMode = false,
-  toggleTheme = () => { },
   onHelpClick = () => { }
 }) => {
   const { settings } = useSettings();
@@ -6896,7 +6894,6 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         groupedTiles={groupedTiles}
         settings={settings}
         darkMode={darkMode}
-        toggleTheme={toggleTheme}
         onHelpClick={onHelpClick}
         onTabChange={requestTab}
         isAuthenticated={isAuthenticated}

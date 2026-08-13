@@ -29,16 +29,38 @@
       try {
         document.documentElement.classList.add('ln-bootstrapping');
 
-        var autoSwitch = localStorage.getItem('linknest_auto_switch');
-        var autoEnabled = autoSwitch === null || autoSwitch === 'true';
-        var isDark;
-        if (autoEnabled) {
-          var hour = new Date().getHours();
-          isDark = hour >= 18 || hour < 7;
-        } else {
-          var savedTheme = localStorage.getItem('linknest_theme');
-          isDark = savedTheme ? savedTheme === 'dark' : true;
+        var parseHHMM = function (value, fallbackMinutes) {
+          if (!value) return fallbackMinutes;
+          var parts = String(value).split(':');
+          var hours = parseInt(parts[0], 10);
+          var mins = parseInt(parts[1], 10);
+          if (isNaN(hours) || isNaN(mins) || hours < 0 || hours > 23 || mins < 0 || mins > 59) {
+            return fallbackMinutes;
+          }
+          return hours * 60 + mins;
+        };
+        var dayStart = parseHHMM(localStorage.getItem('linknest_day_start'), 7 * 60);
+        var nightStart = parseHHMM(localStorage.getItem('linknest_night_start'), 18 * 60);
+        if (dayStart === nightStart) {
+          dayStart = 7 * 60;
+          nightStart = 18 * 60;
         }
+        var now = new Date();
+        var minutes = now.getHours() * 60 + now.getMinutes();
+        var scheduledDark = dayStart < nightStart
+          ? (minutes < dayStart || minutes >= nightStart)
+          : (minutes >= nightStart && minutes < dayStart);
+
+        var mode = localStorage.getItem('linknest_theme_mode');
+        if (mode !== 'light' && mode !== 'dark' && mode !== 'automatic') {
+          var autoSwitch = localStorage.getItem('linknest_auto_switch');
+          if (autoSwitch === 'false') {
+            mode = localStorage.getItem('linknest_theme') === 'light' ? 'light' : 'dark';
+          } else {
+            mode = 'automatic';
+          }
+        }
+        var isDark = mode === 'dark' ? true : mode === 'light' ? false : scheduledDark;
 
         if (isDark) {
           document.documentElement.classList.add('dark');
