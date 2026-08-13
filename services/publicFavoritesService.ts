@@ -1,13 +1,65 @@
+import { getAppBasePath } from './apiHelpers';
+
 /**
  * Public Favorites Service
  * Manages favorites stored in browser localStorage for public (non-authenticated) users.
  * These favorites are completely separate from internal favorites stored in the database.
+ *
+ * Keys are scoped by install path so /ArchLinks and /ERP3 (same origin) do not share lists.
  */
 
 const STORAGE_KEY = 'linknest_public_favorites';
 const LINK_STORAGE_KEY = 'linknest_public_link_favorites';
 const LINK_DETAILS_STORAGE_KEY = 'linknest_public_link_favorite_details';
 const ACTIVE_TAB_KEY = 'linknest_public_active_tab';
+
+const PUBLIC_FAVORITE_BASE_KEYS = [
+  STORAGE_KEY,
+  LINK_STORAGE_KEY,
+  LINK_DETAILS_STORAGE_KEY,
+  ACTIVE_TAB_KEY
+] as const;
+
+let didMigrateLegacyKeys = false;
+
+const scopedStorageKey = (baseKey: string): string => {
+  const scope = getAppBasePath();
+  return scope ? `${baseKey}:${scope}` : baseKey;
+};
+
+/**
+ * Copy unscoped keys into this instance once, then drop the shared keys so other
+ * folders on the same host (e.g. /ERP3) no longer read the same favorites.
+ */
+const migrateLegacyPublicFavoriteKeys = (): void => {
+  if (didMigrateLegacyKeys) return;
+  didMigrateLegacyKeys = true;
+
+  if (typeof window === 'undefined') return;
+
+  const scope = getAppBasePath();
+  if (!scope) return;
+
+  try {
+    for (const baseKey of PUBLIC_FAVORITE_BASE_KEYS) {
+      const scopedKey = `${baseKey}:${scope}`;
+      if (localStorage.getItem(scopedKey) !== null) continue;
+      const legacy = localStorage.getItem(baseKey);
+      if (legacy === null) continue;
+      localStorage.setItem(scopedKey, legacy);
+    }
+    for (const baseKey of PUBLIC_FAVORITE_BASE_KEYS) {
+      localStorage.removeItem(baseKey);
+    }
+  } catch {
+    // localStorage may be blocked; callers already handle that
+  }
+};
+
+const storageKey = (baseKey: string): string => {
+  migrateLegacyPublicFavoriteKeys();
+  return scopedStorageKey(baseKey);
+};
 
 export interface PublicFavoriteLinkDetail {
   id: string;
@@ -86,7 +138,7 @@ export const getPublicFavorites = (): string[] => {
   }
   
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(storageKey(STORAGE_KEY));
     if (!stored) return [];
     const favorites = JSON.parse(stored);
     return Array.isArray(favorites) ? favorites : [];
@@ -118,7 +170,7 @@ export const addPublicFavorite = (tileId: string): boolean => {
     const favorites = getPublicFavorites();
     if (!favorites.includes(tileId)) {
       favorites.push(tileId);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(favorites));
+      localStorage.setItem(storageKey(STORAGE_KEY), JSON.stringify(favorites));
       return true;
     }
     return true; // Already in favorites
@@ -140,7 +192,7 @@ export const removePublicFavorite = (tileId: string): boolean => {
   try {
     const favorites = getPublicFavorites();
     const filtered = favorites.filter(id => id !== tileId);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+    localStorage.setItem(storageKey(STORAGE_KEY), JSON.stringify(filtered));
     return true;
   } catch (error) {
     console.error('Failed to remove public favorite:', error);
@@ -167,7 +219,7 @@ export const togglePublicFavorite = (tileId: string): boolean => {
  */
 export const clearPublicFavorites = (): void => {
   try {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(storageKey(STORAGE_KEY));
   } catch (error) {
     console.error('Failed to clear public favorites:', error);
   }
@@ -178,7 +230,7 @@ export const clearPublicFavorites = (): void => {
  */
 export const getPublicActiveTab = (): string | null => {
   try {
-    return localStorage.getItem(ACTIVE_TAB_KEY);
+    return localStorage.getItem(storageKey(ACTIVE_TAB_KEY));
   } catch (error) {
     console.error('Failed to get public active tab:', error);
     return null;
@@ -190,7 +242,7 @@ export const getPublicActiveTab = (): string | null => {
  */
 export const setPublicActiveTab = (tab: string): void => {
   try {
-    localStorage.setItem(ACTIVE_TAB_KEY, tab);
+    localStorage.setItem(storageKey(ACTIVE_TAB_KEY), tab);
   } catch (error) {
     console.error('Failed to save public active tab:', error);
   }
@@ -395,9 +447,9 @@ export const buildPublicFavoritesExportData = (
   // Persist the cleaned lists so future exports/imports stay accurate
   try {
     if (isLocalStorageAvailable()) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(favorites));
-      localStorage.setItem(LINK_STORAGE_KEY, JSON.stringify(linkFavorites));
-      localStorage.setItem(LINK_DETAILS_STORAGE_KEY, JSON.stringify(linkFavoriteDetails));
+      localStorage.setItem(storageKey(STORAGE_KEY), JSON.stringify(favorites));
+      localStorage.setItem(storageKey(LINK_STORAGE_KEY), JSON.stringify(linkFavorites));
+      localStorage.setItem(storageKey(LINK_DETAILS_STORAGE_KEY), JSON.stringify(linkFavoriteDetails));
     }
   } catch (error) {
     console.error('Failed to prune public favorites during export:', error);
@@ -528,12 +580,12 @@ export const importPublicFavorites = async (file: File): Promise<{
     // Apply space favorites only when the file has real space IDs
     // (never wipe spaces just because an old/partial file had favorites: [])
     if (importingSpaces && favorites) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(favorites));
+      localStorage.setItem(storageKey(STORAGE_KEY), JSON.stringify(favorites));
     }
 
     let importedLinks = 0;
     if (linkFavorites !== null && linkFavorites.length > 0) {
-      localStorage.setItem(LINK_STORAGE_KEY, JSON.stringify(linkFavorites));
+      localStorage.setItem(storageKey(LINK_STORAGE_KEY), JSON.stringify(linkFavorites));
       importedLinks = linkFavorites.length;
 
       if (Object.keys(detailsMap).length > 0) {
@@ -545,9 +597,9 @@ export const importPublicFavorites = async (file: File): Promise<{
         // If normalize filtered by empty preferredIds earlier, rebuild from all details for these IDs
         if (Object.keys(kept).length === 0 && hasLinkDetailsField) {
           const rebuilt = normalizeLinkFavoriteDetails(linkDetailsRaw, linkFavorites);
-          localStorage.setItem(LINK_DETAILS_STORAGE_KEY, JSON.stringify(rebuilt));
+          localStorage.setItem(storageKey(LINK_DETAILS_STORAGE_KEY), JSON.stringify(rebuilt));
         } else {
-          localStorage.setItem(LINK_DETAILS_STORAGE_KEY, JSON.stringify(kept));
+          localStorage.setItem(storageKey(LINK_DETAILS_STORAGE_KEY), JSON.stringify(kept));
         }
       } else {
         // Keep any existing snapshots that still match imported IDs
@@ -556,12 +608,12 @@ export const importPublicFavorites = async (file: File): Promise<{
         for (const id of linkFavorites) {
           if (existing[id]) kept[id] = existing[id];
         }
-        localStorage.setItem(LINK_DETAILS_STORAGE_KEY, JSON.stringify(kept));
+        localStorage.setItem(storageKey(LINK_DETAILS_STORAGE_KEY), JSON.stringify(kept));
       }
     } else if (Object.keys(detailsMap).length > 0) {
       const inferredIds = Object.keys(detailsMap);
-      localStorage.setItem(LINK_STORAGE_KEY, JSON.stringify(inferredIds));
-      localStorage.setItem(LINK_DETAILS_STORAGE_KEY, JSON.stringify(detailsMap));
+      localStorage.setItem(storageKey(LINK_STORAGE_KEY), JSON.stringify(inferredIds));
+      localStorage.setItem(storageKey(LINK_DETAILS_STORAGE_KEY), JSON.stringify(detailsMap));
       importedLinks = inferredIds.length;
     }
 
@@ -607,7 +659,7 @@ export const importPublicFavorites = async (file: File): Promise<{
  */
 export const getPublicLinkFavorites = (): string[] => {
   try {
-    const stored = localStorage.getItem(LINK_STORAGE_KEY);
+    const stored = localStorage.getItem(storageKey(LINK_STORAGE_KEY));
     if (!stored) return [];
     const favorites = JSON.parse(stored);
     return Array.isArray(favorites) ? favorites : [];
@@ -633,7 +685,7 @@ export const addPublicLinkFavorite = (linkId: string): void => {
     const favorites = getPublicLinkFavorites();
     if (!favorites.includes(linkId)) {
       favorites.push(linkId);
-      localStorage.setItem(LINK_STORAGE_KEY, JSON.stringify(favorites));
+      localStorage.setItem(storageKey(LINK_STORAGE_KEY), JSON.stringify(favorites));
     }
   } catch (error) {
     console.error('Failed to add public link favorite:', error);
@@ -647,7 +699,7 @@ export const removePublicLinkFavorite = (linkId: string): void => {
   try {
     const favorites = getPublicLinkFavorites();
     const filtered = favorites.filter(id => id !== linkId);
-    localStorage.setItem(LINK_STORAGE_KEY, JSON.stringify(filtered));
+    localStorage.setItem(storageKey(LINK_STORAGE_KEY), JSON.stringify(filtered));
   } catch (error) {
     console.error('Failed to remove public link favorite:', error);
   }
@@ -673,7 +725,7 @@ export const togglePublicLinkFavorite = (linkId: string): boolean => {
  */
 export const getPublicLinkFavoriteDetailsMap = (): Record<string, PublicFavoriteLinkDetail> => {
   try {
-    const stored = localStorage.getItem(LINK_DETAILS_STORAGE_KEY);
+    const stored = localStorage.getItem(storageKey(LINK_DETAILS_STORAGE_KEY));
     if (!stored) return {};
     const parsed = JSON.parse(stored);
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
@@ -701,7 +753,7 @@ export const upsertPublicLinkFavoriteDetail = (detail: PublicFavoriteLinkDetail)
   try {
     const map = getPublicLinkFavoriteDetailsMap();
     map[detail.id] = detail;
-    localStorage.setItem(LINK_DETAILS_STORAGE_KEY, JSON.stringify(map));
+    localStorage.setItem(storageKey(LINK_DETAILS_STORAGE_KEY), JSON.stringify(map));
   } catch (error) {
     console.error('Failed to save public link favorite detail:', error);
   }
@@ -712,7 +764,7 @@ export const removePublicLinkFavoriteDetail = (linkId: string): void => {
     const map = getPublicLinkFavoriteDetailsMap();
     if (map[linkId]) {
       delete map[linkId];
-      localStorage.setItem(LINK_DETAILS_STORAGE_KEY, JSON.stringify(map));
+      localStorage.setItem(storageKey(LINK_DETAILS_STORAGE_KEY), JSON.stringify(map));
     }
   } catch (error) {
     console.error('Failed to remove public link favorite detail:', error);
@@ -731,7 +783,7 @@ export const syncPublicLinkFavoriteDetails = (details: PublicFavoriteLinkDetail[
         map[detail.id] = detail;
       }
     });
-    localStorage.setItem(LINK_DETAILS_STORAGE_KEY, JSON.stringify(map));
+    localStorage.setItem(storageKey(LINK_DETAILS_STORAGE_KEY), JSON.stringify(map));
   } catch (error) {
     console.error('Failed to sync public link favorite details:', error);
   }
@@ -742,8 +794,8 @@ export const syncPublicLinkFavoriteDetails = (details: PublicFavoriteLinkDetail[
  */
 export const clearPublicLinkFavorites = (): void => {
   try {
-    localStorage.removeItem(LINK_STORAGE_KEY);
-    localStorage.removeItem(LINK_DETAILS_STORAGE_KEY);
+    localStorage.removeItem(storageKey(LINK_STORAGE_KEY));
+    localStorage.removeItem(storageKey(LINK_DETAILS_STORAGE_KEY));
   } catch (error) {
     console.error('Failed to clear public link favorites:', error);
   }
