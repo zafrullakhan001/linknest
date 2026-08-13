@@ -86,7 +86,7 @@ Then Ctrl+F5. Do **not** set `VITE_BASE_PATH=/linknest` on ArchLinks/ERP3.
 
 | Source | When it appears | Apply |
 |--------|-----------------|--------|
-| **Commits** on track branch (default `main`) | Every new push ahead of the installed SHA | Checkout / zipball that commit + rebuild |
+| **Commits** on track branch (default `main`) | Pushes **after** the applied Release SHA (zip) or git HEAD (git mode) | Checkout / zipball that commit + rebuild |
 | **GitHub Releases** (`vX.Y.Z`) | Tag newer than installed `appVersion` | Tag checkout or `linknest-update-*.zip` |
 
 Both **preserve** `data/` and `uploads/` (except when you explicitly restore a DB snapshot). Before each update, the current install is recorded in **rollback history** (last **10** entries).

@@ -658,7 +658,7 @@ export const UpdatesPanel: React.FC<{
               </h5>
               {commits.length === 0 ? (
                 <p className="text-sm text-slate-500">
-                  No newer commits than the installed SHA on the tracked branch / local HEAD.
+                  No newer commits than the applied Release on the tracked branch.
                 </p>
               ) : (
                 <ul className="space-y-2 max-h-48 overflow-y-auto">
