@@ -1107,7 +1107,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   };
 
   const handleAutoDetectAuthSources = async () => {
-    if (!confirm('This will auto-detect authentication sources for all users in the system.\n\nPriority: SAML (if saml_nameid exists) > LDAP (if exists in directory) > Local\n\nContinue?')) {
+    if (!confirm('This will auto-detect authentication sources for all users.\n\nPriority:\n1. LDAP — email/username domain matches the LDAP domain CN (DC=) or login domain\n2. SAML — user has a SAML NameID, or email matches the SAML IdP domain\n3. Local — everyone else\n\nContinue?')) {
       return;
     }
 
@@ -4814,7 +4814,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         disabled={autoDetecting}
                         className={`${isMobile ? 'px-3 py-2 text-xs' : 'px-4 py-2 text-sm'} bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors flex items-center gap-2 touch-manipulation`}
                         style={isMobile ? { minHeight: '44px' } : {}}
-                        title="Auto-detect authentication sources for all users (SAML > LDAP > Local)"
+                        title="Auto-detect authentication sources for all users (LDAP domain/email > SAML > Local)"
                       >
                         {autoDetecting ? (
                           <>
@@ -5037,26 +5037,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right">
                                       <div className="flex items-center justify-end gap-2">
-                                        {/* Primary action buttons - always visible */}
-                                        {!user.is_admin && (
-                                          <button
-                                            onClick={() => {
-                                              setEditUserModal({ open: true, userId: user.id, username: user.username, email: user.email, auth_source: user.auth_source || 'local', notes: user.notes || '' });
-                                              setEditUsername(user.username);
-                                              setEditEmail(user.email);
-                                              setEditAuthSource((user.auth_source || 'local') as 'local' | 'ldap' | 'saml');
-                                              setEditNotes(user.notes || '');
-                                            }}
-                                            disabled={processing === user.id}
-                                            className="px-2.5 py-1.5 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
-                                            title="Edit User"
-                                          >
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                              <path d="M5.433 13.917l1.262-3.155A4 4 0 017.58 9.42l6.92-6.918a2.121 2.121 0 013 3l-6.919 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 01-.65-.65z" />
-                                              <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0010 3H4.75A2.75 2.75 0 002 5.75v9.5A2.75 2.75 0 004.75 18h9.5A2.75 2.75 0 0017 15.25V10a.75.75 0 00-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5z" />
-                                            </svg>
-                                          </button>
-                                        )}
+                                        {/* Primary action buttons - always visible. Admins can edit other admins (including auth source). */}
+                                        <button
+                                          onClick={() => {
+                                            setEditUserModal({ open: true, userId: user.id, username: user.username, email: user.email, auth_source: user.auth_source || 'local', notes: user.notes || '' });
+                                            setEditUsername(user.username);
+                                            setEditEmail(user.email);
+                                            setEditAuthSource((user.auth_source || 'local') as 'local' | 'ldap' | 'saml');
+                                            setEditNotes(user.notes || '');
+                                          }}
+                                          disabled={processing === user.id}
+                                          className="px-2.5 py-1.5 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
+                                          title="Edit User"
+                                        >
+                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                            <path d="M5.433 13.917l1.262-3.155A4 4 0 017.58 9.42l6.92-6.918a2.121 2.121 0 013 3l-6.919 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 01-.65-.65z" />
+                                            <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0010 3H4.75A2.75 2.75 0 002 5.75v9.5A2.75 2.75 0 004.75 18h9.5A2.75 2.75 0 0017 15.25V10a.75.75 0 00-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5z" />
+                                          </svg>
+                                        </button>
                                         {!user.is_admin && (
                                           <button
                                             onClick={() => handleDeleteUser(user.id, user.username)}
@@ -5243,26 +5241,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                               {/* Action Buttons */}
                               <div className="flex items-center gap-2 flex-wrap">
-                                {!user.is_admin && (
-                                  <button
-                                    onClick={() => {
-                                      setEditUserModal({ open: true, userId: user.id, username: user.username, email: user.email, auth_source: user.auth_source || 'local', notes: user.notes || '' });
-                                      setEditUsername(user.username);
-                                      setEditEmail(user.email);
-                                      setEditAuthSource((user.auth_source || 'local') as 'local' | 'ldap' | 'saml');
-                                      setEditNotes(user.notes || '');
-                                    }}
-                                    disabled={processing === user.id}
-                                    className="flex-1 min-w-[100px] px-3 py-2 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1.5 touch-manipulation"
-                                    style={{ minHeight: '44px' }}
-                                  >
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                      <path d="M5.433 13.917l1.262-3.155A4 4 0 017.58 9.42l6.92-6.918a2.121 2.121 0 013 3l-6.919 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 01-.65-.65z" />
-                                      <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0010 3H4.75A2.75 2.75 0 002 5.75v9.5A2.75 2.75 0 004.75 18h9.5A2.75 2.75 0 0017 15.25V10a.75.75 0 00-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5z" />
-                                    </svg>
-                                    Edit
-                                  </button>
-                                )}
+                                <button
+                                  onClick={() => {
+                                    setEditUserModal({ open: true, userId: user.id, username: user.username, email: user.email, auth_source: user.auth_source || 'local', notes: user.notes || '' });
+                                    setEditUsername(user.username);
+                                    setEditEmail(user.email);
+                                    setEditAuthSource((user.auth_source || 'local') as 'local' | 'ldap' | 'saml');
+                                    setEditNotes(user.notes || '');
+                                  }}
+                                  disabled={processing === user.id}
+                                  className="flex-1 min-w-[100px] px-3 py-2 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1.5 touch-manipulation"
+                                  style={{ minHeight: '44px' }}
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                    <path d="M5.433 13.917l1.262-3.155A4 4 0 017.58 9.42l6.92-6.918a2.121 2.121 0 013 3l-6.919 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 01-.65-.65z" />
+                                    <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0010 3H4.75A2.75 2.75 0 002 5.75v9.5A2.75 2.75 0 004.75 18h9.5A2.75 2.75 0 0017 15.25V10a.75.75 0 00-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5z" />
+                                  </svg>
+                                  Edit
+                                </button>
                                 {!user.is_admin && (
                                   <button
                                     onClick={() => handleDeleteUser(user.id, user.username)}
@@ -18700,6 +18696,27 @@ node .\\load-tests\\generate-report.js`}
               </div>
 
               <div className="space-y-2">
+                {/* Edit User — available for all users, including other admins */}
+                <button
+                  onClick={() => {
+                    const target = userActionsDialog.user;
+                    setUserActionsDialog({ open: false, user: null });
+                    setEditUserModal({ open: true, userId: target.id, username: target.username, email: target.email, auth_source: target.auth_source || 'local', notes: target.notes || '' });
+                    setEditUsername(target.username);
+                    setEditEmail(target.email);
+                    setEditAuthSource((target.auth_source || 'local') as 'local' | 'ldap' | 'saml');
+                    setEditNotes(target.notes || '');
+                  }}
+                  disabled={processing === userActionsDialog.user.id}
+                  className="w-full px-4 py-3 text-left text-sm font-medium bg-teal-50 dark:bg-teal-900/10 text-teal-700 dark:text-teal-400 hover:bg-teal-100 dark:hover:bg-teal-900/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 rounded-xl transition-all"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                    <path d="M5.433 13.917l1.262-3.155A4 4 0 017.58 9.42l6.92-6.918a2.121 2.121 0 013 3l-6.919 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 01-.65-.65z" />
+                    <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0010 3H4.75A2.75 2.75 0 002 5.75v9.5A2.75 2.75 0 004.75 18h9.5A2.75 2.75 0 0017 15.25V10a.75.75 0 00-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5z" />
+                  </svg>
+                  Edit User
+                </button>
+
                 {/* Promote/Demote */}
                 <button
                   onClick={async () => {
@@ -18759,6 +18776,35 @@ node .\\load-tests\\generate-report.js`}
                   </button>
                 )}
 
+                {/* Toggle Auth Source — available for all users, including other admins */}
+                <button
+                  onClick={async () => {
+                    const targetId = userActionsDialog.user.id;
+                    setUserActionsDialog({ open: false, user: null });
+                    try {
+                      setProcessing(targetId);
+                      setError('');
+                      const result = await authService.toggleAuthSource(targetId);
+                      setAllUsers(prevUsers =>
+                        prevUsers.map(u =>
+                          u.id === targetId ? { ...u, auth_source: result.auth_source } : u
+                        )
+                      );
+                    } catch (err: any) {
+                      setError(err.message || 'Failed to toggle auth source');
+                    } finally {
+                      setProcessing(null);
+                    }
+                  }}
+                  disabled={processing === userActionsDialog.user.id}
+                  className="w-full px-4 py-3 text-left text-sm font-medium bg-purple-50 dark:bg-purple-900/10 text-purple-700 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 rounded-xl transition-all"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                    <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                  </svg>
+                  Toggle Auth Source ({(userActionsDialog.user.auth_source || 'local').toUpperCase()})
+                </button>
+
                 {!userActionsDialog.user.is_admin && (
                   <>
                     {/* Disable/Enable */}
@@ -18783,34 +18829,6 @@ node .\\load-tests\\generate-report.js`}
                         </svg>
                       )}
                       {userActionsDialog.user.is_disabled ? 'Enable User' : 'Disable User'}
-                    </button>
-
-                    {/* Toggle Auth Source */}
-                    <button
-                      onClick={async () => {
-                        setUserActionsDialog({ open: false, user: null });
-                        try {
-                          setProcessing(userActionsDialog.user.id);
-                          setError('');
-                          const result = await authService.toggleAuthSource(userActionsDialog.user.id);
-                          setAllUsers(prevUsers =>
-                            prevUsers.map(u =>
-                              u.id === userActionsDialog.user.id ? { ...u, auth_source: result.auth_source } : u
-                            )
-                          );
-                        } catch (err: any) {
-                          setError(err.message || 'Failed to toggle auth source');
-                        } finally {
-                          setProcessing(null);
-                        }
-                      }}
-                      disabled={processing === userActionsDialog.user.id}
-                      className="w-full px-4 py-3 text-left text-sm font-medium bg-purple-50 dark:bg-purple-900/10 text-purple-700 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 rounded-xl transition-all"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                        <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-                      </svg>
-                      Toggle Auth Source
                     </button>
 
                     {/* Change Password (local accounts only) */}

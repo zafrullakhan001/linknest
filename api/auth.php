@@ -4185,84 +4185,283 @@ function getLdapServers($settings) {
     ]];
 }
 
-function getLdapDomainFromSettings($settings) {
-    // Try to extract domain from base DN first
-    $baseDn = $settings['ldap_base_dn'] ?? '';
-    if (empty($baseDn)) {
-        $baseDn = $settings['ldap_user_search_base'] ?? '';
+function normalizeAuthDomainCandidate($value) {
+    $value = strtolower(trim((string)$value));
+    $value = preg_replace('#^(ldap|ldaps)://#i', '', $value);
+    $value = preg_replace('/:\d+$/', '', $value);
+    $value = ltrim($value, '@');
+    $value = rtrim($value, '.');
+    if ($value === '' || $value === 'localhost') {
+        return null;
     }
-    
-    if (!empty($baseDn)) {
-        // Extract domain from base DN (e.g., "DC=oneflorida,DC=org" -> "oneflorida.org")
-        if (preg_match_all('/DC=([^,]+)/i', $baseDn, $matches)) {
-            if (!empty($matches[1])) {
-                return strtolower(implode('.', $matches[1]));
+    return $value;
+}
+
+function isGenericAuthDomainLabel($label) {
+    static $generic = [
+        'com', 'org', 'net', 'edu', 'gov', 'mil', 'int', 'local', 'lan', 'internal',
+        'corp', 'private', 'test', 'localhost', 'users', 'computers', 'builtin',
+        'system', 'groups', 'people', 'accounts',
+    ];
+    return in_array(strtolower((string)$label), $generic, true);
+}
+
+function addAuthDomainCandidate(array &$candidates, $value) {
+    $normalized = normalizeAuthDomainCandidate($value);
+    if ($normalized === null) {
+        return;
+    }
+    $candidates[$normalized] = true;
+}
+
+/**
+ * Extract DNS domain and domain CN (left-most DC=) from an LDAP DN.
+ * Example: "CN=Users,DC=oneflorida,DC=org" -> ["oneflorida.org", "oneflorida"]
+ */
+function extractDomainsFromLdapDn($dn) {
+    $domains = [];
+    $dn = trim((string)$dn);
+    if ($dn === '') {
+        return $domains;
+    }
+
+    if (preg_match_all('/DC=([^,]+)/i', $dn, $dcMatches) && !empty($dcMatches[1])) {
+        $dcParts = array_map(static function ($part) {
+            return strtolower(trim((string)$part));
+        }, $dcMatches[1]);
+        $dcCount = count($dcParts);
+        for ($i = 0; $i < $dcCount; $i++) {
+            $suffix = implode('.', array_slice($dcParts, $i));
+            if ($suffix === '') {
+                continue;
+            }
+            // Skip public suffixes / generic labels such as "com" or "local"
+            if (strpos($suffix, '.') === false && isGenericAuthDomainLabel($suffix)) {
+                continue;
+            }
+            $domains[] = $suffix;
+        }
+        $domainCn = $dcParts[0];
+        if ($domainCn !== '' && !isGenericAuthDomainLabel($domainCn)) {
+            $domains[] = $domainCn;
+        }
+    }
+
+    if (preg_match_all('/CN=([^,]+)/i', $dn, $cnMatches) && !empty($cnMatches[1])) {
+        foreach ($cnMatches[1] as $cn) {
+            $cn = strtolower(trim($cn));
+            if ($cn === '' || isGenericAuthDomainLabel($cn)) {
+                continue;
+            }
+            // Only treat CN as a domain when it looks like one (contains a dot)
+            if (strpos($cn, '.') !== false) {
+                $domains[] = $cn;
             }
         }
     }
-    
-    // If domain still not found, try to extract from server hostname
-    $server = trim($settings['ldap_server'] ?? $settings['ldap_host'] ?? '');
-    if (!empty($server)) {
-        // Try to extract domain from FQDN (e.g., "server.example.com" -> "example.com")
-        $parts = explode('.', $server);
-        if (count($parts) >= 2) {
-            // Skip first part (hostname), use rest as domain
-            return strtolower(implode('.', array_slice($parts, 1)));
-        }
+
+    return $domains;
+}
+
+function domainFromLdapHostname($host) {
+    $host = normalizeAuthDomainCandidate($host);
+    if ($host === null || filter_var($host, FILTER_VALIDATE_IP)) {
+        return null;
     }
-    
+    $parts = explode('.', $host);
+    $count = count($parts);
+    if ($count >= 3) {
+        // ldap.company.com -> company.com
+        return implode('.', array_slice($parts, 1));
+    }
+    if ($count === 2) {
+        return $host;
+    }
     return null;
 }
 
 /**
- * Auto-detect authentication source for a single user
- * Priority: Email domain patterns (@localhost = local, @ldap_domain = LDAP) > SAML (if saml_nameid exists) > LDAP (if exists in directory) > Local
- * @param array $user User record from database
- * @param array $ldapSettings LDAP settings (optional, will be fetched if not provided)
- * @return string Detected auth source: 'saml', 'ldap', or 'local'
+ * Collect LDAP domain candidates from multi-server and legacy settings.
+ * Includes login_domain, DC=/CN= from search/bind DNs, and server hostnames.
  */
-function detectUserAuthSource($user, $ldapSettings = null) {
-    $email = $user['email'] ?? '';
-    $emailDomain = extractEmailDomain($email);
-    
-    // Priority 1: Check email domain patterns
-    if (!empty($emailDomain)) {
-        // @localhost = local user
-        if ($emailDomain === 'localhost') {
-            return 'local';
+function collectLdapDomainCandidates($settings) {
+    $candidates = [];
+    if (!is_array($settings) || empty($settings)) {
+        return [];
+    }
+
+    $addFromDn = function ($dn) use (&$candidates) {
+        foreach (extractDomainsFromLdapDn($dn) as $domain) {
+            addAuthDomainCandidate($candidates, $domain);
         }
-        
-        // Check if email domain matches LDAP domain
-        if ($ldapSettings === null) {
-            $db = getDB();
-            $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'ldap_%'");
-            $stmt->execute();
-            $ldapSettings = [];
-            foreach ($stmt->fetchAll() as $row) {
-                $ldapSettings[$row['key']] = $row['value'];
+    };
+
+    addAuthDomainCandidate($candidates, $settings['ldap_login_domain'] ?? '');
+    $addFromDn($settings['ldap_base_dn'] ?? '');
+    $addFromDn($settings['ldap_user_search_base'] ?? '');
+    $addFromDn($settings['ldap_group_search_base'] ?? '');
+    $addFromDn($settings['ldap_bind_dn'] ?? '');
+    addAuthDomainCandidate($candidates, domainFromLdapHostname($settings['ldap_server'] ?? $settings['ldap_host'] ?? ''));
+
+    foreach (getLdapServers($settings) as $server) {
+        if (!is_array($server)) {
+            continue;
+        }
+        addAuthDomainCandidate($candidates, $server['login_domain'] ?? '');
+        $addFromDn($server['user_search_base'] ?? '');
+        $addFromDn($server['group_search_base'] ?? '');
+        $addFromDn($server['bind_dn'] ?? '');
+        $addFromDn($server['user_dn_template'] ?? '');
+        addAuthDomainCandidate($candidates, domainFromLdapHostname($server['server'] ?? ''));
+    }
+
+    return array_keys($candidates);
+}
+
+function getLdapDomainFromSettings($settings) {
+    $candidates = collectLdapDomainCandidates($settings);
+    foreach ($candidates as $domain) {
+        if (strpos($domain, '.') !== false) {
+            return $domain;
+        }
+    }
+    return $candidates[0] ?? null;
+}
+
+/**
+ * True when the user's email (or username@domain) matches an LDAP domain or domain CN.
+ */
+function userMatchesLdapDomains($user, array $ldapDomains) {
+    if (empty($ldapDomains)) {
+        return false;
+    }
+
+    $identityDomains = [];
+    $emailDomain = extractEmailDomain($user['email'] ?? '');
+    if (!empty($emailDomain) && $emailDomain !== 'localhost') {
+        $identityDomains[] = $emailDomain;
+    }
+    $usernameDomain = extractEmailDomain($user['username'] ?? '');
+    if (!empty($usernameDomain) && $usernameDomain !== 'localhost') {
+        $identityDomains[] = $usernameDomain;
+    }
+
+    if (empty($identityDomains)) {
+        return false;
+    }
+
+    foreach ($identityDomains as $identityDomain) {
+        foreach ($ldapDomains as $ldapDomain) {
+            if ($identityDomain === $ldapDomain) {
+                return true;
+            }
+            // user@mail.company.com matches LDAP domain company.com
+            if (strpos($ldapDomain, '.') !== false && substr($identityDomain, -strlen('.' . $ldapDomain)) === '.' . $ldapDomain) {
+                return true;
+            }
+            // Domain CN / NetBIOS (e.g. "oneflorida") matches user@oneflorida.org
+            if (strpos($ldapDomain, '.') === false && !isGenericAuthDomainLabel($ldapDomain)) {
+                $firstLabel = explode('.', $identityDomain)[0];
+                if ($firstLabel === $ldapDomain) {
+                    return true;
+                }
             }
         }
-        
-        $ldapDomain = getLdapDomainFromSettings($ldapSettings);
-        if (!empty($ldapDomain) && $emailDomain === $ldapDomain) {
+    }
+
+    return false;
+}
+
+function collectSamlDomainCandidates($settings) {
+    $candidates = [];
+    if (!is_array($settings) || empty($settings)) {
+        return [];
+    }
+
+    static $genericIdpHosts = [
+        'login.microsoftonline.com',
+        'sts.windows.net',
+        'login.windows.net',
+        'accounts.google.com',
+        'okta.com',
+        'pingone.com',
+        'auth0.com',
+    ];
+
+    $addHost = function ($value) use (&$candidates, $genericIdpHosts) {
+        $value = trim((string)$value);
+        if ($value === '') {
+            return;
+        }
+        $host = $value;
+        if (preg_match('#^https?://#i', $value)) {
+            $parsed = parse_url($value);
+            $host = $parsed['host'] ?? '';
+        }
+        $host = normalizeAuthDomainCandidate($host);
+        if ($host === null) {
+            return;
+        }
+        foreach ($genericIdpHosts as $generic) {
+            if ($host === $generic || substr($host, -strlen('.' . $generic)) === '.' . $generic) {
+                return;
+            }
+        }
+        addAuthDomainCandidate($candidates, $host);
+        $fromHost = domainFromLdapHostname($host);
+        addAuthDomainCandidate($candidates, $fromHost);
+    };
+
+    $addHost($settings['idp_entity_id'] ?? '');
+    $addHost($settings['idp_sso_url'] ?? '');
+    $addHost($settings['sp_entity_id'] ?? '');
+
+    return array_keys($candidates);
+}
+
+function userMatchesSamlDomains($user, array $samlDomains) {
+    return userMatchesLdapDomains($user, $samlDomains);
+}
+
+/**
+ * Auto-detect authentication source for a single user.
+ * Priority: LDAP (domain CN / email match) > SAML (nameid or IdP domain) > Local
+ *
+ * @param array $user User record from database
+ * @param array|null $authSettings Combined LDAP/SAML settings (fetched if not provided)
+ * @return string Detected auth source: 'ldap', 'saml', or 'local'
+ */
+function detectUserAuthSource($user, $authSettings = null) {
+    if ($authSettings === null) {
+        $db = getDB();
+        $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'ldap_%' OR key LIKE 'saml_%' OR key IN ('idp_entity_id', 'idp_sso_url', 'sp_entity_id')");
+        $stmt->execute();
+        $authSettings = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $authSettings[$row['key']] = $row['value'];
+        }
+    }
+
+    $ldapEnabled = !empty($authSettings['ldap_enabled']) && $authSettings['ldap_enabled'] == '1';
+    if ($ldapEnabled) {
+        $ldapDomains = collectLdapDomainCandidates($authSettings);
+        if (userMatchesLdapDomains($user, $ldapDomains)) {
             return 'ldap';
         }
     }
-    
-    // Priority 2: Check for SAML (if saml_nameid exists)
+
     if (!empty($user['saml_nameid'])) {
         return 'saml';
     }
-    
-    // Priority 3: Check if user exists in LDAP directory
-    if (!empty($ldapSettings) && isset($ldapSettings['ldap_enabled']) && $ldapSettings['ldap_enabled'] === '1') {
-        if (checkUserExistsInLdap($user['username'])) {
-            return 'ldap';
+
+    $samlEnabled = !empty($authSettings['saml_enabled']) && $authSettings['saml_enabled'] == '1';
+    if ($samlEnabled) {
+        $samlDomains = collectSamlDomainCandidates($authSettings);
+        if (userMatchesSamlDomains($user, $samlDomains)) {
+            return 'saml';
         }
     }
-    
-    // Default to local
+
     return 'local';
 }
 
@@ -4297,14 +4496,12 @@ function handleAutoDetectAuthSources() {
             }
         }
         
-        // Check if LDAP is enabled to avoid unnecessary checks
-        $stmt = $db->prepare("SELECT key, value FROM settings WHERE key IN ('ldap_enabled') OR key LIKE 'ldap_%'");
+        $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'ldap_%' OR key LIKE 'saml_%' OR key IN ('idp_entity_id', 'idp_sso_url', 'sp_entity_id')");
         $stmt->execute();
         $settings = [];
         foreach ($stmt->fetchAll() as $row) {
             $settings[$row['key']] = $row['value'];
         }
-        $ldapEnabled = isset($settings['ldap_enabled']) && $settings['ldap_enabled'] === '1';
         
         $results = [
             'total' => count($users),
@@ -4316,7 +4513,6 @@ function handleAutoDetectAuthSources() {
         
         foreach ($users as $user) {
             try {
-                // Use the improved detection function that checks email domains
                 $detectedSource = detectUserAuthSource($user, $settings);
                 
                 $currentSource = $user['auth_source'] ?? null;
