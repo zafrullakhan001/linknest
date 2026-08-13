@@ -58,6 +58,60 @@ const storageKey = (baseKey: string): string => {
   return canonicalKey(baseKey);
 };
 
+export const getPublicFavoritesInstanceLabel = (): string => {
+  const path = getAppBasePath();
+  if (!path || path === '/') return 'this site';
+  return path.replace(/^\//, '');
+};
+
+export const getPublicFavoritesInstanceScope = (): string => {
+  return getAppStorageScope() || '__root__';
+};
+
+const normalizeInstanceScope = (value: string): string => {
+  const t = value.trim().toLowerCase().replace(/\/+$/, '');
+  if (t === '' || t === '/' || t === '__root__' || t === 'root') return '__root__';
+  return t.startsWith('/') ? t : `/${t}`;
+};
+
+const instanceScopeFromExport = (obj: Record<string, unknown>): string | null => {
+  const raw = obj.instanceScope ?? obj.instance ?? obj.appBasePath;
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  return normalizeInstanceScope(raw);
+};
+
+/**
+ * Remove this install's public-favorite keys only (canonical + case variants).
+ * Never touches another folder's keys (e.g. /ERP3) or the old shared unscoped keys.
+ */
+const removeThisInstanceKey = (baseKey: string): void => {
+  const currentScope = getPublicFavoritesInstanceScope().toLowerCase();
+  const path = (getAppBasePath() || '').toLowerCase();
+  const prefix = `${baseKey}:`;
+  const toRemove: string[] = [];
+
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(prefix)) continue;
+      const rest = key.slice(prefix.length).toLowerCase();
+      if (rest === currentScope || (path && rest === path)) {
+        toRemove.push(key);
+      }
+    }
+    if (toRemove.length === 0) {
+      toRemove.push(canonicalKey(baseKey));
+    }
+    toRemove.forEach((key) => localStorage.removeItem(key));
+  } catch {
+    try {
+      localStorage.removeItem(canonicalKey(baseKey));
+    } catch {
+      // ignore
+    }
+  }
+};
+
 export interface PublicFavoriteLinkDetail {
   id: string;
   label: string;
@@ -216,7 +270,7 @@ export const togglePublicFavorite = (tileId: string): boolean => {
  */
 export const clearPublicFavorites = (): void => {
   try {
-    localStorage.removeItem(storageKey(STORAGE_KEY));
+    removeThisInstanceKey(STORAGE_KEY);
   } catch (error) {
     console.error('Failed to clear public favorites:', error);
   }
@@ -385,6 +439,9 @@ export const buildPublicFavoritesExportData = (
   options?: PublicFavoritesExportOptions
 ): {
   version: string;
+  instance: string;
+  instanceScope: string;
+  instanceLabel: string;
   exportDate: string;
   favorites: string[];
   linkFavorites: string[];
@@ -453,7 +510,10 @@ export const buildPublicFavoritesExportData = (
   }
 
   return {
-    version: '1.2',
+    version: '1.3',
+    instance: getAppBasePath() || '/',
+    instanceScope: getPublicFavoritesInstanceScope(),
+    instanceLabel: getPublicFavoritesInstanceLabel(),
     exportDate: new Date().toISOString(),
     favorites,
     linkFavorites,
@@ -478,7 +538,8 @@ export const exportPublicFavorites = (options?: PublicFavoritesExportOptions): v
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `linknest-public-favorites-${new Date().toISOString().split('T')[0]}.json`;
+    const slug = getPublicFavoritesInstanceScope().replace(/^\//, '') || 'root';
+    a.download = `linknest-public-favorites-${slug}-${new Date().toISOString().split('T')[0]}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -526,6 +587,18 @@ export const importPublicFavorites = async (file: File): Promise<{
       favoritesRaw = data;
     } else if (data && typeof data === 'object') {
       const obj = data as Record<string, unknown>;
+      const fileScope = instanceScopeFromExport(obj);
+      const currentScope = getPublicFavoritesInstanceScope();
+      if (fileScope && fileScope !== currentScope) {
+        const fromLabel =
+          (typeof obj.instanceLabel === 'string' && obj.instanceLabel.trim())
+            ? obj.instanceLabel.trim()
+            : fileScope.replace(/^\//, '');
+        throw new Error(
+          `This file was exported from ${fromLabel}. Import it on that instance only — not on ${getPublicFavoritesInstanceLabel()}.`
+        );
+      }
+
       // Only accept known favorites export keys (avoid accidental picks like "tiles"/"links")
       if ('favorites' in obj) favoritesRaw = obj.favorites;
       else if ('tileFavorites' in obj) favoritesRaw = obj.tileFavorites;
@@ -635,7 +708,7 @@ export const importPublicFavorites = async (file: File): Promise<{
 
     return {
       success: true,
-      message: `Successfully imported ${parts.join(' and ')}.`,
+      message: `Imported ${parts.join(' and ')} into ${getPublicFavoritesInstanceLabel()} only.`,
       importedCount: (importingSpaces && favorites ? favorites.length : 0) + importedLinks
     };
   } catch (error) {
@@ -791,8 +864,8 @@ export const syncPublicLinkFavoriteDetails = (details: PublicFavoriteLinkDetail[
  */
 export const clearPublicLinkFavorites = (): void => {
   try {
-    localStorage.removeItem(storageKey(LINK_STORAGE_KEY));
-    localStorage.removeItem(storageKey(LINK_DETAILS_STORAGE_KEY));
+    removeThisInstanceKey(LINK_STORAGE_KEY);
+    removeThisInstanceKey(LINK_DETAILS_STORAGE_KEY);
   } catch (error) {
     console.error('Failed to clear public link favorites:', error);
   }

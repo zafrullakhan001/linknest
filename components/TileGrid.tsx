@@ -16,7 +16,7 @@ import { authService, UserListItem } from '../services/authService';
 import { resolveApiBase } from '../services/apiHelpers';
 import { useAuth } from '../contexts/AuthContext';
 import { userPreferencesService } from '../services/userPreferencesService';
-import { getPublicFavorites, togglePublicFavorite, isPublicFavorite, getPublicActiveTab, setPublicActiveTab, exportPublicFavorites, importPublicFavorites, clearPublicFavorites, getPublicLinkFavorites, togglePublicLinkFavorite, clearPublicLinkFavorites, getPublicLinkFavoriteDetails, syncPublicLinkFavoriteDetails, upsertPublicLinkFavoriteDetail, removePublicLinkFavoriteDetail } from '../services/publicFavoritesService';
+import { getPublicFavorites, togglePublicFavorite, isPublicFavorite, getPublicActiveTab, setPublicActiveTab, exportPublicFavorites, importPublicFavorites, clearPublicFavorites, getPublicLinkFavorites, togglePublicLinkFavorite, clearPublicLinkFavorites, getPublicLinkFavoriteDetails, syncPublicLinkFavoriteDetails, upsertPublicLinkFavoriteDetail, removePublicLinkFavoriteDetail, getPublicFavoritesInstanceLabel } from '../services/publicFavoritesService';
 import { linkHealthService } from '../services/linkHealthService';
 import { favoriteLinkHealthService, LinkHealthCheckResult } from '../services/favoriteLinkHealthService';
 import { generateUuid } from '../services/idService';
@@ -6810,21 +6810,23 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     const tileCount = publicFavorites.length;
     const linkCount = favoriteLinks.length;
     const totalCount = tileCount + linkCount;
+    const instanceLabel = getPublicFavoritesInstanceLabel();
 
     if (totalCount === 0) {
       alert('No favorites to remove.');
       return;
     }
 
-    const confirmMessage = `Are you sure you want to remove all ${totalCount} favorite(s)? This action will remove both favorite spaces and favorite links. This cannot be undone.`;
+    const confirmMessage =
+      `Remove all ${totalCount} public favorite(s) from ${instanceLabel} only?\n\n` +
+      `Favorites on other instances will not be changed. This cannot be undone.`;
     if (window.confirm(confirmMessage)) {
       try {
         clearPublicFavorites();
         clearPublicLinkFavorites();
-        // Update states immediately
         setPublicFavorites([]);
         setFavoriteLinks([]);
-        alert(`Successfully removed all ${totalCount} favorite(s).`);
+        alert(`Removed all ${totalCount} public favorite(s) from ${instanceLabel} only.`);
       } catch (error) {
         console.error('Failed to clear public favorites:', error);
         alert('Failed to clear favorites. Please try again.');
@@ -7106,7 +7108,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             <button
               onClick={handleExportPublicFavorites}
               className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded transition-all"
-              title="Export favorites to file"
+              title={`Export ${getPublicFavoritesInstanceLabel()} public favorites`}
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                 <path d="M9.25 13.25a.75.75 0 001.5 0V4.636l2.955 2.955a.75.75 0 001.09-1.03l-4.25-4.5a.75.75 0 00-1.09 0l-4.25 4.5a.75.75 0 001.09 1.03l2.955-2.955V13.25z" />
@@ -7116,7 +7118,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             <button
               onClick={() => fileInputRef.current?.click()}
               className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded transition-all"
-              title="Import favorites from file"
+              title={`Import public favorites into ${getPublicFavoritesInstanceLabel()} only`}
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                 <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.295a.75.75 0 00-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 2.955V2.75z" />
@@ -7133,7 +7135,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             <button
               onClick={handleClearAllPublicFavorites}
               className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-all"
-              title="Remove all favorites"
+              title={`Remove all public favorites from ${getPublicFavoritesInstanceLabel()} only`}
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                 <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
