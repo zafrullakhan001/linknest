@@ -73,7 +73,9 @@ const SshTerminalWidget = lazy(() => import('./components/SshTerminalWidget').th
 
 function hasLikelySession(): boolean {
   try {
-    return /(?:^|; )PHPSESSID=/.test(document.cookie);
+    // HttpOnly session cookies are invisible here; this only helps when the
+    // cookie is readable. Names are instance-scoped (LNSESSArchLinks, …).
+    return /(?:^|; )(?:PHPSESSID|LNSESS[A-Za-z0-9]+)=/.test(document.cookie);
   } catch {
     return false;
   }

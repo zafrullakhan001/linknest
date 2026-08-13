@@ -875,34 +875,11 @@ function handleLogin() {
         trackUserLogin($user['id'], $user['username']);
         
         // Set session cookie expiration based on remember me
-        // Note: ini_set for session.cookie_lifetime must be set before session_start(),
-        // so we update the cookie directly using setcookie()
-        $cookieParams = session_get_cookie_params();
-        if ($rememberMe) {
-            // 30 days for remember me
-            $cookieLifetime = 30 * 24 * 60 * 60; // 30 days in seconds
-            setcookie(
-                session_name(),
-                session_id(),
-                time() + $cookieLifetime,
-                $cookieParams['path'],
-                $cookieParams['domain'],
-                $cookieParams['secure'],
-                $cookieParams['httponly']
-            );
-        } else {
-            // 24 hours for regular sessions (or 0 for session cookie)
-            $cookieLifetime = 24 * 60 * 60; // 24 hours in seconds
-            setcookie(
-                session_name(),
-                session_id(),
-                time() + $cookieLifetime,
-                $cookieParams['path'],
-                $cookieParams['domain'],
-                $cookieParams['secure'],
-                $cookieParams['httponly']
-            );
-        }
+        // Cookie path/name are instance-scoped (see session_bootstrap.php)
+        $cookieLifetime = $rememberMe
+            ? 30 * 24 * 60 * 60
+            : 24 * 60 * 60;
+        linknestWriteSessionCookie($cookieLifetime);
         
         sendJSON([
             'success' => true,
@@ -971,34 +948,11 @@ function handleLogin() {
     trackUserLogin($user['id'], $user['username']);
     
     // Set session cookie expiration based on remember me
-    // Note: ini_set for session.cookie_lifetime must be set before session_start(),
-    // so we update the cookie directly using setcookie()
-    $cookieParams = session_get_cookie_params();
-    if ($rememberMe) {
-        // 30 days for remember me
-        $cookieLifetime = 30 * 24 * 60 * 60; // 30 days in seconds
-        setcookie(
-            session_name(),
-            session_id(),
-            time() + $cookieLifetime,
-            $cookieParams['path'],
-            $cookieParams['domain'],
-            $cookieParams['secure'],
-            $cookieParams['httponly']
-        );
-    } else {
-        // 24 hours for regular sessions (or 0 for session cookie)
-        $cookieLifetime = 24 * 60 * 60; // 24 hours in seconds
-        setcookie(
-            session_name(),
-            session_id(),
-            time() + $cookieLifetime,
-            $cookieParams['path'],
-            $cookieParams['domain'],
-            $cookieParams['secure'],
-            $cookieParams['httponly']
-        );
-    }
+    // Cookie path/name are instance-scoped (see session_bootstrap.php)
+    $cookieLifetime = $rememberMe
+        ? 30 * 24 * 60 * 60
+        : 24 * 60 * 60;
+    linknestWriteSessionCookie($cookieLifetime);
     
     sendJSON([
         'success' => true,
@@ -1050,7 +1004,11 @@ function handleLogout() {
     if (session_status() === PHP_SESSION_NONE) {
         session_start();
     }
-    session_destroy();
+    $_SESSION = [];
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_destroy();
+    }
+    linknestClearSessionCookie();
     sendJSON(['success' => true]);
 }
 

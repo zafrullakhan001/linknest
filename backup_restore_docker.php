@@ -9,6 +9,10 @@
  * Authentication: admin / password123
  */
 
+// Isolate session cookies per install folder (/ArchLinks vs /ERP3) before session_start().
+require_once __DIR__ . '/api/session_bootstrap.php';
+linknestConfigureSession();
+
 // Simple authentication
 session_start();
 

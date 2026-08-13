@@ -84,6 +84,10 @@ error_reporting(E_ALL & ~E_DEPRECATED & ~E_STRICT);
     @file_put_contents($cacheFile, $phpTz, LOCK_EX);
 })();
 
+// Isolate PHP session cookies per install folder (/ArchLinks vs /ERP3) before any session_start().
+require_once __DIR__ . '/session_bootstrap.php';
+linknestConfigureSession();
+
 // Start output buffering to prevent any accidental output
 if (!ob_get_level()) {
     ob_start();
@@ -4785,29 +4789,9 @@ function getAppBasePath(): string {
         return $cached = $fromForced;
     }
 
-    $script = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? ''));
-    if (preg_match('#^/([^/]+)/api/(?:index\.php)?$#', $script, $m)
-        || preg_match('#^/([^/]+)/api/#', $script, $m)) {
-        $base = $normalize('/' . $m[1]);
-        if ($base !== '') {
-            return $cached = $base;
-        }
-    }
-
-    $uri = str_replace('\\', '/', (string)($_SERVER['REQUEST_URI'] ?? ''));
-    $uri = explode('?', $uri, 2)[0];
-    if (preg_match('#^/([^/]+)/api/#', $uri, $m)) {
-        $base = $normalize('/' . $m[1]);
-        if ($base !== '') {
-            return $cached = $base;
-        }
-    }
-
-    // Alias / subdir installs sometimes expose CONTEXT_PREFIX
-    $ctx = str_replace('\\', '/', (string)($_SERVER['CONTEXT_PREFIX'] ?? ''));
-    $fromCtx = $normalize($ctx);
-    if ($fromCtx !== '') {
-        return $cached = $fromCtx;
+    $fromRequest = linknestDetectUrlInstallPath();
+    if ($fromRequest !== '') {
+        return $cached = $fromRequest;
     }
 
     $referer = (string)($_SERVER['HTTP_REFERER'] ?? '');
