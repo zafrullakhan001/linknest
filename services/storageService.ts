@@ -663,6 +663,21 @@ export const getFavoriteLinks = async (): Promise<FavoriteLink[]> => {
   }
 };
 
+/** Persist ordered favorite link IDs for the authenticated user (positions 0..n). */
+export const saveFavoriteLinkOrder = async (linkIds: string[]): Promise<void> => {
+  const response = await fetch(`${API_BASE}/tiles/favorites/links/order`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ linkIds })
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: 'Failed to save favorite link order' }));
+    throw new Error((errorData as { error?: string }).error || 'Failed to save favorite link order');
+  }
+};
+
 /**
  * Resolve link IDs into FavoriteLink payloads (for guest/public favorites).
  * Home-grid tiles load in summary mode without nested links, so guests cannot

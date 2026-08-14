@@ -4,7 +4,7 @@ import { Tile, LinkSection, ThemeColor, THEME_COLORS, COLOR_STYLES, TileVisibili
 import { useSettings } from '../contexts/SettingsContext';
 import { useStyles } from '../contexts/StyleContext';
 import { applyCategoryTextCase, buildCategoryCaseRenameMap } from '../services/styleService';
-import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite, saveTile, createTile, getTiles, getTile, cloneCategory, toggleCategoryFavorite, getRecycleBin, restoreTile, purgeRecycleBin, permanentDeleteTile, permanentDeleteCategory, deleteTile, getArchive, archiveTile, unarchiveTile, purgeArchive, archiveCategory, unarchiveCategory, getFavoriteLinks, resolveFavoriteLinks, FavoriteLink, csvToJson, uploadTileHeaderImage, uploadTileEmojiImage } from '../services/storageService';
+import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite, saveTile, createTile, getTiles, getTile, cloneCategory, toggleCategoryFavorite, getRecycleBin, restoreTile, purgeRecycleBin, permanentDeleteTile, permanentDeleteCategory, deleteTile, getArchive, archiveTile, unarchiveTile, purgeArchive, archiveCategory, unarchiveCategory, getFavoriteLinks, resolveFavoriteLinks, saveFavoriteLinkOrder, FavoriteLink, csvToJson, uploadTileHeaderImage, uploadTileEmojiImage } from '../services/storageService';
 import {
   exportTileToFileAsync,
   exportCategoryToFileAsync,
@@ -12,6 +12,7 @@ import {
   normalizeImportedTiles,
   restoreImportedTileAssets
 } from '../services/spaceTransferService';
+import { FavoriteLinksSection } from './FavoriteLinksSection';
 import { authService, UserListItem } from '../services/authService';
 import { resolveApiBase } from '../services/apiHelpers';
 import { useAuth } from '../contexts/AuthContext';
@@ -2236,57 +2237,6 @@ const SortableTile: React.FC<SortableTileProps> = ({
 };
 
 type TabType = 'favorites' | 'public' | 'public-favorites' | 'your-apps' | 'staging' | 'private' | 'scheduled' | 'expired' | 'archive' | 'recycle-bin' | 'monitoring' | 'monitorv2';
-
-const GuestReorderArrows: React.FC<{
-  canMoveLeft: boolean;
-  canMoveRight: boolean;
-  onMoveLeft: () => void;
-  onMoveRight: () => void;
-  variant?: 'overlay' | 'inline';
-}> = ({ canMoveLeft, canMoveRight, onMoveLeft, onMoveRight, variant = 'overlay' }) => (
-  <div
-    className={
-      variant === 'inline'
-        ? 'flex items-center gap-0.5'
-        : 'absolute bottom-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 z-20 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm p-0.5 rounded-lg border border-slate-200/50 dark:border-slate-700/50'
-    }
-  >
-    <button
-      onClick={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (canMoveLeft) onMoveLeft();
-      }}
-      disabled={!canMoveLeft}
-      className={`p-1 rounded-md transition-all ${canMoveLeft
-        ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
-        : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
-        }`}
-      title="Move left"
-    >
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-        <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clipRule="evenodd" />
-      </svg>
-    </button>
-    <button
-      onClick={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (canMoveRight) onMoveRight();
-      }}
-      disabled={!canMoveRight}
-      className={`p-1 rounded-md transition-all ${canMoveRight
-        ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
-        : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
-        }`}
-      title="Move right"
-    >
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-        <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-      </svg>
-    </button>
-  </div>
-);
 
 export const TileGrid: React.FC<TileGridProps> = ({
   tiles,
@@ -6778,26 +6728,49 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     }
   }, [tiles, stagingTiles, activeTab, isAuthenticated, onUpdateTiles, buildArrangementAndScope, groupedTiles]);
 
-  const handleMoveFavoriteLink = useCallback((linkId: string, direction: 'left' | 'right') => {
-    if (isAuthenticated) return;
+  const handleReorderFavoriteLinks = useCallback(async (orderedLinks: FavoriteLink[]) => {
+    setFavoriteLinks(orderedLinks);
+    const orderedIds = orderedLinks.map((l) => l.id);
 
+    if (isAuthenticated) {
+      try {
+        await saveFavoriteLinkOrder(orderedIds);
+      } catch (err) {
+        console.error('Failed to save favorite link order:', err);
+        try {
+          const links = await getFavoriteLinks();
+          setFavoriteLinks(links);
+        } catch {
+          /* ignore */
+        }
+      }
+      return;
+    }
+
+    writePublicLinkFavorites(orderedIds);
+  }, [isAuthenticated]);
+
+  const handleMoveFavoriteLink = useCallback((linkId: string, direction: 'left' | 'right') => {
     if (favLinksSort !== 'default') {
       handleSetFavLinksSort('default');
     }
 
-    const ids = getPublicLinkFavorites();
+    const ids = isAuthenticated
+      ? favoriteLinks.map((l) => l.id)
+      : getPublicLinkFavorites();
     const currentIndex = ids.indexOf(linkId);
     if (currentIndex === -1) return;
     const targetIndex = direction === 'left' ? currentIndex - 1 : currentIndex + 1;
     if (targetIndex < 0 || targetIndex >= ids.length) return;
 
-    const next = swapPublicFavoriteIds(ids, linkId, ids[targetIndex]);
-    writePublicLinkFavorites(next);
-    setFavoriteLinks((prev) => {
-      const byId = new Map(prev.map((link) => [link.id, link]));
-      return next.map((id) => byId.get(id)).filter(Boolean) as typeof prev;
-    });
-  }, [isAuthenticated, favLinksSort, handleSetFavLinksSort]);
+    const nextIds = [...ids];
+    const [moved] = nextIds.splice(currentIndex, 1);
+    nextIds.splice(targetIndex, 0, moved);
+
+    const byId = new Map(favoriteLinks.map((link) => [link.id, link]));
+    const nextLinks = nextIds.map((id) => byId.get(id)).filter(Boolean) as FavoriteLink[];
+    void handleReorderFavoriteLinks(nextLinks);
+  }, [isAuthenticated, favLinksSort, handleSetFavLinksSort, favoriteLinks, handleReorderFavoriteLinks]);
 
   const handleManualSave = useCallback(async () => {
     if (isSaving) return;
@@ -7904,331 +7877,59 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
       {/* Favorite Links Section - Component */}
       {(() => {
+        if (!favoriteLinksAbove) return null;
+
         const showFavoriteLinks =
           activeTab === 'favorites' ||
           (activeTab === 'public-favorites' && (isAuthenticated || publicFavoritesSubTab === 'favorites'));
-        const favoriteLinksSection = showFavoriteLinks && (
-          <div className="mb-8">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-amber-500">
-                  <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
-                </svg>
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Favorite Links</h2>
-                <span className="text-sm text-slate-500 dark:text-slate-400">({favoriteLinks.length})</span>
-              </div>
-            </div>
-
-            {/* Sub-row for Sort, Position, and Monitoring Controls */}
-            <div className="flex items-center gap-4 mb-4">
-              {/* Sort Controls */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500 dark:text-slate-400">Sort:</span>
-                <button
-                  onClick={() => handleSetFavLinksSort(favLinksSort === 'default' ? 'asc' : favLinksSort === 'asc' ? 'desc' : 'default')}
-                  className={`p-1.5 rounded-lg transition-all ${favLinksSort !== 'default'
-                    ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
-                    }`}
-                  title={favLinksSort === 'asc' ? "Sorted ascending (Click for descending)" : favLinksSort === 'desc' ? "Sorted descending (Click to reset)" : "Sort ascending"}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 transition-transform ${favLinksSort === 'desc' ? 'rotate-180' : ''}`}>
-                    <path fillRule="evenodd" d="M2.24 6.8a.75.75 0 001.06-.04l1.95-2.1v8.59a.75.75 0 001.5 0V4.66l1.95 2.1a.75.75 0 101.1-1.02l-3.25-3.5a.75.75 0 00-1.1 0L2.2 5.74a.75.75 0 00.04 1.06zm8 4a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5zm0-4a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5zm0 8a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5z" clipRule="evenodd" />
-                  </svg>
-                </button>
-              </div>
-
-              {/* Reorder Controls */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500 dark:text-slate-400">Position:</span>
-                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
-                  <button
-                    onClick={() => handleSetFavoriteLinksAbove(true)}
-                    className={`px-2 py-1 text-xs rounded transition-all ${favoriteLinksAbove
-                      ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                      }`}
-                    title="Show links above tiles"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                      <path fillRule="evenodd" d="M10 17a.75.75 0 01-.75-.75V5.612L5.29 9.77a.75.75 0 01-1.08-1.04l5.25-5.5a.75.75 0 011.08 0l5.25 5.5a.75.75 0 11-1.08 1.04l-3.96-4.158V16.25A.75.75 0 0110 17z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => handleSetFavoriteLinksAbove(false)}
-                    className={`px-2 py-1 text-xs rounded transition-all ${!favoriteLinksAbove
-                      ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                      }`}
-                    title="Show links below tiles"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                      <path fillRule="evenodd" d="M10 3a.75.75 0 01.75.75v10.638l3.96-4.158a.75.75 0 111.08 1.04l-5.25 5.5a.75.75 0 01-1.08 0l-5.25-5.5a.75.75 0 111.08-1.04l3.96 4.158V3.75A.75.75 0 0110 3z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              {/* Monitoring Controls */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleExportStats}
-                  className="flex items-center justify-center w-8 h-8 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg transition-all shadow-sm hover:shadow-md"
-                  title="Export stats to CSV"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-emerald-500">
-                    <path fillRule="evenodd" d="M3 4.5A1.5 1.5 0 014.5 3h11A1.5 1.5 0 0117 4.5v11a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 013 15.5v-11zM4.5 4.5v11h11v-11h-11z" clipRule="evenodd" />
-                    <path fillRule="evenodd" d="M10 13a.75.75 0 01-.75-.75V7.56l-1.72 1.72a.75.75 0 01-1.06-1.06l3-3a.75.75 0 011.06 0l3 3a.75.75 0 11-1.06 1.06l-1.72-1.72v4.69A.75.75 0 0110 13z" clipRule="evenodd" />
-                  </svg>
-                </button>
-
-                <button
-                  onClick={handleForceRefresh}
-                  disabled={isCheckingHealth}
-                  className={`flex items-center justify-center w-8 h-8 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg transition-all shadow-sm hover:shadow-md disabled:opacity-50 ${isCheckingHealth ? 'animate-spin' : ''}`}
-                  title="Force refresh now"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-blue-500">
-                    <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-                    <path d="M21 3v5h-5" />
-                  </svg>
-                </button>
-
-                <div className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-1 shadow-sm">
-                  <div className="relative w-8 h-8 flex items-center justify-center">
-                    <svg className="w-6 h-6 rotate-[-90deg]">
-                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="transparent" className="text-slate-100 dark:text-slate-700" />
-                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="transparent" strokeDasharray={2 * Math.PI * 10} strokeDashoffset={isAutoRefreshEnabled ? (2 * Math.PI * 10) * (1 - refreshCountdown / autoRefreshInterval) : (2 * Math.PI * 10)} className={`${isAutoRefreshEnabled ? 'text-emerald-500' : 'text-slate-300 dark:text-slate-600'} transition-all duration-1000 ease-linear`} strokeLinecap="round" />
-                    </svg>
-                    <button onClick={() => setIsAutoRefreshEnabled(!isAutoRefreshEnabled)} className="absolute inset-0 flex items-center justify-center" title={isAutoRefreshEnabled ? "Disable auto-refresh" : "Enable auto-refresh"}>
-                      <div className={`w-1.5 h-1.5 rounded-full ${isAutoRefreshEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300 dark:bg-slate-600'}`}></div>
-                    </button>
-                  </div>
-                  <select value={autoRefreshInterval} onChange={(e) => setAutoRefreshInterval(Number(e.target.value))} disabled={!isAutoRefreshEnabled} className="bg-transparent text-[10px] font-medium text-slate-600 dark:text-slate-400 border-none focus:ring-0 cursor-pointer disabled:opacity-50 pr-2 pl-0">
-                    <option value={10}>10s</option>
-                    <option value={30}>30s</option>
-                    <option value={60}>1m</option>
-                    <option value={180}>3m</option>
-                    <option value={300}>5m</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-              {[...favoriteLinks]
-                .sort((a, b) => {
-                  if (favLinksSort === 'asc') {
-                    return a.label.localeCompare(b.label);
-                  }
-                  if (favLinksSort === 'desc') {
-                    return b.label.localeCompare(a.label);
-                  }
-                  return 0;
-                })
-                .map((link, linkIndex) => {
-                  const storageIndex = favoriteLinks.findIndex((item) => item.id === link.id);
-                  // Resolve effective browser (Link specific > Tile default > System default)
-                  const parentTile = tiles.find(t => t.id === link.tile.id);
-                  const browserToUse = (link.browser && link.browser !== 'default')
-                    ? link.browser
-                    : (parentTile?.browser && parentTile.browser !== 'default' ? parentTile.browser : null);
-
-                  const animationClass = getTileAnimationClass(currentAnimation);
-                  const decorationClass = getTileDecorationClass(currentDecoration);
-                  const fullAnimationClass = `${animationClass} ${decorationClass}`.trim();
-                  const animationDelay = (linkIndex * 50);
-                  const tileAnimatedClass = animationClass ? 'linknest-tile-animated' : '';
-
-                  // Get health check result for this link (ssh:// / vnc:// are never probed)
-                  const skipHealth = isSshLinkUrl(link.url) || isVncLinkUrl(link.url);
-                  const healthResult = skipHealth ? undefined : linkHealthResults.get(link.id);
-                  const healthStatus = healthResult?.health?.status || 'unknown';
-                  const latency = healthResult?.latency;
-                  const httpCode = healthResult?.health?.httpCode;
-
-                  return (
-                    <div
-                      key={link.id}
-                      className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} ${tileAnimatedClass} overflow-hidden`}
-                      style={{ animationDelay: `${animationDelay}ms` }}
-                      onClick={(e) => {
-                        if (tryHandleSshLinkClick(link.url, e)) return;
-                        if (tryHandleVncLinkClick(link.url, e)) return;
-
-                        // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
-                        if (e.ctrlKey || e.metaKey) {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (link.richTextContent) {
-                            setLinkInfoDialog({ link: link as Link });
-                            return;
-                          }
-                          const newWindow = window.open(link.url, '_blank', 'noopener,noreferrer');
-                          if (newWindow) newWindow.focus();
-                          return;
-                        }
-
-                        // If link has rich text content (Information Content), show dialog instead of opening URL
-                        if (link.richTextContent) {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setLinkInfoDialog({ link: link as Link });
-                          return;
-                        }
-
-                        if (settings.browser_specific_links_enabled === '1' && browserToUse) {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          openLinkInBrowser(link.url, browserToUse);
-                          return;
-                        }
-
-                        // Default behavior
-                        window.open(link.url, '_blank');
-                      }}
-                    >
-                      {/* Shark Fin Health Indicator - Top Left Corner */}
-                      {healthResult && (
-                        <div
-                          className="absolute -top-[1px] -left-[1px] w-4 h-4 z-20 pointer-events-none overflow-hidden"
-                          title={`Health Status: ${healthStatus.toUpperCase()}${httpCode ? ` (HTTP ${httpCode})` : ''}\n\n${healthResult.serverLatency ? `Server Check Time: ${favoriteLinkHealthService.formatLatency(healthResult.serverLatency)}\n(Time taken by server to check URL via cURL)` : ''}${latency ? `\n\nClient Roundtrip Time: ${favoriteLinkHealthService.formatLatency(latency)}\n(Total time from browser to server and back)` : ''}\n\nDifference = Network overhead + API processing`}
-                        >
-                          <div
-                            className="absolute -top-2 -left-2 w-5 h-5 rotate-45"
-                            style={{
-                              backgroundColor: (healthStatus === 'healthy' || healthStatus === 'accessible' || healthStatus === 'restricted') ? '#10b981' :
-                                healthStatus === 'broken' ? '#ef4444' :
-                                  (healthStatus === 'timeout' || healthStatus === 'redirected' || healthStatus === 'unknown' || healthStatus === 'checking') ? '#f59e0b' : '#f59e0b'
-                            }}
-                          />
-                        </div>
-                      )}
-
-                      {/* Link Icon */}
-                      <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center shrink-0 text-lg border border-slate-200 dark:border-slate-700">
-                        {link.icon || '🔗'}
-                      </div>
-
-                      {/* Link Info */}
-                      <div className="flex-1 min-w-0 overflow-hidden">
-                        <div className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-2 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
-                          {stripHtml(link.label)}
-                        </div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }} title={link.url}>
-                          {getDisplayUrl(link.url)}
-                        </div>
-                        {/* Browser Indicator */}
-                        {settings.browser_specific_links_enabled === '1' && browserToUse && (
-                          <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
-                            ({formatBrowserName(browserToUse)} browser)
-                          </div>
-                        )}
-                        {/* Parent Tile Info */}
-                        <div className="flex items-center gap-1.5 mt-1 overflow-hidden">
-                          <span className="text-xs shrink-0">{link.tile.emoji}</span>
-                          <span className="text-xs text-slate-400 dark:text-slate-500 line-clamp-1">
-                            {stripHtml(link.tile.title)}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Latency and Status Code - Bottom Right Corner */}
-                      {healthResult && (healthResult.serverLatency || latency || httpCode) && (
-                        <div
-                          className="absolute bottom-1 right-1 text-[10px] text-slate-400 dark:text-slate-500 opacity-60 font-mono cursor-help"
-                          title={`Health Check Results:\n${healthResult.serverLatency ? `Server Check: ${favoriteLinkHealthService.formatLatency(healthResult.serverLatency)} (Time for server to check URL)` : ''}${httpCode ? `\nServer Response Code: ${httpCode}` : ''}${latency ? `\n\nClient Roundtrip: ${favoriteLinkHealthService.formatLatency(latency)} (Total time from browser)` : ''}${httpCode ? `\nClient Response Code: ${httpCode}` : ''}\n\nStatus: ${healthStatus.toUpperCase()}`}
-                        >
-                          {/* Server latency (code) */}
-                          {healthResult.serverLatency !== undefined ? (
-                            <span>
-                              {favoriteLinkHealthService.formatLatency(healthResult.serverLatency)}
-                              {httpCode && `(${httpCode})`}
-                            </span>
-                          ) : null}
-                          {/* Separator */}
-                          {healthResult.serverLatency !== undefined && latency && <span className="mx-1">|</span>}
-                          {/* Client latency (code) */}
-                          {latency && (
-                            <span>
-                              {favoriteLinkHealthService.formatLatency(latency)}
-                              {httpCode && `(${httpCode})`}
-                            </span>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Action bar: View notes (Information) + Unfavorite */}
-                      <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all duration-200 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm p-0.5 rounded-lg border border-slate-200/50 dark:border-slate-700/50 z-20">
-                        {!isAuthenticated && (
-                          <GuestReorderArrows
-                            variant="inline"
-                            canMoveLeft={storageIndex > 0}
-                            canMoveRight={storageIndex >= 0 && storageIndex < favoriteLinks.length - 1}
-                            onMoveLeft={() => handleMoveFavoriteLink(link.id, 'left')}
-                            onMoveRight={() => handleMoveFavoriteLink(link.id, 'right')}
-                          />
-                        )}
-                        {link.notes && link.notes.trim() && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setFavNotesDialogState({ linkId: link.id, notes: link.notes || '', linkLabel: link.label || '' });
-                            }}
-                            className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-all"
-                            title="View notes"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" />
-                            </svg>
-                          </button>
-                        )}
-                        <button
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            if (isAuthenticated) {
-                              const { toggleLinkFavorite } = await import('../services/storageService');
-                              await toggleLinkFavorite(link.id);
-                              const links = await getFavoriteLinks();
-                              setFavoriteLinks(links);
-                            } else {
-                              togglePublicLinkFavorite(link.id);
-                              removePublicLinkFavoriteDetail(link.id);
-                              const favIds = getPublicLinkFavorites();
-                              if (favIds.length === 0) {
-                                setFavoriteLinks([]);
-                              } else {
-                                const cached = getPublicLinkFavoriteDetails().map((detail) => ({
-                                  ...detail,
-                                  isFavorite: true as const
-                                }));
-                                setFavoriteLinks(cached);
-                                resolveFavoriteLinks(favIds).then((resolved) => {
-                                  if (resolved.length > 0) {
-                                    syncPublicLinkFavoriteDetails(resolved);
-                                    setFavoriteLinks(resolved);
-                                  }
-                                }).catch(() => { /* keep cached */ });
-                              }
-                            }
-                          }}
-                          className="p-1.5 rounded-lg text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all"
-                          title="Remove from favorites"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                            <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-            </div>
-          </div>
+        if (!showFavoriteLinks) return null;
+        return (
+          <FavoriteLinksSection
+            favoriteLinks={favoriteLinks}
+            favLinksSort={favLinksSort}
+            onSetFavLinksSort={handleSetFavLinksSort}
+            favoriteLinksAbove={favoriteLinksAbove}
+            onSetFavoriteLinksAbove={handleSetFavoriteLinksAbove}
+            tiles={tiles}
+            isAuthenticated={isAuthenticated}
+            browserSpecificLinksEnabled={settings.browser_specific_links_enabled === '1'}
+            formatBrowserName={formatBrowserName}
+            openLinkInBrowser={openLinkInBrowser}
+            linkHealthResults={linkHealthResults}
+            currentAnimation={currentAnimation}
+            currentDecoration={currentDecoration}
+            isCheckingHealth={isCheckingHealth}
+            isAutoRefreshEnabled={isAutoRefreshEnabled}
+            autoRefreshInterval={autoRefreshInterval}
+            refreshCountdown={refreshCountdown}
+            onToggleAutoRefresh={() => setIsAutoRefreshEnabled(!isAutoRefreshEnabled)}
+            onSetAutoRefreshInterval={setAutoRefreshInterval}
+            onForceRefresh={handleForceRefresh}
+            onExportStats={handleExportStats}
+            onReorder={handleReorderFavoriteLinks}
+            onUnfavorite={async (linkId) => {
+              if (isAuthenticated) {
+                const { toggleLinkFavorite } = await import('../services/storageService');
+                await toggleLinkFavorite(linkId);
+                const links = await getFavoriteLinks();
+                setFavoriteLinks(links);
+              } else {
+                togglePublicLinkFavorite(linkId);
+                removePublicLinkFavoriteDetail(linkId);
+                const favIds = getPublicLinkFavorites();
+                if (favIds.length === 0) {
+                  setFavoriteLinks([]);
+                } else {
+                  const resolved = await resolveFavoriteLinks(favIds);
+                  setFavoriteLinks(resolved);
+                }
+              }
+            }}
+            onOpenNotes={(link) => setFavNotesDialogState({ linkId: link.id, notes: link.notes || '', linkLabel: link.label || '' })}
+            onOpenLinkInfo={(link) => setLinkInfoDialog({ link })}
+          />
         );
 
-        // Render favorite links above if favoriteLinksAbove is true
-        return favoriteLinksAbove ? favoriteLinksSection : null;
       })()}
 
       {activeTab === 'monitoring' && (
@@ -8644,333 +8345,61 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       }
 
       {/* Favorite Links Section - Shown below tiles if favoriteLinksAbove is false */}
-      {
-        (() => {
-          const showFavoriteLinks =
-            activeTab === 'favorites' ||
-            (activeTab === 'public-favorites' && (isAuthenticated || publicFavoritesSubTab === 'favorites'));
-          const favoriteLinksSection = showFavoriteLinks && (
-            <div className="mb-8">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-amber-500">
-                    <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
-                  </svg>
-                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">Favorite Links</h2>
-                  <span className="text-sm text-slate-500 dark:text-slate-400">({favoriteLinks.length})</span>
-                </div>
-              </div>
+      {(() => {
+        if (favoriteLinksAbove) return null;
 
-              {/* Sub-row for Sort, Position, and Monitoring Controls */}
-              <div className="flex items-center gap-4 mb-4">
-                {/* Sort Controls */}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-500 dark:text-slate-400">Sort:</span>
-                  <button
-                    onClick={() => handleSetFavLinksSort(favLinksSort === 'default' ? 'asc' : favLinksSort === 'asc' ? 'desc' : 'default')}
-                    className={`p-1.5 rounded-lg transition-all ${favLinksSort !== 'default'
-                      ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
-                      }`}
-                    title={favLinksSort === 'asc' ? "Sorted ascending (Click for descending)" : favLinksSort === 'desc' ? "Sorted descending (Click to reset)" : "Sort ascending"}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 transition-transform ${favLinksSort === 'desc' ? 'rotate-180' : ''}`}>
-                      <path fillRule="evenodd" d="M2.24 6.8a.75.75 0 001.06-.04l1.95-2.1v8.59a.75.75 0 001.5 0V4.66l1.95 2.1a.75.75 0 101.1-1.02l-3.25-3.5a.75.75 0 00-1.1 0L2.2 5.74a.75.75 0 00.04 1.06zm8 4a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5zm0-4a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5zm0 8a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                </div>
+        const showFavoriteLinks =
+          activeTab === 'favorites' ||
+          (activeTab === 'public-favorites' && (isAuthenticated || publicFavoritesSubTab === 'favorites'));
+        if (!showFavoriteLinks) return null;
+        return (
+          <FavoriteLinksSection
+            favoriteLinks={favoriteLinks}
+            favLinksSort={favLinksSort}
+            onSetFavLinksSort={handleSetFavLinksSort}
+            favoriteLinksAbove={favoriteLinksAbove}
+            onSetFavoriteLinksAbove={handleSetFavoriteLinksAbove}
+            tiles={tiles}
+            isAuthenticated={isAuthenticated}
+            browserSpecificLinksEnabled={settings.browser_specific_links_enabled === '1'}
+            formatBrowserName={formatBrowserName}
+            openLinkInBrowser={openLinkInBrowser}
+            linkHealthResults={linkHealthResults}
+            currentAnimation={currentAnimation}
+            currentDecoration={currentDecoration}
+            isCheckingHealth={isCheckingHealth}
+            isAutoRefreshEnabled={isAutoRefreshEnabled}
+            autoRefreshInterval={autoRefreshInterval}
+            refreshCountdown={refreshCountdown}
+            onToggleAutoRefresh={() => setIsAutoRefreshEnabled(!isAutoRefreshEnabled)}
+            onSetAutoRefreshInterval={setAutoRefreshInterval}
+            onForceRefresh={handleForceRefresh}
+            onExportStats={handleExportStats}
+            onReorder={handleReorderFavoriteLinks}
+            onUnfavorite={async (linkId) => {
+              if (isAuthenticated) {
+                const { toggleLinkFavorite } = await import('../services/storageService');
+                await toggleLinkFavorite(linkId);
+                const links = await getFavoriteLinks();
+                setFavoriteLinks(links);
+              } else {
+                togglePublicLinkFavorite(linkId);
+                removePublicLinkFavoriteDetail(linkId);
+                const favIds = getPublicLinkFavorites();
+                if (favIds.length === 0) {
+                  setFavoriteLinks([]);
+                } else {
+                  const resolved = await resolveFavoriteLinks(favIds);
+                  setFavoriteLinks(resolved);
+                }
+              }
+            }}
+            onOpenNotes={(link) => setFavNotesDialogState({ linkId: link.id, notes: link.notes || '', linkLabel: link.label || '' })}
+            onOpenLinkInfo={(link) => setLinkInfoDialog({ link })}
+          />
+        );
 
-                {/* Reorder Controls */}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-500 dark:text-slate-400">Position:</span>
-                  <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
-                    <button
-                      onClick={() => handleSetFavoriteLinksAbove(true)}
-                      className={`px-2 py-1 text-xs rounded transition-all ${favoriteLinksAbove
-                        ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                        }`}
-                      title="Show links above tiles"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                        <path fillRule="evenodd" d="M10 17a.75.75 0 01-.75-.75V5.612L5.29 9.77a.75.75 0 01-1.08-1.04l5.25-5.5a.75.75 0 011.08 0l5.25 5.5a.75.75 0 11-1.08 1.04l-3.96-4.158V16.25A.75.75 0 0110 17z" clipRule="evenodd" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => handleSetFavoriteLinksAbove(false)}
-                      className={`px-2 py-1 text-xs rounded transition-all ${!favoriteLinksAbove
-                        ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                        }`}
-                      title="Show links below tiles"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                        <path fillRule="evenodd" d="M10 3a.75.75 0 01.75.75v10.638l3.96-4.158a.75.75 0 111.08 1.04l-5.25 5.5a.75.75 0 01-1.08 0l-5.25-5.5a.75.75 0 111.08-1.04l3.96 4.158V3.75A.75.75 0 0110 3z" clipRule="evenodd" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Monitoring Controls */}
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleExportStats}
-                    className="flex items-center justify-center w-8 h-8 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg transition-all shadow-sm hover:shadow-md"
-                    title="Export stats to CSV"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-emerald-500">
-                      <path fillRule="evenodd" d="M3 4.5A1.5 1.5 0 014.5 3h11A1.5 1.5 0 0117 4.5v11a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 013 15.5v-11zM4.5 4.5v11h11v-11h-11z" clipRule="evenodd" />
-                      <path fillRule="evenodd" d="M10 13a.75.75 0 01-.75-.75V7.56l-1.72 1.72a.75.75 0 01-1.06-1.06l3-3a.75.75 0 011.06 0l3 3a.75.75 0 11-1.06 1.06l-1.72-1.72v4.69A.75.75 0 0110 13z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-
-                  <button
-                    onClick={handleForceRefresh}
-                    disabled={isCheckingHealth}
-                    className={`flex items-center justify-center w-8 h-8 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg transition-all shadow-sm hover:shadow-md disabled:opacity-50 ${isCheckingHealth ? 'animate-spin' : ''}`}
-                    title="Force refresh now"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-blue-500">
-                      <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-                      <path d="M21 3v5h-5" />
-                    </svg>
-                  </button>
-
-                  <div className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-1 shadow-sm">
-                    <div className="relative w-8 h-8 flex items-center justify-center">
-                      <svg className="w-6 h-6 rotate-[-90deg]">
-                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="transparent" className="text-slate-100 dark:text-slate-700" />
-                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="transparent" strokeDasharray={2 * Math.PI * 10} strokeDashoffset={isAutoRefreshEnabled ? (2 * Math.PI * 10) * (1 - refreshCountdown / autoRefreshInterval) : (2 * Math.PI * 10)} className={`${isAutoRefreshEnabled ? 'text-emerald-500' : 'text-slate-300 dark:text-slate-600'} transition-all duration-1000 ease-linear`} strokeLinecap="round" />
-                      </svg>
-                      <button onClick={() => setIsAutoRefreshEnabled(!isAutoRefreshEnabled)} className="absolute inset-0 flex items-center justify-center" title={isAutoRefreshEnabled ? "Disable auto-refresh" : "Enable auto-refresh"}>
-                        <div className={`w-1.5 h-1.5 rounded-full ${isAutoRefreshEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300 dark:bg-slate-600'}`}></div>
-                      </button>
-                    </div>
-                    <select value={autoRefreshInterval} onChange={(e) => setAutoRefreshInterval(Number(e.target.value))} disabled={!isAutoRefreshEnabled} className="bg-transparent text-[10px] font-medium text-slate-600 dark:text-slate-400 border-none focus:ring-0 cursor-pointer disabled:opacity-50 pr-2 pl-0">
-                      <option value={10}>10s</option>
-                      <option value={30}>30s</option>
-                      <option value={60}>1m</option>
-                      <option value={180}>3m</option>
-                      <option value={300}>5m</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                {[...favoriteLinks]
-                  .sort((a, b) => {
-                    if (favLinksSort === 'asc') {
-                      return a.label.localeCompare(b.label);
-                    }
-                    if (favLinksSort === 'desc') {
-                      return b.label.localeCompare(a.label);
-                    }
-                    return 0;
-                  })
-                  .map((link, linkIndex) => {
-                    const storageIndex = favoriteLinks.findIndex((item) => item.id === link.id);
-                    // Resolve effective browser (Link specific > Tile default > System default)
-                    const parentTile = tiles.find(t => t.id === link.tile.id);
-                    const browserToUse = (link.browser && link.browser !== 'default')
-                      ? link.browser
-                      : (parentTile?.browser && parentTile.browser !== 'default' ? parentTile.browser : null);
-
-                    const animationClass = getTileAnimationClass(currentAnimation);
-                    const decorationClass = getTileDecorationClass(currentDecoration);
-                    const fullAnimationClass = `${animationClass} ${decorationClass}`.trim();
-                    const animationDelay = (linkIndex * 50);
-                    const tileAnimatedClass = animationClass ? 'linknest-tile-animated' : '';
-
-                    // Get health check result for this link (ssh:// / vnc:// are never probed)
-                    const skipHealth = isSshLinkUrl(link.url) || isVncLinkUrl(link.url);
-                    const healthResult = skipHealth ? undefined : linkHealthResults.get(link.id);
-                    const healthStatus = healthResult?.health?.status || 'unknown';
-                    const latency = healthResult?.latency;
-                    const httpCode = healthResult?.health?.httpCode;
-
-                    return (
-                      <div
-                        key={link.id}
-                        className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} ${tileAnimatedClass} overflow-hidden`}
-                        style={{ animationDelay: `${animationDelay}ms` }}
-                        onClick={(e) => {
-                          if (tryHandleSshLinkClick(link.url, e)) return;
-                          if (tryHandleVncLinkClick(link.url, e)) return;
-
-                          // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
-                          if (e.ctrlKey || e.metaKey) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            if (link.richTextContent) {
-                              setLinkInfoDialog({ link: link as Link });
-                              return;
-                            }
-                            const newWindow = window.open(link.url, '_blank', 'noopener,noreferrer');
-                            if (newWindow) newWindow.focus();
-                            return;
-                          }
-
-                          // If link has rich text content (Information Content), show dialog instead of opening URL
-                          if (link.richTextContent) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setLinkInfoDialog({ link: link as Link });
-                            return;
-                          }
-
-                          if (settings.browser_specific_links_enabled === '1' && browserToUse) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            openLinkInBrowser(link.url, browserToUse);
-                            return;
-                          }
-
-                          // Default behavior
-                          window.open(link.url, '_blank');
-                        }}
-                      >
-                        {/* Shark Fin Health Indicator - Top Left Corner */}
-                        {healthResult && (
-                          <div
-                            className="absolute -top-[1px] -left-[1px] w-4 h-4 z-20 pointer-events-none overflow-hidden"
-                            title={`Health Status: ${healthStatus.toUpperCase()}${httpCode ? ` (HTTP ${httpCode})` : ''}\n\n${healthResult.serverLatency ? `Server Check Time: ${favoriteLinkHealthService.formatLatency(healthResult.serverLatency)}\n(Time taken by server to check URL via cURL)` : ''}${latency ? `\n\nClient Roundtrip Time: ${favoriteLinkHealthService.formatLatency(latency)}\n(Total time from browser to server and back)` : ''}\n\nDifference = Network overhead + API processing`}
-                          >
-                            <div
-                              className="absolute -top-2 -left-2 w-5 h-5 rotate-45"
-                              style={{
-                                backgroundColor: (healthStatus === 'healthy' || healthStatus === 'accessible' || healthStatus === 'restricted') ? '#10b981' :
-                                  healthStatus === 'broken' ? '#ef4444' :
-                                    (healthStatus === 'timeout' || healthStatus === 'redirected' || healthStatus === 'unknown' || healthStatus === 'checking') ? '#f59e0b' : '#f59e0b'
-                              }}
-                            />
-                          </div>
-                        )}
-
-                        {/* Link Icon */}
-                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center shrink-0 text-lg border border-slate-200 dark:border-slate-700">
-                          {link.icon || '🔗'}
-                        </div>
-
-                        {/* Link Info */}
-                        <div className="flex-1 min-w-0 overflow-hidden">
-                          <div className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-2 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
-                            {stripHtml(link.label)}
-                          </div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }} title={link.url}>
-                            {getDisplayUrl(link.url)}
-                          </div>
-                          {/* Browser Indicator */}
-                          {settings.browser_specific_links_enabled === '1' && browserToUse && (
-                            <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
-                              ({formatBrowserName(browserToUse)} browser)
-                            </div>
-                          )}
-                          {/* Parent Tile Info */}
-                          <div className="flex items-center gap-1.5 mt-1 overflow-hidden">
-                            <span className="text-xs shrink-0">{link.tile.emoji}</span>
-                            <span className="text-xs text-slate-400 dark:text-slate-500 line-clamp-1" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{stripHtml(link.tile.title)}</span>
-                          </div>
-                        </div>
-
-                        {/* Latency and Status Code - Bottom Right Corner */}
-                        {healthResult && (healthResult.serverLatency || latency || httpCode) && (
-                          <div
-                            className="absolute bottom-1 right-1 text-[10px] text-slate-400 dark:text-slate-500 opacity-60 font-mono cursor-help"
-                            title={`Health Check Results:\n${healthResult.serverLatency ? `Server Check: ${favoriteLinkHealthService.formatLatency(healthResult.serverLatency)} (Time for server to check URL)` : ''}${httpCode ? `\nServer Response Code: ${httpCode}` : ''}${latency ? `\n\nClient Roundtrip: ${favoriteLinkHealthService.formatLatency(latency)} (Total time from browser)` : ''}${httpCode ? `\nClient Response Code: ${httpCode}` : ''}\n\nStatus: ${healthStatus.toUpperCase()}`}
-                          >
-                            {/* Server latency (code) */}
-                            {healthResult.serverLatency !== undefined ? (
-                              <span>
-                                {favoriteLinkHealthService.formatLatency(healthResult.serverLatency)}
-                                {httpCode && `(${httpCode})`}
-                              </span>
-                            ) : null}
-                            {/* Separator */}
-                            {healthResult.serverLatency !== undefined && latency && <span className="mx-1">|</span>}
-                            {/* Client latency (code) */}
-                            {latency && (
-                              <span>
-                                {favoriteLinkHealthService.formatLatency(latency)}
-                                {httpCode && `(${httpCode})`}
-                              </span>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Action bar: View notes (Information) + Unfavorite */}
-                        <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all duration-200 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm p-0.5 rounded-lg border border-slate-200/50 dark:border-slate-700/50 z-20">
-                          {!isAuthenticated && (
-                            <GuestReorderArrows
-                              variant="inline"
-                              canMoveLeft={storageIndex > 0}
-                              canMoveRight={storageIndex >= 0 && storageIndex < favoriteLinks.length - 1}
-                              onMoveLeft={() => handleMoveFavoriteLink(link.id, 'left')}
-                              onMoveRight={() => handleMoveFavoriteLink(link.id, 'right')}
-                            />
-                          )}
-                          {link.notes && link.notes.trim() && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setFavNotesDialogState({ linkId: link.id, notes: link.notes || '', linkLabel: link.label || '' });
-                              }}
-                              className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-all"
-                              title="View notes"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" />
-                              </svg>
-                            </button>
-                          )}
-                          <button
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              if (isAuthenticated) {
-                                const { toggleLinkFavorite } = await import('../services/storageService');
-                                await toggleLinkFavorite(link.id);
-                                const links = await getFavoriteLinks();
-                                setFavoriteLinks(links);
-                              } else {
-                                togglePublicLinkFavorite(link.id);
-                                removePublicLinkFavoriteDetail(link.id);
-                                const favIds = getPublicLinkFavorites();
-                                if (favIds.length === 0) {
-                                  setFavoriteLinks([]);
-                                } else {
-                                  const cached = getPublicLinkFavoriteDetails().map((detail) => ({
-                                    ...detail,
-                                    isFavorite: true as const
-                                  }));
-                                  setFavoriteLinks(cached);
-                                  resolveFavoriteLinks(favIds).then((resolved) => {
-                                    if (resolved.length > 0) {
-                                      syncPublicLinkFavoriteDetails(resolved);
-                                      setFavoriteLinks(resolved);
-                                    }
-                                  }).catch(() => { /* keep cached */ });
-                                }
-                              }
-                            }}
-                            className="p-1.5 rounded-lg text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all"
-                            title="Remove from favorites"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                              <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            </div>
-          );
-
-          // Render favorite links below if favoriteLinksAbove is false
-          return !favoriteLinksAbove ? favoriteLinksSection : null;
-        })()
-      }
+      })()}
 
       {/* Compact Add Tile Modal */}
       {

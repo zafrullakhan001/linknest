@@ -101,7 +101,9 @@ switch ($method) {
         break;
         
     case 'PUT':
-        if (preg_match('#^/([^/]+)$#', $path, $matches)) {
+        if ($path === '/favorites/links/order' || $path === '/favorites/links/order/') {
+            handleSaveFavoriteLinksOrder();
+        } elseif (preg_match('#^/([^/]+)$#', $path, $matches)) {
             handleUpdateTile($matches[1]);
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
@@ -4226,6 +4228,75 @@ function handleGetFavoriteLinks() {
     } catch (Exception $e) {
         error_log('Error in handleGetFavoriteLinks: ' . $e->getMessage());
         sendJSON(['error' => 'Failed to fetch favorite links', 'details' => $e->getMessage()], 500);
+    }
+}
+
+/**
+ * Persist favorite-link order for the current user.
+ * Body: { "linkIds": ["id1", "id2", ...] } — positions assigned 0..n in array order.
+ * Only link IDs that belong to the user are updated; unknown IDs are ignored.
+ */
+function handleSaveFavoriteLinksOrder() {
+    try {
+        $user = requireAuth();
+        $db = getDB();
+        $data = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($data) || !isset($data['linkIds']) || !is_array($data['linkIds'])) {
+            sendJSON(['error' => 'linkIds array is required'], 400);
+            return;
+        }
+
+        $linkIds = [];
+        foreach ($data['linkIds'] as $id) {
+            if (!is_string($id) && !is_numeric($id)) {
+                continue;
+            }
+            $trimmed = trim((string)$id);
+            if ($trimmed === '' || isset($linkIds[$trimmed])) {
+                continue;
+            }
+            $linkIds[$trimmed] = true;
+        }
+        $orderedIds = array_keys($linkIds);
+        if (count($orderedIds) === 0) {
+            sendJSON(['error' => 'No valid linkIds provided'], 400);
+            return;
+        }
+
+        // Restrict to favorites owned by this user
+        $placeholders = implode(',', array_fill(0, count($orderedIds), '?'));
+        $ownedStmt = $db->prepare(
+            "SELECT link_id FROM user_link_favorites WHERE user_id = ? AND link_id IN ($placeholders)"
+        );
+        $ownedStmt->execute(array_merge([$user['id']], $orderedIds));
+        $owned = [];
+        while ($row = $ownedStmt->fetch(PDO::FETCH_ASSOC)) {
+            $owned[$row['link_id']] = true;
+        }
+
+        $updateStmt = $db->prepare(
+            'UPDATE user_link_favorites SET position = ? WHERE user_id = ? AND link_id = ?'
+        );
+        $db->beginTransaction();
+        $position = 0;
+        $updated = 0;
+        foreach ($orderedIds as $linkId) {
+            if (!isset($owned[$linkId])) {
+                continue;
+            }
+            $updateStmt->execute([$position, $user['id'], $linkId]);
+            $updated += $updateStmt->rowCount() > 0 ? 1 : 0;
+            $position++;
+        }
+        $db->commit();
+
+        sendJSON(['success' => true, 'updated' => $updated, 'positions' => $position]);
+    } catch (Exception $e) {
+        if (isset($db) && $db->inTransaction()) {
+            $db->rollBack();
+        }
+        error_log('Error in handleSaveFavoriteLinksOrder: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to save favorite link order', 'details' => $e->getMessage()], 500);
     }
 }
 
