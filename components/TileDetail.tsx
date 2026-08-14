@@ -114,6 +114,62 @@ function resolveApiBase(): string {
     return '/api';
 }
 
+function getTileHashParts(): { path: string; params: URLSearchParams } | null {
+    if (typeof window === 'undefined') return null;
+    const hash = window.location.hash || '';
+    const withoutHash = hash.startsWith('#') ? hash.slice(1) : hash;
+    if (!withoutHash.startsWith('/tile/')) return null;
+    const q = withoutHash.indexOf('?');
+    const path = q === -1 ? withoutHash : withoutHash.slice(0, q);
+    const params = new URLSearchParams(q === -1 ? '' : withoutHash.slice(q + 1));
+    return { path, params };
+}
+
+function getTabParamFromHash(): string | null {
+    const tab = getTileHashParts()?.params.get('tab');
+    return tab && tab.trim() ? tab.trim() : null;
+}
+
+function slugifyTabTitle(title: string): string {
+    return (title || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+}
+
+function resolveTabId(tabs: Tab[], candidate: string | null | undefined): string | null {
+    if (!candidate || !tabs.length) return null;
+    const trimmed = candidate.trim();
+    if (tabs.some(t => t.id === trimmed)) return trimmed;
+    const slug = trimmed.toLowerCase();
+    const bySlug = tabs.find(t => slugifyTabTitle(t.title) === slug);
+    return bySlug?.id ?? null;
+}
+
+function tabParamFor(tab: Tab, allTabs: Tab[]): string {
+    const slug = slugifyTabTitle(tab.title);
+    if (slug) {
+        const clashes = allTabs.filter(t => slugifyTabTitle(t.title) === slug);
+        if (clashes.length <= 1) return slug;
+    }
+    return tab.id;
+}
+
+function writeTileHashTab(tabParam: string, mode: 'push' | 'replace'): void {
+    const parts = getTileHashParts();
+    if (!parts) return;
+    parts.params.set('tab', tabParam);
+    const qs = parts.params.toString();
+    const nextHash = qs ? `#${parts.path}?${qs}` : `#${parts.path}`;
+    if (window.location.hash === nextHash) return;
+    if (mode === 'replace') {
+        window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${nextHash}`);
+        return;
+    }
+    window.location.hash = nextHash;
+}
+
 interface TileVersion {
     id: number;
     version_number: number;
@@ -638,8 +694,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     // View State
     const [searchTerm, setSearchTerm] = useState('');
     const [copiedId, setCopiedId] = useState<string | null>(null);
-    // Initialize selectedTabId from localStorage, keyed by tile ID
+    // Initialize selectedTabId from the URL (shareable) then localStorage, keyed by tile ID
     const [selectedTabId, setSelectedTabId] = useState<string | null>(() => {
+        const fromUrl = getTabParamFromHash();
+        if (fromUrl) return fromUrl;
         try {
             const savedTabId = localStorage.getItem(`tile_selected_tab_${tile.id}`);
             return savedTabId || null;
@@ -647,6 +705,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             return null;
         }
     });
+    const selectedTabIdRef = useRef<string | null>(selectedTabId);
+    selectedTabIdRef.current = selectedTabId;
 
     // Save selectedTabId to localStorage whenever it changes
     useEffect(() => {
@@ -659,9 +719,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     }, [selectedTabId, tile.id]);
 
-    // Reload selected tab from localStorage when tile changes (when viewing a different tile)
+    // Reload selected tab from URL or localStorage when tile changes (when viewing a different tile)
     // This needs to run before the tab initialization useEffect
     useEffect(() => {
+        const fromUrl = getTabParamFromHash();
+        if (fromUrl) {
+            setSelectedTabId(fromUrl);
+            return;
+        }
         try {
             const savedTabId = localStorage.getItem(`tile_selected_tab_${tile.id}`);
             // Set to null first, then the initialization useEffect will validate and set it properly
@@ -4797,7 +4862,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         return true;
     };
 
-    // Initialize selected tab: restore from localStorage if valid, otherwise select first visible tab
+    // Initialize selected tab: URL (shareable) > current/localStorage if valid > first visible tab
     useEffect(() => {
         if (tile.tabs && tile.tabs.length > 0) {
             // Sort tabs by position and filter visible ones
@@ -4806,20 +4871,27 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 .filter(tab => isEditing || (isContentVisible(tab) && canViewerSeeByVisibility(tab))); // Show all in edit mode
 
             if (sortedTabs.length > 0) {
-                // Check if saved tab ID is still valid (exists and is visible)
+                const fromUrl = resolveTabId(sortedTabs, getTabParamFromHash());
+                if (fromUrl) {
+                    if (selectedTabId !== fromUrl) {
+                        setSelectedTabId(fromUrl);
+                    }
+                    return;
+                }
+
+                const resolvedCurrent = resolveTabId(sortedTabs, selectedTabId);
+                if (resolvedCurrent) {
+                    if (selectedTabId !== resolvedCurrent) {
+                        setSelectedTabId(resolvedCurrent);
+                    }
+                    return;
+                }
+
                 if (selectedTabId) {
-                    const savedTabExists = sortedTabs.some(tab => tab.id === selectedTabId);
-                    if (savedTabExists) {
-                        // Saved tab is valid, keep it selected
-                        return;
-                    } else {
-                        // Saved tab no longer exists or is not visible, clear it
-                        try {
-                            localStorage.removeItem(`tile_selected_tab_${tile.id}`);
-                        } catch (error) {
-                            console.error('Failed to remove invalid tab from localStorage:', error);
-                        }
-                        // Fall through to select first tab
+                    try {
+                        localStorage.removeItem(`tile_selected_tab_${tile.id}`);
+                    } catch (error) {
+                        console.error('Failed to remove invalid tab from localStorage:', error);
                     }
                 }
 
@@ -4837,6 +4909,30 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     }, [tile.tabs, selectedTabId, isEditing, tile.id]);
 
+    // Keep the address bar in sync so the current tab can be shared
+    useEffect(() => {
+        if (!selectedTabId || !tile.tabs?.length) return;
+        const tab = tile.tabs.find(t => t.id === selectedTabId);
+        if (!tab) return;
+        const param = tabParamFor(tab, tile.tabs);
+        if (getTabParamFromHash() !== param) {
+            writeTileHashTab(param, 'replace');
+        }
+    }, [selectedTabId, tile.id, tile.tabs]);
+
+    // Browser back/forward (and hash edits) should change the visible tab
+    useEffect(() => {
+        const onHashChange = () => {
+            if (!tile.tabs?.length) return;
+            const resolved = resolveTabId(tile.tabs, getTabParamFromHash());
+            if (resolved && resolved !== selectedTabIdRef.current) {
+                setSelectedTabId(resolved);
+            }
+        };
+        window.addEventListener('hashchange', onHashChange);
+        return () => window.removeEventListener('hashchange', onHashChange);
+    }, [tile.tabs]);
+
     const getFilteredSections = () => {
         let sectionsToFilter = [];
 
@@ -4847,7 +4943,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 .filter(tab => isEditing || (isContentVisible(tab) && canViewerSeeByVisibility(tab))); // Show all in edit mode
 
             // If selected tab is not visible (e.g. expired while viewing), switch to first visible
-            let tabIdToUse = selectedTabId;
+            let tabIdToUse = resolveTabId(sortedTabs, selectedTabId) || selectedTabId;
             if (tabIdToUse && !isEditing) {
                 const selectedTab = tile.tabs.find(t => t.id === tabIdToUse);
                 if (selectedTab && (!isContentVisible(selectedTab) || !canViewerSeeByVisibility(selectedTab))) {
@@ -5764,7 +5860,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             <div className="border-b border-slate-200 dark:border-slate-700 overflow-x-auto bg-white/50 dark:bg-slate-900/30 backdrop-blur-sm rounded-t-xl">
                                 <div className="flex gap-2 min-w-max py-1 px-2">
                                     {displayTabs.map((tab) => {
-                                        const isActive = selectedTabId === tab.id;
+                                        const isActive = tab.id === selectedTabId || tab.id === resolveTabId(displayTabs, selectedTabId);
                                         const tabSections = tab.sections || [];
                                         // Only apply role-based filtering if source is "Your Apps" tab
                                         // Tile editors see all links (including newly added ones not yet role-filtered in UI)
@@ -5784,7 +5880,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         return (
                                             <button
                                                 key={tab.id}
-                                                onClick={() => setSelectedTabId(tab.id)}
+                                                onClick={() => {
+                                                    setSelectedTabId(tab.id);
+                                                    writeTileHashTab(tabParamFor(tab, displayTabs), 'push');
+                                                }}
                                                 data-active={isActive}
                                                 className={`linknest-content-tab relative px-5 py-2.5 text-sm font-medium transition-all duration-200 whitespace-nowrap rounded-lg ${isActive
                                                     ? `${styles.text} font-semibold`

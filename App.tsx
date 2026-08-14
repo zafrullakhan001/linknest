@@ -744,26 +744,23 @@ const AppContent: React.FC = () => {
     loadDatabasePath();
   }, [showFooterDetails, isMobile]);
 
+  // Tile id only (ignore ?from= / ?tab= so switching space tabs does not refetch)
+  const tileRouteId = route.startsWith('#/tile/')
+    ? ((route.split('/tile/')[1] || '').split('?')[0] || '')
+    : '';
+
   // Fetch full tile when opening #/tile/id (home list is card summary only)
   useEffect(() => {
-    if (!route.startsWith('#/tile/')) {
+    if (!tileRouteId) {
       setDetailTile(null);
       setDetailLoading(false);
       setDetailError(null);
       return;
     }
-    const tilePath = route.split('/tile/')[1];
-    const [tileId] = (tilePath || '').split('?');
-    if (!tileId) {
-      setDetailTile(null);
-      setDetailLoading(false);
-      setDetailError('Space not found.');
-      return;
-    }
     let cancelled = false;
     setDetailLoading(true);
     setDetailError(null);
-    getTile(tileId)
+    getTile(tileRouteId)
       .then((t) => {
         if (cancelled) return;
         setDetailLoading(false);
@@ -780,7 +777,7 @@ const AppContent: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [route, isAuthenticated]);
+  }, [tileRouteId, isAuthenticated]);
 
   // If guest access is disabled and user is not authenticated, we show login dialog (computed here so hooks below run unconditionally).
   // Require !authLoading so we never show/open login until session check has finished (fixes refresh with existing session).
