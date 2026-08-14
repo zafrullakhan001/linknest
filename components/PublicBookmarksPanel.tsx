@@ -101,6 +101,67 @@ const REWRITE_TAB_LABELS: Array<[RewriteToolTab, string]> = [
   ['recipes', 'Recipes']
 ];
 
+const REWRITE_TAB_HELP: Record<
+  RewriteToolTab,
+  { blurb: string; example: string; tip: string }
+> = {
+  domain: {
+    blurb: 'Change the website host after a rebrand or migration. Paths and query strings stay the same; subdomains like www. / portal. are preserved.',
+    example: 'https://portal.ahss.org/apps/hr → https://portal.adventhealth.com/apps/hr',
+    tip: 'Use when the company domain changes (ahss.org → adventhealth.com). Then try Regroup.'
+  },
+  path: {
+    blurb: 'Rewrite only the start of the URL path. The host (domain) does not change.',
+    example: 'https://intranet.example.com/oldportal/forms → …/new/forms',
+    tip: 'Use after an app moves folders, e.g. /SharePoint/sites/X → /sites/X.'
+  },
+  cleanup: {
+    blurb: 'Strip marketing/tracking query junk and optionally upgrade http to https.',
+    example: 'https://site.com/a?utm_source=email&fbclid=1&ok=1 → https://site.com/a?ok=1',
+    tip: 'Safe first pass on imported Chrome bookmarks that are full of utm_* / fbclid params.'
+  },
+  'find-replace': {
+    blurb: 'Replace text in link titles, URLs, and/or space names. Turn on regex for advanced patterns.',
+    example: 'Title “AHSS Portal” → “AdventHealth Portal” · Regex /index\\.php$ → (empty)',
+    tip: 'Plain text for brand renames; regex for stripping endings like /index.php or .aspx.'
+  },
+  normalize: {
+    blurb: 'Standardize URL shape: www on/off, trailing slash, remove :80/:443, force HTTPS.',
+    example: 'http://www.Example.com:80/path/ → https://example.com/path (depending on options)',
+    tip: 'Use when duplicates differ only by www or a trailing slash.'
+  },
+  encoding: {
+    blurb: 'Lowercase hostnames, decode percent-encoded paths, and collapse accidental // in paths.',
+    example: 'https://WWW.Example.COM/docs%20room//a → https://www.example.com/docs room/a',
+    tip: 'Fixes messy pasted URLs without changing the real destination.'
+  },
+  redirects: {
+    blurb: 'After Check links, adopt the final URL when a bookmark redirected (301/302 branding hops).',
+    example: 'Saved: ahss.org/hr → Final: adventhealth.com/hr (update bookmark to final)',
+    tip: 'Run Check links first. Then Preview here or use Update redirects on the space toolbar.'
+  },
+  regroup: {
+    blurb: 'Move links into the space that matches their current domain (creates a space if needed).',
+    example: 'Link on youtube.com sitting in “Misc” → moved into space “Youtube.com”',
+    tip: 'Run after Domain rewrite so spaces match the new hosts.'
+  },
+  suggest: {
+    blurb: 'Propose common fixes for broken or http links: upgrade to https, try adding/removing www.',
+    example: 'http://intranet.local/app (broken) → https://intranet.local/app',
+    tip: 'Best after Check links marks items broken/timeout. Always Preview before Apply.'
+  },
+  pipeline: {
+    blurb: 'Stack several rewrite steps and Preview/Apply them in one go (Domain → Cleanup → Regroup, etc.).',
+    example: '1) Domain ahss.org→adventhealth.com  2) Cleanup tracking  3) Regroup',
+    tip: 'Build steps with +Domain / +Path / … then Preview once. Save the stack under Recipes.'
+  },
+  recipes: {
+    blurb: 'Save a named pipeline (e.g. “AHSS → AdventHealth”) and re-run it later.',
+    example: 'Recipe “AHSS migration” = Domain + Cleanup + Regroup',
+    tip: 'Build steps in Pipeline (or current tab), name them here, then Run → Preview → Apply.'
+  }
+};
+
 const describePipelineStep = (step: BookmarkRewriteRecipeStep): string => {
   switch (step.type) {
     case 'domain':
@@ -1765,10 +1826,30 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                     ? 'bg-sky-50 dark:bg-sky-900/30 border-sky-300 dark:border-sky-700 text-sky-800 dark:text-sky-200'
                     : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
                 }`}
+                title={`${REWRITE_TAB_HELP[id].blurb} Example: ${REWRITE_TAB_HELP[id].example}`}
               >
                 {label}
               </button>
             ))}
+          </div>
+
+          <div className="rounded-lg border border-sky-200/80 dark:border-sky-800/50 bg-sky-50/70 dark:bg-sky-950/30 px-3 py-2.5 space-y-1.5">
+            <p className="text-xs font-semibold text-sky-900 dark:text-sky-100">
+              {REWRITE_TAB_LABELS.find(([id]) => id === rewriteTab)?.[1]} — what this does
+            </p>
+            <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
+              {REWRITE_TAB_HELP[rewriteTab].blurb}
+            </p>
+            <p className="text-[11px] text-slate-600 dark:text-slate-400">
+              <span className="font-semibold text-slate-700 dark:text-slate-300">Example: </span>
+              <code className="font-mono text-[11px] break-all text-slate-800 dark:text-slate-200">
+                {REWRITE_TAB_HELP[rewriteTab].example}
+              </code>
+            </p>
+            <p className="text-[11px] text-sky-800/90 dark:text-sky-300/90">
+              <span className="font-semibold">Tip: </span>
+              {REWRITE_TAB_HELP[rewriteTab].tip}
+            </p>
           </div>
 
           <div className="flex flex-wrap items-start gap-x-4 gap-y-2 text-xs">
@@ -1860,10 +1941,6 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
 
           {rewriteTab === 'path' && (
             <div className="space-y-2">
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Replace a path prefix only (host stays). Example: <code className="text-[11px]">/oldportal</code> →{' '}
-                <code className="text-[11px]">/new</code>
-              </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <label className="block text-xs text-slate-500 dark:text-slate-400">
                   Old path
@@ -1897,9 +1974,6 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
 
           {rewriteTab === 'cleanup' && (
             <div className="space-y-2">
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Strip marketing query params (utm_*, fbclid, gclid, …) and/or force HTTPS.
-              </p>
               <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
                 <input
                   type="checkbox"
@@ -2083,32 +2157,6 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                 />
                 Force HTTPS
               </label>
-            </div>
-          )}
-
-          {rewriteTab === 'encoding' && (
-            <div className="space-y-2">
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Lowercase hostnames, decode percent-encoded path segments, and collapse duplicate slashes.
-              </p>
-            </div>
-          )}
-
-          {rewriteTab === 'regroup' && (
-            <div className="space-y-2">
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Move links into the space that matches their current host domain. Creates new spaces when needed.
-                Useful after a domain rewrite when links still sit in the old space.
-              </p>
-            </div>
-          )}
-
-          {rewriteTab === 'suggest' && (
-            <div className="space-y-2">
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Suggest http→https upgrades and www flips for broken or timed-out links (from Check links).
-                Preview to see proposed fixes before applying.
-              </p>
             </div>
           )}
 
