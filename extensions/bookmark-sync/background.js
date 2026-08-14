@@ -4,7 +4,7 @@
  */
 importScripts('branding.js');
 
-const VERSION = '1.1.0';
+const VERSION = '1.5.1';
 
 function flattenBookmarks(nodes, out) {
   if (!Array.isArray(nodes)) return;
@@ -49,13 +49,36 @@ function readBookmarkTree() {
 }
 
 chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
-  if (!request || request.action !== 'getBookmarks') return;
-  readBookmarkTree().then(sendResponse);
+  if (!request) return;
+  if (request.action === 'getSyncStats') {
+    getSyncStats().then(sendResponse);
+    return true;
+  }
+  if (request.action === 'isSyncEnabled') {
+    getSyncEnabled().then((enabled) => sendResponse({ enabled: !!enabled }));
+    return true;
+  }
+  if (request.action !== 'getBookmarks') return;
+  getSyncEnabled().then((enabled) => {
+    if (!enabled) {
+      sendResponse({ success: false, error: SYNC_DISABLED_MESSAGE });
+      return;
+    }
+    const started = Date.now();
+    return readBookmarkTree().then((result) => {
+      const ms = Math.max(0, Date.now() - started);
+      const ok = !!(result && result.success);
+      return recordSync(ms, ok).then(() => {
+        if (result && typeof result === 'object') result.syncMs = ms;
+        sendResponse(result);
+      });
+    });
+  });
   return true;
 });
 
 function restoreBranding() {
-  getStoredBranding()
+  resolveBranding()
     .then((brand) => applyBranding(brand))
     .catch(() => {});
 }
@@ -63,3 +86,16 @@ function restoreBranding() {
 chrome.runtime.onInstalled.addListener(restoreBranding);
 chrome.runtime.onStartup.addListener(restoreBranding);
 restoreBranding();
+
+function restoreSyncToggle() {
+  getSyncEnabled()
+    .then((on) => applySyncEnabledBadge(on))
+    .catch(() => {});
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes.syncEnabled) return;
+  applySyncEnabledBadge(changes.syncEnabled.newValue !== false);
+});
+
+restoreSyncToggle();

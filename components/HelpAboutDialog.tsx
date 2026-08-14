@@ -374,7 +374,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 border border-emerald-200 dark:border-emerald-800">
                     <p className="font-medium text-emerald-900 dark:text-emerald-100">Guides tab:</p>
                     <p className="text-sm">
-                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (Your Bookmarks &amp; Favorite Links, setup, architecture, App Updates, SSH / VNC, Package for Deployment, and more). Start with <strong>Your Bookmarks</strong> for guest bookmark migrations, or App Updates / Architecture for admin workflows.
+                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (Your Bookmarks, Bookmark Sync Extension, setup, architecture, App Updates, SSH / VNC, Package for Deployment, and more). Start with <strong>Your Bookmarks</strong> or <strong>Bookmark Sync Extension</strong> for guest bookmark sync, or App Updates / Architecture for admin workflows.
                     </p>
                   </div>
                 </div>
@@ -597,8 +597,9 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                 </h3>
                 <div className="space-y-4 text-slate-700 dark:text-slate-300">
                   <p className="text-sm">
-                    Keep everyday links close. Guests use the <strong>Favorites</strong> tab for favorite spaces, Favorite Links, and <strong>Your Bookmarks</strong> (Chrome HTML import). Signed-in users get server-backed favorites. Full walkthrough:{' '}
-                    <strong>Guides → Your Bookmarks &amp; Favorite Links</strong>.
+                    Keep everyday links close. Guests use the <strong>Favorites</strong> tab for favorite spaces, Favorite Links, and <strong>Your Bookmarks</strong> (Chrome HTML import or browser Sync). Signed-in users get server-backed favorites. Full walkthrough:{' '}
+                    <strong>Guides → Your Bookmarks &amp; Favorite Links</strong>. Bookmark extension handshake:{' '}
+                    <strong>Guides → Bookmark Sync Extension</strong>.
                   </p>
 
                   <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 space-y-2 border border-amber-200 dark:border-amber-800">
@@ -613,7 +614,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-sky-50 dark:bg-sky-900/20 rounded-lg p-4 space-y-2 border border-sky-200 dark:border-sky-800">
                     <p className="font-medium text-sky-950 dark:text-sky-100">2. Your Bookmarks (guest)</p>
                     <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
-                      <li>Export bookmarks from Chrome → Import / Merge HTML, or use <strong>Sync</strong> with LinkNest Bookmark Sync or Browser Launcher Pro</li>
+                      <li>Export bookmarks from Chrome → Import / Merge HTML, or use <strong>Sync</strong> with LinkNest Bookmark Sync or Browser Launcher Pro. The branded name does not connect Sync — see <strong>Guides → Bookmark Sync Extension</strong></li>
                       <li>Inside a space: search, sort, compact list, quick-add URL, pin, move between spaces</li>
                       <li><strong>Check links</strong> / <strong>Remove broken</strong> / <strong>Update redirects</strong> after health probes</li>
                       <li>Export Space JSON (for Admin Import Spaces) or HTML (back to Chrome)</li>
@@ -622,8 +623,19 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     </ul>
                   </div>
 
+                  <div className="bg-violet-50 dark:bg-violet-900/20 rounded-lg p-4 space-y-2 border border-violet-200 dark:border-violet-800">
+                    <p className="font-medium text-violet-950 dark:text-violet-100">3. Bookmark Sync extension</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>Load unpacked <code className="text-xs bg-violet-100 dark:bg-violet-900/40 px-1 rounded">extensions/bookmark-sync</code> in the same browser. Allow the <strong>bookmarks</strong> permission</li>
+                      <li>The <strong>name/logo do not connect Sync</strong>. The app posts <code className="text-xs bg-violet-100 dark:bg-violet-900/40 px-1 rounded">BROWSER_LAUNCHER_GET_BOOKMARKS</code>; the extension replies with the bookmark list</li>
+                      <li>Turn <strong>Bookmark sync</strong> off in the extension popup when you do not want the app to read bookmarks (toolbar shows OFF)</li>
+                      <li>Optional app link on Branding makes “Open …” clickable so people do not guess the URL</li>
+                      <li>Full guide: <strong>Guides → Bookmark Sync Extension</strong> (also the extension popup Help tab)</li>
+                    </ul>
+                  </div>
+
                   <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-4 space-y-3 border border-indigo-200 dark:border-indigo-800">
-                    <p className="font-medium text-indigo-950 dark:text-indigo-100">3. Rewrite tools (branding &amp; migration)</p>
+                    <p className="font-medium text-indigo-950 dark:text-indigo-100">4. Rewrite tools (branding &amp; migration)</p>
                     <p className="text-sm">
                       Open <strong>Rewrite tools</strong> from a bookmark space or the bookmarks home. Each tab shows a help card with an example. Always <strong>Preview</strong> → <strong>Apply</strong>; use <strong>Undo</strong> to restore the last snapshot. Optionally <strong>Export CSV</strong> of the preview.
                     </p>
@@ -1722,7 +1734,8 @@ package-for-deployment.bat -BasePath "/myapp"`}</pre>
                     <li><strong>In-app App Updates:</strong> Check GitHub commits/releases, preview changes, apply with DB backup, and roll back from Admin (XAMPP installs). Office tip: publish a <strong>portable Release</strong> (default relative base) and apply the same Release on ArchLinks and ERP3 — see Help → In-app App Updates</li>
                     <li><strong>XAMPP PHP upgrade:</strong> PowerShell script to move to PHP 8.5+ with LDAP verification — see Guides → Upgrade PHP in XAMPP</li>
                     <li><strong>Package for Deployment:</strong> <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">package-for-deployment.bat</code> builds a full XAMPP ZIP with SQLite runtime, remote-widget binaries, and optional DB/uploads flags</li>
-                    <li><strong>Guides tab:</strong> Searchable in-app documentation (Architecture, App Updates, Package for Deployment, XAMPP PHP upgrade, SSH / VNC Manual Deployment, SSH Session Shared Worker, Remote Widgets Setup, and more)</li>
+                    <li><strong>Bookmark Sync extension:</strong> Lightweight Chrome/Edge add-on for Your Bookmarks Sync; name/logo are labels only; toggle sync off in the popup — Help → Guides → Bookmark Sync Extension</li>
+                    <li><strong>Guides tab:</strong> Searchable in-app documentation (Your Bookmarks, Bookmark Sync Extension, Architecture, App Updates, Package for Deployment, XAMPP PHP upgrade, SSH / VNC Manual Deployment, SSH Session Shared Worker, Remote Widgets Setup, and more)</li>
                     <li><strong>SSH sessions across refresh:</strong> SharedWorker in browser memory keeps live SSH sockets through page reload; close the widget to disconnect — Help → SSH sessions across refresh / Guides → SSH Session Shared Worker</li>
                     <li><strong>SSH / VNC manual deploy:</strong> Online, air-gapped runtime pack, HTTPS WSS proxy, Easy mode, <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">ssh://</code> / <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">vnc://</code> space links — Help and Guides</li>
                     <li><strong>QR sharing:</strong> Branded QR codes for the app URL and spaces (desktop + mobile)</li>
@@ -1806,6 +1819,7 @@ package-for-deployment.bat -BasePath "/myapp"`}</pre>
                     'Responsive / Mobile Layouts',
                     'Guest Access Mode',
                     'Browser Integration',
+                    'Bookmark Sync Extension',
                     'Hyperlink Tiles',
                     'Scheduling & Time-based Content',
                     'Tab & Section Organization',

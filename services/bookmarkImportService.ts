@@ -160,6 +160,13 @@ export const friendlyExtensionBookmarkError = (raw?: string): string => {
   ) {
     return 'Browser extension cannot read bookmarks (needs the “bookmarks” permission). Install LinkNest Bookmark Sync (extensions/bookmark-sync) or update Browser Launcher Pro, or use Import HTML.';
   }
+  if (
+    lower.includes('context invalidated') ||
+    lower.includes('extension was reloaded') ||
+    lower.includes('refresh this page')
+  ) {
+    return 'Extension was reloaded. Refresh this page, then try Sync again.';
+  }
   if (lower.includes('timeout') || lower.includes('not available') || lower.includes('install')) {
     return 'Install extension or use Import HTML.';
   }

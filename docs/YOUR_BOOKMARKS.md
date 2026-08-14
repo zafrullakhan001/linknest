@@ -58,9 +58,11 @@ Import a Chrome/Edge bookmark HTML export. Links are grouped into **spaces by we
 ### Sync from browser (extension)
 Install **LinkNest Bookmark Sync** (`extensions/bookmark-sync` — load unpacked in Chrome/Edge) **or** **Browser Launcher Pro** with the Chrome `bookmarks` permission. Click **Sync** to merge browser bookmarks into Your Bookmarks without an HTML file. New URLs are added; existing ones are skipped.
 
-Bookmark Sync is a minified Pro-compatible extension: it only answers `BROWSER_LAUNCHER_GET_BOOKMARKS` / `BROWSER_LAUNCHER_CHECK`. It does not launch other browsers. See `extensions/bookmark-sync/README.md`.
+Bookmark Sync is a minified Pro-compatible extension: it only answers `BROWSER_LAUNCHER_GET_BOOKMARKS` / `BROWSER_LAUNCHER_CHECK`. It does not launch other browsers. The **display name does not connect Sync** — the page talks to the extension by message type. You can turn Sync **off** in the extension popup without uninstalling it.
 
-If Sync fails (extension missing, no `bookmarks` permission, or `getTree` errors), use **Import Chrome HTML** / **Merge Import** instead.
+Full extension guide: **Help → Guides → Bookmark Sync Extension** (also the extension popup **Help** tab).
+
+If Sync fails (extension missing, sync toggle off, no `bookmarks` permission, or `getTree` errors), use **Import Chrome HTML** / **Merge Import** instead.
 
 ### Space toolbar (common)
 | Action | Purpose |

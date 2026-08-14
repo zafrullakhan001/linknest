@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "LinkNest Bookmark Sync",
   "short_name": "LN Sync",
-  "version": "1.1.0",
+  "version": "1.5.1",
   "description": "Minimal Browser Launcher Pro–compatible extension. Syncs Chrome/Edge bookmarks into LinkNest Your Bookmarks — no launcher, license, or native host.",
   "author": "LinkNest",
   "permissions": ["bookmarks", "storage"],

@@ -2626,7 +2626,8 @@ $requiredInPackage = @(
     "extensions\bookmark-sync\manifest.json",
     "extensions\bookmark-sync\background.js",
     "extensions\bookmark-sync\content.js",
-    "extensions\bookmark-sync\branding.js"
+    "extensions\bookmark-sync\branding.js",
+    "extensions\bookmark-sync\org-branding.json"
 )
 
 if (-not $AppOnly) {
@@ -2783,6 +2784,7 @@ try {
         "scripts/harden-xampp-target.ps1",
         "land/browser-launcher-integration.js",
         "extensions/bookmark-sync/manifest.json",
+        "extensions/bookmark-sync/org-branding.json",
         ".htaccess"
     )
     if (-not $AppOnly) {

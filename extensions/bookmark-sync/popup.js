@@ -43,6 +43,7 @@ function showTab(id) {
   });
   document.getElementById('panel-sync').hidden = id !== 'sync';
   document.getElementById('panel-branding').hidden = id !== 'branding';
+  document.getElementById('panel-help').hidden = id !== 'help';
 }
 
 function applyHeader(name, logoSrc) {
@@ -94,46 +95,142 @@ async function fileToSquarePng(file) {
 }
 
 let pendingLogoDataUrl = '';
+let brandingLocked = false;
+
+function setAppNameLabel(appName, appUrl) {
+  const label = document.getElementById('app-name-label');
+  if (!label) return;
+  const name = appName || BRAND_DEFAULT_APP;
+  const url = sanitizeAppUrl(appUrl);
+  label.textContent = name;
+  if (url) {
+    label.href = url;
+    label.title = url;
+    label.classList.add('is-link');
+  } else {
+    label.removeAttribute('href');
+    label.removeAttribute('title');
+    label.classList.remove('is-link');
+  }
+}
+
+function renderSyncStats(stats) {
+  document.getElementById('sync-times').textContent = String((stats && stats.count) || 0);
+  document.getElementById('sync-last').textContent = formatSyncDuration(stats && stats.lastMs);
+  document.getElementById('sync-avg').textContent = formatSyncDuration(stats && stats.averageMs);
+}
+
+function loadSyncStats() {
+  getSyncStats().then(renderSyncStats);
+}
+
+function updateSyncToggleUi(on) {
+  const hint = document.getElementById('sync-toggle-hint');
+  const note = document.getElementById('sync-off-note');
+  const version = document.getElementById('version');
+  if (hint) {
+    hint.textContent = on
+      ? 'On — the app Sync button can read bookmarks from this browser.'
+      : 'Off — the app Sync button cannot read bookmarks.';
+  }
+  if (note) note.hidden = !!on;
+  if (version) {
+    version.textContent = on ? 'v1.5.1 · bookmarks only' : 'v1.5.1 · sync off';
+  }
+}
+
+async function hydrateSyncToggle() {
+  const on = await getSyncEnabled();
+  const input = document.getElementById('sync-enabled');
+  if (input) input.checked = on;
+  updateSyncToggleUi(on);
+}
+
+function setBrandingLocked(locked) {
+  brandingLocked = !!locked;
+  const ids = ['brand-name', 'brand-app-name', 'brand-app-url', 'pick-logo', 'clear-logo', 'logo-file', 'save-brand', 'reset-brand'];
+  ids.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = brandingLocked;
+  });
+  document.getElementById('org-lock-card').hidden = !brandingLocked;
+}
 
 async function hydrateBrandingForm() {
-  const brand = await getStoredBranding();
-  document.getElementById('brand-name').value = brand.name;
+  const brand = await resolveBranding();
+  const src = logoSrcForUi(brand) || DEFAULT_LOGO;
   pendingLogoDataUrl = brand.logoDataUrl || '';
-  const src = pendingLogoDataUrl || DEFAULT_LOGO;
+  document.getElementById('brand-name').value = brand.name;
+  document.getElementById('brand-app-name').value = brand.appName || BRAND_DEFAULT_APP;
+  document.getElementById('brand-app-url').value = brand.appUrl || '';
   document.getElementById('brand-preview').src = src;
   applyHeader(brand.name, src);
+  setAppNameLabel(brand.appName, brand.appUrl);
+  setBrandingLocked(brand.locked);
+  if (brand.source === 'org' && !brand.locked) {
+    setBrandMsg('Organisation default from org-branding.json. Save to override on this browser.');
+  }
 }
 
 async function saveBranding() {
+  if (brandingLocked) return;
   const name = document.getElementById('brand-name').value.trim().slice(0, BRAND_NAME_MAX);
+  const appName = document.getElementById('brand-app-name').value.trim().slice(0, BRAND_NAME_MAX);
+  const appUrlRaw = document.getElementById('brand-app-url').value.trim();
+  const appUrl = sanitizeAppUrl(appUrlRaw);
   if (!name) {
     setBrandMsg('Enter a display name.', true);
+    return;
+  }
+  if (!appName) {
+    setBrandMsg('Enter an app name for the instructions.', true);
+    return;
+  }
+  if (appUrlRaw && !appUrl) {
+    setBrandMsg('App link must be an http:// or https:// URL.', true);
     return;
   }
   const saveBtn = document.getElementById('save-brand');
   saveBtn.disabled = true;
   setBrandMsg('Saving…');
   try {
-    await saveStoredBranding(name, pendingLogoDataUrl);
-    await applyBranding({ name, logoDataUrl: pendingLogoDataUrl });
-    applyHeader(name, pendingLogoDataUrl || DEFAULT_LOGO);
-    setBrandMsg('Saved. Toolbar icon and popup name updated.');
+    await saveStoredBranding(name, pendingLogoDataUrl, appName, appUrl);
+    const brand = await resolveBranding();
+    await applyBranding({
+      name,
+      logoDataUrl: pendingLogoDataUrl || brand.logoDataUrl,
+      logoPath: pendingLogoDataUrl ? '' : brand.logoPath
+    });
+    applyHeader(name, pendingLogoDataUrl || logoSrcForUi(brand) || DEFAULT_LOGO);
+    document.getElementById('brand-app-url').value = appUrl;
+    setAppNameLabel(appName, appUrl);
+    setBrandMsg('Saved. Toolbar icon, popup name, and instructions updated.');
   } catch (err) {
     setBrandMsg((err && err.message) || 'Could not save branding.', true);
   } finally {
-    saveBtn.disabled = false;
+    saveBtn.disabled = brandingLocked;
   }
 }
 
 async function resetBranding() {
+  if (brandingLocked) return;
   await clearStoredBranding();
-  pendingLogoDataUrl = '';
-  document.getElementById('brand-name').value = BRAND_DEFAULT_NAME;
-  document.getElementById('brand-preview').src = DEFAULT_LOGO;
+  const brand = await resolveBranding();
+  pendingLogoDataUrl = brand.logoDataUrl || '';
+  const src = logoSrcForUi(brand) || DEFAULT_LOGO;
+  document.getElementById('brand-name').value = brand.name;
+  document.getElementById('brand-app-name').value = brand.appName || BRAND_DEFAULT_APP;
+  document.getElementById('brand-app-url').value = brand.appUrl || '';
+  document.getElementById('brand-preview').src = src;
   document.getElementById('logo-file').value = '';
-  await applyBranding({ name: BRAND_DEFAULT_NAME, logoDataUrl: '' });
-  applyHeader(BRAND_DEFAULT_NAME, DEFAULT_LOGO);
-  setBrandMsg('Restored default name and logo.');
+  await applyBranding(brand);
+  applyHeader(brand.name, src);
+  setAppNameLabel(brand.appName, brand.appUrl);
+  setBrandMsg(
+    brand.source === 'org'
+      ? 'Restored organisation branding from org-branding.json.'
+      : 'Restored default name and logo.'
+  );
 }
 
 document.querySelectorAll('.tab').forEach((tab) => {
@@ -143,10 +240,12 @@ document.querySelectorAll('.tab').forEach((tab) => {
 document.getElementById('refresh').addEventListener('click', loadCount);
 
 document.getElementById('pick-logo').addEventListener('click', () => {
+  if (brandingLocked) return;
   document.getElementById('logo-file').click();
 });
 
 document.getElementById('logo-file').addEventListener('change', async (event) => {
+  if (brandingLocked) return;
   const file = event.target.files && event.target.files[0];
   if (!file) return;
   setBrandMsg('');
@@ -160,6 +259,7 @@ document.getElementById('logo-file').addEventListener('change', async (event) =>
 });
 
 document.getElementById('clear-logo').addEventListener('click', () => {
+  if (brandingLocked) return;
   pendingLogoDataUrl = '';
   document.getElementById('logo-file').value = '';
   document.getElementById('brand-preview').src = DEFAULT_LOGO;
@@ -169,11 +269,46 @@ document.getElementById('clear-logo').addEventListener('click', () => {
 
 document.getElementById('brand-name').addEventListener('input', () => {
   const name = document.getElementById('brand-name').value.trim() || BRAND_DEFAULT_NAME;
-  applyHeader(name, pendingLogoDataUrl || DEFAULT_LOGO);
+  const logo = pendingLogoDataUrl || document.getElementById('header-logo').getAttribute('src') || DEFAULT_LOGO;
+  applyHeader(name, logo);
 });
+
+document.getElementById('brand-app-name').addEventListener('input', previewAppLink);
+document.getElementById('brand-app-url').addEventListener('input', previewAppLink);
+
+document.getElementById('app-name-label').addEventListener('click', (event) => {
+  const url = sanitizeAppUrl(event.currentTarget.getAttribute('href'));
+  if (!url) return;
+  event.preventDefault();
+  chrome.tabs.create({ url });
+  window.close();
+});
+
+function previewAppLink() {
+  setAppNameLabel(
+    document.getElementById('brand-app-name').value.trim() || BRAND_DEFAULT_APP,
+    document.getElementById('brand-app-url').value.trim()
+  );
+}
 
 document.getElementById('save-brand').addEventListener('click', () => void saveBranding());
 document.getElementById('reset-brand').addEventListener('click', () => void resetBranding());
 
+document.getElementById('sync-enabled').addEventListener('change', async (event) => {
+  const on = !!event.target.checked;
+  await setSyncEnabled(on);
+  await applySyncEnabledBadge(on);
+  updateSyncToggleUi(on);
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  if (changes.syncCount || changes.lastSyncMs || changes.totalSyncMs) {
+    loadSyncStats();
+  }
+});
+
 void hydrateBrandingForm();
+void hydrateSyncToggle();
 loadCount();
+loadSyncStats();

@@ -8,7 +8,7 @@
     :root { color-scheme: light dark; }
     body {
       margin: 0;
-      width: 300px;
+      width: 320px;
       font: 13px/1.45 system-ui, Segoe UI, sans-serif;
       color: #0f172a;
       background: #f8fafc;
@@ -17,19 +17,30 @@
       body { color: #e2e8f0; background: #0f172a; }
       .muted { color: #94a3b8 !important; }
       .card, .tabs { background: #1e293b; border-color: #334155; }
+      .stats { border-top-color: #334155; }
+      .stat-label { color: #94a3b8 !important; }
       .tab { color: #94a3b8; }
       .tab.active { background: #0f172a; color: #e2e8f0; }
+      .slider { background: #475569; }
+      .help-body h2, .help-body h3 { color: #e2e8f0; }
       button.primary { background: #0284c7; }
       button.secondary {
         background: transparent;
         color: #e2e8f0;
         border-color: #334155;
       }
-      input[type="text"] {
+      input[type="text"],
+      input[type="url"] {
         background: #0f172a;
         border-color: #334155;
         color: #e2e8f0;
       }
+      .app-link.is-link { color: #38bdf8; }
+      .slider { background: #475569; }
+      .help h2 { color: #e2e8f0; }
+      .help p, .help li { color: #94a3b8; }
+      .off-note { background: #1e293b; color: #cbd5e1; }
+      .help code { background: #334155; }
     }
     header {
       display: flex;
@@ -76,6 +87,16 @@
       background: #fff;
     }
     .count { font-size: 22px; font-weight: 700; }
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid #e2e8f0;
+    }
+    .stat-value { font-size: 15px; font-weight: 700; }
+    .stat-label { margin: 2px 0 0; color: #64748b; font-size: 11px; }
     ol { margin: 0; padding-left: 18px; }
     li { margin: 4px 0; }
     label {
@@ -83,13 +104,26 @@
       font-weight: 600;
       margin-bottom: 6px;
     }
-    input[type="text"] {
+    input[type="text"],
+    input[type="url"] {
       width: 100%;
       box-sizing: border-box;
       padding: 7px 8px;
       border: 1px solid #e2e8f0;
       border-radius: 8px;
       font: inherit;
+    }
+    .app-link {
+      color: inherit;
+      font-weight: 700;
+      text-decoration: none;
+      pointer-events: none;
+    }
+    .app-link.is-link {
+      color: #0284c7;
+      text-decoration: underline;
+      pointer-events: auto;
+      cursor: pointer;
     }
     .logo-row {
       display: flex;
@@ -130,8 +164,73 @@
       border: 1px solid #e2e8f0;
     }
     button:disabled { opacity: .55; cursor: default; }
-    .err { color: #b91c1c; }
+    .switch-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .switch-row > div { min-width: 0; }
+    .switch {
+      position: relative;
+      width: 40px;
+      height: 22px;
+      flex-shrink: 0;
+      margin: 0;
+    }
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .slider {
+      position: absolute;
+      inset: 0;
+      background: #cbd5e1;
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    .slider:before {
+      content: '';
+      position: absolute;
+      height: 18px;
+      width: 18px;
+      left: 2px;
+      top: 2px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform .15s;
+    }
+    .switch input:checked + .slider { background: #0284c7; }
+    .switch input:checked + .slider:before { transform: translateX(18px); }
+    .off-note {
+      margin: 0 12px 12px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: #f1f5f9;
+      color: #334155;
+      font-size: 12px;
+    }
+    .help {
+      margin: 0 12px 12px;
+      max-height: 340px;
+      overflow: auto;
+      padding-right: 2px;
+    }
+    .help h2 {
+      margin: 0 0 8px;
+      font-size: 13px;
+    }
+    .help p, .help li { font-size: 12px; color: #475569; }
+    .help ul, .help ol { margin: 0 0 10px; padding-left: 18px; }
+    .help code {
+      font-size: 11px;
+      background: #e2e8f0;
+      padding: 0 4px;
+      border-radius: 4px;
+    }
     .ok { color: #047857; }
+    .err { color: #b91c1c; }
     [hidden] { display: none !important; }
   </style>
 </head>
@@ -140,23 +239,51 @@
     <img id="header-logo" src="icons/icon48.png" alt="">
     <div>
       <h1 id="header-name">LinkNest Bookmark Sync</h1>
-      <p class="muted" id="version">v1.1.0 · bookmarks only</p>
+      <p class="muted" id="version">v1.5.1 · bookmarks only</p>
     </div>
   </header>
 
   <nav class="tabs" aria-label="Popup sections">
     <button type="button" class="tab active" data-tab="sync">Sync</button>
     <button type="button" class="tab" data-tab="branding">Branding</button>
+    <button type="button" class="tab" data-tab="help">Help</button>
   </nav>
 
   <section id="panel-sync">
+    <div class="card switch-row">
+      <div>
+        <label for="sync-enabled" style="margin:0">Bookmark sync</label>
+        <p class="muted" id="sync-toggle-hint">On — the app Sync button can read bookmarks from this browser.</p>
+      </div>
+      <label class="switch" title="Enable or disable sync">
+        <input id="sync-enabled" type="checkbox" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+    <p class="off-note" id="sync-off-note" hidden>
+      Sync is off. The Sync button in the app cannot read bookmarks until you turn this on.
+    </p>
     <div class="card">
       <div class="count" id="count">…</div>
       <p class="muted" id="status">Reading bookmarks…</p>
+      <div class="stats">
+        <div>
+          <div class="stat-value" id="sync-times">0</div>
+          <p class="stat-label">Times synced</p>
+        </div>
+        <div>
+          <div class="stat-value" id="sync-last">—</div>
+          <p class="stat-label">Last duration</p>
+        </div>
+        <div>
+          <div class="stat-value" id="sync-avg">—</div>
+          <p class="stat-label">Average</p>
+        </div>
+      </div>
     </div>
     <div class="card">
       <ol>
-        <li>Open LinkNest in this browser</li>
+        <li>Open <a id="app-name-label" class="app-link">LinkNest</a> in this browser</li>
         <li>Favorites → Your Bookmarks</li>
         <li>Click <strong>Sync</strong></li>
       </ol>
@@ -165,9 +292,24 @@
   </section>
 
   <section id="panel-branding" hidden>
+    <div class="card" id="org-lock-card" hidden>
+      <p class="muted" style="margin:0" id="org-lock-text">
+        Branding is set by your organisation in org-branding.json.
+      </p>
+    </div>
     <div class="card">
       <label for="brand-name">Display name</label>
       <input id="brand-name" type="text" maxlength="48" placeholder="Any name you want" autocomplete="off">
+    </div>
+    <div class="card">
+      <label for="brand-app-name">App name in instructions</label>
+      <input id="brand-app-name" type="text" maxlength="48" placeholder="LinkNest" autocomplete="off">
+      <p class="muted" style="margin:6px 0 0">Shown as “Open <em>this name</em> in this browser”.</p>
+    </div>
+    <div class="card">
+      <label for="brand-app-url">App link (optional)</label>
+      <input id="brand-app-url" type="url" maxlength="500" placeholder="https://intranet.example.com/linknest" autocomplete="off">
+      <p class="muted" style="margin:6px 0 0">Makes the name a clickable link so people do not have to guess the URL.</p>
     </div>
     <div class="card">
       <label>Logo</label>
@@ -180,12 +322,48 @@
         </div>
       </div>
     </div>
-    <p class="muted" style="margin: 0 14px 10px;">
-      Used in this popup and the toolbar icon. Chrome’s extensions page still shows the packaged name.
+    <p class="muted" style="margin: 0 14px 10px;" id="brand-help">
+      Used in this popup and the toolbar icon. Chrome’s extensions page still shows the packaged name. For mass deployment, edit org-branding.json in this extension folder.
     </p>
     <button type="button" class="primary" id="save-brand">Save branding</button>
     <button type="button" class="secondary" id="reset-brand">Reset to default</button>
     <p class="muted" id="brand-msg" style="margin: 0 14px 12px;"></p>
+  </section>
+
+  <section id="panel-help" hidden>
+    <div class="help">
+      <h2>How the Sync button talks to this extension</h2>
+      <p>
+        The app name you type in Branding (LinkNest, ERP Landing, AdventHealth, …) is <strong>only a label</strong>.
+        It does <strong>not</strong> connect Sync. Chrome’s extensions page name does not matter either.
+      </p>
+      <p>What actually makes Sync work:</p>
+      <ol>
+        <li>This extension is installed in the <strong>same browser</strong> as the app, with the <strong>bookmarks</strong> permission allowed.</li>
+        <li><strong>Bookmark sync</strong> on the Sync tab is <strong>on</strong> (this popup). An OFF badge on the toolbar means it is disabled.</li>
+        <li>You open the app over <strong>http://</strong> or <strong>https://</strong> (not a saved HTML file).</li>
+        <li>You click <strong>Sync</strong> on Favorites → Your Bookmarks (or Fetch in Favorites Organizer).</li>
+      </ol>
+      <h2>The handshake (not the name)</h2>
+      <p>
+        The page posts a window message <code>BROWSER_LAUNCHER_GET_BOOKMARKS</code>.
+        This extension’s content script hears it, reads <code>chrome.bookmarks</code>, and replies with
+        <code>BROWSER_LAUNCHER_BOOKMARKS_LIST</code>. That is the same protocol Browser Launcher Pro uses, bookmarks only.
+      </p>
+      <h2>What Branding is for</h2>
+      <ul>
+        <li><strong>Display name / logo</strong> — toolbar and this popup.</li>
+        <li><strong>App name</strong> — the words in “Open … in this browser”.</li>
+        <li><strong>App link</strong> — optional URL so that name is clickable. Use this so people do not guess the site.</li>
+      </ul>
+      <h2>If Sync fails</h2>
+      <ul>
+        <li>Reload this extension, then <strong>refresh the app page</strong> (required after every extension reload).</li>
+        <li>Turn Bookmark sync on here.</li>
+        <li>Or use Import HTML / Merge in Your Bookmarks.</li>
+      </ul>
+      <p class="muted">Full guide in the app: Help → Guides → Bookmark Sync Extension.</p>
+    </div>
   </section>
 
   <script src="branding.js"></script>
