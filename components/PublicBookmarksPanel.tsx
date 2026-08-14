@@ -19,6 +19,17 @@ import {
   rewritePublicBookmarkPaths,
   cleanupPublicBookmarkUrls,
   findReplacePublicBookmarks,
+  normalizePublicBookmarkUrls,
+  cleanupPublicBookmarkEncoding,
+  regroupPublicBookmarksByHost,
+  suggestPublicBookmarkUrlFixes,
+  runPublicBookmarkRewritePipeline,
+  downloadBookmarkRewritePreviewCsv,
+  peekBookmarkRewriteUndo,
+  undoLastPublicBookmarkRewrite,
+  listBookmarkRewriteRecipes,
+  saveBookmarkRewriteRecipe,
+  deleteBookmarkRewriteRecipe,
   listRedirectUpdatableBookmarks,
   applyPublicBookmarkRedirectUrls,
   movePublicBookmarkCategory,
@@ -45,7 +56,9 @@ import {
   sortBookmarkCategories,
   sortBookmarkLinks,
   type BookmarkSortMode,
-  type BookmarkRewriteChange
+  type BookmarkRewriteChange,
+  type BookmarkRewriteRecipeStep,
+  type BookmarkRewriteRecipe
 } from '../services/publicBookmarksService';
 import {
   useTileAnimation,
@@ -61,7 +74,57 @@ interface PublicBookmarksPanelProps {
 }
 
 type ImportMode = 'replace' | 'merge';
-type RewriteToolTab = 'domain' | 'path' | 'cleanup' | 'find-replace' | 'redirects';
+type RewriteToolTab =
+  | 'domain'
+  | 'path'
+  | 'cleanup'
+  | 'find-replace'
+  | 'normalize'
+  | 'encoding'
+  | 'redirects'
+  | 'regroup'
+  | 'suggest'
+  | 'pipeline'
+  | 'recipes';
+
+const REWRITE_TAB_LABELS: Array<[RewriteToolTab, string]> = [
+  ['domain', 'Domain'],
+  ['path', 'Path'],
+  ['cleanup', 'Cleanup'],
+  ['find-replace', 'Find & replace'],
+  ['normalize', 'Normalize'],
+  ['encoding', 'Encoding'],
+  ['redirects', 'Redirects'],
+  ['regroup', 'Regroup'],
+  ['suggest', 'Suggest'],
+  ['pipeline', 'Pipeline'],
+  ['recipes', 'Recipes']
+];
+
+const describePipelineStep = (step: BookmarkRewriteRecipeStep): string => {
+  switch (step.type) {
+    case 'domain':
+      return `Domain: ${step.from} → ${step.to}`;
+    case 'path':
+      return `Path: ${step.from} → ${step.to || '/'}`;
+    case 'cleanup':
+      return `Cleanup: ${step.stripTracking !== false ? 'strip tracking' : ''}${step.forceHttps ? ' + HTTPS' : ''}`.trim();
+    case 'find-replace':
+      return `Find/replace: “${step.find}” → “${step.replace}”${step.useRegex ? ' (regex)' : ''}`;
+    case 'normalize':
+      return `Normalize: www=${step.wwwMode || 'keep'}, slash=${step.trailingSlash || 'keep'}`;
+    case 'encoding':
+      return 'Encoding cleanup';
+    case 'redirects':
+      return 'Update redirects';
+    case 'regroup':
+      return 'Regroup by host';
+    case 'suggest-fixes':
+      return 'Suggest URL fixes';
+    default:
+      return 'Step';
+  }
+};
 
 const isThemeColor = (value: string | undefined): value is ThemeColor =>
   !!value && Object.prototype.hasOwnProperty.call(COLOR_STYLES, value);
@@ -142,6 +205,19 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
   const [findInUrls, setFindInUrls] = useState(true);
   const [findInSpaceTitles, setFindInSpaceTitles] = useState(true);
   const [findCaseSensitive, setFindCaseSensitive] = useState(false);
+  const [findUseRegex, setFindUseRegex] = useState(false);
+  const [skipPinned, setSkipPinned] = useState(true);
+  const [selectedLinkIds, setSelectedLinkIds] = useState<string[]>([]);
+  const [normalizeWwwMode, setNormalizeWwwMode] = useState<'keep' | 'add' | 'remove'>('keep');
+  const [normalizeTrailingSlash, setNormalizeTrailingSlash] = useState<'keep' | 'add' | 'remove'>(
+    'keep'
+  );
+  const [stripDefaultPorts, setStripDefaultPorts] = useState(true);
+  const [normalizeForceHttps, setNormalizeForceHttps] = useState(false);
+  const [pipelineSteps, setPipelineSteps] = useState<BookmarkRewriteRecipeStep[]>([]);
+  const [recipeName, setRecipeName] = useState('');
+  const [recipes, setRecipes] = useState<BookmarkRewriteRecipe[]>([]);
+  const [undoInfo, setUndoInfo] = useState<ReturnType<typeof peekBookmarkRewriteUndo>>(null);
   const [rewritePreview, setRewritePreview] = useState<BookmarkRewriteChange[] | null>(null);
   const [rewritePreviewMeta, setRewritePreviewMeta] = useState<{
     updated: number;
@@ -349,9 +425,185 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
   const rewriteScopeId = (): string | undefined =>
     rewriteAllSpaces || !openSpace ? undefined : openSpace.id;
 
+  const rewriteScope = (dryRun?: boolean) => ({
+    categoryId: rewriteScopeId(),
+    ...(dryRun !== undefined ? { dryRun } : {}),
+    skipPinned,
+    linkIds: selectedLinkIds.length ? selectedLinkIds : undefined
+  });
+
+  const refreshUndoInfo = () => setUndoInfo(peekBookmarkRewriteUndo());
+
   const clearRewritePreview = () => {
     setRewritePreview(null);
     setRewritePreviewMeta(null);
+  };
+
+  const buildStepForTool = (
+    tool: 'domain' | 'path' | 'cleanup' | 'find-replace' | 'normalize'
+  ): BookmarkRewriteRecipeStep | null => {
+    switch (tool) {
+      case 'domain':
+        if (!rewriteFrom.trim() || !rewriteTo.trim()) return null;
+        return { type: 'domain', from: rewriteFrom, to: rewriteTo };
+      case 'path':
+        if (!pathFrom.trim()) return null;
+        return { type: 'path', from: pathFrom, to: pathTo };
+      case 'cleanup':
+        return { type: 'cleanup', stripTracking, forceHttps };
+      case 'find-replace':
+        if (!findText) return null;
+        return {
+          type: 'find-replace',
+          find: findText,
+          replace: replaceText,
+          useRegex: findUseRegex,
+          inTitles: findInTitles,
+          inUrls: findInUrls,
+          inSpaceTitles: findInSpaceTitles,
+          caseSensitive: findCaseSensitive
+        };
+      case 'normalize':
+        if (
+          normalizeWwwMode === 'keep' &&
+          normalizeTrailingSlash === 'keep' &&
+          !stripDefaultPorts &&
+          !normalizeForceHttps
+        ) {
+          return null;
+        }
+        return {
+          type: 'normalize',
+          wwwMode: normalizeWwwMode,
+          trailingSlash: normalizeTrailingSlash,
+          stripDefaultPorts,
+          forceHttps: normalizeForceHttps
+        };
+      default:
+        return null;
+    }
+  };
+
+  const buildStepFromCurrentTab = (): BookmarkRewriteRecipeStep | null => {
+    switch (rewriteTab) {
+      case 'domain':
+        return buildStepForTool('domain');
+      case 'path':
+        return buildStepForTool('path');
+      case 'cleanup':
+        return buildStepForTool('cleanup');
+      case 'find-replace':
+        return buildStepForTool('find-replace');
+      case 'normalize':
+        return buildStepForTool('normalize');
+      case 'encoding':
+        return { type: 'encoding' };
+      case 'redirects':
+        return { type: 'redirects' };
+      case 'regroup':
+        return { type: 'regroup' };
+      case 'suggest':
+        return { type: 'suggest-fixes' };
+      default:
+        return null;
+    }
+  };
+
+  const addPipelineStep = (step: BookmarkRewriteRecipeStep | null, label: string) => {
+    if (!step) {
+      setMessage(`Configure ${label} settings before adding as a pipeline step.`);
+      return;
+    }
+    setPipelineSteps((prev) => [...prev, step]);
+    clearRewritePreview();
+  };
+
+  const runRewrite = (dryRun: boolean) => {
+    const scope = rewriteScope(dryRun);
+    let result;
+    switch (rewriteTab) {
+      case 'domain':
+        result = rewritePublicBookmarkDomains(rewriteFrom, rewriteTo, {
+          ...scope,
+          renameMatchingSpaces: true
+        });
+        break;
+      case 'path':
+        result = rewritePublicBookmarkPaths(pathFrom, pathTo, scope);
+        break;
+      case 'cleanup':
+        result = cleanupPublicBookmarkUrls({
+          ...scope,
+          stripTracking,
+          forceHttps
+        });
+        break;
+      case 'find-replace':
+        result = findReplacePublicBookmarks(findText, replaceText, {
+          ...scope,
+          inTitles: findInTitles,
+          inUrls: findInUrls,
+          inSpaceTitles: findInSpaceTitles,
+          caseSensitive: findCaseSensitive,
+          useRegex: findUseRegex
+        });
+        break;
+      case 'normalize':
+        result = normalizePublicBookmarkUrls({
+          ...scope,
+          wwwMode: normalizeWwwMode,
+          trailingSlash: normalizeTrailingSlash,
+          stripDefaultPorts,
+          forceHttps: normalizeForceHttps
+        });
+        break;
+      case 'encoding':
+        result = cleanupPublicBookmarkEncoding(scope);
+        break;
+      case 'regroup':
+        result = regroupPublicBookmarksByHost(scope);
+        break;
+      case 'suggest':
+        result = suggestPublicBookmarkUrlFixes(scope);
+        break;
+      case 'pipeline':
+        result = runPublicBookmarkRewritePipeline(pipelineSteps, scope);
+        break;
+      case 'redirects':
+        result = applyPublicBookmarkRedirectUrls(scope);
+        break;
+      case 'recipes':
+        return null;
+      default:
+        return null;
+    }
+    return result;
+  };
+
+  const applyRewriteResult = (result: NonNullable<ReturnType<typeof runRewrite>>, applying: boolean) => {
+    if (applying) {
+      applyData(result.data);
+      refreshUndoInfo();
+      clearRewritePreview();
+      let msg = result.message;
+      if (result.ok && result.updated > 0 && rewriteTab === 'domain') {
+        msg += ' Tip: use the Regroup tab to move links into matching domain spaces.';
+      }
+      setMessage(msg);
+      if (result.ok && result.updated > 0) {
+        if (rewriteTab === 'domain') setRewriteTo('');
+        if (rewriteTab === 'path') setPathTo('');
+        if (rewriteTab === 'find-replace') setFindText('');
+      }
+      return;
+    }
+    setRewritePreview(result.changes);
+    setRewritePreviewMeta({
+      updated: result.updated,
+      scanned: result.scanned,
+      message: result.message
+    });
+    if (!result.ok) setMessage(result.message);
   };
 
   const openRewriteTools = (
@@ -374,98 +626,64 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
     setReplaceText('');
     setRewriteAllSpaces(!cat);
     setRewriteTab(tab);
+    setSelectedLinkIds([]);
+    setPipelineSteps([]);
+    setRecipeName('');
+    setRecipes(listBookmarkRewriteRecipes());
+    refreshUndoInfo();
     clearRewritePreview();
     setShowRewriteTools(true);
   };
 
-  const runRewritePreview = () => {
-    const scope = { categoryId: rewriteScopeId(), dryRun: true as const };
-    let result;
-    switch (rewriteTab) {
-      case 'domain':
-        result = rewritePublicBookmarkDomains(rewriteFrom, rewriteTo, {
-          ...scope,
-          renameMatchingSpaces: true
-        });
-        break;
-      case 'path':
-        result = rewritePublicBookmarkPaths(pathFrom, pathTo, scope);
-        break;
-      case 'cleanup':
-        result = cleanupPublicBookmarkUrls({
-          ...scope,
-          stripTracking,
-          forceHttps
-        });
-        break;
-      case 'find-replace':
-        result = findReplacePublicBookmarks(findText, replaceText, {
-          ...scope,
-          inTitles: findInTitles,
-          inUrls: findInUrls,
-          inSpaceTitles: findInSpaceTitles,
-          caseSensitive: findCaseSensitive
-        });
-        break;
-      case 'redirects':
-        result = applyPublicBookmarkRedirectUrls(scope);
-        break;
-      default:
-        return;
+  const handleUndoRewrite = () => {
+    const result = undoLastPublicBookmarkRewrite();
+    applyData(result.data);
+    refreshUndoInfo();
+    clearRewritePreview();
+    setMessage(result.message);
+  };
+
+  const handleSaveRecipe = () => {
+    const built = buildStepFromCurrentTab();
+    const steps = pipelineSteps.length > 0 ? pipelineSteps : built ? [built] : [];
+    if (steps.length === 0) {
+      setMessage('Add pipeline steps or configure a tab before saving a recipe.');
+      return;
     }
-    setRewritePreview(result.changes);
-    setRewritePreviewMeta({
-      updated: result.updated,
-      scanned: result.scanned,
-      message: result.message
-    });
-    if (!result.ok) setMessage(result.message);
+    const name = recipeName.trim() || 'Untitled';
+    const next = saveBookmarkRewriteRecipe(name, steps);
+    setRecipes(next);
+    setRecipeName('');
+    setMessage(`Saved recipe “${name}” (${steps.length} step${steps.length === 1 ? '' : 's'}).`);
+  };
+
+  const handleRunRecipe = (recipe: BookmarkRewriteRecipe) => {
+    setPipelineSteps(recipe.steps);
+    setRewriteTab('pipeline');
+    clearRewritePreview();
+    const result = runPublicBookmarkRewritePipeline(recipe.steps, rewriteScope(true));
+    applyRewriteResult(result, false);
+  };
+
+  const handleDeleteRecipe = (id: string) => {
+    setRecipes(deleteBookmarkRewriteRecipe(id));
+  };
+
+  const toggleSelectedLink = (linkId: string) => {
+    setSelectedLinkIds((prev) =>
+      prev.includes(linkId) ? prev.filter((id) => id !== linkId) : [...prev, linkId]
+    );
+    clearRewritePreview();
+  };
+
+  const runRewritePreview = () => {
+    const result = runRewrite(true);
+    if (result) applyRewriteResult(result, false);
   };
 
   const applyRewrite = () => {
-    const scope = { categoryId: rewriteScopeId(), dryRun: false as const };
-    let result;
-    switch (rewriteTab) {
-      case 'domain':
-        result = rewritePublicBookmarkDomains(rewriteFrom, rewriteTo, {
-          ...scope,
-          renameMatchingSpaces: true
-        });
-        break;
-      case 'path':
-        result = rewritePublicBookmarkPaths(pathFrom, pathTo, scope);
-        break;
-      case 'cleanup':
-        result = cleanupPublicBookmarkUrls({
-          ...scope,
-          stripTracking,
-          forceHttps
-        });
-        break;
-      case 'find-replace':
-        result = findReplacePublicBookmarks(findText, replaceText, {
-          ...scope,
-          inTitles: findInTitles,
-          inUrls: findInUrls,
-          inSpaceTitles: findInSpaceTitles,
-          caseSensitive: findCaseSensitive
-        });
-        break;
-      case 'redirects':
-        result = applyPublicBookmarkRedirectUrls(scope);
-        break;
-      default:
-        return;
-    }
-    applyData(result.data);
-    setMessage(result.message);
-    clearRewritePreview();
-    if (result.ok && result.updated > 0) {
-      // Keep panel open so user can run another pass; clear domain "to" for safety
-      if (rewriteTab === 'domain') setRewriteTo('');
-      if (rewriteTab === 'path') setPathTo('');
-      if (rewriteTab === 'find-replace') setFindText('');
-    }
+    const result = runRewrite(false);
+    if (result) applyRewriteResult(result, true);
   };
 
   const handleApplyRedirectsQuick = () => {
@@ -1492,39 +1710,49 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
       {showRewriteTools && (
         <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 p-4 space-y-3 shadow-sm">
           <div className="flex items-start justify-between gap-2">
-            <div>
+            <div className="min-w-0 flex-1">
               <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
                 Rewrite tools
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Preview changes before applying — branding moves, path swaps, cleanup, find/replace, redirects.
+                Preview changes before applying — domain, path, cleanup, normalize, pipeline, and more.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setShowRewriteTools(false);
-                clearRewritePreview();
-              }}
-              className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-              title="Close"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-              </svg>
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleUndoRewrite}
+                disabled={!undoInfo}
+                className="px-2.5 py-1 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                title={
+                  undoInfo
+                    ? `Restore snapshot from ${undoInfo.savedAt ? new Date(undoInfo.savedAt).toLocaleString() : 'last apply'}`
+                    : 'No undo snapshot'
+                }
+              >
+                Undo
+                {undoInfo
+                  ? ` (${undoInfo.spaceCount} space${undoInfo.spaceCount === 1 ? '' : 's'}, ${undoInfo.linkCount} link${undoInfo.linkCount === 1 ? '' : 's'})`
+                  : ''}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRewriteTools(false);
+                  clearRewritePreview();
+                }}
+                className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                title="Close"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                </svg>
+              </button>
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-1">
-            {(
-              [
-                ['domain', 'Domain'],
-                ['path', 'Path'],
-                ['cleanup', 'Cleanup'],
-                ['find-replace', 'Find & replace'],
-                ['redirects', 'Redirects']
-              ] as Array<[RewriteToolTab, string]>
-            ).map(([id, label]) => (
+            {REWRITE_TAB_LABELS.map(([id, label]) => (
               <button
                 key={id}
                 type="button"
@@ -1542,6 +1770,62 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
               </button>
             ))}
           </div>
+
+          <div className="flex flex-wrap items-start gap-x-4 gap-y-2 text-xs">
+            <label className="flex items-center gap-2 text-slate-600 dark:text-slate-300 cursor-pointer shrink-0">
+              <input
+                type="checkbox"
+                checked={skipPinned}
+                onChange={(e) => {
+                  setSkipPinned(e.target.checked);
+                  clearRewritePreview();
+                }}
+                className="rounded border-slate-300 dark:border-slate-600"
+              />
+              Skip pinned links
+            </label>
+            <label className="flex items-center gap-2 text-slate-600 dark:text-slate-300 cursor-pointer shrink-0">
+              <input
+                type="checkbox"
+                checked={rewriteAllSpaces || !openSpace}
+                disabled={!openSpace}
+                onChange={(e) => {
+                  setRewriteAllSpaces(e.target.checked);
+                  clearRewritePreview();
+                }}
+                className="rounded border-slate-300 dark:border-slate-600"
+              />
+              All bookmark spaces
+            </label>
+          </div>
+
+          {openSpace && (
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/40 p-2">
+              <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1.5">
+                Limit to links
+                {selectedLinkIds.length === 0 ? ' (all links in scope)' : ` (${selectedLinkIds.length} selected)`}
+              </p>
+              <div className="max-h-28 overflow-y-auto space-y-0.5">
+                {openSpace.links.map((link) => (
+                  <label
+                    key={link.id}
+                    className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer py-0.5"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedLinkIds.includes(link.id)}
+                      onChange={() => toggleSelectedLink(link.id)}
+                      className="rounded border-slate-300 dark:border-slate-600 shrink-0"
+                    />
+                    <span className="truncate min-w-0">
+                      {link.pinned ? '📌 ' : ''}
+                      {link.title}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
 
           {rewriteTab === 'domain' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1722,7 +2006,255 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                   />
                   Case sensitive
                 </label>
+                <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={findUseRegex}
+                    onChange={(e) => {
+                      setFindUseRegex(e.target.checked);
+                      clearRewritePreview();
+                    }}
+                    className="rounded border-slate-300 dark:border-slate-600"
+                  />
+                  Use regex
+                </label>
               </div>
+            </div>
+          )}
+
+          {rewriteTab === 'normalize' && (
+            <div className="space-y-2">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Standardize www prefix, trailing slashes, default ports, and HTTPS.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <label className="block text-xs text-slate-500 dark:text-slate-400">
+                  www prefix
+                  <select
+                    value={normalizeWwwMode}
+                    onChange={(e) => {
+                      setNormalizeWwwMode(e.target.value as 'keep' | 'add' | 'remove');
+                      clearRewritePreview();
+                    }}
+                    className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                  >
+                    <option value="keep">Keep as-is</option>
+                    <option value="add">Add www.</option>
+                    <option value="remove">Remove www.</option>
+                  </select>
+                </label>
+                <label className="block text-xs text-slate-500 dark:text-slate-400">
+                  Trailing slash
+                  <select
+                    value={normalizeTrailingSlash}
+                    onChange={(e) => {
+                      setNormalizeTrailingSlash(e.target.value as 'keep' | 'add' | 'remove');
+                      clearRewritePreview();
+                    }}
+                    className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                  >
+                    <option value="keep">Keep as-is</option>
+                    <option value="add">Add trailing /</option>
+                    <option value="remove">Remove trailing /</option>
+                  </select>
+                </label>
+              </div>
+              <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={stripDefaultPorts}
+                  onChange={(e) => {
+                    setStripDefaultPorts(e.target.checked);
+                    clearRewritePreview();
+                  }}
+                  className="rounded border-slate-300 dark:border-slate-600"
+                />
+                Strip default ports (:80 / :443)
+              </label>
+              <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={normalizeForceHttps}
+                  onChange={(e) => {
+                    setNormalizeForceHttps(e.target.checked);
+                    clearRewritePreview();
+                  }}
+                  className="rounded border-slate-300 dark:border-slate-600"
+                />
+                Force HTTPS
+              </label>
+            </div>
+          )}
+
+          {rewriteTab === 'encoding' && (
+            <div className="space-y-2">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Lowercase hostnames, decode percent-encoded path segments, and collapse duplicate slashes.
+              </p>
+            </div>
+          )}
+
+          {rewriteTab === 'regroup' && (
+            <div className="space-y-2">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Move links into the space that matches their current host domain. Creates new spaces when needed.
+                Useful after a domain rewrite when links still sit in the old space.
+              </p>
+            </div>
+          )}
+
+          {rewriteTab === 'suggest' && (
+            <div className="space-y-2">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Suggest http→https upgrades and www flips for broken or timed-out links (from Check links).
+                Preview to see proposed fixes before applying.
+              </p>
+            </div>
+          )}
+
+          {rewriteTab === 'pipeline' && (
+            <div className="space-y-2">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Run multiple rewrite steps in order. Add steps from other tabs, then preview or apply the pipeline.
+              </p>
+              {pipelineSteps.length > 0 ? (
+                <ul className="space-y-1 max-h-32 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 p-2 bg-slate-50/50 dark:bg-slate-900/40">
+                  {pipelineSteps.map((step, i) => (
+                    <li
+                      key={`${step.type}-${i}`}
+                      className="flex items-center justify-between gap-2 text-xs text-slate-700 dark:text-slate-300"
+                    >
+                      <span className="truncate min-w-0">
+                        {i + 1}. {describePipelineStep(step)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPipelineSteps((prev) => prev.filter((_, j) => j !== i));
+                          clearRewritePreview();
+                        }}
+                        className="shrink-0 text-slate-400 hover:text-red-500"
+                        title="Remove step"
+                      >
+                        ×
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-slate-400 dark:text-slate-500 italic">No steps yet.</p>
+              )}
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => addPipelineStep(buildStepForTool('domain'), 'Domain')}
+                  className="px-2 py-1 text-[11px] font-medium rounded-md bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600"
+                >
+                  + Domain
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addPipelineStep(buildStepForTool('path'), 'Path')}
+                  className="px-2 py-1 text-[11px] font-medium rounded-md bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600"
+                >
+                  + Path
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addPipelineStep(buildStepForTool('cleanup'), 'Cleanup')}
+                  className="px-2 py-1 text-[11px] font-medium rounded-md bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600"
+                >
+                  + Cleanup
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addPipelineStep(buildStepForTool('find-replace'), 'Find/replace')}
+                  className="px-2 py-1 text-[11px] font-medium rounded-md bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600"
+                >
+                  + Find/replace
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addPipelineStep(buildStepForTool('normalize'), 'Normalize')}
+                  className="px-2 py-1 text-[11px] font-medium rounded-md bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600"
+                >
+                  + Normalize
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPipelineSteps([]);
+                    clearRewritePreview();
+                  }}
+                  disabled={pipelineSteps.length === 0}
+                  className="px-2 py-1 text-[11px] font-medium rounded-md text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-40"
+                >
+                  Clear
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-400 dark:text-slate-500">
+                Tip: configure Domain/Path/Find on their tabs first, then use + buttons to capture settings.
+              </p>
+            </div>
+          )}
+
+          {rewriteTab === 'recipes' && (
+            <div className="space-y-2">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Save reusable step sequences. Run loads steps into Pipeline and previews; Delete removes the recipe.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  value={recipeName}
+                  onChange={(e) => setRecipeName(e.target.value)}
+                  placeholder="Recipe name"
+                  className="flex-1 px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveRecipe}
+                  className="px-3 py-2 text-sm font-medium rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition-colors shrink-0"
+                >
+                  Save recipe
+                </button>
+              </div>
+              {recipes.length > 0 ? (
+                <ul className="space-y-1 max-h-36 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 p-2">
+                  {recipes.map((recipe) => (
+                    <li
+                      key={recipe.id}
+                      className="flex items-center justify-between gap-2 text-xs text-slate-700 dark:text-slate-300 py-0.5"
+                    >
+                      <span className="truncate min-w-0">
+                        {recipe.name}
+                        <span className="text-slate-400 dark:text-slate-500">
+                          {' '}
+                          ({recipe.steps.length} step{recipe.steps.length === 1 ? '' : 's'})
+                        </span>
+                      </span>
+                      <span className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleRunRecipe(recipe)}
+                          className="px-2 py-0.5 rounded-md bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-900/50"
+                        >
+                          Run
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRecipe(recipe.id)}
+                          className="px-2 py-0.5 rounded-md text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                        >
+                          Delete
+                        </button>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-slate-400 dark:text-slate-500 italic">No saved recipes.</p>
+              )}
             </div>
           )}
 
@@ -1742,25 +2274,22 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
             </div>
           )}
 
-          <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={rewriteAllSpaces || !openSpace}
-              disabled={!openSpace}
-              onChange={(e) => {
-                setRewriteAllSpaces(e.target.checked);
-                clearRewritePreview();
-              }}
-              className="rounded border-slate-300 dark:border-slate-600"
-            />
-            Apply to all bookmark spaces (not only this one)
-          </label>
-
           {rewritePreviewMeta && (
             <div className="rounded-lg border border-amber-200 dark:border-amber-800/60 bg-amber-50/80 dark:bg-amber-950/30 p-3 space-y-2">
-              <p className="text-xs font-medium text-amber-900 dark:text-amber-200">
-                {rewritePreviewMeta.message}
-              </p>
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-xs font-medium text-amber-900 dark:text-amber-200">
+                  {rewritePreviewMeta.message}
+                </p>
+                {rewritePreview && rewritePreview.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setMessage(downloadBookmarkRewritePreviewCsv(rewritePreview))}
+                    className="shrink-0 px-2 py-0.5 text-[11px] font-medium rounded-md bg-white/80 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+                  >
+                    Export CSV
+                  </button>
+                )}
+              </div>
               {rewritePreview && rewritePreview.length > 0 && (
                 <ul className="max-h-40 overflow-y-auto space-y-1.5 text-[11px] font-mono text-slate-700 dark:text-slate-300">
                   {rewritePreview.slice(0, 12).map((c, i) => (
@@ -1786,26 +2315,33 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
           )}
 
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={runRewritePreview}
-              className="px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
-            >
-              Preview
-            </button>
-            <button
-              type="button"
-              onClick={applyRewrite}
-              disabled={rewritePreviewMeta != null && rewritePreviewMeta.updated === 0}
-              className="px-3 py-1.5 text-sm font-medium rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition-colors disabled:opacity-50"
-              title={
-                rewritePreviewMeta
-                  ? 'Apply the previewed changes'
-                  : 'Tip: Preview first, then Apply'
-              }
-            >
-              Apply{rewritePreviewMeta && rewritePreviewMeta.updated > 0 ? ` (${rewritePreviewMeta.updated})` : ''}
-            </button>
+            {rewriteTab !== 'recipes' && (
+              <>
+                <button
+                  type="button"
+                  onClick={runRewritePreview}
+                  className="px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                >
+                  Preview
+                </button>
+                <button
+                  type="button"
+                  onClick={applyRewrite}
+                  disabled={rewritePreviewMeta != null && rewritePreviewMeta.updated === 0}
+                  className="px-3 py-1.5 text-sm font-medium rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition-colors disabled:opacity-50"
+                  title={
+                    rewritePreviewMeta
+                      ? 'Apply the previewed changes'
+                      : 'Tip: Preview first, then Apply'
+                  }
+                >
+                  Apply
+                  {rewritePreviewMeta && rewritePreviewMeta.updated > 0
+                    ? ` (${rewritePreviewMeta.updated})`
+                    : ''}
+                </button>
+              </>
+            )}
             <button
               type="button"
               onClick={() => {

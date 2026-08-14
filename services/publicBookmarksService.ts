@@ -861,7 +861,7 @@ export interface BookmarkRewriteChange {
   categoryTitle: string;
   linkId?: string;
   linkTitle?: string;
-  field: 'url' | 'title' | 'spaceTitle';
+  field: 'url' | 'title' | 'spaceTitle' | 'space';
   before: string;
   after: string;
 }
@@ -879,7 +879,29 @@ export type BookmarkRewriteScope = {
   categoryId?: string;
   dryRun?: boolean;
   renameMatchingSpaces?: boolean;
+  /** Skip pinned links. */
+  skipPinned?: boolean;
+  /** When set, only these link IDs are rewritten. */
+  linkIds?: string[];
+  /** Use this dataset instead of reading storage (pipelines). */
+  sourceData?: PublicBookmarksData;
+  /** Mutate in memory without writing storage (pipelines). */
+  deferPersist?: boolean;
 };
+
+const linkMatchesRewriteScope = (
+  link: PublicBookmarkLink,
+  opts?: BookmarkRewriteScope
+): boolean => {
+  if (opts?.skipPinned && link.pinned) return false;
+  if (opts?.linkIds && opts.linkIds.length > 0 && !opts.linkIds.includes(link.id)) {
+    return false;
+  }
+  return true;
+};
+
+const resolveRewriteSource = (opts?: BookmarkRewriteScope): PublicBookmarksData =>
+  opts?.sourceData ?? getPublicBookmarks();
 
 const TRACKING_QUERY_KEYS = new Set([
   'fbclid',
@@ -1006,12 +1028,95 @@ const emptyRewriteResult = (
   changes: []
 });
 
+const REWRITE_UNDO_KEY = 'undo';
+const REWRITE_RECIPES_KEY = 'rewrite_recipes';
+
+const rewriteMetaStorageKey = (suffix: string): string =>
+  storageKey(`bookmarks_${suffix}`);
+
+/** Save pre-rewrite snapshot for one-shot Undo. */
+export const pushBookmarkRewriteUndoSnapshot = (
+  data?: PublicBookmarksData
+): void => {
+  try {
+    const snapshot = data ?? getPublicBookmarks();
+    localStorage.setItem(
+      rewriteMetaStorageKey(REWRITE_UNDO_KEY),
+      JSON.stringify({
+        savedAt: new Date().toISOString(),
+        data: snapshot
+      })
+    );
+  } catch {
+    // ignore quota
+  }
+};
+
+export const peekBookmarkRewriteUndo = (): {
+  savedAt: string;
+  linkCount: number;
+  spaceCount: number;
+} | null => {
+  try {
+    const raw = localStorage.getItem(rewriteMetaStorageKey(REWRITE_UNDO_KEY));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as {
+      savedAt?: string;
+      data?: PublicBookmarksData;
+    };
+    if (!parsed?.data?.categories || !Array.isArray(parsed.data.categories)) return null;
+    return {
+      savedAt: parsed.savedAt || '',
+      spaceCount: parsed.data.categories.length,
+      linkCount: countPublicBookmarkLinks(parsed.data)
+    };
+  } catch {
+    return null;
+  }
+};
+
+export const clearBookmarkRewriteUndo = (): void => {
+  try {
+    localStorage.removeItem(rewriteMetaStorageKey(REWRITE_UNDO_KEY));
+  } catch {
+    // ignore
+  }
+};
+
+/** Restore the last rewrite undo snapshot (clears undo after success). */
+export const undoLastPublicBookmarkRewrite = (): BookmarkRewriteResult => {
+  try {
+    const raw = localStorage.getItem(rewriteMetaStorageKey(REWRITE_UNDO_KEY));
+    if (!raw) {
+      return emptyRewriteResult('Nothing to undo — no rewrite snapshot saved.', true);
+    }
+    const parsed = JSON.parse(raw) as { data?: PublicBookmarksData };
+    if (!parsed?.data?.categories || !Array.isArray(parsed.data.categories)) {
+      clearBookmarkRewriteUndo();
+      return emptyRewriteResult('Undo snapshot was invalid.', false);
+    }
+    const restored = persist(parsed.data.categories);
+    clearBookmarkRewriteUndo();
+    const n = countPublicBookmarkLinks(restored);
+    return {
+      data: restored,
+      ok: true,
+      message: `Undid last rewrite — restored ${restored.categories.length} space(s), ${n} link(s).`,
+      scanned: n,
+      updated: n,
+      changes: []
+    };
+  } catch {
+    return emptyRewriteResult('Failed to undo rewrite.', false);
+  }
+};
+
 const finishRewrite = (
   source: PublicBookmarksData,
   categories: PublicBookmarkCategory[],
   changes: BookmarkRewriteChange[],
   scanned: number,
-  dryRun: boolean | undefined,
+  opts: BookmarkRewriteScope | undefined,
   successMessage: string,
   noneMessage: string
 ): BookmarkRewriteResult => {
@@ -1020,7 +1125,6 @@ const finishRewrite = (
       .filter((c) => c.linkId)
       .map((c) => `${c.categoryId}:${c.linkId}`)
   ).size;
-  // Space-title-only changes still count
   const spaceOnly = changes.filter((c) => c.field === 'spaceTitle' && !c.linkId).length;
   const linkUpdates = updated;
   const totalTouched = linkUpdates + spaceOnly;
@@ -1036,7 +1140,7 @@ const finishRewrite = (
     };
   }
 
-  if (dryRun) {
+  if (opts?.dryRun) {
     return {
       data: source,
       ok: true,
@@ -1047,6 +1151,23 @@ const finishRewrite = (
     };
   }
 
+  const nextData: PublicBookmarksData = {
+    categories,
+    updatedAt: new Date().toISOString()
+  };
+
+  if (opts?.deferPersist) {
+    return {
+      data: nextData,
+      ok: true,
+      message: successMessage.replace('%n%', String(linkUpdates || changes.length)),
+      scanned,
+      updated: linkUpdates || changes.length,
+      changes
+    };
+  }
+
+  pushBookmarkRewriteUndoSnapshot(source);
   const next = persist(categories);
   return {
     data: next,
@@ -1084,7 +1205,7 @@ export const rewritePublicBookmarkDomains = (
     );
   }
 
-  const source = getPublicBookmarks();
+  const source = resolveRewriteSource(opts);
   let scanned = 0;
   const changes: BookmarkRewriteChange[] = [];
   const renameSpaces = opts?.renameMatchingSpaces !== false;
@@ -1094,6 +1215,7 @@ export const rewritePublicBookmarkDomains = (
     if (opts?.categoryId && cat.id !== opts.categoryId) return cat;
 
     const links = cat.links.map((link) => {
+      if (!linkMatchesRewriteScope(link, opts)) return link;
       scanned += 1;
       const nextUrl = rewriteBookmarkUrlDomain(link.url, from, to);
       if (!nextUrl || nextUrl === link.url) return link;
@@ -1145,7 +1267,7 @@ export const rewritePublicBookmarkDomains = (
     categories,
     changes,
     scanned,
-    opts?.dryRun,
+    opts,
     `Rewrote %n% link(s) from ${from} → ${to}${opts?.categoryId ? ' in this space' : ' across Your Bookmarks'}.`,
     `No links matched “${from}”${opts?.categoryId ? ' in this space' : ''}.`
   );
@@ -1172,7 +1294,7 @@ export const rewritePublicBookmarkPaths = (
     return emptyRewriteResult('Old and new paths are the same.');
   }
 
-  const source = getPublicBookmarks();
+  const source = resolveRewriteSource(opts);
   let scanned = 0;
   const changes: BookmarkRewriteChange[] = [];
 
@@ -1180,6 +1302,7 @@ export const rewritePublicBookmarkPaths = (
     if (opts?.categoryId && cat.id !== opts.categoryId) return cat;
 
     const links = cat.links.map((link) => {
+      if (!linkMatchesRewriteScope(link, opts)) return link;
       scanned += 1;
       const nextUrl = rewriteBookmarkUrlPath(link.url, fromPath, toPath);
       if (!nextUrl || nextUrl === link.url) return link;
@@ -1207,7 +1330,7 @@ export const rewritePublicBookmarkPaths = (
     categories,
     changes,
     scanned,
-    opts?.dryRun,
+    opts,
     `Rewrote path on %n% link(s): ${fromPath} → ${toPath}.`,
     `No links matched path “${fromPath}”${opts?.categoryId ? ' in this space' : ''}.`
   );
@@ -1228,7 +1351,7 @@ export const cleanupPublicBookmarkUrls = (
     return emptyRewriteResult('Enable strip tracking params and/or force HTTPS.');
   }
 
-  const source = getPublicBookmarks();
+  const source = resolveRewriteSource(opts);
   let scanned = 0;
   const changes: BookmarkRewriteChange[] = [];
 
@@ -1236,6 +1359,7 @@ export const cleanupPublicBookmarkUrls = (
     if (opts.categoryId && cat.id !== opts.categoryId) return cat;
 
     const links = cat.links.map((link) => {
+      if (!linkMatchesRewriteScope(link, opts)) return link;
       scanned += 1;
       let nextUrl = link.url;
       if (stripTracking) {
@@ -1273,7 +1397,7 @@ export const cleanupPublicBookmarkUrls = (
     categories,
     changes,
     scanned,
-    opts.dryRun,
+    opts,
     `Cleaned %n% link(s) (${parts.join(' + ')}).`,
     `No links needed cleanup${opts.categoryId ? ' in this space' : ''}.`
   );
@@ -1290,6 +1414,7 @@ export const findReplacePublicBookmarks = (
     inUrls?: boolean;
     inSpaceTitles?: boolean;
     caseSensitive?: boolean;
+    useRegex?: boolean;
   }
 ): BookmarkRewriteResult => {
   const find = findRaw;
@@ -1301,21 +1426,36 @@ export const findReplacePublicBookmarks = (
   const inUrls = opts?.inUrls !== false;
   const inSpaceTitles = opts?.inSpaceTitles === true;
   const caseSensitive = opts?.caseSensitive === true;
+  const useRegex = opts?.useRegex === true;
   const replace = replaceRaw;
 
   if (!inTitles && !inUrls && !inSpaceTitles) {
     return emptyRewriteResult('Choose at least one target: titles, URLs, or space names.');
   }
 
+  let regex: RegExp | null = null;
+  if (useRegex) {
+    try {
+      regex = new RegExp(find, caseSensitive ? 'g' : 'gi');
+    } catch {
+      return emptyRewriteResult('Invalid regular expression.');
+    }
+  }
+
   const replaceIn = (value: string): string | null => {
+    if (regex) {
+      regex.lastIndex = 0;
+      if (!regex.test(value)) return null;
+      regex.lastIndex = 0;
+      const next = value.replace(regex, replace);
+      return next === value ? null : next;
+    }
     if (caseSensitive) {
       if (!value.includes(find)) return null;
       return value.split(find).join(replace);
     }
-    const lower = value.toLowerCase();
     const needle = find.toLowerCase();
-    if (!lower.includes(needle)) return null;
-    // Case-insensitive replace preserving non-matched segments
+    if (!value.toLowerCase().includes(needle)) return null;
     const parts: string[] = [];
     let i = 0;
     while (i < value.length) {
@@ -1330,7 +1470,7 @@ export const findReplacePublicBookmarks = (
     return parts.join('');
   };
 
-  const source = getPublicBookmarks();
+  const source = resolveRewriteSource(opts);
   let scanned = 0;
   const changes: BookmarkRewriteChange[] = [];
 
@@ -1353,6 +1493,7 @@ export const findReplacePublicBookmarks = (
     }
 
     const links = cat.links.map((link) => {
+      if (!linkMatchesRewriteScope(link, opts)) return link;
       scanned += 1;
       let url = link.url;
       let title = link.title;
@@ -1408,7 +1549,7 @@ export const findReplacePublicBookmarks = (
     categories,
     changes,
     scanned,
-    opts?.dryRun,
+    opts,
     `Replaced in %n% item(s): “${find}” → “${replace}”.`,
     `No matches for “${find}”${opts?.categoryId ? ' in this space' : ''}.`
   );
@@ -1464,8 +1605,10 @@ export const listRedirectUpdatableBookmarks = (
 export const applyPublicBookmarkRedirectUrls = (
   opts?: BookmarkRewriteScope & { linkIds?: string[] }
 ): BookmarkRewriteResult => {
-  const source = getPublicBookmarks();
-  const candidates = listRedirectUpdatableBookmarks(opts?.categoryId, source);
+  const source = resolveRewriteSource(opts);
+  const candidates = listRedirectUpdatableBookmarks(opts?.categoryId, source).filter((c) =>
+    linkMatchesRewriteScope(c.link, opts)
+  );
   const idFilter =
     opts?.linkIds && opts.linkIds.length > 0 ? new Set(opts.linkIds) : null;
   const selected = idFilter
@@ -1528,10 +1671,581 @@ export const applyPublicBookmarkRedirectUrls = (
     categories,
     changes,
     scanned,
-    opts?.dryRun,
+    opts,
     `Updated %n% link(s) to their final redirect URL(s).`,
     'No redirected URLs to update.'
   );
+};
+
+/** Normalize scheme / www / ports / trailing slash. */
+export const normalizePublicBookmarkUrls = (
+  opts: BookmarkRewriteScope & {
+    wwwMode?: 'add' | 'remove' | 'keep';
+    trailingSlash?: 'add' | 'remove' | 'keep';
+    stripDefaultPorts?: boolean;
+    forceHttps?: boolean;
+  }
+): BookmarkRewriteResult => {
+  const wwwMode = opts.wwwMode || 'keep';
+  const trailingSlash = opts.trailingSlash || 'keep';
+  const stripDefaultPorts = opts.stripDefaultPorts !== false;
+  const forceHttps = opts.forceHttps === true;
+
+  if (
+    wwwMode === 'keep' &&
+    trailingSlash === 'keep' &&
+    !stripDefaultPorts &&
+    !forceHttps
+  ) {
+    return emptyRewriteResult('Choose at least one normalize option.');
+  }
+
+  const transform = (url: string): string | null => {
+    try {
+      const parsed = new URL(url);
+      let changed = false;
+
+      if (forceHttps && parsed.protocol === 'http:') {
+        parsed.protocol = 'https:';
+        changed = true;
+      }
+
+      if (stripDefaultPorts) {
+        if (
+          (parsed.protocol === 'https:' && parsed.port === '443') ||
+          (parsed.protocol === 'http:' && parsed.port === '80')
+        ) {
+          parsed.port = '';
+          changed = true;
+        }
+      }
+
+      const host = parsed.hostname;
+      if (wwwMode === 'add' && !host.toLowerCase().startsWith('www.')) {
+        parsed.hostname = `www.${host}`;
+        changed = true;
+      } else if (wwwMode === 'remove' && host.toLowerCase().startsWith('www.')) {
+        parsed.hostname = host.slice(4);
+        changed = true;
+      }
+
+      let path = parsed.pathname || '/';
+      if (trailingSlash === 'add' && path !== '/' && !path.endsWith('/')) {
+        parsed.pathname = `${path}/`;
+        changed = true;
+      } else if (trailingSlash === 'remove' && path.length > 1 && path.endsWith('/')) {
+        parsed.pathname = path.replace(/\/+$/, '') || '/';
+        changed = true;
+      }
+
+      const next = parsed.toString();
+      return changed && next !== url ? next : null;
+    } catch {
+      return null;
+    }
+  };
+
+  return mapUrlRewrite(opts, transform, 'Normalized %n% link(s).', 'No links needed URL normalize.');
+};
+
+/** Decode path encoding, lowercase host, collapse duplicate slashes. */
+export const cleanupPublicBookmarkEncoding = (
+  opts?: BookmarkRewriteScope
+): BookmarkRewriteResult => {
+  const transform = (url: string): string | null => {
+    try {
+      const parsed = new URL(url);
+      let changed = false;
+
+      const lowerHost = parsed.hostname.toLowerCase();
+      if (lowerHost !== parsed.hostname) {
+        parsed.hostname = lowerHost;
+        changed = true;
+      }
+
+      let path = parsed.pathname || '/';
+      const collapsed = path.replace(/\/{2,}/g, '/') || '/';
+      if (collapsed !== path) {
+        path = collapsed;
+        changed = true;
+      }
+
+      try {
+        const decoded = decodeURI(path);
+        if (decoded !== path) {
+          path = decoded;
+          changed = true;
+        }
+      } catch {
+        // keep encoded path
+      }
+
+      parsed.pathname = path;
+      const next = parsed.toString();
+      return changed && next !== url ? next : null;
+    } catch {
+      return null;
+    }
+  };
+
+  return mapUrlRewrite(
+    opts,
+    transform,
+    'Cleaned encoding on %n% link(s).',
+    'No encoding cleanup needed.'
+  );
+};
+
+const mapUrlRewrite = (
+  opts: BookmarkRewriteScope | undefined,
+  transform: (url: string) => string | null,
+  successMessage: string,
+  noneMessage: string
+): BookmarkRewriteResult => {
+  const source = resolveRewriteSource(opts);
+  let scanned = 0;
+  const changes: BookmarkRewriteChange[] = [];
+
+  const categories = source.categories.map((cat) => {
+    if (opts?.categoryId && cat.id !== opts.categoryId) return cat;
+
+    const links = cat.links.map((link) => {
+      if (!linkMatchesRewriteScope(link, opts)) return link;
+      scanned += 1;
+      const nextUrl = transform(link.url);
+      if (!nextUrl || nextUrl === link.url) return link;
+      let title = link.title;
+      if (title === link.url) title = nextUrl;
+      changes.push({
+        categoryId: cat.id,
+        categoryTitle: cat.title,
+        linkId: link.id,
+        linkTitle: link.title,
+        field: 'url',
+        before: link.url,
+        after: nextUrl
+      });
+      return { ...link, url: nextUrl, title, healthFinalUrl: undefined };
+    });
+
+    return { ...cat, links: dedupeCategoryLinks(links) };
+  });
+
+  return finishRewrite(source, categories, changes, scanned, opts, successMessage, noneMessage);
+};
+
+/**
+ * Move links into the space that matches their current host domain (create if needed).
+ */
+export const regroupPublicBookmarksByHost = (
+  opts?: BookmarkRewriteScope
+): BookmarkRewriteResult => {
+  const source = resolveRewriteSource(opts);
+  let scanned = 0;
+  const changes: BookmarkRewriteChange[] = [];
+
+  // Start with a mutable copy of every space
+  const byId = new Map<string, PublicBookmarkCategory>();
+  for (const cat of source.categories) {
+    byId.set(cat.id, { ...cat, links: [...cat.links] });
+  }
+
+  const ensureDest = (domainKey: string): PublicBookmarkCategory => {
+    const existing = findCategoryForDomain([...byId.values()], domainKey);
+    if (existing) {
+      const live = byId.get(existing.id);
+      if (live) return live;
+    }
+    const titleGuess =
+      domainKey === 'misc'
+        ? 'Miscellaneous'
+        : domainKey.charAt(0).toUpperCase() + domainKey.slice(1);
+    const created: PublicBookmarkCategory = {
+      id: generateUuid(),
+      title: titleGuess,
+      emoji: '🌐',
+      themeColor: 'sky',
+      links: []
+    };
+    byId.set(created.id, created);
+    return created;
+  };
+
+  for (const cat of source.categories) {
+    if (opts?.categoryId && cat.id !== opts.categoryId) continue;
+
+    const liveCat = byId.get(cat.id);
+    if (!liveCat) continue;
+
+    const remaining: PublicBookmarkLink[] = [];
+    for (const link of [...liveCat.links]) {
+      if (!linkMatchesRewriteScope(link, opts)) {
+        remaining.push(link);
+        continue;
+      }
+      scanned += 1;
+      const domainKey = getBookmarkBaseDomain(link.url) || 'misc';
+      const dest = ensureDest(domainKey);
+      if (dest.id === liveCat.id) {
+        remaining.push(link);
+        continue;
+      }
+      // Remove from current (we'll set remaining at end), add to dest
+      dest.links.push(link);
+      changes.push({
+        categoryId: dest.id,
+        categoryTitle: dest.title,
+        linkId: link.id,
+        linkTitle: link.title,
+        field: 'space',
+        before: cat.title,
+        after: dest.title
+      });
+    }
+    liveCat.links = remaining;
+  }
+
+  const categories = [...byId.values()]
+    .filter((c) => c.links.length > 0)
+    .map((c) => ({ ...c, links: dedupeCategoryLinks(c.links) }));
+
+  // Preserve original order for existing ids, append new spaces at end
+  const order = source.categories.map((c) => c.id);
+  categories.sort((a, b) => {
+    const ia = order.indexOf(a.id);
+    const ib = order.indexOf(b.id);
+    if (ia === -1 && ib === -1) return a.title.localeCompare(b.title);
+    if (ia === -1) return 1;
+    if (ib === -1) return -1;
+    return ia - ib;
+  });
+
+  return finishRewrite(
+    source,
+    categories,
+    changes,
+    scanned,
+    opts,
+    `Moved %n% link(s) into matching domain space(s).`,
+    'All links already sit in matching domain spaces.'
+  );
+};
+
+/** Suggest common URL fixes from health / scheme issues. */
+export const suggestPublicBookmarkUrlFixes = (
+  opts?: BookmarkRewriteScope
+): BookmarkRewriteResult => {
+  const transform = (url: string): string | null => {
+    try {
+      const parsed = new URL(url);
+      let changed = false;
+      if (parsed.protocol === 'http:') {
+        parsed.protocol = 'https:';
+        changed = true;
+      }
+      // Prefer bare host without www for broken health often; only strip www if present with http was issue
+      // Keep conservative: https only unless path looks like double-slash host typo
+      const next = parsed.toString();
+      return changed && next !== url ? next : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const source = resolveRewriteSource(opts);
+  let scanned = 0;
+  const changes: BookmarkRewriteChange[] = [];
+
+  const categories = source.categories.map((cat) => {
+    if (opts?.categoryId && cat.id !== opts.categoryId) return cat;
+    const links = cat.links.map((link) => {
+      if (!linkMatchesRewriteScope(link, opts)) return link;
+      const broken =
+        isRemovableBrokenBookmarkHealth(link.healthStatus) ||
+        link.url.startsWith('http://');
+      if (!broken && link.healthStatus !== 'redirected') return link;
+      scanned += 1;
+
+      let nextUrl = transform(link.url);
+      // Also try www flip when broken
+      if (!nextUrl && isRemovableBrokenBookmarkHealth(link.healthStatus)) {
+        try {
+          const p = new URL(link.url);
+          if (p.hostname.toLowerCase().startsWith('www.')) {
+            p.hostname = p.hostname.slice(4);
+            nextUrl = p.toString();
+          } else {
+            p.hostname = `www.${p.hostname}`;
+            nextUrl = p.toString();
+          }
+          if (nextUrl === link.url) nextUrl = null;
+        } catch {
+          nextUrl = null;
+        }
+      }
+
+      if (!nextUrl || nextUrl === link.url) return link;
+      let title = link.title;
+      if (title === link.url) title = nextUrl;
+      changes.push({
+        categoryId: cat.id,
+        categoryTitle: cat.title,
+        linkId: link.id,
+        linkTitle: link.title,
+        field: 'url',
+        before: link.url,
+        after: nextUrl
+      });
+      return { ...link, url: nextUrl, title, healthFinalUrl: undefined };
+    });
+    return { ...cat, links: dedupeCategoryLinks(links) };
+  });
+
+  return finishRewrite(
+    source,
+    categories,
+    changes,
+    scanned,
+    opts,
+    `Applied suggested fixes to %n% link(s).`,
+    'No suggested fixes for broken/http links.'
+  );
+};
+
+export type BookmarkRewriteRecipeStep =
+  | { type: 'domain'; from: string; to: string }
+  | { type: 'path'; from: string; to: string }
+  | { type: 'cleanup'; stripTracking?: boolean; forceHttps?: boolean }
+  | {
+      type: 'find-replace';
+      find: string;
+      replace: string;
+      useRegex?: boolean;
+      inTitles?: boolean;
+      inUrls?: boolean;
+      inSpaceTitles?: boolean;
+      caseSensitive?: boolean;
+    }
+  | {
+      type: 'normalize';
+      wwwMode?: 'add' | 'remove' | 'keep';
+      trailingSlash?: 'add' | 'remove' | 'keep';
+      stripDefaultPorts?: boolean;
+      forceHttps?: boolean;
+    }
+  | { type: 'encoding' }
+  | { type: 'redirects' }
+  | { type: 'regroup' }
+  | { type: 'suggest-fixes' };
+
+export interface BookmarkRewriteRecipe {
+  id: string;
+  name: string;
+  createdAt: string;
+  steps: BookmarkRewriteRecipeStep[];
+}
+
+export const listBookmarkRewriteRecipes = (): BookmarkRewriteRecipe[] => {
+  try {
+    const raw = localStorage.getItem(rewriteMetaStorageKey(REWRITE_RECIPES_KEY));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (r) => r && typeof r.id === 'string' && typeof r.name === 'string' && Array.isArray(r.steps)
+    ) as BookmarkRewriteRecipe[];
+  } catch {
+    return [];
+  }
+};
+
+export const saveBookmarkRewriteRecipe = (
+  name: string,
+  steps: BookmarkRewriteRecipeStep[]
+): BookmarkRewriteRecipe[] => {
+  const trimmed = name.trim();
+  if (!trimmed || steps.length === 0) return listBookmarkRewriteRecipes();
+  const recipes = listBookmarkRewriteRecipes();
+  const next: BookmarkRewriteRecipe = {
+    id: generateUuid(),
+    name: trimmed.slice(0, 80),
+    createdAt: new Date().toISOString(),
+    steps
+  };
+  const all = [next, ...recipes].slice(0, 30);
+  try {
+    localStorage.setItem(rewriteMetaStorageKey(REWRITE_RECIPES_KEY), JSON.stringify(all));
+  } catch {
+    // ignore
+  }
+  return all;
+};
+
+export const deleteBookmarkRewriteRecipe = (id: string): BookmarkRewriteRecipe[] => {
+  const all = listBookmarkRewriteRecipes().filter((r) => r.id !== id);
+  try {
+    localStorage.setItem(rewriteMetaStorageKey(REWRITE_RECIPES_KEY), JSON.stringify(all));
+  } catch {
+    // ignore
+  }
+  return all;
+};
+
+const runRecipeStep = (
+  step: BookmarkRewriteRecipeStep,
+  scope: BookmarkRewriteScope
+): BookmarkRewriteResult => {
+  switch (step.type) {
+    case 'domain':
+      return rewritePublicBookmarkDomains(step.from, step.to, {
+        ...scope,
+        renameMatchingSpaces: true
+      });
+    case 'path':
+      return rewritePublicBookmarkPaths(step.from, step.to, scope);
+    case 'cleanup':
+      return cleanupPublicBookmarkUrls({
+        ...scope,
+        stripTracking: step.stripTracking !== false,
+        forceHttps: step.forceHttps === true
+      });
+    case 'find-replace':
+      return findReplacePublicBookmarks(step.find, step.replace, {
+        ...scope,
+        useRegex: step.useRegex,
+        inTitles: step.inTitles,
+        inUrls: step.inUrls,
+        inSpaceTitles: step.inSpaceTitles,
+        caseSensitive: step.caseSensitive
+      });
+    case 'normalize':
+      return normalizePublicBookmarkUrls({
+        ...scope,
+        wwwMode: step.wwwMode,
+        trailingSlash: step.trailingSlash,
+        stripDefaultPorts: step.stripDefaultPorts,
+        forceHttps: step.forceHttps
+      });
+    case 'encoding':
+      return cleanupPublicBookmarkEncoding(scope);
+    case 'redirects':
+      return applyPublicBookmarkRedirectUrls(scope);
+    case 'regroup':
+      return regroupPublicBookmarksByHost(scope);
+    case 'suggest-fixes':
+      return suggestPublicBookmarkUrlFixes(scope);
+    default:
+      return emptyRewriteResult('Unknown pipeline step.');
+  }
+};
+
+/**
+ * Run multiple rewrite steps in order. Dry-run previews cumulative changes
+ * without saving; apply writes once at the end (with a single undo snapshot).
+ */
+export const runPublicBookmarkRewritePipeline = (
+  steps: BookmarkRewriteRecipeStep[],
+  opts?: BookmarkRewriteScope
+): BookmarkRewriteResult => {
+  if (!steps.length) {
+    return emptyRewriteResult('Add at least one pipeline step.');
+  }
+
+  const original = resolveRewriteSource(opts);
+  let working: PublicBookmarksData = {
+    categories: original.categories.map((c) => ({
+      ...c,
+      links: c.links.map((l) => ({ ...l }))
+    })),
+    updatedAt: original.updatedAt
+  };
+
+  const allChanges: BookmarkRewriteChange[] = [];
+  let scanned = 0;
+  let lastMessage = '';
+
+  for (const step of steps) {
+    const result = runRecipeStep(step, {
+      ...opts,
+      sourceData: working,
+      dryRun: false,
+      deferPersist: true
+    });
+    if (!result.ok) {
+      return {
+        ...result,
+        data: original,
+        changes: allChanges
+      };
+    }
+    working = result.data;
+    allChanges.push(...result.changes);
+    scanned += result.scanned;
+    lastMessage = result.message;
+  }
+
+  if (allChanges.length === 0) {
+    return {
+      data: original,
+      ok: true,
+      message: 'Pipeline produced no changes.',
+      scanned,
+      updated: 0,
+      changes: []
+    };
+  }
+
+  if (opts?.dryRun) {
+    const updated = new Set(
+      allChanges.filter((c) => c.linkId).map((c) => `${c.categoryId}:${c.linkId}`)
+    ).size;
+    return {
+      data: original,
+      ok: true,
+      message: `Pipeline preview: ${allChanges.length} change(s) across ${updated || 1} link(s) (${steps.length} step(s)).`,
+      scanned,
+      updated: updated || allChanges.length,
+      changes: allChanges
+    };
+  }
+
+  pushBookmarkRewriteUndoSnapshot(original);
+  const next = persist(working.categories);
+  const updated = new Set(
+    allChanges.filter((c) => c.linkId).map((c) => `${c.categoryId}:${c.linkId}`)
+  ).size;
+  return {
+    data: next,
+    ok: true,
+    message: `Pipeline applied ${steps.length} step(s): updated ${updated || allChanges.length} link(s). ${lastMessage}`,
+    scanned,
+    updated: updated || allChanges.length,
+    changes: allChanges
+  };
+};
+
+/** Download rewrite preview changes as CSV. */
+export const downloadBookmarkRewritePreviewCsv = (
+  changes: BookmarkRewriteChange[],
+  filename = 'bookmark-rewrite-preview.csv'
+): string => {
+  const esc = (v: string) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const rows = [
+    ['field', 'space', 'link', 'before', 'after'].map(esc).join(','),
+    ...changes.map((c) =>
+      [c.field, c.categoryTitle, c.linkTitle || '', c.before, c.after].map(esc).join(',')
+    )
+  ];
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  return `Downloaded ${changes.length} change(s) as CSV.`;
 };
 
 const BOOKMARK_EXPORT_GROUP = 'Bookmarks';
