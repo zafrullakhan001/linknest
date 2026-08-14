@@ -52,11 +52,13 @@ Import a Chrome/Edge bookmark HTML export. Links are grouped into **spaces by we
 
 ### Getting started
 1. Chrome → Bookmarks → Bookmark manager → ⋮ → **Export bookmarks**
-2. In Favorites → **Your Bookmarks** → **Import Chrome HTML**, **Merge Import**, or **Sync** (Browser Launcher Pro extension)
+2. In Favorites → **Your Bookmarks** → **Import Chrome HTML**, **Merge Import**, or **Sync** (LinkNest Bookmark Sync or Browser Launcher Pro)
 3. Open a domain space to work with its links
 
 ### Sync from browser (extension)
-If **Browser Launcher Pro** (or a compatible extension that answers `BROWSER_LAUNCHER_GET_BOOKMARKS`) is installed **with the Chrome `bookmarks` permission**, click **Sync** to merge browser bookmarks into Your Bookmarks without an HTML file. New URLs are added; existing ones are skipped.
+Install **LinkNest Bookmark Sync** (`extensions/bookmark-sync` — load unpacked in Chrome/Edge) **or** **Browser Launcher Pro** with the Chrome `bookmarks` permission. Click **Sync** to merge browser bookmarks into Your Bookmarks without an HTML file. New URLs are added; existing ones are skipped.
+
+Bookmark Sync is a minified Pro-compatible extension: it only answers `BROWSER_LAUNCHER_GET_BOOKMARKS` / `BROWSER_LAUNCHER_CHECK`. It does not launch other browsers. See `extensions/bookmark-sync/README.md`.
 
 If Sync fails (extension missing, no `bookmarks` permission, or `getTree` errors), use **Import Chrome HTML** / **Merge Import** instead.
 

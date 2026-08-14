@@ -320,7 +320,7 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
       setTimeout(() => {
         window.removeEventListener('message', responseListener);
         if (loading) {
-          setError('Timeout waiting for extension response. Make sure Browser Launcher Pro extension is installed and enabled.');
+          setError('Timeout waiting for extension response. Install LinkNest Bookmark Sync (extensions/bookmark-sync) or Browser Launcher Pro, then reload.');
           setLoading(false);
         }
       }, 15000);
@@ -2921,16 +2921,16 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
             <div className="mb-4">
               <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded text-sm text-blue-800 dark:text-blue-300 mb-3">
                 <p className="text-xs mb-2">
-                  Pull favorites directly from Browser Launcher Pro extension.
+                  Pull favorites from LinkNest Bookmark Sync or Browser Launcher Pro.
                 </p>
                 {extensionStatus === 'checking' && (
-                  <p className="text-xs">🔍 Detecting Browser Launcher Pro extension...</p>
+                  <p className="text-xs">🔍 Detecting bookmark sync extension...</p>
                 )}
                 {extensionStatus === 'found' && (
                   <p className="text-xs">✅ Extension detected! You can fetch bookmarks now.</p>
                 )}
                 {extensionStatus === 'not-found' && (
-                  <p className="text-xs">⚠️ Extension not detected. Please make sure Browser Launcher Pro extension is installed and enabled. You can find it in chrome://extensions</p>
+                  <p className="text-xs">⚠️ Extension not detected. Load unpacked extensions/bookmark-sync (or install Browser Launcher Pro) from chrome://extensions, then refresh.</p>
                 )}
                 {extensionStatus === 'error' && (
                   <p className="text-xs">❌ Error detecting extension. Please refresh the page and try again.</p>

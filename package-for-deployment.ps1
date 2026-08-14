@@ -533,7 +533,8 @@ $DirsToInclude = @(
     "analytics",
     "monitorv2",
     "vendor",   # OneLogin php-saml (+ xmlseclibs) required for SAML 2.0
-    "land"      # Required by index.html (browser-launcher-integration.js) for vite builds
+    "land",     # Required by index.html (browser-launcher-integration.js) for vite builds
+    "extensions"  # LinkNest Bookmark Sync (load unpacked in Chrome/Edge)
 )
 if (-not $AppOnly) {
     $DirsToInclude += @("docker", "load-tests")
@@ -2621,7 +2622,11 @@ $requiredInPackage = @(
     "scripts\harden-xampp-target.ps1",
     "components\UpdatesDialog.tsx",
     "services\updaterService.ts",
-    "land\browser-launcher-integration.js"
+    "land\browser-launcher-integration.js",
+    "extensions\bookmark-sync\manifest.json",
+    "extensions\bookmark-sync\background.js",
+    "extensions\bookmark-sync\content.js",
+    "extensions\bookmark-sync\branding.js"
 )
 
 if (-not $AppOnly) {
@@ -2777,6 +2782,7 @@ try {
         "scripts/publish-update-release.ps1",
         "scripts/harden-xampp-target.ps1",
         "land/browser-launcher-integration.js",
+        "extensions/bookmark-sync/manifest.json",
         ".htaccess"
     )
     if (-not $AppOnly) {

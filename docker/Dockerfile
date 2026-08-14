@@ -132,6 +132,7 @@ WORKDIR /var/www/html
 # Copy PHP files
 COPY api/ ./api/
 COPY scripts/ ./scripts/
+COPY extensions/ ./extensions/
 COPY docker/.htaccess ./.htaccess
 
 # Staging AI Offline Kit templates (served by api/tiles.php from app root)

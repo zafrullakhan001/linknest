@@ -388,6 +388,7 @@
 
     // If marker not found, wait a bit and check again (content script might load after page script)
     let attempt = 0;
+    let sawBookmarkOnly = false;
     const checkWithRetry = function () {
       attempt++;
 
@@ -409,6 +410,17 @@
         if (event.data &&
           event.data.type === 'BROWSER_LAUNCHER_CHECK_RESPONSE' &&
           event.data.timestamp === timestamp) {
+          const features = event.data.features;
+          // Bookmark Sync Lite answers CHECK but cannot launch browsers.
+          // Legacy Pro omits features — treat as a full launcher.
+          const canLaunch = !Array.isArray(features) ||
+            features.indexOf('launch') !== -1 ||
+            features.indexOf('open') !== -1 ||
+            features.indexOf('browsers') !== -1;
+          if (!canLaunch) {
+            sawBookmarkOnly = true;
+            return;
+          }
           window.removeEventListener('message', responseListener);
           if (!responded) {
             responded = true;
@@ -427,8 +439,9 @@
           // Retry if we have attempts left
           if (attempt < retries) {
             setTimeout(checkWithRetry, delay);
+          } else if (sawBookmarkOnly) {
+            callback(false, 'LinkNest Bookmark Sync is installed (bookmarks only). Install Browser Launcher Pro to open links in other browsers.');
           } else {
-            // All retries exhausted
             callback(false, 'No response from extension after ' + retries + ' attempts. Make sure extension is installed and reloaded.');
           }
         }

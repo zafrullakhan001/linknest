@@ -158,7 +158,7 @@ export const friendlyExtensionBookmarkError = (raw?: string): string => {
     lower.includes('bookmarks is undefined') ||
     lower.includes('bookmarks api')
   ) {
-    return 'Browser extension cannot read bookmarks (needs the “bookmarks” permission). Update/reinstall Browser Launcher Pro with bookmarks access, or use Import HTML.';
+    return 'Browser extension cannot read bookmarks (needs the “bookmarks” permission). Install LinkNest Bookmark Sync (extensions/bookmark-sync) or update Browser Launcher Pro, or use Import HTML.';
   }
   if (lower.includes('timeout') || lower.includes('not available') || lower.includes('install')) {
     return 'Install extension or use Import HTML.';
@@ -171,8 +171,8 @@ export const friendlyExtensionBookmarkError = (raw?: string): string => {
 };
 
 /**
- * Ask Browser Launcher Pro (or compatible extension) for the user's bookmarks
- * via window.postMessage. Resolves with bookmarks or a friendly failure reason.
+ * Ask LinkNest Bookmark Sync or Browser Launcher Pro (compatible postMessage
+ * protocol) for the user's bookmarks. Resolves with bookmarks or a friendly failure.
  */
 export const requestBookmarksFromBrowserExtension = (
   timeoutMs = 12000

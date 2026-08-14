@@ -1733,7 +1733,7 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                 onClick={() => void handleSyncFromBrowser()}
                 disabled={busy}
                 className="col-span-2 sm:col-auto inline-flex items-center justify-center gap-1.5 min-h-10 sm:min-h-0 px-3 py-2 sm:py-1.5 text-sm font-medium rounded-lg bg-sky-600 hover:bg-sky-500 text-white shadow-sm transition-colors disabled:opacity-50"
-                title="Merge bookmarks from Browser Launcher Pro. Falls back to Import HTML if the extension is missing."
+                title="Merge bookmarks from LinkNest Bookmark Sync (or Browser Launcher Pro). Falls back to Import HTML if the extension is missing."
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 opacity-90" aria-hidden>
                   <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm-9.624-2.848a5.5 5.5 0 019.201-2.466l.312.311h-2.433a.75.75 0 000 1.5h4.243a.75.75 0 00.75-.75V3.989a.75.75 0 00-1.5 0v2.43l-.31-.31A7 7 0 003.239 9.248a.75.75 0 001.449.39z" clipRule="evenodd" />
@@ -1845,7 +1845,7 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
           </div>
 
           <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed max-w-3xl px-0.5">
-            Sync from Browser Launcher Pro, or Import HTML from Chrome. Domains become spaces — saved only in this browser.
+            Sync from the Bookmark Sync extension, or Import HTML from Chrome. Domains become spaces — saved only in this browser.
           </p>
         </div>
       )}
@@ -2500,7 +2500,7 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
             No bookmarks yet
           </p>
           <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 max-w-md mx-auto">
-            Sync from Browser Launcher Pro, or export HTML from Chrome (Bookmarks → Bookmark manager → ⋮ → Export) and import it here.
+            Sync from the Bookmark Sync extension, or export HTML from Chrome (Bookmarks → Bookmark manager → ⋮ → Export) and import it here.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-2">
             <button
@@ -2508,7 +2508,7 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
               onClick={() => void handleSyncFromBrowser()}
               disabled={busy}
               className="px-4 py-2 text-sm font-medium rounded-xl bg-violet-600 hover:bg-violet-500 text-white transition-colors disabled:opacity-50"
-              title="Merge bookmarks from Browser Launcher Pro when installed"
+              title="Merge bookmarks from LinkNest Bookmark Sync (or Browser Launcher Pro) when installed"
             >
               {busy ? 'Syncing…' : 'Sync from browser'}
             </button>
