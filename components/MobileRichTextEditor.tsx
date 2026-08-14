@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { RichTextEditor } from './RichTextEditor';
+import { SelectableRichTextEditor } from './SelectableRichTextEditor';
 
 interface MobileRichTextEditorProps {
     value: string;
@@ -121,7 +121,7 @@ export const MobileRichTextEditor: React.FC<MobileRichTextEditorProps> = ({
                     </div>
                     <div className="flex-1 overflow-auto p-4">
                         {/* In fullscreen, show the full editor with all controls */}
-                        <RichTextEditor
+                        <SelectableRichTextEditor
                             value={value}
                             onChange={onChange}
                             placeholder={placeholder}
@@ -390,9 +390,9 @@ export const MobileRichTextEditor: React.FC<MobileRichTextEditorProps> = ({
                         </div>
                     )}
 
-                    {/* Editor - Hide RichTextEditor's toolbar on mobile when not fullscreen */}
+                    {/* Editor - Hide Simple editor toolbar on mobile when not fullscreen */}
                     <div className="mobile-editor-wrapper">
-                        <RichTextEditor
+                        <SelectableRichTextEditor
                             value={value}
                             onChange={onChange}
                             placeholder={placeholder}

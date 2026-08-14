@@ -3359,6 +3359,36 @@ function canUserSeeByVisibility(?array $user, array $row, array $userGroupIds = 
     return true;
 }
 
+/**
+ * Whether the user has an accepted tile-share invitation for this space.
+ * Accepted recipients should see nested tabs/sections/links inside that shared space.
+ */
+function userHasAcceptedTileShare(PDO $db, string $tileId, ?array $user): bool {
+    if (!$user || empty($user['id']) || $tileId === '') {
+        return false;
+    }
+    static $cache = [];
+    $cacheKey = ((int)$user['id']) . ':' . $tileId;
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
+    $stmt = $db->prepare('SELECT 1 FROM tile_share_invitations WHERE tile_id = ? AND receiver_user_id = ? AND status = ? LIMIT 1');
+    $stmt->execute([$tileId, $user['id'], 'accepted']);
+    $cache[$cacheKey] = (bool)$stmt->fetchColumn();
+    return $cache[$cacheKey];
+}
+
+/**
+ * Visibility check for nested content inside a space.
+ * Accepted share recipients see the full nested graph (still respects published).
+ */
+function canUserSeeNestedInTile(PDO $db, string $tileId, ?array $user, array $row, array $userGroupIds = [], bool $isAcceptedShareRecipient = false): bool {
+    if ($isAcceptedShareRecipient || userHasAcceptedTileShare($db, $tileId, $user)) {
+        return true;
+    }
+    return canUserSeeByVisibility($user, $row, $userGroupIds);
+}
+
 // Helper function to check if user has permission to edit a tile
 function canUserEditTile($userId, $tileId, $db) {
     // Admins can always edit - check if current authenticated user is admin

@@ -1,4 +1,7 @@
 // Chat service for managing chat messages and tile sharing
+import { Tile } from '../types';
+import { getTile } from './storageService';
+
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 export interface ChatMessage {
@@ -89,16 +92,50 @@ export const deleteMessage = async (messageId: number): Promise<void> => {
 
 export const sendTile = async (tile: any, recipientId?: number | null): Promise<ChatMessage> => {
   try {
-    // Clean tile data before sending - remove any user-specific or temporary fields
+    if (!tile?.id) {
+      throw new Error('Cannot share this tile: missing space id.');
+    }
+
+    // Home-grid tiles are summary-only (empty tabs/links). Load the full nested space.
+    const fullTile = await getTile(tile.id);
+    if (!fullTile) {
+      throw new Error('Failed to load full space data for sharing. Please try again.');
+    }
+
+    const {
+      id: _id,
+      userId: _userId,
+      user_id: _user_id,
+      canView: _canView,
+      canEdit: _canEdit,
+      canDelete: _canDelete,
+      hasRoleAccess: _hasRoleAccess,
+      canAddLinks: _canAddLinks,
+      canAddSections: _canAddSections,
+      canAddTabs: _canAddTabs,
+      canEditLinks: _canEditLinks,
+      canDeleteLinks: _canDeleteLinks,
+      canDeleteSections: _canDeleteSections,
+      canDeleteTabs: _canDeleteTabs,
+      canChangeVisibility: _canChangeVisibility,
+      canChangeBrowser: _canChangeBrowser,
+      canCloneTile: _canCloneTile,
+      canViewTileInfo: _canViewTileInfo,
+      canEditTile: _canEditTile,
+      searchLinks: _searchLinks,
+      sharedWithMeInvitationId: _sharedInv,
+      sharedWithMeSharer: _sharedSharer,
+      isFavorite: _isFavorite,
+      deletedAt: _deletedAt,
+      archivedAt: _archivedAt,
+      ...shareable
+    } = fullTile as Tile & { user_id?: unknown };
+
     const cleanTile = {
-      ...tile,
-      // Remove fields that shouldn't be shared
-      id: undefined, // Will be regenerated on import
-      createdAt: tile.createdAt || Date.now(),
-      user_id: undefined,
-      // Keep all other tile properties
+      ...shareable,
+      createdAt: fullTile.createdAt || Date.now(),
     };
-    
+
     return await sendMessage('', cleanTile, recipientId);
   } catch (e) {
     console.error("Failed to send tile", e);

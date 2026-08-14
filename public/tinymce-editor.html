@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TinyMCE Editor</title>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body { background: #fff; }
+    body.dark { background: #0f172a; }
+    #wrap { height: 100%; box-sizing: border-box; padding: 8px; }
+    .error { font-family: system-ui, sans-serif; padding: 16px; color: #b91c1c; }
+  </style>
+</head>
+<body>
+  <div id="wrap"><textarea id="editor"></textarea></div>
+  <script>
+    (function () {
+      var MSG = 'linknest-tinymce';
+      var params = new URLSearchParams(location.search);
+      var dark = params.get('dark') === '1';
+      if (dark) document.body.classList.add('dark');
+
+      function tinymceUiOpen() {
+        return !!(
+          document.querySelector('.tox-dialog-wrap') ||
+          document.querySelector('.tox-menu') ||
+          document.querySelector('.tox-swatches') ||
+          document.querySelector('.tox-collection--grid')
+        );
+      }
+
+      function requestClose() {
+        window.parent.postMessage({ source: MSG, type: 'close' }, '*');
+      }
+
+      document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape' && e.key !== 'Esc') return;
+        if (tinymceUiOpen()) return;
+        e.preventDefault();
+        e.stopPropagation();
+        requestClose();
+      }, true);
+
+      var tinymceBase = new URL('./tinymce/', document.baseURI).href.replace(/\/?$/, '');
+      var script = document.createElement('script');
+      script.src = tinymceBase + '/tinymce.min.js';
+      script.onerror = function () {
+        document.body.innerHTML = '<p class="error">Could not load TinyMCE from ' + tinymceBase + '</p>';
+      };
+      script.onload = function () {
+        if (!window.tinymce) {
+          document.body.innerHTML = '<p class="error">TinyMCE loaded but window.tinymce is missing.</p>';
+          return;
+        }
+        window.tinymce.init({
+          selector: '#editor',
+          license_key: 'gpl',
+          base_url: tinymceBase,
+          suffix: '.min',
+          height: '100%',
+          menubar: 'edit insert view format table tools help',
+          branding: false,
+          promotion: false,
+          plugins:
+            'accordion advlist anchor autolink autosave charmap code codesample directionality ' +
+            'emoticons help image importcss insertdatetime link lists media nonbreaking pagebreak ' +
+            'preview quickbars searchreplace table visualblocks visualchars wordcount',
+          toolbar_mode: 'wrap',
+          toolbar: [
+            'undo redo | bold italic underline strikethrough | alignleft aligncenter alignright alignjustify | lineheight | styles | blocks fontfamily fontsize | searchreplace',
+            'bullist numlist accordion | outdent indent | link unlink anchor image | code | forecolor backcolor | table | subscript superscript',
+            'charmap emoticons media hr ltr rtl | pastetext | visualchars visualblocks nonbreaking blockquote | preview codesample insertdatetime pagebreak removeformat | help'
+          ],
+          quickbars_selection_toolbar: 'bold italic underline | quicklink h2 h3 blockquote',
+          quickbars_insert_toolbar: 'quickimage quicktable hr',
+          contextmenu: 'link image table',
+          skin: dark ? 'oxide-dark' : 'oxide',
+          content_css: dark ? 'dark' : 'default',
+          content_style: 'body { font-family: Georgia, "Times New Roman", Times, serif; font-size: 16px; line-height: 1.5; }',
+          convert_urls: false,
+          relative_urls: false,
+          browser_spellcheck: true,
+          resize: false,
+          image_advtab: true,
+          table_use_colgroups: true,
+          setup: function (editor) {
+            var emit = function () {
+              window.parent.postMessage({ source: MSG, type: 'change', html: editor.getContent() }, '*');
+            };
+            editor.on('init', function () {
+              window.parent.postMessage({ source: MSG, type: 'ready' }, '*');
+            });
+            editor.on('change input undo redo KeyUp', emit);
+          }
+        });
+      };
+      document.head.appendChild(script);
+
+      window.addEventListener('message', function (e) {
+        if (!e.data || e.data.source !== MSG) return;
+        var ed = window.tinymce && window.tinymce.get('editor');
+        if (!ed) return;
+        if (e.data.type === 'set') {
+          ed.setContent(e.data.html || '');
+        }
+        if (e.data.type === 'get') {
+          window.parent.postMessage({ source: MSG, type: 'content', html: ed.getContent() }, '*');
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

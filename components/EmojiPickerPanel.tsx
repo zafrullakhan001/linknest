@@ -3,10 +3,25 @@ import { createPortal } from 'react-dom';
 import { EMOJI_PICKER_CATEGORIES } from '../types';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
+/** True when the field looks like a pasted/custom emoji rather than a keyword search. */
+function looksLikeCustomEmoji(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  // Keyword searches are letters/numbers/spaces/hyphens only
+  if (/^[a-z0-9\s-]+$/i.test(trimmed)) return false;
+  // Guard against accidental long pastes (URLs, paragraphs)
+  if (trimmed.length > 64) return false;
+  return true;
+}
+
 function emojisForQuery(search: string, activeId: string): string[] {
   const q = search.trim().toLowerCase();
   if (!q) {
     return EMOJI_PICKER_CATEGORIES.find((c) => c.id === activeId)?.emojis || [];
+  }
+  // Custom/pasted emoji: don't filter the catalog; the "Use this emoji" action handles it
+  if (looksLikeCustomEmoji(search)) {
+    return [];
   }
   const matchedCats = EMOJI_PICKER_CATEGORIES.filter(
     (c) =>
@@ -29,14 +44,22 @@ export const EmojiPickerPanel: React.FC<{
   const [activeTab, setActiveTab] = useState('popular');
   const [searchTerm, setSearchTerm] = useState('');
 
+  const customEmoji = looksLikeCustomEmoji(searchTerm) ? searchTerm.trim() : '';
   const filteredEmojis = useMemo(
     () => emojisForQuery(searchTerm, activeTab),
     [searchTerm, activeTab]
   );
 
+  const applyCustomEmoji = (raw: string) => {
+    const emoji = raw.trim();
+    if (!looksLikeCustomEmoji(emoji)) return false;
+    onSelect(emoji);
+    return true;
+  };
+
   return (
     <div className="flex flex-col h-full min-h-0 bg-white dark:bg-slate-800">
-      <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-gradient-to-r from-slate-50 to-white dark:from-slate-900/50 dark:to-slate-800">
+      <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-gradient-to-r from-slate-50 to-white dark:from-slate-900/50 dark:to-slate-800 space-y-2">
         <input
           type="text"
           value={searchTerm}
@@ -45,17 +68,35 @@ export const EmojiPickerPanel: React.FC<{
             setSearchTerm(next);
             if (next) setActiveTab('');
           }}
-          onKeyDown={(e) => {
-            if (e.key !== 'Enter') return;
-            const pasted = searchTerm.trim();
-            if (pasted && !/^[a-z0-9\s-]+$/i.test(pasted)) {
-              onSelect(pasted);
+          onPaste={(e) => {
+            const pasted = e.clipboardData?.getData('text')?.trim() || '';
+            if (looksLikeCustomEmoji(pasted)) {
+              e.preventDefault();
+              applyCustomEmoji(pasted);
             }
           }}
-          placeholder="Search healthcare, ERP, cloud…"
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter') return;
+            if (applyCustomEmoji(searchTerm)) {
+              e.preventDefault();
+            }
+          }}
+          placeholder="Search… or paste any emoji here"
           className="w-full text-sm px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 text-slate-900 dark:text-white"
           autoFocus
         />
+        {customEmoji ? (
+          <button
+            type="button"
+            onClick={() => applyCustomEmoji(customEmoji)}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold transition-colors"
+          >
+            <span className="text-xl leading-none" aria-hidden>
+              {customEmoji}
+            </span>
+            Use this emoji
+          </button>
+        ) : null}
       </div>
 
       {!searchTerm && (
@@ -97,9 +138,17 @@ export const EmojiPickerPanel: React.FC<{
               </button>
             ))}
           </div>
+        ) : customEmoji ? (
+          <div className="text-center py-6 text-sm text-slate-500 dark:text-slate-400 space-y-2">
+            <div className="text-4xl" aria-hidden>
+              {customEmoji}
+            </div>
+            <p>This emoji isn’t in the built-in list. Click <span className="font-semibold text-slate-700 dark:text-slate-200">Use this emoji</span> above, or press Enter.</p>
+          </div>
         ) : (
-          <div className="text-center py-8 text-sm text-slate-500 dark:text-slate-400">
-            No emojis found. Try “health”, “erp”, “bio”, or “cloud”.
+          <div className="text-center py-8 text-sm text-slate-500 dark:text-slate-400 space-y-1">
+            <p>No emojis found. Try “health”, “erp”, “bio”, or “cloud”.</p>
+            <p className="text-xs">Or paste any emoji from Emojipedia / Windows emoji panel (Win + .).</p>
           </div>
         )}
       </div>

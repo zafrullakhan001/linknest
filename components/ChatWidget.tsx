@@ -7,6 +7,150 @@ import { createTile, saveTile } from '../services/storageService';
 import { parseSpaceExportObject, normalizeImportedTiles, restoreImportedTileAssets } from '../services/spaceTransferService';
 import { generateUuid } from '../services/idService';
 import { isEscapeDialogOpen } from '../hooks/useEscapeToClose';
+import { EmojiPickerPanel } from './EmojiPickerPanel';
+
+const QUICK_EMOJIS = ['👍', '❤️', '😂', '🎉', '🙏', '🔥', '✅', '👋', '😊', '🚀'];
+
+const CHAT_THEME_KEY = 'linknest.chatWidget.theme.v1';
+type ChatThemeId = 'vivid' | 'indigo';
+
+const CHAT_THEMES = {
+  vivid: {
+    label: 'Colorful',
+    emoji: '🎨',
+    shell: 'border border-violet-200 dark:border-violet-800/60 bg-white dark:bg-slate-800',
+    sidebar: 'border-r border-violet-200/80 dark:border-violet-800/50 bg-gradient-to-b from-violet-50 via-white to-sky-50 dark:from-slate-900 dark:via-slate-900 dark:to-violet-950/40',
+    sidebarHeader: 'border-b border-violet-200/70 dark:border-violet-800/40',
+    sidebarTitle: 'text-violet-900 dark:text-violet-100',
+    refreshBtn: 'text-violet-400 hover:text-violet-700 dark:hover:text-violet-200 hover:bg-violet-100 dark:hover:bg-violet-900/40',
+    publicOn: 'bg-gradient-to-r from-teal-500 to-emerald-500 text-white shadow-md',
+    publicOff: 'text-slate-700 dark:text-slate-300 hover:bg-teal-50 dark:hover:bg-teal-900/20',
+    search: 'border border-violet-200 dark:border-violet-700 bg-white/80 dark:bg-slate-800 placeholder-violet-400 dark:placeholder-violet-500/70 focus:ring-violet-400',
+    userOn: 'bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white shadow-md',
+    userOff: 'text-slate-700 dark:text-slate-300 hover:bg-violet-50 dark:hover:bg-violet-900/20',
+    chatArea: 'bg-gradient-to-br from-white via-violet-50/40 to-sky-50/60 dark:from-slate-800 dark:via-slate-800 dark:to-violet-950/30',
+    header: 'border-b border-violet-200/70 dark:border-violet-800/40 bg-gradient-to-r from-violet-50 via-fuchsia-50 to-sky-50 dark:from-slate-900 dark:via-violet-950/50 dark:to-slate-900',
+    menuBtn: 'text-violet-400 hover:text-violet-700 dark:hover:text-violet-200 hover:bg-white/70 dark:hover:bg-violet-900/40',
+    publicAvatar: 'bg-gradient-to-br from-teal-400 to-emerald-500',
+    subtitle: 'text-fuchsia-600 dark:text-fuchsia-300',
+    closeBtn: 'text-rose-400 hover:text-rose-600 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-900/30',
+    messageSearch: 'border border-violet-200 dark:border-violet-700 bg-white/90 dark:bg-slate-800 placeholder-violet-400 dark:placeholder-violet-500/70 focus:ring-fuchsia-400',
+    emptyTitle: 'text-violet-700 dark:text-violet-300',
+    ownName: 'font-semibold text-sky-600 dark:text-sky-300',
+    otherName: 'font-semibold text-fuchsia-600 dark:text-fuchsia-300',
+    ownBubble: 'bg-gradient-to-br from-sky-500 to-indigo-600 text-white rounded-br-md',
+    otherBubble: 'bg-gradient-to-br from-violet-100 to-fuchsia-100 dark:from-violet-900/60 dark:to-fuchsia-900/40 text-slate-900 dark:text-violet-50 border border-violet-200/70 dark:border-violet-700/40 rounded-bl-md',
+    composer: 'border-t border-violet-200/70 dark:border-violet-800/40 bg-gradient-to-r from-white via-violet-50/50 to-sky-50/50 dark:from-slate-900 dark:via-slate-900 dark:to-violet-950/40',
+    input: 'border border-violet-200 dark:border-violet-700 bg-white dark:bg-slate-800 placeholder-violet-400 dark:placeholder-violet-500/70 focus:ring-fuchsia-400',
+    send: 'bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 shadow-md',
+    sendIcon: '🚀',
+    quickHover: 'hover:bg-violet-100 dark:hover:bg-violet-900/40',
+    emojiPanel: 'border border-fuchsia-200 dark:border-fuchsia-700/40',
+    emojiOn: 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/40 dark:text-fuchsia-200',
+    emojiOff: 'text-fuchsia-500 hover:bg-fuchsia-50 dark:hover:bg-fuchsia-900/30',
+    tileOn: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200',
+    tileOff: 'text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/30',
+    jsonOn: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200',
+    jsonOff: 'text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30',
+    dialog: 'border-violet-200 dark:border-violet-800',
+    dialogDup: 'bg-violet-100 dark:bg-violet-900/30 hover:bg-violet-200 dark:hover:bg-violet-900/50 text-violet-900 dark:text-violet-100',
+    avatars: [
+      'bg-gradient-to-br from-violet-500 to-fuchsia-500',
+      'bg-gradient-to-br from-sky-500 to-cyan-500',
+      'bg-gradient-to-br from-emerald-500 to-teal-500',
+      'bg-gradient-to-br from-amber-500 to-orange-500',
+      'bg-gradient-to-br from-rose-500 to-pink-500',
+      'bg-gradient-to-br from-indigo-500 to-blue-600',
+      'bg-gradient-to-br from-lime-500 to-green-600',
+      'bg-gradient-to-br from-fuchsia-500 to-purple-600',
+      'bg-gradient-to-br from-cyan-500 to-blue-500',
+      'bg-gradient-to-br from-orange-500 to-red-500',
+    ],
+  },
+  indigo: {
+    label: 'Indigo',
+    emoji: '💼',
+    shell: 'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800',
+    sidebar: 'border-r border-slate-200 dark:border-slate-700 bg-gradient-to-b from-brand-50 via-slate-50 to-white dark:from-slate-900 dark:via-slate-900 dark:to-slate-950',
+    sidebarHeader: 'border-b border-slate-200 dark:border-slate-700',
+    sidebarTitle: 'text-slate-900 dark:text-white',
+    refreshBtn: 'text-slate-400 hover:text-brand-600 dark:hover:text-brand-500 hover:bg-slate-100 dark:hover:bg-slate-700',
+    publicOn: 'bg-brand-500 text-white shadow-sm',
+    publicOff: 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800',
+    search: 'border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 placeholder-slate-400 dark:placeholder-slate-500 focus:ring-brand-500',
+    userOn: 'bg-brand-500 text-white shadow-sm',
+    userOff: 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800',
+    chatArea: 'bg-slate-50/70 dark:bg-slate-800',
+    header: 'border-b border-slate-200 dark:border-slate-700 bg-gradient-to-r from-brand-50 to-white dark:from-slate-900 dark:to-slate-800',
+    menuBtn: 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700',
+    publicAvatar: 'bg-gradient-to-br from-brand-500 to-indigo-700',
+    subtitle: 'text-slate-500 dark:text-slate-400',
+    closeBtn: 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700',
+    messageSearch: 'border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 placeholder-slate-400 dark:placeholder-slate-500 focus:ring-brand-500',
+    emptyTitle: 'text-slate-600 dark:text-slate-300',
+    ownName: 'font-semibold text-brand-600 dark:text-brand-500',
+    otherName: 'font-semibold text-indigo-600 dark:text-indigo-300',
+    ownBubble: 'bg-brand-500 text-white rounded-br-md',
+    otherBubble: 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white rounded-bl-md',
+    composer: 'border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800',
+    input: 'border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 placeholder-slate-400 dark:placeholder-slate-500 focus:ring-brand-500',
+    send: 'bg-brand-500 hover:bg-brand-600 shadow-sm',
+    sendIcon: '➤',
+    quickHover: 'hover:bg-slate-100 dark:hover:bg-slate-700',
+    emojiPanel: 'border-slate-200 dark:border-slate-700',
+    emojiOn: 'bg-brand-50 text-brand-700 dark:bg-brand-900/40 dark:text-brand-100',
+    emojiOff: 'text-slate-400 hover:text-brand-500 hover:bg-slate-100 dark:hover:bg-slate-700',
+    tileOn: 'bg-brand-50 text-brand-700 dark:bg-brand-900/40 dark:text-brand-100',
+    tileOff: 'text-slate-400 hover:text-brand-500 hover:bg-slate-100 dark:hover:bg-slate-700',
+    jsonOn: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200',
+    jsonOff: 'text-slate-400 hover:text-indigo-500 hover:bg-slate-100 dark:hover:bg-slate-700',
+    dialog: 'border-slate-200 dark:border-slate-700',
+    dialogDup: 'bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-900 dark:text-white',
+    avatars: [
+      'bg-gradient-to-br from-brand-500 to-indigo-700',
+      'bg-gradient-to-br from-indigo-500 to-blue-700',
+      'bg-gradient-to-br from-blue-500 to-indigo-600',
+      'bg-gradient-to-br from-slate-500 to-slate-700',
+      'bg-gradient-to-br from-sky-600 to-indigo-700',
+      'bg-gradient-to-br from-indigo-600 to-brand-700',
+      'bg-gradient-to-br from-blue-600 to-slate-700',
+      'bg-gradient-to-br from-brand-600 to-blue-800',
+      'bg-gradient-to-br from-indigo-400 to-indigo-700',
+      'bg-gradient-to-br from-slate-600 to-indigo-800',
+    ],
+  },
+} as const;
+
+const readChatTheme = (): ChatThemeId => {
+  try {
+    const saved = localStorage.getItem(CHAT_THEME_KEY);
+    if (saved === 'vivid' || saved === 'indigo') return saved;
+  } catch {
+    // ignore
+  }
+  return 'vivid';
+};
+
+const getAvatarGradient = (name: string, palettes: readonly string[]): string => {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  }
+  return palettes[hash % palettes.length];
+};
+
+const getAccountMeta = (item?: { auth_source?: string; email?: string; is_admin?: boolean }) => {
+  if (item?.is_admin) {
+    return { label: 'Admin', emoji: '👑', pill: 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200' };
+  }
+  if (item?.auth_source === 'saml') {
+    return { label: 'SAML', emoji: '🔐', pill: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-200' };
+  }
+  if (item?.auth_source === 'ldap') {
+    return { label: 'LDAP', emoji: '🏢', pill: 'bg-teal-100 text-teal-800 dark:bg-teal-900/50 dark:text-teal-200' };
+  }
+  return { label: 'Local', emoji: '🏠', pill: 'bg-sky-100 text-sky-800 dark:bg-sky-900/50 dark:text-sky-200' };
+};
 
 interface ChatWidgetProps {
   tiles: Tile[];
@@ -33,9 +177,21 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
     existingTile: Tile; 
     newTile: Tile; 
   } | null>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [chatTheme, setChatTheme] = useState<ChatThemeId>(readChatTheme);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const { user } = useAuth();
+  const t = CHAT_THEMES[chatTheme];
+
+  const applyChatTheme = (id: ChatThemeId) => {
+    setChatTheme(id);
+    try {
+      localStorage.setItem(CHAT_THEME_KEY, id);
+    } catch {
+      // ignore
+    }
+  };
 
   // Escape key handler to close widget
   useEffect(() => {
@@ -49,6 +205,12 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
           e.preventDefault();
           e.stopPropagation();
           setDuplicateDialog(null);
+          return;
+        }
+        if (showEmojiPicker) {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowEmojiPicker(false);
           return;
         }
         if (showTileSelector) {
@@ -77,7 +239,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
     return () => {
       window.removeEventListener('keydown', handleEscape, true);
     };
-  }, [onClose, showTileSelector, showJsonInput, duplicateDialog]);
+  }, [onClose, showTileSelector, showJsonInput, duplicateDialog, showEmojiPicker]);
    // Get last seen message ID from localStorage, or initialize to 0
   const getLastSeenMessageId = (): number => {
     if (!user) return 0;
@@ -301,9 +463,6 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
   };
 
   const handleImportTile = async (tileData: any, action?: 'duplicate' | 'overwrite' | 'merge') => {
-    // If action is provided, it means we're handling a duplicate
-    if (!action && !confirm('Import this tile into your workspace?')) return;
-
     try {
       // Ensure tileData has required structure
       if (!tileData || typeof tileData !== 'object') {
@@ -338,9 +497,8 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
         return;
       }
       
-      // Normalize the tile data and restore any embedded logos
+      // Normalize the tile data
       const normalizedTiles = normalizeImportedTiles(parsed);
-      await restoreImportedTileAssets(normalizedTiles, parsed.assets);
       
       if (!normalizedTiles || normalizedTiles.length === 0) {
         alert('Invalid tile data. Unable to import.');
@@ -348,6 +506,29 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
       }
 
       const tileToImport = normalizedTiles[0];
+
+      const sectionHasContent = (section: { links?: unknown[]; richTextContent?: unknown[] } | undefined) =>
+        (section?.links?.length ?? 0) > 0 ||
+        (section?.richTextContent?.length ?? 0) > 0 ||
+        (Array.isArray(section?.richTextContent) &&
+          section.richTextContent.some((rt: any) => typeof rt?.content === 'string' && rt.content.trim() !== ''));
+
+      const hasNestedContent =
+        (tileToImport.tabs ?? []).some((tab) =>
+          (tab.sections ?? []).some((section) => sectionHasContent(section))
+        ) ||
+        (tileToImport.sections ?? []).some((section) => sectionHasContent(section)) ||
+        !!(tileToImport.htmlContent && String(tileToImport.htmlContent).trim());
+
+      if (!tileToImport.isHyperlink && !hasNestedContent) {
+        alert('This shared tile has no links or content to import. Ask the sender to share it again.');
+        return;
+      }
+
+      // If action is provided, it means we're handling a duplicate
+      if (!action && !confirm('Import this tile into your workspace?')) return;
+
+      await restoreImportedTileAssets(normalizedTiles, parsed.assets);
       
       // Check for existing tile with same title in user's private "Imported" category
       if (!action && user?.id) {
@@ -679,23 +860,29 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
       decorationStyles.color = tile.tileTextColor;
     }
 
-    // Count links
-    const linkCount = tile.tabs
+    // Count links from nested tabs/sections, then fall back to summary fields
+    const nestedLinkCount = Array.isArray(tile.tabs) && tile.tabs.length > 0
       ? tile.tabs.reduce((count: number, tab: any) => {
           return count + (tab.sections?.reduce((secCount: number, section: any) => {
             return secCount + (section.links?.length || 0);
           }, 0) || 0);
         }, 0)
-      : tile.sections?.reduce((count: number, section: any) => count + (section.links?.length || 0), 0) || 0;
+      : (Array.isArray(tile.sections)
+          ? tile.sections.reduce((count: number, section: any) => count + (section.links?.length || 0), 0)
+          : 0);
+    const summaryLinkCount = typeof tile.linkCount === 'number'
+      ? tile.linkCount
+      : (Array.isArray(tile.searchLinks) ? tile.searchLinks.length : 0);
+    const linkCount = nestedLinkCount > 0 ? nestedLinkCount : summaryLinkCount;
 
     return (
       <div
-        className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 max-w-sm cursor-pointer hover:shadow-lg transition-shadow"
+        className="bg-white/95 dark:bg-slate-800/95 border border-amber-200 dark:border-amber-700/50 rounded-xl p-3 max-w-sm cursor-pointer hover:shadow-lg hover:border-amber-400 dark:hover:border-amber-500 transition-all shadow-sm"
         style={decorationStyles}
         onClick={() => handleImportTile(tile)}
       >
         <div className="flex items-start gap-3 mb-2">
-          <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-base flex-shrink-0">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-100 to-orange-100 dark:from-amber-900/40 dark:to-orange-900/40 flex items-center justify-center text-lg flex-shrink-0 shadow-inner">
             {tile.emoji || '📁'}
           </div>
           <div className="flex-1 min-w-0">
@@ -710,16 +897,13 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
           </div>
         </div>
         {!tile.isHyperlink && linkCount > 0 && (
-          <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 mt-2">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-              <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
-              <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01-.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
-            </svg>
+          <div className="flex items-center gap-1 text-xs text-teal-700 dark:text-teal-300 mt-2 font-medium">
+            <span>🔗</span>
             <span>{linkCount} link{linkCount !== 1 ? 's' : ''}</span>
           </div>
         )}
-        <div className="mt-2 text-xs text-slate-400 dark:text-slate-500 italic">
-          Click to import
+        <div className="mt-2 text-xs text-amber-600 dark:text-amber-400 font-medium">
+          ⬇️ Click to import
         </div>
       </div>
     );
@@ -731,37 +915,65 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
     return recipient ? recipient.username : 'Unknown';
   };
 
+  const insertEmoji = (emoji: string) => {
+    setInputMessage((prev) => {
+      if (prev.length + emoji.length > 10000) return prev;
+      return prev + emoji;
+    });
+  };
+
+  const renderAvatar = (name: string, size: 'sm' | 'md' = 'sm') => {
+    const sizeClass = size === 'md' ? 'w-9 h-9 text-sm' : 'w-8 h-8 text-xs';
+    return (
+      <div
+        className={`${sizeClass} rounded-full ${getAvatarGradient(name, t.avatars)} text-white flex items-center justify-center font-bold shadow-md ring-2 ring-white/80 dark:ring-slate-800 flex-shrink-0`}
+      >
+        {name.charAt(0).toUpperCase()}
+      </div>
+    );
+  };
+
+  const renderAccountPill = (
+    item?: { auth_source?: string; email?: string; is_admin?: boolean },
+    selected = false
+  ) => {
+    const meta = getAccountMeta(item);
+    return (
+      <span
+        className={`px-1.5 py-0.5 text-[10px] font-semibold rounded-full whitespace-nowrap ${
+          selected ? 'bg-white/25 text-white' : meta.pill
+        }`}
+      >
+        {meta.emoji} {meta.label}
+      </span>
+    );
+  };
+
   return (
-    <div className="w-full h-full bg-white dark:bg-slate-800 rounded-2xl shadow-2xl flex border border-slate-200 dark:border-slate-700">
+    <div className={`w-full h-full rounded-2xl shadow-2xl flex overflow-hidden ${t.shell}`}>
       {/* User Panel */}
       {showUserPanel && (
-        <div className="w-64 border-r border-slate-200 dark:border-slate-700 flex flex-col bg-slate-50 dark:bg-slate-900">
-          <div className="p-4 border-b border-slate-200 dark:border-slate-700">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Users</h3>
+        <div className={`w-64 flex flex-col ${t.sidebar}`}>
+          <div className={`p-4 ${t.sidebarHeader}`}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className={`text-sm font-bold ${t.sidebarTitle}`}>👥 People</h3>
               <button
                 onClick={loadUsers}
-                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
+                className={`p-1.5 rounded-lg transition-colors ${t.refreshBtn}`}
                 title="Refresh user list"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                  <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
-                </svg>
+                <span className="text-sm" aria-hidden>🔄</span>
               </button>
             </div>
             <button
               onClick={() => setSelectedRecipient(null)}
-              className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                selectedRecipient === null
-                  ? 'bg-brand-500 text-white'
-                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              className={`w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all ${
+                selectedRecipient === null ? t.publicOn : t.publicOff
               }`}
             >
               <div className="flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                  <path d="M10 9a3 3 0 100-6 3 3 0 000 6zM6 8a2 2 0 11-4 0 2 2 0 014 0zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-3.385-.572zM16 8a2 2 0 11-4 0 2 2 0 014 0zm-1.615 8.428a1.224 1.224 0 00.569-1.175 5.966 5.966 0 00-2.081-.416 5.967 5.967 0 00-1.788.27A9.953 9.953 0 0013 18a9.953 9.953 0 003.385-.572z" />
-                </svg>
-                <span className="font-medium">Public Chat</span>
+                <span className="text-base" aria-hidden>🌍</span>
+                <span className="font-semibold">Public Chat</span>
               </div>
             </button>
             <div className="mt-2">
@@ -769,106 +981,129 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
                 type="text"
                 value={userSearchTerm}
                 onChange={(e) => setUserSearchTerm(e.target.value)}
-                placeholder="Search users..."
-                className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                placeholder="🔍 Search people..."
+                className={`w-full px-3 py-2 text-sm rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 ${t.search}`}
               />
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-2">
             {filteredUsers.length === 0 ? (
-              <div className="text-center text-slate-500 dark:text-slate-400 text-sm py-4">
-                {userSearchTerm ? 'No users found' : 'No other users available'}
+              <div className="text-center text-slate-500 dark:text-slate-400 text-sm py-6 px-2">
+                <div className="text-2xl mb-1" aria-hidden>{userSearchTerm ? '🧐' : '😴'}</div>
+                {userSearchTerm ? 'No people found' : 'No other people yet'}
               </div>
             ) : (
-              filteredUsers.map((userItem) => (
-                <button
-                  key={userItem.id}
-                  onClick={() => setSelectedRecipient(userItem.id)}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors mb-1 ${
-                    selectedRecipient === userItem.id
-                      ? 'bg-brand-500 text-white'
-                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-full bg-brand-500 text-white flex items-center justify-center text-xs font-semibold">
-                      {userItem.username.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium truncate">{userItem.username}</span>
-                        {userItem.is_admin ? (
-                          <span className="px-1.5 py-0.5 text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded">
-                            Admin
-                          </span>
-                        ) : (() => {
-                          // Determine account type: SAML, LDAP, or Local
-                          let accountType = 'Local';
-                          if (userItem.auth_source === 'saml') {
-                            accountType = 'SAML';
-                          } else if (userItem.auth_source === 'ldap') {
-                            accountType = 'LDAP';
-                          } else if (userItem.email && userItem.email.includes('@localhost')) {
-                            accountType = 'Local';
-                          }
-                          
-                          return (
-                            <span className="px-1.5 py-0.5 text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 rounded">
-                              {accountType}
-                            </span>
-                          );
-                        })()}
+              filteredUsers.map((userItem) => {
+                const isSelected = selectedRecipient === userItem.id;
+                return (
+                  <button
+                    key={userItem.id}
+                    onClick={() => setSelectedRecipient(userItem.id)}
+                    className={`w-full text-left px-3 py-2 rounded-xl text-sm transition-all mb-1 ${
+                      isSelected ? t.userOn : t.userOff
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      {renderAvatar(userItem.username)}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold truncate">{userItem.username}</span>
+                          {renderAccountPill(userItem, isSelected)}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </button>
-              ))
+                  </button>
+                );
+              })
             )}
           </div>
         </div>
       )}
 
       {/* Chat Area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className={`flex-1 flex flex-col min-w-0 ${t.chatArea}`}>
         {/* Header */}
-        <div className="p-4 border-b border-slate-200 dark:border-slate-700">
+        <div className={`p-4 ${t.header}`}>
           <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 min-w-0">
               <button
                 onClick={() => setShowUserPanel(!showUserPanel)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
-                title={showUserPanel ? "Hide user panel" : "Show user panel"}
+                className={`p-1.5 rounded-lg transition-colors shrink-0 ${t.menuBtn}`}
+                title={showUserPanel ? "Hide people panel" : "Show people panel"}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
                   <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zM2 10a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10zm0 5.25a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
                 </svg>
               </button>
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{getRecipientName()}</h3>
-                {selectedRecipient !== null && (
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Direct message</p>
+              <div className="flex items-center gap-2 min-w-0">
+                {selectedRecipient === null ? (
+                  <div className={`w-9 h-9 rounded-full ${t.publicAvatar} text-white flex items-center justify-center text-lg shadow-md ring-2 ring-white/80 dark:ring-slate-800`}>
+                    🌍
+                  </div>
+                ) : (
+                  renderAvatar(getRecipientName(), 'md')
                 )}
+                <div className="min-w-0">
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white truncate">
+                    {selectedRecipient === null ? '🌍 Public Chat' : getRecipientName()}
+                  </h3>
+                  <p className={`text-xs font-medium ${t.subtitle}`}>
+                    {selectedRecipient === null ? '💬 Everyone can see this' : '💌 Direct message'}
+                  </p>
+                </div>
               </div>
             </div>
-            {onClose && (
-              <button
-                onClick={onClose}
-                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
-                title="Close Chat Widget"
+            <div className="flex items-center gap-1.5 shrink-0">
+              <div
+                className="flex items-center rounded-lg p-0.5 bg-white/80 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-600 shadow-sm"
+                role="group"
+                aria-label="Chat appearance"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                  <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                </svg>
-              </button>
-            )}
+                <button
+                  type="button"
+                  onClick={() => applyChatTheme('vivid')}
+                  className={`px-2 py-1 text-[11px] font-semibold rounded-md transition-all ${
+                    chatTheme === 'vivid'
+                      ? 'bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white shadow'
+                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                  }`}
+                  title="Colorful theme"
+                  aria-pressed={chatTheme === 'vivid'}
+                >
+                  🎨 Colorful
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyChatTheme('indigo')}
+                  className={`px-2 py-1 text-[11px] font-semibold rounded-md transition-all ${
+                    chatTheme === 'indigo'
+                      ? 'bg-brand-500 text-white shadow'
+                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                  }`}
+                  title="Indigo professional theme"
+                  aria-pressed={chatTheme === 'indigo'}
+                >
+                  💼 Indigo
+                </button>
+              </div>
+              {onClose && (
+                <button
+                  onClick={onClose}
+                  className={`p-1.5 rounded-lg transition-colors ${t.closeBtn}`}
+                  title="Close Chat Widget"
+                >
+                  <span className="text-base" aria-hidden>✖️</span>
+                </button>
+              )}
+            </div>
           </div>
           <div>
             <input
               type="text"
               value={messageSearchTerm}
               onChange={(e) => setMessageSearchTerm(e.target.value)}
-              placeholder="Search messages..."
-              className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              placeholder="🔎 Search messages..."
+              className={`w-full px-3 py-2 text-sm rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 ${t.messageSearch}`}
             />
           </div>
         </div>
@@ -876,92 +1111,85 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
       {/* Messages */}
       <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         {filteredMessages.length === 0 ? (
-          <div className="text-center text-slate-500 dark:text-slate-400 py-8">
-            <p>{messageSearchTerm ? 'No messages found' : 'No messages yet. Start the conversation!'}</p>
+          <div className="text-center py-10 px-4">
+            <div className="text-4xl mb-2" aria-hidden>{messageSearchTerm ? '🔎' : '✨'}</div>
+            <p className={`text-sm font-semibold ${t.emptyTitle}`}>
+              {messageSearchTerm ? 'No matching messages' : 'No messages yet'}
+            </p>
+            {!messageSearchTerm && (
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Say hello 👋 or drop a 🎉 to start the conversation
+              </p>
+            )}
           </div>
         ) : (
-          filteredMessages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex ${message.user_id === user?.id ? 'justify-end' : 'justify-start'}`}
-            >
-              <div className={`max-w-[80%] ${message.user_id === user?.id ? 'items-end' : 'items-start'} flex flex-col`}>
-                <div className="text-xs text-slate-500 dark:text-slate-400 mb-1 px-2 flex items-center gap-2">
-                  <span className={message.user_id !== user?.id ? 'text-red-500 dark:text-red-400 font-semibold' : ''}>{message.username}</span>
-                  {(() => {
-                    const messageUser = users.find(u => u.id === message.user_id);
-                    if (messageUser?.is_admin) {
-                      return <span className="px-1.5 py-0.5 text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded">Admin</span>;
-                    } else {
-                      // Determine account type: SAML, LDAP, or Local
-                      let accountType = 'Local';
-                      if (messageUser?.auth_source === 'saml') {
-                        accountType = 'SAML';
-                      } else if (messageUser?.auth_source === 'ldap') {
-                        accountType = 'LDAP';
-                      } else if (messageUser?.email && messageUser.email.includes('@localhost')) {
-                        accountType = 'Local';
-                      }
-                      
-                      return (
-                        <span className="px-1.5 py-0.5 text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 rounded">
-                          {accountType}
-                        </span>
-                      );
-                    }
-                  })()}
-                  <span>• {formatTime(message.created_at)}</span>
-                </div>
-                <div
-                  className={`rounded-2xl px-4 py-2 ${
-                    message.user_id === user?.id
-                      ? 'bg-brand-500 text-white'
-                      : 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white'
-                  }`}
-                >
-                  {message.message_type === 'tile' && message.tile_data ? (
-                    <div>
-                      <div className="mb-2 font-medium text-sm">📦 Shared a tile:</div>
-                      {renderTilePreview(message.tile_data)}
-                    </div>
-                  ) : message.message_type === 'json' ? (
-                    <pre className="text-xs bg-black/10 dark:bg-black/20 p-2 rounded overflow-x-auto max-w-full">
-                      {message.message}
-                    </pre>
-                  ) : (
-                    <div className="whitespace-pre-wrap break-words">{message.message}</div>
+          filteredMessages.map((message) => {
+            const isOwn = message.user_id === user?.id;
+            const messageUser = isOwn && user
+              ? user
+              : users.find(u => u.id === message.user_id);
+            return (
+              <div
+                key={message.id}
+                className={`flex gap-2 ${isOwn ? 'justify-end' : 'justify-start'}`}
+              >
+                {!isOwn && renderAvatar(message.username)}
+                <div className={`max-w-[80%] ${isOwn ? 'items-end' : 'items-start'} flex flex-col`}>
+                  <div className="text-xs text-slate-500 dark:text-slate-400 mb-1 px-1 flex items-center gap-1.5 flex-wrap">
+                    <span className={isOwn ? t.ownName : t.otherName}>
+                      {isOwn ? '🙋 You' : message.username}
+                    </span>
+                    {renderAccountPill(messageUser)}
+                    <span>🕒 {formatTime(message.created_at)}</span>
+                  </div>
+                  <div
+                    className={`rounded-2xl px-4 py-2 shadow-sm ${
+                      isOwn ? t.ownBubble : t.otherBubble
+                    }`}
+                  >
+                    {message.message_type === 'tile' && message.tile_data ? (
+                      <div>
+                        <div className="mb-2 font-medium text-sm">📦 Shared a tile:</div>
+                        {renderTilePreview(message.tile_data)}
+                      </div>
+                    ) : message.message_type === 'json' ? (
+                      <pre className="text-xs bg-black/10 dark:bg-black/20 p-2 rounded overflow-x-auto max-w-full">
+                        {message.message}
+                      </pre>
+                    ) : (
+                      <div className="whitespace-pre-wrap break-words">{message.message}</div>
+                    )}
+                  </div>
+                  {isOwn && (
+                    <button
+                      onClick={() => handleDeleteMessage(message.id)}
+                      className="mt-1 text-xs text-slate-400 hover:text-rose-500 transition-colors"
+                    >
+                      🗑️ Delete
+                    </button>
                   )}
                 </div>
-                {message.user_id === user?.id && (
-                  <button
-                    onClick={() => handleDeleteMessage(message.id)}
-                    className="mt-1 text-xs text-slate-400 hover:text-red-500 transition-colors"
-                  >
-                    Delete
-                  </button>
-                )}
               </div>
-            </div>
-          ))
+            );
+          })
         )}
         <div ref={messagesEndRef} />
       </div>
 
       {/* Input Area */}
-      <div className="border-t border-slate-200 dark:border-slate-700 p-4">
+      <div className={`p-3 ${t.composer}`}>
         {selectedTile && (
-          <div className="mb-2 p-2 bg-brand-50 dark:bg-brand-900/20 rounded-lg flex items-center justify-between">
+          <div className="mb-2 p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 rounded-xl flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-lg">{selectedTile.emoji}</span>
+              <span className="text-lg">{selectedTile.emoji || '📦'}</span>
               <span className="text-sm font-medium text-slate-900 dark:text-white">{selectedTile.title}</span>
             </div>
             <button
               onClick={() => setSelectedTile(null)}
-              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              className="text-slate-400 hover:text-rose-500 dark:hover:text-rose-300"
+              title="Remove attached tile"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-              </svg>
+              ✖️
             </button>
           </div>
         )}
@@ -976,8 +1204,8 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
                   setJsonInput(value);
                 }
               }}
-              placeholder="Paste JSON code here..."
-              className="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white font-mono"
+              placeholder="🧩 Paste JSON code here..."
+              className="w-full p-2 text-sm border border-indigo-200 dark:border-indigo-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono"
               rows={4}
               maxLength={10000}
               onKeyDown={(e) => {
@@ -1005,10 +1233,10 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
         )}
 
         {showTileSelector && (
-          <div className="mb-2 max-h-48 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-700">
+          <div className="mb-2 max-h-48 overflow-y-auto border border-amber-200 dark:border-amber-700/40 rounded-xl bg-white dark:bg-slate-800">
             {shareableTiles.length === 0 ? (
               <div className="p-4 text-sm text-slate-500 dark:text-slate-400 text-center">
-                {user?.is_admin ? 'No tiles available' : 'No private tiles available to share'}
+                {user?.is_admin ? '📭 No tiles available' : '🔒 No private tiles available to share'}
               </div>
             ) : (
               shareableTiles.map((tile) => (
@@ -1018,9 +1246,9 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
                     setSelectedTile(tile);
                     setShowTileSelector(false);
                   }}
-                  className="w-full p-3 text-left hover:bg-slate-50 dark:hover:bg-slate-600 flex items-center gap-3 border-b border-slate-200 dark:border-slate-600 last:border-b-0"
+                  className="w-full p-3 text-left hover:bg-amber-50 dark:hover:bg-amber-900/20 flex items-center gap-3 border-b border-amber-100 dark:border-slate-700 last:border-b-0"
                 >
-                  <span className="text-lg">{tile.emoji}</span>
+                  <span className="text-lg">{tile.emoji || '📦'}</span>
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-sm text-slate-900 dark:text-white truncate">
                       {tile.title}
@@ -1037,31 +1265,73 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
           </div>
         )}
 
-        <div className="flex gap-2">
+        {showEmojiPicker && (
+          <div className={`mb-2 h-72 rounded-xl overflow-hidden shadow-inner border ${t.emojiPanel}`}>
+            <EmojiPickerPanel
+              onSelect={(emoji) => {
+                insertEmoji(emoji);
+                setShowEmojiPicker(false);
+              }}
+            />
+          </div>
+        )}
+
+        <div className="flex items-center gap-1 mb-2 overflow-x-auto pb-0.5">
+          {QUICK_EMOJIS.map((emoji) => (
+            <button
+              key={emoji}
+              type="button"
+              onClick={() => insertEmoji(emoji)}
+              disabled={isLoading || selectedTile !== null || showJsonInput}
+              className={`h-8 w-8 flex items-center justify-center text-base rounded-lg hover:scale-110 transition-all disabled:opacity-40 ${t.quickHover}`}
+              title={`Insert ${emoji}`}
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex gap-2 items-end">
           <button
             onClick={() => {
               setShowTileSelector(!showTileSelector);
               setShowJsonInput(false);
+              setShowEmojiPicker(false);
             }}
-            className="p-2 text-slate-400 hover:text-brand-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+            className={`p-2 rounded-xl transition-colors ${
+              showTileSelector ? t.tileOn : t.tileOff
+            }`}
             title="Share a tile"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-              <path d="M3.25 4A2.25 2.25 0 001 6.25v7.5A2.25 2.25 0 003.25 16h13.5A2.25 2.25 0 0019 13.75v-7.5A2.25 2.25 0 0016.75 4H3.25zM3.5 6.25a.75.75 0 01.75-.75h11.5a.75.75 0 01.75.75v7.5a.75.75 0 01-.75.75H4.25a.75.75 0 01-.75-.75v-7.5z" />
-              <path d="M6.25 8A1.25 1.25 0 105 9.25 1.25 1.25 0 006.25 8zM10.75 8a1.25 1.25 0 10-1.25 1.25 1.25 1.25 0 001.25-1.25zM15.25 8a1.25 1.25 0 10-1.25 1.25 1.25 1.25 0 001.25-1.25z" />
-            </svg>
+            <span className="text-lg" aria-hidden>📦</span>
           </button>
           <button
             onClick={() => {
               setShowJsonInput(!showJsonInput);
               setShowTileSelector(false);
+              setShowEmojiPicker(false);
             }}
-            className="p-2 text-slate-400 hover:text-brand-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+            className={`p-2 rounded-xl transition-colors ${
+              showJsonInput ? t.jsonOn : t.jsonOff
+            }`}
             title="Share JSON code"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-              <path fillRule="evenodd" d="M4.25 2A2.25 2.25 0 002 4.25v11.5A2.25 2.25 0 004.25 18h11.5A2.25 2.25 0 0018 15.75V4.25A2.25 2.25 0 0015.75 2H4.25zm4.03 6.28a.75.75 0 00-1.06-1.06L4.97 9.47a.75.75 0 000 1.06l2.25 2.25a.75.75 0 001.06-1.06L6.56 10l1.72-1.72zm4.5-1.06a.75.75 0 10-1.06 1.06L13.44 10l-1.72 1.72a.75.75 0 101.06 1.06l2.25-2.25a.75.75 0 000-1.06l-2.25-2.25z" clipRule="evenodd" />
-            </svg>
+            <span className="text-lg" aria-hidden>🧩</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setShowEmojiPicker(!showEmojiPicker);
+              setShowTileSelector(false);
+              setShowJsonInput(false);
+            }}
+            disabled={isLoading || selectedTile !== null || showJsonInput}
+            className={`p-2 rounded-xl transition-colors disabled:opacity-40 ${
+              showEmojiPicker ? t.emojiOn : t.emojiOff
+            }`}
+            title="Add emoji"
+          >
+            <span className="text-lg" aria-hidden>😊</span>
           </button>
           <div className="flex-1 flex flex-col">
             <input
@@ -1074,9 +1344,9 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
                 }
               }}
               onKeyPress={handleKeyPress}
-              placeholder="Type a message..."
+              placeholder="Type a message… ✨"
               maxLength={10000}
-              className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              className={`w-full px-4 py-2.5 rounded-2xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 ${t.input}`}
               disabled={isLoading || selectedTile !== null || showJsonInput}
             />
             {inputMessage.length > 0 && (
@@ -1088,17 +1358,20 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
           <button
             onClick={handleSendMessage}
             disabled={isLoading || (!inputMessage.trim() && !selectedTile && !jsonInput.trim())}
-            className="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`px-4 py-2.5 text-white rounded-2xl transition-all disabled:opacity-50 disabled:cursor-not-allowed font-semibold ${t.send}`}
+            title="Send"
           >
             {isLoading ? (
               <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
-            ) : (
+            ) : chatTheme === 'indigo' ? (
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
                 <path d="M3.105 2.289a.75.75 0 00-.826.95l1.414 4.925A1.5 1.5 0 005.135 9.25h6.115a.75.75 0 010 1.5H5.135a1.5 1.5 0 00-1.442 1.086l-1.414 4.926a.75.75 0 00.826.95 28.896 28.896 0 0015.293-7.154.75.75 0 000-1.115A28.897 28.897 0 003.105 2.289z" />
               </svg>
+            ) : (
+              <span className="text-lg leading-none" aria-hidden>{t.sendIcon}</span>
             )}
           </button>
         </div>
@@ -1108,9 +1381,9 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
       {/* Duplicate Tile Dialog */}
       {duplicateDialog && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setDuplicateDialog(null)}>
-          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-6 max-w-md w-full mx-4 border border-slate-200 dark:border-slate-700" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
-              Tile Already Exists
+          <div className={`bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-6 max-w-md w-full mx-4 border ${t.dialog}`} onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">
+              📦 Tile already exists
             </h3>
             <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
               A tile named <strong className="text-slate-900 dark:text-white">"{duplicateDialog.existingTile.title}"</strong> already exists in your Private area under the Imported category. What would you like to do?
@@ -1118,25 +1391,25 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
             <div className="space-y-2">
               <button
                 onClick={() => handleImportTile(duplicateDialog.newTile, 'duplicate')}
-                className="w-full px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-900 dark:text-white rounded-lg transition-colors text-sm font-medium"
+                className={`w-full px-4 py-2 rounded-xl transition-colors text-sm font-medium ${t.dialogDup}`}
               >
-                Create Duplicate Copy
+                📄 Create duplicate copy
               </button>
               <button
                 onClick={() => handleImportTile(duplicateDialog.newTile, 'merge')}
-                className="w-full px-4 py-2 bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-900 dark:text-blue-200 rounded-lg transition-colors text-sm font-medium"
+                className="w-full px-4 py-2 bg-sky-100 dark:bg-sky-900/30 hover:bg-sky-200 dark:hover:bg-sky-900/50 text-sky-900 dark:text-sky-200 rounded-xl transition-colors text-sm font-medium"
               >
-                Merge Links (Add new links to existing tile)
+                🔗 Merge links (add new links to existing tile)
               </button>
               <button
                 onClick={() => handleImportTile(duplicateDialog.newTile, 'overwrite')}
-                className="w-full px-4 py-2 bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-900 dark:text-red-200 rounded-lg transition-colors text-sm font-medium"
+                className="w-full px-4 py-2 bg-rose-100 dark:bg-rose-900/30 hover:bg-rose-200 dark:hover:bg-rose-900/50 text-rose-900 dark:text-rose-200 rounded-xl transition-colors text-sm font-medium"
               >
-                Overwrite Existing Tile
+                ⚠️ Overwrite existing tile
               </button>
               <button
                 onClick={() => setDuplicateDialog(null)}
-                className="w-full px-4 py-2 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg transition-colors text-sm font-medium"
+                className="w-full px-4 py-2 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-xl transition-colors text-sm font-medium"
               >
                 Cancel
               </button>

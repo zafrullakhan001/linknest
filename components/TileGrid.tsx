@@ -4095,9 +4095,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         filteredTiles = []; // No role-based content for unauthenticated users
       }
     } else if (activeTab === 'private') {
-      // Show only authenticated and private tiles that belong to the user
+      // Show private tiles the user is allowed to see, plus tiles shared with them
       if (isAuthenticated && user) {
         filteredTiles = tiles.filter(t => {
+          if (t.sharedWithMeInvitationId) {
+            return true;
+          }
           if (t.visibility === 'private') {
             // Only show if user is in allowedUsers list
             return t.allowedUsers && t.allowedUsers.includes(user.id);

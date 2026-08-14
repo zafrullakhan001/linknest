@@ -15,8 +15,8 @@ import { cloneTile, getTiles, saveTile, toggleLinkFavorite, createTempVersion, u
 import { removeSharedTile } from '../services/tileShareService';
 import { useSettings } from '../contexts/SettingsContext';
 import { isEscapeDialogOpen, useEscapeToClose } from '../hooks/useEscapeToClose';
-import { RichTextEditor } from './RichTextEditor';
-import { RichTextContentItem } from './RichTextContentItem';
+import { SelectableRichTextEditor } from './SelectableRichTextEditor';
+import { RichTextContentItem, type RichTextContentItemHandle } from './RichTextContentItem';
 import { RichTextBoxedView } from './RichTextBoxedView';
 import {
     RichTextBoxOptionsFields,
@@ -47,6 +47,8 @@ import {
     TileHierarchyViews,
     readHierarchyViewPreference,
     writeHierarchyViewPreference,
+    readTileEditExpandPreference,
+    writeTileEditExpandPreference,
     type HierarchyViewMode,
 } from './TileHierarchyViews';
 import { VersionDiffViewer } from './VersionDiffViewer';
@@ -387,6 +389,108 @@ const UrlProbeBadges: React.FC<{ url: string }> = ({ url }) => {
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
+/** Deep-clone a link with a fresh id (all fields preserved). */
+const cloneLinkItem = (link: Link, opts?: { appendCopyLabel?: boolean }): Link => ({
+    id: generateId(),
+    label: opts?.appendCopyLabel ? `${link.label} (Copy)` : link.label,
+    url: link.url,
+    icon: link.icon,
+    textColor: link.textColor,
+    health: link.health ? { ...link.health } : undefined,
+    visibility: link.visibility,
+    published: link.published,
+    allowedUsers: link.allowedUsers ? [...link.allowedUsers] : undefined,
+    allowedGroups: link.allowedGroups ? [...link.allowedGroups] : undefined,
+    notes: link.notes,
+    tooltip: link.tooltip,
+    richTextContent: link.richTextContent,
+    visibleFrom: link.visibleFrom,
+    expiresAt: link.expiresAt,
+    browser: link.browser,
+    hasRoleAccess: link.hasRoleAccess === true ? true : undefined,
+    position: link.position,
+    animation: link.animation,
+});
+
+/** Deep-clone a rich text block with a fresh id (all box/meta fields preserved). */
+const cloneRichTextItem = (source: RichTextContent): RichTextContent => ({
+    id: generateId(),
+    content: source.content,
+    position: source.position,
+    visibility: source.visibility,
+    allowedUsers: source.allowedUsers ? [...source.allowedUsers] : undefined,
+    allowedGroups: source.allowedGroups ? [...source.allowedGroups] : undefined,
+    visibleFrom: source.visibleFrom,
+    expiresAt: source.expiresAt,
+    boxed: source.boxed,
+    boxTitle: source.boxTitle,
+    boxFooter: source.boxFooter,
+    boxHeaderAlign: source.boxHeaderAlign,
+    boxFooterAlign: source.boxFooterAlign,
+    boxHeaderBg: source.boxHeaderBg,
+    boxFooterBg: source.boxFooterBg,
+    boxBodyBg: source.boxBodyBg,
+    boxHeaderFontWeight: source.boxHeaderFontWeight,
+    boxFooterFontWeight: source.boxFooterFontWeight,
+    boxHeaderFontSize: source.boxHeaderFontSize,
+    boxFooterFontSize: source.boxFooterFontSize,
+    boxHeaderEmoji: source.boxHeaderEmoji,
+    boxImportance: source.boxImportance,
+});
+
+/** Deep-clone a section including every link and rich text item. */
+const cloneSectionItem = (
+    section: LinkSection,
+    opts?: { appendCopyTitle?: boolean; position?: number }
+): LinkSection => {
+    const links = Array.isArray(section.links) ? section.links : [];
+    const richTextContent = Array.isArray(section.richTextContent) ? section.richTextContent : [];
+
+    return {
+        id: generateId(),
+        title: opts?.appendCopyTitle ? `${section.title} (Copy)` : section.title,
+        emoji: section.emoji,
+        textColor: section.textColor,
+        visibility: section.visibility,
+        published: section.published,
+        allowedUsers: section.allowedUsers ? [...section.allowedUsers] : undefined,
+        allowedGroups: section.allowedGroups ? [...section.allowedGroups] : undefined,
+        visibleFrom: section.visibleFrom,
+        expiresAt: section.expiresAt,
+        forceStackedView: section.forceStackedView,
+        position: opts?.position ?? section.position ?? 0,
+        links: links.map((link) => cloneLinkItem(link)),
+        richTextContent: richTextContent.map((rt) => cloneRichTextItem(rt)),
+    };
+};
+
+/** Deep-clone an entire tab with all sections, links, and rich text. */
+const cloneTabItem = (
+    tab: Tab,
+    opts?: { appendCopyTitle?: boolean; position?: number }
+): Tab => {
+    const sortedSections = [...(tab.sections || [])].sort(
+        (a, b) => (a.position ?? 0) - (b.position ?? 0)
+    );
+
+    return {
+        id: generateId(),
+        title: opts?.appendCopyTitle === false ? tab.title : `${tab.title} (Copy)`,
+        emoji: tab.emoji,
+        textColor: tab.textColor,
+        visibility: tab.visibility,
+        published: tab.published,
+        allowedUsers: tab.allowedUsers ? [...tab.allowedUsers] : undefined,
+        allowedGroups: tab.allowedGroups ? [...tab.allowedGroups] : undefined,
+        visibleFrom: tab.visibleFrom,
+        expiresAt: tab.expiresAt,
+        position: opts?.position ?? tab.position,
+        sections: sortedSections.map((section, index) =>
+            cloneSectionItem(section, { position: section.position ?? index })
+        ),
+    };
+};
+
 /** Yellow = Authenticated, orange = specific users/groups. Shown to editors/admins only. */
 const VisibilityProtectionBadge: React.FC<{
   visibility?: LinkVisibility | string | null;
@@ -442,6 +546,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [expandedTabs, setExpandedTabs] = useState<Set<string>>(new Set());
     const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
     const [hierarchyView, setHierarchyView] = useState<HierarchyViewMode>(() => readHierarchyViewPreference());
+    const skipNextExpandPersistRef = useRef(false);
 
     const changeHierarchyView = (mode: HierarchyViewMode) => {
         setHierarchyView(mode);
@@ -504,6 +609,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
     // Selection State for Bulk Actions
     const [selectedLinkIds, setSelectedLinkIds] = useState<string[]>([]);
+    const [selectedRichTextIds, setSelectedRichTextIds] = useState<string[]>([]);
+    const selectedItemCount = selectedLinkIds.length + selectedRichTextIds.length;
 
     // State for Editing Links (keyed by link ID)
     const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
@@ -650,6 +757,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [newRichTextFooterSize, setNewRichTextFooterSize] = useState<Record<string, BoxFontSize>>({});
     const [newRichTextHeaderEmoji, setNewRichTextHeaderEmoji] = useState<Record<string, string>>({});
     const [newRichTextImportance, setNewRichTextImportance] = useState<Record<string, BoxImportance>>({});
+    const richTextItemRefs = useRef<Map<string, RichTextContentItemHandle>>(new Map());
+    const setRichTextItemRef = (sectionId: string, richTextId: string, handle: RichTextContentItemHandle | null) => {
+        const key = `${sectionId}:${richTextId}`;
+        if (handle) {
+            richTextItemRefs.current.set(key, handle);
+        } else {
+            richTextItemRefs.current.delete(key);
+        }
+    };
 
     // Link Search State (for edit mode)
     const [linkSearchTerm, setLinkSearchTerm] = useState('');
@@ -1013,14 +1129,48 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     }, [isEditing]);
 
-    // Tree/Compact: expand all tabs once when entering those views with none expanded
+    // Restore Cards/Tree/Compact + expand/collapse when entering edit (and undo temporary Cards switches)
+    useEffect(() => {
+        if (!isEditing) return;
+
+        setHierarchyView(readHierarchyViewPreference());
+
+        const saved = readTileEditExpandPreference(tile.id);
+        if (!saved) return;
+
+        const validTabIds = new Set((tile.tabs || []).map((t) => t.id));
+        const validSectionIds = new Set([
+            ...(tile.tabs || []).flatMap((t) => (t.sections || []).map((s) => s.id)),
+            ...(tile.sections || []).map((s) => s.id),
+        ]);
+
+        skipNextExpandPersistRef.current = true;
+        setExpandedTabs(new Set(saved.tabs.filter((id) => validTabIds.has(id))));
+        setExpandedSections(new Set(saved.sections.filter((id) => validSectionIds.has(id))));
+    }, [isEditing, tile.id]);
+
+    // Persist expand/collapse while editing (skip initial empty write so first-time tree auto-expand still works)
+    useEffect(() => {
+        if (!isEditing) return;
+        if (skipNextExpandPersistRef.current) {
+            skipNextExpandPersistRef.current = false;
+            return;
+        }
+        const hasExpanded = expandedTabs.size > 0 || expandedSections.size > 0;
+        const hadSaved = readTileEditExpandPreference(tile.id) !== null;
+        if (!hasExpanded && !hadSaved) return;
+        writeTileEditExpandPreference(tile.id, expandedTabs, expandedSections);
+    }, [isEditing, tile.id, expandedTabs, expandedSections]);
+
+    // Tree/Compact: expand all tabs once when entering those views with none expanded (and no saved preference)
     useEffect(() => {
         if (!isEditing || hierarchyView === 'cards' || editTabs.length === 0) return;
+        if (readTileEditExpandPreference(tile.id)) return;
         setExpandedTabs(prev => {
             if (prev.size > 0) return prev;
             return new Set(editTabs.map(t => t.id));
         });
-    }, [isEditing, hierarchyView, editTabs.length]);
+    }, [isEditing, hierarchyView, editTabs.length, tile.id]);
 
     // Refresh editTabs when entering edit mode to ensure we have the latest data
     // AND create a temp version snapshot once per edit session
@@ -2132,6 +2282,141 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         animation: 'inherit'
     });
 
+    const applyRichTextDraftToItem = (rt: RichTextContent, content: string, meta?: RichTextBoxMeta): RichTextContent => {
+        if (!meta) {
+            return { ...rt, content };
+        }
+        if (!meta.boxed) {
+            return {
+                ...rt,
+                content,
+                boxed: false,
+                boxTitle: undefined,
+                boxFooter: undefined,
+                boxHeaderAlign: undefined,
+                boxFooterAlign: undefined,
+                boxHeaderBg: undefined,
+                boxFooterBg: undefined,
+                boxBodyBg: undefined,
+                boxHeaderFontWeight: undefined,
+                boxFooterFontWeight: undefined,
+                boxHeaderFontSize: undefined,
+                boxFooterFontSize: undefined,
+                boxHeaderEmoji: undefined,
+                boxImportance: undefined,
+            };
+        }
+        return {
+            ...rt,
+            content,
+            boxed: true,
+            boxTitle: meta.boxTitle,
+            boxFooter: meta.boxFooter,
+            boxHeaderAlign: meta.boxHeaderAlign || 'left',
+            boxFooterAlign: meta.boxFooterAlign || 'left',
+            boxHeaderBg: meta.boxHeaderBg || DEFAULT_HEADER_BG,
+            boxFooterBg: meta.boxFooterBg || DEFAULT_FOOTER_BG,
+            boxBodyBg: meta.boxBodyBg || DEFAULT_BODY_BG,
+            boxHeaderFontWeight: meta.boxHeaderFontWeight || 'bold',
+            boxFooterFontWeight: meta.boxFooterFontWeight || 'normal',
+            boxHeaderFontSize: meta.boxHeaderFontSize || 'md',
+            boxFooterFontSize: meta.boxFooterFontSize || 'sm',
+            boxHeaderEmoji: meta.boxHeaderEmoji,
+            boxImportance: meta.boxImportance || 'notes',
+        };
+    };
+
+    const commitPendingRichTextForms = (tabs: Tab[], sections: LinkSection[]): { tabs: Tab[]; sections: LinkSection[]; didChange: boolean } => {
+        const openEdits = Object.entries(editingRichTextId).filter(([, id]) => !!id) as [string, string][];
+        const pendingNewSectionIds = Object.entries(newRichTextContent)
+            .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && !!entry[1].trim())
+            .map(([sectionId]) => sectionId);
+
+        if (openEdits.length === 0 && pendingNewSectionIds.length === 0) {
+            return { tabs, sections, didChange: false };
+        }
+
+        const pendingNewSet = new Set(pendingNewSectionIds);
+        let didChange = false;
+
+        const patchSection = (s: LinkSection): LinkSection => {
+            let richTextContent = [...(s.richTextContent || [])];
+            let sectionChanged = false;
+
+            const editingId = editingRichTextId[s.id];
+            if (editingId) {
+                const handle = richTextItemRefs.current.get(`${s.id}:${editingId}`);
+                const draft = handle?.getDraft();
+                if (draft) {
+                    richTextContent = richTextContent.map(rt =>
+                        rt.id === editingId ? applyRichTextDraftToItem(rt, draft.content, draft.meta) : rt
+                    );
+                    sectionChanged = true;
+                }
+            }
+
+            if (pendingNewSet.has(s.id)) {
+                const content = newRichTextContent[s.id]?.trim();
+                if (content) {
+                    const meta = buildBoxMetaFromFields({
+                        boxed: !!newRichTextBoxed[s.id],
+                        boxTitle: newRichTextBoxTitle[s.id] || '',
+                        boxFooter: newRichTextBoxFooter[s.id] || '',
+                        boxHeaderAlign: newRichTextHeaderAlign[s.id] || 'left',
+                        boxFooterAlign: newRichTextFooterAlign[s.id] || 'left',
+                        boxHeaderBg: newRichTextHeaderBg[s.id] || DEFAULT_HEADER_BG,
+                        boxFooterBg: newRichTextFooterBg[s.id] || DEFAULT_FOOTER_BG,
+                        boxBodyBg: newRichTextBodyBg[s.id] || DEFAULT_BODY_BG,
+                        boxHeaderFontWeight: newRichTextHeaderWeight[s.id] || 'bold',
+                        boxFooterFontWeight: newRichTextFooterWeight[s.id] || 'normal',
+                        boxHeaderFontSize: newRichTextHeaderSize[s.id] || 'md',
+                        boxFooterFontSize: newRichTextFooterSize[s.id] || 'sm',
+                        boxHeaderEmoji: newRichTextHeaderEmoji[s.id] || '',
+                        boxImportance: newRichTextImportance[s.id] || 'notes',
+                    });
+                    const maxPosition = Math.max(
+                        -1,
+                        ...(s.links || []).map(i => i.position || 0),
+                        ...richTextContent.map(i => i.position || 0)
+                    );
+                    richTextContent = [
+                        ...richTextContent,
+                        {
+                            id: generateId(),
+                            content,
+                            position: maxPosition + 1,
+                            ...meta,
+                        },
+                    ];
+                    sectionChanged = true;
+                }
+            }
+
+            if (sectionChanged) {
+                didChange = true;
+                return { ...s, richTextContent };
+            }
+            return s;
+        };
+
+        if (tabs.length > 0) {
+            return {
+                tabs: tabs.map(tab => ({
+                    ...tab,
+                    sections: (tab.sections || []).map(patchSection),
+                })),
+                sections,
+                didChange,
+            };
+        }
+
+        return {
+            tabs,
+            sections: sections.map(patchSection),
+            didChange,
+        };
+    };
+
     const commitPendingLinkForms = (tabs: Tab[], sections: LinkSection[]): { tabs: Tab[]; sections: LinkSection[]; didChange: boolean } => {
         const pendingEdits = Object.entries(editLinkState).filter(([, state]) =>
             !!state && !!state.label?.trim() && !!state.url?.trim()
@@ -2197,7 +2482,111 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
 
         const incomingTabs = Array.isArray(tabsOverride) ? tabsOverride : editTabs;
-        const { tabs: tabsToSave, sections: sectionsToSave, didChange } = commitPendingLinkForms(incomingTabs, editSections);
+        const richFlush = commitPendingRichTextForms(incomingTabs, editSections);
+        const { tabs: tabsToSave, sections: sectionsToSave, didChange } = commitPendingLinkForms(
+            richFlush.tabs,
+            richFlush.sections
+        );
+
+        if (richFlush.didChange) {
+            if (richFlush.tabs.length > 0) {
+                setEditTabs(richFlush.tabs);
+            } else {
+                setEditSections(richFlush.sections);
+            }
+            setEditingRichTextId(prev => {
+                const next = { ...prev };
+                Object.keys(next).forEach(sectionId => {
+                    if (next[sectionId]) next[sectionId] = null;
+                });
+                return next;
+            });
+            const pendingNewSectionIds = Object.entries(newRichTextContent)
+                .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && !!entry[1].trim())
+                .map(([sectionId]) => sectionId);
+            if (pendingNewSectionIds.length > 0) {
+                setNewRichTextContent(prev => {
+                    const next = { ...prev };
+                    pendingNewSectionIds.forEach(id => { next[id] = ''; });
+                    return next;
+                });
+                setNewRichTextBoxed(prev => {
+                    const next = { ...prev };
+                    pendingNewSectionIds.forEach(id => { next[id] = false; });
+                    return next;
+                });
+                setNewRichTextBoxTitle(prev => {
+                    const next = { ...prev };
+                    pendingNewSectionIds.forEach(id => { next[id] = ''; });
+                    return next;
+                });
+                setNewRichTextBoxFooter(prev => {
+                    const next = { ...prev };
+                    pendingNewSectionIds.forEach(id => { next[id] = ''; });
+                    return next;
+                });
+                setNewRichTextHeaderAlign(prev => {
+                    const next = { ...prev };
+                    pendingNewSectionIds.forEach(id => { next[id] = 'left'; });
+                    return next;
+                });
+                setNewRichTextFooterAlign(prev => {
+                    const next = { ...prev };
+                    pendingNewSectionIds.forEach(id => { next[id] = 'left'; });
+                    return next;
+                });
+                setNewRichTextHeaderBg(prev => {
+                    const next = { ...prev };
+                    pendingNewSectionIds.forEach(id => { next[id] = DEFAULT_HEADER_BG; });
+                    return next;
+                });
+                setNewRichTextFooterBg(prev => {
+                    const next = { ...prev };
+                    pendingNewSectionIds.forEach(id => { next[id] = DEFAULT_FOOTER_BG; });
+                    return next;
+                });
+                setNewRichTextBodyBg(prev => {
+                    const next = { ...prev };
+                    pendingNewSectionIds.forEach(id => { next[id] = DEFAULT_BODY_BG; });
+                    return next;
+                });
+                setNewRichTextHeaderWeight(prev => {
+                    const next = { ...prev };
+                    pendingNewSectionIds.forEach(id => { next[id] = 'bold'; });
+                    return next;
+                });
+                setNewRichTextFooterWeight(prev => {
+                    const next = { ...prev };
+                    pendingNewSectionIds.forEach(id => { next[id] = 'normal'; });
+                    return next;
+                });
+                setNewRichTextHeaderSize(prev => {
+                    const next = { ...prev };
+                    pendingNewSectionIds.forEach(id => { next[id] = 'md'; });
+                    return next;
+                });
+                setNewRichTextFooterSize(prev => {
+                    const next = { ...prev };
+                    pendingNewSectionIds.forEach(id => { next[id] = 'sm'; });
+                    return next;
+                });
+                setNewRichTextHeaderEmoji(prev => {
+                    const next = { ...prev };
+                    pendingNewSectionIds.forEach(id => { next[id] = ''; });
+                    return next;
+                });
+                setNewRichTextImportance(prev => {
+                    const next = { ...prev };
+                    pendingNewSectionIds.forEach(id => { next[id] = 'notes'; });
+                    return next;
+                });
+                setShowAddRichTextForm(prev => {
+                    const next = { ...prev };
+                    pendingNewSectionIds.forEach(id => { next[id] = false; });
+                    return next;
+                });
+            }
+        }
 
         if (didChange) {
             if (tabsToSave.length > 0) {
@@ -2555,35 +2944,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         const tabToClone = editTabs.find(t => t.id === tabId);
         if (!tabToClone) return;
 
-        // Deep clone the tab with new IDs
-        const clonedTab: Tab = {
-            id: generateId(),
-            title: `${tabToClone.title} (Copy)`,
-            position: tabToClone.position + 1,
-            textColor: tabToClone.textColor,
-            emoji: tabToClone.emoji,
-            sections: tabToClone.sections.map((section, index) => ({
-                id: generateId(),
-                title: section.title,
-                textColor: section.textColor,
-                emoji: section.emoji,
-                position: section.position ?? index,
-                links: section.links.map(link => ({
-                    id: generateId(),
-                    label: link.label,
-                    url: link.url,
-                    icon: link.icon,
-                    visibility: link.visibility,
-                    allowedUsers: link.allowedUsers ? [...link.allowedUsers] : undefined,
-                    notes: link.notes,
-                    tooltip: link.tooltip,
-                    health: link.health
-                }))
-            }))
-        };
+        const index = editTabs.findIndex(t => t.id === tabId);
+        const clonedTab = cloneTabItem(tabToClone, {
+            appendCopyTitle: true,
+            position: (tabToClone.position ?? index) + 1,
+        });
 
         // Insert cloned tab after the original
-        const index = editTabs.findIndex(t => t.id === tabId);
         const newTabs = [
             ...editTabs.slice(0, index + 1),
             clonedTab,
@@ -2593,6 +2960,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         // Update positions
         newTabs.forEach((t, idx) => { t.position = idx; });
         setEditTabs(newTabs);
+        setExpandedTabs(prev => new Set(prev).add(clonedTab.id));
+        // Expand all cloned sections so the full copy is visible immediately
+        setExpandedSections(prev => {
+            const next = new Set(prev);
+            clonedTab.sections.forEach((s) => next.add(s.id));
+            return next;
+        });
     };
 
     const handleUpdateTabVisibility = (tabId: string, visibility: LinkVisibility, allowedUsers?: number[], allowedGroups?: number[]) => {
@@ -2929,31 +3303,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     const handleCloneSection = (tabId: string, sectionId: string) => {
+        let clonedSectionId: string | null = null;
+
         setEditTabs(editTabs.map(tab => {
             if (tab.id !== tabId) return tab;
 
             const sectionToClone = tab.sections.find(s => s.id === sectionId);
             if (!sectionToClone) return tab;
-
-            // Deep clone the section with new IDs
-            const clonedSection: LinkSection = {
-                id: generateId(),
-                title: `${sectionToClone.title} (Copy)`,
-                textColor: sectionToClone.textColor,
-                emoji: sectionToClone.emoji,
-                position: (sectionToClone.position ?? 0) + 1,
-                links: sectionToClone.links.map(link => ({
-                    id: generateId(),
-                    label: link.label,
-                    url: link.url,
-                    icon: link.icon,
-                    visibility: link.visibility,
-                    allowedUsers: link.allowedUsers ? [...link.allowedUsers] : undefined,
-                    notes: link.notes,
-                    tooltip: link.tooltip,
-                    health: link.health
-                }))
-            };
 
             // Sort sections first to find correct index
             const sortedSections = [...tab.sections].sort((a, b) => {
@@ -2964,6 +3320,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
             const index = sortedSections.findIndex(s => s.id === sectionId);
             if (index === -1) return tab;
+
+            const clonedSection = cloneSectionItem(sectionToClone, {
+                appendCopyTitle: true,
+                position: (sectionToClone.position ?? index) + 1,
+            });
+            clonedSectionId = clonedSection.id;
 
             // Insert cloned section after the original
             const newSections = [
@@ -2979,6 +3341,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
             return { ...tab, sections: newSections };
         }));
+
+        if (clonedSectionId) {
+            setExpandedSections(prev => new Set(prev).add(clonedSectionId!));
+        }
     };
 
     const handleUpdateSectionVisibility = (tabId: string, sectionId: string, visibility: LinkVisibility, allowedUsers?: number[], allowedGroups?: number[]) => {
@@ -3555,50 +3921,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     const handleUpdateRichText = (tabId: string, sectionId: string, richTextId: string, content: string, meta?: RichTextBoxMeta) => {
-        const applyUpdate = (rt: RichTextContent) => {
-            if (rt.id !== richTextId) return rt;
-            if (!meta) {
-                return { ...rt, content };
-            }
-            if (!meta.boxed) {
-                return {
-                    ...rt,
-                    content,
-                    boxed: false,
-                    boxTitle: undefined,
-                    boxFooter: undefined,
-                    boxHeaderAlign: undefined,
-                    boxFooterAlign: undefined,
-                    boxHeaderBg: undefined,
-                    boxFooterBg: undefined,
-                    boxBodyBg: undefined,
-                    boxHeaderFontWeight: undefined,
-                    boxFooterFontWeight: undefined,
-                    boxHeaderFontSize: undefined,
-                    boxFooterFontSize: undefined,
-                    boxHeaderEmoji: undefined,
-                    boxImportance: undefined,
-                };
-            }
-            return {
-                ...rt,
-                content,
-                boxed: true,
-                boxTitle: meta.boxTitle,
-                boxFooter: meta.boxFooter,
-                boxHeaderAlign: meta.boxHeaderAlign || 'left',
-                boxFooterAlign: meta.boxFooterAlign || 'left',
-                boxHeaderBg: meta.boxHeaderBg || DEFAULT_HEADER_BG,
-                boxFooterBg: meta.boxFooterBg || DEFAULT_FOOTER_BG,
-                boxBodyBg: meta.boxBodyBg || DEFAULT_BODY_BG,
-                boxHeaderFontWeight: meta.boxHeaderFontWeight || 'bold',
-                boxFooterFontWeight: meta.boxFooterFontWeight || 'normal',
-                boxHeaderFontSize: meta.boxHeaderFontSize || 'md',
-                boxFooterFontSize: meta.boxFooterFontSize || 'sm',
-                boxHeaderEmoji: meta.boxHeaderEmoji,
-                boxImportance: meta.boxImportance || 'notes',
-            };
-        };
+        const applyUpdate = (rt: RichTextContent) =>
+            rt.id !== richTextId ? rt : applyRichTextDraftToItem(rt, content, meta);
 
         if (editTabs.length > 0) {
             setEditTabs(prev => prev.map(tab => {
@@ -3664,25 +3988,48 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         );
     };
 
+    const toggleRichTextSelection = (richTextId: string) => {
+        setSelectedRichTextIds(prev =>
+            prev.includes(richTextId)
+                ? prev.filter(id => id !== richTextId)
+                : [...prev, richTextId]
+        );
+    };
+
+    const clearItemSelection = () => {
+        setSelectedLinkIds([]);
+        setSelectedRichTextIds([]);
+    };
+
     const toggleAllLinksInSectionSelection = (section: LinkSection) => {
         const sectionLinkIds = (section.links || []).map(l => l.id);
-        const allSelected = sectionLinkIds.length > 0 && sectionLinkIds.every(id => selectedLinkIds.includes(id));
+        const sectionRichTextIds = (section.richTextContent || []).map(r => r.id);
+        const hasItems = sectionLinkIds.length > 0 || sectionRichTextIds.length > 0;
+        const allSelected = hasItems
+            && sectionLinkIds.every(id => selectedLinkIds.includes(id))
+            && sectionRichTextIds.every(id => selectedRichTextIds.includes(id));
 
         if (allSelected) {
             setSelectedLinkIds(prev => prev.filter(id => !sectionLinkIds.includes(id)));
+            setSelectedRichTextIds(prev => prev.filter(id => !sectionRichTextIds.includes(id)));
         } else {
             setSelectedLinkIds(prev => [...new Set([...prev, ...sectionLinkIds])]);
+            setSelectedRichTextIds(prev => [...new Set([...prev, ...sectionRichTextIds])]);
         }
     };
 
-    const handleBulkMove = (targetTabId: string, targetSectionId: string) => {
-        if (selectedLinkIds.length === 0) return;
+    const cloneRichTextForBulk = (source: RichTextContent): RichTextContent => cloneRichTextItem(source);
 
-        // 1. Find and extract all selected links from the appropriate source
+    const handleBulkMove = (targetTabId: string, targetSectionId: string) => {
+        if (selectedLinkIds.length === 0 && selectedRichTextIds.length === 0) return;
+
+        // 1. Find and extract all selected links and rich text from the appropriate source
         const selectedLinks: Link[] = [];
+        const selectedRichTexts: RichTextContent[] = [];
 
         const processSection = (section: LinkSection) => {
             const preservedLinks: Link[] = [];
+            const preservedRichText: RichTextContent[] = [];
             (section.links || []).forEach(link => {
                 if (selectedLinkIds.includes(link.id)) {
                     selectedLinks.push({ ...link });
@@ -3690,10 +4037,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     preservedLinks.push(link);
                 }
             });
+            (section.richTextContent || []).forEach(rt => {
+                if (selectedRichTextIds.includes(rt.id)) {
+                    selectedRichTexts.push({ ...rt });
+                } else {
+                    preservedRichText.push(rt);
+                }
+            });
 
             return {
                 ...section,
-                links: preservedLinks
+                links: preservedLinks,
+                richTextContent: preservedRichText
             };
         };
 
@@ -3710,15 +4065,21 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 };
             }
 
-            // Target section: add links to the end
+            // Target section: add selected items to the end
             const currentItems = getSortedItems(section);
             const nextPos = currentItems.length;
             const linksToAdd = selectedLinks.map((link, idx) => ({
                 ...link,
-                position: nextPos + idx
+                position: nextPos + idx,
+                type: 'link' as const
+            }));
+            const richTextToAdd = selectedRichTexts.map((rt, idx) => ({
+                ...rt,
+                position: nextPos + selectedLinks.length + idx,
+                type: 'rich-text' as const
             }));
 
-            const finalItems = [...currentItems, ...linksToAdd.map(l => ({ ...l, type: 'link' as const }))];
+            const finalItems = [...currentItems, ...linksToAdd, ...richTextToAdd];
             // Ensure strict positions
             finalItems.forEach((item, idx) => { item.position = idx; });
 
@@ -3731,13 +4092,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
         // 3. Apply changes to the relevant state
         if (editTabs.length > 0) {
-            // First pass: remove links
+            // First pass: remove selected items
             const updatedTabs = editTabs.map(tab => ({
                 ...tab,
                 sections: tab.sections.map(processSection)
             }));
 
-            if (selectedLinks.length === 0) return;
+            if (selectedLinks.length === 0 && selectedRichTexts.length === 0) return;
 
             // Second pass: add to target
             setEditTabs(updatedTabs.map(tab => ({
@@ -3745,23 +4106,24 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 sections: tab.sections.map(finalizeSection)
             })));
         } else if (editSections.length > 0) {
-            // First pass: remove links
+            // First pass: remove selected items
             const updatedSections = editSections.map(processSection);
 
-            if (selectedLinks.length === 0) return;
+            if (selectedLinks.length === 0 && selectedRichTexts.length === 0) return;
 
             // Second pass: add to target
             setEditSections(updatedSections.map(finalizeSection));
         }
 
-        setSelectedLinkIds([]);
+        clearItemSelection();
     };
 
     const handleBulkCopy = (targetTabId: string, targetSectionId: string) => {
-        if (selectedLinkIds.length === 0) return;
+        if (selectedLinkIds.length === 0 && selectedRichTextIds.length === 0) return;
 
-        // 1. Find all selected links (don't remove them)
+        // 1. Find all selected links and rich text (don't remove them)
         const linksToCopy: Link[] = [];
+        const richTextToCopy: RichTextContent[] = [];
         const allSections = editTabs.length > 0
             ? editTabs.flatMap(t => t.sections)
             : editSections;
@@ -3776,9 +4138,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     });
                 }
             });
+            (section.richTextContent || []).forEach(rt => {
+                if (selectedRichTextIds.includes(rt.id)) {
+                    richTextToCopy.push(cloneRichTextForBulk(rt));
+                }
+            });
         });
 
-        if (linksToCopy.length === 0) return;
+        if (linksToCopy.length === 0 && richTextToCopy.length === 0) return;
 
         // 2. Add copies to target section
         const addToSection = (section: LinkSection) => {
@@ -3789,10 +4156,16 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
             const newLinks = linksToCopy.map((link, idx) => ({
                 ...link,
-                position: nextPos + idx
+                position: nextPos + idx,
+                type: 'link' as const
+            }));
+            const newRichText = richTextToCopy.map((rt, idx) => ({
+                ...rt,
+                position: nextPos + linksToCopy.length + idx,
+                type: 'rich-text' as const
             }));
 
-            const finalItems = [...currentItems, ...newLinks.map(l => ({ ...l, type: 'link' as const }))];
+            const finalItems = [...currentItems, ...newLinks, ...newRichText];
             finalItems.forEach((item, idx) => { item.position = idx; });
 
             return {
@@ -3811,7 +4184,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             setEditSections(editSections.map(addToSection));
         }
 
-        setSelectedLinkIds([]);
+        clearItemSelection();
     };
 
     const handleCloneLink = (tabId: string, sectionId: string, linkId: string) => {
@@ -6559,7 +6932,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         )}
                                     </div>
                                     {editingIntro && (
-                                        <RichTextEditor
+                                        <SelectableRichTextEditor
                                             value={editHtml}
                                             onChange={setEditHtml}
                                             placeholder="Enter intro content with formatting..."
@@ -7414,12 +7787,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             return (
                                                 <>
                                                     {matchedLinks.length} link{matchedLinks.length !== 1 ? 's' : ''} found
-                                                    {selectedLinkIds.length > 0 && (
+                                                    {selectedItemCount > 0 && (
                                                         <button
-                                                            onClick={() => setSelectedLinkIds([])}
+                                                            onClick={clearItemSelection}
                                                             className="text-xs text-red-500 hover:text-red-600 font-semibold underline underline-offset-2 transition-colors ml-4"
                                                         >
-                                                            Clear selection ({selectedLinkIds.length})
+                                                            Clear selection ({selectedItemCount})
                                                         </button>
                                                     )}
                                                 </>
@@ -7427,11 +7800,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         })()}
                                     </div>
                                 )}
-                                {!linkSearchTerm && selectedLinkIds.length > 0 && (
+                                {!linkSearchTerm && selectedItemCount > 0 && (
                                     <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                                        {selectedLinkIds.length} link{selectedLinkIds.length !== 1 ? 's' : ''} selected
+                                        {selectedItemCount} item{selectedItemCount !== 1 ? 's' : ''} selected
+                                        {selectedLinkIds.length > 0 && selectedRichTextIds.length > 0 && (
+                                            <span className="text-slate-400"> ({selectedLinkIds.length} link{selectedLinkIds.length !== 1 ? 's' : ''}, {selectedRichTextIds.length} rich text)</span>
+                                        )}
                                         <button
-                                            onClick={() => setSelectedLinkIds([])}
+                                            onClick={clearItemSelection}
                                             className="text-xs text-red-500 hover:text-red-600 font-semibold underline underline-offset-2 transition-colors ml-4"
                                         >
                                             Clear selection
@@ -7499,6 +7875,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 expandedTabs={expandedTabs}
                                                 expandedSections={expandedSections}
                                                 selectedLinkIds={selectedLinkIds}
+                                                selectedRichTextIds={selectedRichTextIds}
                                                 linkSearchTerm={linkSearchTerm}
                                                 canDeleteTabs={tile.canDeleteTabs !== false && (tile.canDeleteTabs !== undefined || !!tile.canEdit)}
                                                 onToggleTab={toggleTab}
@@ -7548,6 +7925,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     openCardsForEditing(`tab-${tabId}`);
                                                 }}
                                                 onToggleLinkSelection={toggleLinkSelection}
+                                                onToggleRichTextSelection={toggleRichTextSelection}
                                                 onToggleFavorite={handleToggleLinkFavorite}
                                             />
                                         </div>
@@ -7815,10 +8193,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     </div>
                                                                     <div className="text-slate-400 dark:text-slate-500 font-mono text-xs">#{sectionIndex + 1}</div>
                                                                     {/* Select All Checkbox */}
-                                                                    <div className="flex items-center px-1" title="Select all links in this section">
+                                                                    <div className="flex items-center px-1" title="Select all links and rich text in this section">
                                                                         <input
                                                                             type="checkbox"
-                                                                            checked={(section.links || []).length > 0 && (section.links || []).every(l => selectedLinkIds.includes(l.id))}
+                                                                            checked={
+                                                                                ((section.links || []).length > 0 || (section.richTextContent || []).length > 0)
+                                                                                && (section.links || []).every(l => selectedLinkIds.includes(l.id))
+                                                                                && (section.richTextContent || []).every(r => selectedRichTextIds.includes(r.id))
+                                                                            }
                                                                             onChange={() => toggleAllLinksInSectionSelection(section)}
                                                                             className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 cursor-pointer"
                                                                         />
@@ -7837,22 +8219,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         className="flex-1 bg-transparent border-none text-slate-900 dark:text-white font-semibold focus:ring-0 placeholder-slate-400"
                                                                     />
                                                                     {/* Bulk Action Buttons */}
-                                                                    {selectedLinkIds.length > 0 && (
+                                                                    {selectedItemCount > 0 && (
                                                                         <div className="flex gap-1.5 animate-in fade-in slide-in-from-right-2">
                                                                             <button
                                                                                 onClick={() => handleBulkMove(tab.id, section.id)}
                                                                                 className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white text-[10px] font-bold rounded-lg shadow-sm hover:shadow-md transition-all active:scale-95 whitespace-nowrap"
-                                                                                title="Move selected links to this section"
+                                                                                title="Move selected links and rich text to this section"
                                                                             >
                                                                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3 h-3">
                                                                                     <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
                                                                                 </svg>
-                                                                                MOVE ({selectedLinkIds.length})
+                                                                                MOVE ({selectedItemCount})
                                                                             </button>
                                                                             <button
                                                                                 onClick={() => handleBulkCopy(tab.id, section.id)}
                                                                                 className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold rounded-lg shadow-sm hover:shadow-md transition-all active:scale-95 whitespace-nowrap"
-                                                                                title="Copy selected links to this section"
+                                                                                title="Copy selected links and rich text to this section"
                                                                             >
                                                                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3 h-3">
                                                                                     <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v2.25a2.25 2.25 0 0 1-2.25 2.25H4.5A2.25 2.25 0 0 1 2.25 19.5V6.25a2.25 2.25 0 0 1 2.25-2.25h9a2.25 2.25 0 0 1 2.25 2.25v2.25m-6.75 2.25h13.5m-3 0-3 3m3-3-3-3" />
@@ -8070,6 +8452,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                             className={`transition-opacity duration-200 ${matchesSearch ? 'opacity-100' : 'opacity-40'}`}
                                                                                         >
                                                                                             <RichTextContentItem
+                                                                                                ref={(handle) => setRichTextItemRef(section.id, richText.id, handle)}
                                                                                                 content={richText}
                                                                                                 sectionId={section.id}
                                                                                                 tabId={tab.id}
@@ -8089,6 +8472,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                 visibility={richText.visibility || 'public'}
                                                                                                 visibleFrom={richText.visibleFrom}
                                                                                                 expiresAt={richText.expiresAt}
+                                                                                                isSelected={selectedRichTextIds.includes(richText.id)}
+                                                                                                onToggleSelect={() => toggleRichTextSelection(richText.id)}
                                                                                             />
                                                                                         </div>
                                                                                     );
@@ -8346,7 +8731,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         >
                                                                                             <div>
                                                                                                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Link Label (Rich Text)</label>
-                                                                                                <RichTextEditor
+                                                                                                <SelectableRichTextEditor
                                                                                                     value={editLinkState[link.id]?.label || ''}
                                                                                                     onChange={(value) => updateEditLinkState(link.id, 'label', value)}
                                                                                                     placeholder="Enter link name with formatting..."
@@ -8526,7 +8911,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     Demo Fill
                                                                                                 </button>
                                                                                             </div>
-                                                                                            <RichTextEditor
+                                                                                            <SelectableRichTextEditor
                                                                                                 value={editLinkState[link.id]?.richTextContent || ''}
                                                                                                 onChange={(html) => {
                                                                                                     const currentState = editLinkState[link.id] || {
@@ -8846,7 +9231,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             <div className="space-y-3">
                                                                                 <div>
                                                                                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Link Label (Rich Text)</label>
-                                                                                    <RichTextEditor
+                                                                                    <SelectableRichTextEditor
                                                                                         value={newLinkState[section.id]?.label || ''}
                                                                                         onChange={(value) => updateNewLinkState(section.id, 'label', value)}
                                                                                         placeholder="Enter link name with formatting..."
@@ -9143,7 +9528,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
                                                                                     If provided, clicking this link will open a rich text dialog instead of navigating to the URL. Leave empty to open the URL normally.
                                                                                 </p>
-                                                                                <RichTextEditor
+                                                                                <SelectableRichTextEditor
                                                                                     value={newLinkState[section.id]?.richTextContent || ''}
                                                                                     onChange={(html) => updateNewLinkState(section.id, 'richTextContent', html)}
                                                                                     placeholder="Enter rich text content that will be displayed in a dialog when the link is clicked..."
@@ -9250,7 +9635,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     </svg>
                                                                                 </button>
                                                                             </div>
-                                                                            <RichTextEditor
+                                                                            <SelectableRichTextEditor
                                                                                 value={newRichTextContent[section.id] || ''}
                                                                                 onChange={(value) => setNewRichTextContent(prev => ({ ...prev, [section.id]: value }))}
                                                                                 placeholder="Enter rich text content with formatting..."

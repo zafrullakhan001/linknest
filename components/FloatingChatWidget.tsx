@@ -315,14 +315,14 @@ export const FloatingChatWidget: React.FC<{
         {/* Drag handle (bigger + easier to grab, doesn't change layout) */}
         <button
           type="button"
-          className={`absolute -top-3 left-1/2 -translate-x-1/2 w-16 h-7 rounded-full shadow-md border border-blue-300/70 dark:border-blue-600/60 bg-blue-500/90 dark:bg-blue-600/90 backdrop-blur flex items-center justify-center text-white ${
+          className={`absolute -top-3 left-1/2 -translate-x-1/2 w-16 h-7 rounded-full shadow-md border border-blue-300/70 dark:border-blue-600/60 bg-brand-500 dark:bg-brand-600 backdrop-blur flex items-center justify-center text-white ${
             isDragging ? 'cursor-grabbing' : 'cursor-grab'
           }`}
           onPointerDown={startDrag}
           title="Drag chat widget (grab here)"
           aria-label="Drag chat widget"
         >
-          <span className="text-[16px] leading-none tracking-widest flex items-center">⋮⋮⋮</span>
+          <span className="text-[14px] leading-none flex items-center gap-0.5">💬 <span className="tracking-widest">⋮</span></span>
         </button>
 
         {/* Resize handles */}

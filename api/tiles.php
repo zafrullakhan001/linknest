@@ -594,6 +594,7 @@ function handleGetTiles() {
             $searchLinkStmt->execute($visibleTileIds);
             while ($linkRow = $searchLinkStmt->fetch(PDO::FETCH_ASSOC)) {
                 $tileId = $linkRow['tile_id'];
+                $isAcceptedShareRecipient = isset($acceptedSharedTiles[$tileId]);
 
                 // Parent tab visibility (when section belongs to a tab)
                 if (!empty($linkRow['tab_id'])) {
@@ -603,7 +604,7 @@ function handleGetTiles() {
                         'allowed_groups' => $linkRow['tab_allowed_groups'],
                         'published' => $linkRow['tab_published'],
                     ];
-                    if (!canUserSeePublishedContent($user, $tabRow) || !canUserSeeByVisibility($user, $tabRow, $userGroupIds)) {
+                    if (!canUserSeePublishedContent($user, $tabRow) || !canUserSeeNestedInTile($db, $tileId, $user, $tabRow, $userGroupIds, $isAcceptedShareRecipient)) {
                         continue;
                     }
                 }
@@ -615,7 +616,7 @@ function handleGetTiles() {
                     'allowed_groups' => $linkRow['section_allowed_groups'],
                     'published' => $linkRow['section_published'],
                 ];
-                if (!canUserSeePublishedContent($user, $sectionRow) || !canUserSeeByVisibility($user, $sectionRow, $userGroupIds)) {
+                if (!canUserSeePublishedContent($user, $sectionRow) || !canUserSeeNestedInTile($db, $tileId, $user, $sectionRow, $userGroupIds, $isAcceptedShareRecipient)) {
                     continue;
                 }
 
@@ -623,7 +624,7 @@ function handleGetTiles() {
                 if (!canUserSeePublishedContent($user, $linkRow)) {
                     continue;
                 }
-                $isVisible = canUserSeeByVisibility($user, $linkRow, $userGroupIds);
+                $isVisible = canUserSeeNestedInTile($db, $tileId, $user, $linkRow, $userGroupIds, $isAcceptedShareRecipient);
                 $linkHasRoleAccess = isset($linkRoleAccess[$linkRow['id']]);
                 if ($linkHasRoleAccess && !$isVisible) {
                     $isVisible = true;
@@ -866,6 +867,7 @@ function handleGetTiles() {
             $tile = &$tilesById[$tileId];
             $tile['messages'] = $messagesByTile[$tileId] ?? [];
             $tabs = [];
+            $isAcceptedShareRecipient = isset($acceptedSharedTiles[$tileId]);
             
             // Process tabs for this tile
             if (isset($tabsByTile[$tileId])) {
@@ -873,7 +875,7 @@ function handleGetTiles() {
                     if (!canUserSeePublishedContent($user, $tabRow)) {
                         continue;
                     }
-                    if (!canUserSeeByVisibility($user, $tabRow, $userGroupIds)) {
+                    if (!canUserSeeNestedInTile($db, $tileId, $user, $tabRow, $userGroupIds, $isAcceptedShareRecipient)) {
                         continue;
                     }
                     $tab = [
@@ -897,7 +899,7 @@ function handleGetTiles() {
                             if (!canUserSeePublishedContent($user, $sectionRow)) {
                                 continue;
                             }
-                            if (!canUserSeeByVisibility($user, $sectionRow, $userGroupIds)) {
+                            if (!canUserSeeNestedInTile($db, $tileId, $user, $sectionRow, $userGroupIds, $isAcceptedShareRecipient)) {
                                 continue;
                             }
                             $section = [
@@ -933,7 +935,7 @@ function handleGetTiles() {
                                         $allowedGroups = [];
                                     }
 
-                                    $isVisible = canUserSeeByVisibility($user, $linkRow, $userGroupIds);
+                                    $isVisible = canUserSeeNestedInTile($db, $tileId, $user, $linkRow, $userGroupIds, $isAcceptedShareRecipient);
 
                                     // Check role-based access from batched data
                                     $linkHasRoleAccess = isset($linkRoleAccess[$linkRow['id']]);
@@ -985,7 +987,7 @@ function handleGetTiles() {
                             $section['richTextContent'] = [];
                             if (isset($richTextBySection[$sectionRow['id']])) {
                                 foreach ($richTextBySection[$sectionRow['id']] as $richTextRow) {
-                                    if (!canUserSeeByVisibility($user, $richTextRow, $userGroupIds)) {
+                                    if (!canUserSeeNestedInTile($db, $tileId, $user, $richTextRow, $userGroupIds, $isAcceptedShareRecipient)) {
                                         continue;
                                     }
                                     $section['richTextContent'][] = mapRichTextRow($richTextRow);
@@ -1010,7 +1012,7 @@ function handleGetTiles() {
                     if (!canUserSeePublishedContent($user, $sectionRow)) {
                         continue;
                     }
-                    if (!canUserSeeByVisibility($user, $sectionRow, $userGroupIds)) {
+                    if (!canUserSeeNestedInTile($db, $tileId, $user, $sectionRow, $userGroupIds, $isAcceptedShareRecipient)) {
                         continue;
                     }
                     $section = [
@@ -1042,7 +1044,7 @@ function handleGetTiles() {
                                 $allowedGroups = [];
                             }
 
-                            $isVisible = canUserSeeByVisibility($user, $linkRow, $userGroupIds);
+                            $isVisible = canUserSeeNestedInTile($db, $tileId, $user, $linkRow, $userGroupIds, $isAcceptedShareRecipient);
 
                             // Check role-based access from batched data
                             $linkHasRoleAccess = isset($linkRoleAccess[$linkRow['id']]);
@@ -1091,7 +1093,7 @@ function handleGetTiles() {
                     $section['richTextContent'] = [];
                     if (isset($richTextBySection[$sectionRow['id']])) {
                         foreach ($richTextBySection[$sectionRow['id']] as $richTextRow) {
-                            if (!canUserSeeByVisibility($user, $richTextRow, $userGroupIds)) {
+                            if (!canUserSeeNestedInTile($db, $tileId, $user, $richTextRow, $userGroupIds, $isAcceptedShareRecipient)) {
                                 continue;
                             }
                             $section['richTextContent'][] = mapRichTextRow($richTextRow);
@@ -1214,10 +1216,12 @@ function handleGetTile($tileId) {
     }
 
     // Accepted share invitations
-    if (!$isTileVisible && $user) {
+    $isAcceptedShareRecipient = false;
+    if ($user) {
         $sharedCheck = $db->prepare('SELECT id, sharer_user_id FROM tile_share_invitations WHERE tile_id = ? AND receiver_user_id = ? AND status = ?');
         $sharedCheck->execute([$row['id'], $user['id'], 'accepted']);
         if ($sharedCheck->fetch()) {
+            $isAcceptedShareRecipient = true;
             $isTileVisible = true;
         }
     }
@@ -1409,7 +1413,7 @@ function handleGetTile($tileId) {
         if (!canUserSeePublishedContent($user, $tabRow)) {
             continue;
         }
-        if (!canUserSeeByVisibility($user, $tabRow, $userGroupIds)) {
+        if (!canUserSeeNestedInTile($db, $tileId, $user, $tabRow, $userGroupIds, $isAcceptedShareRecipient)) {
             continue;
         }
         $tabColor = (!empty($tabRow['text_color']) && trim($tabRow['text_color']) !== '') ? trim($tabRow['text_color']) : null;
@@ -1437,7 +1441,7 @@ function handleGetTile($tileId) {
             if (!canUserSeePublishedContent($user, $sectionRow)) {
                 continue;
             }
-            if (!canUserSeeByVisibility($user, $sectionRow, $userGroupIds)) {
+            if (!canUserSeeNestedInTile($db, $tileId, $user, $sectionRow, $userGroupIds, $isAcceptedShareRecipient)) {
                 continue;
             }
             $section = [
@@ -1477,7 +1481,7 @@ function handleGetTile($tileId) {
                     $allowedUsers = [];
                 }
 
-                $isVisible = canUserSeeByVisibility($user, $linkRow, $userGroupIds);
+                $isVisible = canUserSeeNestedInTile($db, $tileId, $user, $linkRow, $userGroupIds, $isAcceptedShareRecipient);
 
                 // Always check role-based access for authenticated users (for "Your Apps" tab)
                 $linkHasRoleAccess = false;
@@ -1532,7 +1536,7 @@ function handleGetTile($tileId) {
             $richTextStmt->execute([$sectionRow['id']]);
             $section['richTextContent'] = [];
             while ($richTextRow = $richTextStmt->fetch()) {
-                if (!canUserSeeByVisibility($user, $richTextRow, $userGroupIds)) {
+                if (!canUserSeeNestedInTile($db, $tileId, $user, $richTextRow, $userGroupIds, $isAcceptedShareRecipient)) {
                     continue;
                 }
                 $section['richTextContent'][] = mapRichTextRow($richTextRow);
@@ -1563,7 +1567,7 @@ function handleGetTile($tileId) {
                 if (!canUserSeePublishedContent($user, $sectionRow)) {
                     continue;
                 }
-                if (!canUserSeeByVisibility($user, $sectionRow, $userGroupIds)) {
+                if (!canUserSeeNestedInTile($db, $tileId, $user, $sectionRow, $userGroupIds, $isAcceptedShareRecipient)) {
                     continue;
                 }
                 $section = [
@@ -1600,7 +1604,7 @@ function handleGetTile($tileId) {
                         $allowedGroups = [];
                     }
 
-                    $isVisible = canUserSeeByVisibility($user, $linkRow, $userGroupIds);
+                    $isVisible = canUserSeeNestedInTile($db, $tileId, $user, $linkRow, $userGroupIds, $isAcceptedShareRecipient);
 
                     // Always check role-based access for authenticated users (for "Your Apps" tab)
                     $linkHasRoleAccess = false;
@@ -1649,7 +1653,7 @@ function handleGetTile($tileId) {
                 $richTextStmt = $db->prepare('SELECT * FROM rich_text_content WHERE section_id = ? ORDER BY position ASC');
                 $richTextStmt->execute([$sectionRow['id']]);
                 while ($richTextRow = $richTextStmt->fetch()) {
-                    if (!canUserSeeByVisibility($user, $richTextRow, $userGroupIds)) {
+                    if (!canUserSeeNestedInTile($db, $tileId, $user, $richTextRow, $userGroupIds, $isAcceptedShareRecipient)) {
                         continue;
                     }
                     $section['richTextContent'][] = mapRichTextRow($richTextRow);
@@ -2112,6 +2116,18 @@ function handleCreateTile() {
                             error_log('Error inserting link (fallback): ' . $e2->getMessage());
                             throw $e2;
                         }
+                    }
+                }
+            }
+
+            // Insert rich text content for legacy sections (same as tabbed create path)
+            if (isset($section['richTextContent']) && is_array($section['richTextContent'])) {
+                foreach ($section['richTextContent'] as $richText) {
+                    $richTextId = $richText['id'] ?? uniqid('richtext_', true);
+                    try {
+                        insertRichTextContent($db, $richTextId, $sectionId, $richText);
+                    } catch (PDOException $e) {
+                        error_log('Rich text content insert error (legacy sections): ' . $e->getMessage());
                     }
                 }
             }

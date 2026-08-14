@@ -182,7 +182,7 @@ export const FloatingSnakeGameWidget: React.FC<{
                 {/* Drag handle (bigger + easier to grab, doesn't change layout) */}
                 <button
                     type="button"
-                    className={`absolute -top-3 left-1/2 -translate-x-1/2 w-16 h-7 rounded-full shadow-md border border-green-300/70 dark:border-green-600/60 bg-green-500/90 dark:bg-green-600/90 backdrop-blur flex items-center justify-center text-white ${isDragging ? 'cursor-grabbing' : 'cursor-grab'
+                    className={`absolute -top-3 left-1/2 -translate-x-1/2 w-16 h-7 rounded-full shadow-[0_0_18px_rgba(34,211,238,0.45)] border border-cyan-300/70 bg-cyan-500/90 backdrop-blur flex items-center justify-center text-slate-950 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'
                         }`}
                     onPointerDown={startDrag}
                     title="Drag snake game widget (grab here)"

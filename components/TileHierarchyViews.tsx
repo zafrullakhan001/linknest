@@ -25,6 +25,51 @@ export function writeHierarchyViewPreference(mode: HierarchyViewMode) {
   }
 }
 
+export type TileEditExpandState = {
+  tabs: string[];
+  sections: string[];
+};
+
+function expandStorageKey(tileId: string): string {
+  return `linknest.tileEditExpand.${tileId}`;
+}
+
+export function readTileEditExpandPreference(tileId: string): TileEditExpandState | null {
+  if (!tileId) return null;
+  try {
+    const raw = localStorage.getItem(expandStorageKey(tileId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<TileEditExpandState>;
+    if (!parsed || typeof parsed !== 'object') return null;
+    const tabs = Array.isArray(parsed.tabs) ? parsed.tabs.filter((id): id is string => typeof id === 'string') : [];
+    const sections = Array.isArray(parsed.sections)
+      ? parsed.sections.filter((id): id is string => typeof id === 'string')
+      : [];
+    return { tabs, sections };
+  } catch {
+    return null;
+  }
+}
+
+export function writeTileEditExpandPreference(
+  tileId: string,
+  tabs: Iterable<string>,
+  sections: Iterable<string>
+): void {
+  if (!tileId) return;
+  try {
+    localStorage.setItem(
+      expandStorageKey(tileId),
+      JSON.stringify({
+        tabs: Array.from(tabs),
+        sections: Array.from(sections),
+      })
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
 function stripHtml(content: string): string {
   if (!content) return '';
   if (typeof document === 'undefined') return content.replace(/<[^>]*>/g, '');
@@ -252,6 +297,7 @@ export interface TileHierarchyViewsProps {
   expandedTabs: Set<string>;
   expandedSections: Set<string>;
   selectedLinkIds: string[];
+  selectedRichTextIds?: string[];
   linkSearchTerm: string;
   canDeleteTabs: boolean;
   onToggleTab: (tabId: string) => void;
@@ -285,6 +331,7 @@ export interface TileHierarchyViewsProps {
   onAddLink: (tabId: string, sectionId: string) => void;
   onAddRichText: (tabId: string, sectionId: string) => void;
   onToggleLinkSelection: (linkId: string) => void;
+  onToggleRichTextSelection?: (richTextId: string) => void;
   onToggleFavorite?: (linkId: string) => void;
 }
 
@@ -368,8 +415,10 @@ const TabNode: React.FC<
   onAddLink,
   onAddRichText,
   onToggleLinkSelection,
+  onToggleRichTextSelection,
   onToggleFavorite,
   selectedLinkIds,
+  selectedRichTextIds = [],
 }) => {
   const open = expandedTabs.has(tab.id);
   const sections = [...(tab.sections || [])].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
@@ -474,6 +523,7 @@ const TabNode: React.FC<
               expanded={expandedSections.has(section.id)}
               linkSearchTerm={linkSearchTerm}
               selectedLinkIds={selectedLinkIds}
+              selectedRichTextIds={selectedRichTextIds}
               onToggleSection={onToggleSection}
               onRemoveSection={onRemoveSection}
               onCloneSection={onCloneSection}
@@ -495,6 +545,7 @@ const TabNode: React.FC<
               onAddLink={onAddLink}
               onAddRichText={onAddRichText}
               onToggleLinkSelection={onToggleLinkSelection}
+              onToggleRichTextSelection={onToggleRichTextSelection}
               onToggleFavorite={onToggleFavorite}
             />
           ))}
@@ -525,6 +576,7 @@ const SectionNode: React.FC<{
   expanded: boolean;
   linkSearchTerm: string;
   selectedLinkIds: string[];
+  selectedRichTextIds?: string[];
   onToggleSection: (sectionId: string) => void;
   onRemoveSection: (tabId: string, sectionId: string) => void;
   onCloneSection: (tabId: string, sectionId: string) => void;
@@ -546,6 +598,7 @@ const SectionNode: React.FC<{
   onAddLink: (tabId: string, sectionId: string) => void;
   onAddRichText: (tabId: string, sectionId: string) => void;
   onToggleLinkSelection: (linkId: string) => void;
+  onToggleRichTextSelection?: (richTextId: string) => void;
   onToggleFavorite?: (linkId: string) => void;
 }> = ({
   tab,
@@ -556,6 +609,7 @@ const SectionNode: React.FC<{
   expanded,
   linkSearchTerm,
   selectedLinkIds,
+  selectedRichTextIds = [],
   onToggleSection,
   onRemoveSection,
   onCloneSection,
@@ -577,6 +631,7 @@ const SectionNode: React.FC<{
   onAddLink,
   onAddRichText,
   onToggleLinkSelection,
+  onToggleRichTextSelection,
   onToggleFavorite,
 }) => {
   const items = getSortedItems(section);
@@ -688,12 +743,25 @@ const SectionNode: React.FC<{
                 item.boxTitle?.trim() ||
                 stripHtml(item.content || '').slice(0, 48) ||
                 'Rich text';
+              const selected = selectedRichTextIds.includes(item.id);
               return (
                 <div
                   key={item.id}
                   id={`link-${item.id}`}
-                  className={`flex items-center gap-2 ${isCompact ? 'px-3 py-1 pl-10' : 'px-2 py-1 rounded hover:bg-violet-50/80 dark:hover:bg-violet-950/20'}`}
+                  className={`flex items-center gap-2 ${isCompact ? 'px-3 py-1 pl-10' : 'px-2 py-1 rounded hover:bg-violet-50/80 dark:hover:bg-violet-950/20'} ${
+                    selected ? 'bg-brand-50/80 dark:bg-brand-950/20' : ''
+                  }`}
                 >
+                  {onToggleRichTextSelection && (
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={() => onToggleRichTextSelection(item.id)}
+                      className="w-3.5 h-3.5 rounded border-slate-300 text-brand-600 shrink-0"
+                      onClick={(e) => e.stopPropagation()}
+                      title="Select rich text for move / copy"
+                    />
+                  )}
                   <span className="text-sm shrink-0" aria-hidden>
                     📄
                   </span>

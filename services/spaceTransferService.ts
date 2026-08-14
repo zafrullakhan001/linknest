@@ -342,16 +342,46 @@ const normalizeImportedLink = (link: any): Link => ({
 });
 
 /** Normalize rich text content items from import JSON */
-const normalizeRichTextContent = (rtc: any) => ({
-  id: generateId(),
-  content: String(rtc.content || ''),
-  position: typeof rtc.position === 'number' ? rtc.position : 0,
-  visibility: rtc.visibility || 'public',
-  allowedUsers: asNumberArray(rtc.allowedUsers),
-  allowedGroups: asNumberArray(rtc.allowedGroups),
-  visibleFrom: typeof rtc.visibleFrom === 'string' ? rtc.visibleFrom : undefined,
-  expiresAt: typeof rtc.expiresAt === 'string' ? rtc.expiresAt : undefined
-});
+const normalizeRichTextContent = (rtc: any) => {
+  const align = (v: unknown): 'left' | 'center' | 'right' | undefined =>
+    v === 'left' || v === 'center' || v === 'right' ? v : undefined;
+  const weight = (v: unknown): 'normal' | 'bold' | undefined =>
+    v === 'normal' || v === 'bold' ? v : undefined;
+  const size = (v: unknown): 'sm' | 'md' | 'lg' | undefined =>
+    v === 'sm' || v === 'md' || v === 'lg' ? v : undefined;
+  const importance = (v: unknown) =>
+    v === 'notes' || v === 'info' || v === 'tip' || v === 'important' || v === 'warning' || v === 'critical'
+      ? v
+      : undefined;
+
+  const boxed =
+    rtc.boxed === true || rtc.boxed === 1 || rtc.boxed === '1' || rtc.boxed === 'true';
+
+  return {
+    id: generateId(),
+    content: String(rtc.content || ''),
+    position: typeof rtc.position === 'number' ? rtc.position : 0,
+    visibility: rtc.visibility || 'public',
+    allowedUsers: asNumberArray(rtc.allowedUsers ?? rtc.allowed_users),
+    allowedGroups: asNumberArray(rtc.allowedGroups ?? rtc.allowed_groups),
+    visibleFrom: typeof rtc.visibleFrom === 'string' ? rtc.visibleFrom : (typeof rtc.visible_from === 'string' ? rtc.visible_from : undefined),
+    expiresAt: typeof rtc.expiresAt === 'string' ? rtc.expiresAt : (typeof rtc.expires_at === 'string' ? rtc.expires_at : undefined),
+    boxed: boxed || undefined,
+    boxTitle: typeof (rtc.boxTitle ?? rtc.box_title) === 'string' ? String(rtc.boxTitle ?? rtc.box_title) : undefined,
+    boxFooter: typeof (rtc.boxFooter ?? rtc.box_footer) === 'string' ? String(rtc.boxFooter ?? rtc.box_footer) : undefined,
+    boxHeaderAlign: align(rtc.boxHeaderAlign ?? rtc.box_header_align),
+    boxFooterAlign: align(rtc.boxFooterAlign ?? rtc.box_footer_align),
+    boxHeaderBg: typeof (rtc.boxHeaderBg ?? rtc.box_header_bg) === 'string' ? String(rtc.boxHeaderBg ?? rtc.box_header_bg) : undefined,
+    boxFooterBg: typeof (rtc.boxFooterBg ?? rtc.box_footer_bg) === 'string' ? String(rtc.boxFooterBg ?? rtc.box_footer_bg) : undefined,
+    boxBodyBg: typeof (rtc.boxBodyBg ?? rtc.box_body_bg) === 'string' ? String(rtc.boxBodyBg ?? rtc.box_body_bg) : undefined,
+    boxHeaderFontWeight: weight(rtc.boxHeaderFontWeight ?? rtc.box_header_font_weight),
+    boxFooterFontWeight: weight(rtc.boxFooterFontWeight ?? rtc.box_footer_font_weight),
+    boxHeaderFontSize: size(rtc.boxHeaderFontSize ?? rtc.box_header_font_size),
+    boxFooterFontSize: size(rtc.boxFooterFontSize ?? rtc.box_footer_font_size),
+    boxHeaderEmoji: typeof (rtc.boxHeaderEmoji ?? rtc.box_header_emoji) === 'string' ? String(rtc.boxHeaderEmoji ?? rtc.box_header_emoji) : undefined,
+    boxImportance: importance(rtc.boxImportance ?? rtc.box_importance)
+  };
+};
 
 /** Normalize a section (links + rich text) from import JSON */
 const normalizeImportedSection = (section: any): LinkSection => {

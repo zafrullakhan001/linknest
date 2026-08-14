@@ -36,6 +36,7 @@ COPY hooks/ ./hooks/
 COPY utils/ ./utils/
 COPY land/ ./land/
 COPY public/ ./public/
+COPY scripts/copy-tinymce-assets.mjs ./scripts/copy-tinymce-assets.mjs
 COPY App.tsx ./
 COPY types.ts ./
 # Type declarations required by VNC Viewer widget (@novnc/novnc)
@@ -49,7 +50,8 @@ RUN if [ ! -f index.html ]; then echo "ERROR: index.html not found!" && exit 1; 
 # Build frontend for Docker (base path is /)
 # Keep production mode for the Vite build only; do not set NODE_ENV before npm ci
 ENV NODE_ENV=production
-RUN ./node_modules/.bin/vite build --config vite.docker.config.ts && \
+RUN node scripts/copy-tinymce-assets.mjs && \
+    ./node_modules/.bin/vite build --config vite.docker.config.ts && \
     echo "=== Build Output Verification ===" && \
     ls -la dist/ && \
     echo "" && \

@@ -74,6 +74,17 @@ AddDefaultCharset UTF-8
     RewriteCond %{REQUEST_URI} ssh-session-keepalive\.html$
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule (^|/)ssh-session-keepalive\.html$ dist/ssh-session-keepalive.html [L]
+
+    # TinyMCE iframe host (Vite public/ → dist/)
+    RewriteCond %{REQUEST_URI} tinymce-editor\.html$
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule (^|/)tinymce-editor\.html$ dist/tinymce-editor.html [L]
+
+    # TinyMCE self-hosted runtime (Vite public/tinymce → dist/tinymce)
+    # Without this, /tinymce/*.js returns the HTML 404 page and TinyMCE fails to load.
+    RewriteCond %{REQUEST_URI} /tinymce/
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule (^|/)tinymce/(.*)$ dist/tinymce/$2 [L]
     
     # Block direct access to source files in production
     RewriteCond %{DOCUMENT_ROOT}%{REQUEST_URI}dist/index.html -f
@@ -99,6 +110,8 @@ AddDefaultCharset UTF-8
     RewriteCond %{REQUEST_URI} !dist/
     RewriteCond %{REQUEST_URI} !assets/
     RewriteCond %{REQUEST_URI} !uploads/
+    RewriteCond %{REQUEST_URI} !/tinymce/
+    RewriteCond %{REQUEST_URI} !tinymce-editor\.html$
     RewriteCond %{REQUEST_URI} !/_ln_sshgw/
     RewriteCond %{REQUEST_URI} !/_ln_vncgw/
     RewriteCond %{REQUEST_URI} !\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$

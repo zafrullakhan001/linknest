@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { RichTextContent } from '../types';
-import { RichTextEditor } from './RichTextEditor';
+import { SelectableRichTextEditor } from './SelectableRichTextEditor';
 import { RichTextBoxedView, type BoxAlign } from './RichTextBoxedView';
 import {
   RichTextBoxOptionsFields,
@@ -15,6 +15,10 @@ import {
 } from './RichTextBoxOptionsFields';
 
 export type { RichTextBoxMeta };
+
+export interface RichTextContentItemHandle {
+  getDraft: () => { id: string; content: string; meta: RichTextBoxMeta };
+}
 
 interface RichTextContentItemProps {
   content: RichTextContent;
@@ -36,6 +40,8 @@ interface RichTextContentItemProps {
   visibility?: 'public' | 'authenticated' | 'private';
   visibleFrom?: string;
   expiresAt?: string;
+  isSelected?: boolean;
+  onToggleSelect?: () => void;
 }
 
 function normalizeAlign(v?: string | null): BoxAlign {
@@ -55,26 +61,31 @@ function normalizeImportance(v?: string | null): BoxImportance {
   return allowed.includes(v as BoxImportance) ? (v as BoxImportance) : 'notes';
 }
 
-export const RichTextContentItem: React.FC<RichTextContentItemProps> = ({
-  content,
-  sectionId,
-  onUpdate,
-  onDelete,
-  onMoveUp,
-  onMoveDown,
-  canMoveUp,
-  canMoveDown,
-  isEditing,
-  onEdit,
-  onCancel,
-  onSave,
-  onClone,
-  onSchedule,
-  onVisibilityChange,
-  visibility = 'public',
-  visibleFrom,
-  expiresAt,
-}) => {
+export const RichTextContentItem = forwardRef<RichTextContentItemHandle, RichTextContentItemProps>(function RichTextContentItem(
+  {
+    content,
+    sectionId,
+    onUpdate,
+    onDelete,
+    onMoveUp,
+    onMoveDown,
+    canMoveUp,
+    canMoveDown,
+    isEditing,
+    onEdit,
+    onCancel,
+    onSave,
+    onClone,
+    onSchedule,
+    onVisibilityChange,
+    visibility = 'public',
+    visibleFrom,
+    expiresAt,
+    isSelected = false,
+    onToggleSelect,
+  },
+  ref
+) {
   const [localContent, setLocalContent] = useState(content.content);
   const [localBoxed, setLocalBoxed] = useState(!!content.boxed);
   const [localBoxTitle, setLocalBoxTitle] = useState(content.boxTitle || '');
@@ -117,6 +128,32 @@ export const RichTextContentItem: React.FC<RichTextContentItemProps> = ({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditing, content.id]);
+
+  const currentMeta = () =>
+    buildBoxMetaFromFields({
+      boxed: localBoxed,
+      boxTitle: localBoxTitle,
+      boxFooter: localBoxFooter,
+      boxHeaderAlign: localHeaderAlign,
+      boxFooterAlign: localFooterAlign,
+      boxHeaderBg: localHeaderBg,
+      boxFooterBg: localFooterBg,
+      boxBodyBg: localBodyBg,
+      boxHeaderFontWeight: localHeaderWeight,
+      boxFooterFontWeight: localFooterWeight,
+      boxHeaderFontSize: localHeaderSize,
+      boxFooterFontSize: localFooterSize,
+      boxHeaderEmoji: localHeaderEmoji,
+      boxImportance: localImportance,
+    });
+
+  useImperativeHandle(ref, () => ({
+    getDraft: () => ({
+      id: content.id,
+      content: localContent,
+      meta: currentMeta(),
+    }),
+  }));
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -162,24 +199,6 @@ export const RichTextContentItem: React.FC<RichTextContentItemProps> = ({
     }
   };
 
-  const currentMeta = () =>
-    buildBoxMetaFromFields({
-      boxed: localBoxed,
-      boxTitle: localBoxTitle,
-      boxFooter: localBoxFooter,
-      boxHeaderAlign: localHeaderAlign,
-      boxFooterAlign: localFooterAlign,
-      boxHeaderBg: localHeaderBg,
-      boxFooterBg: localFooterBg,
-      boxBodyBg: localBodyBg,
-      boxHeaderFontWeight: localHeaderWeight,
-      boxFooterFontWeight: localFooterWeight,
-      boxHeaderFontSize: localHeaderSize,
-      boxFooterFontSize: localFooterSize,
-      boxHeaderEmoji: localHeaderEmoji,
-      boxImportance: localImportance,
-    });
-
   const handleSave = () => {
     onUpdate(content.id, localContent, currentMeta());
     onSave();
@@ -192,7 +211,7 @@ export const RichTextContentItem: React.FC<RichTextContentItemProps> = ({
 
   if (isEditing) {
     return (
-      <div className="bg-white dark:bg-slate-800 border-2 border-brand-500 dark:border-brand-500/50 rounded-xl p-4 shadow-lg space-y-3">
+      <div className="bg-white dark:bg-slate-800 border-2 border-brand-500 dark:border-brand-500/50 rounded-xl p-4 shadow-lg space-y-3 overflow-visible relative z-20">
         <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
           <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Edit Rich Text Content</h4>
           <div className="flex items-center gap-2">
@@ -215,7 +234,7 @@ export const RichTextContentItem: React.FC<RichTextContentItemProps> = ({
             </button>
           </div>
         </div>
-        <RichTextEditor value={localContent} onChange={setLocalContent} placeholder="Enter rich text content..." />
+        <SelectableRichTextEditor value={localContent} onChange={setLocalContent} placeholder="Enter rich text content..." />
         <RichTextBoxOptionsFields
           boxed={localBoxed}
           onBoxedChange={setLocalBoxed}
@@ -260,7 +279,11 @@ export const RichTextContentItem: React.FC<RichTextContentItemProps> = ({
   }
 
   return (
-    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-4 shadow-sm hover:shadow-md transition-all group rich-text-content-item">
+    <div className={`bg-white dark:bg-slate-800 border rounded-lg p-4 shadow-sm hover:shadow-md transition-all group rich-text-content-item ${
+      isSelected
+        ? 'border-brand-400 dark:border-brand-500 ring-1 ring-brand-400/40 dark:ring-brand-500/40'
+        : 'border-slate-200 dark:border-slate-700'
+    }`}>
       <div className="flex items-start gap-3">
         <div className="flex flex-col gap-1 shrink-0">
           <button
@@ -284,6 +307,18 @@ export const RichTextContentItem: React.FC<RichTextContentItemProps> = ({
             </svg>
           </button>
         </div>
+
+        {onToggleSelect && (
+          <div className="flex items-center pt-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={onToggleSelect}
+              className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 cursor-pointer"
+              title="Select rich text for move / copy"
+            />
+          </div>
+        )}
 
         <div className="flex-1 min-w-0">
           <RichTextBoxedView
@@ -372,4 +407,4 @@ export const RichTextContentItem: React.FC<RichTextContentItemProps> = ({
       </div>
     </div>
   );
-};
+});

@@ -107,6 +107,9 @@ docker/*.crt
 
 # OS specific files
 
+# Self-hosted TinyMCE runtime (copied from node_modules via postinstall)
+public/tinymce/
+
 # Windows
 Thumbs.db
 ehthumbs.db
