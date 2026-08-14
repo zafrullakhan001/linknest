@@ -58,9 +58,11 @@ Import a Chrome/Edge bookmark HTML export. Links are grouped into **spaces by we
 ### Sync from browser (extension)
 Install **LinkNest Bookmark Sync** (`extensions/bookmark-sync` — load unpacked in Chrome/Edge) **or** **Browser Launcher Pro** with the Chrome `bookmarks` permission. Click **Sync** to merge browser bookmarks into Your Bookmarks without an HTML file. New URLs are added; existing ones are skipped.
 
-Bookmark Sync is a minified Pro-compatible extension: it only answers `BROWSER_LAUNCHER_GET_BOOKMARKS` / `BROWSER_LAUNCHER_CHECK`. It does not launch other browsers. The **display name does not connect Sync** — the page talks to the extension by message type. You can turn Sync **off** in the extension popup without uninstalling it.
+Bookmark Sync is a minified Pro-compatible extension: it only answers `BROWSER_LAUNCHER_GET_BOOKMARKS` / `BROWSER_LAUNCHER_CHECK` from **allowlisted** LinkNest origins, and only when **Bookmark sync** is On in the popup (it starts **Off**). It reads **this browser profile only** — not another user’s PC or Chrome profile — and does not upload bookmarks. The **display name does not connect Sync**.
 
-Full extension guide: **Help → Guides → Bookmark Sync Extension** (also the extension popup **Help** tab).
+After v1.6, add your app origin to `org-branding.json` `allowedOrigins` (the shipped file allows local XAMPP/Vite origins such as `http://localhost` and `http://localhost:3000`) and turn the popup toggle **On**.
+
+Full extension guide (including mass deploy): **Help → Guides → Bookmark Sync Extension** (also the extension popup **Help** tab).
 
 If Sync fails (extension missing, sync toggle off, no `bookmarks` permission, or `getTree` errors), use **Import Chrome HTML** / **Merge Import** instead.
 

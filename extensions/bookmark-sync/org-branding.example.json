@@ -4,5 +4,9 @@
   "appName": "Contoso",
   "appUrl": "https://intranet.contoso.com/linknest",
   "logo": "branding/logo.png",
-  "locked": true
+  "locked": true,
+  "allowedOrigins": [
+    "https://intranet.contoso.com"
+  ],
+  "syncDefaultOn": false
 }

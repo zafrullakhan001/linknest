@@ -348,7 +348,7 @@ Default credentials:
 ## Documentation References
 
 - `docs/YOUR_BOOKMARKS.md` - Guest Your Bookmarks, Favorite Links compact view, Rewrite tools
-- `docs/BOOKMARK_SYNC_EXTENSION.md` - LinkNest Bookmark Sync extension (handshake, toggle, branding vs protocol)
+- `docs/BOOKMARK_SYNC_EXTENSION.md` - LinkNest Bookmark Sync extension (handshake, origin allowlist, per-profile sync, mass deploy)
 - `docs/APP_UPDATES.md` - In-app App Updates (portable Releases for ArchLinks / ERP3)
 - `docs/SETUP.md` - Detailed setup instructions
 - `docs/PACKAGE_FOR_DEPLOYMENT.md` - Windows XAMPP deploy ZIP (`package-for-deployment.bat`)

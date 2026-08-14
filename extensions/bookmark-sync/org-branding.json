@@ -1,9 +1,18 @@
 {
-  "_comment": "Mass-deployment branding. Copy this folder to each PC, edit this file, put a PNG at the logo path, then Load unpacked (or force-install). Set enabled to true. locked:true applies org branding on every machine and disables the Branding tab. appName is the product name in ‘Open … in this browser’. appUrl makes that name a clickable http(s) link.",
+  "_comment": "Mass-deployment. Copy this folder to each PC (or force-install a packed CRX). Set enabled to true for branding. allowedOrigins is the security allowlist (scheme+host+port only) — pages not listed never receive bookmarks. appUrl’s origin is also allowed. syncDefaultOn false = users must turn Bookmark sync On in the popup. locked:true applies org branding and disables the Branding tab. For production, list only your LinkNest origin(s) and remove localhost.",
   "enabled": false,
   "name": "Your Organisation Bookmark Sync",
   "appName": "Your Organisation",
   "appUrl": "https://intranet.example.com/linknest",
   "logo": "branding/logo.png",
-  "locked": true
+  "locked": true,
+  "allowedOrigins": [
+    "http://localhost",
+    "http://localhost:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8000"
+  ],
+  "syncDefaultOn": false
 }

@@ -1,9 +1,10 @@
 /**
  * Page bridge for LinkNest Bookmark Sync.
  * Speaks the same postMessage protocol as Browser Launcher Pro, bookmarks only.
+ * Only allowlisted origins receive replies; postMessage uses this page's origin (not *).
  */
 (function () {
-  const VERSION = '1.5.1';
+  const VERSION = '1.6.0';
   const FEATURES = ['bookmarks'];
   const RELOAD_MSG =
     'Extension was reloaded. Refresh this page, then try Sync again.';
@@ -16,9 +17,19 @@
     }
   }
 
-  function post(payload) {
+  function pageOrigin() {
     try {
-      window.postMessage(payload, '*');
+      return window.location.origin;
+    } catch (_err) {
+      return '';
+    }
+  }
+
+  function post(payload) {
+    const target = pageOrigin();
+    if (!target) return;
+    try {
+      window.postMessage(payload, target);
     } catch (_err) {
       /* page may be tearing down */
     }
@@ -36,13 +47,13 @@
     });
   }
 
-  function withSyncEnabled(callback) {
+  function withPageGate(callback) {
     if (!isContextValid()) {
       callback(null);
       return;
     }
     try {
-      chrome.storage.local.get(['syncEnabled'], function (result) {
+      chrome.runtime.sendMessage({ action: 'pageGate' }, function (response) {
         if (!isContextValid()) {
           callback(null);
           return;
@@ -52,7 +63,7 @@
             callback(null);
             return;
           }
-          callback(!result || result.syncEnabled !== false);
+          callback(response && typeof response === 'object' ? response : null);
         } catch (_err) {
           callback(null);
         }
@@ -65,39 +76,38 @@
   window.addEventListener('message', function (event) {
     try {
       if (event.source !== window || !event.data || typeof event.data !== 'object') return;
+      if (event.origin !== pageOrigin()) return;
 
       const type = event.data.type;
       const timestamp = event.data.timestamp;
 
-      if (type === 'BROWSER_LAUNCHER_CHECK') {
-        withSyncEnabled(function (enabled) {
-          if (enabled === null) return;
+      if (type !== 'BROWSER_LAUNCHER_CHECK' && type !== 'BROWSER_LAUNCHER_GET_BOOKMARKS') {
+        return;
+      }
+
+      withPageGate(function (gate) {
+        // Unknown sites and dead extension context: do not reply (no fingerprint).
+        if (!gate || !gate.allowed) return;
+
+        if (type === 'BROWSER_LAUNCHER_CHECK') {
           post({
             type: 'BROWSER_LAUNCHER_CHECK_RESPONSE',
             available: true,
             version: VERSION,
             name: 'LinkNest Bookmark Sync',
             features: FEATURES,
-            syncEnabled: enabled,
+            syncEnabled: !!gate.syncEnabled,
             timestamp: timestamp
           });
-        });
-        return;
-      }
+          return;
+        }
 
-      if (type !== 'BROWSER_LAUNCHER_GET_BOOKMARKS') return;
-
-      if (!isContextValid()) {
-        failBookmarks(timestamp, RELOAD_MSG);
-        return;
-      }
-
-      withSyncEnabled(function (enabled) {
-        if (enabled === null) {
+        if (!isContextValid()) {
           failBookmarks(timestamp, RELOAD_MSG);
           return;
         }
-        if (!enabled) {
+
+        if (!gate.syncEnabled) {
           failBookmarks(
             timestamp,
             'Sync is turned off in the Bookmark Sync extension. Open the toolbar popup and enable Bookmark sync.'

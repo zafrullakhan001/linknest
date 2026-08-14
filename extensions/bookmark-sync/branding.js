@@ -1,3 +1,4 @@
+const EXTENSION_VERSION = '1.6.0';
 const BRAND_DEFAULT_NAME = 'LinkNest Bookmark Sync';
 const BRAND_DEFAULT_APP = 'LinkNest';
 const BRAND_NAME_MAX = 48;
@@ -85,6 +86,97 @@ function sanitizeAppUrl(raw) {
   }
 }
 
+/** Scheme + host + port only (http/https). Paths are ignored. */
+function originFromHref(raw) {
+  const href = sanitizeAppUrl(raw);
+  if (!href) return '';
+  try {
+    return new URL(href).origin;
+  } catch (_err) {
+    return '';
+  }
+}
+
+function uniqueOrigins(list) {
+  const out = [];
+  for (const item of list || []) {
+    const origin = originFromHref(item);
+    if (origin && out.indexOf(origin) === -1) out.push(origin);
+  }
+  return out;
+}
+
+function readManagedPolicy() {
+  return new Promise((resolve) => {
+    try {
+      if (!chrome.storage || !chrome.storage.managed) {
+        resolve(null);
+        return;
+      }
+      chrome.storage.managed.get(['allowedOrigins', 'syncDefaultOn'], (result) => {
+        if (chrome.runtime.lastError) {
+          resolve(null);
+          return;
+        }
+        resolve(result && typeof result === 'object' ? result : null);
+      });
+    } catch (_err) {
+      resolve(null);
+    }
+  });
+}
+
+async function loadOrgFile() {
+  try {
+    const res = await fetch(chrome.runtime.getURL(ORG_BRANDING_FILE), { cache: 'no-store' });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data || typeof data !== 'object') return null;
+    return data;
+  } catch (_err) {
+    return null;
+  }
+}
+
+/**
+ * Origins that may receive bookmark lists / CHECK replies.
+ * Fail-closed: an empty list means no page is allowed.
+ * Always read from org-branding.json (even when branding enabled is false),
+ * plus optional chrome.storage.managed for GPO/Intune.
+ */
+async function loadOriginPolicy() {
+  const data = await loadOrgFile();
+  const managed = await readManagedPolicy();
+  const fromFile = uniqueOrigins([
+    ...(Array.isArray(data && data.allowedOrigins) ? data.allowedOrigins : []),
+    data && data.enabled !== false ? data.appUrl : ''
+  ]);
+  const fromManaged = uniqueOrigins(
+    managed && Array.isArray(managed.allowedOrigins) ? managed.allowedOrigins : []
+  );
+  let syncDefaultOn = !!(data && data.syncDefaultOn === true);
+  if (managed && typeof managed.syncDefaultOn === 'boolean') {
+    syncDefaultOn = managed.syncDefaultOn;
+  }
+  return {
+    allowedOrigins: uniqueOrigins(fromFile.concat(fromManaged)),
+    syncDefaultOn
+  };
+}
+
+async function isOriginAllowed(origin) {
+  const normalized = originFromHref(origin);
+  if (!normalized) return false;
+  const policy = await loadOriginPolicy();
+  return policy.allowedOrigins.indexOf(normalized) !== -1;
+}
+
+function senderPageOrigin(sender) {
+  if (sender && sender.tab && sender.tab.url) return originFromHref(sender.tab.url);
+  if (sender && sender.url) return originFromHref(sender.url);
+  return '';
+}
+
 function pickAppName(stored, org, locked) {
   if (locked && org) return org.appName || BRAND_DEFAULT_APP;
   return (stored && stored.appName) || (org && org.appName) || BRAND_DEFAULT_APP;
@@ -96,10 +188,16 @@ function pickAppUrl(stored, org, locked) {
 }
 
 function getSyncEnabled() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get([SYNC_STORAGE.enabled], (result) => {
-      resolve(result[SYNC_STORAGE.enabled] !== false);
-    });
+  return Promise.all([
+    new Promise((resolve) => {
+      chrome.storage.local.get([SYNC_STORAGE.enabled], (result) => resolve(result || {}));
+    }),
+    loadOriginPolicy()
+  ]).then(([result, policy]) => {
+    const stored = result[SYNC_STORAGE.enabled];
+    if (stored === true) return true;
+    if (stored === false) return false;
+    return !!(policy && policy.syncDefaultOn);
   });
 }
 
@@ -182,26 +280,20 @@ function safeLogoPath(raw) {
 }
 
 async function loadOrgConfig() {
-  try {
-    const res = await fetch(chrome.runtime.getURL(ORG_BRANDING_FILE), { cache: 'no-store' });
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (!data || typeof data !== 'object' || data.enabled === false) return null;
-    const name = String(data.name || '').trim().slice(0, BRAND_NAME_MAX);
-    const appName = String(data.appName || '').trim().slice(0, BRAND_NAME_MAX);
-    const appUrl = sanitizeAppUrl(data.appUrl || data.url || '');
-    const logoRaw = String(data.logo || '').trim();
-    if (!name && !logoRaw && !appName && !appUrl) return null;
-    return {
-      name,
-      appName,
-      appUrl,
-      logoRaw,
-      locked: data.locked === true
-    };
-  } catch (_err) {
-    return null;
-  }
+  const data = await loadOrgFile();
+  if (!data || data.enabled === false) return null;
+  const name = String(data.name || '').trim().slice(0, BRAND_NAME_MAX);
+  const appName = String(data.appName || '').trim().slice(0, BRAND_NAME_MAX);
+  const appUrl = sanitizeAppUrl(data.appUrl || data.url || '');
+  const logoRaw = String(data.logo || '').trim();
+  if (!name && !logoRaw && !appName && !appUrl) return null;
+  return {
+    name,
+    appName,
+    appUrl,
+    logoRaw,
+    locked: data.locked === true
+  };
 }
 
 function orgLogoParts(logoRaw) {

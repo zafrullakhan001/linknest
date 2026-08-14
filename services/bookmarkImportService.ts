@@ -167,8 +167,14 @@ export const friendlyExtensionBookmarkError = (raw?: string): string => {
   ) {
     return 'Extension was reloaded. Refresh this page, then try Sync again.';
   }
+  if (lower.includes('turned off') || lower.includes('enable bookmark sync')) {
+    return 'Turn Bookmark sync On in the extension popup (it starts Off), then try Sync again — or use Import HTML.';
+  }
+  if (lower.includes('allowlist') || lower.includes('not allowed')) {
+    return 'This site is not on the Bookmark Sync allowlist. Ask IT to add this origin to org-branding.json allowedOrigins — or use Import HTML.';
+  }
   if (lower.includes('timeout') || lower.includes('not available') || lower.includes('install')) {
-    return 'Install extension or use Import HTML.';
+    return 'Install extension, turn Bookmark sync On, confirm this site is allowlisted, or use Import HTML.';
   }
   // Keep short unknown errors; otherwise fall back to the standard hint
   if (msg.length <= 120 && !lower.includes('undefined') && !lower.includes('null')) {
@@ -177,9 +183,14 @@ export const friendlyExtensionBookmarkError = (raw?: string): string => {
   return 'Install extension or use Import HTML.';
 };
 
+/** Same-window replies from our content script (reject other frames / origins). */
+export const isTrustedPageExtensionMessage = (event: MessageEvent): boolean =>
+  event.source === window && event.origin === window.location.origin;
+
 /**
  * Ask LinkNest Bookmark Sync or Browser Launcher Pro (compatible postMessage
  * protocol) for the user's bookmarks. Resolves with bookmarks or a friendly failure.
+ * Only accepts replies from this page origin.
  */
 export const requestBookmarksFromBrowserExtension = (
   timeoutMs = 12000
@@ -187,6 +198,7 @@ export const requestBookmarksFromBrowserExtension = (
   return new Promise((resolve) => {
     const timestamp = Date.now();
     let settled = false;
+    const targetOrigin = window.location.origin;
 
     const finish = (result: BrowserExtensionBookmarksResult) => {
       if (settled) return;
@@ -197,6 +209,7 @@ export const requestBookmarksFromBrowserExtension = (
     };
 
     const onMessage = (event: MessageEvent) => {
+      if (!isTrustedPageExtensionMessage(event)) return;
       const data = event.data;
       if (
         !data ||
@@ -247,7 +260,7 @@ export const requestBookmarksFromBrowserExtension = (
       finish({
         ok: false,
         reason: 'timeout',
-        message: 'Install extension or use Import HTML.'
+        message: 'Install extension, turn Bookmark sync On, confirm this site is allowlisted, or use Import HTML.'
       });
     }, timeoutMs);
 
@@ -257,7 +270,7 @@ export const requestBookmarksFromBrowserExtension = (
         type: 'BROWSER_LAUNCHER_GET_BOOKMARKS',
         timestamp
       },
-      '*'
+      targetOrigin
     );
   });
 };

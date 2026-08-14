@@ -130,12 +130,14 @@ function updateSyncToggleUi(on) {
   const version = document.getElementById('version');
   if (hint) {
     hint.textContent = on
-      ? 'On — the app Sync button can read bookmarks from this browser.'
-      : 'Off — the app Sync button cannot read bookmarks.';
+      ? 'On — only this browser profile’s bookmarks, and only on allowlisted LinkNest sites.'
+      : 'Off — the app Sync button cannot read bookmarks. Turn on to sync this profile only.';
   }
   if (note) note.hidden = !!on;
   if (version) {
-    version.textContent = on ? 'v1.5.1 · bookmarks only' : 'v1.5.1 · sync off';
+    version.textContent = on
+      ? 'v' + EXTENSION_VERSION + ' · this profile only'
+      : 'v' + EXTENSION_VERSION + ' · sync off';
   }
 }
 
@@ -144,6 +146,20 @@ async function hydrateSyncToggle() {
   const input = document.getElementById('sync-enabled');
   if (input) input.checked = on;
   updateSyncToggleUi(on);
+}
+
+async function hydrateAllowlistHint() {
+  const el = document.getElementById('allowlist-hint');
+  if (!el || typeof loadOriginPolicy !== 'function') return;
+  try {
+    const policy = await loadOriginPolicy();
+    const list = (policy && policy.allowedOrigins) || [];
+    el.textContent = list.length
+      ? 'Allowed LinkNest sites: ' + list.join(', ')
+      : 'No sites are allowlisted. Edit org-branding.json allowedOrigins before Sync will work.';
+  } catch (_err) {
+    el.textContent = '';
+  }
 }
 
 function setBrandingLocked(locked) {
@@ -310,5 +326,6 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 void hydrateBrandingForm();
 void hydrateSyncToggle();
+void hydrateAllowlistHint();
 loadCount();
 loadSyncStats();

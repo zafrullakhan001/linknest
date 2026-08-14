@@ -1,10 +1,13 @@
 /**
  * LinkNest Bookmark Sync — service worker (MV3).
  * Bookmark flatten for LinkNest / Fav Organizer, plus stored toolbar branding.
+ * Bookmarks are read only from this Chrome/Edge profile (never another user or PC).
  */
 importScripts('branding.js');
 
-const VERSION = '1.5.1';
+const VERSION = EXTENSION_VERSION;
+const ORIGIN_DENIED_MESSAGE =
+  'This site is not on the organisation allowlist. Bookmark Sync only answers your LinkNest origin.';
 
 function flattenBookmarks(nodes, out) {
   if (!Array.isArray(nodes)) return;
@@ -48,18 +51,45 @@ function readBookmarkTree() {
   });
 }
 
-chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
+function isExtensionPageSender(sender) {
+  if (!sender) return false;
+  const url = String(sender.url || '');
+  return url.indexOf(chrome.runtime.getURL('')) === 0;
+}
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (!request) return;
+
+  if (request.action === 'pageGate') {
+    const origin = senderPageOrigin(sender);
+    Promise.all([isOriginAllowed(origin), getSyncEnabled()]).then(([allowed, enabled]) => {
+      sendResponse({ allowed: !!allowed, syncEnabled: !!enabled, origin: origin });
+    });
+    return true;
+  }
+
   if (request.action === 'getSyncStats') {
+    if (!isExtensionPageSender(sender)) {
+      sendResponse({ count: 0 });
+      return;
+    }
     getSyncStats().then(sendResponse);
     return true;
   }
+
   if (request.action === 'isSyncEnabled') {
     getSyncEnabled().then((enabled) => sendResponse({ enabled: !!enabled }));
     return true;
   }
+
   if (request.action !== 'getBookmarks') return;
-  getSyncEnabled().then((enabled) => {
+
+  const origin = senderPageOrigin(sender);
+  Promise.all([isOriginAllowed(origin), getSyncEnabled()]).then(([allowed, enabled]) => {
+    if (!allowed) {
+      sendResponse({ success: false, error: ORIGIN_DENIED_MESSAGE });
+      return;
+    }
     if (!enabled) {
       sendResponse({ success: false, error: SYNC_DISABLED_MESSAGE });
       return;
@@ -95,7 +125,7 @@ function restoreSyncToggle() {
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !changes.syncEnabled) return;
-  applySyncEnabledBadge(changes.syncEnabled.newValue !== false);
+  applySyncEnabledBadge(changes.syncEnabled.newValue === true);
 });
 
 restoreSyncToggle();

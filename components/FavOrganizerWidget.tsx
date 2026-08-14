@@ -9,7 +9,9 @@ import {
   ImportedBookmark,
   parseHTMLBookmarks,
   deduplicateBookmarks,
-  groupBookmarksByDomain
+  groupBookmarksByDomain,
+  isTrustedPageExtensionMessage,
+  requestBookmarksFromBrowserExtension
 } from '../services/bookmarkImportService';
 
 type Bookmark = ImportedBookmark;
@@ -235,9 +237,12 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
     };
 
     const responseListener = (event: MessageEvent) => {
-      if (event.data &&
+      if (
+        isTrustedPageExtensionMessage(event) &&
+        event.data &&
         event.data.type === 'BROWSER_LAUNCHER_CHECK_RESPONSE' &&
-        event.data.timestamp === timestamp) {
+        event.data.timestamp === timestamp
+      ) {
         window.removeEventListener('message', responseListener);
         extensionFound = true;
 
@@ -250,7 +255,7 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
     };
 
     window.addEventListener('message', responseListener);
-    window.postMessage(checkMessage, '*');
+    window.postMessage(checkMessage, window.location.origin);
 
     // Timeout after 3 seconds
     setTimeout(() => {
@@ -274,56 +279,28 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
     setError(null);
 
     try {
-      const timestamp = Date.now();
-      const message = {
-        type: 'BROWSER_LAUNCHER_GET_BOOKMARKS',
-        timestamp: timestamp
-      };
+      const result = await requestBookmarksFromBrowserExtension(15000);
+      if (!result.ok) {
+        setError(result.message);
+        setLoading(false);
+        return;
+      }
 
-      const responseListener = (event: MessageEvent) => {
-        if (event.data &&
-          event.data.type === 'BROWSER_LAUNCHER_BOOKMARKS_LIST' &&
-          event.data.timestamp === timestamp) {
-          window.removeEventListener('message', responseListener);
+      const { unique, duplicateCount } = deduplicateBookmarks(result.bookmarks);
+      setBookmarks(unique);
+      setUniqueBookmarks(unique);
+      setDuplicateCount(duplicateCount);
+      autoGenerateTilesByDomain(unique);
 
-          if (event.data.success && event.data.bookmarks) {
-            // Deduplicate bookmarks
-            const { unique, duplicateCount } = deduplicateBookmarks(event.data.bookmarks);
-
-            setBookmarks(unique);
-            setUniqueBookmarks(unique);
-            setDuplicateCount(duplicateCount);
-
-            // Auto-generate tiles
-            autoGenerateTilesByDomain(unique);
-
-            if (unique.length === 0) {
-              setError('No bookmarks found in browser extension.');
-            } else {
-              setError(null);
-              if (duplicateCount > 0) {
-                console.log(`Filtered ${duplicateCount} duplicate bookmark(s). Processing ${unique.length} unique links.`);
-              }
-            }
-          } else {
-            setError(event.data?.error || 'Failed to fetch bookmarks from extension.');
-          }
-
-          setLoading(false);
+      if (unique.length === 0) {
+        setError('No bookmarks found in browser extension.');
+      } else {
+        setError(null);
+        if (duplicateCount > 0) {
+          console.log(`Filtered ${duplicateCount} duplicate bookmark(s). Processing ${unique.length} unique links.`);
         }
-      };
-
-      window.addEventListener('message', responseListener);
-      window.postMessage(message, '*');
-
-      // Timeout after 15 seconds
-      setTimeout(() => {
-        window.removeEventListener('message', responseListener);
-        if (loading) {
-          setError('Timeout waiting for extension response. Install LinkNest Bookmark Sync (extensions/bookmark-sync) or Browser Launcher Pro, then reload.');
-          setLoading(false);
-        }
-      }, 15000);
+      }
+      setLoading(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch bookmarks from extension.');
       setLoading(false);
@@ -2930,7 +2907,7 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
                   <p className="text-xs">✅ Extension detected! You can fetch bookmarks now.</p>
                 )}
                 {extensionStatus === 'not-found' && (
-                  <p className="text-xs">⚠️ Extension not detected. Load unpacked extensions/bookmark-sync (or install Browser Launcher Pro) from chrome://extensions, then refresh.</p>
+                  <p className="text-xs">⚠️ Extension not detected. Install Bookmark Sync in this browser profile, turn Bookmark sync On, confirm this site is allowlisted, then refresh. Or use Import HTML.</p>
                 )}
                 {extensionStatus === 'error' && (
                   <p className="text-xs">❌ Error detecting extension. Please refresh the page and try again.</p>

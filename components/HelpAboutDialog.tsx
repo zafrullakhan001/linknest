@@ -413,7 +413,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Favorites &amp; Your Bookmarks</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Favorite spaces and links for quick access. Guests can import Chrome bookmarks into domain spaces, use compact title-only views, check link health, and run Rewrite tools for branding migrations (domain/path, cleanup, pipelines, recipes, undo). Full guide: Guides → Your Bookmarks &amp; Favorite Links.
+                      Favorite spaces and links for quick access. Guests can import Chrome bookmarks into domain spaces (HTML or Bookmark Sync from <strong>this browser profile</strong> only), use compact title-only views, check link health, and run Rewrite tools. Full guide: Guides → Your Bookmarks &amp; Favorite Links.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -626,11 +626,11 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-violet-50 dark:bg-violet-900/20 rounded-lg p-4 space-y-2 border border-violet-200 dark:border-violet-800">
                     <p className="font-medium text-violet-950 dark:text-violet-100">3. Bookmark Sync extension</p>
                     <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
-                      <li>Load unpacked <code className="text-xs bg-violet-100 dark:bg-violet-900/40 px-1 rounded">extensions/bookmark-sync</code> in the same browser. Allow the <strong>bookmarks</strong> permission</li>
-                      <li>The <strong>name/logo do not connect Sync</strong>. The app posts <code className="text-xs bg-violet-100 dark:bg-violet-900/40 px-1 rounded">BROWSER_LAUNCHER_GET_BOOKMARKS</code>; the extension replies with the bookmark list</li>
-                      <li>Turn <strong>Bookmark sync</strong> off in the extension popup when you do not want the app to read bookmarks (toolbar shows OFF)</li>
-                      <li>Optional app link on Branding makes “Open …” clickable so people do not guess the URL</li>
-                      <li>Full guide: <strong>Guides → Bookmark Sync Extension</strong> (also the extension popup Help tab)</li>
+                      <li>Load unpacked <code className="text-xs bg-violet-100 dark:bg-violet-900/40 px-1 rounded">extensions/bookmark-sync</code> (or IT force-install) in <strong>your</strong> Chrome/Edge profile. Allow the <strong>bookmarks</strong> permission</li>
+                      <li>Turn <strong>Bookmark sync On</strong> in the popup (it starts <strong>Off</strong>; toolbar shows OFF). Only <strong>this profile’s</strong> bookmarks are read — not another user’s browser</li>
+                      <li>The site must be on the organisation <strong>allowlist</strong> (<code className="text-xs bg-violet-100 dark:bg-violet-900/40 px-1 rounded">allowedOrigins</code> in <code className="text-xs bg-violet-100 dark:bg-violet-900/40 px-1 rounded">org-branding.json</code>). Other websites cannot request your bookmark tree</li>
+                      <li>The <strong>name/logo do not connect Sync</strong>. The app posts <code className="text-xs bg-violet-100 dark:bg-violet-900/40 px-1 rounded">BROWSER_LAUNCHER_GET_BOOKMARKS</code> to this page origin; the extension replies only if allowlisted and sync is on</li>
+                      <li>Mass deploy: pack a signed CRX, set <code className="text-xs bg-violet-100 dark:bg-violet-900/40 px-1 rounded">allowedOrigins</code> to only your LinkNest origin, force-install <strong>per user</strong> (Intune/GPO). Full guide: <strong>Guides → Bookmark Sync Extension</strong></li>
                     </ul>
                   </div>
 
@@ -1734,7 +1734,7 @@ package-for-deployment.bat -BasePath "/myapp"`}</pre>
                     <li><strong>In-app App Updates:</strong> Check GitHub commits/releases, preview changes, apply with DB backup, and roll back from Admin (XAMPP installs). Office tip: publish a <strong>portable Release</strong> (default relative base) and apply the same Release on ArchLinks and ERP3 — see Help → In-app App Updates</li>
                     <li><strong>XAMPP PHP upgrade:</strong> PowerShell script to move to PHP 8.5+ with LDAP verification — see Guides → Upgrade PHP in XAMPP</li>
                     <li><strong>Package for Deployment:</strong> <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">package-for-deployment.bat</code> builds a full XAMPP ZIP with SQLite runtime, remote-widget binaries, and optional DB/uploads flags</li>
-                    <li><strong>Bookmark Sync extension:</strong> Lightweight Chrome/Edge add-on for Your Bookmarks Sync; name/logo are labels only; toggle sync off in the popup — Help → Guides → Bookmark Sync Extension</li>
+                    <li><strong>Bookmark Sync extension:</strong> Origin allowlist, Bookmark sync Off by default, same-origin messages, and per-browser-profile isolation so each user can only sync their own bookmarks — Help → Guides → Bookmark Sync Extension</li>
                     <li><strong>Guides tab:</strong> Searchable in-app documentation (Your Bookmarks, Bookmark Sync Extension, Architecture, App Updates, Package for Deployment, XAMPP PHP upgrade, SSH / VNC Manual Deployment, SSH Session Shared Worker, Remote Widgets Setup, and more)</li>
                     <li><strong>SSH sessions across refresh:</strong> SharedWorker in browser memory keeps live SSH sockets through page reload; close the widget to disconnect — Help → SSH sessions across refresh / Guides → SSH Session Shared Worker</li>
                     <li><strong>SSH / VNC manual deploy:</strong> Online, air-gapped runtime pack, HTTPS WSS proxy, Easy mode, <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">ssh://</code> / <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">vnc://</code> space links — Help and Guides</li>
