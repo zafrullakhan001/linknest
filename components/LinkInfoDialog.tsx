@@ -319,7 +319,7 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
         <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-slate-900/50 px-5 py-4">
           {displayHtml ? (
             <div
-              className="link-info-viewer text-sm text-slate-700 dark:text-slate-200"
+              className="link-info-viewer ln-tinymce-content text-slate-700 dark:text-slate-200"
               dangerouslySetInnerHTML={{ __html: displayHtml }}
             />
           ) : (
@@ -327,123 +327,6 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
               No information available for this link.
             </div>
           )}
-          <style>{`
-            .link-info-viewer {
-              word-break: break-word;
-              white-space: pre-wrap;
-              line-height: 1.55;
-            }
-            .link-info-viewer h1,
-            .link-info-viewer h2,
-            .link-info-viewer h3,
-            .link-info-viewer h4,
-            .link-info-viewer h5,
-            .link-info-viewer h6 {
-              color: #0f172a;
-              font-weight: 600;
-              margin: 0.85em 0 0.4em;
-              line-height: 1.35;
-            }
-            .dark .link-info-viewer h1,
-            .dark .link-info-viewer h2,
-            .dark .link-info-viewer h3,
-            .dark .link-info-viewer h4,
-            .dark .link-info-viewer h5,
-            .dark .link-info-viewer h6 {
-              color: #f1f5f9;
-            }
-            .link-info-viewer h1 { font-size: 1.25rem; }
-            .link-info-viewer h2 { font-size: 1.125rem; }
-            .link-info-viewer h3 { font-size: 1rem; }
-            .link-info-viewer p { margin: 0.35em 0; }
-            .link-info-viewer strong,
-            .link-info-viewer b {
-              color: #1e293b;
-              font-weight: 600;
-            }
-            .dark .link-info-viewer strong,
-            .dark .link-info-viewer b {
-              color: #e2e8f0;
-            }
-            .link-info-viewer a {
-              color: #2563eb;
-              text-decoration: underline;
-              text-underline-offset: 2px;
-            }
-            .dark .link-info-viewer a {
-              color: #60a5fa;
-            }
-            .link-info-viewer ul,
-            .link-info-viewer ol {
-              margin: 0.5em 0;
-              padding-left: 1.5em;
-            }
-            .link-info-viewer ul { list-style-type: disc; }
-            .link-info-viewer ol { list-style-type: decimal; }
-            .link-info-viewer li { margin: 0.2em 0; }
-            .link-info-viewer table {
-              width: 100%;
-              border-collapse: collapse;
-              margin: 0.75em 0;
-              border: 1px solid #e2e8f0;
-              border-radius: 0.5rem;
-              overflow: hidden;
-            }
-            .dark .link-info-viewer table {
-              border-color: #334155;
-            }
-            .link-info-viewer table th,
-            .link-info-viewer table td {
-              border: 1px solid #e2e8f0;
-              padding: 0.5em 0.75em;
-              text-align: left;
-            }
-            .dark .link-info-viewer table th,
-            .dark .link-info-viewer table td {
-              border-color: #334155;
-            }
-            .link-info-viewer table th {
-              background-color: #f8fafc;
-              font-weight: 600;
-              color: #334155;
-            }
-            .dark .link-info-viewer table th {
-              background-color: #1e293b;
-              color: #e2e8f0;
-            }
-            .link-info-viewer blockquote {
-              border-left: 3px solid #94a3b8;
-              padding-left: 0.85em;
-              margin: 0.75em 0;
-              color: #64748b;
-            }
-            .link-info-viewer code {
-              background-color: #f1f5f9;
-              padding: 0.125em 0.3em;
-              border-radius: 0.25rem;
-              font-family: ui-monospace, monospace;
-              font-size: 0.875em;
-            }
-            .dark .link-info-viewer code {
-              background-color: #1e293b;
-            }
-            .link-info-viewer img {
-              max-width: 100%;
-              height: auto;
-              display: block;
-              margin: 0.5em 0;
-              border-radius: 0.5rem;
-            }
-            .link-info-viewer div[style*="background-color"] {
-              border-radius: 0.5rem;
-              padding: 0.85em;
-              margin: 0.65em 0;
-              border: 1px solid #e2e8f0;
-            }
-            .dark .link-info-viewer div[style*="background-color"] {
-              border-color: #334155;
-            }
-          `}</style>
         </div>
 
         {/* Footer */}

@@ -366,7 +366,7 @@ export const LinkNotesDialog: React.FC<LinkNotesDialogProps> = ({
         <div className="flex-1 overflow-y-auto px-5 py-4 bg-slate-50 dark:bg-slate-900/50">
           {displayHtml ? (
             <div
-              className="link-notes-viewer text-sm text-slate-700 dark:text-slate-200"
+              className="link-notes-viewer ln-tinymce-content text-slate-700 dark:text-slate-200"
               dangerouslySetInnerHTML={{ __html: displayHtml }}
             />
           ) : (
@@ -374,46 +374,6 @@ export const LinkNotesDialog: React.FC<LinkNotesDialogProps> = ({
               <p className="text-sm">No notes for this link yet.</p>
             </div>
           )}
-          <style>{`
-            .link-notes-viewer {
-              word-break: break-word;
-              line-height: 1.55;
-            }
-            .link-notes-viewer p {
-              margin: 0.35em 0;
-            }
-            .link-notes-viewer p:has(> strong:only-child) {
-              margin-top: 0.95em;
-              margin-bottom: 0.25em;
-            }
-            .link-notes-viewer p:first-child {
-              margin-top: 0;
-            }
-            .link-notes-viewer strong,
-            .link-notes-viewer b {
-              color: #1e293b;
-              font-weight: 600;
-            }
-            .dark .link-notes-viewer strong,
-            .dark .link-notes-viewer b {
-              color: #e2e8f0;
-            }
-            .link-notes-viewer a {
-              color: #2563eb;
-              text-decoration: underline;
-              text-underline-offset: 2px;
-              word-break: break-all;
-            }
-            .dark .link-notes-viewer a {
-              color: #60a5fa;
-            }
-            .link-notes-viewer a:hover {
-              color: #1d4ed8;
-            }
-            .dark .link-notes-viewer a:hover {
-              color: #93c5fd;
-            }
-          `}</style>
         </div>
 
         {/* Footer */}

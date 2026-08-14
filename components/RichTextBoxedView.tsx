@@ -62,7 +62,7 @@ function footerFontSizePx(size?: BoxFontSize | null): number {
 
 /**
  * Renders section rich text with optional styled header/footer box.
- * Always linkifies bare URLs/emails and preserves whitespace (pre-wrap).
+ * Always linkifies bare URLs/emails. Display styles match TinyMCE via .ln-tinymce-content.
  */
 export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
   content,
@@ -86,14 +86,13 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
   const html = linkifyHtml(content || '');
   const bodyBg = boxBodyBg || '#ffffff';
   const bodyStyle: React.CSSProperties = {
-    whiteSpace: 'pre-wrap',
     wordBreak: 'break-word',
     color: contrastText(bodyBg),
   };
 
   const body = (
     <div
-      className={`rich-text-content prose prose-sm max-w-none dark:prose-invert prose-p:my-1 prose-a:text-brand-600 dark:prose-a:text-brand-400 prose-headings:text-slate-800 dark:prose-headings:text-slate-200 ${bodyClassName}`}
+      className={`rich-text-content ln-tinymce-content ${bodyClassName}`}
       style={bodyStyle}
       dangerouslySetInnerHTML={{ __html: html || '' }}
     />

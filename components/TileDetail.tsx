@@ -5743,7 +5743,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         {tile.htmlContent && (
                             <div className="lg:hidden bg-white dark:bg-slate-800/30 rounded-xl border border-slate-200 dark:border-slate-700/50 p-6 shadow-sm">
                                 <div
-                                    className="prose prose-sm max-w-none dark:prose-invert"
+                                    className="ln-tinymce-content text-slate-700 dark:text-slate-200"
                                     dangerouslySetInnerHTML={{ __html: tile.htmlContent }}
                                 />
                             </div>
@@ -5753,7 +5753,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         {tile.htmlContent && (
                             <div className="hidden lg:block bg-white dark:bg-slate-800/20 border border-slate-200 dark:border-slate-800 p-6 rounded-xl shadow-sm">
                                 <div
-                                    className="prose prose-sm max-w-none dark:prose-invert prose-p:text-slate-600 dark:prose-p:text-slate-400 prose-a:text-brand-500 dark:prose-a:text-brand-400 prose-headings:text-slate-800 dark:prose-headings:text-slate-200 leading-relaxed"
+                                    className="ln-tinymce-content text-slate-700 dark:text-slate-200"
                                     dangerouslySetInnerHTML={{ __html: tile.htmlContent }}
                                 />
                             </div>
@@ -6053,7 +6053,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         boxFooterFontSize={item.boxFooterFontSize}
                                                                         boxHeaderEmoji={item.boxHeaderEmoji}
                                                                         boxImportance={item.boxImportance}
-                                                                        bodyClassName="prose-p:text-slate-600 dark:prose-p:text-slate-400 prose-a:text-brand-500 dark:prose-a:text-brand-400"
                                                                     />
                                                                 </div>
                                                             );

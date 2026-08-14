@@ -87,7 +87,7 @@ export const TinyMceRichTextEditor: React.FC<TinyMceRichTextEditorProps> = ({
     <div className={`tinymce-rich-text-editor ${className}`}>
       <div className="rounded-xl border-2 border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/60 p-3 space-y-3">
         <div
-          className="min-h-[80px] max-h-40 overflow-auto text-sm text-slate-800 dark:text-slate-200 prose prose-sm dark:prose-invert max-w-none"
+          className="min-h-[80px] max-h-40 overflow-auto text-slate-800 dark:text-slate-200 ln-tinymce-content"
           dangerouslySetInnerHTML={{ __html: previewHtml }}
         />
         <div className="flex justify-end">
