@@ -1892,7 +1892,7 @@ body.has-broadcast-banner .linknest-app-container {
 
 @media (min-width: 768px) {
   body.has-broadcast-banner .linknest-app-container {
-    /* 4rem nav (pt-16) + 40px banner — body rule must not override nav offset */
+    /* 4rem nav (pt-16) + 40px banner â body rule must not override nav offset */
     padding-top: calc(4rem + 40px);
   }
 }
@@ -7714,59 +7714,59 @@ body {
 }
 
 .tile-decor-christmas::before {
-  content: '🎅';
+  content: 'ð';
 }
 
 .tile-decor-thanksgiving::before {
-  content: '🦃';
+  content: 'ð¦';
 }
 
 .tile-decor-veterans::before {
-  content: '🎖️';
+  content: 'ðï¸';
 }
 
 .tile-decor-halloween::before {
-  content: '🎃';
+  content: 'ð';
 }
 
 .tile-decor-new-year::before {
-  content: '🎆';
+  content: 'ð';
 }
 
 .tile-decor-valentine::before {
-  content: '💖';
+  content: 'ð';
 }
 
 .tile-decor-st-patrick::before {
-  content: '🍀';
+  content: 'ð';
 }
 
 .tile-decor-easter::before {
-  content: '🥚';
+  content: 'ð¥';
 }
 
 .tile-decor-birthday::before {
-  content: '🎂';
+  content: 'ð';
 }
 
 .tile-decor-party::before {
-  content: '🎉';
+  content: 'ð';
 }
 
 .tile-decor-snow::before {
-  content: '❄️';
+  content: 'âï¸';
 }
 
 .tile-decor-autumn::before {
-  content: '🍁';
+  content: 'ð';
 }
 
 .tile-decor-spring::before {
-  content: '🌸';
+  content: 'ð¸';
 }
 
 .tile-decor-summer::before {
-  content: '☀️';
+  content: 'âï¸';
 }
 
 @keyframes widgetMenuFadeIn {
@@ -7842,7 +7842,7 @@ body {
   background: rgb(51 65 85);
 }
 
-/* SSH / RDP left panel chrome — font size must scale past Tailwind text-[Npx] locks */
+/* SSH / RDP left panel chrome â font size must scale past Tailwind text-[Npx] locks */
 aside.ssh-sidebar-chrome {
   --ssh-side-fs: 12px;
   font-size: var(--ssh-side-fs);
@@ -7878,4 +7878,37 @@ aside.ssh-sidebar-chrome button,
 aside.ssh-sidebar-chrome label,
 aside.ssh-sidebar-chrome p {
   font-family: inherit;
+}
+
+/* Hide native search clear so it doesn't stack on custom X buttons (esp. mobile WebKit) */
+input[type="search"]::-webkit-search-decoration,
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-results-button,
+input[type="search"]::-webkit-search-results-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
+input[type="search"]::-ms-clear {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* Your Bookmarks tiles — denser below md (override theme !important padding/font) */
+@media (max-width: 767px) {
+  .linknest-bookmarks-tile-grid .linknest-tile {
+    min-height: 0 !important;
+    height: auto !important;
+    padding: 10px !important;
+  }
+
+  .linknest-bookmarks-tile-grid .linknest-tile h3 {
+    font-size: 0.8125rem !important;
+    line-height: 1.25 !important;
+  }
+
+  .linknest-bookmarks-tile-grid .linknest-tile p {
+    font-size: 0.6875rem !important;
+  }
 }

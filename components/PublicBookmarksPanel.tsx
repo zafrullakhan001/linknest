@@ -1112,7 +1112,10 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
             <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd" />
           </svg>
           <input
-            type="search"
+            type="text"
+            inputMode="search"
+            enterKeyHint="search"
+            autoComplete="off"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={
@@ -1120,17 +1123,18 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                 ? 'Search links in this space…'
                 : 'Search spaces or links by title / URL…'
             }
-            className="w-full pl-9 pr-9 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/40 focus:border-sky-400"
+            className="w-full pl-9 pr-10 py-2.5 sm:py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/40 focus:border-sky-400"
             aria-label="Search bookmarks"
           />
           {isSearching && (
             <button
               type="button"
               onClick={() => setSearchQuery('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 inline-flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/80 transition-colors"
               title="Clear search"
+              aria-label="Clear search"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 pointer-events-none" aria-hidden>
                 <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
               </svg>
             </button>
@@ -2598,7 +2602,13 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
               Showing {displayCategories.length} of {data.categories.length} space{data.categories.length === 1 ? '' : 's'}
             </p>
           )}
-          <div className={compact ? 'grid grid-cols-3 gap-4' : 'linknest-tile-grid'}>
+          <div
+            className={
+              compact
+                ? 'grid grid-cols-3 gap-4'
+                : 'linknest-tile-grid linknest-bookmarks-tile-grid'
+            }
+          >
             {displayCategories.map((cat, displayIndex) => {
               const fullIndex = data.categories.findIndex((c) => c.id === cat.id);
               const canMoveLeft = !isSearching && isManualSort && fullIndex > 0;
@@ -2633,15 +2643,15 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                     linknest-tile ${tileAnimatedClass} ${fullAnimationClass} group relative overflow-hidden rounded-xl
                     border border-slate-200 dark:border-slate-700/50 hover:border-brand-300 dark:hover:border-brand-500/50
                     transition-[transform,box-shadow,border-color] duration-200 ease-out
-                    flex flex-col h-full min-h-[140px] min-w-0 cursor-pointer
+                    flex flex-col h-auto md:h-full min-h-0 md:min-h-[140px] min-w-0 cursor-pointer
                     ${cat.pinned ? 'ring-1 ring-amber-300/50 dark:ring-amber-500/30' : ''}
                   `}
                 >
-                  <div className="flex items-start gap-2 mb-3 min-w-0">
+                  <div className="flex items-start gap-2 mb-1.5 md:mb-3 min-w-0">
                     <div className="flex items-center gap-2 shrink-0">
                       <div
                         className={`
-                          w-10 h-10 rounded-lg ${styles.soft} flex items-center justify-center text-lg
+                          w-8 h-8 md:w-10 md:h-10 rounded-lg ${styles.soft} flex items-center justify-center text-base md:text-lg
                           border ${styles.border} transition-shadow duration-200 ease-out group-hover:shadow-md overflow-hidden
                         `}
                       >
@@ -2652,7 +2662,20 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                         )}
                       </div>
                     </div>
-                    <div className="relative flex-1 min-w-0 min-h-[40px]">
+                    {/* Title sits beside icon on small screens to avoid a tall empty card */}
+                    <div className="flex-1 min-w-0 md:hidden">
+                      <h3
+                        className={`font-bold text-sm leading-tight line-clamp-2 ${styles.text}`}
+                      >
+                        {cat.pinned ? '📌 ' : ''}
+                        {cat.title}
+                      </h3>
+                      <p className="text-slate-600 dark:text-slate-400 text-[11px] line-clamp-1 leading-snug mt-0.5">
+                        {spaceLinkCount} link{spaceLinkCount === 1 ? '' : 's'}
+                        {recent ? ` · ${recent}` : ''}
+                      </p>
+                    </div>
+                    <div className="relative hidden md:block flex-1 min-w-0 min-h-[40px]">
                       <div className="relative z-10 opacity-0 group-hover:opacity-100 transition-opacity flex flex-wrap items-center gap-1 justify-end w-full min-w-0">
                         <button
                           type="button"
@@ -2707,7 +2730,7 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                     </div>
                   </div>
 
-                  <div className="relative z-[1] flex-1 mb-3">
+                  <div className="relative z-[1] hidden md:block flex-1 mb-3">
                     <h3
                       className={`font-bold text-sm leading-tight line-clamp-2 mb-1.5 ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}
                     >
@@ -2720,7 +2743,7 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                     </p>
                   </div>
 
-                  <div className="pt-2.5 border-t border-slate-100 dark:border-slate-700/50 flex items-center justify-between">
+                  <div className="pt-1.5 md:pt-2.5 border-t border-slate-100 dark:border-slate-700/50 flex items-center justify-between gap-1 mt-auto">
                     <div className={`flex items-center gap-1.5 text-xs font-medium ${styles.text}`}>
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
                         <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
@@ -2729,8 +2752,48 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                       <span>{spaceLinkCount}</span>
                     </div>
 
+                    {/* Mobile: always-visible compact actions (no hover) */}
+                    <div className="flex md:hidden items-center gap-0.5">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          applyData(
+                            updatePublicBookmarkCategory(cat.id, { pinned: !cat.pinned })
+                          );
+                        }}
+                        className={`p-1.5 rounded-md ${
+                          cat.pinned
+                            ? 'text-amber-500'
+                            : 'text-slate-400'
+                        }`}
+                        title={cat.pinned ? 'Unpin space' : 'Pin space'}
+                        aria-label={cat.pinned ? 'Unpin space' : 'Pin space'}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                          <path d="M10 2a.75.75 0 01.75.75v1.038a6.502 6.502 0 014.712 4.712H16.5a.75.75 0 010 1.5h-.038a6.502 6.502 0 01-4.712 4.712V16.5a.75.75 0 01-1.5 0v-1.038a6.502 6.502 0 01-4.712-4.712H3.5a.75.75 0 010-1.5h1.038A6.502 6.502 0 019.25 3.788V2.75A.75.75 0 0110 2z" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleDeleteSpace(cat);
+                        }}
+                        className="p-1.5 rounded-md text-slate-400"
+                        title="Delete this space"
+                        aria-label="Delete this space"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                          <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    </div>
+
                     {!isSearching && isManualSort ? (
-                      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 z-10">
+                      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity hidden md:flex items-center gap-0.5 z-10">
                         <button
                           type="button"
                           onClick={(e) => {
@@ -2769,7 +2832,7 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                         </button>
                       </div>
                     ) : (
-                      <div className="text-slate-300 dark:text-slate-600 group-hover:text-brand-500 transition-colors">
+                      <div className="hidden md:block text-slate-300 dark:text-slate-600 group-hover:text-brand-500 transition-colors">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                           <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
                         </svg>
