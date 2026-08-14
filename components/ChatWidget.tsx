@@ -139,17 +139,97 @@ const getAvatarGradient = (name: string, palettes: readonly string[]): string =>
   return palettes[hash % palettes.length];
 };
 
-const getAccountMeta = (item?: { auth_source?: string; email?: string; is_admin?: boolean }) => {
-  if (item?.is_admin) {
-    return { label: 'Admin', emoji: '👑', pill: 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200' };
-  }
-  if (item?.auth_source === 'saml') {
+const getAuthSourceMeta = (item?: { auth_source?: string }) => {
+  const source = String(item?.auth_source || 'local').trim().toLowerCase();
+  if (source === 'saml') {
     return { label: 'SAML', emoji: '🔐', pill: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-200' };
   }
-  if (item?.auth_source === 'ldap') {
+  if (source === 'ldap') {
     return { label: 'LDAP', emoji: '🏢', pill: 'bg-teal-100 text-teal-800 dark:bg-teal-900/50 dark:text-teal-200' };
   }
-  return { label: 'Local', emoji: '🏠', pill: 'bg-sky-100 text-sky-800 dark:bg-sky-900/50 dark:text-sky-200' };
+  if (source === 'local') {
+    return { label: 'Local', emoji: '🏠', pill: 'bg-sky-100 text-sky-800 dark:bg-sky-900/50 dark:text-sky-200' };
+  }
+  return {
+    label: source.toUpperCase(),
+    emoji: '🔑',
+    pill: 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
+  };
+};
+
+const ADMIN_PILL = {
+  label: 'Admin',
+  emoji: '👑',
+  pill: 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200',
+};
+
+type ShareTabId = 'private' | 'public' | 'authenticated' | 'staging';
+type ShareTabFilter = 'all' | ShareTabId;
+
+const SHARE_TAB_ORDER: ShareTabId[] = ['private', 'public', 'authenticated', 'staging'];
+
+const SHARE_TAB_META: Record<ShareTabId, { label: string; emoji: string; chip: string; header: string }> = {
+  private: {
+    label: 'Private tab',
+    emoji: '🔒',
+    chip: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
+    header: 'bg-amber-50 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200',
+  },
+  public: {
+    label: 'Public tab',
+    emoji: '🌍',
+    chip: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200',
+    header: 'bg-sky-50 text-sky-900 dark:bg-sky-900/30 dark:text-sky-200',
+  },
+  authenticated: {
+    label: 'Your Apps',
+    emoji: '👤',
+    chip: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200',
+    header: 'bg-indigo-50 text-indigo-900 dark:bg-indigo-900/30 dark:text-indigo-200',
+  },
+  staging: {
+    label: 'Staging',
+    emoji: '🧪',
+    chip: 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
+    header: 'bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-200',
+  },
+};
+
+const getShareTab = (tile: Tile): ShareTabId => {
+  if (tile.sourceTab === 'staging') return 'staging';
+  if (tile.visibility === 'private') return 'private';
+  if (tile.visibility === 'authenticated') return 'authenticated';
+  return 'public';
+};
+
+const getTileShareTags = (tile: Tile): string[] => {
+  const tags: string[] = [];
+  const group = (tile.group || '').trim();
+  if (group) tags.push(group);
+  if (Array.isArray(tile.searchTags)) {
+    for (const raw of tile.searchTags) {
+      const tag = String(raw).trim();
+      if (tag && !tags.some((existing) => existing.toLowerCase() === tag.toLowerCase())) {
+        tags.push(tag);
+      }
+    }
+  }
+  return tags;
+};
+
+const titleCaseToken = (token: string): string => {
+  if (!token) return '';
+  return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
+};
+
+/** First / last name guessed from the email local part (jane.doe@x.com → Jane Doe). */
+const nameFromEmail = (email?: string): string => {
+  if (!email || !email.includes('@')) return '';
+  const local = email.split('@')[0].trim();
+  if (!local) return '';
+  const parts = local.split(/[._+\-]+/).filter(Boolean);
+  if (parts.length === 0) return '';
+  return parts.map(titleCaseToken).join(' ');
 };
 
 interface ChatWidgetProps {
@@ -168,6 +248,9 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
   const [isLoading, setIsLoading] = useState(false);
   const [selectedTile, setSelectedTile] = useState<Tile | null>(null);
   const [showTileSelector, setShowTileSelector] = useState(false);
+  const [tileShareSearch, setTileShareSearch] = useState('');
+  const [tileShareTabFilter, setTileShareTabFilter] = useState<ShareTabFilter>('all');
+  const [tileShareTagFilter, setTileShareTagFilter] = useState<string | null>(null);
   const [showJsonInput, setShowJsonInput] = useState(false);
   const [showUserPanel, setShowUserPanel] = useState(true);
   const [jsonInput, setJsonInput] = useState('');
@@ -259,10 +342,16 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
     if (!userSearchTerm.trim()) {
       return users;
     }
-    const searchLower = userSearchTerm.toLowerCase();
-    return users.filter(u => 
-      u.username.toLowerCase().includes(searchLower)
-    );
+    const searchLower = userSearchTerm.trim().toLowerCase();
+    const searchDigits = searchLower.replace(/^#/, '');
+    return users.filter((u) => {
+      if (u.username.toLowerCase().includes(searchLower)) return true;
+      if (u.email && u.email.toLowerCase().includes(searchLower)) return true;
+      if (String(u.id) === searchDigits || String(u.id).includes(searchDigits)) return true;
+      const derivedName = nameFromEmail(u.email);
+      if (derivedName && derivedName.toLowerCase().includes(searchLower)) return true;
+      return false;
+    });
   }, [users, userSearchTerm]);
 
   // Filter messages based on search term
@@ -310,6 +399,55 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
       return false;
     });
   }, [tiles, user]);
+
+  const shareTabCounts = useMemo(() => {
+    const counts: Record<ShareTabId, number> = { private: 0, public: 0, authenticated: 0, staging: 0 };
+    shareableTiles.forEach((tile) => {
+      counts[getShareTab(tile)] += 1;
+    });
+    return counts;
+  }, [shareableTiles]);
+
+  const filteredShareTiles = useMemo(() => {
+    const query = tileShareSearch.trim().toLowerCase();
+    return shareableTiles.filter((tile) => {
+      const tab = getShareTab(tile);
+      if (tileShareTabFilter !== 'all' && tab !== tileShareTabFilter) return false;
+      const tags = getTileShareTags(tile);
+      if (
+        tileShareTagFilter &&
+        !tags.some((tag) => tag.toLowerCase() === tileShareTagFilter.toLowerCase())
+      ) {
+        return false;
+      }
+      if (!query) return true;
+      const haystack = [
+        tile.title,
+        tile.description,
+        tile.group,
+        SHARE_TAB_META[tab].label,
+        ...tags,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [shareableTiles, tileShareSearch, tileShareTabFilter, tileShareTagFilter]);
+
+  const groupedShareTiles = useMemo(() => {
+    return SHARE_TAB_ORDER
+      .map((tab) => ({
+        tab,
+        tiles: filteredShareTiles.filter((tile) => getShareTab(tile) === tab),
+      }))
+      .filter((group) => group.tiles.length > 0);
+  }, [filteredShareTiles]);
+
+  const visibleShareTabs = useMemo(
+    () => SHARE_TAB_ORDER.filter((tab) => shareTabCounts[tab] > 0),
+    [shareTabCounts]
+  );
 
   // Load users list function
   const loadUsers = async () => {
@@ -933,18 +1071,21 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
     );
   };
 
-  const renderAccountPill = (
-    item?: { auth_source?: string; email?: string; is_admin?: boolean },
-    selected = false
+  const renderAccountPills = (
+    item?: { auth_source?: string; email?: string; is_admin?: boolean }
   ) => {
-    const meta = getAccountMeta(item);
+    const source = getAuthSourceMeta(item);
+    const pills = item?.is_admin ? [ADMIN_PILL, source] : [source];
     return (
-      <span
-        className={`px-1.5 py-0.5 text-[10px] font-semibold rounded-full whitespace-nowrap ${
-          selected ? 'bg-white/25 text-white' : meta.pill
-        }`}
-      >
-        {meta.emoji} {meta.label}
+      <span className="inline-flex items-center gap-1 flex-wrap">
+        {pills.map((meta) => (
+          <span
+            key={meta.label}
+            className={`px-1.5 py-0.5 text-[10px] font-semibold rounded-full whitespace-nowrap ${meta.pill}`}
+          >
+            {meta.emoji} {meta.label}
+          </span>
+        ))}
       </span>
     );
   };
@@ -981,7 +1122,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
                 type="text"
                 value={userSearchTerm}
                 onChange={(e) => setUserSearchTerm(e.target.value)}
-                placeholder="🔍 Search people..."
+                placeholder="🔍 Search name, email, or ID..."
                 className={`w-full px-3 py-2 text-sm rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 ${t.search}`}
               />
             </div>
@@ -995,10 +1136,14 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
             ) : (
               filteredUsers.map((userItem) => {
                 const isSelected = selectedRecipient === userItem.id;
+                const derivedName = nameFromEmail(userItem.email);
+                const showDerivedName =
+                  !!derivedName && derivedName.toLowerCase() !== userItem.username.toLowerCase();
                 return (
                   <button
                     key={userItem.id}
                     onClick={() => setSelectedRecipient(userItem.id)}
+                    title={[userItem.username, derivedName, userItem.email, `ID ${userItem.id}`].filter(Boolean).join(' · ')}
                     className={`w-full text-left px-3 py-2 rounded-xl text-sm transition-all mb-1 ${
                       isSelected ? t.userOn : t.userOff
                     }`}
@@ -1006,10 +1151,17 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
                     <div className="flex items-center gap-2">
                       {renderAvatar(userItem.username)}
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 min-w-0">
                           <span className="font-semibold truncate">{userItem.username}</span>
-                          {renderAccountPill(userItem, isSelected)}
                         </div>
+                        <div className="flex items-center gap-1 mt-0.5 min-w-0">
+                          {renderAccountPills(userItem)}
+                        </div>
+                        {showDerivedName && (
+                          <div className={`text-[11px] truncate ${isSelected ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
+                            {derivedName}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </button>
@@ -1044,11 +1196,20 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
                   renderAvatar(getRecipientName(), 'md')
                 )}
                 <div className="min-w-0">
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white truncate">
-                    {selectedRecipient === null ? '🌍 Public Chat' : getRecipientName()}
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white truncate flex items-center gap-1.5">
+                    <span className="truncate">{selectedRecipient === null ? '🌍 Public Chat' : getRecipientName()}</span>
+                    {selectedRecipient !== null && renderAccountPills(users.find((u) => u.id === selectedRecipient))}
                   </h3>
                   <p className={`text-xs font-medium ${t.subtitle}`}>
-                    {selectedRecipient === null ? '💬 Everyone can see this' : '💌 Direct message'}
+                    {selectedRecipient === null
+                      ? '💬 Everyone can see this'
+                      : (() => {
+                          const recipient = users.find((u) => u.id === selectedRecipient);
+                          const derived = nameFromEmail(recipient?.email);
+                          return derived && derived.toLowerCase() !== (recipient?.username || '').toLowerCase()
+                            ? `💌 ${derived}`
+                            : '💌 Direct message';
+                        })()}
                   </p>
                 </div>
               </div>
@@ -1139,7 +1300,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
                     <span className={isOwn ? t.ownName : t.otherName}>
                       {isOwn ? '🙋 You' : message.username}
                     </span>
-                    {renderAccountPill(messageUser)}
+                    {renderAccountPills(messageUser)}
                     <span>🕒 {formatTime(message.created_at)}</span>
                   </div>
                   <div
@@ -1179,14 +1340,32 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
       {/* Input Area */}
       <div className={`p-3 ${t.composer}`}>
         {selectedTile && (
-          <div className="mb-2 p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 rounded-xl flex items-center justify-between">
-            <div className="flex items-center gap-2">
+          <div className="mb-2 p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 rounded-xl flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               <span className="text-lg">{selectedTile.emoji || '📦'}</span>
-              <span className="text-sm font-medium text-slate-900 dark:text-white">{selectedTile.title}</span>
+              <div className="min-w-0">
+                <span className="text-sm font-medium text-slate-900 dark:text-white truncate block">{selectedTile.title}</span>
+                <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                  {(() => {
+                    const tab = getShareTab(selectedTile);
+                    const meta = SHARE_TAB_META[tab];
+                    return (
+                      <span className={`px-1.5 py-0.5 text-[10px] font-semibold rounded-full ${meta.chip}`}>
+                        {meta.emoji} {meta.label.replace(' tab', '')}
+                      </span>
+                    );
+                  })()}
+                  {getTileShareTags(selectedTile).map((tag) => (
+                    <span key={tag} className="px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-teal-50 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200">
+                      🏷️ {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
             </div>
             <button
               onClick={() => setSelectedTile(null)}
-              className="text-slate-400 hover:text-rose-500 dark:hover:text-rose-300"
+              className="text-slate-400 hover:text-rose-500 dark:hover:text-rose-300 shrink-0"
               title="Remove attached tile"
             >
               ✖️
@@ -1233,35 +1412,145 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
         )}
 
         {showTileSelector && (
-          <div className="mb-2 max-h-48 overflow-y-auto border border-amber-200 dark:border-amber-700/40 rounded-xl bg-white dark:bg-slate-800">
-            {shareableTiles.length === 0 ? (
-              <div className="p-4 text-sm text-slate-500 dark:text-slate-400 text-center">
-                {user?.is_admin ? '📭 No tiles available' : '🔒 No private tiles available to share'}
-              </div>
-            ) : (
-              shareableTiles.map((tile) => (
+          <div className="mb-2 max-h-80 flex flex-col border border-amber-200 dark:border-amber-700/40 rounded-xl bg-white dark:bg-slate-800 overflow-hidden">
+            <div className="p-2 border-b border-amber-100 dark:border-slate-700 space-y-2 shrink-0">
+              <input
+                type="text"
+                value={tileShareSearch}
+                onChange={(e) => setTileShareSearch(e.target.value)}
+                placeholder="🔎 Filter tiles by name or tag..."
+                className={`w-full px-3 py-1.5 text-sm rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 ${t.search}`}
+              />
+              {visibleShareTabs.length > 1 && (
+                <div className="flex flex-wrap items-center gap-1 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTileShareTabFilter('all');
+                      setTileShareTagFilter(null);
+                    }}
+                    className={`px-2 py-0.5 text-[11px] font-semibold rounded-full whitespace-nowrap transition-colors ${
+                      tileShareTabFilter === 'all'
+                        ? 'bg-slate-800 text-white dark:bg-white dark:text-slate-900'
+                        : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    All ({shareableTiles.length})
+                  </button>
+                  {visibleShareTabs.map((tab) => {
+                    const meta = SHARE_TAB_META[tab];
+                    const active = tileShareTabFilter === tab;
+                    return (
+                      <button
+                        key={tab}
+                        type="button"
+                        onClick={() => {
+                          setTileShareTabFilter(active ? 'all' : tab);
+                          setTileShareTagFilter(null);
+                        }}
+                        className={`px-2 py-0.5 text-[11px] font-semibold rounded-full whitespace-nowrap transition-colors ${
+                          active ? `${meta.chip} ring-1 ring-current` : meta.chip
+                        }`}
+                      >
+                        {meta.emoji} {meta.label.replace(' tab', '')} ({shareTabCounts[tab]})
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {tileShareTagFilter && (
                 <button
-                  key={tile.id}
-                  onClick={() => {
-                    setSelectedTile(tile);
-                    setShowTileSelector(false);
-                  }}
-                  className="w-full p-3 text-left hover:bg-amber-50 dark:hover:bg-amber-900/20 flex items-center gap-3 border-b border-amber-100 dark:border-slate-700 last:border-b-0"
+                  type="button"
+                  onClick={() => setTileShareTagFilter(null)}
+                  className="px-2 py-0.5 text-[11px] font-medium rounded-full bg-teal-600 text-white inline-flex items-center gap-1"
+                  title="Clear tag filter"
                 >
-                  <span className="text-lg">{tile.emoji || '📦'}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm text-slate-900 dark:text-white truncate">
-                      {tile.title}
-                    </div>
-                    {tile.description && (
-                      <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                        {tile.description}
-                      </div>
-                    )}
-                  </div>
+                  🏷️ {tileShareTagFilter} ✕
                 </button>
-              ))
-            )}
+              )}
+            </div>
+            <div className="flex-1 overflow-y-auto min-h-0">
+              {shareableTiles.length === 0 ? (
+                <div className="p-4 text-sm text-slate-500 dark:text-slate-400 text-center">
+                  {user?.is_admin ? '📭 No tiles available' : '🔒 No private tiles available to share'}
+                </div>
+              ) : groupedShareTiles.length === 0 ? (
+                <div className="p-4 text-sm text-slate-500 dark:text-slate-400 text-center">
+                  🧐 No tiles match this filter
+                </div>
+              ) : (
+                groupedShareTiles.map((group) => {
+                  const meta = SHARE_TAB_META[group.tab];
+                  return (
+                    <div key={group.tab}>
+                      <div className={`sticky top-0 z-[1] px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide ${meta.header}`}>
+                        {meta.emoji} {meta.label} · {group.tiles.length}
+                      </div>
+                      {group.tiles.map((tile) => {
+                        const tags = getTileShareTags(tile);
+                        return (
+                          <button
+                            key={tile.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedTile(tile);
+                              setShowTileSelector(false);
+                            }}
+                            className="w-full p-3 text-left hover:bg-amber-50 dark:hover:bg-amber-900/20 flex items-start gap-3 border-b border-amber-100 dark:border-slate-700 last:border-b-0"
+                          >
+                            <span className="text-lg mt-0.5">{tile.emoji || '📦'}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-sm text-slate-900 dark:text-white truncate">
+                                {tile.title}
+                              </div>
+                              {tile.description && (
+                                <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                                  {tile.description}
+                                </div>
+                              )}
+                              <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                                <span className={`px-1.5 py-0.5 text-[10px] font-semibold rounded-full ${meta.chip}`}>
+                                  {meta.emoji} {meta.label.replace(' tab', '')}
+                                </span>
+                                {tags.map((tag) => (
+                                  <span
+                                    key={tag}
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      setTileShareTagFilter(
+                                        tileShareTagFilter?.toLowerCase() === tag.toLowerCase() ? null : tag
+                                      );
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key !== 'Enter' && e.key !== ' ') return;
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      setTileShareTagFilter(
+                                        tileShareTagFilter?.toLowerCase() === tag.toLowerCase() ? null : tag
+                                      );
+                                    }}
+                                    className={`px-1.5 py-0.5 text-[10px] font-medium rounded-full ${
+                                      tileShareTagFilter?.toLowerCase() === tag.toLowerCase()
+                                        ? 'bg-teal-600 text-white'
+                                        : 'bg-teal-50 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200 hover:bg-teal-100'
+                                    }`}
+                                  >
+                                    🏷️ {tag}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         )}
 
