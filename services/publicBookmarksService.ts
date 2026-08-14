@@ -7,6 +7,9 @@ import {
   normalizeBookmarkUrl,
   getBookmarkBaseDomain
 } from './bookmarkImportService';
+import type { Tile, ThemeColor } from '../types';
+import { THEME_COLORS } from '../types';
+import type { SpaceExportFile } from './spaceTransferService';
 
 /**
  * Guest "Your Bookmarks" — Chrome HTML import stored in scoped localStorage.
@@ -26,6 +29,11 @@ export interface PublicBookmarkLink {
   url: string;
   pinned?: boolean;
   lastOpenedAt?: string;
+  /** Last health probe status from check-url (guest bookmarks). */
+  healthStatus?: string;
+  healthHttpCode?: number | null;
+  healthError?: string | null;
+  healthCheckedAt?: string;
 }
 
 export interface PublicBookmarkCategory {
@@ -119,6 +127,18 @@ const normalizeLink = (raw: unknown): PublicBookmarkLink | null => {
     lastOpenedAt:
       typeof link.lastOpenedAt === 'string' && link.lastOpenedAt.trim()
         ? link.lastOpenedAt.trim()
+        : undefined,
+    healthStatus:
+      typeof link.healthStatus === 'string' && link.healthStatus.trim()
+        ? link.healthStatus.trim()
+        : undefined,
+    healthHttpCode:
+      typeof link.healthHttpCode === 'number' ? link.healthHttpCode : null,
+    healthError:
+      typeof link.healthError === 'string' ? link.healthError : undefined,
+    healthCheckedAt:
+      typeof link.healthCheckedAt === 'string' && link.healthCheckedAt.trim()
+        ? link.healthCheckedAt.trim()
         : undefined
   };
 };
@@ -188,7 +208,12 @@ export type BookmarkSortMode =
   | 'alpha-asc'
   | 'alpha-desc'
   | 'links-max'
-  | 'links-min';
+  | 'links-min'
+  | 'broken-first';
+
+/** Broken or timed-out after a health check (used for sort + remove). */
+export const isRemovableBrokenBookmarkHealth = (status?: string): boolean =>
+  status === 'broken' || status === 'timeout';
 
 const partitionPinned = <T extends { pinned?: boolean }>(items: T[]): [T[], T[]] => [
   items.filter((i) => i.pinned),
@@ -204,7 +229,7 @@ export const sortBookmarkCategories = (
   mode: BookmarkSortMode = 'manual'
 ): PublicBookmarkCategory[] => {
   const [pinned, rest] = partitionPinned(categories);
-  if (mode === 'manual') return [...pinned, ...rest];
+  if (mode === 'manual' || mode === 'broken-first') return [...pinned, ...rest];
 
   const compare = (a: PublicBookmarkCategory, b: PublicBookmarkCategory): number => {
     switch (mode) {
@@ -233,6 +258,17 @@ export const sortBookmarkLinks = (
   links: PublicBookmarkLink[],
   mode: BookmarkSortMode = 'manual'
 ): PublicBookmarkLink[] => {
+  // Broken/timeout first (then pinned within each group)
+  if (mode === 'broken-first') {
+    const broken = links.filter((l) => isRemovableBrokenBookmarkHealth(l.healthStatus));
+    const ok = links.filter((l) => !isRemovableBrokenBookmarkHealth(l.healthStatus));
+    const orderPinned = (list: PublicBookmarkLink[]) => {
+      const [pinned, rest] = partitionPinned(list);
+      return [...pinned, ...rest];
+    };
+    return [...orderPinned(broken), ...orderPinned(ok)];
+  }
+
   const [pinned, rest] = partitionPinned(links);
   // Link-count modes don't apply inside a space — fall back to manual order.
   if (mode === 'manual' || mode === 'links-max' || mode === 'links-min') {
@@ -763,6 +799,338 @@ export const downloadPublicBookmarkCategoryHtml = (
   }
 };
 
+/** Normalize user domain input (strip protocol/path; keep host only). */
+export const normalizeDomainInput = (raw: string): string => {
+  let s = raw.trim().toLowerCase();
+  if (!s) return '';
+  s = s.replace(/^https?:\/\//i, '');
+  s = s.split('/')[0].split('?')[0].split('#')[0];
+  s = s.replace(/:\d+$/, '');
+  s = s.replace(/^\.+|\.+$/g, '');
+  return s;
+};
+
+/**
+ * Rewrite hostname when it equals or is a subdomain of fromDomain.
+ * e.g. www.ahss.org + ahss.org → www.adventhealth.com
+ */
+export const rewriteBookmarkUrlDomain = (
+  url: string,
+  fromDomain: string,
+  toDomain: string
+): string | null => {
+  const from = normalizeDomainInput(fromDomain);
+  const to = normalizeDomainInput(toDomain);
+  if (!from || !to || from === to) return null;
+
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    if (host === from) {
+      parsed.hostname = to;
+      return parsed.toString();
+    }
+    if (host.endsWith(`.${from}`)) {
+      parsed.hostname = `${host.slice(0, -(from.length + 1))}.${to}`;
+      return parsed.toString();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
+
+const titleLooksLikeDomain = (title: string, domain: string): boolean => {
+  const t = title.trim().toLowerCase();
+  const d = domain.toLowerCase();
+  if (!t || !d) return false;
+  if (t === d || t === `www.${d}`) return true;
+  // Domain-style titles from grouping (e.g. "Ahss.org" → Ahss)
+  const base = d.split('.')[0];
+  return !!base && t === base;
+};
+
+/**
+ * Rewrite bookmark URLs from one domain to another (branding migrations).
+ * Scope: one space (categoryId) or all spaces.
+ */
+export const rewritePublicBookmarkDomains = (
+  fromDomainRaw: string,
+  toDomainRaw: string,
+  opts?: { categoryId?: string; renameMatchingSpaces?: boolean }
+): {
+  data: PublicBookmarksData;
+  updated: number;
+  scanned: number;
+  message: string;
+  ok: boolean;
+} => {
+  const from = normalizeDomainInput(fromDomainRaw);
+  const to = normalizeDomainInput(toDomainRaw);
+
+  if (!from || !to) {
+    return {
+      data: getPublicBookmarks(),
+      updated: 0,
+      scanned: 0,
+      ok: false,
+      message: 'Enter both the old domain and the new domain (e.g. ahss.org → adventhealth.com).'
+    };
+  }
+  if (from === to) {
+    return {
+      data: getPublicBookmarks(),
+      updated: 0,
+      scanned: 0,
+      ok: false,
+      message: 'Old and new domains are the same.'
+    };
+  }
+  if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(from) || !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(to)) {
+    return {
+      data: getPublicBookmarks(),
+      updated: 0,
+      scanned: 0,
+      ok: false,
+      message: 'Use a valid domain like ahss.org or adventhealth.com (no path).'
+    };
+  }
+
+  const source = getPublicBookmarks();
+  let updated = 0;
+  let scanned = 0;
+  const renameSpaces = opts?.renameMatchingSpaces !== false;
+  const toTitle =
+    to.charAt(0).toUpperCase() + to.slice(1);
+
+  const categories = source.categories.map((cat) => {
+    if (opts?.categoryId && cat.id !== opts.categoryId) return cat;
+
+    const links = cat.links.map((link) => {
+      scanned += 1;
+      const nextUrl = rewriteBookmarkUrlDomain(link.url, from, to);
+      if (!nextUrl || nextUrl === link.url) return link;
+      updated += 1;
+      let title = link.title;
+      // If title was the old URL or contained the old host, refresh lightly
+      if (title === link.url) {
+        title = nextUrl;
+      }
+      return { ...link, url: nextUrl, title };
+    });
+
+    // Dedupe by normalized URL within the space after rewrite
+    const seen = new Set<string>();
+    const deduped: PublicBookmarkLink[] = [];
+    for (const link of links) {
+      const key = normalizeBookmarkUrl(link.url);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(link);
+    }
+
+    let title = cat.title;
+    if (renameSpaces && titleLooksLikeDomain(cat.title, from)) {
+      title = toTitle;
+    }
+
+    return { ...cat, title, links: deduped };
+  });
+
+  if (updated === 0) {
+    return {
+      data: source,
+      updated: 0,
+      scanned,
+      ok: true,
+      message: `No links matched “${from}”${opts?.categoryId ? ' in this space' : ''}.`
+    };
+  }
+
+  const next = persist(categories);
+  return {
+    data: next,
+    updated,
+    scanned,
+    ok: true,
+    message: `Rewrote ${updated} link${updated === 1 ? '' : 's'} from ${from} → ${to}${opts?.categoryId ? ' in this space' : ' across Your Bookmarks'}.`
+  };
+};
+
+const BOOKMARK_EXPORT_GROUP = 'Bookmarks';
+
+const isThemeColor = (value: string | undefined): value is ThemeColor =>
+  !!value && (THEME_COLORS as readonly string[]).includes(value);
+
+const slugifySpaceName = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 50) || 'space';
+
+const triggerJsonDownload = (data: unknown, filename: string): void => {
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
+/**
+ * Convert a guest bookmark space into a LinkNest Tile suitable for
+ * Admin / TileGrid “Import Space” (SpaceExportFile v1.3).
+ */
+export const bookmarkCategoryToSpaceTile = (
+  cat: PublicBookmarkCategory
+): Tile => {
+  const now = Date.now();
+  const themeColor: ThemeColor = isThemeColor(cat.themeColor)
+    ? cat.themeColor
+    : 'sky';
+  const emoji = (cat.emoji && cat.emoji.trim()) || '🌐';
+  const linkCount = cat.links.length;
+
+  return {
+    id: generateUuid(),
+    title: cat.title,
+    description:
+      linkCount === 1
+        ? `1 bookmark from ${cat.title}`
+        : `${linkCount} bookmarks from ${cat.title}`,
+    emoji,
+    themeColor,
+    group: BOOKMARK_EXPORT_GROUP,
+    createdAt: now,
+    visibility: 'public',
+    published: true,
+    showEmoji: true,
+    showTitle: true,
+    showDescription: true,
+    tabs: [
+      {
+        id: generateUuid(),
+        title: 'Links',
+        position: 0,
+        visibility: 'public',
+        published: true,
+        sections: [
+          {
+            id: generateUuid(),
+            title: 'Bookmarks',
+            emoji,
+            visibility: 'public',
+            published: true,
+            position: 0,
+            links: cat.links.map((link, index) => ({
+              id: generateUuid(),
+              label: link.title || link.url,
+              url: link.url,
+              visibility: 'public' as const,
+              published: true,
+              position: index
+            }))
+          }
+        ]
+      }
+    ]
+  };
+};
+
+/** Download one bookmark space as LinkNest Import Space JSON (type: tile). */
+export const downloadPublicBookmarkCategoryAsSpaceJson = (
+  categoryId: string,
+  data?: PublicBookmarksData
+): { success: boolean; message: string; linkCount: number } => {
+  const source = data ?? getPublicBookmarks();
+  const cat = source.categories.find((c) => c.id === categoryId);
+  if (!cat || cat.links.length === 0) {
+    return {
+      success: false,
+      message: 'Nothing to export in this space.',
+      linkCount: 0
+    };
+  }
+
+  try {
+    const tile = bookmarkCategoryToSpaceTile(cat);
+    const payload: SpaceExportFile = {
+      version: '1.3',
+      type: 'tile',
+      exportedAt: Date.now(),
+      tile
+    };
+    triggerJsonDownload(payload, `linknest-space-${slugifySpaceName(cat.title)}.json`);
+    return {
+      success: true,
+      message: `Exported “${cat.title}” as LinkNest space JSON (${cat.links.length} link${cat.links.length === 1 ? '' : 's'}). Use Admin → Import Spaces or Import Space to bring it into the app.`,
+      linkCount: cat.links.length
+    };
+  } catch (error) {
+    console.error('Failed to export bookmark space JSON:', error);
+    return {
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : 'Failed to export space JSON.',
+      linkCount: cat.links.length
+    };
+  }
+};
+
+/** Download all bookmark spaces as LinkNest Import Spaces JSON (type: all_categories). */
+export const downloadPublicBookmarksAsSpacesJson = (
+  data?: PublicBookmarksData
+): { success: boolean; message: string; linkCount: number; spaceCount: number } => {
+  const source = data ?? getPublicBookmarks();
+  const cats = source.categories.filter((c) => c.links.length > 0);
+  const total = cats.reduce((sum, c) => sum + c.links.length, 0);
+  if (cats.length === 0) {
+    return {
+      success: false,
+      message: 'No bookmarks to export.',
+      linkCount: 0,
+      spaceCount: 0
+    };
+  }
+
+  try {
+    const tiles = cats.map((cat) => bookmarkCategoryToSpaceTile(cat));
+    const payload: SpaceExportFile = {
+      version: '1.3',
+      type: 'all_categories',
+      exportedAt: Date.now(),
+      tiles,
+      categories: [BOOKMARK_EXPORT_GROUP]
+    };
+    const stamp = new Date().toISOString().slice(0, 10);
+    triggerJsonDownload(payload, `linknest-bookmark-spaces-${stamp}.json`);
+    return {
+      success: true,
+      message: `Exported ${cats.length} space${cats.length === 1 ? '' : 's'} (${total} link${total === 1 ? '' : 's'}) as LinkNest JSON. Import via Admin → Import Spaces.`,
+      linkCount: total,
+      spaceCount: cats.length
+    };
+  } catch (error) {
+    console.error('Failed to export bookmark spaces JSON:', error);
+    return {
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : 'Failed to export spaces JSON.',
+      linkCount: total,
+      spaceCount: cats.length
+    };
+  }
+};
+
 export const renamePublicBookmarkCategory = (
   categoryId: string,
   title: string
@@ -1027,6 +1395,147 @@ export const removeNeverOpenedPublicBookmarks = (
     .map((cat) => {
       const links = cat.links.filter((l) => {
         if (l.lastOpenedAt) return true;
+        removed += 1;
+        return false;
+      });
+      return { ...cat, links };
+    })
+    .filter((cat) => cat.links.length > 0);
+
+  if (removed === 0) return { data: source, removed: 0 };
+  return { data: persist(categories), removed };
+};
+
+export const countBrokenPublicBookmarks = (
+  data?: PublicBookmarksData,
+  categoryId?: string
+): number => {
+  const source = data ?? getPublicBookmarks();
+  return source.categories.reduce((sum, cat) => {
+    if (categoryId && cat.id !== categoryId) return sum;
+    return (
+      sum +
+      cat.links.filter((l) => isRemovableBrokenBookmarkHealth(l.healthStatus)).length
+    );
+  }, 0);
+};
+
+export const setPublicBookmarkLinkHealth = (
+  categoryId: string,
+  linkId: string,
+  health: {
+    status: string;
+    httpCode?: number | null;
+    error?: string | null;
+    checkedAt?: number | string;
+  } | null
+): PublicBookmarksData => {
+  const data = getPublicBookmarks();
+  const checkedAt =
+    health == null
+      ? undefined
+      : typeof health.checkedAt === 'number'
+        ? new Date(health.checkedAt * (health.checkedAt < 1e12 ? 1000 : 1)).toISOString()
+        : typeof health.checkedAt === 'string'
+          ? health.checkedAt
+          : new Date().toISOString();
+
+  const categories = data.categories.map((cat) => {
+    if (cat.id !== categoryId) return cat;
+    return {
+      ...cat,
+      links: cat.links.map((l) => {
+        if (l.id !== linkId) return l;
+        if (!health) {
+          const {
+            healthStatus: _s,
+            healthHttpCode: _c,
+            healthError: _e,
+            healthCheckedAt: _a,
+            ...rest
+          } = l;
+          return rest;
+        }
+        return {
+          ...l,
+          healthStatus: health.status,
+          healthHttpCode: health.httpCode ?? null,
+          healthError: health.error ?? undefined,
+          healthCheckedAt: checkedAt
+        };
+      })
+    };
+  });
+  return persist(categories);
+};
+
+export const setPublicBookmarkLinksHealthBatch = (
+  updates: Array<{
+    categoryId: string;
+    linkId: string;
+    health: {
+      status: string;
+      httpCode?: number | null;
+      error?: string | null;
+      checkedAt?: number | string;
+    } | null;
+  }>
+): PublicBookmarksData => {
+  let data = getPublicBookmarks();
+  for (const u of updates) {
+    // Apply in memory then persist once
+    const categories = data.categories.map((cat) => {
+      if (cat.id !== u.categoryId) return cat;
+      return {
+        ...cat,
+        links: cat.links.map((l) => {
+          if (l.id !== u.linkId) return l;
+          if (!u.health) {
+            const {
+              healthStatus: _s,
+              healthHttpCode: _c,
+              healthError: _e,
+              healthCheckedAt: _a,
+              ...rest
+            } = l;
+            return rest;
+          }
+          const checkedAt =
+            typeof u.health.checkedAt === 'number'
+              ? new Date(
+                  u.health.checkedAt * (u.health.checkedAt < 1e12 ? 1000 : 1)
+                ).toISOString()
+              : typeof u.health.checkedAt === 'string'
+                ? u.health.checkedAt
+                : new Date().toISOString();
+          return {
+            ...l,
+            healthStatus: u.health.status,
+            healthHttpCode: u.health.httpCode ?? null,
+            healthError: u.health.error ?? undefined,
+            healthCheckedAt: checkedAt
+          };
+        })
+      };
+    });
+    data = { categories, updatedAt: new Date().toISOString() };
+  }
+  setPublicBookmarks(data);
+  return getPublicBookmarks();
+};
+
+/** Remove links marked broken or timed out (after a health check). */
+export const removeBrokenPublicBookmarks = (
+  categoryId?: string,
+  data?: PublicBookmarksData
+): { data: PublicBookmarksData; removed: number } => {
+  const source = data ?? getPublicBookmarks();
+  let removed = 0;
+  const categories = source.categories
+    .map((cat) => {
+      if (categoryId && cat.id !== categoryId) return cat;
+      const links = cat.links.filter((l) => {
+        if (!isRemovableBrokenBookmarkHealth(l.healthStatus)) return true;
         removed += 1;
         return false;
       });

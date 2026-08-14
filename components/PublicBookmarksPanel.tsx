@@ -12,7 +12,10 @@ import {
   mergePublicBookmarksFromHtml,
   downloadPublicBookmarksHtml,
   downloadPublicBookmarkCategoryHtml,
+  downloadPublicBookmarkCategoryAsSpaceJson,
+  downloadPublicBookmarksAsSpacesJson,
   regeneratePublicBookmarksByDomain,
+  rewritePublicBookmarkDomains,
   movePublicBookmarkCategory,
   movePublicBookmarkLink,
   movePublicBookmarkLinkToCategory,
@@ -28,6 +31,10 @@ import {
   findNeverOpenedPublicBookmarks,
   removeNeverOpenedPublicBookmarks,
   clearPublicBookmarks,
+  setPublicBookmarkLinksHealthBatch,
+  removeBrokenPublicBookmarks,
+  countBrokenPublicBookmarks,
+  isRemovableBrokenBookmarkHealth,
   getBookmarkFaviconUrl,
   getCategoryFaviconUrl,
   sortBookmarkCategories,
@@ -40,6 +47,7 @@ import {
   getTileDecorationClass
 } from './TileAnimationSelector';
 import { TitleEmojiPicker } from './TitleEmojiPicker';
+import { linkHealthService } from '../services/linkHealthService';
 
 interface PublicBookmarksPanelProps {
   compact?: boolean;
@@ -112,8 +120,34 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
   const [quickAddUrl, setQuickAddUrl] = useState('');
   const [moveMenuLinkId, setMoveMenuLinkId] = useState<string | null>(null);
   const [styleMenuOpen, setStyleMenuOpen] = useState(false);
+  const [showDomainRewrite, setShowDomainRewrite] = useState(false);
+  const [rewriteFrom, setRewriteFrom] = useState('');
+  const [rewriteTo, setRewriteTo] = useState('');
+  const [rewriteAllSpaces, setRewriteAllSpaces] = useState(false);
+  const [healthChecking, setHealthChecking] = useState(false);
+  const [healthProgress, setHealthProgress] = useState<{ done: number; total: number } | null>(null);
+  const healthAbortRef = useRef<AbortController | null>(null);
+  const [linksCompact, setLinksCompact] = useState(() => {
+    try {
+      const raw = localStorage.getItem('linknest_bookmarks_links_compact');
+      if (raw === '0') return false;
+      if (raw === '1') return true;
+    } catch {
+      // ignore
+    }
+    return true;
+  });
 
   const isManualSort = sortMode === 'manual';
+
+  const setLinksCompactPref = (value: boolean) => {
+    setLinksCompact(value);
+    try {
+      localStorage.setItem('linknest_bookmarks_links_compact', value ? '1' : '0');
+    } catch {
+      // ignore
+    }
+  };
 
   const refresh = useCallback(() => {
     setData(getPublicBookmarks());
@@ -141,6 +175,11 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
     [data.categories, openSpaceId]
   );
 
+  const brokenInOpenSpace = useMemo(
+    () => (openSpace ? countBrokenPublicBookmarks(data, openSpace.id) : 0),
+    [data, openSpace]
+  );
+
   useEffect(() => {
     if (openSpaceId && !data.categories.some((c) => c.id === openSpaceId)) {
       setOpenSpaceId(null);
@@ -150,11 +189,21 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
   useEffect(() => {
     setMoveMenuLinkId(null);
     setStyleMenuOpen(false);
+    setShowDomainRewrite(false);
   }, [openSpaceId]);
 
-  // Link-count sorts only apply to the spaces grid
+  useEffect(() => {
+    return () => {
+      healthAbortRef.current?.abort();
+    };
+  }, []);
+
+  // Link-count sorts only apply to the spaces grid; broken-first only inside a space
   useEffect(() => {
     if (openSpaceId && (sortMode === 'links-max' || sortMode === 'links-min')) {
+      setSortMode('manual');
+    }
+    if (!openSpaceId && sortMode === 'broken-first') {
       setSortMode('manual');
     }
   }, [openSpaceId, sortMode]);
@@ -258,8 +307,220 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
     setMessage(downloadPublicBookmarksHtml(data).message);
   };
 
-  const handleExportSpace = (cat: PublicBookmarkCategory) => {
+  const handleExportSpacesJson = () => {
+    if (linkCount === 0) return;
+    setMessage(downloadPublicBookmarksAsSpacesJson(data).message);
+  };
+
+  const handleExportSpaceHtml = (cat: PublicBookmarkCategory) => {
     setMessage(downloadPublicBookmarkCategoryHtml(cat.id, data).message);
+  };
+
+  const handleExportSpaceJson = (cat: PublicBookmarkCategory) => {
+    setMessage(downloadPublicBookmarkCategoryAsSpaceJson(cat.id, data).message);
+  };
+
+  const openDomainRewrite = (cat?: PublicBookmarkCategory | null) => {
+    // Prefill "from" with a likely domain from the space's first link
+    let from = '';
+    if (cat?.links[0]?.url) {
+      try {
+        from = new URL(cat.links[0].url).hostname.replace(/^www\./i, '');
+      } catch {
+        from = '';
+      }
+    }
+    setRewriteFrom(from);
+    setRewriteTo('');
+    setRewriteAllSpaces(!cat);
+    setShowDomainRewrite(true);
+  };
+
+  const handleDomainRewrite = () => {
+    if (!rewriteFrom.trim() || !rewriteTo.trim()) {
+      setMessage('Enter both the old and new domain.');
+      return;
+    }
+    const scopeLabel = rewriteAllSpaces || !openSpace
+      ? 'all bookmark spaces'
+      : `space “${openSpace.title}”`;
+    const ok = window.confirm(
+      `Rewrite matching links in ${scopeLabel}?\n\n${rewriteFrom.trim()} → ${rewriteTo.trim()}\n\nPaths and query strings are kept. Subdomains like www. / portal. are preserved.`
+    );
+    if (!ok) return;
+
+    const result = rewritePublicBookmarkDomains(rewriteFrom, rewriteTo, {
+      categoryId: rewriteAllSpaces || !openSpace ? undefined : openSpace.id,
+      renameMatchingSpaces: true
+    });
+    applyData(result.data);
+    setMessage(result.message);
+    if (result.ok && result.updated > 0) {
+      setShowDomainRewrite(false);
+      setRewriteTo('');
+    }
+  };
+
+  const handleCheckSpaceLinks = async () => {
+    if (!openSpace || openSpace.links.length === 0 || healthChecking) return;
+    healthAbortRef.current?.abort();
+    const controller = new AbortController();
+    healthAbortRef.current = controller;
+
+    const links = [...openSpace.links];
+    setHealthChecking(true);
+    setHealthProgress({ done: 0, total: links.length });
+    setMessage(`Checking ${links.length} link${links.length === 1 ? '' : 's'}…`);
+
+    const batchSize = 15;
+    const updates: Array<{
+      categoryId: string;
+      linkId: string;
+      health: {
+        status: string;
+        httpCode?: number | null;
+        error?: string | null;
+        checkedAt?: number | string;
+      } | null;
+    }> = [];
+    let broken = 0;
+    let healthy = 0;
+    let other = 0;
+
+    const recordHealth = (
+      link: PublicBookmarkLink,
+      health: {
+        status: string;
+        httpCode?: number | null;
+        error?: string | null;
+        checkedAt?: number | string;
+      } | null
+    ) => {
+      updates.push({ categoryId: openSpace.id, linkId: link.id, health });
+      if (!health) {
+        other += 1;
+        return;
+      }
+      if (isRemovableBrokenBookmarkHealth(health.status)) broken += 1;
+      else if (
+        health.status === 'healthy' ||
+        health.status === 'accessible' ||
+        health.status === 'restricted' ||
+        health.status === 'redirected'
+      ) {
+        healthy += 1;
+      } else {
+        other += 1;
+      }
+    };
+
+    try {
+      for (let i = 0; i < links.length; i += batchSize) {
+        if (controller.signal.aborted) break;
+        const batch = links.slice(i, i + batchSize);
+        try {
+          const results = await linkHealthService.checkUrls(
+            batch.map((l) => l.url),
+            controller.signal
+          );
+          const byUrl = new Map(results.map((r) => [r.url, r]));
+          for (const link of batch) {
+            const match =
+              byUrl.get(link.url) ||
+              byUrl.get(link.url.replace(/\/$/, '')) ||
+              byUrl.get(`${link.url.replace(/\/$/, '')}/`);
+            if (!match || match.skipped || !match.health) {
+              recordHealth(
+                link,
+                match?.skipped
+                  ? null
+                  : {
+                      status: 'broken',
+                      httpCode: null,
+                      error: 'No health result',
+                      checkedAt: Date.now()
+                    }
+              );
+              continue;
+            }
+            recordHealth(link, {
+              status: match.health.status,
+              httpCode: match.health.httpCode ?? null,
+              error: match.health.error ?? null,
+              checkedAt: match.health.checkedAt ?? Date.now()
+            });
+          }
+        } catch (err) {
+          // Fall back to single checks for this batch
+          for (const link of batch) {
+            if (controller.signal.aborted) break;
+            try {
+              const result = await linkHealthService.checkUrl(link.url, controller.signal);
+              recordHealth(
+                link,
+                result.health
+                  ? {
+                      status: result.health.status,
+                      httpCode: result.health.httpCode ?? null,
+                      error: result.health.error ?? null,
+                      checkedAt: result.health.checkedAt ?? Date.now()
+                    }
+                  : null
+              );
+            } catch {
+              recordHealth(link, {
+                status: 'broken',
+                httpCode: null,
+                error: err instanceof Error ? err.message : 'Health check failed',
+                checkedAt: Date.now()
+              });
+            }
+          }
+        }
+        setHealthProgress({ done: Math.min(i + batchSize, links.length), total: links.length });
+      }
+
+      if (updates.length > 0) {
+        applyData(setPublicBookmarkLinksHealthBatch(updates));
+      }
+
+      if (controller.signal.aborted) {
+        setMessage('Link check cancelled.');
+      } else {
+        setMessage(
+          `Checked ${links.length} link${links.length === 1 ? '' : 's'}: ${healthy} OK, ${broken} broken/timeout${other ? `, ${other} other/skipped` : ''}.`
+        );
+      }
+    } finally {
+      setHealthChecking(false);
+      setHealthProgress(null);
+      if (healthAbortRef.current === controller) {
+        healthAbortRef.current = null;
+      }
+    }
+  };
+
+  const handleCancelHealthCheck = () => {
+    healthAbortRef.current?.abort();
+  };
+
+  const handleRemoveBrokenInSpace = () => {
+    if (!openSpace) return;
+    const n = countBrokenPublicBookmarks(data, openSpace.id);
+    if (n === 0) {
+      setMessage('No broken or timed-out links to remove. Run Check links first.');
+      return;
+    }
+    const ok = window.confirm(
+      `Remove ${n} broken/timed-out link${n === 1 ? '' : 's'} from “${openSpace.title}”?\n\nOnly links marked broken or timeout after a health check are removed.`
+    );
+    if (!ok) return;
+    const result = removeBrokenPublicBookmarks(openSpace.id, data);
+    applyData(result.data);
+    if (!result.data.categories.some((c) => c.id === openSpace.id)) {
+      setOpenSpaceId(null);
+    }
+    setMessage(`Removed ${result.removed} broken link${result.removed === 1 ? '' : 's'}.`);
   };
 
   const handleCleanup = () => {
@@ -431,9 +692,24 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
           <option value="recent">Recently opened</option>
           <option value="alpha-asc">Name A → Z</option>
           <option value="alpha-desc">Name Z → A</option>
+          {openSpace && <option value="broken-first">Broken links first</option>}
           {!openSpace && <option value="links-max">Most links first</option>}
           {!openSpace && <option value="links-min">Fewest links first</option>}
         </select>
+        {openSpace && (
+          <button
+            type="button"
+            onClick={() => setLinksCompactPref(!linksCompact)}
+            className={`px-3 py-2 text-xs font-medium rounded-xl border transition-colors shrink-0 ${
+              linksCompact
+                ? 'bg-sky-50 dark:bg-sky-900/20 border-sky-300 dark:border-sky-700 text-sky-700 dark:text-sky-300'
+                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+            }`}
+            title={linksCompact ? 'Switch to card view' : 'Switch to compact list'}
+          >
+            {linksCompact ? 'Compact' : 'Cards'}
+          </button>
+        )}
       </div>
     ) : null;
 
@@ -449,16 +725,152 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
     const animationDelay = displayIndex * 50;
     const recent = formatRecent(link.lastOpenedAt);
     const otherSpaces = data.categories.filter((c) => c.id !== cat.id);
+    const healthStatus = link.healthStatus || '';
+    const isBroken = isRemovableBrokenBookmarkHealth(healthStatus);
+    const healthColor =
+      healthStatus === 'healthy' ||
+      healthStatus === 'accessible' ||
+      healthStatus === 'restricted'
+        ? '#10b981'
+        : healthStatus === 'broken'
+          ? '#ef4444'
+          : healthStatus === 'timeout' ||
+              healthStatus === 'redirected' ||
+              healthStatus === 'unknown'
+            ? '#f59e0b'
+            : healthStatus
+              ? '#94a3b8'
+              : '#cbd5e1';
+    const healthTitle = healthStatus
+      ? `${linkHealthService.getHealthLabel(healthStatus)}${
+          link.healthHttpCode ? ` (HTTP ${link.healthHttpCode})` : ''
+        }${link.healthError ? `\n${link.healthError}` : ''}`
+      : undefined;
+
+    if (linksCompact) {
+      return (
+        <div
+          key={link.id}
+          className={`group relative flex items-center gap-2 px-2 py-1 rounded-lg cursor-pointer transition-colors ${fullAnimationClass} ${tileAnimatedClass}
+            hover:bg-slate-100/90 dark:hover:bg-slate-800/80
+            ${isBroken ? 'bg-red-50/60 dark:bg-red-950/20' : ''}
+            ${link.pinned && !isBroken ? 'bg-amber-50/50 dark:bg-amber-950/10' : ''}
+          `}
+          style={{ animationDelay: `${animationDelay}ms` }}
+          onClick={() => handleOpenLink(cat, link)}
+          title={link.url}
+        >
+          <span
+            className="w-1.5 h-1.5 rounded-full shrink-0"
+            style={{ backgroundColor: healthColor }}
+            title={healthTitle}
+          />
+          <div className="w-5 h-5 rounded overflow-hidden shrink-0 bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 flex items-center justify-center">
+            <FaviconImg url={link.url} className="w-full h-full object-contain p-0.5" />
+          </div>
+          <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-hidden">
+            {link.pinned && (
+              <span className="text-[9px] font-bold tracking-wide text-amber-600 dark:text-amber-400 shrink-0">PIN</span>
+            )}
+            {isBroken && (
+              <span className="text-[9px] font-bold tracking-wide text-red-600 dark:text-red-400 shrink-0">BROKEN</span>
+            )}
+            <span className="text-[13px] leading-tight font-medium text-slate-800 dark:text-slate-100 truncate group-hover:text-amber-600 dark:group-hover:text-amber-400">
+              {link.title}
+            </span>
+            <span className="text-[11px] text-slate-400 dark:text-slate-500 truncate hidden md:inline max-w-[38%]">
+              {getDisplayUrl(link.url)}
+            </span>
+            {recent && (
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 shrink-0 hidden lg:inline">
+                {recent}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                applyData(setPublicBookmarkLinkPinned(cat.id, link.id, !link.pinned));
+              }}
+              className={`p-0.5 rounded ${link.pinned ? 'text-amber-500' : 'text-slate-400 hover:text-amber-500'}`}
+              title={link.pinned ? 'Unpin' : 'Pin'}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                <path d="M10 2a.75.75 0 01.75.75v1.038a6.502 6.502 0 014.712 4.712H16.5a.75.75 0 010 1.5h-.038a6.502 6.502 0 01-4.712 4.712V16.5a.75.75 0 01-1.5 0v-1.038a6.502 6.502 0 01-4.712-4.712H3.5a.75.75 0 010-1.5h1.038A6.502 6.502 0 019.25 3.788V2.75A.75.75 0 0110 2z" />
+              </svg>
+            </button>
+            {isManualSort && (
+              <>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleMoveLink(cat.id, link.id, 'left');
+                  }}
+                  disabled={!canMoveLeft}
+                  className={`p-0.5 rounded ${canMoveLeft ? 'text-slate-400 hover:text-brand-500' : 'text-slate-200 dark:text-slate-700'}`}
+                  title="Move up"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                    <path fillRule="evenodd" d="M14.77 12.79a.75.75 0 01-1.06-.02L10 8.832l-3.71 3.938a.75.75 0 11-1.08-1.04l4.25-4.5a.75.75 0 011.08 0l4.25 4.5a.75.75 0 01-.02 1.06z" clipRule="evenodd" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleMoveLink(cat.id, link.id, 'right');
+                  }}
+                  disabled={!canMoveRight}
+                  className={`p-0.5 rounded ${canMoveRight ? 'text-slate-400 hover:text-brand-500' : 'text-slate-200 dark:text-slate-700'}`}
+                  title="Move down"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                    <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleRemoveLink(cat.id, link.id);
+              }}
+              className="p-0.5 rounded text-slate-400 hover:text-red-500"
+              title="Remove"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div
         key={link.id}
         className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} ${tileAnimatedClass} overflow-hidden ${
           link.pinned ? 'ring-1 ring-amber-300/60 dark:ring-amber-500/40' : ''
-        }`}
+        } ${isBroken ? 'border-red-300 dark:border-red-700/60' : ''}`}
         style={{ animationDelay: `${animationDelay}ms` }}
         onClick={() => handleOpenLink(cat, link)}
       >
+        {healthStatus && (
+          <div
+            className="absolute top-0 right-0 w-0 h-0 border-t-[18px] border-l-[18px] border-l-transparent z-10"
+            style={{ borderTopColor: healthColor }}
+            title={healthTitle}
+          />
+        )}
         <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-700 overflow-hidden">
           <FaviconImg url={link.url} />
         </div>
@@ -467,6 +879,11 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
             {link.pinned && (
               <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400 shrink-0">
                 Pinned
+              </span>
+            )}
+            {isBroken && (
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-red-600 dark:text-red-400 shrink-0">
+                Broken
               </span>
             )}
             <div
@@ -736,10 +1153,54 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => handleExportSpace(openSpace)}
+                onClick={() => openDomainRewrite(openSpace)}
                 className="px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                title="Rewrite URLs from one domain to another (branding)"
               >
-                Export space
+                Rewrite domain
+              </button>
+              {healthChecking ? (
+                <button
+                  type="button"
+                  onClick={handleCancelHealthCheck}
+                  className="px-3 py-1.5 text-sm font-medium rounded-lg bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 transition-colors"
+                >
+                  Cancel check{healthProgress ? ` (${healthProgress.done}/${healthProgress.total})` : ''}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void handleCheckSpaceLinks()}
+                  className="px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                  title="Probe each link via the server health checker"
+                >
+                  Check links
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleRemoveBrokenInSpace}
+                disabled={healthChecking || brokenInOpenSpace === 0}
+                className="px-3 py-1.5 text-sm font-medium rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-40"
+                title="Remove links marked broken or timed out"
+              >
+                Remove broken{brokenInOpenSpace > 0 ? ` (${brokenInOpenSpace})` : ''}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleExportSpaceJson(openSpace)}
+                className="px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+                title="Download LinkNest space JSON for Import Space"
+              >
+                Export Space JSON
+              </button>
+              <button
+                type="button"
+                onClick={() => handleExportSpaceHtml(openSpace)}
+                className="px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                title="Download Chrome HTML for this space"
+              >
+                Export HTML
               </button>
               <button
                 type="button"
@@ -813,6 +1274,24 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
               </button>
               <button
                 type="button"
+                onClick={handleExportSpacesJson}
+                disabled={busy}
+                className="px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50"
+                title="Download LinkNest spaces JSON for Admin → Import Spaces"
+              >
+                Export Spaces JSON
+              </button>
+              <button
+                type="button"
+                onClick={() => openDomainRewrite(null)}
+                disabled={busy}
+                className="px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
+                title="Rewrite URLs from one domain to another across all bookmark spaces"
+              >
+                Rewrite domain
+              </button>
+              <button
+                type="button"
                 onClick={handleCleanup}
                 disabled={busy}
                 className="px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
@@ -844,13 +1323,87 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
 
       {!openSpace && (
         <p className="text-xs text-slate-500 dark:text-slate-500">
-          Domains become spaces. Merge Import adds without wiping. Export HTML for Chrome re-import. Favicons load from the site. Saved only in this browser.
+          Domains become spaces. Merge Import adds without wiping. Export Spaces JSON for app Import Spaces; Export HTML for Chrome. Favicons load from the site. Saved only in this browser.
         </p>
       )}
 
       {message && (
         <div className="text-sm px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
           {message}
+        </div>
+      )}
+
+      {showDomainRewrite && (
+        <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 p-4 space-y-3 shadow-sm">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+                Rewrite domain
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                For branding changes (e.g. ahss.org → adventhealth.com). Keeps paths; updates matching hosts and subdomains.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowDomainRewrite(false)}
+              className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              title="Close"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+              </svg>
+            </button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <label className="block text-xs text-slate-500 dark:text-slate-400">
+              Old domain
+              <input
+                type="text"
+                value={rewriteFrom}
+                onChange={(e) => setRewriteFrom(e.target.value)}
+                placeholder="ahss.org"
+                className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+              />
+            </label>
+            <label className="block text-xs text-slate-500 dark:text-slate-400">
+              New domain
+              <input
+                type="text"
+                value={rewriteTo}
+                onChange={(e) => setRewriteTo(e.target.value)}
+                placeholder="adventhealth.com"
+                className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+              />
+            </label>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={rewriteAllSpaces || !openSpace}
+              disabled={!openSpace}
+              onChange={(e) => setRewriteAllSpaces(e.target.checked)}
+              className="rounded border-slate-300 dark:border-slate-600"
+            />
+            Apply to all bookmark spaces (not only this one)
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleDomainRewrite}
+              disabled={!rewriteFrom.trim() || !rewriteTo.trim()}
+              className="px-3 py-1.5 text-sm font-medium rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition-colors disabled:opacity-50"
+            >
+              Rewrite links
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowDomainRewrite(false)}
+              className="px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
 
@@ -918,7 +1471,13 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                   Showing {openSpaceLinks.length} of {openSpace.links.length} link{openSpace.links.length === 1 ? '' : 's'}
                 </p>
               )}
-              <div className={`grid gap-4 ${compact ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'}`}>
+              <div
+                className={
+                  linksCompact
+                    ? 'flex flex-col gap-0.5 rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-white/60 dark:bg-slate-900/40 p-1'
+                    : `grid gap-4 ${compact ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'}`
+                }
+              >
                 {openSpaceLinks.map((link, displayIndex) => {
                   const fullIndex = openSpace.links.findIndex((l) => l.id === link.id);
                   return renderLinkCard(openSpace, link, fullIndex, openSpace.links.length, displayIndex);
@@ -1028,10 +1587,10 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            handleExportSpace(cat);
+                            handleExportSpaceJson(cat);
                           }}
-                          className="p-1 rounded-md text-slate-400 hover:text-sky-500 hover:bg-sky-50 dark:hover:bg-sky-900/20 transition-all"
-                          title="Export this space as HTML"
+                          className="p-1 rounded-md text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all"
+                          title="Export as LinkNest Space JSON"
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
                             <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z" />

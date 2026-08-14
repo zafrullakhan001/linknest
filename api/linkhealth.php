@@ -30,6 +30,8 @@ switch ($method) {
             handleCheckSingleLink();
         } elseif ($path === '/check-url') {
             handleCheckUrl();
+        } elseif ($path === '/check-urls') {
+            handleCheckUrls();
         } elseif ($path === '/check-tile') {
             handleCheckTileLinks();
         } elseif ($path === '/check-all') {
@@ -832,11 +834,123 @@ function handleGetHealthStats() {
 }
 
 /**
- * POST /api/linkhealth.php/check-url - Probe an arbitrary URL (edit-form preview)
+ * POST /api/linkhealth.php/check-url - Probe an arbitrary URL (edit-form preview / guest bookmarks)
  * Returns round-trip latency and HTTP status without requiring a saved link ID.
+ * Guests are allowed (Your Bookmarks) with a per-session rate limit.
  */
+function enforceUrlProbeRateLimit($maxPerMinute = 80) {
+    $key = 'linkhealth_url_probe_ts';
+    $now = time();
+    if (!isset($_SESSION[$key]) || !is_array($_SESSION[$key])) {
+        $_SESSION[$key] = [];
+    }
+    $_SESSION[$key] = array_values(array_filter($_SESSION[$key], function ($t) use ($now) {
+        return ($now - (int)$t) < 60;
+    }));
+    if (count($_SESSION[$key]) >= (int)$maxPerMinute) {
+        sendJSON(['error' => 'Too many link checks. Please wait a minute and try again.'], 429);
+        return false;
+    }
+    $_SESSION[$key][] = $now;
+    return true;
+}
+
+/**
+ * POST /api/linkhealth.php/check-urls — Probe up to 20 URLs in parallel (guest bookmarks).
+ */
+function handleCheckUrls() {
+    // Count one rate token per batch (not per URL) so large spaces can finish
+    if (!enforceUrlProbeRateLimit(120)) {
+        return;
+    }
+    releaseSessionLock();
+    set_time_limit(30);
+
+    try {
+        $data = getJSONInput();
+        $rawUrls = isset($data['urls']) && is_array($data['urls']) ? $data['urls'] : [];
+        $urls = [];
+        foreach ($rawUrls as $u) {
+            if (!is_string($u)) continue;
+            $url = trim($u);
+            if ($url === '') continue;
+            if (!preg_match('#^https?://#i', $url)) {
+                $url = 'https://' . $url;
+            }
+            $parts = parse_url($url);
+            $scheme = strtolower((string)($parts['scheme'] ?? ''));
+            if ($scheme !== 'http' && $scheme !== 'https') continue;
+            if (!filter_var($url, FILTER_VALIDATE_URL)) continue;
+            $urls[] = $url;
+            if (count($urls) >= 20) break;
+        }
+
+        if (empty($urls)) {
+            sendJSON(['error' => 'Provide a non-empty urls array (http/https only).'], 400);
+            return;
+        }
+
+        $probe = [];
+        $skipped = [];
+        foreach ($urls as $url) {
+            if (isLinkCheckExceptionUrl($url) || shouldSkipLinkHealthCheck($url)) {
+                $skipped[$url] = true;
+            } else {
+                $probe[] = $url;
+            }
+        }
+
+        $parallel = !empty($probe) ? checkUrlsParallel($probe, 10) : [];
+        $results = [];
+        foreach ($urls as $url) {
+            if (!empty($skipped[$url])) {
+                $results[] = [
+                    'url' => $url,
+                    'skipped' => true,
+                    'health' => null
+                ];
+                continue;
+            }
+            $healthResult = $parallel[$url] ?? [
+                'status' => 'broken',
+                'http_code' => 0,
+                'error' => 'No result',
+                'server_latency' => 0
+            ];
+            if (!empty($healthResult['skipped'])) {
+                $results[] = [
+                    'url' => $url,
+                    'skipped' => true,
+                    'health' => null
+                ];
+                continue;
+            }
+            $results[] = [
+                'url' => $url,
+                'health' => [
+                    'status' => $healthResult['status'],
+                    'httpCode' => !empty($healthResult['http_code']) ? (int)$healthResult['http_code'] : null,
+                    'error' => $healthResult['error'] ?? null,
+                    'serverLatency' => $healthResult['server_latency'] ?? 0,
+                    'checkedAt' => time()
+                ]
+            ];
+        }
+
+        sendJSON([
+            'success' => true,
+            'results' => $results
+        ]);
+    } catch (Exception $e) {
+        error_log('URL batch probe failed: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to check URLs: ' . $e->getMessage()], 500);
+    }
+}
+
 function handleCheckUrl() {
-    requireAuth();
+    if (!enforceUrlProbeRateLimit(120)) {
+        return;
+    }
     releaseSessionLock();
     set_time_limit(8);
 

@@ -212,6 +212,40 @@ export const linkHealthService = {
   },
 
   /**
+   * Probe up to 20 URLs in parallel (guest bookmark space checks).
+   */
+  async checkUrls(
+    urls: string[],
+    signal?: AbortSignal
+  ): Promise<
+    Array<{
+      url: string;
+      skipped?: boolean;
+      health: (LinkHealth & { serverLatency?: number }) | null;
+    }>
+  > {
+    const response = await withTimeout(
+      fetch(`${API_BASE}/linkhealth/check-urls`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ urls }),
+        signal
+      }),
+      35000,
+      'checkUrls'
+    );
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to check URLs');
+    }
+
+    const data = await response.json();
+    return Array.isArray(data.results) ? data.results : [];
+  },
+
+  /**
    * Get health indicator color class
    */
   getHealthColor(status: string): string {
