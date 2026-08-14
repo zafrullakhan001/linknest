@@ -415,6 +415,13 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
         }
         return true;
       });
+
+      const order = new Map<string, number>(currentPublicFavorites.map((id, i) => [id, i]));
+      allTiles = [...allTiles].sort((a, b) => {
+        const ai = order.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+        const bi = order.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+        return ai - bi;
+      });
     } else if (isAuthFavoritesTab) {
       // For authenticated users on favorites tab, use isFavorite flag
       usedRecalculation = true;

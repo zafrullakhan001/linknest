@@ -1263,6 +1263,9 @@ const AppContent: React.FC = () => {
       {!isAuthenticated && guestAccessEnabled && (
         <div className="container mx-auto px-4 max-w-6xl-plus pb-4">
           <div className="p-2.5 bg-slate-100/50 dark:bg-slate-800/30 border border-slate-200/50 dark:border-slate-700/50 rounded-md text-center">
+            <p className="text-[11px] leading-snug text-slate-500 dark:text-slate-500 mb-1.5">
+              Public Favorites are saved in this browser only. They will not appear on another computer or browser unless you export them here and import the file there.
+            </p>
             <p className="text-xs text-slate-600 dark:text-slate-400">
               👋 Guest Mode: You're viewing all public links.
               <button

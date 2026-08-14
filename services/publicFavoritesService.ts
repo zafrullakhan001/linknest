@@ -13,13 +13,24 @@ const STORAGE_KEY = 'linknest_public_favorites';
 const LINK_STORAGE_KEY = 'linknest_public_link_favorites';
 const LINK_DETAILS_STORAGE_KEY = 'linknest_public_link_favorite_details';
 const ACTIVE_TAB_KEY = 'linknest_public_active_tab';
+const LAYOUT_KEY = 'linknest_public_favorites_layout';
+const LEGACY_FAV_LINKS_SORT_KEY = 'favLinksSort';
+const LEGACY_FAVORITE_LINKS_ABOVE_KEY = 'favoriteLinksAbove';
 
 const PUBLIC_FAVORITE_BASE_KEYS = [
   STORAGE_KEY,
   LINK_STORAGE_KEY,
   LINK_DETAILS_STORAGE_KEY,
-  ACTIVE_TAB_KEY
+  ACTIVE_TAB_KEY,
+  LAYOUT_KEY
 ] as const;
+
+export type FavLinksSort = 'default' | 'asc' | 'desc';
+
+export interface PublicFavoritesLayout {
+  favoriteLinksAbove: boolean;
+  favLinksSort: FavLinksSort;
+}
 
 let didNormalizeScopeCase = false;
 
@@ -266,6 +277,113 @@ export const togglePublicFavorite = (tileId: string): boolean => {
 };
 
 /**
+ * Replace the public favorite tile ID list (preserves caller order).
+ */
+export const setPublicFavorites = (ids: string[]): boolean => {
+  if (!isLocalStorageAvailable()) {
+    checkLocalStorageAvailability();
+    return false;
+  }
+
+  try {
+    localStorage.setItem(storageKey(STORAGE_KEY), JSON.stringify(pruneIdList(ids)));
+    return true;
+  } catch (error) {
+    console.error('Failed to set public favorites:', error);
+    return false;
+  }
+};
+
+/**
+ * Swap two IDs in an ordered list. Returns a new array; no-op if either ID is missing.
+ */
+export const swapPublicFavoriteIds = (list: string[], idA: string, idB: string): string[] => {
+  const next = [...list];
+  const i = next.indexOf(idA);
+  const j = next.indexOf(idB);
+  if (i === -1 || j === -1 || i === j) return next;
+  [next[i], next[j]] = [next[j], next[i]];
+  return next;
+};
+
+const DEFAULT_PUBLIC_FAVORITES_LAYOUT: PublicFavoritesLayout = {
+  favoriteLinksAbove: true,
+  favLinksSort: 'default'
+};
+
+const normalizeFavLinksSort = (value: unknown): FavLinksSort => {
+  return value === 'asc' || value === 'desc' || value === 'default' ? value : 'default';
+};
+
+const normalizeLayout = (raw: unknown, fallback: PublicFavoritesLayout): PublicFavoritesLayout => {
+  if (!raw || typeof raw !== 'object') return fallback;
+  const obj = raw as Record<string, unknown>;
+  const aboveRaw = obj.favoriteLinksAbove;
+  const favoriteLinksAbove =
+    typeof aboveRaw === 'boolean'
+      ? aboveRaw
+      : typeof aboveRaw === 'string'
+        ? aboveRaw === 'true'
+        : fallback.favoriteLinksAbove;
+  return {
+    favoriteLinksAbove,
+    favLinksSort: normalizeFavLinksSort(obj.favLinksSort ?? fallback.favLinksSort)
+  };
+};
+
+/**
+ * Guest Favorites layout (section above/below + link sort).
+ * Migrates once from the old unscoped keys without deleting them.
+ */
+export const getPublicFavoritesLayout = (): PublicFavoritesLayout => {
+  if (!isLocalStorageAvailable()) {
+    return { ...DEFAULT_PUBLIC_FAVORITES_LAYOUT };
+  }
+
+  try {
+    const stored = localStorage.getItem(storageKey(LAYOUT_KEY));
+    if (stored) {
+      return normalizeLayout(JSON.parse(stored), DEFAULT_PUBLIC_FAVORITES_LAYOUT);
+    }
+
+    const legacySort = localStorage.getItem(LEGACY_FAV_LINKS_SORT_KEY);
+    const legacyAbove = localStorage.getItem(LEGACY_FAVORITE_LINKS_ABOVE_KEY);
+    if (legacySort !== null || legacyAbove !== null) {
+      const layout: PublicFavoritesLayout = {
+        favoriteLinksAbove: legacyAbove !== null ? legacyAbove === 'true' : true,
+        favLinksSort: normalizeFavLinksSort(legacySort)
+      };
+      localStorage.setItem(storageKey(LAYOUT_KEY), JSON.stringify(layout));
+      return layout;
+    }
+  } catch (error) {
+    console.error('Failed to get public favorites layout:', error);
+  }
+
+  return { ...DEFAULT_PUBLIC_FAVORITES_LAYOUT };
+};
+
+export const setPublicFavoritesLayout = (partial: Partial<PublicFavoritesLayout>): PublicFavoritesLayout => {
+  const current = getPublicFavoritesLayout();
+  const next: PublicFavoritesLayout = {
+    favoriteLinksAbove: partial.favoriteLinksAbove ?? current.favoriteLinksAbove,
+    favLinksSort: partial.favLinksSort !== undefined
+      ? normalizeFavLinksSort(partial.favLinksSort)
+      : current.favLinksSort
+  };
+
+  try {
+    if (isLocalStorageAvailable()) {
+      localStorage.setItem(storageKey(LAYOUT_KEY), JSON.stringify(next));
+    }
+  } catch (error) {
+    console.error('Failed to save public favorites layout:', error);
+  }
+
+  return next;
+};
+
+/**
  * Clear all public favorites
  */
 export const clearPublicFavorites = (): void => {
@@ -318,15 +436,19 @@ const pruneIdList = (ids: string[]): string[] => {
 /**
  * Coerce mixed ID lists from older exports into unique non-empty strings.
  * Skips bad entries instead of failing the whole import.
+ * When entries include a numeric `position`, sort by that before returning IDs.
  */
 const normalizeIdList = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];
 
-  const ids: string[] = [];
+  type ParsedEntry = { id: string; position: number | null; index: number };
+  const entries: ParsedEntry[] = [];
   const seen = new Set<string>();
 
-  for (const entry of value) {
+  for (let index = 0; index < value.length; index++) {
+    const entry = value[index];
     let id: string | null = null;
+    let position: number | null = null;
     if (typeof entry === 'string') {
       id = entry.trim();
     } else if (typeof entry === 'number' && Number.isFinite(entry)) {
@@ -336,15 +458,27 @@ const normalizeIdList = (value: unknown): string[] => {
       const candidate = obj.id ?? obj.tileId ?? obj.linkId;
       if (typeof candidate === 'string') id = candidate.trim();
       else if (typeof candidate === 'number' && Number.isFinite(candidate)) id = String(candidate);
+      if (typeof obj.position === 'number' && Number.isFinite(obj.position)) {
+        position = obj.position;
+      }
     }
 
     if (id && !seen.has(id)) {
       seen.add(id);
-      ids.push(id);
+      entries.push({ id, position, index });
     }
   }
 
-  return ids;
+  if (entries.some((entry) => entry.position !== null)) {
+    entries.sort((a, b) => {
+      const pa = a.position ?? a.index;
+      const pb = b.position ?? b.index;
+      if (pa !== pb) return pa - pb;
+      return a.index - b.index;
+    });
+  }
+
+  return entries.map((entry) => entry.id);
 };
 
 /**
@@ -429,6 +563,8 @@ export interface PublicFavoritesExportOptions {
   spaceIds?: string[];
   /** Link snapshots currently shown on the Favorites tab. */
   links?: PublicFavoriteLinkDetail[];
+  /** Guest layout prefs (section position + link sort). */
+  layout?: PublicFavoritesLayout;
 }
 
 /**
@@ -447,6 +583,7 @@ export const buildPublicFavoritesExportData = (
   linkFavorites: string[];
   linkFavoriteDetails: Record<string, PublicFavoriteLinkDetail>;
   activeTab: string;
+  layout: PublicFavoritesLayout;
 } => {
   const storedSpaceIds = pruneIdList(getPublicFavorites());
   const storedLinkIds = pruneIdList(getPublicLinkFavorites());
@@ -509,8 +646,20 @@ export const buildPublicFavoritesExportData = (
     console.error('Failed to prune public favorites during export:', error);
   }
 
+  const layout = options?.layout
+    ? normalizeLayout(options.layout, getPublicFavoritesLayout())
+    : getPublicFavoritesLayout();
+
+  try {
+    if (isLocalStorageAvailable()) {
+      localStorage.setItem(storageKey(LAYOUT_KEY), JSON.stringify(layout));
+    }
+  } catch (error) {
+    console.error('Failed to persist public favorites layout during export:', error);
+  }
+
   return {
-    version: '1.3',
+    version: '1.4',
     instance: getAppBasePath() || '/',
     instanceScope: getPublicFavoritesInstanceScope(),
     instanceLabel: getPublicFavoritesInstanceLabel(),
@@ -518,7 +667,8 @@ export const buildPublicFavoritesExportData = (
     favorites,
     linkFavorites,
     linkFavoriteDetails,
-    activeTab: getPublicActiveTab() || 'public-favorites'
+    activeTab: getPublicActiveTab() || 'public-favorites',
+    layout
   };
 };
 
@@ -581,6 +731,7 @@ export const importPublicFavorites = async (file: File): Promise<{
     let linkFavoritesRaw: unknown = undefined;
     let linkDetailsRaw: unknown = undefined;
     let activeTabRaw: unknown = undefined;
+    let layoutRaw: unknown = undefined;
 
     if (Array.isArray(data)) {
       // Legacy: bare array of space IDs
@@ -613,6 +764,10 @@ export const importPublicFavorites = async (file: File): Promise<{
       else if ('linkFavoriteSnapshots' in obj) linkDetailsRaw = obj.linkFavoriteSnapshots;
 
       activeTabRaw = obj.activeTab;
+      layoutRaw = obj.layout ?? {
+        favoriteLinksAbove: obj.favoriteLinksAbove,
+        favLinksSort: obj.favLinksSort
+      };
     } else {
       throw new Error('Invalid export format. Expected a JSON object or array of favorite IDs.');
     }
@@ -698,6 +853,18 @@ export const importPublicFavorites = async (file: File): Promise<{
       setPublicActiveTab('public-favorites');
     }
 
+    if (layoutRaw && typeof layoutRaw === 'object') {
+      const importedLayout = layoutRaw as Record<string, unknown>;
+      const hasAbove = importedLayout.favoriteLinksAbove !== undefined;
+      const hasSort = importedLayout.favLinksSort !== undefined;
+      if (hasAbove || hasSort) {
+        setPublicFavoritesLayout({
+          ...(hasAbove ? { favoriteLinksAbove: importedLayout.favoriteLinksAbove === true || importedLayout.favoriteLinksAbove === 'true' } : {}),
+          ...(hasSort ? { favLinksSort: normalizeFavLinksSort(importedLayout.favLinksSort) } : {})
+        });
+      }
+    }
+
     const parts: string[] = [];
     if (importingSpaces && favorites) {
       parts.push(`${favorites.length} space favorite(s)`);
@@ -736,6 +903,24 @@ export const getPublicLinkFavorites = (): string[] => {
   } catch (error) {
     console.error('Failed to get public link favorites:', error);
     return [];
+  }
+};
+
+/**
+ * Replace the public favorite link ID list (preserves caller order).
+ */
+export const setPublicLinkFavorites = (ids: string[]): boolean => {
+  if (!isLocalStorageAvailable()) {
+    checkLocalStorageAvailability();
+    return false;
+  }
+
+  try {
+    localStorage.setItem(storageKey(LINK_STORAGE_KEY), JSON.stringify(pruneIdList(ids)));
+    return true;
+  } catch (error) {
+    console.error('Failed to set public link favorites:', error);
+    return false;
   }
 };
 

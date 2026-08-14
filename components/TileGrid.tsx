@@ -16,7 +16,7 @@ import { authService, UserListItem } from '../services/authService';
 import { resolveApiBase } from '../services/apiHelpers';
 import { useAuth } from '../contexts/AuthContext';
 import { userPreferencesService } from '../services/userPreferencesService';
-import { getPublicFavorites, togglePublicFavorite, isPublicFavorite, getPublicActiveTab, setPublicActiveTab, exportPublicFavorites, importPublicFavorites, clearPublicFavorites, getPublicLinkFavorites, togglePublicLinkFavorite, clearPublicLinkFavorites, getPublicLinkFavoriteDetails, syncPublicLinkFavoriteDetails, upsertPublicLinkFavoriteDetail, removePublicLinkFavoriteDetail, getPublicFavoritesInstanceLabel } from '../services/publicFavoritesService';
+import { getPublicFavorites, togglePublicFavorite, isPublicFavorite, getPublicActiveTab, setPublicActiveTab, exportPublicFavorites, importPublicFavorites, clearPublicFavorites, getPublicLinkFavorites, togglePublicLinkFavorite, clearPublicLinkFavorites, getPublicLinkFavoriteDetails, syncPublicLinkFavoriteDetails, upsertPublicLinkFavoriteDetail, removePublicLinkFavoriteDetail, getPublicFavoritesInstanceLabel, setPublicFavorites as writePublicFavorites, setPublicLinkFavorites as writePublicLinkFavorites, swapPublicFavoriteIds, getPublicFavoritesLayout, setPublicFavoritesLayout } from '../services/publicFavoritesService';
 import { linkHealthService } from '../services/linkHealthService';
 import { favoriteLinkHealthService, LinkHealthCheckResult } from '../services/favoriteLinkHealthService';
 import { generateUuid } from '../services/idService';
@@ -2173,8 +2173,8 @@ const SortableTile: React.FC<SortableTileProps> = ({
 
         {/* Reorder Buttons */}
 
-        {/* Arrow Buttons for Reordering - Centered at bottom, only visible for authenticated users */}
-        {isAuthenticated && (onMoveLeft || onMoveRight) ? (
+        {/* Arrow Buttons for Reordering - Centered at bottom (auth users, or guests on Favorites) */}
+        {(onMoveLeft || onMoveRight) ? (
           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 z-10">
             <button
               onClick={(e) => {
@@ -2228,6 +2228,50 @@ const SortableTile: React.FC<SortableTileProps> = ({
 };
 
 type TabType = 'favorites' | 'public' | 'public-favorites' | 'your-apps' | 'staging' | 'private' | 'scheduled' | 'expired' | 'archive' | 'recycle-bin' | 'monitoring' | 'monitorv2';
+
+const GuestReorderArrows: React.FC<{
+  canMoveLeft: boolean;
+  canMoveRight: boolean;
+  onMoveLeft: () => void;
+  onMoveRight: () => void;
+}> = ({ canMoveLeft, canMoveRight, onMoveLeft, onMoveRight }) => (
+  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 z-10">
+    <button
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (canMoveLeft) onMoveLeft();
+      }}
+      disabled={!canMoveLeft}
+      className={`p-1 rounded-md transition-all ${canMoveLeft
+        ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
+        : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
+        }`}
+      title="Move left"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+        <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clipRule="evenodd" />
+      </svg>
+    </button>
+    <button
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (canMoveRight) onMoveRight();
+      }}
+      disabled={!canMoveRight}
+      className={`p-1 rounded-md transition-all ${canMoveRight
+        ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
+        : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
+        }`}
+      title="Move right"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+        <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+      </svg>
+    </button>
+  </div>
+);
 
 export const TileGrid: React.FC<TileGridProps> = ({
   tiles,
@@ -2534,8 +2578,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [isLoadingFavoriteLinks, setIsLoadingFavoriteLinks] = useState(false);
   const [favLinksSort, setFavLinksSort] = useState<'default' | 'asc' | 'desc'>(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('favLinksSort');
-      return (saved as 'default' | 'asc' | 'desc') || 'default';
+      return getPublicFavoritesLayout().favLinksSort;
     }
     return 'default';
   });
@@ -2550,14 +2593,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
     }
   }, [isAuthenticated]);
 
-  const handleSetFavLinksSort = (sort: 'default' | 'asc' | 'desc') => {
+  const handleSetFavLinksSort = useCallback((sort: 'default' | 'asc' | 'desc') => {
     setFavLinksSort(sort);
     if (isAuthenticated) {
       userPreferencesService.updatePreference('favLinksSort', sort);
     } else {
-      localStorage.setItem('favLinksSort', sort);
+      setPublicFavoritesLayout({ favLinksSort: sort });
     }
-  };
+  }, [isAuthenticated]);
   const [linkHealthResults, setLinkHealthResults] = useState<Map<string, LinkHealthCheckResult>>(new Map());
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
   const [autoRefreshInterval, setAutoRefreshInterval] = useState<number>(30); // Default 30s
@@ -4165,6 +4208,16 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       });
     }
 
+    // Guest Favorites: keep the user's localStorage order, not global API position
+    if (activeTab === 'public-favorites' && !isAuthenticated && publicFavorites.length > 0) {
+      const order = new Map<string, number>(publicFavorites.map((id, i) => [id, i]));
+      filteredTiles = [...filteredTiles].sort((a, b) => {
+        const ai = order.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+        const bi = order.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+        return ai - bi;
+      });
+    }
+
     if (!searchTerm.trim()) {
       // No search term - return filtered tiles grouped normally
       // IMPORTANT: Preserve the order of tiles as they come from the API
@@ -4558,10 +4611,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
   // State for favorite links section position (true = above tiles, false = below tiles)
   const [favoriteLinksAbove, setFavoriteLinksAbove] = useState<boolean>(() => {
-    // Initialize from localStorage for public users
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('favoriteLinksAbove');
-      return saved !== null ? saved === 'true' : true;
+      return getPublicFavoritesLayout().favoriteLinksAbove;
     }
     return true;
   });
@@ -4583,7 +4634,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     if (isAuthenticated) {
       userPreferencesService.updatePreference('favoriteLinksAbove', above);
     } else {
-      localStorage.setItem('favoriteLinksAbove', String(above));
+      setPublicFavoritesLayout({ favoriteLinksAbove: above });
     }
   };
 
@@ -6624,8 +6675,22 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
   }, [editingCategorySchedule, categoryVisibleFrom, categoryExpiresAt, categoryMetadata, categoryOrder, isAuthenticated]);
 
   const handleMoveTile = useCallback(async (tileId: string, direction: 'left' | 'right') => {
-    // Only authenticated users can move tiles
-    if (!isAuthenticated) return;
+    if (!isAuthenticated) {
+      if (activeTab !== 'public-favorites') return;
+      const currentTile = tiles.find(t => t.id === tileId);
+      if (!currentTile) return;
+      const currentGroup = currentTile.group || 'General';
+      const groupTiles = groupedTiles[currentGroup] || [];
+      const indexInGroup = groupTiles.findIndex(t => t.id === tileId);
+      if (indexInGroup === -1) return;
+      const targetIndexInGroup = direction === 'left' ? indexInGroup - 1 : indexInGroup + 1;
+      if (targetIndexInGroup < 0 || targetIndexInGroup >= groupTiles.length) return;
+      const neighborId = groupTiles[targetIndexInGroup].id;
+      const next = swapPublicFavoriteIds(getPublicFavorites(), tileId, neighborId);
+      writePublicFavorites(next);
+      setPublicFavorites(next);
+      return;
+    }
 
     const sourceTiles = activeTab === 'staging' ? stagingTiles : tiles;
     const currentIndex = sourceTiles.findIndex(t => t.id === tileId);
@@ -6677,7 +6742,28 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       // Don't alert on auto-save failure to avoid annoying popups,
       // let the user use the manual save button if needed.
     }
-  }, [tiles, stagingTiles, activeTab, isAuthenticated, onUpdateTiles, buildArrangementAndScope]);
+  }, [tiles, stagingTiles, activeTab, isAuthenticated, onUpdateTiles, buildArrangementAndScope, groupedTiles]);
+
+  const handleMoveFavoriteLink = useCallback((linkId: string, direction: 'left' | 'right') => {
+    if (isAuthenticated) return;
+
+    if (favLinksSort !== 'default') {
+      handleSetFavLinksSort('default');
+    }
+
+    const ids = getPublicLinkFavorites();
+    const currentIndex = ids.indexOf(linkId);
+    if (currentIndex === -1) return;
+    const targetIndex = direction === 'left' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= ids.length) return;
+
+    const next = swapPublicFavoriteIds(ids, linkId, ids[targetIndex]);
+    writePublicLinkFavorites(next);
+    setFavoriteLinks((prev) => {
+      const byId = new Map(prev.map((link) => [link.id, link]));
+      return next.map((id) => byId.get(id)).filter(Boolean) as typeof prev;
+    });
+  }, [isAuthenticated, favLinksSort, handleSetFavLinksSort]);
 
   const handleManualSave = useCallback(async () => {
     if (isSaving) return;
@@ -6801,11 +6887,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
   const handleExportPublicFavorites = useCallback(() => {
     try {
-      // Export only what is currently shown on the Favorites tab
-      // (not stale orphan IDs that may still sit in localStorage).
-      const visibleSpaceIds = tiles
-        .filter((t) => publicFavorites.includes(t.id))
-        .map((t) => t.id);
+      // Export currently visible favorites in the guest's saved order
+      // (not stale orphan IDs, and not global API tile position).
+      const visibleIdSet = new Set(
+        tiles.filter((t) => publicFavorites.includes(t.id)).map((t) => t.id)
+      );
+      const visibleSpaceIds = publicFavorites.filter((id) => visibleIdSet.has(id));
       const visibleLinks = favoriteLinks.map((link) => ({
         id: link.id,
         label: link.label,
@@ -6829,13 +6916,17 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
       exportPublicFavorites({
         spaceIds: visibleSpaceIds,
-        links: visibleLinks
+        links: visibleLinks,
+        layout: {
+          favoriteLinksAbove,
+          favLinksSort
+        }
       });
     } catch (error) {
       console.error('Failed to export public favorites:', error);
       alert(error instanceof Error ? error.message : 'Failed to export favorites. Please try again.');
     }
-  }, [tiles, publicFavorites, favoriteLinks]);
+  }, [tiles, publicFavorites, favoriteLinks, favoriteLinksAbove, favLinksSort]);
 
   const handleImportPublicFavorites = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -6847,6 +6938,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         // Update public favorites state immediately
         const updatedFavorites = getPublicFavorites();
         setPublicFavorites(updatedFavorites);
+
+        const importedLayout = getPublicFavoritesLayout();
+        setFavLinksSort(importedLayout.favLinksSort);
+        setFavoriteLinksAbove(importedLayout.favoriteLinksAbove);
 
         // Refresh guest favorite links from imported IDs / snapshots first
         // so the UI is never blank while waiting on API resolve.
@@ -6867,7 +6962,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
               if (resolved.length > 0) {
                 // Merge resolved over cache; keep unresolved snapshots
                 const byId = new Map(cached.map((c) => [c.id, c]));
-                resolved.forEach((r) => byId.set(r.id, r));
+                resolved.forEach((r) => byId.set(r.id, { ...r, isFavorite: true as const }));
                 const merged = favIds.map((id) => byId.get(id)).filter(Boolean) as typeof cached;
                 syncPublicLinkFavoriteDetails(merged);
                 setFavoriteLinks(merged);
@@ -8037,6 +8132,14 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           </svg>
                         </button>
                       </div>
+                      {!isAuthenticated && favLinksSort === 'default' && (
+                        <GuestReorderArrows
+                          canMoveLeft={linkIndex > 0}
+                          canMoveRight={linkIndex < favoriteLinks.length - 1}
+                          onMoveLeft={() => handleMoveFavoriteLink(link.id, 'left')}
+                          onMoveRight={() => handleMoveFavoriteLink(link.id, 'right')}
+                        />
+                      )}
                     </div>
                   );
                 })}
@@ -8184,8 +8287,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         onEditTile={handleOpenEditModal}
                         onToggleFavorite={handleToggleFavorite}
                         onMoveToCategory={handleMoveTileToCategory}
-                        onMoveLeft={() => handleMoveTile(tile.id, 'left')}
-                        onMoveRight={() => handleMoveTile(tile.id, 'right')}
+                        onMoveLeft={(isAuthenticated || (!isAuthenticated && activeTab === 'public-favorites')) ? () => handleMoveTile(tile.id, 'left') : undefined}
+                        onMoveRight={(isAuthenticated || (!isAuthenticated && activeTab === 'public-favorites')) ? () => handleMoveTile(tile.id, 'right') : undefined}
                         onExportTile={handleExportTile}
                         onRestoreTile={activeTab === 'recycle-bin' ? handleRestoreTile : undefined}
                         onPermanentDeleteTile={activeTab === 'recycle-bin' ? handlePermanentDeleteTile : undefined}
@@ -8764,6 +8867,14 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             </svg>
                           </button>
                         </div>
+                      {!isAuthenticated && favLinksSort === 'default' && (
+                        <GuestReorderArrows
+                          canMoveLeft={linkIndex > 0}
+                          canMoveRight={linkIndex < favoriteLinks.length - 1}
+                          onMoveLeft={() => handleMoveFavoriteLink(link.id, 'left')}
+                          onMoveRight={() => handleMoveFavoriteLink(link.id, 'right')}
+                        />
+                      )}
                       </div>
                     );
                   })}
