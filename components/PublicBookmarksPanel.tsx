@@ -10,6 +10,7 @@ import {
   countPublicBookmarkLinks,
   importPublicBookmarksFromHtml,
   mergePublicBookmarksFromHtml,
+  mergePublicBookmarksFromList,
   downloadPublicBookmarksHtml,
   downloadPublicBookmarkCategoryHtml,
   downloadPublicBookmarkCategoryAsSpaceJson,
@@ -67,6 +68,7 @@ import {
 } from './TileAnimationSelector';
 import { TitleEmojiPicker } from './TitleEmojiPicker';
 import { linkHealthService } from '../services/linkHealthService';
+import { requestBookmarksFromBrowserExtension } from '../services/bookmarkImportService';
 
 interface PublicBookmarksPanelProps {
   compact?: boolean;
@@ -251,6 +253,7 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
   const [quickAddUrl, setQuickAddUrl] = useState('');
   const [moveMenuLinkId, setMoveMenuLinkId] = useState<string | null>(null);
   const [styleMenuOpen, setStyleMenuOpen] = useState(false);
+  const [toolbarMoreOpen, setToolbarMoreOpen] = useState(false);
   const [showRewriteTools, setShowRewriteTools] = useState(false);
   const [rewriteTab, setRewriteTab] = useState<RewriteToolTab>('domain');
   const [rewriteFrom, setRewriteFrom] = useState('');
@@ -318,6 +321,10 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    setToolbarMoreOpen(false);
+  }, [openSpaceId]);
 
   const linkCount = countPublicBookmarkLinks(data);
   const isSearching = searchQuery.trim().length > 0;
@@ -439,6 +446,33 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
     } finally {
       setBusy(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleSyncFromBrowser = async () => {
+    if (busy) return;
+    setBusy(true);
+    setMessage('Syncing bookmarks from browser extension…');
+    try {
+      const ext = await requestBookmarksFromBrowserExtension(12000);
+      if (!ext.ok) {
+        setMessage(ext.message);
+        return;
+      }
+      const result = mergePublicBookmarksFromList(ext.bookmarks, {
+        sourceLabel: 'extension'
+      });
+      setOpenSpaceId(null);
+      refresh();
+      setMessage(result.message);
+    } catch (err) {
+      setMessage(
+        err instanceof Error
+          ? err.message
+          : 'Install extension or use Import HTML.'
+      );
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -1458,9 +1492,17 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
 
   return (
     <div className={compact ? 'space-y-4' : 'space-y-6 mb-8'}>
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="flex items-center gap-2 min-w-0">
-          {openSpace ? (
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".html,.htm,text/html"
+        className="hidden"
+        onChange={handleImportFile}
+      />
+
+      {openSpace ? (
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
             <button
               type="button"
               onClick={() => {
@@ -1475,12 +1517,6 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                 <path fillRule="evenodd" d="M17 10a.75.75 0 01-.75.75H5.612l4.158 3.96a.75.75 0 11-1.04 1.08l-5.5-5.25a.75.75 0 010-1.08l5.5-5.25a.75.75 0 111.04 1.08L5.612 9.25H16.25A.75.75 0 0117 10z" clipRule="evenodd" />
               </svg>
             </button>
-          ) : (
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-sky-500 shrink-0">
-              <path fillRule="evenodd" d="M4.25 2A2.25 2.25 0 002 4.25v11.5A2.25 2.25 0 004.25 18h11.5A2.25 2.25 0 0018 15.75V4.25A2.25 2.25 0 0015.75 2H4.25zM6 6.75A.75.75 0 016.75 6h6.5a.75.75 0 010 1.5h-6.5A.75.75 0 016 6.75zM6.75 9a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zM6 12.75a.75.75 0 01.75-.75h3.5a.75.75 0 010 1.5h-3.5a.75.75 0 01-.75-.75z" clipRule="evenodd" />
-            </svg>
-          )}
-          {openSpace ? (
             <div className="min-w-0 flex items-center gap-2 flex-wrap">
               <TitleEmojiPicker
                 value={openSpace.emoji || ''}
@@ -1525,53 +1561,14 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                 </span>
               )}
             </div>
-          ) : (
-            <>
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white">Your Bookmarks</h2>
-              <span className="text-sm text-slate-500 dark:text-slate-400">
-                ({data.categories.length} space{data.categories.length === 1 ? '' : 's'}, {linkCount} link{linkCount === 1 ? '' : 's'})
-              </span>
-            </>
-          )}
-        </div>
+          </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".html,.htm,text/html"
-            className="hidden"
-            onChange={handleImportFile}
-          />
-          {!openSpace && (
-            <>
-              <button
-                type="button"
-                onClick={() => handleImportClick('replace')}
-                disabled={busy}
-                className="px-3 py-1.5 text-sm font-medium rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition-colors disabled:opacity-50"
-              >
-                {busy ? 'Importing…' : 'Import Chrome HTML'}
-              </button>
-              {linkCount > 0 && (
-                <button
-                  type="button"
-                  onClick={() => handleImportClick('merge')}
-                  disabled={busy}
-                  className="px-3 py-1.5 text-sm font-medium rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-50"
-                  title="Add new links without wiping existing spaces"
-                >
-                  Merge Import
-                </button>
-              )}
-            </>
-          )}
-          {openSpace && (
-            <>
+          <div className="w-full sm:w-auto rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-slate-50/90 dark:bg-slate-800/50 p-2 space-y-2 sm:space-y-0 sm:flex sm:flex-wrap sm:items-center sm:gap-1.5">
+            <div className="grid grid-cols-2 gap-2 sm:contents">
               <button
                 type="button"
                 onClick={() => handleOpenAll(openSpace)}
-                className="px-3 py-1.5 text-sm font-medium rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition-colors"
+                className="col-span-2 sm:col-auto inline-flex items-center justify-center min-h-10 sm:min-h-0 px-3 py-2 sm:py-1.5 text-sm font-medium rounded-lg bg-sky-600 hover:bg-sky-500 text-white shadow-sm transition-colors"
                 title={`Open up to ${OPEN_ALL_BOOKMARKS_MAX} links`}
               >
                 Open all
@@ -1579,63 +1576,65 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
               <button
                 type="button"
                 onClick={() => openRewriteTools(openSpace)}
-                className="px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                className="inline-flex items-center justify-center min-h-10 sm:min-h-0 px-2.5 py-2 sm:py-1.5 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 sm:border-0 sm:bg-transparent dark:sm:bg-transparent sm:hover:bg-white dark:sm:hover:bg-slate-700/80 transition-colors"
                 title="Domain, path, tracking cleanup, find/replace, and redirect updates"
               >
-                Rewrite tools
+                Rewrite
               </button>
               {healthChecking ? (
                 <button
                   type="button"
                   onClick={handleCancelHealthCheck}
-                  className="px-3 py-1.5 text-sm font-medium rounded-lg bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 transition-colors"
+                  className="inline-flex items-center justify-center min-h-10 sm:min-h-0 px-2.5 py-2 sm:py-1.5 text-sm font-medium rounded-lg bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 transition-colors"
                 >
-                  Cancel check{healthProgress ? ` (${healthProgress.done}/${healthProgress.total})` : ''}
+                  Cancel{healthProgress ? ` (${healthProgress.done}/${healthProgress.total})` : ''}
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={() => void handleCheckSpaceLinks()}
-                  className="px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                  className="inline-flex items-center justify-center min-h-10 sm:min-h-0 px-2.5 py-2 sm:py-1.5 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 sm:border-0 sm:bg-transparent dark:sm:bg-transparent sm:hover:bg-white dark:sm:hover:bg-slate-700/80 transition-colors"
                   title="Probe each link via the server health checker"
                 >
                   Check links
                 </button>
               )}
+            </div>
+            <div className={`${toolbarMoreOpen ? 'grid' : 'hidden'} sm:contents grid-cols-2 gap-2`}>
               {redirectUpdatableCount > 0 && !healthChecking && (
                 <button
                   type="button"
                   onClick={handleApplyRedirectsQuick}
-                  className="px-3 py-1.5 text-sm font-medium rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
+                  className="inline-flex items-center justify-center min-h-10 sm:min-h-0 px-2.5 py-2 sm:py-1.5 text-sm font-medium rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 sm:border-0 sm:bg-transparent dark:sm:bg-transparent transition-colors"
                   title="Replace bookmark URLs with the final URL after redirects"
                 >
-                  Update redirects ({redirectUpdatableCount})
+                  Redirects ({redirectUpdatableCount})
                 </button>
               )}
               <button
                 type="button"
                 onClick={handleRemoveBrokenInSpace}
                 disabled={healthChecking || brokenInOpenSpace === 0}
-                className="px-3 py-1.5 text-sm font-medium rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-40"
+                className="inline-flex items-center justify-center min-h-10 sm:min-h-0 px-2.5 py-2 sm:py-1.5 text-sm font-medium rounded-lg border border-red-200/80 dark:border-red-900/50 bg-white dark:bg-slate-900 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 sm:border-0 sm:bg-transparent dark:sm:bg-transparent transition-colors disabled:opacity-40"
                 title="Remove links marked broken or timed out"
               >
-                Remove broken{brokenInOpenSpace > 0 ? ` (${brokenInOpenSpace})` : ''}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleExportSpaceJson(openSpace)}
-                className="px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
-                title="Download LinkNest space JSON for Import Space"
-              >
-                Export Space JSON
+                Broken{brokenInOpenSpace > 0 ? ` (${brokenInOpenSpace})` : ''}
               </button>
               <button
                 type="button"
                 onClick={() => handleExportSpaceHtml(openSpace)}
-                className="px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                className="inline-flex items-center justify-center min-h-10 sm:min-h-0 px-2.5 py-2 sm:py-1.5 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                 title="Download Chrome HTML for this space"
               >
                 Export HTML
+              </button>
+              <button
+                type="button"
+                onClick={() => handleExportSpaceJson(openSpace)}
+                className="inline-flex items-center justify-center min-h-10 sm:min-h-0 px-2.5 py-2 sm:py-1.5 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                title="Download LinkNest space JSON for Import Space"
+              >
+                Export JSON
               </button>
               <button
                 type="button"
@@ -1644,24 +1643,24 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                     updatePublicBookmarkCategory(openSpace.id, { pinned: !openSpace.pinned })
                   )
                 }
-                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                className={`inline-flex items-center justify-center min-h-10 sm:min-h-0 px-2.5 py-2 sm:py-1.5 text-sm font-medium rounded-lg border transition-colors ${
                   openSpace.pinned
-                    ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    ? 'border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300'
+                    : 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 sm:border-0 sm:bg-transparent dark:sm:bg-transparent sm:hover:bg-white dark:sm:hover:bg-slate-700/80'
                 }`}
               >
                 {openSpace.pinned ? 'Unpin' : 'Pin'}
               </button>
-              <div className="relative">
+              <div className="relative col-span-1">
                 <button
                   type="button"
                   onClick={() => setStyleMenuOpen((v) => !v)}
-                  className="px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                  className="w-full inline-flex items-center justify-center min-h-10 sm:min-h-0 px-2.5 py-2 sm:py-1.5 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 sm:border-0 sm:bg-transparent dark:sm:bg-transparent sm:hover:bg-white dark:sm:hover:bg-slate-700/80 transition-colors"
                 >
                   Color
                 </button>
                 {styleMenuOpen && (
-                  <div className="absolute right-0 top-full mt-1 p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-xl z-30 grid grid-cols-6 gap-1.5 w-44">
+                  <div className="absolute left-0 sm:left-auto sm:right-0 top-full mt-1 p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-xl z-30 grid grid-cols-6 gap-1.5 w-44">
                     {THEME_COLORS.map((color) => {
                       const s = COLOR_STYLES[color];
                       return (
@@ -1687,79 +1686,164 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
               <button
                 type="button"
                 onClick={() => handleDeleteSpace(openSpace)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                className="inline-flex items-center justify-center min-h-10 sm:min-h-0 gap-1.5 px-2.5 py-2 sm:py-1.5 text-sm font-medium rounded-lg border border-red-200/80 dark:border-red-900/50 bg-white dark:bg-slate-900 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 sm:border-0 sm:bg-transparent dark:sm:bg-transparent sm:p-1.5 sm:w-auto transition-colors"
                 title="Delete this space"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                   <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
                 </svg>
+                <span className="sm:hidden">Delete</span>
               </button>
-            </>
-          )}
-          {!openSpace && linkCount > 0 && (
-            <>
-              <button
-                type="button"
-                onClick={handleExport}
-                disabled={busy}
-                className="px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
-                title="Download Chrome HTML to import back into your browser"
-              >
-                Export HTML
-              </button>
-              <button
-                type="button"
-                onClick={handleExportSpacesJson}
-                disabled={busy}
-                className="px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50"
-                title="Download LinkNest spaces JSON for Admin → Import Spaces"
-              >
-                Export Spaces JSON
-              </button>
-              <button
-                type="button"
-                onClick={() => openRewriteTools(null)}
-                disabled={busy}
-                className="px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
-                title="Domain, path, tracking cleanup, find/replace across all spaces"
-              >
-                Rewrite tools
-              </button>
-              <button
-                type="button"
-                onClick={handleCleanup}
-                disabled={busy}
-                className="px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
-                title="Remove duplicate URLs and never-opened links"
-              >
-                Cleanup{dupeCount + neverOpenedCount > 0 ? ` (${dupeCount + neverOpenedCount})` : ''}
-              </button>
-              <button
-                type="button"
-                onClick={handleRegenerate}
-                disabled={busy}
-                className="px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
-                title="Re-group by website domain"
-              >
-                Regenerate by domain
-              </button>
-              <button
-                type="button"
-                onClick={handleClear}
-                disabled={busy}
-                className="px-3 py-1.5 text-sm font-medium rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50"
-              >
-                Clear
-              </button>
-            </>
-          )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setToolbarMoreOpen((v) => !v)}
+              className="sm:hidden w-full inline-flex items-center justify-center gap-1 min-h-10 px-3 py-2 text-sm font-medium rounded-lg text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700/80 transition-colors"
+              aria-expanded={toolbarMoreOpen}
+            >
+              {toolbarMoreOpen ? 'Less' : 'More actions'}
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 transition-transform ${toolbarMoreOpen ? 'rotate-180' : ''}`}>
+                <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 011.06 0L10 11.94l3.72-3.72a.75.75 0 111.06 1.06l-4.25 4.25a.75.75 0 01-1.06 0L5.22 9.28a.75.75 0 010-1.06z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-sky-500 shrink-0">
+                <path fillRule="evenodd" d="M4.25 2A2.25 2.25 0 002 4.25v11.5A2.25 2.25 0 004.25 18h11.5A2.25 2.25 0 0018 15.75V4.25A2.25 2.25 0 0015.75 2H4.25zM6 6.75A.75.75 0 016.75 6h6.5a.75.75 0 010 1.5h-6.5A.75.75 0 016 6.75zM6.75 9a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zM6 12.75a.75.75 0 01.75-.75h3.5a.75.75 0 010 1.5h-3.5a.75.75 0 01-.75-.75z" clipRule="evenodd" />
+              </svg>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white">Your Bookmarks</h2>
+            </div>
+            <span className="text-sm text-slate-500 dark:text-slate-400 pl-7 sm:pl-0">
+              {data.categories.length} space{data.categories.length === 1 ? '' : 's'} · {linkCount} link{linkCount === 1 ? '' : 's'}
+            </span>
+          </div>
 
-      {!openSpace && (
-        <p className="text-xs text-slate-500 dark:text-slate-500">
-          Domains become spaces. Merge Import adds without wiping. Export Spaces JSON for app Import Spaces; Export HTML for Chrome. Favicons load from the site. Saved only in this browser.
-        </p>
+          <div className="rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-slate-50/90 dark:bg-slate-800/50 shadow-sm p-2 space-y-2 sm:space-y-0 sm:flex sm:flex-wrap sm:items-center sm:gap-1.5">
+            <div className="grid grid-cols-2 gap-2 sm:contents">
+              <button
+                type="button"
+                onClick={() => void handleSyncFromBrowser()}
+                disabled={busy}
+                className="col-span-2 sm:col-auto inline-flex items-center justify-center gap-1.5 min-h-10 sm:min-h-0 px-3 py-2 sm:py-1.5 text-sm font-medium rounded-lg bg-sky-600 hover:bg-sky-500 text-white shadow-sm transition-colors disabled:opacity-50"
+                title="Merge bookmarks from Browser Launcher Pro. Falls back to Import HTML if the extension is missing."
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 opacity-90" aria-hidden>
+                  <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm-9.624-2.848a5.5 5.5 0 019.201-2.466l.312.311h-2.433a.75.75 0 000 1.5h4.243a.75.75 0 00.75-.75V3.989a.75.75 0 00-1.5 0v2.43l-.31-.31A7 7 0 003.239 9.248a.75.75 0 001.449.39z" clipRule="evenodd" />
+                </svg>
+                {busy ? 'Syncing…' : 'Sync'}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleImportClick('replace')}
+                disabled={busy}
+                className={`${
+                  linkCount > 0 ? '' : 'col-span-2 sm:col-auto '
+                }inline-flex items-center justify-center min-h-10 sm:min-h-0 px-2.5 py-2 sm:py-1.5 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-50`}
+                title="Replace all bookmarks with a Chrome bookmarks HTML export"
+              >
+                {busy ? 'Working…' : 'Import HTML'}
+              </button>
+              {linkCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handleImportClick('merge')}
+                  disabled={busy}
+                  className="inline-flex items-center justify-center min-h-10 sm:min-h-0 px-2.5 py-2 sm:py-1.5 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-50"
+                  title="Add new links without wiping existing spaces"
+                >
+                  Merge
+                </button>
+              )}
+            </div>
+
+            {linkCount > 0 && (
+              <>
+                <span className="hidden sm:block w-px h-5 bg-slate-200 dark:bg-slate-600 mx-0.5" aria-hidden />
+                <div
+                  className={`${
+                    toolbarMoreOpen ? 'grid' : 'hidden'
+                  } sm:contents grid-cols-2 gap-2`}
+                >
+                  <button
+                    type="button"
+                    onClick={handleExport}
+                    disabled={busy}
+                    className="inline-flex items-center justify-center min-h-10 sm:min-h-0 px-2.5 py-2 sm:py-1.5 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 sm:border-0 sm:bg-transparent dark:sm:bg-transparent sm:hover:bg-white dark:sm:hover:bg-slate-700/80 transition-colors disabled:opacity-50"
+                    title="Download Chrome HTML to import back into your browser"
+                  >
+                    Export HTML
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExportSpacesJson}
+                    disabled={busy}
+                    className="inline-flex items-center justify-center min-h-10 sm:min-h-0 px-2.5 py-2 sm:py-1.5 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 sm:border-0 sm:bg-transparent dark:sm:bg-transparent sm:hover:bg-white dark:sm:hover:bg-slate-700/80 transition-colors disabled:opacity-50"
+                    title="Download LinkNest spaces JSON for Admin → Import Spaces"
+                  >
+                    Export JSON
+                  </button>
+                  <span className="hidden sm:block w-px h-5 bg-slate-200 dark:bg-slate-600 mx-0.5" aria-hidden />
+                  <button
+                    type="button"
+                    onClick={() => openRewriteTools(null)}
+                    disabled={busy}
+                    className="inline-flex items-center justify-center min-h-10 sm:min-h-0 px-2.5 py-2 sm:py-1.5 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 sm:border-0 sm:bg-transparent dark:sm:bg-transparent sm:hover:bg-white dark:sm:hover:bg-slate-700/80 transition-colors disabled:opacity-50"
+                    title="Domain, path, tracking cleanup, find/replace across all spaces"
+                  >
+                    Rewrite
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCleanup}
+                    disabled={busy}
+                    className="inline-flex items-center justify-center min-h-10 sm:min-h-0 px-2.5 py-2 sm:py-1.5 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 sm:border-0 sm:bg-transparent dark:sm:bg-transparent sm:hover:bg-white dark:sm:hover:bg-slate-700/80 transition-colors disabled:opacity-50"
+                    title="Remove duplicate URLs and never-opened links"
+                  >
+                    Cleanup{dupeCount + neverOpenedCount > 0 ? ` (${dupeCount + neverOpenedCount})` : ''}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRegenerate}
+                    disabled={busy}
+                    className="inline-flex items-center justify-center min-h-10 sm:min-h-0 px-2.5 py-2 sm:py-1.5 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 sm:border-0 sm:bg-transparent dark:sm:bg-transparent sm:hover:bg-white dark:sm:hover:bg-slate-700/80 transition-colors disabled:opacity-50"
+                    title="Re-group by website domain"
+                  >
+                    By domain
+                  </button>
+                  <span className="hidden sm:block w-px h-5 bg-slate-200 dark:bg-slate-600 mx-0.5" aria-hidden />
+                  <button
+                    type="button"
+                    onClick={handleClear}
+                    disabled={busy}
+                    className="col-span-2 sm:col-auto inline-flex items-center justify-center min-h-10 sm:min-h-0 px-2.5 py-2 sm:py-1.5 text-sm font-medium rounded-lg border border-red-200/80 dark:border-red-900/50 bg-white dark:bg-slate-900 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 sm:border-0 sm:bg-transparent dark:sm:bg-transparent sm:ml-auto transition-colors disabled:opacity-50"
+                    title="Clear all bookmarks from this browser"
+                  >
+                    Clear all
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setToolbarMoreOpen((v) => !v)}
+                  className="sm:hidden w-full inline-flex items-center justify-center gap-1 min-h-10 px-3 py-2 text-sm font-medium rounded-lg text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700/80 transition-colors"
+                  aria-expanded={toolbarMoreOpen}
+                >
+                  {toolbarMoreOpen ? 'Less' : 'More actions'}
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 transition-transform ${toolbarMoreOpen ? 'rotate-180' : ''}`}>
+                    <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 011.06 0L10 11.94l3.72-3.72a.75.75 0 111.06 1.06l-4.25 4.25a.75.75 0 01-1.06 0L5.22 9.28a.75.75 0 010-1.06z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </>
+            )}
+          </div>
+
+          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed max-w-3xl px-0.5">
+            Sync from Browser Launcher Pro, or Import HTML from Chrome. Domains become spaces — saved only in this browser.
+          </p>
+        </div>
       )}
 
       {message && (
@@ -2412,16 +2496,27 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
             No bookmarks yet
           </p>
           <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 max-w-md mx-auto">
-            In Chrome: Bookmarks → Bookmark manager → ⋮ → Export bookmarks. Then import that HTML file here.
+            Sync from Browser Launcher Pro, or export HTML from Chrome (Bookmarks → Bookmark manager → ⋮ → Export) and import it here.
           </p>
-          <button
-            type="button"
-            onClick={() => handleImportClick('replace')}
-            disabled={busy}
-            className="px-4 py-2 text-sm font-medium rounded-xl bg-sky-600 hover:bg-sky-500 text-white transition-colors disabled:opacity-50"
-          >
-            Import Chrome HTML
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => void handleSyncFromBrowser()}
+              disabled={busy}
+              className="px-4 py-2 text-sm font-medium rounded-xl bg-violet-600 hover:bg-violet-500 text-white transition-colors disabled:opacity-50"
+              title="Merge bookmarks from Browser Launcher Pro when installed"
+            >
+              {busy ? 'Syncing…' : 'Sync from browser'}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleImportClick('replace')}
+              disabled={busy}
+              className="px-4 py-2 text-sm font-medium rounded-xl bg-sky-600 hover:bg-sky-500 text-white transition-colors disabled:opacity-50"
+            >
+              Import Chrome HTML
+            </button>
+          </div>
         </div>
       ) : openSpace ? (
         <div className="space-y-4">

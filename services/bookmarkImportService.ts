@@ -141,3 +141,116 @@ export const groupBookmarksByDomain = (bookmarkList: ImportedBookmark[]): Domain
 
   return generated;
 };
+
+export type BrowserExtensionBookmarksResult =
+  | { ok: true; bookmarks: ImportedBookmark[] }
+  | { ok: false; reason: 'timeout' | 'error' | 'empty'; message: string };
+
+/** Map raw extension JS errors to a user-facing Sync message. */
+export const friendlyExtensionBookmarkError = (raw?: string): string => {
+  const msg = (raw || '').trim();
+  const lower = msg.toLowerCase();
+  if (
+    !msg ||
+    lower.includes('gettree') ||
+    lower.includes('chrome.bookmarks') ||
+    lower.includes("reading 'bookmarks'") ||
+    lower.includes('bookmarks is undefined') ||
+    lower.includes('bookmarks api')
+  ) {
+    return 'Browser extension cannot read bookmarks (needs the “bookmarks” permission). Update/reinstall Browser Launcher Pro with bookmarks access, or use Import HTML.';
+  }
+  if (lower.includes('timeout') || lower.includes('not available') || lower.includes('install')) {
+    return 'Install extension or use Import HTML.';
+  }
+  // Keep short unknown errors; otherwise fall back to the standard hint
+  if (msg.length <= 120 && !lower.includes('undefined') && !lower.includes('null')) {
+    return `${msg} — or use Import HTML.`;
+  }
+  return 'Install extension or use Import HTML.';
+};
+
+/**
+ * Ask Browser Launcher Pro (or compatible extension) for the user's bookmarks
+ * via window.postMessage. Resolves with bookmarks or a friendly failure reason.
+ */
+export const requestBookmarksFromBrowserExtension = (
+  timeoutMs = 12000
+): Promise<BrowserExtensionBookmarksResult> => {
+  return new Promise((resolve) => {
+    const timestamp = Date.now();
+    let settled = false;
+
+    const finish = (result: BrowserExtensionBookmarksResult) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      window.removeEventListener('message', onMessage);
+      resolve(result);
+    };
+
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data;
+      if (
+        !data ||
+        data.type !== 'BROWSER_LAUNCHER_BOOKMARKS_LIST' ||
+        data.timestamp !== timestamp
+      ) {
+        return;
+      }
+
+      if (!data.success) {
+        finish({
+          ok: false,
+          reason: 'error',
+          message: friendlyExtensionBookmarkError(
+            typeof data.error === 'string' ? data.error : undefined
+          )
+        });
+        return;
+      }
+
+      const raw = Array.isArray(data.bookmarks) ? data.bookmarks : [];
+      const bookmarks: ImportedBookmark[] = [];
+      for (const item of raw) {
+        if (!item || typeof item !== 'object') continue;
+        const url = typeof item.url === 'string' ? item.url.trim() : '';
+        if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) continue;
+        const title =
+          (typeof item.title === 'string' && item.title.trim()) ||
+          (typeof item.label === 'string' && item.label.trim()) ||
+          url;
+        bookmarks.push({ title, url });
+      }
+
+      if (bookmarks.length === 0) {
+        finish({
+          ok: false,
+          reason: 'empty',
+          message:
+            'No http(s) bookmarks returned by the extension. Install extension or use Import HTML.'
+        });
+        return;
+      }
+
+      finish({ ok: true, bookmarks });
+    };
+
+    const timer = window.setTimeout(() => {
+      finish({
+        ok: false,
+        reason: 'timeout',
+        message: 'Install extension or use Import HTML.'
+      });
+    }, timeoutMs);
+
+    window.addEventListener('message', onMessage);
+    window.postMessage(
+      {
+        type: 'BROWSER_LAUNCHER_GET_BOOKMARKS',
+        timestamp
+      },
+      '*'
+    );
+  });
+};

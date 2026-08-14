@@ -99,6 +99,39 @@ window.addEventListener('message', function (event) {
       }
     });
   }
+
+  // Handle bookmarks sync for LinkNest Your Bookmarks / Fav Organizer
+  if (event.data && event.data.type === 'BROWSER_LAUNCHER_GET_BOOKMARKS') {
+    const timestamp = event.data.timestamp;
+    chrome.runtime.sendMessage({ action: 'getBookmarks' }, (response) => {
+      if (chrome.runtime.lastError) {
+        window.postMessage({
+          type: 'BROWSER_LAUNCHER_BOOKMARKS_LIST',
+          bookmarks: [],
+          error: chrome.runtime.lastError.message || 'Extension messaging failed',
+          timestamp: timestamp,
+          success: false
+        }, '*');
+        return;
+      }
+      if (response && response.success && Array.isArray(response.bookmarks)) {
+        window.postMessage({
+          type: 'BROWSER_LAUNCHER_BOOKMARKS_LIST',
+          bookmarks: response.bookmarks,
+          timestamp: timestamp,
+          success: true
+        }, '*');
+      } else {
+        window.postMessage({
+          type: 'BROWSER_LAUNCHER_BOOKMARKS_LIST',
+          bookmarks: [],
+          error: (response && response.error) || 'Failed to fetch bookmarks',
+          timestamp: timestamp,
+          success: false
+        }, '*');
+      }
+    });
+  }
 });
 
 // Send response back to the page

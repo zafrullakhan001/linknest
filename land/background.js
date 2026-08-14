@@ -1586,6 +1586,56 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true;
   }
+
+  // Flatten Chrome bookmark tree for LinkNest Sync / Fav Organizer
+  if (request.action === 'getBookmarks') {
+    const flattenBookmarks = (nodes, out) => {
+      if (!Array.isArray(nodes)) return;
+      for (const node of nodes) {
+        if (!node) continue;
+        if (node.url && (String(node.url).startsWith('http://') || String(node.url).startsWith('https://'))) {
+          out.push({
+            title: (node.title && String(node.title).trim()) || node.url,
+            url: String(node.url)
+          });
+        }
+        if (node.children && node.children.length) {
+          flattenBookmarks(node.children, out);
+        }
+      }
+    };
+
+    try {
+      if (!chrome.bookmarks || typeof chrome.bookmarks.getTree !== 'function') {
+        sendResponse({
+          success: false,
+          error:
+            'Bookmarks API unavailable. Add the "bookmarks" permission to the extension manifest, reload the extension, or use Import HTML.'
+        });
+        return false;
+      }
+
+      chrome.bookmarks.getTree((tree) => {
+        if (chrome.runtime.lastError) {
+          sendResponse({
+            success: false,
+            error: chrome.runtime.lastError.message || 'Failed to read bookmarks'
+          });
+          return;
+        }
+        const bookmarks = [];
+        flattenBookmarks(tree, bookmarks);
+        sendResponse({ success: true, bookmarks: bookmarks });
+      });
+      return true;
+    } catch (err) {
+      sendResponse({
+        success: false,
+        error: (err && err.message) || 'Failed to read bookmarks'
+      });
+      return false;
+    }
+  }
 });
 
 // Function to execute PowerShell script

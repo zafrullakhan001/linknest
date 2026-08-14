@@ -478,84 +478,7 @@ export const mergePublicBookmarksFromHtml = async (
   try {
     const text = await file.text();
     const extracted = parseHTMLBookmarks(text);
-    const { unique, duplicateCount } = deduplicateBookmarks(extracted);
-
-    if (unique.length === 0) {
-      return {
-        success: false,
-        message: 'No bookmarks found in this file.',
-        linkCount: 0,
-        categoryCount: 0,
-        duplicateCount,
-        addedCount: 0,
-        skippedExisting: 0
-      };
-    }
-
-    const current = getPublicBookmarks();
-    const existingUrls = new Set(
-      current.categories.flatMap((c) =>
-        c.links.map((l) => normalizeBookmarkUrl(l.url))
-      )
-    );
-
-    const toAdd = unique.filter(
-      (b) => !existingUrls.has(normalizeBookmarkUrl(b.url))
-    );
-    const skippedExisting = unique.length - toAdd.length;
-
-    if (toAdd.length === 0) {
-      return {
-        success: true,
-        message: `No new links to add (${skippedExisting} already saved${duplicateCount > 0 ? `, ${duplicateCount} in-file duplicates skipped` : ''}).`,
-        linkCount: countPublicBookmarkLinks(current),
-        categoryCount: current.categories.length,
-        duplicateCount,
-        addedCount: 0,
-        skippedExisting
-      };
-    }
-
-    const groups = groupBookmarksByDomain(toAdd);
-    let categories = current.categories.map((c) => ({
-      ...c,
-      links: [...c.links]
-    }));
-
-    for (const group of groups) {
-      const existing = findCategoryForDomain(categories, group.domainKey);
-      const newLinks = group.links.map((link) => ({
-        id: generateUuid(),
-        title: link.title,
-        url: link.url
-      }));
-      if (existing) {
-        categories = categories.map((cat) =>
-          cat.id === existing.id
-            ? { ...cat, links: [...cat.links, ...newLinks] }
-            : cat
-        );
-      } else {
-        categories.push({
-          id: generateUuid(),
-          title: group.title,
-          emoji: group.emoji,
-          themeColor: group.themeColor,
-          links: newLinks
-        });
-      }
-    }
-
-    const next = persist(categories);
-    return {
-      success: true,
-      message: `Merged ${toAdd.length} new link${toAdd.length === 1 ? '' : 's'} (${skippedExisting} already present${duplicateCount > 0 ? `, ${duplicateCount} in-file duplicates skipped` : ''}).`,
-      linkCount: countPublicBookmarkLinks(next),
-      categoryCount: next.categories.length,
-      duplicateCount,
-      addedCount: toAdd.length,
-      skippedExisting
-    };
+    return mergePublicBookmarksFromList(extracted, { sourceLabel: 'file' });
   } catch (error) {
     console.error('Failed to merge public bookmarks:', error);
     return {
@@ -571,6 +494,127 @@ export const mergePublicBookmarksFromHtml = async (
       skippedExisting: 0
     };
   }
+};
+
+/**
+ * Merge a flat list of bookmarks (e.g. from browser extension sync).
+ */
+export const mergePublicBookmarksFromList = (
+  bookmarks: Array<{ title?: string; url?: string; label?: string }>,
+  opts?: { sourceLabel?: string }
+): ImportResult => {
+  if (!isLocalStorageAvailable()) {
+    return {
+      success: false,
+      message: 'Browser storage is not available. Cannot save bookmarks here.',
+      linkCount: 0,
+      categoryCount: 0,
+      duplicateCount: 0,
+      addedCount: 0,
+      skippedExisting: 0
+    };
+  }
+
+  const normalized = (bookmarks || [])
+    .map((b) => {
+      const url = typeof b.url === 'string' ? b.url.trim() : '';
+      if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+        return null;
+      }
+      const title =
+        (typeof b.title === 'string' && b.title.trim()) ||
+        (typeof b.label === 'string' && b.label.trim()) ||
+        url;
+      return { title, url };
+    })
+    .filter((b): b is { title: string; url: string } => !!b);
+
+  const { unique, duplicateCount } = deduplicateBookmarks(normalized);
+  const sourceLabel = opts?.sourceLabel || 'list';
+
+  if (unique.length === 0) {
+    return {
+      success: false,
+      message:
+        sourceLabel === 'extension'
+          ? 'No bookmarks found from the browser extension.'
+          : 'No bookmarks found in this file.',
+      linkCount: 0,
+      categoryCount: 0,
+      duplicateCount,
+      addedCount: 0,
+      skippedExisting: 0
+    };
+  }
+
+  const current = getPublicBookmarks();
+  const existingUrls = new Set(
+    current.categories.flatMap((c) =>
+      c.links.map((l) => normalizeBookmarkUrl(l.url))
+    )
+  );
+
+  const toAdd = unique.filter(
+    (b) => !existingUrls.has(normalizeBookmarkUrl(b.url))
+  );
+  const skippedExisting = unique.length - toAdd.length;
+
+  if (toAdd.length === 0) {
+    return {
+      success: true,
+      message: `No new links to add (${skippedExisting} already saved${duplicateCount > 0 ? `, ${duplicateCount} duplicates skipped` : ''}).`,
+      linkCount: countPublicBookmarkLinks(current),
+      categoryCount: current.categories.length,
+      duplicateCount,
+      addedCount: 0,
+      skippedExisting
+    };
+  }
+
+  const groups = groupBookmarksByDomain(toAdd);
+  let categories = current.categories.map((c) => ({
+    ...c,
+    links: [...c.links]
+  }));
+
+  for (const group of groups) {
+    const existing = findCategoryForDomain(categories, group.domainKey);
+    const newLinks = group.links.map((link) => ({
+      id: generateUuid(),
+      title: link.title,
+      url: link.url
+    }));
+    if (existing) {
+      categories = categories.map((cat) =>
+        cat.id === existing.id
+          ? { ...cat, links: [...cat.links, ...newLinks] }
+          : cat
+      );
+    } else {
+      categories.push({
+        id: generateUuid(),
+        title: group.title,
+        emoji: group.emoji,
+        themeColor: group.themeColor,
+        links: newLinks
+      });
+    }
+  }
+
+  const next = persist(categories);
+  const head =
+    sourceLabel === 'extension'
+      ? 'Synced from browser extension'
+      : 'Merged';
+  return {
+    success: true,
+    message: `${head}: ${toAdd.length} new link${toAdd.length === 1 ? '' : 's'} (${skippedExisting} already present${duplicateCount > 0 ? `, ${duplicateCount} duplicates skipped` : ''}).`,
+    linkCount: countPublicBookmarkLinks(next),
+    categoryCount: next.categories.length,
+    duplicateCount,
+    addedCount: toAdd.length,
+    skippedExisting
+  };
 };
 
 /** Re-run domain grouping from all current links (replaces categories). */

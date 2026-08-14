@@ -613,7 +613,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-sky-50 dark:bg-sky-900/20 rounded-lg p-4 space-y-2 border border-sky-200 dark:border-sky-800">
                     <p className="font-medium text-sky-950 dark:text-sky-100">2. Your Bookmarks (guest)</p>
                     <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
-                      <li>Export bookmarks from Chrome → Import / Merge HTML here (grouped by domain into spaces)</li>
+                      <li>Export bookmarks from Chrome → Import / Merge HTML, or use <strong>Sync</strong> with Browser Launcher Pro</li>
                       <li>Inside a space: search, sort, compact list, quick-add URL, pin, move between spaces</li>
                       <li><strong>Check links</strong> / <strong>Remove broken</strong> / <strong>Update redirects</strong> after health probes</li>
                       <li>Export Space JSON (for Admin Import Spaces) or HTML (back to Chrome)</li>
