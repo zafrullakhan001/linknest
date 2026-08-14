@@ -3,6 +3,16 @@
 ## Overview
 The Help & About dialog has been comprehensively updated to reflect all new features added to LinkNest.
 
+## Latest: Your Bookmarks & Rewrite tools (2026-08)
+
+- Added writable guide: [`docs/YOUR_BOOKMARKS.md`](../docs/YOUR_BOOKMARKS.md)
+- Registered in Guides API (`api/docs.php`) under **Features**
+- Help tab: **Favorites, Your Bookmarks & Rewrite tools** — Favorite Links compact view, guest Chrome import, full rewrite tool table (Domain → Recipes), Undo/CSV, suggested workflows
+- Key Features card + Tips + About feature list updated
+- In-panel rewrite tabs already show example help cards
+
+---
+
 ## Latest: SSH Session SharedWorker guide (2026-08)
 
 - Added writable guide: [`docs/SSH_SESSION_SHARED_WORKER.md`](../docs/SSH_SESSION_SHARED_WORKER.md)

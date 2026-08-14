@@ -350,9 +350,11 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                       <li>View all public tiles and links</li>
                       <li>Search and filter links</li>
                       <li>Navigate between tiles</li>
+                      <li>Use the <strong>Favorites</strong> tab: favorite spaces, Favorite Links, and <strong>Your Bookmarks</strong> (import Chrome HTML)</li>
+                      <li>Rewrite bookmark URLs after branding changes (Domain, Path, Cleanup, Pipeline, Recipes, Undo)</li>
                       <li>Share the app via QR code from the navigation bar</li>
                       <li>Use floating widgets allowed for guests (clock, weather, calculator, and more)</li>
-                      <li>Cannot create, edit, or delete content</li>
+                      <li>Cannot create or edit server tiles (bookmarks stay in this browser only)</li>
                     </ul>
                   </div>
                   <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
@@ -372,7 +374,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 border border-emerald-200 dark:border-emerald-800">
                     <p className="font-medium text-emerald-900 dark:text-emerald-100">Guides tab:</p>
                     <p className="text-sm">
-                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (setup, architecture, App Updates, SSH / VNC Manual Deployment, SSH Session Shared Worker, Remote Widgets, Package for Deployment, and more). Start with App Updates or Architecture for the latest admin workflows.
+                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (Your Bookmarks &amp; Favorite Links, setup, architecture, App Updates, SSH / VNC, Package for Deployment, and more). Start with <strong>Your Bookmarks</strong> for guest bookmark migrations, or App Updates / Architecture for admin workflows.
                     </p>
                   </div>
                 </div>
@@ -408,6 +410,12 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   Key Features
                 </h3>
                 <div className="grid md:grid-cols-2 gap-4">
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Favorites &amp; Your Bookmarks</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Favorite spaces and links for quick access. Guests can import Chrome bookmarks into domain spaces, use compact title-only views, check link health, and run Rewrite tools for branding migrations (domain/path, cleanup, pipelines, recipes, undo). Full guide: Guides → Your Bookmarks &amp; Favorite Links.
+                    </p>
+                  </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Tiles & Spaces</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
@@ -575,6 +583,108 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Link Health Statuses</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
                       Health checks surface up, down, and redirected states so you can spot broken links and unexpected redirects before users hit them.
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-amber-500">
+                    <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
+                  </svg>
+                  Favorites, Your Bookmarks &amp; Rewrite tools
+                </h3>
+                <div className="space-y-4 text-slate-700 dark:text-slate-300">
+                  <p className="text-sm">
+                    Keep everyday links close. Guests use the <strong>Favorites</strong> tab for favorite spaces, Favorite Links, and <strong>Your Bookmarks</strong> (Chrome HTML import). Signed-in users get server-backed favorites. Full walkthrough:{' '}
+                    <strong>Guides → Your Bookmarks &amp; Favorite Links</strong>.
+                  </p>
+
+                  <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 space-y-2 border border-amber-200 dark:border-amber-800">
+                    <p className="font-medium text-amber-950 dark:text-amber-100">1. Favorite Links</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>Star links from spaces so they appear in the Favorite Links strip</li>
+                      <li><strong>View: Compact / Cards</strong> — compact shows <em>title only</em> with star + drag (arrows hidden); cards show URL, space, and health</li>
+                      <li>Sort A–Z or manual drag; place the strip above or below spaces</li>
+                    </ul>
+                  </div>
+
+                  <div className="bg-sky-50 dark:bg-sky-900/20 rounded-lg p-4 space-y-2 border border-sky-200 dark:border-sky-800">
+                    <p className="font-medium text-sky-950 dark:text-sky-100">2. Your Bookmarks (guest)</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>Export bookmarks from Chrome → Import / Merge HTML here (grouped by domain into spaces)</li>
+                      <li>Inside a space: search, sort, compact list, quick-add URL, pin, move between spaces</li>
+                      <li><strong>Check links</strong> / <strong>Remove broken</strong> / <strong>Update redirects</strong> after health probes</li>
+                      <li>Export Space JSON (for Admin Import Spaces) or HTML (back to Chrome)</li>
+                      <li>Home tools: Cleanup (dupes / never-opened), Regenerate by domain, full JSON/HTML export</li>
+                      <li>Saved in <strong>this browser only</strong> — export if you need a backup</li>
+                    </ul>
+                  </div>
+
+                  <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-4 space-y-3 border border-indigo-200 dark:border-indigo-800">
+                    <p className="font-medium text-indigo-950 dark:text-indigo-100">3. Rewrite tools (branding &amp; migration)</p>
+                    <p className="text-sm">
+                      Open <strong>Rewrite tools</strong> from a bookmark space or the bookmarks home. Each tab shows a help card with an example. Always <strong>Preview</strong> → <strong>Apply</strong>; use <strong>Undo</strong> to restore the last snapshot. Optionally <strong>Export CSV</strong> of the preview.
+                    </p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-indigo-200 dark:border-indigo-700 text-indigo-900 dark:text-indigo-200">
+                            <th className="py-1.5 pr-3 font-semibold">Tool</th>
+                            <th className="py-1.5 font-semibold">Example / use</th>
+                          </tr>
+                        </thead>
+                        <tbody className="text-slate-700 dark:text-slate-300">
+                          <tr className="border-b border-indigo-100 dark:border-indigo-900/40 align-top">
+                            <td className="py-1.5 pr-3 font-medium whitespace-nowrap">Domain</td>
+                            <td className="py-1.5">ahss.org → adventhealth.com (paths kept; www/portal preserved)</td>
+                          </tr>
+                          <tr className="border-b border-indigo-100 dark:border-indigo-900/40 align-top">
+                            <td className="py-1.5 pr-3 font-medium whitespace-nowrap">Path</td>
+                            <td className="py-1.5">/oldportal/forms → /new/forms (host unchanged)</td>
+                          </tr>
+                          <tr className="border-b border-indigo-100 dark:border-indigo-900/40 align-top">
+                            <td className="py-1.5 pr-3 font-medium whitespace-nowrap">Cleanup</td>
+                            <td className="py-1.5">Strip utm_*/fbclid; optional force HTTPS</td>
+                          </tr>
+                          <tr className="border-b border-indigo-100 dark:border-indigo-900/40 align-top">
+                            <td className="py-1.5 pr-3 font-medium whitespace-nowrap">Find &amp; replace</td>
+                            <td className="py-1.5">“AHSS” → “AdventHealth”; optional regex (e.g. strip /index.php)</td>
+                          </tr>
+                          <tr className="border-b border-indigo-100 dark:border-indigo-900/40 align-top">
+                            <td className="py-1.5 pr-3 font-medium whitespace-nowrap">Normalize</td>
+                            <td className="py-1.5">www on/off, trailing slash, strip :80/:443, HTTPS</td>
+                          </tr>
+                          <tr className="border-b border-indigo-100 dark:border-indigo-900/40 align-top">
+                            <td className="py-1.5 pr-3 font-medium whitespace-nowrap">Encoding</td>
+                            <td className="py-1.5">Lowercase host, decode %20, collapse //</td>
+                          </tr>
+                          <tr className="border-b border-indigo-100 dark:border-indigo-900/40 align-top">
+                            <td className="py-1.5 pr-3 font-medium whitespace-nowrap">Redirects</td>
+                            <td className="py-1.5">After Check links, adopt final URL from 301/302</td>
+                          </tr>
+                          <tr className="border-b border-indigo-100 dark:border-indigo-900/40 align-top">
+                            <td className="py-1.5 pr-3 font-medium whitespace-nowrap">Regroup</td>
+                            <td className="py-1.5">Move links into matching domain spaces (create if needed)</td>
+                          </tr>
+                          <tr className="border-b border-indigo-100 dark:border-indigo-900/40 align-top">
+                            <td className="py-1.5 pr-3 font-medium whitespace-nowrap">Suggest</td>
+                            <td className="py-1.5">Propose https / www fixes for broken or http links</td>
+                          </tr>
+                          <tr className="border-b border-indigo-100 dark:border-indigo-900/40 align-top">
+                            <td className="py-1.5 pr-3 font-medium whitespace-nowrap">Pipeline</td>
+                            <td className="py-1.5">Stack Domain → Cleanup → Regroup; one Preview/Apply</td>
+                          </tr>
+                          <tr className="align-top">
+                            <td className="py-1.5 pr-3 font-medium whitespace-nowrap">Recipes</td>
+                            <td className="py-1.5">Save named pipelines (e.g. “AHSS migration”) and re-run later</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className="text-sm">
+                      Shared filters: <strong>Skip pinned</strong>, all spaces vs this space, optional link checklist. Typical branding flow: Domain → Regroup → Check links → Update redirects.
                     </p>
                   </div>
                 </div>
@@ -1452,6 +1562,9 @@ package-for-deployment.bat -BasePath "/myapp"`}</pre>
                   <ul className="list-disc list-inside space-y-1 ml-2">
                     <li>Use the search bar to quickly find links across all tiles</li>
                     <li>Favorite frequently used tiles for quick access; organize favorites with the Favorites Organizer widget</li>
+                    <li>Guests: Favorites → Your Bookmarks to import Chrome HTML; use Compact view and Rewrite tools for branding migrations (Preview → Apply → Undo)</li>
+                    <li>Favorite Links: switch View to Compact for title-only rows with star + drag (arrows hidden)</li>
+                    <li>Bookmark rewrite tip: Domain → Regroup → Check links → Update redirects; save stacks as Recipes</li>
                     <li>Organize related tiles into categories</li>
                     <li>Use tabs within tiles to group related links</li>
                     <li>Create hyperlink tiles for quick access to external resources</li>
@@ -1495,7 +1608,7 @@ package-for-deployment.bat -BasePath "/myapp"`}</pre>
                     <li>Use SAML/SSO for enterprise Single Sign-On authentication (admin only)</li>
                     <li>Control tab visibility to show/hide specific tabs application-wide (admin only)</li>
                     <li>Send broadcast messages that scroll across the application (admin only)</li>
-                    <li>Open the <strong>Guides</strong> tab for searchable docs (Architecture, App Updates, Package for Deployment, XAMPP PHP upgrade, deployment, and more)</li>
+                    <li>Open the <strong>Guides</strong> tab for searchable docs (Your Bookmarks, Architecture, App Updates, Package for Deployment, XAMPP PHP upgrade, deployment, and more)</li>
                   </ul>
                 </div>
               </section>
@@ -1679,6 +1792,10 @@ package-for-deployment.bat -BasePath "/myapp"`}</pre>
                     'Visibility Controls',
                     'Categories & Groups',
                     'Favorites & Archive',
+                    'Your Bookmarks (guest Chrome HTML)',
+                    'Favorite Links Compact View',
+                    'Bookmark Rewrite Tools (Domain/Path/Pipeline/Recipes)',
+                    'Bookmark Link Health & Redirect Update',
                     'Share Spaces with Users',
                     'Shared Tile Notifications',
                     'QR Code Sharing',
