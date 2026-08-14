@@ -169,7 +169,7 @@ API: `POST /api/updater/rollback` with `{ "historyId": "…", "restoreDatabase":
 - PHP `ZipArchive` + cURL
 - Prefer Releases with `linknest-update-vX.Y.Z.zip`
 - Commit zipballs do not include `dist/`; without Node the UI stays old
-- Extract allow-list includes `api/`, `dist/`, `components/`, `services/`, `utils/`, `App.tsx`, `types.ts`, etc. (not `data/` / `uploads/`)
+- Extract allow-list includes `api/`, `dist/`, `components/`, `services/`, `utils/`, `styles/`, `App.tsx`, `types.ts`, `index.css`, etc. (not `data/` / `uploads/`)
 
 ### Frontend / SSH & VNC widgets
 
@@ -179,6 +179,8 @@ The browser loads the built UI from **`dist/`** (not raw `components/*.tsx`).
 |---------|------------------------------|
 | **git** mode + Node.js/npm | Apply a **commit** → updater runs `npm ci` + `npm run build:prod` → new widgets appear |
 | **zip** mode (typical office XAMPP, no Node) | Apply a **GitHub Release** from `publish-update-release.ps1` (includes `dist/`) |
+
+If a commit apply rebuild fails with a **Browserslist / caniuse-lite is N months old** message, that text is usually a stderr warning, not the real failure. Prefer applying a **Release** (prebuilt `dist/`) instead of a bare commit. Updater rebuilds also set `BROWSERSLIST_IGNORE_OLD_DATA=1` so that warning does not mask success.
 
 ---
 
@@ -223,6 +225,7 @@ Env (optional): `GITHUB_TOKEN` / `GH_TOKEN`.
 | UI / SSH widget still old after commit | Zip mode: apply a **portable Release**, not only a commit; Ctrl+F5 |
 | 404 `/linknest/assets/...` under ArchLinks or ERP3 | Release baked wrong base — publish with default `relative`, or rebuild with `VITE_BASE_PATH=./` |
 | Build fails: `buildSshLinkUrl` is not exported | Old bug: zip skipped `utils/` — fixed in updater allow-list; re-apply a Release that includes `utils/sshLink.ts` |
+| Build fails: `Could not resolve "./styles/tinymce-wysiwyg.css"` | Zip allow-list omitted `styles/`; TinyMCE display CSS now lives in `index.css`. Re-apply this update (or a Release). |
 | Update failed: could not rebuild dist | Expected without Node — publish/apply a Release instead |
 | `Failed writing scripts/data/` | Empty ZIP folder entry on Windows; fixed in **v2.3.5**. Do not retry v2.3.4 — apply **Release v2.3.5** |
 | UI still old | Ctrl+F5; check `BUILD_INFO.json` and that `dist/assets/*.js` timestamps changed |

@@ -27,6 +27,7 @@ const UPDATER_ZIP_ALLOW_PREFIXES = [
     'services/',
     'hooks/',
     'utils/',
+    'styles/',
     'scripts/',
     'land/',
     'vendor/',
@@ -576,12 +577,29 @@ function updaterAugmentGitCommand(string $command): string {
 }
 
 /**
+ * On Windows, npm/npx are .cmd shims — run via cmd.exe so proc_open gets a real exit code.
+ */
+function updaterAugmentShellCommand(string $command): string {
+    $command = updaterAugmentGitCommand($command);
+    if (!updaterIsWindows()) {
+        return $command;
+    }
+    if (preg_match('/^\s*cmd(\.exe)?\s/i', $command)) {
+        return $command;
+    }
+    if (preg_match('/^\s*(npm|npx|node)(\s|$)/i', $command)) {
+        return 'cmd /c ' . $command;
+    }
+    return $command;
+}
+
+/**
  * @param int $timeoutSec 0 = no timeout
  * @param array<string, string> $extraEnv extra environment variables for the child process
  */
 function updaterRunCommand(string $command, ?string $cwd = null, int $timeoutSec = 180, array $extraEnv = []): array {
     $cwd = $cwd ?: UPDATER_ROOT;
-    $command = updaterAugmentGitCommand($command);
+    $command = updaterAugmentShellCommand($command);
 
     $descriptor = [
         0 => ['pipe', 'r'],
@@ -630,6 +648,9 @@ function updaterRunCommand(string $command, ?string $cwd = null, int $timeoutSec
     $stderr = '';
     $start = time();
     $timedOut = false;
+    // PHP only reports exitcode once via proc_get_status(); later calls / proc_close()
+    // often return -1 even when the process succeeded (common on Windows).
+    $statusExitCode = null;
     while (true) {
         $status = proc_get_status($proc);
         $chunkOut = stream_get_contents($pipes[1]);
@@ -641,6 +662,9 @@ function updaterRunCommand(string $command, ?string $cwd = null, int $timeoutSec
             $stderr .= $chunkErr;
         }
         if (!$status['running']) {
+            if (array_key_exists('exitcode', $status) && is_int($status['exitcode']) && $status['exitcode'] >= 0) {
+                $statusExitCode = $status['exitcode'];
+            }
             break;
         }
         if ($timeoutSec > 0 && (time() - $start) >= $timeoutSec) {
@@ -661,7 +685,8 @@ function updaterRunCommand(string $command, ?string $cwd = null, int $timeoutSec
     }
     fclose($pipes[1]);
     fclose($pipes[2]);
-    $code = proc_close($proc);
+    $closeCode = proc_close($proc);
+    $code = $statusExitCode !== null ? $statusExitCode : (int)$closeCode;
 
     if ($timedOut) {
         return [
@@ -1654,20 +1679,64 @@ function updaterRebuildFrontend(): void {
         throw new RuntimeException('Node.js/npm required to rebuild after checkout');
     }
     $viteEnv = updaterPortableViteEnv();
+    // Stale caniuse-lite only prints a stderr warning, but on some hosts that noise
+    // was the only text shown when a rebuild was mis-reported as failed.
+    $viteEnv['BROWSERSLIST_IGNORE_OLD_DATA'] = '1';
     updaterSetProgress(55, 'Installing npm dependencies...');
     $ci = updaterRunCommand('npm ci', null, 600, $viteEnv);
     if (!$ci['ok']) {
         updaterAppendLog('npm ci failed, trying npm install...');
         $ci = updaterRunCommand('npm install', null, 600, $viteEnv);
         if (!$ci['ok']) {
-            throw new RuntimeException('npm install failed: ' . ($ci['stderr'] ?: $ci['stdout']));
+            throw new RuntimeException('npm install failed: ' . updaterCommandFailureMessage($ci));
         }
     }
     updaterSetProgress(75, 'Building frontend (portable base for any folder name)...');
     $build = updaterRunCommand('npm run build:prod', null, 600, $viteEnv);
     if (!$build['ok']) {
-        throw new RuntimeException('npm run build failed: ' . ($build['stderr'] ?: $build['stdout']));
+        throw new RuntimeException('npm run build failed: ' . updaterCommandFailureMessage($build));
     }
+}
+
+/**
+ * Prefer actionable build output over noisy stderr-only warnings (e.g. Browserslist age).
+ *
+ * @param array{ok?:bool,code?:int,stdout?:string,stderr?:string} $result
+ */
+function updaterCommandFailureMessage(array $result): string {
+    $stdout = trim((string)($result['stdout'] ?? ''));
+    $stderr = trim((string)($result['stderr'] ?? ''));
+    $code = isset($result['code']) ? (int)$result['code'] : -1;
+
+    $isBrowserslistNoise = static function (string $text): bool {
+        return $text !== ''
+            && stripos($text, 'Browserslist: browsers data') !== false
+            && stripos($text, 'update-browserslist-db') !== false
+            && !preg_match('/\b(error|failed|ERR!|ENOENT|SyntaxError|TypeError)\b/i', $text);
+    };
+
+    $parts = [];
+    if ($stdout !== '' && !$isBrowserslistNoise($stdout)) {
+        $parts[] = $stdout;
+    }
+    if ($stderr !== '' && !$isBrowserslistNoise($stderr)) {
+        $parts[] = $stderr;
+    }
+    if ($parts === []) {
+        if ($stderr !== '') {
+            $parts[] = $stderr;
+        } elseif ($stdout !== '') {
+            $parts[] = $stdout;
+        } else {
+            $parts[] = 'exit code ' . $code;
+        }
+    }
+
+    $msg = trim(implode("\n", $parts));
+    if (strlen($msg) > 4000) {
+        $msg = substr($msg, -4000);
+    }
+    return $msg;
 }
 
 /**
