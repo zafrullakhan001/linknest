@@ -36,6 +36,14 @@ import { getDisplayUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
 import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
 import { MobileTileView } from './MobileTileView';
+import { PublicBookmarksPanel } from './PublicBookmarksPanel';
+import {
+  PublicFavoritesSubTab,
+  getPublicFavoritesSubTab,
+  setPublicFavoritesSubTab,
+  countPublicBookmarkLinks,
+  getPublicBookmarks
+} from '../services/publicBookmarksService';
 import { SearchResultFilterControl, SearchWordModeControl, FuzzySearchControl, SearchIncludeUrlsControl, RefineSearchInput, SearchStatsBar, MatchScoreBadge, collectMatchingSearchLinks, collectMatchingSearchTags, parseSearchResultFilter, parseSearchWordMode, parseSearchFuzzy, parseSearchIncludeUrls, getSearchWords, tileMatchesSearch, filterGroupedTilesBySearch, matchingLinkMatchesSearch, scoreTileSearch, scoreLinkSearch, scoreTagSearch, combineSearchScores, type SearchResultFilter, type SearchWordMode, type SearchStatsSummary, type SearchMatchScore } from './SearchResultFilterControl';
 import type { StagingOfflineKitHandle } from './StagingOfflineKit';
 import { FormSection, FormLabel, SpaceModalHeader, EditModalTabButton } from './SpaceFormChrome';
@@ -2438,6 +2446,19 @@ export const TileGrid: React.FC<TileGridProps> = ({
     }
     return 'spaces';
   });
+  const [publicFavoritesSubTab, setPublicFavoritesSubTabState] = useState<PublicFavoritesSubTab>(() =>
+    typeof window !== 'undefined' ? getPublicFavoritesSubTab() : 'favorites'
+  );
+  const [publicBookmarkLinkCount, setPublicBookmarkLinkCount] = useState(() =>
+    typeof window !== 'undefined' ? countPublicBookmarkLinks() : 0
+  );
+  const handleSetPublicFavoritesSubTab = useCallback((tab: PublicFavoritesSubTab) => {
+    setPublicFavoritesSubTabState(tab);
+    setPublicFavoritesSubTab(tab);
+    if (tab === 'bookmarks') {
+      setPublicBookmarkLinkCount(countPublicBookmarkLinks());
+    }
+  }, []);
   const [pendingInvitationsCount, setPendingInvitationsCount] = useState(0);
   const [blockedUsersCount, setBlockedUsersCount] = useState(0);
   const [linkInfoDialog, setLinkInfoDialog] = useState<{ link: Link } | null>(null);
@@ -2466,6 +2487,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
     }
     return 'public';
   });
+
+  useEffect(() => {
+    if (!isAuthenticated && activeTab === 'public-favorites') {
+      setPublicBookmarkLinkCount(countPublicBookmarkLinks(getPublicBookmarks()));
+    }
+  }, [isAuthenticated, activeTab, publicFavoritesSubTab]);
 
   const requestTab = useCallback((tab: TabType) => {
     if (isTabDisabledBySettings(tab)) {
@@ -7316,8 +7343,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             )}
           </button>
         )}
-        {/* Export/Import buttons for public favorites - only show when favorites tab is active */}
-        {!isAuthenticated && !disabledAppTabs.has('favorites') && activeTab === 'public-favorites' && (
+        {/* Export/Import buttons for public favorites - only on Favorites sub-tab */}
+        {!isAuthenticated && !disabledAppTabs.has('favorites') && activeTab === 'public-favorites' && publicFavoritesSubTab === 'favorites' && (
           <div className="flex items-center gap-1 ml-2 pl-2 border-l border-slate-300 dark:border-slate-600 flex-shrink-0">
             <button
               onClick={handleExportPublicFavorites}
@@ -7507,6 +7534,42 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           </div>
         )}
       </div>
+
+      {/* Guest Public Favorites sub-tabs: starred Favorites vs Your Bookmarks */}
+      {!isAuthenticated && activeTab === 'public-favorites' && !disabledAppTabs.has('favorites') && (
+        <div className="flex items-center gap-2 py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl overflow-x-auto">
+          <button
+            type="button"
+            onClick={() => handleSetPublicFavoritesSubTab('favorites')}
+            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors whitespace-nowrap flex items-center gap-1.5 ${publicFavoritesSubTab === 'favorites'
+              ? 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 shadow-sm ring-1 ring-slate-200 dark:ring-slate-600'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'
+              }`}
+          >
+            Favorites
+            {(publicFavoritesCount + favoriteLinks.length) > 0 && (
+              <span className="px-1.5 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-full">
+                {publicFavoritesCount + favoriteLinks.length}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSetPublicFavoritesSubTab('bookmarks')}
+            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors whitespace-nowrap flex items-center gap-1.5 ${publicFavoritesSubTab === 'bookmarks'
+              ? 'bg-white dark:bg-slate-700 text-sky-600 dark:text-sky-400 shadow-sm ring-1 ring-slate-200 dark:ring-slate-600'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'
+              }`}
+          >
+            Your Bookmarks
+            {publicBookmarkLinkCount > 0 && (
+              <span className="px-1.5 py-0.5 text-xs bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400 rounded-full">
+                {publicBookmarkLinkCount}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Staging overview + AI Offline Kit (admin) */}
       {activeTab === 'staging' && isAuthenticated && user?.is_admin && (
@@ -7834,9 +7897,17 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       )}
 
 
+      {/* Guest Your Bookmarks (Chrome HTML import) */}
+      {!isAuthenticated && activeTab === 'public-favorites' && publicFavoritesSubTab === 'bookmarks' && (
+        <PublicBookmarksPanel onChange={() => setPublicBookmarkLinkCount(countPublicBookmarkLinks())} />
+      )}
+
       {/* Favorite Links Section - Component */}
       {(() => {
-        const favoriteLinksSection = (activeTab === 'favorites' || activeTab === 'public-favorites') && (
+        const showFavoriteLinks =
+          activeTab === 'favorites' ||
+          (activeTab === 'public-favorites' && (isAuthenticated || publicFavoritesSubTab === 'favorites'));
+        const favoriteLinksSection = showFavoriteLinks && (
           <div className="mb-8">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -8173,7 +8244,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       )}
 
       {/* Categories View */}
-      {viewMode === 'categories' && activeTab !== 'monitoring' && activeTab !== 'monitorv2' && !(activeTab === 'private' && privateSubTab !== 'spaces') && !hideSearchTiles && (
+      {viewMode === 'categories' && activeTab !== 'monitoring' && activeTab !== 'monitorv2' && !(activeTab === 'private' && privateSubTab !== 'spaces') && !hideSearchTiles && !( !isAuthenticated && activeTab === 'public-favorites' && publicFavoritesSubTab === 'bookmarks') && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-20 mt-6">
           {Object.keys(groupedTiles).map((groupName) => {
             const groupTiles = groupedTiles[groupName];
@@ -8240,7 +8311,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       )}
 
       {/* Tiles Grid - Full Width with More Columns */}
-      <div className={activeTab === 'monitoring' || activeTab === 'monitorv2' || viewMode === 'categories' || (activeTab === 'private' && privateSubTab !== 'spaces') || hideSearchTiles ? 'hidden' : ''}>
+      <div className={activeTab === 'monitoring' || activeTab === 'monitorv2' || viewMode === 'categories' || (activeTab === 'private' && privateSubTab !== 'spaces') || hideSearchTiles || (!isAuthenticated && activeTab === 'public-favorites' && publicFavoritesSubTab === 'bookmarks') ? 'hidden' : ''}>
         {Object.keys(groupedTiles).map((groupName, groupIndex) => {
           const groupTiles = groupedTiles[groupName];
           // Use the actual display order (which respects categoryOrder)
@@ -8575,7 +8646,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       {/* Favorite Links Section - Shown below tiles if favoriteLinksAbove is false */}
       {
         (() => {
-          const favoriteLinksSection = (activeTab === 'favorites' || activeTab === 'public-favorites') && (
+          const showFavoriteLinks =
+            activeTab === 'favorites' ||
+            (activeTab === 'public-favorites' && (isAuthenticated || publicFavoritesSubTab === 'favorites'));
+          const favoriteLinksSection = showFavoriteLinks && (
             <div className="mb-8">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">

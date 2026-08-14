@@ -5,6 +5,13 @@ import { useAuth } from '../contexts/AuthContext';
 import { COLOR_STYLES } from '../types';
 import { TileAnimationSelector, useTileAnimation, getTileAnimationClass, getTileDecorationClass, TileAnimation, TileDecoration } from './TileAnimationSelector';
 import { getPublicFavorites, checkLocalStorageAvailability, togglePublicFavorite, isPublicFavorite, getPublicLinkFavorites, getPublicLinkFavoriteDetails, syncPublicLinkFavoriteDetails } from '../services/publicFavoritesService';
+import {
+  PublicFavoritesSubTab,
+  getPublicFavoritesSubTab,
+  setPublicFavoritesSubTab,
+  countPublicBookmarkLinks
+} from '../services/publicBookmarksService';
+import { PublicBookmarksPanel } from './PublicBookmarksPanel';
 import { getFavoriteLinks, resolveFavoriteLinks, FavoriteLink } from '../services/storageService';
 import { getDisplayUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick } from '../utils/sshLink';
@@ -164,6 +171,21 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
   const [favoriteLinks, setFavoriteLinks] = useState<FavoriteLink[]>([]);
   const [isLoadingFavoriteLinks, setIsLoadingFavoriteLinks] = useState(false);
   const isFavoritesTab = activeTab === 'favorites' || activeTab === 'public-favorites';
+  const [publicFavoritesSubTab, setPublicFavoritesSubTabState] = useState<PublicFavoritesSubTab>(() =>
+    typeof window !== 'undefined' ? getPublicFavoritesSubTab() : 'favorites'
+  );
+  const [publicBookmarkLinkCount, setPublicBookmarkLinkCount] = useState(() =>
+    typeof window !== 'undefined' ? countPublicBookmarkLinks() : 0
+  );
+  const handleSetPublicFavoritesSubTab = useCallback((tab: PublicFavoritesSubTab) => {
+    setPublicFavoritesSubTabState(tab);
+    setPublicFavoritesSubTab(tab);
+    setPublicBookmarkLinkCount(countPublicBookmarkLinks());
+  }, []);
+  const showGuestBookmarks =
+    !isAuthenticated && activeTab === 'public-favorites' && publicFavoritesSubTab === 'bookmarks';
+  const showGuestFavoritesContent =
+    isAuthenticated || publicFavoritesSubTab === 'favorites' || activeTab !== 'public-favorites';
 
   // Load favorite links when Favorites tab is active
   useEffect(() => {
@@ -1005,8 +1027,42 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
           </div>
         )}
 
+        {/* Guest Favorites | Your Bookmarks switch */}
+        {!isAuthenticated && activeTab === 'public-favorites' && localStorageAvailable && (
+          <div className="mb-4 flex items-center gap-2 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl">
+            <button
+              type="button"
+              onClick={() => handleSetPublicFavoritesSubTab('favorites')}
+              className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${publicFavoritesSubTab === 'favorites'
+                ? 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 shadow-sm'
+                : 'text-slate-600 dark:text-slate-400'
+                }`}
+            >
+              Favorites
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSetPublicFavoritesSubTab('bookmarks')}
+              className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${publicFavoritesSubTab === 'bookmarks'
+                ? 'bg-white dark:bg-slate-700 text-sky-600 dark:text-sky-400 shadow-sm'
+                : 'text-slate-600 dark:text-slate-400'
+                }`}
+            >
+              Bookmarks
+              {publicBookmarkLinkCount > 0 ? ` (${publicBookmarkLinkCount})` : ''}
+            </button>
+          </div>
+        )}
+
+        {showGuestBookmarks && (
+          <PublicBookmarksPanel
+            compact
+            onChange={() => setPublicBookmarkLinkCount(countPublicBookmarkLinks())}
+          />
+        )}
+
         {/* Favorite Links — mobile cards (Favorites tab only) */}
-        {isFavoritesTab && (isLoadingFavoriteLinks || favoriteLinks.length > 0) && (
+        {isFavoritesTab && showGuestFavoritesContent && (isLoadingFavoriteLinks || favoriteLinks.length > 0) && (
           <div className="mb-8">
             <div className="flex items-center gap-2 mb-3">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-amber-500">
@@ -1127,14 +1183,14 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
           </div>
         )}
 
-        {isFavoritesTab && filteredTiles.length > 0 && searchResultFilter !== 'links' && (
+        {isFavoritesTab && showGuestFavoritesContent && filteredTiles.length > 0 && searchResultFilter !== 'links' && (
           <div className="flex items-center gap-2 mb-3">
             <h2 className="text-base font-bold text-slate-900 dark:text-white">Favorite Spaces</h2>
             <span className="text-xs text-slate-500 dark:text-slate-400">({filteredTiles.length})</span>
           </div>
         )}
 
-        {filteredTiles.length > 0 && !(searchTerm.trim() && searchResultFilter === 'links') ? (
+        {!showGuestBookmarks && filteredTiles.length > 0 && !(searchTerm.trim() && searchResultFilter === 'links') ? (
           <div className="grid grid-cols-3 gap-6">
             {filteredTiles.map((tile, index) => {
               const tileStyles = getTileStyles(tile);
@@ -1261,7 +1317,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
               );
             })}
           </div>
-        ) : favoriteLinks.length === 0 && !isLoadingFavoriteLinks && !(searchTerm.trim() && searchResultFilter !== 'tiles' && matchingSearchLinks.length > 0) ? (
+        ) : !showGuestBookmarks && favoriteLinks.length === 0 && !isLoadingFavoriteLinks && !(searchTerm.trim() && searchResultFilter !== 'tiles' && matchingSearchLinks.length > 0) ? (
           <div className="text-center py-16 animate-fadeIn">
             {!isAuthenticated && activeTab === 'public-favorites' ? (
               <>

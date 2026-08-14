@@ -5,11 +5,14 @@ import { settingsService } from '../services/settingsService';
 import { useAuth } from '../contexts/AuthContext';
 import { generateUuid } from '../services/idService';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import {
+  ImportedBookmark,
+  parseHTMLBookmarks,
+  deduplicateBookmarks,
+  groupBookmarksByDomain
+} from '../services/bookmarkImportService';
 
-interface Bookmark {
-  title: string;
-  url: string;
-}
+type Bookmark = ImportedBookmark;
 
 interface FavOrganizerWidgetProps {
   onClose?: () => void;
@@ -135,49 +138,15 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
       return;
     }
 
-    const domainMap = new Map<string, Bookmark[]>();
-
-    bookmarkList.forEach(bookmark => {
-      try {
-        const url = new URL(bookmark.url);
-        const domain = url.hostname.replace('www.', '').replace(/^\.+/, '');
-        const baseDomain = domain.split('.').slice(-2).join('.'); // Get main domain (e.g., google.com from mail.google.com)
-
-        if (!domainMap.has(baseDomain)) {
-          domainMap.set(baseDomain, []);
-        }
-        domainMap.get(baseDomain)!.push(bookmark);
-      } catch {
-        // Invalid URL, put in misc
-        if (!domainMap.has('misc')) {
-          domainMap.set('misc', []);
-        }
-        domainMap.get('misc')!.push(bookmark);
-      }
-    });
-
-    // Create tiles from domains
-    const emojis = ['💻', '🌐', '📚', '🛠️', '🎨', '🚀', '📱', '☁️', '🔐', '💰', '📊', '🎮', '🎵', '📷', '✈️', '🛒', '🏥', '🎓', '📝', '💡'];
-    const colors = ['blue', 'emerald', 'violet', 'amber', 'rose', 'cyan', 'fuchsia', 'orange', 'indigo', 'lime', 'sky', 'slate', 'teal', 'pink', 'purple', 'yellow', 'zinc', 'red', 'green', 'gray'];
-
-    const generatedTiles = Array.from(domainMap.entries()).map(([domain, links], index) => {
-      const domainName = domain === 'misc' ? 'Miscellaneous' : domain.charAt(0).toUpperCase() + domain.slice(1);
-      return {
-        id: `tile_${Date.now()}_${index}`,
-        title: domainName,
-        description: `${links.length} link${links.length !== 1 ? 's' : ''} from ${domain}`,
-        emoji: emojis[index % emojis.length],
-        themeColor: colors[index % colors.length],
-        links
-      };
-    });
-
-    // Sort by domain name (misc at the end)
-    generatedTiles.sort((a, b) => {
-      if (a.title === 'Miscellaneous') return 1;
-      if (b.title === 'Miscellaneous') return -1;
-      return a.title.localeCompare(b.title);
-    });
+    const stamp = Date.now();
+    const generatedTiles = groupBookmarksByDomain(bookmarkList).map((group, index) => ({
+      id: `tile_${stamp}_${index}`,
+      title: group.title,
+      description: group.description,
+      emoji: group.emoji,
+      themeColor: group.themeColor,
+      links: group.links
+    }));
 
     setManualTiles(generatedTiles);
   };
@@ -379,68 +348,6 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
     } else {
       localStorage.removeItem(OPENROUTER_API_KEY_STORAGE);
     }
-  };
-
-  // Deduplicate bookmarks by URL (case-insensitive, normalize URLs)
-  const deduplicateBookmarks = (bookmarks: Bookmark[]): { unique: Bookmark[]; duplicateCount: number } => {
-    const seenUrls = new Map<string, Bookmark>();
-    const unique: Bookmark[] = [];
-    let duplicates = 0;
-
-    for (const bookmark of bookmarks) {
-      // Normalize URL: lowercase, remove trailing slash, remove fragments
-      const normalizedUrl = bookmark.url
-        .toLowerCase()
-        .replace(/\/$/, '') // Remove trailing slash
-        .split('#')[0] // Remove fragment
-        .trim();
-
-      if (!seenUrls.has(normalizedUrl)) {
-        seenUrls.set(normalizedUrl, bookmark);
-        unique.push(bookmark);
-      } else {
-        duplicates++;
-        // Keep the bookmark with the better title (longer, more descriptive)
-        const existing = seenUrls.get(normalizedUrl)!;
-        if (bookmark.title.length > existing.title.length && bookmark.title !== bookmark.url) {
-          // Replace with better title
-          const index = unique.findIndex(b => {
-            const norm = b.url.toLowerCase().replace(/\/$/, '').split('#')[0].trim();
-            return norm === normalizedUrl;
-          });
-          if (index !== -1) {
-            unique[index] = bookmark;
-            seenUrls.set(normalizedUrl, bookmark);
-          }
-        }
-      }
-    }
-
-    return { unique, duplicateCount: duplicates };
-  };
-
-  // Parse HTML bookmark file (Netscape format used by Chrome/Edge/Firefox)
-  const parseHTMLBookmarks = (htmlContent: string): Bookmark[] => {
-    const bookmarksList: Bookmark[] = [];
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(htmlContent, 'text/html');
-
-    // Find all anchor tags (bookmarks)
-    const links = doc.querySelectorAll('a');
-
-    links.forEach((link) => {
-      const href = link.getAttribute('href');
-      const title = link.textContent?.trim() || href || '';
-
-      if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
-        bookmarksList.push({
-          title: title || href,
-          url: href
-        });
-      }
-    });
-
-    return bookmarksList;
   };
 
   // Handle HTML bookmark file import
