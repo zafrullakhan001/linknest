@@ -34,6 +34,8 @@ export interface PublicBookmarkLink {
   healthHttpCode?: number | null;
   healthError?: string | null;
   healthCheckedAt?: string;
+  /** Final URL after redirects from last health check (when different from url). */
+  healthFinalUrl?: string;
 }
 
 export interface PublicBookmarkCategory {
@@ -139,6 +141,10 @@ const normalizeLink = (raw: unknown): PublicBookmarkLink | null => {
     healthCheckedAt:
       typeof link.healthCheckedAt === 'string' && link.healthCheckedAt.trim()
         ? link.healthCheckedAt.trim()
+        : undefined,
+    healthFinalUrl:
+      typeof link.healthFinalUrl === 'string' && link.healthFinalUrl.trim()
+        ? link.healthFinalUrl.trim()
         : undefined
   };
 };
@@ -850,58 +856,239 @@ const titleLooksLikeDomain = (title: string, domain: string): boolean => {
   return !!base && t === base;
 };
 
+export interface BookmarkRewriteChange {
+  categoryId: string;
+  categoryTitle: string;
+  linkId?: string;
+  linkTitle?: string;
+  field: 'url' | 'title' | 'spaceTitle';
+  before: string;
+  after: string;
+}
+
+export interface BookmarkRewriteResult {
+  data: PublicBookmarksData;
+  ok: boolean;
+  message: string;
+  scanned: number;
+  updated: number;
+  changes: BookmarkRewriteChange[];
+}
+
+export type BookmarkRewriteScope = {
+  categoryId?: string;
+  dryRun?: boolean;
+  renameMatchingSpaces?: boolean;
+};
+
+const TRACKING_QUERY_KEYS = new Set([
+  'fbclid',
+  'gclid',
+  'gclsrc',
+  'dclid',
+  'msclkid',
+  'mc_cid',
+  'mc_eid',
+  'mkt_tok',
+  '_ga',
+  '_gl',
+  '_hsenc',
+  '_hsmi',
+  'igshid',
+  'si',
+  'feature',
+  'ref',
+  'ref_src',
+  'ref_url',
+  'ncid',
+  'cmpid',
+  's_cid'
+]);
+
+const isTrackingQueryKey = (key: string): boolean => {
+  const k = key.toLowerCase();
+  if (TRACKING_QUERY_KEYS.has(k)) return true;
+  if (k.startsWith('utm_')) return true;
+  if (k.startsWith('hsa_')) return true;
+  if (k.startsWith('mtm_')) return true;
+  if (k.startsWith('pk_')) return true;
+  return false;
+};
+
+/** Strip common marketing / click-id query params. */
+export const stripBookmarkTrackingParams = (url: string): string | null => {
+  try {
+    const parsed = new URL(url);
+    let changed = false;
+    const keys = [...parsed.searchParams.keys()];
+    for (const key of keys) {
+      if (isTrackingQueryKey(key)) {
+        parsed.searchParams.delete(key);
+        changed = true;
+      }
+    }
+    if (!changed) return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+};
+
+/** Upgrade http:// → https:// when possible. */
+export const forceBookmarkUrlHttps = (url: string): string | null => {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:') return null;
+    parsed.protocol = 'https:';
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+};
+
+/** Normalize path prefix for rewrite (leading slash, no trailing slash except root). */
+export const normalizePathPrefix = (raw: string): string => {
+  let s = raw.trim();
+  if (!s) return '';
+  if (!s.startsWith('/')) s = `/${s}`;
+  if (s.length > 1 && s.endsWith('/')) s = s.slice(0, -1);
+  return s;
+};
+
+/**
+ * Replace a path prefix: /oldportal/foo → /new/foo when from=/oldportal to=/new
+ */
+export const rewriteBookmarkUrlPath = (
+  url: string,
+  fromPathRaw: string,
+  toPathRaw: string
+): string | null => {
+  const fromPath = normalizePathPrefix(fromPathRaw);
+  const toPath = normalizePathPrefix(toPathRaw);
+  if (!fromPath || toPath === '') return null;
+  if (fromPath === toPath) return null;
+
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname || '/';
+    if (path === fromPath || path.startsWith(`${fromPath}/`)) {
+      const rest = path.slice(fromPath.length);
+      parsed.pathname = `${toPath}${rest}` || '/';
+      return parsed.toString();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
+
+const dedupeCategoryLinks = (links: PublicBookmarkLink[]): PublicBookmarkLink[] => {
+  const seen = new Set<string>();
+  const deduped: PublicBookmarkLink[] = [];
+  for (const link of links) {
+    const key = normalizeBookmarkUrl(link.url);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(link);
+  }
+  return deduped;
+};
+
+const emptyRewriteResult = (
+  message: string,
+  ok = false
+): BookmarkRewriteResult => ({
+  data: getPublicBookmarks(),
+  ok,
+  message,
+  scanned: 0,
+  updated: 0,
+  changes: []
+});
+
+const finishRewrite = (
+  source: PublicBookmarksData,
+  categories: PublicBookmarkCategory[],
+  changes: BookmarkRewriteChange[],
+  scanned: number,
+  dryRun: boolean | undefined,
+  successMessage: string,
+  noneMessage: string
+): BookmarkRewriteResult => {
+  const updated = new Set(
+    changes
+      .filter((c) => c.linkId)
+      .map((c) => `${c.categoryId}:${c.linkId}`)
+  ).size;
+  // Space-title-only changes still count
+  const spaceOnly = changes.filter((c) => c.field === 'spaceTitle' && !c.linkId).length;
+  const linkUpdates = updated;
+  const totalTouched = linkUpdates + spaceOnly;
+
+  if (changes.length === 0) {
+    return {
+      data: source,
+      ok: true,
+      message: noneMessage,
+      scanned,
+      updated: 0,
+      changes: []
+    };
+  }
+
+  if (dryRun) {
+    return {
+      data: source,
+      ok: true,
+      message: `Preview: ${changes.length} change${changes.length === 1 ? '' : 's'} across ${Math.max(linkUpdates, 1)} link/space update${linkUpdates === 1 && spaceOnly === 0 ? '' : 's'} (${scanned} scanned).`,
+      scanned,
+      updated: linkUpdates || totalTouched,
+      changes
+    };
+  }
+
+  const next = persist(categories);
+  return {
+    data: next,
+    ok: true,
+    message: successMessage.replace('%n%', String(linkUpdates || changes.length)),
+    scanned,
+    updated: linkUpdates || changes.length,
+    changes
+  };
+};
+
 /**
  * Rewrite bookmark URLs from one domain to another (branding migrations).
- * Scope: one space (categoryId) or all spaces.
+ * Scope: one space (categoryId) or all spaces. Pass dryRun for staging preview.
  */
 export const rewritePublicBookmarkDomains = (
   fromDomainRaw: string,
   toDomainRaw: string,
-  opts?: { categoryId?: string; renameMatchingSpaces?: boolean }
-): {
-  data: PublicBookmarksData;
-  updated: number;
-  scanned: number;
-  message: string;
-  ok: boolean;
-} => {
+  opts?: BookmarkRewriteScope
+): BookmarkRewriteResult => {
   const from = normalizeDomainInput(fromDomainRaw);
   const to = normalizeDomainInput(toDomainRaw);
 
   if (!from || !to) {
-    return {
-      data: getPublicBookmarks(),
-      updated: 0,
-      scanned: 0,
-      ok: false,
-      message: 'Enter both the old domain and the new domain (e.g. ahss.org → adventhealth.com).'
-    };
+    return emptyRewriteResult(
+      'Enter both the old domain and the new domain (e.g. ahss.org → adventhealth.com).'
+    );
   }
   if (from === to) {
-    return {
-      data: getPublicBookmarks(),
-      updated: 0,
-      scanned: 0,
-      ok: false,
-      message: 'Old and new domains are the same.'
-    };
+    return emptyRewriteResult('Old and new domains are the same.');
   }
   if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(from) || !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(to)) {
-    return {
-      data: getPublicBookmarks(),
-      updated: 0,
-      scanned: 0,
-      ok: false,
-      message: 'Use a valid domain like ahss.org or adventhealth.com (no path).'
-    };
+    return emptyRewriteResult(
+      'Use a valid domain like ahss.org or adventhealth.com (no path).'
+    );
   }
 
   const source = getPublicBookmarks();
-  let updated = 0;
   let scanned = 0;
+  const changes: BookmarkRewriteChange[] = [];
   const renameSpaces = opts?.renameMatchingSpaces !== false;
-  const toTitle =
-    to.charAt(0).toUpperCase() + to.slice(1);
+  const toTitle = to.charAt(0).toUpperCase() + to.slice(1);
 
   const categories = source.categories.map((cat) => {
     if (opts?.categoryId && cat.id !== opts.categoryId) return cat;
@@ -910,51 +1097,441 @@ export const rewritePublicBookmarkDomains = (
       scanned += 1;
       const nextUrl = rewriteBookmarkUrlDomain(link.url, from, to);
       if (!nextUrl || nextUrl === link.url) return link;
-      updated += 1;
+
       let title = link.title;
-      // If title was the old URL or contained the old host, refresh lightly
-      if (title === link.url) {
-        title = nextUrl;
+      if (title === link.url) title = nextUrl;
+
+      changes.push({
+        categoryId: cat.id,
+        categoryTitle: cat.title,
+        linkId: link.id,
+        linkTitle: link.title,
+        field: 'url',
+        before: link.url,
+        after: nextUrl
+      });
+      if (title !== link.title) {
+        changes.push({
+          categoryId: cat.id,
+          categoryTitle: cat.title,
+          linkId: link.id,
+          linkTitle: link.title,
+          field: 'title',
+          before: link.title,
+          after: title
+        });
       }
-      return { ...link, url: nextUrl, title };
+      return { ...link, url: nextUrl, title, healthFinalUrl: undefined };
     });
 
-    // Dedupe by normalized URL within the space after rewrite
-    const seen = new Set<string>();
-    const deduped: PublicBookmarkLink[] = [];
-    for (const link of links) {
-      const key = normalizeBookmarkUrl(link.url);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      deduped.push(link);
-    }
-
+    const deduped = dedupeCategoryLinks(links);
     let title = cat.title;
     if (renameSpaces && titleLooksLikeDomain(cat.title, from)) {
+      changes.push({
+        categoryId: cat.id,
+        categoryTitle: cat.title,
+        field: 'spaceTitle',
+        before: cat.title,
+        after: toTitle
+      });
       title = toTitle;
     }
 
     return { ...cat, title, links: deduped };
   });
 
-  if (updated === 0) {
-    return {
-      data: source,
-      updated: 0,
-      scanned,
-      ok: true,
-      message: `No links matched “${from}”${opts?.categoryId ? ' in this space' : ''}.`
-    };
+  return finishRewrite(
+    source,
+    categories,
+    changes,
+    scanned,
+    opts?.dryRun,
+    `Rewrote %n% link(s) from ${from} → ${to}${opts?.categoryId ? ' in this space' : ' across Your Bookmarks'}.`,
+    `No links matched “${from}”${opts?.categoryId ? ' in this space' : ''}.`
+  );
+};
+
+/**
+ * Path prefix rewrite: /oldportal → /new (keeps host, query, hash).
+ */
+export const rewritePublicBookmarkPaths = (
+  fromPathRaw: string,
+  toPathRaw: string,
+  opts?: BookmarkRewriteScope
+): BookmarkRewriteResult => {
+  const fromPath = normalizePathPrefix(fromPathRaw);
+  const toPath = normalizePathPrefix(toPathRaw);
+
+  if (!fromPath) {
+    return emptyRewriteResult('Enter the old path prefix (e.g. /oldportal).');
+  }
+  if (toPath === '') {
+    return emptyRewriteResult('Enter the new path prefix (e.g. /new or /).');
+  }
+  if (fromPath === toPath) {
+    return emptyRewriteResult('Old and new paths are the same.');
   }
 
-  const next = persist(categories);
-  return {
-    data: next,
-    updated,
+  const source = getPublicBookmarks();
+  let scanned = 0;
+  const changes: BookmarkRewriteChange[] = [];
+
+  const categories = source.categories.map((cat) => {
+    if (opts?.categoryId && cat.id !== opts.categoryId) return cat;
+
+    const links = cat.links.map((link) => {
+      scanned += 1;
+      const nextUrl = rewriteBookmarkUrlPath(link.url, fromPath, toPath);
+      if (!nextUrl || nextUrl === link.url) return link;
+
+      let title = link.title;
+      if (title === link.url) title = nextUrl;
+
+      changes.push({
+        categoryId: cat.id,
+        categoryTitle: cat.title,
+        linkId: link.id,
+        linkTitle: link.title,
+        field: 'url',
+        before: link.url,
+        after: nextUrl
+      });
+      return { ...link, url: nextUrl, title, healthFinalUrl: undefined };
+    });
+
+    return { ...cat, links: dedupeCategoryLinks(links) };
+  });
+
+  return finishRewrite(
+    source,
+    categories,
+    changes,
     scanned,
-    ok: true,
-    message: `Rewrote ${updated} link${updated === 1 ? '' : 's'} from ${from} → ${to}${opts?.categoryId ? ' in this space' : ' across Your Bookmarks'}.`
+    opts?.dryRun,
+    `Rewrote path on %n% link(s): ${fromPath} → ${toPath}.`,
+    `No links matched path “${fromPath}”${opts?.categoryId ? ' in this space' : ''}.`
+  );
+};
+
+/**
+ * Strip tracking params and/or force HTTPS.
+ */
+export const cleanupPublicBookmarkUrls = (
+  opts: BookmarkRewriteScope & {
+    stripTracking?: boolean;
+    forceHttps?: boolean;
+  }
+): BookmarkRewriteResult => {
+  const stripTracking = opts.stripTracking !== false;
+  const forceHttps = opts.forceHttps === true;
+  if (!stripTracking && !forceHttps) {
+    return emptyRewriteResult('Enable strip tracking params and/or force HTTPS.');
+  }
+
+  const source = getPublicBookmarks();
+  let scanned = 0;
+  const changes: BookmarkRewriteChange[] = [];
+
+  const categories = source.categories.map((cat) => {
+    if (opts.categoryId && cat.id !== opts.categoryId) return cat;
+
+    const links = cat.links.map((link) => {
+      scanned += 1;
+      let nextUrl = link.url;
+      if (stripTracking) {
+        nextUrl = stripBookmarkTrackingParams(nextUrl) || nextUrl;
+      }
+      if (forceHttps) {
+        nextUrl = forceBookmarkUrlHttps(nextUrl) || nextUrl;
+      }
+      if (nextUrl === link.url) return link;
+
+      let title = link.title;
+      if (title === link.url) title = nextUrl;
+
+      changes.push({
+        categoryId: cat.id,
+        categoryTitle: cat.title,
+        linkId: link.id,
+        linkTitle: link.title,
+        field: 'url',
+        before: link.url,
+        after: nextUrl
+      });
+      return { ...link, url: nextUrl, title, healthFinalUrl: undefined };
+    });
+
+    return { ...cat, links: dedupeCategoryLinks(links) };
+  });
+
+  const parts: string[] = [];
+  if (stripTracking) parts.push('tracking params');
+  if (forceHttps) parts.push('HTTPS');
+
+  return finishRewrite(
+    source,
+    categories,
+    changes,
+    scanned,
+    opts.dryRun,
+    `Cleaned %n% link(s) (${parts.join(' + ')}).`,
+    `No links needed cleanup${opts.categoryId ? ' in this space' : ''}.`
+  );
+};
+
+/**
+ * Bulk find & replace in titles and/or URLs (and optional space titles).
+ */
+export const findReplacePublicBookmarks = (
+  findRaw: string,
+  replaceRaw: string,
+  opts?: BookmarkRewriteScope & {
+    inTitles?: boolean;
+    inUrls?: boolean;
+    inSpaceTitles?: boolean;
+    caseSensitive?: boolean;
+  }
+): BookmarkRewriteResult => {
+  const find = findRaw;
+  if (!find) {
+    return emptyRewriteResult('Enter text to find.');
+  }
+
+  const inTitles = opts?.inTitles !== false;
+  const inUrls = opts?.inUrls !== false;
+  const inSpaceTitles = opts?.inSpaceTitles === true;
+  const caseSensitive = opts?.caseSensitive === true;
+  const replace = replaceRaw;
+
+  if (!inTitles && !inUrls && !inSpaceTitles) {
+    return emptyRewriteResult('Choose at least one target: titles, URLs, or space names.');
+  }
+
+  const replaceIn = (value: string): string | null => {
+    if (caseSensitive) {
+      if (!value.includes(find)) return null;
+      return value.split(find).join(replace);
+    }
+    const lower = value.toLowerCase();
+    const needle = find.toLowerCase();
+    if (!lower.includes(needle)) return null;
+    // Case-insensitive replace preserving non-matched segments
+    const parts: string[] = [];
+    let i = 0;
+    while (i < value.length) {
+      const idx = value.toLowerCase().indexOf(needle, i);
+      if (idx === -1) {
+        parts.push(value.slice(i));
+        break;
+      }
+      parts.push(value.slice(i, idx), replace);
+      i = idx + find.length;
+    }
+    return parts.join('');
   };
+
+  const source = getPublicBookmarks();
+  let scanned = 0;
+  const changes: BookmarkRewriteChange[] = [];
+
+  const categories = source.categories.map((cat) => {
+    if (opts?.categoryId && cat.id !== opts.categoryId) return cat;
+
+    let spaceTitle = cat.title;
+    if (inSpaceTitles) {
+      const nextSpace = replaceIn(cat.title);
+      if (nextSpace != null && nextSpace !== cat.title) {
+        changes.push({
+          categoryId: cat.id,
+          categoryTitle: cat.title,
+          field: 'spaceTitle',
+          before: cat.title,
+          after: nextSpace
+        });
+        spaceTitle = nextSpace;
+      }
+    }
+
+    const links = cat.links.map((link) => {
+      scanned += 1;
+      let url = link.url;
+      let title = link.title;
+      let touched = false;
+
+      if (inUrls) {
+        const nextUrl = replaceIn(url);
+        if (nextUrl != null && nextUrl !== url) {
+          changes.push({
+            categoryId: cat.id,
+            categoryTitle: cat.title,
+            linkId: link.id,
+            linkTitle: link.title,
+            field: 'url',
+            before: url,
+            after: nextUrl
+          });
+          url = nextUrl;
+          touched = true;
+        }
+      }
+      if (inTitles) {
+        const nextTitle = replaceIn(title);
+        if (nextTitle != null && nextTitle !== title) {
+          changes.push({
+            categoryId: cat.id,
+            categoryTitle: cat.title,
+            linkId: link.id,
+            linkTitle: link.title,
+            field: 'title',
+            before: title,
+            after: nextTitle
+          });
+          title = nextTitle;
+          touched = true;
+        }
+      }
+
+      if (!touched) return link;
+      return {
+        ...link,
+        url,
+        title,
+        healthFinalUrl: url !== link.url ? undefined : link.healthFinalUrl
+      };
+    });
+
+    return { ...cat, title: spaceTitle, links: dedupeCategoryLinks(links) };
+  });
+
+  return finishRewrite(
+    source,
+    categories,
+    changes,
+    scanned,
+    opts?.dryRun,
+    `Replaced in %n% item(s): “${find}” → “${replace}”.`,
+    `No matches for “${find}”${opts?.categoryId ? ' in this space' : ''}.`
+  );
+};
+
+const urlsMeaningfullyDifferent = (a: string, b: string): boolean => {
+  try {
+    return normalizeBookmarkUrl(a) !== normalizeBookmarkUrl(b);
+  } catch {
+    return a.trim() !== b.trim();
+  }
+};
+
+/** Links that redirected to a different final URL during health check. */
+export const listRedirectUpdatableBookmarks = (
+  categoryId?: string,
+  data?: PublicBookmarksData
+): Array<{
+  categoryId: string;
+  categoryTitle: string;
+  link: PublicBookmarkLink;
+  finalUrl: string;
+}> => {
+  const source = data ?? getPublicBookmarks();
+  const out: Array<{
+    categoryId: string;
+    categoryTitle: string;
+    link: PublicBookmarkLink;
+    finalUrl: string;
+  }> = [];
+
+  for (const cat of source.categories) {
+    if (categoryId && cat.id !== categoryId) continue;
+    for (const link of cat.links) {
+      const finalUrl = (link.healthFinalUrl || '').trim();
+      if (!finalUrl) continue;
+      if (!urlsMeaningfullyDifferent(link.url, finalUrl)) continue;
+      // Prefer redirected status, but any stored finalUrl from check is usable
+      out.push({
+        categoryId: cat.id,
+        categoryTitle: cat.title,
+        link,
+        finalUrl
+      });
+    }
+  }
+  return out;
+};
+
+/**
+ * Update bookmark URLs to the final redirect target from the last health check.
+ */
+export const applyPublicBookmarkRedirectUrls = (
+  opts?: BookmarkRewriteScope & { linkIds?: string[] }
+): BookmarkRewriteResult => {
+  const source = getPublicBookmarks();
+  const candidates = listRedirectUpdatableBookmarks(opts?.categoryId, source);
+  const idFilter =
+    opts?.linkIds && opts.linkIds.length > 0 ? new Set(opts.linkIds) : null;
+  const selected = idFilter
+    ? candidates.filter((c) => idFilter.has(c.link.id))
+    : candidates;
+
+  if (selected.length === 0) {
+    return emptyRewriteResult(
+      'No redirected URLs to update. Run Check links first; only links that landed on a different final URL are listed.',
+      true
+    );
+  }
+
+  let scanned = 0;
+  const changes: BookmarkRewriteChange[] = [];
+  const byCat = new Map<string, Set<string>>();
+  for (const c of selected) {
+    if (!byCat.has(c.categoryId)) byCat.set(c.categoryId, new Set());
+    byCat.get(c.categoryId)!.add(c.link.id);
+  }
+
+  const categories = source.categories.map((cat) => {
+    const ids = byCat.get(cat.id);
+    if (!ids) return cat;
+
+    const links = cat.links.map((link) => {
+      if (!ids.has(link.id)) return link;
+      scanned += 1;
+      const finalUrl = (link.healthFinalUrl || '').trim();
+      if (!finalUrl || !urlsMeaningfullyDifferent(link.url, finalUrl)) return link;
+
+      let title = link.title;
+      if (title === link.url) title = finalUrl;
+
+      changes.push({
+        categoryId: cat.id,
+        categoryTitle: cat.title,
+        linkId: link.id,
+        linkTitle: link.title,
+        field: 'url',
+        before: link.url,
+        after: finalUrl
+      });
+
+      return {
+        ...link,
+        url: finalUrl,
+        title,
+        healthFinalUrl: undefined,
+        healthStatus: 'healthy',
+        healthError: undefined
+      };
+    });
+
+    return { ...cat, links: dedupeCategoryLinks(links) };
+  });
+
+  return finishRewrite(
+    source,
+    categories,
+    changes,
+    scanned,
+    opts?.dryRun,
+    `Updated %n% link(s) to their final redirect URL(s).`,
+    'No redirected URLs to update.'
+  );
 };
 
 const BOOKMARK_EXPORT_GROUP = 'Bookmarks';
@@ -1428,6 +2005,7 @@ export const setPublicBookmarkLinkHealth = (
     httpCode?: number | null;
     error?: string | null;
     checkedAt?: number | string;
+    finalUrl?: string | null;
   } | null
 ): PublicBookmarksData => {
   const data = getPublicBookmarks();
@@ -1452,16 +2030,22 @@ export const setPublicBookmarkLinkHealth = (
             healthHttpCode: _c,
             healthError: _e,
             healthCheckedAt: _a,
+            healthFinalUrl: _f,
             ...rest
           } = l;
           return rest;
         }
+        const finalUrl =
+          typeof health.finalUrl === 'string' && health.finalUrl.trim()
+            ? health.finalUrl.trim()
+            : undefined;
         return {
           ...l,
           healthStatus: health.status,
           healthHttpCode: health.httpCode ?? null,
           healthError: health.error ?? undefined,
-          healthCheckedAt: checkedAt
+          healthCheckedAt: checkedAt,
+          healthFinalUrl: finalUrl
         };
       })
     };
@@ -1478,6 +2062,7 @@ export const setPublicBookmarkLinksHealthBatch = (
       httpCode?: number | null;
       error?: string | null;
       checkedAt?: number | string;
+      finalUrl?: string | null;
     } | null;
   }>
 ): PublicBookmarksData => {
@@ -1496,6 +2081,7 @@ export const setPublicBookmarkLinksHealthBatch = (
               healthHttpCode: _c,
               healthError: _e,
               healthCheckedAt: _a,
+              healthFinalUrl: _f,
               ...rest
             } = l;
             return rest;
@@ -1508,12 +2094,17 @@ export const setPublicBookmarkLinksHealthBatch = (
               : typeof u.health.checkedAt === 'string'
                 ? u.health.checkedAt
                 : new Date().toISOString();
+          const finalUrl =
+            typeof u.health.finalUrl === 'string' && u.health.finalUrl.trim()
+              ? u.health.finalUrl.trim()
+              : undefined;
           return {
             ...l,
             healthStatus: u.health.status,
             healthHttpCode: u.health.httpCode ?? null,
             healthError: u.health.error ?? undefined,
-            healthCheckedAt: checkedAt
+            healthCheckedAt: checkedAt,
+            healthFinalUrl: finalUrl
           };
         })
       };

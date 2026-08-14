@@ -3,6 +3,8 @@ export interface LinkHealth {
   httpCode?: number | null;
   error?: string | null;
   checkedAt?: number | null;
+  /** Final URL after following redirects (when available from health probe). */
+  finalUrl?: string | null;
 }
 
 export type LinkVisibility = 'public' | 'authenticated' | 'private';

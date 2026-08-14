@@ -184,7 +184,7 @@ export const linkHealthService = {
   async checkUrl(url: string, signal?: AbortSignal): Promise<{
     url: string;
     scheme: 'http' | 'https' | string;
-    health: LinkHealth & { serverLatency?: number };
+    health: LinkHealth & { serverLatency?: number; finalUrl?: string | null };
   }> {
     const response = await withTimeout(
       fetch(`${API_BASE}/linkhealth/check-url`, {
@@ -221,7 +221,7 @@ export const linkHealthService = {
     Array<{
       url: string;
       skipped?: boolean;
-      health: (LinkHealth & { serverLatency?: number }) | null;
+      health: (LinkHealth & { serverLatency?: number; finalUrl?: string | null }) | null;
     }>
   > {
     const response = await withTimeout(

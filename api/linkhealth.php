@@ -362,6 +362,7 @@ function checkUrlHealth($url, $timeoutSeconds = 2) {
     
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $redirectCount = (int)curl_getinfo($ch, CURLINFO_REDIRECT_COUNT);
+    $effectiveUrl = (string)curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
     $error = curl_error($ch);
     $errno = curl_errno($ch);
     // Determine status using shared logic
@@ -369,11 +370,19 @@ function checkUrlHealth($url, $timeoutSeconds = 2) {
     $status = $statusResult['status'];
     $error = $statusResult['error'];
 
+    $finalUrl = null;
+    if ($effectiveUrl !== '' && strcasecmp($effectiveUrl, $url) !== 0) {
+        $finalUrl = $effectiveUrl;
+    } elseif ($redirectCount > 0 && $effectiveUrl !== '') {
+        $finalUrl = $effectiveUrl;
+    }
+
     return [
         'status' => $status,
         'http_code' => $httpCode,
         'error' => $error,
-        'server_latency' => $serverLatency
+        'server_latency' => $serverLatency,
+        'final_url' => $finalUrl
     ];
 }
 
@@ -459,14 +468,22 @@ function checkUrlsParallel($urls, $maxConcurrent = 12) {
         $serverLatency = round((microtime(true) - $startedAt) * 1000);
         $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $redirectCount = (int)curl_getinfo($ch, CURLINFO_REDIRECT_COUNT);
+        $effectiveUrl = (string)curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
         $error = curl_error($ch);
         $errno = curl_errno($ch);
         $statusResult = determineHealthStatus($httpCode, $errno, $error, $redirectCount);
+        $finalUrl = null;
+        if ($effectiveUrl !== '' && strcasecmp($effectiveUrl, $url) !== 0) {
+            $finalUrl = $effectiveUrl;
+        } elseif ($redirectCount > 0 && $effectiveUrl !== '') {
+            $finalUrl = $effectiveUrl;
+        }
         $results[$url] = [
             'status' => $statusResult['status'],
             'http_code' => $httpCode,
             'error' => $statusResult['error'],
-            'server_latency' => $serverLatency
+            'server_latency' => $serverLatency,
+            'final_url' => $finalUrl
         ];
     };
 
@@ -932,6 +949,7 @@ function handleCheckUrls() {
                     'httpCode' => !empty($healthResult['http_code']) ? (int)$healthResult['http_code'] : null,
                     'error' => $healthResult['error'] ?? null,
                     'serverLatency' => $healthResult['server_latency'] ?? 0,
+                    'finalUrl' => !empty($healthResult['final_url']) ? (string)$healthResult['final_url'] : null,
                     'checkedAt' => time()
                 ]
             ];
@@ -1014,6 +1032,7 @@ function handleCheckUrl() {
                 'httpCode' => $healthResult['http_code'] ?: null,
                 'error' => $healthResult['error'],
                 'serverLatency' => $healthResult['server_latency'],
+                'finalUrl' => !empty($healthResult['final_url']) ? (string)$healthResult['final_url'] : null,
                 'checkedAt' => time()
             ]
         ]);

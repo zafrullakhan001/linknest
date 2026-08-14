@@ -16,6 +16,11 @@ import {
   downloadPublicBookmarksAsSpacesJson,
   regeneratePublicBookmarksByDomain,
   rewritePublicBookmarkDomains,
+  rewritePublicBookmarkPaths,
+  cleanupPublicBookmarkUrls,
+  findReplacePublicBookmarks,
+  listRedirectUpdatableBookmarks,
+  applyPublicBookmarkRedirectUrls,
   movePublicBookmarkCategory,
   movePublicBookmarkLink,
   movePublicBookmarkLinkToCategory,
@@ -39,7 +44,8 @@ import {
   getCategoryFaviconUrl,
   sortBookmarkCategories,
   sortBookmarkLinks,
-  type BookmarkSortMode
+  type BookmarkSortMode,
+  type BookmarkRewriteChange
 } from '../services/publicBookmarksService';
 import {
   useTileAnimation,
@@ -55,6 +61,7 @@ interface PublicBookmarksPanelProps {
 }
 
 type ImportMode = 'replace' | 'merge';
+type RewriteToolTab = 'domain' | 'path' | 'cleanup' | 'find-replace' | 'redirects';
 
 const isThemeColor = (value: string | undefined): value is ThemeColor =>
   !!value && Object.prototype.hasOwnProperty.call(COLOR_STYLES, value);
@@ -120,10 +127,27 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
   const [quickAddUrl, setQuickAddUrl] = useState('');
   const [moveMenuLinkId, setMoveMenuLinkId] = useState<string | null>(null);
   const [styleMenuOpen, setStyleMenuOpen] = useState(false);
-  const [showDomainRewrite, setShowDomainRewrite] = useState(false);
+  const [showRewriteTools, setShowRewriteTools] = useState(false);
+  const [rewriteTab, setRewriteTab] = useState<RewriteToolTab>('domain');
   const [rewriteFrom, setRewriteFrom] = useState('');
   const [rewriteTo, setRewriteTo] = useState('');
   const [rewriteAllSpaces, setRewriteAllSpaces] = useState(false);
+  const [pathFrom, setPathFrom] = useState('');
+  const [pathTo, setPathTo] = useState('');
+  const [stripTracking, setStripTracking] = useState(true);
+  const [forceHttps, setForceHttps] = useState(true);
+  const [findText, setFindText] = useState('');
+  const [replaceText, setReplaceText] = useState('');
+  const [findInTitles, setFindInTitles] = useState(true);
+  const [findInUrls, setFindInUrls] = useState(true);
+  const [findInSpaceTitles, setFindInSpaceTitles] = useState(true);
+  const [findCaseSensitive, setFindCaseSensitive] = useState(false);
+  const [rewritePreview, setRewritePreview] = useState<BookmarkRewriteChange[] | null>(null);
+  const [rewritePreviewMeta, setRewritePreviewMeta] = useState<{
+    updated: number;
+    scanned: number;
+    message: string;
+  } | null>(null);
   const [healthChecking, setHealthChecking] = useState(false);
   const [healthProgress, setHealthProgress] = useState<{ done: number; total: number } | null>(null);
   const healthAbortRef = useRef<AbortController | null>(null);
@@ -189,7 +213,9 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
   useEffect(() => {
     setMoveMenuLinkId(null);
     setStyleMenuOpen(false);
-    setShowDomainRewrite(false);
+    setShowRewriteTools(false);
+    setRewritePreview(null);
+    setRewritePreviewMeta(null);
   }, [openSpaceId]);
 
   useEffect(() => {
@@ -320,8 +346,18 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
     setMessage(downloadPublicBookmarkCategoryAsSpaceJson(cat.id, data).message);
   };
 
-  const openDomainRewrite = (cat?: PublicBookmarkCategory | null) => {
-    // Prefill "from" with a likely domain from the space's first link
+  const rewriteScopeId = (): string | undefined =>
+    rewriteAllSpaces || !openSpace ? undefined : openSpace.id;
+
+  const clearRewritePreview = () => {
+    setRewritePreview(null);
+    setRewritePreviewMeta(null);
+  };
+
+  const openRewriteTools = (
+    cat?: PublicBookmarkCategory | null,
+    tab: RewriteToolTab = 'domain'
+  ) => {
     let from = '';
     if (cat?.links[0]?.url) {
       try {
@@ -332,34 +368,133 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
     }
     setRewriteFrom(from);
     setRewriteTo('');
+    setPathFrom('');
+    setPathTo('');
+    setFindText('');
+    setReplaceText('');
     setRewriteAllSpaces(!cat);
-    setShowDomainRewrite(true);
+    setRewriteTab(tab);
+    clearRewritePreview();
+    setShowRewriteTools(true);
   };
 
-  const handleDomainRewrite = () => {
-    if (!rewriteFrom.trim() || !rewriteTo.trim()) {
-      setMessage('Enter both the old and new domain.');
-      return;
+  const runRewritePreview = () => {
+    const scope = { categoryId: rewriteScopeId(), dryRun: true as const };
+    let result;
+    switch (rewriteTab) {
+      case 'domain':
+        result = rewritePublicBookmarkDomains(rewriteFrom, rewriteTo, {
+          ...scope,
+          renameMatchingSpaces: true
+        });
+        break;
+      case 'path':
+        result = rewritePublicBookmarkPaths(pathFrom, pathTo, scope);
+        break;
+      case 'cleanup':
+        result = cleanupPublicBookmarkUrls({
+          ...scope,
+          stripTracking,
+          forceHttps
+        });
+        break;
+      case 'find-replace':
+        result = findReplacePublicBookmarks(findText, replaceText, {
+          ...scope,
+          inTitles: findInTitles,
+          inUrls: findInUrls,
+          inSpaceTitles: findInSpaceTitles,
+          caseSensitive: findCaseSensitive
+        });
+        break;
+      case 'redirects':
+        result = applyPublicBookmarkRedirectUrls(scope);
+        break;
+      default:
+        return;
     }
-    const scopeLabel = rewriteAllSpaces || !openSpace
-      ? 'all bookmark spaces'
-      : `space “${openSpace.title}”`;
-    const ok = window.confirm(
-      `Rewrite matching links in ${scopeLabel}?\n\n${rewriteFrom.trim()} → ${rewriteTo.trim()}\n\nPaths and query strings are kept. Subdomains like www. / portal. are preserved.`
-    );
-    if (!ok) return;
-
-    const result = rewritePublicBookmarkDomains(rewriteFrom, rewriteTo, {
-      categoryId: rewriteAllSpaces || !openSpace ? undefined : openSpace.id,
-      renameMatchingSpaces: true
+    setRewritePreview(result.changes);
+    setRewritePreviewMeta({
+      updated: result.updated,
+      scanned: result.scanned,
+      message: result.message
     });
+    if (!result.ok) setMessage(result.message);
+  };
+
+  const applyRewrite = () => {
+    const scope = { categoryId: rewriteScopeId(), dryRun: false as const };
+    let result;
+    switch (rewriteTab) {
+      case 'domain':
+        result = rewritePublicBookmarkDomains(rewriteFrom, rewriteTo, {
+          ...scope,
+          renameMatchingSpaces: true
+        });
+        break;
+      case 'path':
+        result = rewritePublicBookmarkPaths(pathFrom, pathTo, scope);
+        break;
+      case 'cleanup':
+        result = cleanupPublicBookmarkUrls({
+          ...scope,
+          stripTracking,
+          forceHttps
+        });
+        break;
+      case 'find-replace':
+        result = findReplacePublicBookmarks(findText, replaceText, {
+          ...scope,
+          inTitles: findInTitles,
+          inUrls: findInUrls,
+          inSpaceTitles: findInSpaceTitles,
+          caseSensitive: findCaseSensitive
+        });
+        break;
+      case 'redirects':
+        result = applyPublicBookmarkRedirectUrls(scope);
+        break;
+      default:
+        return;
+    }
     applyData(result.data);
     setMessage(result.message);
+    clearRewritePreview();
     if (result.ok && result.updated > 0) {
-      setShowDomainRewrite(false);
-      setRewriteTo('');
+      // Keep panel open so user can run another pass; clear domain "to" for safety
+      if (rewriteTab === 'domain') setRewriteTo('');
+      if (rewriteTab === 'path') setPathTo('');
+      if (rewriteTab === 'find-replace') setFindText('');
     }
   };
+
+  const handleApplyRedirectsQuick = () => {
+    if (!openSpace) return;
+    const preview = applyPublicBookmarkRedirectUrls({
+      categoryId: openSpace.id,
+      dryRun: true
+    });
+    if (preview.updated === 0) {
+      setMessage(preview.message);
+      return;
+    }
+    const ok = window.confirm(
+      `Update ${preview.updated} link${preview.updated === 1 ? '' : 's'} in “${openSpace.title}” to their final redirect URL(s)?\n\nSample:\n${preview.changes
+        .filter((c) => c.field === 'url')
+        .slice(0, 3)
+        .map((c) => `• ${c.before}\n  → ${c.after}`)
+        .join('\n')}`
+    );
+    if (!ok) return;
+    const result = applyPublicBookmarkRedirectUrls({ categoryId: openSpace.id });
+    applyData(result.data);
+    setMessage(result.message);
+  };
+
+  const redirectUpdatableCount = useMemo(() => {
+    if (!openSpace) return 0;
+    return listRedirectUpdatableBookmarks(openSpace.id, data).length;
+  }, [openSpace, data]);
 
   const handleCheckSpaceLinks = async () => {
     if (!openSpace || openSpace.links.length === 0 || healthChecking) return;
@@ -381,10 +516,12 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
         httpCode?: number | null;
         error?: string | null;
         checkedAt?: number | string;
+        finalUrl?: string | null;
       } | null;
     }> = [];
     let broken = 0;
     let healthy = 0;
+    let redirected = 0;
     let other = 0;
 
     const recordHealth = (
@@ -394,6 +531,7 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
         httpCode?: number | null;
         error?: string | null;
         checkedAt?: number | string;
+        finalUrl?: string | null;
       } | null
     ) => {
       updates.push({ categoryId: openSpace.id, linkId: link.id, health });
@@ -402,11 +540,13 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
         return;
       }
       if (isRemovableBrokenBookmarkHealth(health.status)) broken += 1;
-      else if (
+      else if (health.status === 'redirected') {
+        redirected += 1;
+        healthy += 1;
+      } else if (
         health.status === 'healthy' ||
         health.status === 'accessible' ||
-        health.status === 'restricted' ||
-        health.status === 'redirected'
+        health.status === 'restricted'
       ) {
         healthy += 1;
       } else {
@@ -447,7 +587,8 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
               status: match.health.status,
               httpCode: match.health.httpCode ?? null,
               error: match.health.error ?? null,
-              checkedAt: match.health.checkedAt ?? Date.now()
+              checkedAt: match.health.checkedAt ?? Date.now(),
+              finalUrl: match.health.finalUrl ?? null
             });
           }
         } catch (err) {
@@ -463,7 +604,8 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                       status: result.health.status,
                       httpCode: result.health.httpCode ?? null,
                       error: result.health.error ?? null,
-                      checkedAt: result.health.checkedAt ?? Date.now()
+                      checkedAt: result.health.checkedAt ?? Date.now(),
+                      finalUrl: result.health.finalUrl ?? null
                     }
                   : null
               );
@@ -487,8 +629,12 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
       if (controller.signal.aborted) {
         setMessage('Link check cancelled.');
       } else {
+        const redirectHint =
+          redirected > 0
+            ? ` ${redirected} redirected — use “Update redirects” to adopt final URLs.`
+            : '';
         setMessage(
-          `Checked ${links.length} link${links.length === 1 ? '' : 's'}: ${healthy} OK, ${broken} broken/timeout${other ? `, ${other} other/skipped` : ''}.`
+          `Checked ${links.length} link${links.length === 1 ? '' : 's'}: ${healthy} OK, ${broken} broken/timeout${other ? `, ${other} other/skipped` : ''}.${redirectHint}`
         );
       }
     } finally {
@@ -1153,11 +1299,11 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => openDomainRewrite(openSpace)}
+                onClick={() => openRewriteTools(openSpace)}
                 className="px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-                title="Rewrite URLs from one domain to another (branding)"
+                title="Domain, path, tracking cleanup, find/replace, and redirect updates"
               >
-                Rewrite domain
+                Rewrite tools
               </button>
               {healthChecking ? (
                 <button
@@ -1175,6 +1321,16 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                   title="Probe each link via the server health checker"
                 >
                   Check links
+                </button>
+              )}
+              {redirectUpdatableCount > 0 && !healthChecking && (
+                <button
+                  type="button"
+                  onClick={handleApplyRedirectsQuick}
+                  className="px-3 py-1.5 text-sm font-medium rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
+                  title="Replace bookmark URLs with the final URL after redirects"
+                >
+                  Update redirects ({redirectUpdatableCount})
                 </button>
               )}
               <button
@@ -1283,12 +1439,12 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => openDomainRewrite(null)}
+                onClick={() => openRewriteTools(null)}
                 disabled={busy}
                 className="px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
-                title="Rewrite URLs from one domain to another across all bookmark spaces"
+                title="Domain, path, tracking cleanup, find/replace across all spaces"
               >
-                Rewrite domain
+                Rewrite tools
               </button>
               <button
                 type="button"
@@ -1333,20 +1489,23 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
         </div>
       )}
 
-      {showDomainRewrite && (
+      {showRewriteTools && (
         <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 p-4 space-y-3 shadow-sm">
           <div className="flex items-start justify-between gap-2">
             <div>
               <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-                Rewrite domain
+                Rewrite tools
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                For branding changes (e.g. ahss.org → adventhealth.com). Keeps paths; updates matching hosts and subdomains.
+                Preview changes before applying — branding moves, path swaps, cleanup, find/replace, redirects.
               </p>
             </div>
             <button
               type="button"
-              onClick={() => setShowDomainRewrite(false)}
+              onClick={() => {
+                setShowRewriteTools(false);
+                clearRewritePreview();
+              }}
               className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               title="Close"
             >
@@ -1355,50 +1514,304 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
               </svg>
             </button>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <label className="block text-xs text-slate-500 dark:text-slate-400">
-              Old domain
-              <input
-                type="text"
-                value={rewriteFrom}
-                onChange={(e) => setRewriteFrom(e.target.value)}
-                placeholder="ahss.org"
-                className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
-              />
-            </label>
-            <label className="block text-xs text-slate-500 dark:text-slate-400">
-              New domain
-              <input
-                type="text"
-                value={rewriteTo}
-                onChange={(e) => setRewriteTo(e.target.value)}
-                placeholder="adventhealth.com"
-                className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
-              />
-            </label>
+
+          <div className="flex flex-wrap gap-1">
+            {(
+              [
+                ['domain', 'Domain'],
+                ['path', 'Path'],
+                ['cleanup', 'Cleanup'],
+                ['find-replace', 'Find & replace'],
+                ['redirects', 'Redirects']
+              ] as Array<[RewriteToolTab, string]>
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  setRewriteTab(id);
+                  clearRewritePreview();
+                }}
+                className={`px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors ${
+                  rewriteTab === id
+                    ? 'bg-sky-50 dark:bg-sky-900/30 border-sky-300 dark:border-sky-700 text-sky-800 dark:text-sky-200'
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
+
+          {rewriteTab === 'domain' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <label className="block text-xs text-slate-500 dark:text-slate-400">
+                Old domain
+                <input
+                  type="text"
+                  value={rewriteFrom}
+                  onChange={(e) => {
+                    setRewriteFrom(e.target.value);
+                    clearRewritePreview();
+                  }}
+                  placeholder="ahss.org"
+                  className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                />
+              </label>
+              <label className="block text-xs text-slate-500 dark:text-slate-400">
+                New domain
+                <input
+                  type="text"
+                  value={rewriteTo}
+                  onChange={(e) => {
+                    setRewriteTo(e.target.value);
+                    clearRewritePreview();
+                  }}
+                  placeholder="adventhealth.com"
+                  className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                />
+              </label>
+            </div>
+          )}
+
+          {rewriteTab === 'path' && (
+            <div className="space-y-2">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Replace a path prefix only (host stays). Example: <code className="text-[11px]">/oldportal</code> →{' '}
+                <code className="text-[11px]">/new</code>
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <label className="block text-xs text-slate-500 dark:text-slate-400">
+                  Old path
+                  <input
+                    type="text"
+                    value={pathFrom}
+                    onChange={(e) => {
+                      setPathFrom(e.target.value);
+                      clearRewritePreview();
+                    }}
+                    placeholder="/oldportal"
+                    className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono"
+                  />
+                </label>
+                <label className="block text-xs text-slate-500 dark:text-slate-400">
+                  New path
+                  <input
+                    type="text"
+                    value={pathTo}
+                    onChange={(e) => {
+                      setPathTo(e.target.value);
+                      clearRewritePreview();
+                    }}
+                    placeholder="/new"
+                    className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono"
+                  />
+                </label>
+              </div>
+            </div>
+          )}
+
+          {rewriteTab === 'cleanup' && (
+            <div className="space-y-2">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Strip marketing query params (utm_*, fbclid, gclid, …) and/or force HTTPS.
+              </p>
+              <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={stripTracking}
+                  onChange={(e) => {
+                    setStripTracking(e.target.checked);
+                    clearRewritePreview();
+                  }}
+                  className="rounded border-slate-300 dark:border-slate-600"
+                />
+                Strip tracking params
+              </label>
+              <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={forceHttps}
+                  onChange={(e) => {
+                    setForceHttps(e.target.checked);
+                    clearRewritePreview();
+                  }}
+                  className="rounded border-slate-300 dark:border-slate-600"
+                />
+                Force HTTPS
+              </label>
+            </div>
+          )}
+
+          {rewriteTab === 'find-replace' && (
+            <div className="space-y-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <label className="block text-xs text-slate-500 dark:text-slate-400">
+                  Find
+                  <input
+                    type="text"
+                    value={findText}
+                    onChange={(e) => {
+                      setFindText(e.target.value);
+                      clearRewritePreview();
+                    }}
+                    placeholder="AHSS"
+                    className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                  />
+                </label>
+                <label className="block text-xs text-slate-500 dark:text-slate-400">
+                  Replace with
+                  <input
+                    type="text"
+                    value={replaceText}
+                    onChange={(e) => {
+                      setReplaceText(e.target.value);
+                      clearRewritePreview();
+                    }}
+                    placeholder="AdventHealth"
+                    className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                  />
+                </label>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={findInTitles}
+                    onChange={(e) => {
+                      setFindInTitles(e.target.checked);
+                      clearRewritePreview();
+                    }}
+                    className="rounded border-slate-300 dark:border-slate-600"
+                  />
+                  Link titles
+                </label>
+                <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={findInUrls}
+                    onChange={(e) => {
+                      setFindInUrls(e.target.checked);
+                      clearRewritePreview();
+                    }}
+                    className="rounded border-slate-300 dark:border-slate-600"
+                  />
+                  URLs
+                </label>
+                <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={findInSpaceTitles}
+                    onChange={(e) => {
+                      setFindInSpaceTitles(e.target.checked);
+                      clearRewritePreview();
+                    }}
+                    className="rounded border-slate-300 dark:border-slate-600"
+                  />
+                  Space names
+                </label>
+                <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={findCaseSensitive}
+                    onChange={(e) => {
+                      setFindCaseSensitive(e.target.checked);
+                      clearRewritePreview();
+                    }}
+                    className="rounded border-slate-300 dark:border-slate-600"
+                  />
+                  Case sensitive
+                </label>
+              </div>
+            </div>
+          )}
+
+          {rewriteTab === 'redirects' && (
+            <div className="space-y-2">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                After Check links, adopt the final URL when a bookmark redirected (branding 301s).
+                {openSpace
+                  ? ` ${redirectUpdatableCount} updatable in this space.`
+                  : ' Open a space or apply across all spaces below.'}
+              </p>
+              {!openSpace && (
+                <p className="text-xs text-amber-700 dark:text-amber-300">
+                  {listRedirectUpdatableBookmarks(undefined, data).length} redirected link(s) ready across all spaces.
+                </p>
+              )}
+            </div>
+          )}
+
           <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
             <input
               type="checkbox"
               checked={rewriteAllSpaces || !openSpace}
               disabled={!openSpace}
-              onChange={(e) => setRewriteAllSpaces(e.target.checked)}
+              onChange={(e) => {
+                setRewriteAllSpaces(e.target.checked);
+                clearRewritePreview();
+              }}
               className="rounded border-slate-300 dark:border-slate-600"
             />
             Apply to all bookmark spaces (not only this one)
           </label>
+
+          {rewritePreviewMeta && (
+            <div className="rounded-lg border border-amber-200 dark:border-amber-800/60 bg-amber-50/80 dark:bg-amber-950/30 p-3 space-y-2">
+              <p className="text-xs font-medium text-amber-900 dark:text-amber-200">
+                {rewritePreviewMeta.message}
+              </p>
+              {rewritePreview && rewritePreview.length > 0 && (
+                <ul className="max-h-40 overflow-y-auto space-y-1.5 text-[11px] font-mono text-slate-700 dark:text-slate-300">
+                  {rewritePreview.slice(0, 12).map((c, i) => (
+                    <li key={`${c.categoryId}-${c.linkId || 'space'}-${c.field}-${i}`} className="leading-snug">
+                      <span className="text-slate-400 dark:text-slate-500">
+                        [{c.field}] {c.categoryTitle}
+                        {c.linkTitle ? ` / ${c.linkTitle}` : ''}:
+                      </span>
+                      <br />
+                      <span className="text-red-600/90 dark:text-red-400 line-through break-all">{c.before}</span>
+                      <br />
+                      <span className="text-emerald-700 dark:text-emerald-400 break-all">{c.after}</span>
+                    </li>
+                  ))}
+                  {rewritePreview.length > 12 && (
+                    <li className="text-slate-500 dark:text-slate-400 font-sans">
+                      …and {rewritePreview.length - 12} more
+                    </li>
+                  )}
+                </ul>
+              )}
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={handleDomainRewrite}
-              disabled={!rewriteFrom.trim() || !rewriteTo.trim()}
-              className="px-3 py-1.5 text-sm font-medium rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition-colors disabled:opacity-50"
+              onClick={runRewritePreview}
+              className="px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
             >
-              Rewrite links
+              Preview
             </button>
             <button
               type="button"
-              onClick={() => setShowDomainRewrite(false)}
+              onClick={applyRewrite}
+              disabled={rewritePreviewMeta != null && rewritePreviewMeta.updated === 0}
+              className="px-3 py-1.5 text-sm font-medium rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition-colors disabled:opacity-50"
+              title={
+                rewritePreviewMeta
+                  ? 'Apply the previewed changes'
+                  : 'Tip: Preview first, then Apply'
+              }
+            >
+              Apply{rewritePreviewMeta && rewritePreviewMeta.updated > 0 ? ` (${rewritePreviewMeta.updated})` : ''}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowRewriteTools(false);
+                clearRewritePreview();
+              }}
               className="px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200"
             >
               Cancel

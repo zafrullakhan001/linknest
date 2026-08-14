@@ -26,6 +26,27 @@ import { getTileAnimationClass, getTileDecorationClass, type TileAnimation, type
 const stripHtml = (value: string): string =>
   String(value || '').replace(/<[^>]*>/g, '').trim();
 
+const FAV_LINKS_COMPACT_KEY = 'linknest_favorite_links_compact';
+
+const readFavLinksCompactPref = (): boolean => {
+  try {
+    const raw = localStorage.getItem(FAV_LINKS_COMPACT_KEY);
+    if (raw === '0') return false;
+    if (raw === '1') return true;
+  } catch {
+    // ignore
+  }
+  return false;
+};
+
+const writeFavLinksCompactPref = (value: boolean): void => {
+  try {
+    localStorage.setItem(FAV_LINKS_COMPACT_KEY, value ? '1' : '0');
+  } catch {
+    // ignore
+  }
+};
+
 type FavLinksSort = 'default' | 'asc' | 'desc';
 
 export interface FavoriteLinksSectionProps {
@@ -77,6 +98,7 @@ const SortableFavoriteLinkCard: React.FC<{
   onOpenNotes: () => void;
   onOpenLinkInfo: () => void;
   showArrowReorder: boolean;
+  compact?: boolean;
 }> = ({
   link,
   canDrag,
@@ -98,6 +120,7 @@ const SortableFavoriteLinkCard: React.FC<{
   onOpenNotes,
   onOpenLinkInfo,
   showArrowReorder,
+  compact = false,
 }) => {
   const {
     attributes,
@@ -131,6 +154,130 @@ const SortableFavoriteLinkCard: React.FC<{
     opacity: isDragging ? 0.85 : undefined,
   };
 
+  const title = stripHtml(link.label);
+
+  const openLink = (e: React.MouseEvent) => {
+    if (tryHandleSshLinkClick(link.url, e)) return;
+    if (tryHandleVncLinkClick(link.url, e)) return;
+
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (link.richTextContent) {
+        onOpenLinkInfo();
+        return;
+      }
+      const newWindow = window.open(link.url, '_blank', 'noopener,noreferrer');
+      if (newWindow) newWindow.focus();
+      return;
+    }
+
+    if (link.richTextContent) {
+      e.preventDefault();
+      e.stopPropagation();
+      onOpenLinkInfo();
+      return;
+    }
+
+    if (browserSpecificLinksEnabled && browserToUse) {
+      e.preventDefault();
+      e.stopPropagation();
+      openLinkInBrowser(link.url, browserToUse);
+      return;
+    }
+
+    window.open(link.url, '_blank');
+  };
+
+  if (compact) {
+    return (
+      <div
+        ref={setNodeRef}
+        style={style}
+        className={`group relative flex items-center gap-2 px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:border-amber-300 dark:hover:border-amber-500/50 transition-colors shadow-sm cursor-pointer ${fullAnimationClass} ${tileAnimatedClass} overflow-hidden ${
+          isDragging ? 'ring-2 ring-amber-400 shadow-md' : ''
+        }`}
+        onClick={openLink}
+        title={link.url}
+      >
+        {healthResult && !skipHealth && (
+          <div
+            className="absolute -top-[1px] -left-[1px] w-3.5 h-3.5 z-20 pointer-events-none overflow-hidden"
+            title={`Health Status: ${healthStatus.toUpperCase()}${httpCode ? ` (HTTP ${httpCode})` : ''}`}
+          >
+            <div
+              className="absolute -top-2 -left-2 w-4 h-4 rotate-45"
+              style={{
+                backgroundColor:
+                  healthStatus === 'healthy' ||
+                  healthStatus === 'accessible' ||
+                  healthStatus === 'restricted'
+                    ? '#10b981'
+                    : healthStatus === 'broken'
+                      ? '#ef4444'
+                      : '#f59e0b',
+              }}
+            />
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="text-[13px] leading-tight font-semibold text-slate-900 dark:text-white truncate group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+            {title}
+          </div>
+        </div>
+        <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+          {link.notes && link.notes.trim() && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenNotes();
+              }}
+              className="p-1 rounded-md text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+              title="View notes"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" />
+              </svg>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              void onUnfavorite();
+            }}
+            className="p-1 rounded-md text-amber-500 hover:text-amber-600 hover:bg-slate-100 dark:hover:bg-slate-700"
+            title="Remove from favorites"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+              <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
+            </svg>
+          </button>
+          {canDrag && (
+            <button
+              type="button"
+              className={`inline-flex items-center justify-center p-1 rounded-md cursor-grab active:cursor-grabbing ${
+                isDragging
+                  ? 'bg-slate-300 text-slate-700 dark:bg-slate-600 dark:text-slate-100'
+                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
+              }`}
+              title="Drag to reorder"
+              aria-label="Drag to reorder"
+              onClick={(e) => e.stopPropagation()}
+              {...attributes}
+              {...listeners}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                <path d="M7 4a1 1 0 11-2 0 1 1 0 012 0zM7 10a1 1 0 11-2 0 1 1 0 012 0zM7 16a1 1 0 11-2 0 1 1 0 012 0zM15 4a1 1 0 11-2 0 1 1 0 012 0zM15 10a1 1 0 11-2 0 1 1 0 012 0zM15 16a1 1 0 11-2 0 1 1 0 012 0z" />
+              </svg>
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       ref={setNodeRef}
@@ -138,38 +285,7 @@ const SortableFavoriteLinkCard: React.FC<{
       className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} ${tileAnimatedClass} overflow-hidden ${
         isDragging ? 'ring-2 ring-amber-400 shadow-lg' : ''
       }`}
-      onClick={(e) => {
-        if (tryHandleSshLinkClick(link.url, e)) return;
-        if (tryHandleVncLinkClick(link.url, e)) return;
-
-        if (e.ctrlKey || e.metaKey) {
-          e.preventDefault();
-          e.stopPropagation();
-          if (link.richTextContent) {
-            onOpenLinkInfo();
-            return;
-          }
-          const newWindow = window.open(link.url, '_blank', 'noopener,noreferrer');
-          if (newWindow) newWindow.focus();
-          return;
-        }
-
-        if (link.richTextContent) {
-          e.preventDefault();
-          e.stopPropagation();
-          onOpenLinkInfo();
-          return;
-        }
-
-        if (browserSpecificLinksEnabled && browserToUse) {
-          e.preventDefault();
-          e.stopPropagation();
-          openLinkInBrowser(link.url, browserToUse);
-          return;
-        }
-
-        window.open(link.url, '_blank');
-      }}
+      onClick={openLink}
     >
       {healthResult && (
         <div
@@ -199,7 +315,7 @@ const SortableFavoriteLinkCard: React.FC<{
           className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-2 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors"
           style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}
         >
-          {stripHtml(link.label)}
+          {title}
         </div>
         <div
           className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5"
@@ -370,9 +486,15 @@ export const FavoriteLinksSection: React.FC<FavoriteLinksSectionProps> = ({
   onOpenLinkInfo,
 }) => {
   const [savingOrder, setSavingOrder] = useState(false);
+  const [linksCompact, setLinksCompact] = useState(() => readFavLinksCompactPref());
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
+
+  const setLinksCompactPref = (value: boolean) => {
+    setLinksCompact(value);
+    writeFavLinksCompactPref(value);
+  };
 
   const displayLinks = useMemo(() => {
     const list = [...favoriteLinks];
@@ -440,7 +562,9 @@ export const FavoriteLinksSection: React.FC<FavoriteLinksSectionProps> = ({
           <span className="text-sm text-slate-500 dark:text-slate-400">({favoriteLinks.length})</span>
           {canDrag && (
             <span className="text-[10px] sm:text-xs text-slate-400 dark:text-slate-500 hidden sm:inline">
-              Hover a link and drag the bottom-right handle to reorder
+              {linksCompact
+                ? 'Hover a link for star / drag handle'
+                : 'Hover a link and drag the bottom-right handle to reorder'}
             </span>
           )}
           {favLinksSort !== 'default' && (
@@ -482,6 +606,22 @@ export const FavoriteLinksSection: React.FC<FavoriteLinksSectionProps> = ({
             >
               <path fillRule="evenodd" d="M2.24 6.8a.75.75 0 001.06-.04l1.95-2.1v8.59a.75.75 0 001.5 0V4.66l1.95 2.1a.75.75 0 101.1-1.02l-3.25-3.5a.75.75 0 00-1.1 0L2.2 5.74a.75.75 0 00.04 1.06zm8 4a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5zm0-4a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5zm0 8a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5z" clipRule="evenodd" />
             </svg>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-500 dark:text-slate-400">View:</span>
+          <button
+            type="button"
+            onClick={() => setLinksCompactPref(!linksCompact)}
+            className={`px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors ${
+              linksCompact
+                ? 'bg-sky-50 dark:bg-sky-900/20 border-sky-300 dark:border-sky-700 text-sky-700 dark:text-sky-300'
+                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+            }`}
+            title={linksCompact ? 'Switch to card view' : 'Switch to compact title-only view'}
+          >
+            {linksCompact ? 'Compact' : 'Cards'}
           </button>
         </div>
 
@@ -601,7 +741,13 @@ export const FavoriteLinksSection: React.FC<FavoriteLinksSectionProps> = ({
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => void handleDragEnd(e)}>
         <SortableContext items={displayLinks.map((l) => l.id)} strategy={rectSortingStrategy}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          <div
+            className={
+              linksCompact
+                ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-1.5'
+                : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3'
+            }
+          >
             {displayLinks.map((link, linkIndex) => {
               const storageIndex = favoriteLinks.findIndex((item) => item.id === link.id);
               return (
@@ -630,7 +776,8 @@ export const FavoriteLinksSection: React.FC<FavoriteLinksSectionProps> = ({
                   onUnfavorite={() => onUnfavorite(link.id)}
                   onOpenNotes={() => onOpenNotes(link)}
                   onOpenLinkInfo={() => onOpenLinkInfo(link as unknown as Link)}
-                  showArrowReorder={true}
+                  showArrowReorder={!linksCompact && canDrag}
+                  compact={linksCompact}
                 />
               );
             })}
