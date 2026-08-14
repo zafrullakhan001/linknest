@@ -2234,8 +2234,15 @@ const GuestReorderArrows: React.FC<{
   canMoveRight: boolean;
   onMoveLeft: () => void;
   onMoveRight: () => void;
-}> = ({ canMoveLeft, canMoveRight, onMoveLeft, onMoveRight }) => (
-  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 z-10">
+  variant?: 'overlay' | 'inline';
+}> = ({ canMoveLeft, canMoveRight, onMoveLeft, onMoveRight, variant = 'overlay' }) => (
+  <div
+    className={
+      variant === 'inline'
+        ? 'flex items-center gap-0.5'
+        : 'absolute bottom-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 z-20 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm p-0.5 rounded-lg border border-slate-200/50 dark:border-slate-700/50'
+    }
+  >
     <button
       onClick={(e) => {
         e.preventDefault();
@@ -7949,6 +7956,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                   return 0;
                 })
                 .map((link, linkIndex) => {
+                  const storageIndex = favoriteLinks.findIndex((item) => item.id === link.id);
                   // Resolve effective browser (Link specific > Tile default > System default)
                   const parentTile = tiles.find(t => t.id === link.tile.id);
                   const browserToUse = (link.browser && link.browser !== 'default')
@@ -8081,6 +8089,15 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
                       {/* Action bar: View notes (Information) + Unfavorite */}
                       <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all duration-200 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm p-0.5 rounded-lg border border-slate-200/50 dark:border-slate-700/50 z-20">
+                        {!isAuthenticated && (
+                          <GuestReorderArrows
+                            variant="inline"
+                            canMoveLeft={storageIndex > 0}
+                            canMoveRight={storageIndex >= 0 && storageIndex < favoriteLinks.length - 1}
+                            onMoveLeft={() => handleMoveFavoriteLink(link.id, 'left')}
+                            onMoveRight={() => handleMoveFavoriteLink(link.id, 'right')}
+                          />
+                        )}
                         {link.notes && link.notes.trim() && (
                           <button
                             onClick={(e) => {
@@ -8132,14 +8149,6 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           </svg>
                         </button>
                       </div>
-                      {!isAuthenticated && favLinksSort === 'default' && (
-                        <GuestReorderArrows
-                          canMoveLeft={linkIndex > 0}
-                          canMoveRight={linkIndex < favoriteLinks.length - 1}
-                          onMoveLeft={() => handleMoveFavoriteLink(link.id, 'left')}
-                          onMoveRight={() => handleMoveFavoriteLink(link.id, 'right')}
-                        />
-                      )}
                     </div>
                   );
                 })}
@@ -8686,6 +8695,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                     return 0;
                   })
                   .map((link, linkIndex) => {
+                    const storageIndex = favoriteLinks.findIndex((item) => item.id === link.id);
                     // Resolve effective browser (Link specific > Tile default > System default)
                     const parentTile = tiles.find(t => t.id === link.tile.id);
                     const browserToUse = (link.browser && link.browser !== 'default')
@@ -8816,6 +8826,15 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
                         {/* Action bar: View notes (Information) + Unfavorite */}
                         <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all duration-200 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm p-0.5 rounded-lg border border-slate-200/50 dark:border-slate-700/50 z-20">
+                          {!isAuthenticated && (
+                            <GuestReorderArrows
+                              variant="inline"
+                              canMoveLeft={storageIndex > 0}
+                              canMoveRight={storageIndex >= 0 && storageIndex < favoriteLinks.length - 1}
+                              onMoveLeft={() => handleMoveFavoriteLink(link.id, 'left')}
+                              onMoveRight={() => handleMoveFavoriteLink(link.id, 'right')}
+                            />
+                          )}
                           {link.notes && link.notes.trim() && (
                             <button
                               onClick={(e) => {
@@ -8867,14 +8886,6 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             </svg>
                           </button>
                         </div>
-                      {!isAuthenticated && favLinksSort === 'default' && (
-                        <GuestReorderArrows
-                          canMoveLeft={linkIndex > 0}
-                          canMoveRight={linkIndex < favoriteLinks.length - 1}
-                          onMoveLeft={() => handleMoveFavoriteLink(link.id, 'left')}
-                          onMoveRight={() => handleMoveFavoriteLink(link.id, 'right')}
-                        />
-                      )}
                       </div>
                     );
                   })}
