@@ -46,6 +46,8 @@ switch ($method) {
             handleBulkImport();
         } elseif ($path === '/csv-to-json' || $path === '/csv-to-json/') {
             handleCsvToJson();
+        } elseif ($path === '/clone-category' || $path === '/clone-category/') {
+            handleCloneCategory('');
         } elseif (preg_match('#^/category/([^/]+)/clone$#', $path, $matches)) {
             handleCloneCategory(rawurldecode($matches[1]));
         } elseif (preg_match('#^/category/([^/]+)/archive$#', $path, $matches)) {
@@ -2799,24 +2801,15 @@ function handleCloneTile($tileId) {
 function handleCloneCategory($categoryName) {
     $user = requireAuth();
     $db = getDB();
-    
-    // Category name is already decoded by the routing
-    // Ensure it's properly trimmed
-    $categoryName = trim($categoryName);
-    
-    if (empty($categoryName)) {
-        sendJSON(['error' => 'Invalid category name'], 400);
-    }
-    
-    // Log the attempt for debugging
-    error_log('Clone category attempt: User ' . $user['id'] . ' (' . $user['username'] . '), is_admin=' . ($user['is_admin'] ? 'true' : 'false') . ', category="' . $categoryName . '"');
-    
-    // Optional: source_tab to scope clone (staging vs public)
+
+    // Read body once (php://input can only be read a single time).
     $sourceTab = 'public';
     $rawInput = @file_get_contents('php://input');
+    $body = [];
     if ($rawInput !== false && $rawInput !== '') {
-        $body = json_decode($rawInput, true);
-        if (is_array($body)) {
+        $decoded = json_decode($rawInput, true);
+        if (is_array($decoded)) {
+            $body = $decoded;
             if (isset($body['sourceTab']) && trim((string)$body['sourceTab']) === 'staging') {
                 $sourceTab = 'staging';
             } elseif (isset($body['source_tab']) && trim((string)$body['source_tab']) === 'staging') {
@@ -2824,6 +2817,20 @@ function handleCloneCategory($categoryName) {
             }
         }
     }
+
+    // Prefer JSON body so names with spaces/special chars never sit in the URL
+    // (Apache 2.4 returns 403 for unescaped spaces in rewritten PATH_INFO).
+    $categoryName = trim((string)$categoryName);
+    if ($categoryName === '') {
+        $categoryName = trim((string)($body['categoryName'] ?? $body['category'] ?? ''));
+    }
+
+    if ($categoryName === '') {
+        sendJSON(['error' => 'Invalid category name'], 400);
+    }
+    
+    // Log the attempt for debugging
+    error_log('Clone category attempt: User ' . $user['id'] . ' (' . $user['username'] . '), is_admin=' . ($user['is_admin'] ? 'true' : 'false') . ', category="' . $categoryName . '"');
 
     // Get all tiles in this category (exclude deleted and archived tiles), optionally scoped by source_tab
     if ($sourceTab === 'staging') {

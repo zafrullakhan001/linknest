@@ -748,17 +748,20 @@ export const cloneCategory = async (categoryName: string, options?: { sourceTab?
   errors: string[];
 }> => {
   try {
-    const encodedCategoryName = encodeURIComponent(categoryName);
-    const body = options?.sourceTab === 'staging' ? JSON.stringify({ sourceTab: 'staging' }) : undefined;
-    const response = await fetch(`${API_BASE}/tiles/category/${encodedCategoryName}/clone`, {
+    const payload: { categoryName: string; sourceTab?: 'staging' } = { categoryName };
+    if (options?.sourceTab === 'staging') {
+      payload.sourceTab = 'staging';
+    }
+    // POST body (not URL path) so names with spaces are not rejected by Apache as 403.
+    const response = await fetch(`${API_BASE}/tiles/clone-category`, {
       method: 'POST',
       credentials: 'include',
-      headers: body ? { 'Content-Type': 'application/json' } : undefined,
-      body
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: 'Failed to clone category' }));
+      const errorData = await response.json().catch(() => ({ error: `Failed to clone category (${response.status})` }));
       throw new Error(errorData.error || 'Failed to clone category');
     }
 

@@ -1877,8 +1877,8 @@ const SortableTile: React.FC<SortableTileProps> = ({
               className="p-1 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded transition-all"
               title="Share with user"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                <path d="M13 4.5a2.5 2.5 0 11.602 4.765l-.875 2.035a.75.75 0 001.396.264l.875-2.034a2.501 2.501 0 10-.602-4.765zm-6 0a2.5 2.5 0 11.602 4.765l-.875 2.035a.75.75 0 101.396.264l.875-2.034a2.501 2.501 0 00-.602-4.765zM7 14a2.5 2.5 0 01-.875-4.765l.875-2.034a.75.75 0 001.396.264l-.875 2.035A2.5 2.5 0 017 14z" />
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5" aria-hidden="true">
+                <path d="M10 5a3 3 0 11-6 0 3 3 0 016 0zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-5.385-1.572zM16.25 10.75a.75.75 0 00-1.5 0v2h-2a.75.75 0 000 1.5h2v2a.75.75 0 001.5 0v-2h2a.75.75 0 000-1.5h-2v-2z" />
               </svg>
             </button>
           )}

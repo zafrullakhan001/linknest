@@ -7,7 +7,9 @@ ErrorDocument 404 "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'><m
 
 
 # Enable directory access and file serving
-Options -Indexes +FollowSymLinks
+# MultiViews maps /api/tiles/... onto tiles.php and /api/.../clone onto clone.php,
+# which 403s PATH_INFO when the category name contains spaces (%20).
+Options -Indexes -MultiViews +FollowSymLinks
 
 # Set default charset to UTF-8
 AddDefaultCharset UTF-8
@@ -53,7 +55,9 @@ AddDefaultCharset UTF-8
     RewriteCond %{REQUEST_URI} ^.*/api/
     RewriteCond %{REQUEST_URI} !api/index\.php
     RewriteCond %{REQUEST_FILENAME} !-f
-    RewriteRule ^api/(.*)$ api/index.php?path=$1 [L,QSA]
+    # BCTLS escapes spaces/CTL in $1 so category names like "BUSINESS IT SERVICES"
+    # do not produce an unescaped query string that Apache 2.4 rejects with 403.
+    RewriteRule ^api/(.*)$ api/index.php?path=$1 [BCTLS,L,QSA]
 
     # Allow direct access to uploads/ directory
     RewriteCond %{REQUEST_URI} ^.*/uploads/

@@ -1,5 +1,6 @@
 # Enable directory access and file serving
-Options -Indexes +FollowSymLinks
+# MultiViews maps /api/tiles/... onto tiles.php and 403s PATH_INFO with spaces.
+Options -Indexes -MultiViews +FollowSymLinks
 
 # Set proper MIME types for JavaScript modules - MUST be before rewrite rules
 <IfModule mod_mime.c>
@@ -59,7 +60,8 @@ Options -Indexes +FollowSymLinks
     RewriteCond %{REQUEST_URI} ^/api/
     RewriteCond %{REQUEST_URI} !^/api/index\.php
     RewriteCond %{REQUEST_FILENAME} !-f
-    RewriteRule ^api/(.*)$ api/index.php?path=$1 [L,QSA]
+    # BCTLS escapes spaces/CTL in $1 so category names with spaces are not 403'd.
+    RewriteRule ^api/(.*)$ api/index.php?path=$1 [BCTLS,L,QSA]
     
     # Redirect /index.tsx to dist/index.html (serve compiled version)
     RewriteCond %{DOCUMENT_ROOT}/dist/index.html -f
