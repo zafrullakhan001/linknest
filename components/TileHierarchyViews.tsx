@@ -308,6 +308,7 @@ export interface TileHierarchyViewsProps {
   onCloneTab: (tabId: string) => void;
   onCloneSection: (tabId: string, sectionId: string) => void;
   onCloneLink: (tabId: string, sectionId: string, linkId: string) => void;
+  onConvertLinkToTile: (tabId: string, sectionId: string, link: Link) => void;
   onRemoveLink: (tabId: string, sectionId: string, linkId: string) => void;
   onMoveTab: (tabId: string, direction: 'up' | 'down') => void;
   onMoveSection: (tabId: string, sectionId: string, direction: 'up' | 'down') => void;
@@ -392,6 +393,7 @@ const TabNode: React.FC<
   onCloneTab,
   onCloneSection,
   onCloneLink,
+  onConvertLinkToTile,
   onRemoveLink,
   onMoveTab,
   onMoveSection,
@@ -528,6 +530,7 @@ const TabNode: React.FC<
               onRemoveSection={onRemoveSection}
               onCloneSection={onCloneSection}
               onCloneLink={onCloneLink}
+              onConvertLinkToTile={onConvertLinkToTile}
               onRemoveLink={onRemoveLink}
               onMoveSection={onMoveSection}
               onMoveItem={onMoveItem}
@@ -581,6 +584,7 @@ const SectionNode: React.FC<{
   onRemoveSection: (tabId: string, sectionId: string) => void;
   onCloneSection: (tabId: string, sectionId: string) => void;
   onCloneLink: (tabId: string, sectionId: string, linkId: string) => void;
+  onConvertLinkToTile: (tabId: string, sectionId: string, link: Link) => void;
   onRemoveLink: (tabId: string, sectionId: string, linkId: string) => void;
   onMoveSection: (tabId: string, sectionId: string, direction: 'up' | 'down') => void;
   onMoveItem: (tabId: string, sectionId: string, itemId: string, direction: 'up' | 'down') => void;
@@ -614,6 +618,7 @@ const SectionNode: React.FC<{
   onRemoveSection,
   onCloneSection,
   onCloneLink,
+  onConvertLinkToTile,
   onRemoveLink,
   onMoveSection,
   onMoveItem,
@@ -870,6 +875,7 @@ const SectionNode: React.FC<{
                     },
                     { id: 'edit', label: 'Edit link', onClick: () => onEditLink(tab.id, section.id, link) },
                     { id: 'clone', label: 'Clone', onClick: () => onCloneLink(tab.id, section.id, link.id) },
+                    { id: 'convert', label: 'Convert to tile/space…', onClick: () => onConvertLinkToTile(tab.id, section.id, link) },
                     {
                       id: 'schedule',
                       label: 'Schedule…',

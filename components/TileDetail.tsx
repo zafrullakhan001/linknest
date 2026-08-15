@@ -11,7 +11,8 @@ import {
     parseSectionLinksExport,
     parseTabExport
 } from '../services/sectionTabTransferService';
-import { cloneTile, getTiles, saveTile, toggleLinkFavorite, createTempVersion, updateTilePageAnimation, recordTileVisit } from '../services/storageService';
+import { cloneTile, createTile, getTiles, saveTile, toggleLinkFavorite, createTempVersion, updateTilePageAnimation, recordTileVisit } from '../services/storageService';
+import { generateUuid } from '../services/idService';
 import { removeSharedTile } from '../services/tileShareService';
 import { useSettings } from '../contexts/SettingsContext';
 import { isEscapeDialogOpen, useEscapeToClose } from '../hooks/useEscapeToClose';
@@ -670,6 +671,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
     // State for Editing Links (keyed by link ID)
     const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
+    const [convertLinkDialog, setConvertLinkDialog] = useState<{ tabId: string; sectionId: string; link: Link } | null>(null);
+    const [convertingLinkToTile, setConvertingLinkToTile] = useState(false);
     const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, browser: string, richTextContent: string, animation: string }>>({});
 
     // Available browsers from BrowserLauncher API
@@ -4317,6 +4320,124 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }));
     };
 
+    const openConvertLinkDialog = (tabId: string, sectionId: string, link: Link) => {
+        const edited = editLinkState[link.id];
+        const liveLink: Link = edited
+            ? {
+                ...link,
+                label: edited.label || link.label,
+                url: (edited.url || link.url || '').trim(),
+                icon: edited.icon || link.icon,
+                notes: edited.notes || link.notes,
+                tooltip: edited.tooltip || link.tooltip,
+                visibility: edited.visibility || link.visibility,
+                published: edited.published,
+                allowedUsers: edited.allowedUsers || link.allowedUsers,
+                allowedGroups: edited.allowedGroups || link.allowedGroups,
+                browser: edited.browser || link.browser,
+                animation: edited.animation || link.animation,
+            }
+            : { ...link, url: (link.url || '').trim() };
+        if (!liveLink.url) {
+            alert('This link needs a URL before it can be converted to a tile.');
+            return;
+        }
+        setConvertLinkDialog({ tabId, sectionId, link: liveLink });
+    };
+
+    const handleConvertLinkToIndependentTile = async (asHyperlink: boolean) => {
+        if (!convertLinkDialog) return;
+        if (!isAuthenticated) {
+            onAuthRequired?.();
+            return;
+        }
+
+        const { link } = convertLinkDialog;
+        const title = stripHtmlTags(link.label || '').trim() || getDisplayUrl(link.url) || 'Untitled';
+        const isAdmin = !!user?.is_admin;
+        let visibility: TileVisibility = tile.visibility || 'public';
+        let allowedUsers = tile.allowedUsers ? [...tile.allowedUsers] : [];
+        let allowedGroups = tile.allowedGroups ? [...tile.allowedGroups] : [];
+
+        if (link.visibility === 'private') {
+            visibility = 'private';
+            if (link.allowedUsers?.length) allowedUsers = [...link.allowedUsers];
+            if (link.allowedGroups?.length) allowedGroups = [...link.allowedGroups];
+        } else if (link.visibility === 'authenticated' && visibility === 'public') {
+            visibility = 'authenticated';
+        }
+
+        if (!isAdmin) {
+            visibility = 'private';
+        }
+        if (visibility === 'private' && user && !allowedUsers.includes(user.id)) {
+            allowedUsers = [...allowedUsers, user.id];
+        }
+
+        const emoji = (link.icon && link.icon.length <= 8) ? link.icon : (tile.emoji || '🔗');
+        const newLink: Link = {
+            id: generateId(),
+            label: link.label || title,
+            url: link.url,
+            icon: link.icon,
+            textColor: link.textColor,
+            visibility: link.visibility,
+            published: link.published,
+            allowedUsers: link.allowedUsers ? [...link.allowedUsers] : undefined,
+            allowedGroups: link.allowedGroups ? [...link.allowedGroups] : undefined,
+            notes: link.notes,
+            tooltip: link.tooltip,
+            browser: link.browser,
+            animation: link.animation,
+        };
+
+        const newTile: Tile = {
+            id: generateUuid(),
+            title,
+            description: '',
+            emoji,
+            themeColor: tile.themeColor,
+            group: tile.group || 'General',
+            tabs: asHyperlink
+                ? []
+                : [{
+                    id: generateId(),
+                    title: 'General',
+                    position: 0,
+                    sections: [{
+                        id: generateId(),
+                        title: 'General',
+                        links: [newLink],
+                    }],
+                }],
+            createdAt: Date.now(),
+            visibility,
+            allowedUsers: visibility === 'private' ? allowedUsers : undefined,
+            allowedGroups: visibility === 'private' ? allowedGroups : undefined,
+            isHyperlink: asHyperlink,
+            hyperlinkUrl: asHyperlink ? link.url : undefined,
+            openInNewTab: asHyperlink ? true : undefined,
+            sourceTab: (tile.sourceTab === 'staging' || sourceTab === 'staging') ? 'staging' : 'public',
+            browser: (link.browser && link.browser !== 'default') ? link.browser : tile.browser,
+        };
+
+        setConvertingLinkToTile(true);
+        try {
+            await createTile(newTile);
+            if (newTile.sourceTab !== 'staging') {
+                const updatedTiles = await getTiles();
+                onUpdateTiles(updatedTiles, true);
+            }
+            setConvertLinkDialog(null);
+            alert(`Created independent ${asHyperlink ? 'hyperlink tile' : 'space'} “${title}”. You’ll find it on the dashboard. The original link is still in this space.`);
+        } catch (err) {
+            console.error(err);
+            alert(err instanceof Error ? err.message : 'Failed to create tile from this link.');
+        } finally {
+            setConvertingLinkToTile(false);
+        }
+    };
+
     const handleCloneRichText = (tabId: string, sectionId: string, richTextId: string) => {
         setEditTabs(editTabs.map(tab => {
             if (tab.id !== tabId) return tab;
@@ -7035,6 +7156,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             onChange={setEditHtml}
                                             placeholder="Enter intro content with formatting..."
                                             className="min-h-[160px]"
+                                            startOpen
                                         />
                                     )}
                                 </div>
@@ -7984,6 +8106,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 onCloneTab={handleCloneTab}
                                                 onCloneSection={handleCloneSection}
                                                 onCloneLink={handleCloneLink}
+                                                onConvertLinkToTile={openConvertLinkDialog}
                                                 onRemoveLink={handleRemoveLinkFromSection}
                                                 onMoveTab={handleMoveTab}
                                                 onMoveSection={handleMoveSection}
@@ -9111,7 +9234,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         </LinkEditSection>
 
                                                                                         {/* Action Buttons */}
-                                                                                        <div className="flex gap-2 justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
+                                                                                        <div className="flex flex-wrap gap-2 justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={() => openConvertLinkDialog(tab.id, section.id, link)}
+                                                                                                className="mr-auto px-4 py-2 text-xs font-medium text-indigo-700 dark:text-indigo-300 hover:text-indigo-900 dark:hover:text-indigo-100 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg border border-indigo-200 dark:border-indigo-800 transition-all"
+                                                                                            >
+                                                                                                Convert to tile/space
+                                                                                            </button>
                                                                                             <button
                                                                                                 onClick={handleCancelEditLink}
                                                                                                 className="px-4 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 transition-all"
@@ -9276,6 +9406,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                                                                                                     <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
                                                                                                     <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
+                                                                                                </svg>
+                                                                                            </button>
+                                                                                            <button
+                                                                                                onClick={() => openConvertLinkDialog(tab.id, section.id, link)}
+                                                                                                className="p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-200 dark:hover:bg-slate-800 rounded"
+                                                                                                title="Convert to independent tile/space"
+                                                                                            >
+                                                                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                                                                    <path d="M2 4.25A2.25 2.25 0 014.25 2h2.5A2.25 2.25 0 019 4.25v2.5A2.25 2.25 0 016.75 9h-2.5A2.25 2.25 0 012 6.75v-2.5zM11 4.25A2.25 2.25 0 0113.25 2h2.5A2.25 2.25 0 0118 4.25v2.5A2.25 2.25 0 0115.75 9h-2.5A2.25 2.25 0 0111 6.75v-2.5zM2 13.25A2.25 2.25 0 014.25 11h2.5A2.25 2.25 0 019 13.25v2.5A2.25 2.25 0 016.75 18h-2.5A2.25 2.25 0 012 15.75v-2.5zM12.25 11.75a.75.75 0 000 1.5h2v2a.75.75 0 001.5 0v-2h2a.75.75 0 000-1.5h-2v-2a.75.75 0 00-1.5 0v2h-2z" />
                                                                                                 </svg>
                                                                                             </button>
                                                                                             <button
@@ -10480,6 +10619,60 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 </div>
                             );
                         })()}
+
+                        {/* Convert link to independent tile/space */}
+                        {convertLinkDialog && (
+                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => !convertingLinkToTile && setConvertLinkDialog(null)}>
+                                <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Convert to independent tile</h3>
+                                        <button
+                                            type="button"
+                                            onClick={() => !convertingLinkToTile && setConvertLinkDialog(null)}
+                                            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                                            title="Close"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                                        Create a dashboard tile from <span className="font-semibold text-slate-800 dark:text-slate-200" dangerouslySetInnerHTML={{ __html: convertLinkDialog.link.label || 'this link' }} />. The original link stays in this space.
+                                    </p>
+                                    <div className="space-y-2">
+                                        <button
+                                            type="button"
+                                            disabled={convertingLinkToTile}
+                                            onClick={() => void handleConvertLinkToIndependentTile(false)}
+                                            className="w-full text-left rounded-xl border border-sky-200 dark:border-sky-800 bg-sky-50/80 dark:bg-sky-950/30 hover:border-sky-400 px-4 py-3 transition-colors disabled:opacity-50"
+                                        >
+                                            <div className="text-sm font-semibold text-slate-900 dark:text-white">📁 Space</div>
+                                            <div className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">New space with this URL in a General section — you can add more links later</div>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled={convertingLinkToTile}
+                                            onClick={() => void handleConvertLinkToIndependentTile(true)}
+                                            className="w-full text-left rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/80 dark:bg-indigo-950/30 hover:border-indigo-400 px-4 py-3 transition-colors disabled:opacity-50"
+                                        >
+                                            <div className="text-sm font-semibold text-slate-900 dark:text-white">🔗 Hyperlink tile</div>
+                                            <div className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">Direct click-through to this URL from the dashboard</div>
+                                        </button>
+                                    </div>
+                                    <div className="mt-4 flex justify-end">
+                                        <button
+                                            type="button"
+                                            disabled={convertingLinkToTile}
+                                            onClick={() => setConvertLinkDialog(null)}
+                                            className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"
+                                        >
+                                            {convertingLinkToTile ? 'Creating…' : 'Cancel'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Link Scheduling Dialog */}
                         {schedulingDialogLink && (() => {

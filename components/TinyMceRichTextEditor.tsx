@@ -7,6 +7,8 @@ interface TinyMceRichTextEditorProps {
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
+  /** When true, open the full-screen editor immediately. Default is closed until the user asks for it. */
+  startOpen?: boolean;
 }
 
 const MSG = 'linknest-tinymce';
@@ -22,8 +24,9 @@ export const TinyMceRichTextEditor: React.FC<TinyMceRichTextEditorProps> = ({
   onChange,
   placeholder = 'Enter text...',
   className = '',
+  startOpen = false,
 }) => {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(startOpen);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const htmlRef = useRef(value || '');
   const readyRef = useRef(false);

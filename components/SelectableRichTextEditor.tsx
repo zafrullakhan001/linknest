@@ -31,6 +31,8 @@ interface SelectableRichTextEditorProps {
   className?: string;
   /** Hide the Simple | TinyMCE toggle (still uses stored preference). */
   hideToggle?: boolean;
+  /** Open TinyMCE full screen immediately when that editor is selected. */
+  startOpen?: boolean;
 }
 
 /**
@@ -43,6 +45,7 @@ export const SelectableRichTextEditor: React.FC<SelectableRichTextEditorProps> =
   placeholder = 'Enter text...',
   className = '',
   hideToggle = false,
+  startOpen = false,
 }) => {
   const [kind, setKind] = useState<RichTextEditorKind>(() => readRichTextEditorPreference());
 
@@ -102,6 +105,7 @@ export const SelectableRichTextEditor: React.FC<SelectableRichTextEditorProps> =
           value={value}
           onChange={onChange}
           placeholder={placeholder}
+          startOpen={startOpen}
         />
       ) : (
         <RichTextEditor

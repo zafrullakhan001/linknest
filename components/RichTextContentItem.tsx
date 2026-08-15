@@ -234,7 +234,7 @@ export const RichTextContentItem = forwardRef<RichTextContentItemHandle, RichTex
             </button>
           </div>
         </div>
-        <SelectableRichTextEditor value={localContent} onChange={setLocalContent} placeholder="Enter rich text content..." />
+        <SelectableRichTextEditor value={localContent} onChange={setLocalContent} placeholder="Enter rich text content..." startOpen />
         <RichTextBoxOptionsFields
           boxed={localBoxed}
           onBoxedChange={setLocalBoxed}
