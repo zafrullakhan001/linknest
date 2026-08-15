@@ -1,5 +1,7 @@
 const DEFAULT_LOGO = 'icons/icon48.png';
 
+let lastBookmarkCount = null;
+
 function flatten(nodes, out) {
   if (!Array.isArray(nodes)) return;
   for (const node of nodes) {
@@ -15,6 +17,26 @@ function setStatus(countText, statusText, isError) {
   const status = document.getElementById('status');
   status.textContent = statusText;
   status.classList.toggle('err', !!isError);
+}
+
+function statusCopyForModes(countText, modes) {
+  const read = !!(modes && modes.read);
+  const write = !!(modes && modes.write);
+  if (!read && !write) {
+    return 'http(s) bookmarks in this profile (Sync and OutSync are off)';
+  }
+  if (read && !write) {
+    return 'http(s) bookmarks ready to Sync (OutSync is off)';
+  }
+  if (!read && write) {
+    return 'http(s) bookmarks ready to OutSync (Sync is off)';
+  }
+  return 'http(s) bookmarks ready to sync';
+}
+
+function applyBookmarkCountStatus(modes) {
+  if (lastBookmarkCount == null) return;
+  setStatus(String(lastBookmarkCount), statusCopyForModes(String(lastBookmarkCount), modes), false);
 }
 
 function loadCount() {
@@ -33,7 +55,10 @@ function loadCount() {
     }
     const urls = [];
     flatten(tree, urls);
-    setStatus(String(urls.length), 'http(s) bookmarks ready to sync', false);
+    lastBookmarkCount = urls.length;
+    getSyncModes()
+      .then((modes) => applyBookmarkCountStatus(modes))
+      .catch(() => setStatus(String(urls.length), 'http(s) bookmarks ready to sync', false));
   });
 }
 
@@ -114,38 +139,73 @@ function setAppNameLabel(appName, appUrl) {
   }
 }
 
+function fillStatRow(prefix, stats) {
+  const times = document.getElementById(prefix + '-times');
+  const last = document.getElementById(prefix + '-last');
+  const avg = document.getElementById(prefix + '-avg');
+  if (times) times.textContent = String((stats && stats.count) || 0);
+  if (last) last.textContent = formatSyncDuration(stats && stats.lastMs);
+  if (avg) avg.textContent = formatSyncDuration(stats && stats.averageMs);
+}
+
 function renderSyncStats(stats) {
-  document.getElementById('sync-times').textContent = String((stats && stats.count) || 0);
-  document.getElementById('sync-last').textContent = formatSyncDuration(stats && stats.lastMs);
-  document.getElementById('sync-avg').textContent = formatSyncDuration(stats && stats.averageMs);
+  fillStatRow('read', stats && stats.read);
+  fillStatRow('write', stats && stats.write);
 }
 
 function loadSyncStats() {
   getSyncStats().then(renderSyncStats);
 }
 
-function updateSyncToggleUi(on) {
-  const hint = document.getElementById('sync-toggle-hint');
-  const note = document.getElementById('sync-off-note');
+function updateSyncToggleUi(modes) {
+  const read = !!(modes && modes.read);
+  const write = !!(modes && modes.write);
+  const readHint = document.getElementById('read-toggle-hint');
+  const writeHint = document.getElementById('write-toggle-hint');
+  const readNote = document.getElementById('read-off-note');
+  const writeNote = document.getElementById('write-off-note');
+  const readStatsNote = document.getElementById('read-stats-note');
+  const writeStatsNote = document.getElementById('write-stats-note');
   const version = document.getElementById('version');
-  if (hint) {
-    hint.textContent = on
-      ? 'On — only this browser profile’s bookmarks, and only on allowlisted LinkNest sites.'
-      : 'Off — the app Sync button cannot read bookmarks. Turn on to sync this profile only.';
+  if (readHint) {
+    readHint.textContent = read
+      ? 'On — Sync can pull this profile’s bookmarks into allowlisted LinkNest sites.'
+      : 'Off — Sync cannot pull bookmarks from this profile.';
   }
-  if (note) note.hidden = !!on;
+  if (writeHint) {
+    writeHint.textContent = write
+      ? 'On — OutSync can add new bookmarks (and update titles) in this profile from allowlisted LinkNest sites.'
+      : 'Off — OutSync cannot add or update bookmarks in this profile.';
+  }
+  if (readNote) readNote.hidden = read;
+  if (writeNote) writeNote.hidden = write;
+  if (readStatsNote) {
+    readStatsNote.textContent = read
+      ? 'Browser → app'
+      : 'Off — Sync cannot pull bookmarks. Previous counts stay below.';
+  }
+  if (writeStatsNote) {
+    writeStatsNote.textContent = write
+      ? 'App → browser'
+      : 'Off — OutSync cannot write bookmarks. Previous counts stay below.';
+  }
   if (version) {
-    version.textContent = on
-      ? 'v' + EXTENSION_VERSION + ' · this profile only'
-      : 'v' + EXTENSION_VERSION + ' · sync off';
+    let suffix = ' · sync off';
+    if (read && write) suffix = ' · this profile only';
+    else if (read) suffix = ' · read-only';
+    else if (write) suffix = ' · read-write';
+    version.textContent = 'v' + EXTENSION_VERSION + suffix;
   }
+  applyBookmarkCountStatus({ read: read, write: write });
 }
 
 async function hydrateSyncToggle() {
-  const on = await getSyncEnabled();
-  const input = document.getElementById('sync-enabled');
-  if (input) input.checked = on;
-  updateSyncToggleUi(on);
+  const modes = await getSyncModes();
+  const readInput = document.getElementById('sync-read-enabled');
+  const writeInput = document.getElementById('sync-write-enabled');
+  if (readInput) readInput.checked = !!modes.read;
+  if (writeInput) writeInput.checked = !!modes.write;
+  updateSyncToggleUi(modes);
 }
 
 async function hydrateAllowlistHint() {
@@ -310,17 +370,39 @@ function previewAppLink() {
 document.getElementById('save-brand').addEventListener('click', () => void saveBranding());
 document.getElementById('reset-brand').addEventListener('click', () => void resetBranding());
 
-document.getElementById('sync-enabled').addEventListener('change', async (event) => {
+document.getElementById('sync-read-enabled').addEventListener('change', async (event) => {
   const on = !!event.target.checked;
-  await setSyncEnabled(on);
-  await applySyncEnabledBadge(on);
-  updateSyncToggleUi(on);
+  await setReadEnabled(on);
+  const modes = await getSyncModes();
+  await applySyncEnabledBadge(modes);
+  updateSyncToggleUi(modes);
+});
+
+document.getElementById('sync-write-enabled').addEventListener('change', async (event) => {
+  const on = !!event.target.checked;
+  await setWriteEnabled(on);
+  const modes = await getSyncModes();
+  await applySyncEnabledBadge(modes);
+  updateSyncToggleUi(modes);
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
-  if (changes.syncCount || changes.lastSyncMs || changes.totalSyncMs) {
+  if (
+    changes.syncCount ||
+    changes.lastSyncMs ||
+    changes.totalSyncMs ||
+    changes.syncReadCount ||
+    changes.lastReadSyncMs ||
+    changes.totalReadSyncMs ||
+    changes.syncWriteCount ||
+    changes.lastWriteSyncMs ||
+    changes.totalWriteSyncMs
+  ) {
     loadSyncStats();
+  }
+  if (changes.syncEnabled || changes.syncReadEnabled || changes.syncWriteEnabled) {
+    void hydrateSyncToggle();
   }
 });
 

@@ -10,8 +10,8 @@
       }
     },
     "syncDefaultOn": {
-      "title": "Default Bookmark sync On for new profiles",
-      "description": "If true, Bookmark sync starts On until the user toggles it. Default is false (opt-in).",
+      "title": "Default Read-only and Read-write On for new profiles",
+      "description": "If true, both Read-only (Sync) and Read-write (OutSync) start On until the user toggles them. Default is false (opt-in).",
       "type": "boolean"
     }
   }

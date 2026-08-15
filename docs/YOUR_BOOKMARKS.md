@@ -52,19 +52,32 @@ Import a Chrome/Edge bookmark HTML export. Links are grouped into **spaces by we
 
 ### Getting started
 1. Chrome → Bookmarks → Bookmark manager → ⋮ → **Export bookmarks**
-2. In Favorites → **Your Bookmarks** → **Import Chrome HTML**, **Merge Import**, or **Sync** (LinkNest Bookmark Sync or Browser Launcher Pro)
+2. In Favorites → **Your Bookmarks** → **Import Chrome HTML**, **Merge Import**, **Sync** (browser → app), or **OutSync** (app → browser; Bookmark Sync 1.8+, Read-write On)
 3. Open a domain space to work with its links
 
 ### Sync from browser (extension)
-Install **LinkNest Bookmark Sync** (`extensions/bookmark-sync` — load unpacked in Chrome/Edge) **or** **Browser Launcher Pro** with the Chrome `bookmarks` permission. Click **Sync** to merge browser bookmarks into Your Bookmarks without an HTML file. New URLs are added; existing ones are skipped.
+Install **LinkNest Bookmark Sync** (`extensions/bookmark-sync` — load unpacked in Chrome/Edge) **or** **Browser Launcher Pro** with the Chrome `bookmarks` permission. **Sync** and **OutSync** appear only when an extension answers on this origin. Each button is greyed out when its popup toggle is Off (Read-only for Sync, Read-write for OutSync). Hover a greyed button for the hint. Click **Sync** (when enabled) to merge browser bookmarks into Your Bookmarks without an HTML file. New URLs are added; existing ones are skipped.
 
-Bookmark Sync is a minified Pro-compatible extension: it only answers `BROWSER_LAUNCHER_GET_BOOKMARKS` / `BROWSER_LAUNCHER_CHECK` from **allowlisted** LinkNest origins, and only when **Bookmark sync** is On in the popup (it starts **Off**). It reads **this browser profile only** — not another user’s PC or Chrome profile — and does not upload bookmarks. The **display name does not connect Sync**.
+Bookmark Sync is a minified Pro-compatible extension: it answers `BROWSER_LAUNCHER_GET_BOOKMARKS` / `BROWSER_LAUNCHER_CHECK` from **allowlisted** LinkNest origins, and only when **Read-only** is On in the popup (it starts **Off**). It reads **this browser profile only** — not another user’s PC or Chrome profile — and does not upload bookmarks. The **display name does not connect Sync**.
 
-After v1.6, add your app origin to `org-branding.json` `allowedOrigins` (the shipped file allows local XAMPP/Vite origins such as `http://localhost` and `http://localhost:3000`) and turn the popup toggle **On**.
+After v1.8, turn **Read-only** on for Sync and **Read-write** on for OutSync (both start Off). After v1.6, add your app origin to `org-branding.json` `allowedOrigins` (the shipped file allows local XAMPP/Vite origins such as `http://localhost` and `http://localhost:3000`).
 
 Full extension guide (including mass deploy): **Help → Guides → Bookmark Sync Extension** (also the extension popup **Help** tab).
 
-If Sync fails (extension missing, sync toggle off, no `bookmarks` permission, or `getTree` errors), use **Import Chrome HTML** / **Merge Import** instead.
+If Sync fails (extension missing, Read-only off, no `bookmarks` permission, or `getTree` errors), use **Import Chrome HTML** / **Merge Import** instead.
+
+### OutSync to browser (extension)
+Click **OutSync** on Your Bookmarks (when the button is enabled and you have links saved) to **preview** what would change in **this Chrome/Edge profile**, then **Apply**. The button is hidden until Bookmark Sync is available on this origin, and greyed until **Read-write** is On. Requires Bookmark Sync **1.8.2+**. Browser Launcher Pro does not implement OutSync (OutSync stays greyed if only Pro is installed).
+
+- Matching URLs (normalized) already in the browser are **skipped**; titles are **updated in place** if they differ
+- New URLs are added under **Other Bookmarks → LinkNest → space name**
+- Nothing is deleted or moved out of existing Chrome folders
+- **Download JSON** saves the preview changelog (adds, title updates, and unchanged URLs)
+- **Backup this browser’s bookmarks before applying** is **on by default**. Apply downloads this Chrome/Edge profile’s tree to **this PC’s Downloads folder** as **HTML** (Chrome Bookmark manager Import) plus **JSON** (`linknest-browser-bookmarks-backup-….html` / `.json`). The backup is not stored in LinkNest. If the backup fails, Apply is blocked until you retry or uncheck backup. **Download backup now** saves the same files without applying.
+
+**Restore:** Chrome → Bookmarks → Bookmark manager → **Import bookmarks** (the HTML). Import **merges**; it does not delete newer bookmarks. OutSync adds live under **Other Bookmarks → LinkNest** — delete that folder to drop new links. Title updates can be restored from the changelog JSON (`previousTitle`).
+
+If OutSync times out, reload Bookmark Sync 1.8.2+, refresh the app, and turn **Read-write** **On**. Backup also works with **Read-only** On.
 
 ### Space toolbar (common)
 | Action | Purpose |
@@ -87,6 +100,7 @@ If Sync fails (extension missing, sync toggle off, no `bookmarks` permission, or
 - **Pin** links, move between spaces, reorder (manual sort)
 
 ### Home (all spaces) extras
+- **OutSync** — preview adds/title updates, optional browser bookmark backup (HTML + JSON), download JSON changelog, then Apply to this browser
 - **Export Spaces JSON** / **Export HTML** — full library
 - **Rewrite tools** — same suite across all spaces
 - **Cleanup** — remove duplicate URLs and never-opened links

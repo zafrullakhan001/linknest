@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = '1.6.0';
+const EXTENSION_VERSION = '1.8.2';
 const BRAND_DEFAULT_NAME = 'LinkNest Bookmark Sync';
 const BRAND_DEFAULT_APP = 'LinkNest';
 const BRAND_NAME_MAX = 48;
@@ -15,10 +15,25 @@ const SYNC_STORAGE = {
   totalMs: 'totalSyncMs',
   lastAt: 'lastSyncAt',
   lastOk: 'lastSyncOk',
-  enabled: 'syncEnabled'
+  enabled: 'syncEnabled',
+  readEnabled: 'syncReadEnabled',
+  writeEnabled: 'syncWriteEnabled',
+  readCount: 'syncReadCount',
+  readLastMs: 'lastReadSyncMs',
+  readTotalMs: 'totalReadSyncMs',
+  readLastAt: 'lastReadSyncAt',
+  readLastOk: 'lastReadSyncOk',
+  writeCount: 'syncWriteCount',
+  writeLastMs: 'lastWriteSyncMs',
+  writeTotalMs: 'totalWriteSyncMs',
+  writeLastAt: 'lastWriteSyncAt',
+  writeLastOk: 'lastWriteSyncOk'
 };
-const SYNC_DISABLED_MESSAGE =
-  'Sync is turned off in the Bookmark Sync extension. Open the toolbar popup and enable Bookmark sync.';
+const SYNC_READ_DISABLED_MESSAGE =
+  'Read-only Sync is turned off. Open the toolbar popup and enable Read-only (Sync).';
+const SYNC_WRITE_DISABLED_MESSAGE =
+  'Read-write OutSync is turned off. Open the toolbar popup and enable Read-write (OutSync).';
+const SYNC_DISABLED_MESSAGE = SYNC_READ_DISABLED_MESSAGE;
 const ORG_BRANDING_FILE = 'org-branding.json';
 
 function getStoredBrandingRaw() {
@@ -139,7 +154,7 @@ async function loadOrgFile() {
 }
 
 /**
- * Origins that may receive bookmark lists / CHECK replies.
+ * Origins that may receive bookmark lists, CHECK replies, or OutSync writes.
  * Fail-closed: an empty list means no page is allowed.
  * Always read from org-branding.json (even when branding enabled is false),
  * plus optional chrome.storage.managed for GPO/Intune.
@@ -187,33 +202,100 @@ function pickAppUrl(stored, org, locked) {
   return (stored && stored.appUrl) || (org && org.appUrl) || '';
 }
 
-function getSyncEnabled() {
+function storedToggle(value, fallback) {
+  if (value === true) return true;
+  if (value === false) return false;
+  return !!fallback;
+}
+
+function getSyncModes() {
   return Promise.all([
     new Promise((resolve) => {
-      chrome.storage.local.get([SYNC_STORAGE.enabled], (result) => resolve(result || {}));
+      chrome.storage.local.get(
+        [SYNC_STORAGE.enabled, SYNC_STORAGE.readEnabled, SYNC_STORAGE.writeEnabled],
+        (result) => resolve(result || {})
+      );
     }),
     loadOriginPolicy()
   ]).then(([result, policy]) => {
-    const stored = result[SYNC_STORAGE.enabled];
-    if (stored === true) return true;
-    if (stored === false) return false;
-    return !!(policy && policy.syncDefaultOn);
+    const defaultOn = !!(policy && policy.syncDefaultOn);
+    const legacy = result[SYNC_STORAGE.enabled];
+    const legacyOn = storedToggle(legacy, defaultOn);
+    const read = storedToggle(result[SYNC_STORAGE.readEnabled], legacyOn);
+    const write = storedToggle(result[SYNC_STORAGE.writeEnabled], legacyOn);
+    return { read: read, write: write, any: !!(read || write) };
   });
 }
 
+function getSyncEnabled() {
+  return getSyncModes().then((modes) => modes.any);
+}
+
+function getReadEnabled() {
+  return getSyncModes().then((modes) => modes.read);
+}
+
+function getWriteEnabled() {
+  return getSyncModes().then((modes) => modes.write);
+}
+
+function setReadEnabled(on) {
+  return chrome.storage.local.set({ [SYNC_STORAGE.readEnabled]: !!on });
+}
+
+function setWriteEnabled(on) {
+  return chrome.storage.local.set({ [SYNC_STORAGE.writeEnabled]: !!on });
+}
+
 function setSyncEnabled(on) {
-  return chrome.storage.local.set({ [SYNC_STORAGE.enabled]: !!on });
+  const value = !!on;
+  return chrome.storage.local.set({
+    [SYNC_STORAGE.enabled]: value,
+    [SYNC_STORAGE.readEnabled]: value,
+    [SYNC_STORAGE.writeEnabled]: value
+  });
 }
 
 async function applySyncEnabledBadge(on) {
+  const anyOn = on && typeof on === 'object' ? !!on.any : !!on;
   try {
-    await chrome.action.setBadgeText({ text: on ? '' : 'OFF' });
-    if (!on) {
+    await chrome.action.setBadgeText({ text: anyOn ? '' : 'OFF' });
+    if (!anyOn) {
       await chrome.action.setBadgeBackgroundColor({ color: '#64748b' });
     }
   } catch (_err) {
     /* ignore */
   }
+}
+
+function parseStatBlock(result, countKey, lastMsKey, totalMsKey, lastAtKey, lastOkKey, fallback) {
+  const hasOwn = result[countKey] != null;
+  const count = hasOwn
+    ? Number(result[countKey]) || 0
+    : fallback
+      ? Number(result[fallback.count]) || 0
+      : 0;
+  const lastMsRaw = hasOwn ? result[lastMsKey] : result[lastMsKey] != null ? result[lastMsKey] : fallback && result[fallback.lastMs];
+  const lastMs = Number(lastMsRaw);
+  const totalMs = hasOwn
+    ? Number(result[totalMsKey]) || 0
+    : fallback
+      ? Number(result[fallback.totalMs]) || 0
+      : 0;
+  const lastAt = hasOwn
+    ? Number(result[lastAtKey]) || 0
+    : fallback
+      ? Number(result[fallback.lastAt]) || 0
+      : 0;
+  const lastOkRaw = hasOwn ? result[lastOkKey] : result[lastOkKey] != null ? result[lastOkKey] : fallback && result[fallback.lastOk];
+  return {
+    count: count,
+    lastMs: Number.isFinite(lastMs) ? lastMs : null,
+    totalMs: totalMs,
+    averageMs: count > 0 ? Math.round(totalMs / count) : null,
+    lastAt: lastAt,
+    lastOk: lastOkRaw !== false
+  };
 }
 
 function getSyncStats() {
@@ -224,19 +306,45 @@ function getSyncStats() {
         SYNC_STORAGE.lastMs,
         SYNC_STORAGE.totalMs,
         SYNC_STORAGE.lastAt,
-        SYNC_STORAGE.lastOk
+        SYNC_STORAGE.lastOk,
+        SYNC_STORAGE.readCount,
+        SYNC_STORAGE.readLastMs,
+        SYNC_STORAGE.readTotalMs,
+        SYNC_STORAGE.readLastAt,
+        SYNC_STORAGE.readLastOk,
+        SYNC_STORAGE.writeCount,
+        SYNC_STORAGE.writeLastMs,
+        SYNC_STORAGE.writeTotalMs,
+        SYNC_STORAGE.writeLastAt,
+        SYNC_STORAGE.writeLastOk
       ],
       (result) => {
-        const count = Number(result[SYNC_STORAGE.count]) || 0;
-        const lastMs = Number(result[SYNC_STORAGE.lastMs]);
-        const totalMs = Number(result[SYNC_STORAGE.totalMs]) || 0;
+        const row = result || {};
+        const legacy = {
+          count: SYNC_STORAGE.count,
+          lastMs: SYNC_STORAGE.lastMs,
+          totalMs: SYNC_STORAGE.totalMs,
+          lastAt: SYNC_STORAGE.lastAt,
+          lastOk: SYNC_STORAGE.lastOk
+        };
         resolve({
-          count,
-          lastMs: Number.isFinite(lastMs) ? lastMs : null,
-          totalMs,
-          averageMs: count > 0 ? Math.round(totalMs / count) : null,
-          lastAt: Number(result[SYNC_STORAGE.lastAt]) || 0,
-          lastOk: result[SYNC_STORAGE.lastOk] !== false
+          read: parseStatBlock(
+            row,
+            SYNC_STORAGE.readCount,
+            SYNC_STORAGE.readLastMs,
+            SYNC_STORAGE.readTotalMs,
+            SYNC_STORAGE.readLastAt,
+            SYNC_STORAGE.readLastOk,
+            legacy
+          ),
+          write: parseStatBlock(
+            row,
+            SYNC_STORAGE.writeCount,
+            SYNC_STORAGE.writeLastMs,
+            SYNC_STORAGE.writeTotalMs,
+            SYNC_STORAGE.writeLastAt,
+            SYNC_STORAGE.writeLastOk
+          )
         });
       }
     );
@@ -250,24 +358,73 @@ function formatSyncDuration(ms) {
   return (ms / 1000).toFixed(1) + ' s';
 }
 
-function recordSync(durationMs, ok) {
+function recordSync(durationMs, ok, kind) {
   const ms = Math.max(0, Math.round(Number(durationMs) || 0));
+  const isWrite = kind === 'write';
+  const countKey = isWrite ? SYNC_STORAGE.writeCount : SYNC_STORAGE.readCount;
+  const totalKey = isWrite ? SYNC_STORAGE.writeTotalMs : SYNC_STORAGE.readTotalMs;
+  const lastMsKey = isWrite ? SYNC_STORAGE.writeLastMs : SYNC_STORAGE.readLastMs;
+  const lastAtKey = isWrite ? SYNC_STORAGE.writeLastAt : SYNC_STORAGE.readLastAt;
+  const lastOkKey = isWrite ? SYNC_STORAGE.writeLastOk : SYNC_STORAGE.readLastOk;
   return new Promise((resolve) => {
     chrome.storage.local.get(
-      [SYNC_STORAGE.count, SYNC_STORAGE.totalMs],
+      [countKey, totalKey, SYNC_STORAGE.count, SYNC_STORAGE.totalMs],
       (result) => {
-        const prevCount = Number(result[SYNC_STORAGE.count]) || 0;
+        let prevCount = result[countKey] != null ? Number(result[countKey]) || 0 : null;
+        let prevTotal = result[totalKey] != null ? Number(result[totalKey]) || 0 : null;
+        if (!isWrite && prevCount == null) {
+          prevCount = Number(result[SYNC_STORAGE.count]) || 0;
+          prevTotal = Number(result[SYNC_STORAGE.totalMs]) || 0;
+        }
+        prevCount = prevCount || 0;
+        prevTotal = prevTotal || 0;
         const payload = {
-          [SYNC_STORAGE.lastMs]: ms,
-          [SYNC_STORAGE.lastAt]: Date.now(),
-          [SYNC_STORAGE.lastOk]: !!ok
+          [lastMsKey]: ms,
+          [lastAtKey]: Date.now(),
+          [lastOkKey]: !!ok
         };
         if (ok) {
           const count = prevCount + 1;
-          payload[SYNC_STORAGE.count] = count;
-          payload[SYNC_STORAGE.totalMs] = (Number(result[SYNC_STORAGE.totalMs]) || 0) + ms;
+          payload[countKey] = count;
+          payload[totalKey] = prevTotal + ms;
         }
         chrome.storage.local.set(payload, resolve);
+      }
+    );
+  });
+}
+
+function migrateLegacySyncStats() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(
+      [
+        SYNC_STORAGE.count,
+        SYNC_STORAGE.lastMs,
+        SYNC_STORAGE.totalMs,
+        SYNC_STORAGE.lastAt,
+        SYNC_STORAGE.lastOk,
+        SYNC_STORAGE.readCount
+      ],
+      (result) => {
+        if (result && result[SYNC_STORAGE.readCount] != null) {
+          resolve();
+          return;
+        }
+        const count = Number(result && result[SYNC_STORAGE.count]) || 0;
+        if (!count) {
+          resolve();
+          return;
+        }
+        chrome.storage.local.set(
+          {
+            [SYNC_STORAGE.readCount]: count,
+            [SYNC_STORAGE.readLastMs]: Number(result[SYNC_STORAGE.lastMs]) || 0,
+            [SYNC_STORAGE.readTotalMs]: Number(result[SYNC_STORAGE.totalMs]) || 0,
+            [SYNC_STORAGE.readLastAt]: Number(result[SYNC_STORAGE.lastAt]) || 0,
+            [SYNC_STORAGE.readLastOk]: result[SYNC_STORAGE.lastOk] !== false
+          },
+          resolve
+        );
       }
     );
   });

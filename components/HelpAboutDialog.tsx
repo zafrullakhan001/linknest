@@ -374,7 +374,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 border border-emerald-200 dark:border-emerald-800">
                     <p className="font-medium text-emerald-900 dark:text-emerald-100">Guides tab:</p>
                     <p className="text-sm">
-                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (Your Bookmarks, Bookmark Sync Extension, setup, architecture, App Updates, SSH / VNC, Package for Deployment, and more). Start with <strong>Your Bookmarks</strong> or <strong>Bookmark Sync Extension</strong> for guest bookmark sync, or App Updates / Architecture for admin workflows.
+                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (Your Bookmarks, Bookmark Sync Extension, setup, architecture, App Updates, SSH / VNC, Package for Deployment, and more). Start with <strong>Your Bookmarks</strong> or <strong>Bookmark Sync Extension</strong> for guest bookmark Sync / OutSync, or App Updates / Architecture for admin workflows.
                     </p>
                   </div>
                 </div>
@@ -413,7 +413,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Favorites &amp; Your Bookmarks</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Favorite spaces and links for quick access. Guests can import Chrome bookmarks into domain spaces (HTML or Bookmark Sync from <strong>this browser profile</strong> only), use compact title-only views, check link health, and run Rewrite tools. Full guide: Guides → Your Bookmarks &amp; Favorite Links.
+                      Favorite spaces and links for quick access. Guests can import Chrome bookmarks into domain spaces (HTML or Bookmark Sync from <strong>this browser profile</strong> only), push them back with <strong>OutSync</strong>, use compact title-only views, check link health, and run Rewrite tools. Full guide: Guides → Your Bookmarks &amp; Favorite Links.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -597,7 +597,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                 </h3>
                 <div className="space-y-4 text-slate-700 dark:text-slate-300">
                   <p className="text-sm">
-                    Keep everyday links close. Guests use the <strong>Favorites</strong> tab for favorite spaces, Favorite Links, and <strong>Your Bookmarks</strong> (Chrome HTML import or browser Sync). Signed-in users get server-backed favorites. Full walkthrough:{' '}
+                    Keep everyday links close. Guests use the <strong>Favorites</strong> tab for favorite spaces, Favorite Links, and <strong>Your Bookmarks</strong> (Chrome HTML import, browser Sync, or OutSync). Signed-in users get server-backed favorites. Full walkthrough:{' '}
                     <strong>Guides → Your Bookmarks &amp; Favorite Links</strong>. Bookmark extension handshake:{' '}
                     <strong>Guides → Bookmark Sync Extension</strong>.
                   </p>
@@ -614,7 +614,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-sky-50 dark:bg-sky-900/20 rounded-lg p-4 space-y-2 border border-sky-200 dark:border-sky-800">
                     <p className="font-medium text-sky-950 dark:text-sky-100">2. Your Bookmarks (guest)</p>
                     <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
-                      <li>Export bookmarks from Chrome → Import / Merge HTML, or use <strong>Sync</strong> with LinkNest Bookmark Sync or Browser Launcher Pro. The branded name does not connect Sync — see <strong>Guides → Bookmark Sync Extension</strong></li>
+                      <li>Export bookmarks from Chrome → Import / Merge HTML, or use <strong>Sync</strong> (browser → app) with LinkNest Bookmark Sync or Browser Launcher Pro. Use <strong>OutSync</strong> (Bookmark Sync 1.8+, Read-write On) to push Your Bookmarks into Other Bookmarks → LinkNest. The branded name does not connect Sync — see <strong>Guides → Bookmark Sync Extension</strong></li>
                       <li>Inside a space: search, sort, compact list, quick-add URL, pin, move between spaces</li>
                       <li><strong>Check links</strong> / <strong>Remove broken</strong> / <strong>Update redirects</strong> after health probes</li>
                       <li>Export Space JSON (for Admin Import Spaces) or HTML (back to Chrome)</li>
@@ -627,9 +627,9 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <p className="font-medium text-violet-950 dark:text-violet-100">3. Bookmark Sync extension</p>
                     <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
                       <li>Load unpacked <code className="text-xs bg-violet-100 dark:bg-violet-900/40 px-1 rounded">extensions/bookmark-sync</code> (or IT force-install) in <strong>your</strong> Chrome/Edge profile. Allow the <strong>bookmarks</strong> permission</li>
-                      <li>Turn <strong>Bookmark sync On</strong> in the popup (it starts <strong>Off</strong>; toolbar shows OFF). Only <strong>this profile’s</strong> bookmarks are read — not another user’s browser</li>
+                      <li>Turn <strong>Read-only</strong> on for Sync and <strong>Read-write</strong> on for OutSync in the popup (both start <strong>Off</strong>; toolbar shows OFF when both are off). Only <strong>this profile’s</strong> bookmarks are read or written — not another user’s browser</li>
                       <li>The site must be on the organisation <strong>allowlist</strong> (<code className="text-xs bg-violet-100 dark:bg-violet-900/40 px-1 rounded">allowedOrigins</code> in <code className="text-xs bg-violet-100 dark:bg-violet-900/40 px-1 rounded">org-branding.json</code>). Other websites cannot request your bookmark tree</li>
-                      <li>The <strong>name/logo do not connect Sync</strong>. The app posts <code className="text-xs bg-violet-100 dark:bg-violet-900/40 px-1 rounded">BROWSER_LAUNCHER_GET_BOOKMARKS</code> to this page origin; the extension replies only if allowlisted and sync is on</li>
+                      <li>The <strong>name/logo do not connect Sync</strong>. The app posts <code className="text-xs bg-violet-100 dark:bg-violet-900/40 px-1 rounded">BROWSER_LAUNCHER_GET_BOOKMARKS</code> (Sync, needs Read-only) or <code className="text-xs bg-violet-100 dark:bg-violet-900/40 px-1 rounded">BROWSER_LAUNCHER_PUSH_BOOKMARKS</code> (OutSync, needs Read-write) to this page origin; the extension replies only if allowlisted and that toggle is on. OutSync can back up this profile’s bookmarks (HTML + JSON) before Apply (Bookmark Sync 1.8.2+)</li>
                       <li>Mass deploy: pack a signed CRX, set <code className="text-xs bg-violet-100 dark:bg-violet-900/40 px-1 rounded">allowedOrigins</code> to only your LinkNest origin, force-install <strong>per user</strong> (Intune/GPO). Full guide: <strong>Guides → Bookmark Sync Extension</strong></li>
                     </ul>
                   </div>
@@ -1734,7 +1734,7 @@ package-for-deployment.bat -BasePath "/myapp"`}</pre>
                     <li><strong>In-app App Updates:</strong> Check GitHub commits/releases, preview changes, apply with DB backup, and roll back from Admin (XAMPP installs). Office tip: publish a <strong>portable Release</strong> (default relative base) and apply the same Release on ArchLinks and ERP3 — see Help → In-app App Updates</li>
                     <li><strong>XAMPP PHP upgrade:</strong> PowerShell script to move to PHP 8.5+ with LDAP verification — see Guides → Upgrade PHP in XAMPP</li>
                     <li><strong>Package for Deployment:</strong> <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">package-for-deployment.bat</code> builds a full XAMPP ZIP with SQLite runtime, remote-widget binaries, and optional DB/uploads flags</li>
-                    <li><strong>Bookmark Sync extension:</strong> Origin allowlist, Bookmark sync Off by default, same-origin messages, and per-browser-profile isolation so each user can only sync their own bookmarks — Help → Guides → Bookmark Sync Extension</li>
+                    <li><strong>Bookmark Sync extension:</strong> Origin allowlist, Bookmark sync Off by default, same-origin messages, per-browser-profile isolation, and OutSync (app → Other Bookmarks → LinkNest) — Help → Guides → Bookmark Sync Extension</li>
                     <li><strong>Guides tab:</strong> Searchable in-app documentation (Your Bookmarks, Bookmark Sync Extension, Architecture, App Updates, Package for Deployment, XAMPP PHP upgrade, SSH / VNC Manual Deployment, SSH Session Shared Worker, Remote Widgets Setup, and more)</li>
                     <li><strong>SSH sessions across refresh:</strong> SharedWorker in browser memory keeps live SSH sockets through page reload; close the widget to disconnect — Help → SSH sessions across refresh / Guides → SSH Session Shared Worker</li>
                     <li><strong>SSH / VNC manual deploy:</strong> Online, air-gapped runtime pack, HTTPS WSS proxy, Easy mode, <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">ssh://</code> / <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">vnc://</code> space links — Help and Guides</li>

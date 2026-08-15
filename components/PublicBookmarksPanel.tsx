@@ -68,7 +68,18 @@ import {
 } from './TileAnimationSelector';
 import { TitleEmojiPicker } from './TitleEmojiPicker';
 import { linkHealthService } from '../services/linkHealthService';
-import { requestBookmarksFromBrowserExtension } from '../services/bookmarkImportService';
+import {
+  requestBookmarksFromBrowserExtension,
+  flattenPublicBookmarksForOutSync,
+  requestPushBookmarksToBrowserExtension,
+  downloadOutSyncChangelogJson,
+  requestBrowserBookmarkBackup,
+  downloadBrowserBookmarkBackup,
+  probeBrowserBookmarkExtension,
+  sameExtensionPresence,
+  type OutSyncChange,
+  type BrowserExtensionPresence
+} from '../services/bookmarkImportService';
 
 interface PublicBookmarksPanelProps {
   compact?: boolean;
@@ -254,6 +265,15 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
   const [moveMenuLinkId, setMoveMenuLinkId] = useState<string | null>(null);
   const [styleMenuOpen, setStyleMenuOpen] = useState(false);
   const [toolbarMoreOpen, setToolbarMoreOpen] = useState(false);
+  const [outSyncPreview, setOutSyncPreview] = useState<{
+    added: number;
+    updated: number;
+    skipped: number;
+    rootFolder: string;
+    changes: OutSyncChange[];
+  } | null>(null);
+  const [outSyncBackupBeforeApply, setOutSyncBackupBeforeApply] = useState(true);
+  const [extPresence, setExtPresence] = useState<BrowserExtensionPresence | null>(null);
   const [showRewriteTools, setShowRewriteTools] = useState(false);
   const [rewriteTab, setRewriteTab] = useState<RewriteToolTab>('domain');
   const [rewriteFrom, setRewriteFrom] = useState('');
@@ -323,10 +343,44 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
   }, [refresh]);
 
   useEffect(() => {
+    let cancelled = false;
+    const run = () => {
+      void probeBrowserBookmarkExtension(1200).then((presence) => {
+        if (cancelled) return;
+        setExtPresence((prev) => (sameExtensionPresence(prev, presence) ? prev : presence));
+      });
+    };
+    run();
+    const interval = window.setInterval(run, 2500);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') run();
+    };
+    window.addEventListener('focus', run);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', run);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, []);
+
+  useEffect(() => {
     setToolbarMoreOpen(false);
   }, [openSpaceId]);
 
   const linkCount = countPublicBookmarkLinks(data);
+  const extAvailable = !!extPresence?.available;
+  const canExtSync = !!extPresence?.canSync;
+  const canExtOutSync = !!extPresence?.canOutSync;
+  const syncButtonTitle = canExtSync
+    ? 'Merge this browser profile’s bookmarks via LinkNest Bookmark Sync (allowlisted origin + Read-only On).'
+    : 'Turn Read-only (Sync) On in the Bookmark Sync toolbar popup.';
+  const outSyncButtonTitle = canExtOutSync
+    ? 'Preview what OutSync would add or update in this browser (Bookmark Sync 1.8.2+, Read-write On). Optionally back up Chrome bookmarks first, download a JSON changelog, then Apply. Nothing is written until you Apply.'
+    : extPresence?.supportsOutSync
+      ? 'Turn Read-write (OutSync) On in the Bookmark Sync toolbar popup.'
+      : 'OutSync needs Bookmark Sync 1.8+ with Read-write On. Browser Launcher Pro cannot push bookmarks.';
   const isSearching = searchQuery.trim().length > 0;
   const q = searchQuery.trim().toLowerCase();
   const dupeCount = useMemo(
@@ -450,7 +504,7 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
   };
 
   const handleSyncFromBrowser = async () => {
-    if (busy) return;
+    if (busy || !extPresence?.canSync) return;
     setBusy(true);
     setMessage('Syncing bookmarks from browser extension…');
     try {
@@ -474,6 +528,134 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleOutSyncToBrowser = async () => {
+    if (busy || linkCount === 0 || !extPresence?.canOutSync) return;
+    setBusy(true);
+    setMessage('Previewing OutSync against this browser…');
+    try {
+      const payload = flattenPublicBookmarksForOutSync(data);
+      const result = await requestPushBookmarksToBrowserExtension(payload, {
+        timeoutMs: 60000,
+        dryRun: true
+      });
+      if (!result.ok) {
+        setOutSyncPreview(null);
+        setMessage(result.message);
+        return;
+      }
+      const changing = result.added + result.updated;
+      if (changing === 0) {
+        setOutSyncPreview(null);
+        setMessage(
+          `Nothing new to OutSync — all ${result.skipped} URL${
+            result.skipped === 1 ? '' : 's'
+          } are already in this browser with matching titles.`
+        );
+        return;
+      }
+      setOutSyncPreview({
+        added: result.added,
+        updated: result.updated,
+        skipped: result.skipped,
+        rootFolder: result.rootFolder,
+        changes: result.changes
+      });
+      setMessage(
+        `Preview: ${result.added} new, ${result.updated} title${
+          result.updated === 1 ? '' : 's'
+        } to update, ${result.skipped} already in the browser.`
+      );
+    } catch (err) {
+      setOutSyncPreview(null);
+      setMessage(
+        err instanceof Error
+          ? err.message
+          : 'OutSync preview failed. Reload Bookmark Sync 1.8.1+, then try again.'
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleApplyOutSync = async () => {
+    if (busy || !outSyncPreview || linkCount === 0) return;
+    if (outSyncPreview.added + outSyncPreview.updated === 0) return;
+    setBusy(true);
+    try {
+      if (outSyncBackupBeforeApply) {
+        setMessage('Backing up this browser’s bookmarks…');
+        const backup = await requestBrowserBookmarkBackup();
+        if (!backup.ok) {
+          setMessage(
+            `${backup.message} Uncheck “Backup this browser’s bookmarks before applying” to Apply without a backup.`
+          );
+          return;
+        }
+        setMessage(await downloadBrowserBookmarkBackup(backup));
+      }
+      setMessage('Pushing bookmarks to this browser…');
+      const payload = flattenPublicBookmarksForOutSync(data);
+      const result = await requestPushBookmarksToBrowserExtension(payload, {
+        timeoutMs: 60000
+      });
+      if (!result.ok) {
+        setMessage(result.message);
+        return;
+      }
+      setOutSyncPreview(null);
+      setMessage(
+        `${outSyncBackupBeforeApply ? 'Backup saved to Downloads. ' : ''}Pushed ${result.added} new, updated ${
+          result.updated
+        } title${result.updated === 1 ? '' : 's'}, ${result.skipped} already in the browser.`
+      );
+    } catch (err) {
+      setMessage(
+        err instanceof Error
+          ? err.message
+          : 'OutSync failed. Reload Bookmark Sync 1.8.2+, then try again.'
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDownloadBrowserBookmarkBackup = async () => {
+    if (busy) return;
+    setBusy(true);
+    setMessage('Backing up this browser’s bookmarks…');
+    try {
+      const backup = await requestBrowserBookmarkBackup();
+      if (!backup.ok) {
+        setMessage(backup.message);
+        return;
+      }
+      setMessage(await downloadBrowserBookmarkBackup(backup));
+    } catch (err) {
+      setMessage(
+        err instanceof Error
+          ? err.message
+          : 'Backup failed. Reload Bookmark Sync 1.8.2+, then try again.'
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDownloadOutSyncChangelog = () => {
+    if (!outSyncPreview) return;
+    setMessage(
+      downloadOutSyncChangelogJson({
+        generatedAt: new Date().toISOString(),
+        rootFolder: outSyncPreview.rootFolder,
+        dryRun: true,
+        added: outSyncPreview.added,
+        updated: outSyncPreview.updated,
+        skipped: outSyncPreview.skipped,
+        changes: outSyncPreview.changes
+      })
+    );
   };
 
   const handleRegenerate = () => {
@@ -1728,18 +1910,37 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
 
           <div className="rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-slate-50/90 dark:bg-slate-800/50 shadow-sm p-2 space-y-2 sm:space-y-0 sm:flex sm:flex-wrap sm:items-center sm:gap-1.5">
             <div className="grid grid-cols-2 gap-2 sm:contents">
-              <button
-                type="button"
-                onClick={() => void handleSyncFromBrowser()}
-                disabled={busy}
-                className="col-span-2 sm:col-auto inline-flex items-center justify-center gap-1.5 min-h-10 sm:min-h-0 px-3 py-2 sm:py-1.5 text-sm font-medium rounded-lg bg-sky-600 hover:bg-sky-500 text-white shadow-sm transition-colors disabled:opacity-50"
-                title="Merge this browser profile’s bookmarks via LinkNest Bookmark Sync (allowlisted origin + Bookmark sync On). Falls back to Import HTML."
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 opacity-90" aria-hidden>
-                  <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm-9.624-2.848a5.5 5.5 0 019.201-2.466l.312.311h-2.433a.75.75 0 000 1.5h4.243a.75.75 0 00.75-.75V3.989a.75.75 0 00-1.5 0v2.43l-.31-.31A7 7 0 003.239 9.248a.75.75 0 001.449.39z" clipRule="evenodd" />
-                </svg>
-                {busy ? 'Syncing…' : 'Sync'}
-              </button>
+              {extAvailable && (
+                <button
+                  type="button"
+                  onClick={() => void handleSyncFromBrowser()}
+                  disabled={busy || !canExtSync}
+                  className={`${
+                    linkCount > 0 ? '' : 'col-span-2 sm:col-auto '
+                  }inline-flex items-center justify-center gap-1.5 min-h-10 sm:min-h-0 px-3 py-2 sm:py-1.5 text-sm font-medium rounded-lg bg-sky-600 hover:bg-sky-500 text-white shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-sky-600`}
+                  title={syncButtonTitle}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 opacity-90" aria-hidden>
+                    <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm-9.624-2.848a5.5 5.5 0 019.201-2.466l.312.311h-2.433a.75.75 0 000 1.5h4.243a.75.75 0 00.75-.75V3.989a.75.75 0 00-1.5 0v2.43l-.31-.31A7 7 0 003.239 9.248a.75.75 0 001.449.39z" clipRule="evenodd" />
+                  </svg>
+                  {busy ? 'Syncing…' : 'Sync'}
+                </button>
+              )}
+              {extAvailable && linkCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void handleOutSyncToBrowser()}
+                  disabled={busy || !canExtOutSync}
+                  className="inline-flex items-center justify-center gap-1.5 min-h-10 sm:min-h-0 px-3 py-2 sm:py-1.5 text-sm font-medium rounded-lg border border-sky-300 dark:border-sky-700 bg-white dark:bg-slate-900 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/30 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white dark:disabled:hover:bg-slate-900"
+                  title={outSyncButtonTitle}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 opacity-90" aria-hidden>
+                    <path fillRule="evenodd" d="M9.25 13.25a.75.75 0 001.5 0V4.636l2.955 3.129a.75.75 0 001.09-1.03l-4.25-4.5a.75.75 0 00-1.09 0l-4.25 4.5a.75.75 0 101.09 1.03L9.25 4.636v8.614z" clipRule="evenodd" />
+                    <path fillRule="evenodd" d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" clipRule="evenodd" />
+                  </svg>
+                  {busy ? 'Working…' : 'OutSync'}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => handleImportClick('replace')}
@@ -1845,7 +2046,9 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
           </div>
 
           <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed max-w-3xl px-0.5">
-            Sync from Bookmark Sync (this browser profile only, after you turn the popup toggle On), or Import HTML from Chrome. Domains become spaces — saved only in this browser.
+            {extAvailable
+              ? 'Sync and OutSync use Bookmark Sync on this browser profile. Greyed buttons mean that toggle is Off in the extension popup (Read-only for Sync, Read-write for OutSync). Import HTML from Chrome still works without the extension. Domains become spaces — saved only in this browser.'
+              : 'Install LinkNest Bookmark Sync to show Sync and OutSync, or Import HTML from Chrome. Domains become spaces — saved only in this browser.'}
           </p>
         </div>
       )}
@@ -1853,6 +2056,152 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
       {message && (
         <div className="text-sm px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
           {message}
+        </div>
+      )}
+
+      {outSyncPreview && (
+        <div className="rounded-xl border border-sky-200 dark:border-sky-800/60 bg-sky-50/80 dark:bg-sky-950/30 p-4 space-y-3 shadow-sm">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-sky-950 dark:text-sky-100">
+                OutSync preview
+              </h3>
+              <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+                {outSyncPreview.added} new · {outSyncPreview.updated} title
+                {outSyncPreview.updated === 1 ? '' : 's'} to update · {outSyncPreview.skipped} already
+                in the browser. Nothing is written until you Apply. New links go under Other Bookmarks
+                → {outSyncPreview.rootFolder}.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setOutSyncPreview(null)}
+              className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shrink-0"
+              title="Close preview"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+              </svg>
+            </button>
+          </div>
+          {(() => {
+            const changing = outSyncPreview.changes.filter(
+              (c) => c.action === 'add' || c.action === 'update'
+            );
+            const shown = changing.slice(0, 40);
+            return changing.length > 0 ? (
+              <ul className="max-h-56 overflow-y-auto space-y-2 text-[11px] text-slate-700 dark:text-slate-300">
+                {shown.map((c, i) => (
+                  <li
+                    key={`${c.action}-${c.url}-${i}`}
+                    className="leading-snug border-b border-sky-100/80 dark:border-sky-900/40 pb-2 last:border-0 last:pb-0"
+                  >
+                    <span
+                      className={`inline-block font-semibold uppercase tracking-wide mr-1.5 ${
+                        c.action === 'add'
+                          ? 'text-emerald-700 dark:text-emerald-400'
+                          : 'text-amber-700 dark:text-amber-300'
+                      }`}
+                    >
+                      {c.action === 'add' ? 'Add' : 'Update'}
+                    </span>
+                    {c.action === 'update' && c.previousTitle ? (
+                      <>
+                        <span className="text-red-600/90 dark:text-red-400 line-through break-all">
+                          {c.previousTitle}
+                        </span>
+                        <span className="text-slate-400 dark:text-slate-500"> → </span>
+                        <span className="text-emerald-700 dark:text-emerald-400 break-all">
+                          {c.title}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="font-medium break-all">{c.title}</span>
+                    )}
+                    <br />
+                    <span className="font-mono text-slate-500 dark:text-slate-400 break-all">
+                      {c.url}
+                    </span>
+                    {c.action === 'add' && c.path ? (
+                      <>
+                        <br />
+                        <span className="text-slate-500 dark:text-slate-400">{c.path}</span>
+                      </>
+                    ) : null}
+                  </li>
+                ))}
+                {changing.length > shown.length ? (
+                  <li className="text-slate-500 dark:text-slate-400">
+                    …and {changing.length - shown.length} more (included in the JSON changelog)
+                  </li>
+                ) : null}
+              </ul>
+            ) : (
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                No adds or title updates. Every URL is already in this browser with a matching title.
+              </p>
+            );
+          })()}
+          <label className="flex items-start gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              className="mt-0.5 rounded border-slate-300 dark:border-slate-600"
+              checked={outSyncBackupBeforeApply}
+              onChange={(e) => setOutSyncBackupBeforeApply(e.target.checked)}
+              disabled={busy}
+            />
+            <span>
+              Backup this browser’s bookmarks before applying (HTML + JSON)
+              <span className="block text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
+                Files save to this PC’s Downloads folder (Chrome download bar):{' '}
+                <code className="text-[10px]">linknest-browser-bookmarks-backup-….html</code> and{' '}
+                <code className="text-[10px]">.json</code>. They are not stored in LinkNest. Import
+                the HTML in Chrome Bookmark manager to merge the saved tree. Import does not delete
+                newer links — remove Other Bookmarks → LinkNest to drop OutSync adds. Title restores:
+                OutSync changelog <code className="text-[10px]">previousTitle</code>.
+              </span>
+            </span>
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void handleApplyOutSync()}
+              disabled={busy || outSyncPreview.added + outSyncPreview.updated === 0}
+              className="px-3 py-1.5 text-sm font-medium rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition-colors disabled:opacity-50"
+            >
+              {busy
+                ? 'Applying…'
+                : `Apply${
+                    outSyncPreview.added + outSyncPreview.updated > 0
+                      ? ` (${outSyncPreview.added + outSyncPreview.updated})`
+                      : ''
+                  }`}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleDownloadBrowserBookmarkBackup()}
+              disabled={busy}
+              className="px-3 py-1.5 text-sm font-medium rounded-lg border border-sky-300 dark:border-sky-700 bg-white dark:bg-slate-900 text-sky-800 dark:text-sky-200 hover:bg-sky-100 dark:hover:bg-sky-900/40 transition-colors disabled:opacity-50"
+            >
+              Download backup now
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadOutSyncChangelog}
+              disabled={busy}
+              className="px-3 py-1.5 text-sm font-medium rounded-lg border border-sky-300 dark:border-sky-700 bg-white dark:bg-slate-900 text-sky-800 dark:text-sky-200 hover:bg-sky-100 dark:hover:bg-sky-900/40 transition-colors disabled:opacity-50"
+            >
+              Download JSON
+            </button>
+            <button
+              type="button"
+              onClick={() => setOutSyncPreview(null)}
+              disabled={busy}
+              className="px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
 
@@ -2500,18 +2849,22 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
             No bookmarks yet
           </p>
           <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 max-w-md mx-auto">
-            Sync from Bookmark Sync (this browser profile, popup toggle On), or export HTML from Chrome (Bookmarks → Bookmark manager → ⋮ → Export) and import it here.
+            {extAvailable
+              ? 'Sync from Bookmark Sync (turn Read-only On in the toolbar popup), or export HTML from Chrome (Bookmarks → Bookmark manager → ⋮ → Export) and import it here.'
+              : 'Export HTML from Chrome (Bookmarks → Bookmark manager → ⋮ → Export) and import it here, or install LinkNest Bookmark Sync to enable Sync.'}
           </p>
           <div className="flex flex-wrap items-center justify-center gap-2">
-            <button
-              type="button"
-              onClick={() => void handleSyncFromBrowser()}
-              disabled={busy}
-              className="px-4 py-2 text-sm font-medium rounded-xl bg-violet-600 hover:bg-violet-500 text-white transition-colors disabled:opacity-50"
-              title="Merge this browser profile’s bookmarks via LinkNest Bookmark Sync when installed and allowlisted"
-            >
-              {busy ? 'Syncing…' : 'Sync from browser'}
-            </button>
+            {extAvailable && (
+              <button
+                type="button"
+                onClick={() => void handleSyncFromBrowser()}
+                disabled={busy || !canExtSync}
+                className="px-4 py-2 text-sm font-medium rounded-xl bg-violet-600 hover:bg-violet-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-violet-600"
+                title={syncButtonTitle}
+              >
+                {busy ? 'Syncing…' : 'Sync from browser'}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => handleImportClick('replace')}

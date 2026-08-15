@@ -18,6 +18,7 @@
       .muted { color: #94a3b8 !important; }
       .card, .tabs { background: #1e293b; border-color: #334155; }
       .stats { border-top-color: #334155; }
+      .switch-stack .switch-row + .switch-row { border-top-color: #334155; }
       .stat-label { color: #94a3b8 !important; }
       .tab { color: #94a3b8; }
       .tab.active { background: #0f172a; color: #e2e8f0; }
@@ -96,7 +97,13 @@
       border-top: 1px solid #e2e8f0;
     }
     .stat-value { font-size: 15px; font-weight: 700; }
-    .stat-label { margin: 2px 0 0; color: #64748b; font-size: 11px; }
+    .stat-heading { margin: 0 0 2px; font-size: 12px; font-weight: 700; }
+    .stats-caption { margin: 0 0 8px; }
+    .switch-stack .switch-row + .switch-row {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid #e2e8f0;
+    }
     ol { margin: 0; padding-left: 18px; }
     li { margin: 4px 0; }
     label {
@@ -239,7 +246,7 @@
     <img id="header-logo" src="icons/icon48.png" alt="">
     <div>
       <h1 id="header-name">LinkNest Bookmark Sync</h1>
-      <p class="muted" id="version">v1.6.0 · sync off</p>
+      <p class="muted" id="version">v1.8.2 · sync off</p>
     </div>
   </header>
 
@@ -250,34 +257,71 @@
   </nav>
 
   <section id="panel-sync">
-    <div class="card switch-row">
-      <div>
-        <label for="sync-enabled" style="margin:0">Bookmark sync</label>
-        <p class="muted" id="sync-toggle-hint">Off until you turn it on — then only this browser profile’s bookmarks, and only on your organisation’s LinkNest site.</p>
+    <div class="card switch-stack">
+      <div class="switch-row">
+        <div>
+          <label for="sync-read-enabled" style="margin:0">Read-only</label>
+          <p class="muted" id="read-toggle-hint">Off — Sync cannot pull bookmarks from this profile.</p>
+        </div>
+        <label class="switch" title="Enable or disable read-only Sync">
+          <input id="sync-read-enabled" type="checkbox">
+          <span class="slider"></span>
+        </label>
       </div>
-      <label class="switch" title="Enable or disable sync">
-        <input id="sync-enabled" type="checkbox">
-        <span class="slider"></span>
-      </label>
+      <div class="switch-row">
+        <div>
+          <label for="sync-write-enabled" style="margin:0">Read-write</label>
+          <p class="muted" id="write-toggle-hint">Off — OutSync cannot add or update bookmarks in this profile.</p>
+        </div>
+        <label class="switch" title="Enable or disable read-write OutSync">
+          <input id="sync-write-enabled" type="checkbox">
+          <span class="slider"></span>
+        </label>
+      </div>
     </div>
-    <p class="off-note" id="sync-off-note">
-      Sync starts off. Turn it on to merge <strong>this browser profile’s</strong> bookmarks into LinkNest. Other websites and other people’s browsers cannot read your tree.
+    <p class="off-note" id="read-off-note">
+      Read-only starts off. Turn it on so <strong>Sync</strong> can pull <strong>this browser profile’s</strong> bookmarks into LinkNest. The app cannot read your tree while this is off.
+    </p>
+    <p class="off-note" id="write-off-note">
+      Read-write starts off. Turn it on so <strong>OutSync</strong> can add new bookmarks (and update titles) in this profile. The app cannot write Chrome bookmarks while this is off. Nothing is deleted.
     </p>
     <p class="muted" id="allowlist-hint" style="margin: 0 14px 10px;"></p>
     <div class="card">
       <div class="count" id="count">…</div>
       <p class="muted" id="status">Reading bookmarks…</p>
+    </div>
+    <div class="card">
+      <p class="stat-heading">Read-only (Sync)</p>
+      <p class="muted stats-caption" id="read-stats-note">Browser → app</p>
       <div class="stats">
         <div>
-          <div class="stat-value" id="sync-times">0</div>
+          <div class="stat-value" id="read-times">0</div>
           <p class="stat-label">Times synced</p>
         </div>
         <div>
-          <div class="stat-value" id="sync-last">—</div>
+          <div class="stat-value" id="read-last">—</div>
           <p class="stat-label">Last duration</p>
         </div>
         <div>
-          <div class="stat-value" id="sync-avg">—</div>
+          <div class="stat-value" id="read-avg">—</div>
+          <p class="stat-label">Average</p>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <p class="stat-heading">Read-write (OutSync)</p>
+      <p class="muted stats-caption" id="write-stats-note">App → browser</p>
+      <div class="stats">
+        <div>
+          <div class="stat-value" id="write-times">0</div>
+          <p class="stat-label">Times synced</p>
+        </div>
+        <div>
+          <div class="stat-value" id="write-last">—</div>
+          <p class="stat-label">Last duration</p>
+        </div>
+        <div>
+          <div class="stat-value" id="write-avg">—</div>
           <p class="stat-label">Average</p>
         </div>
       </div>
@@ -286,7 +330,7 @@
       <ol>
         <li>Open <a id="app-name-label" class="app-link">LinkNest</a> in this browser</li>
         <li>Favorites → Your Bookmarks</li>
-        <li>Click <strong>Sync</strong></li>
+        <li>Click <strong>Sync</strong> (into the app) or <strong>OutSync</strong> (into this browser)</li>
       </ol>
     </div>
     <button type="button" class="primary" id="refresh">Refresh count</button>
@@ -333,21 +377,22 @@
 
   <section id="panel-help" hidden>
     <div class="help">
-      <h2>Security (v1.6)</h2>
+      <h2>Security (v1.8)</h2>
       <p>
-        Bookmark lists are sent only to sites on the organisation <strong>allowlist</strong>
+        Bookmark lists and OutSync writes are sent only to sites on the organisation <strong>allowlist</strong>
         (<code>allowedOrigins</code> in <code>org-branding.json</code>, plus the App link origin when branding is on).
-        Other websites get no reply. Bookmark sync starts <strong>Off</strong> until you turn it on here.
+        Other websites get no reply. <strong>Read-only</strong> (Sync) and <strong>Read-write</strong> (OutSync) start
+        <strong>Off</strong> until you turn each one on here.
       </p>
       <h2>This profile only — not other people</h2>
       <p>
         Chrome and Edge store bookmarks <strong>per browser profile</strong> on this PC.
-        This extension can only read <strong>your</strong> bookmarks in <strong>this</strong> profile.
+        This extension can only read and write <strong>your</strong> bookmarks in <strong>this</strong> profile.
         It cannot reach another employee’s PC, another Windows login, or another Chrome/Edge profile.
-        Guest Your Bookmarks stay in this browser; nothing is uploaded by the extension.
+        Guest Your Bookmarks stay in this browser; nothing is uploaded by the extension. OutSync never deletes Chrome bookmarks.
       </p>
       <p>
-        Do not share a signed-in Chrome profile or an unlocked session. Anyone using this profile can click Sync and import <em>this</em> profile’s bookmarks into the LinkNest page they have open.
+        Do not share a signed-in Chrome profile or an unlocked session. Anyone using this profile can click Sync or OutSync and import or write <em>this</em> profile’s bookmarks from the LinkNest page they have open.
       </p>
       <h2>How the Sync button talks to this extension</h2>
       <p>
@@ -357,14 +402,15 @@
       <p>What actually makes Sync work:</p>
       <ol>
         <li>This extension is installed in <strong>your</strong> Chrome/Edge profile, with the <strong>bookmarks</strong> permission allowed.</li>
-        <li><strong>Bookmark sync</strong> on the Sync tab is <strong>on</strong>. An OFF badge means it is disabled.</li>
+        <li><strong>Read-only</strong> and/or <strong>Read-write</strong> on the Sync tab is <strong>on</strong>. An OFF badge means both are disabled.</li>
         <li>You open the organisation LinkNest URL (that origin must be allowlisted). <code>file://</code> pages never work.</li>
-        <li>You click <strong>Sync</strong> on Favorites → Your Bookmarks (or Fetch in Favorites Organizer).</li>
+        <li>You click <strong>Sync</strong> or <strong>OutSync</strong> on Favorites → Your Bookmarks (or Fetch in Favorites Organizer).</li>
       </ol>
       <h2>The handshake (not the name)</h2>
       <p>
         The page posts a window message <code>BROWSER_LAUNCHER_GET_BOOKMARKS</code> to its own origin.
-        This extension replies with <code>BROWSER_LAUNCHER_BOOKMARKS_LIST</code> only if the site is allowlisted and sync is on.
+        This extension replies with <code>BROWSER_LAUNCHER_BOOKMARKS_LIST</code> only if the site is allowlisted and <strong>Read-only</strong> is on.
+        OutSync posts <code>BROWSER_LAUNCHER_PREVIEW_PUSH_BOOKMARKS</code> first (preview, no writes), then optionally <code>BROWSER_LAUNCHER_BACKUP_BOOKMARKS</code> (v1.8.2+, Read-only or Read-write) before <code>BROWSER_LAUNCHER_PUSH_BOOKMARKS</code> when you Apply — only if <strong>Read-write</strong> is on. Matching URLs are skipped (titles updated if they differ), and new links go under Other Bookmarks → LinkNest.
       </p>
       <h2>Mass deploy (IT)</h2>
       <ul>
@@ -372,11 +418,11 @@
         <li>Force-install a packed CRX (or Edge add-on) per user via Intune / GPO. Do not rely on Developer mode.</li>
         <li>Each user keeps their own Windows account and Chrome profile so they can only sync their own bookmarks.</li>
       </ul>
-      <h2>If Sync fails</h2>
+      <h2>If Sync or OutSync fails</h2>
       <ul>
-        <li>Reload this extension, then <strong>refresh the app page</strong>.</li>
-        <li>Turn Bookmark sync on here. Confirm the site origin is in <code>allowedOrigins</code>.</li>
-        <li>Or use Import HTML / Merge in Your Bookmarks.</li>
+        <li>Reload this extension, then <strong>refresh the app page</strong>. OutSync preview needs v1.8.1+; bookmark backup before Apply needs v1.8.2+.</li>
+        <li>Turn Read-only on for Sync, and Read-write on for OutSync. Confirm the site origin is in <code>allowedOrigins</code>.</li>
+        <li>Or use Import HTML / Merge / Export HTML in Your Bookmarks.</li>
       </ul>
       <p class="muted">Full guide in the app: Help → Guides → Bookmark Sync Extension.</p>
     </div>
