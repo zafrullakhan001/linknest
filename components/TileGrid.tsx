@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
-import { Tile, LinkSection, ThemeColor, THEME_COLORS, COLOR_STYLES, TileVisibility, TileMessage, Link, CelebrationConfig } from '../types';
+import { Tile, Tab, LinkSection, ThemeColor, THEME_COLORS, COLOR_STYLES, TileVisibility, TileMessage, Link, CelebrationConfig } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { useStyles } from '../contexts/StyleContext';
 import { applyCategoryTextCase, buildCategoryCaseRenameMap } from '../services/styleService';
-import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite, saveTile, createTile, getTiles, getTile, cloneCategory, toggleCategoryFavorite, getRecycleBin, restoreTile, purgeRecycleBin, permanentDeleteTile, permanentDeleteCategory, deleteTile, getArchive, archiveTile, unarchiveTile, purgeArchive, archiveCategory, unarchiveCategory, getFavoriteLinks, resolveFavoriteLinks, saveFavoriteLinkOrder, FavoriteLink, csvToJson, uploadTileHeaderImage, uploadTileEmojiImage } from '../services/storageService';
+import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite, saveTile, createTile, getTiles, getTile, cloneCategory, toggleCategoryFavorite, getRecycleBin, restoreTile, purgeRecycleBin, permanentDeleteTile, permanentDeleteCategory, deleteTile, getArchive, archiveTile, unarchiveTile, purgeArchive, archiveCategory, unarchiveCategory, getFavoriteLinks, resolveFavoriteLinks, saveFavoriteLinkOrder, FavoriteLink, csvToJson, uploadTileHeaderImage, uploadTileEmojiImage, recordTileVisit } from '../services/storageService';
 import {
   exportTileToFileAsync,
   exportCategoryToFileAsync,
@@ -101,6 +101,29 @@ interface TileGridProps {
 }
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
+
+/** Turn a hyperlink tile URL into a default tab → section → link graph. */
+function buildSpaceTabsFromHyperlink(title: string, url: string): Tab[] {
+  const trimmedUrl = url.trim();
+  const linkLabel = title.trim() || trimmedUrl || 'Link';
+  const section: LinkSection = {
+    id: generateId(),
+    title: 'General',
+    links: trimmedUrl
+      ? [{
+          id: generateId(),
+          label: linkLabel,
+          url: trimmedUrl,
+        }]
+      : [],
+  };
+  return [{
+    id: generateId(),
+    title: 'General',
+    position: 0,
+    sections: [section],
+  }];
+}
 
 /** Strip HTML tags from a string and return plain text (for safe display of user content that may contain HTML) */
 function stripHtml(html: string): string {
@@ -5143,6 +5166,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     const sourceList = activeTab === 'staging' ? stagingTiles : tiles;
     const tile = sourceList.find(t => t.id === tileId);
     if (tile?.isHyperlink && tile.hyperlinkUrl) {
+      // Hyperlink tiles never open TileDetail, so record the visit here
+      void recordTileVisit(tile.id);
       if (tile.openInNewTab) {
         window.open(tile.hyperlinkUrl, '_blank', 'noopener,noreferrer');
       } else {
@@ -5393,6 +5418,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     if (!editingTile || !newTitle.trim() || isUpdatingTile) return;
 
     if (tileType === 'hyperlink' && !hyperlinkUrl.trim()) return;
+    if (editingTile.isHyperlink && tileType === 'space' && !hyperlinkUrl.trim()) return;
 
     if (newVisibility === 'private' && newAllowedUsers.length === 0) return;
 
@@ -5457,6 +5483,11 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       };
     }
 
+    const convertingHyperlinkToSpace = !!editingTile.isHyperlink && tileType === 'space';
+    const convertedTabs = convertingHyperlinkToSpace
+      ? buildSpaceTabsFromHyperlink(newTitle, hyperlinkUrl)
+      : undefined;
+
     const updatedTile: Tile = {
       ...editingTile,
       title: newTitle,
@@ -5489,6 +5520,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       visibleFrom: visibleFrom.trim() ? new Date(visibleFrom).toISOString() : undefined,
       expiresAt: expiresAt.trim() ? new Date(expiresAt).toISOString() : undefined,
       messages: messages,
+      ...(convertingHyperlinkToSpace
+        ? { tabs: convertedTabs, sections: [] }
+        : {}),
       ...decorationProps
     };
 
@@ -5532,9 +5566,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     await persistEditingTile({ closeModal: false });
   };
 
+  const convertingHyperlinkToSpace = !!(editingTile?.isHyperlink && tileType === 'space');
+
   const isEditFormInvalid =
     !newTitle.trim() ||
     (tileType === 'hyperlink' && !hyperlinkUrl.trim()) ||
+    (convertingHyperlinkToSpace && !hyperlinkUrl.trim()) ||
     (newVisibility === 'private' && newAllowedUsers.length === 0);
 
   const isPrivateScopeSave = activeTab === 'private' && !!user;
@@ -9712,9 +9749,11 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             >
               <SpaceModalHeader
                 emoji={tileType === 'hyperlink' ? '🔗' : '✏️'}
-                eyebrow={tileType === 'hyperlink' ? 'Edit Hyperlink' : 'Edit Space'}
+                eyebrow={convertingHyperlinkToSpace ? 'Convert Hyperlink' : (tileType === 'hyperlink' ? 'Edit Hyperlink' : 'Edit Space')}
                 title={editingTile.title || (tileType === 'hyperlink' ? 'Edit Hyperlink' : 'Edit Space')}
-                subtitle={tileType === 'hyperlink' ? 'Update your hyperlink settings' : 'Update your space settings'}
+                subtitle={convertingHyperlinkToSpace
+                  ? 'This URL will become a section with a link inside the new space'
+                  : (tileType === 'hyperlink' ? 'Update your hyperlink settings' : 'Update your space settings')}
                 onClose={() => setIsEditModalOpen(false)}
                 onMouseDown={handleDragStart}
               />
@@ -10735,10 +10774,46 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       />
                     </div>
 
-                    {/* URL - Only for hyperlinks */}
-                    {tileType === 'hyperlink' && (
+                    {/* Convert hyperlink → space */}
+                    {editingTile.isHyperlink && (
                       <div>
-                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">URL</label>
+                        <FormLabel emoji="🧩">Type</FormLabel>
+                        <div className="space-y-2">
+                          <label className={`flex items-center gap-2.5 cursor-pointer rounded-lg border px-3 py-2.5 transition-colors ${tileType === 'space' ? 'border-sky-300 bg-sky-50/80 dark:border-sky-700 dark:bg-sky-950/30' : 'border-slate-200 dark:border-slate-700 hover:bg-white/70 dark:hover:bg-slate-800/50'}`}>
+                            <input
+                              type="radio"
+                              name="editTileType"
+                              value="space"
+                              checked={tileType === 'space'}
+                              onChange={() => setTileType('space')}
+                              className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                            />
+                            <span className="text-sm text-slate-700 dark:text-slate-300"><span aria-hidden="true">📁</span> Space — convert to a space with sections and links</span>
+                          </label>
+                          <label className={`flex items-center gap-2.5 cursor-pointer rounded-lg border px-3 py-2.5 transition-colors ${tileType === 'hyperlink' ? 'border-indigo-300 bg-indigo-50/80 dark:border-indigo-700 dark:bg-indigo-950/30' : 'border-slate-200 dark:border-slate-700 hover:bg-white/70 dark:hover:bg-slate-800/50'}`}>
+                            <input
+                              type="radio"
+                              name="editTileType"
+                              value="hyperlink"
+                              checked={tileType === 'hyperlink'}
+                              onChange={() => setTileType('hyperlink')}
+                              className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                            />
+                            <span className="text-sm text-slate-700 dark:text-slate-300"><span aria-hidden="true">🔗</span> Hyperlink — keep as a direct URL</span>
+                          </label>
+                        </div>
+                        {convertingHyperlinkToSpace && (
+                          <p className="mt-2 text-xs text-sky-700 dark:text-sky-300 px-3 py-2 bg-sky-50 dark:bg-sky-950/30 rounded-lg border border-sky-200 dark:border-sky-800">
+                            Saving will add a <strong>General</strong> section containing this URL as a link. You can add more tabs, sections, and links after that.
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* URL - hyperlinks, and while converting a hyperlink to a space */}
+                    {(tileType === 'hyperlink' || convertingHyperlinkToSpace) && (
+                      <div>
+                        <FormLabel emoji="🌐">URL</FormLabel>
                         <input
                           type="url"
                           value={hyperlinkUrl}
@@ -12285,9 +12360,11 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                   >
                     {isUpdatingTile
                       ? 'Saving…'
-                      : tileType === 'hyperlink'
-                        ? '🔗 Update Hyperlink'
-                        : '✨ Update Space'}
+                      : convertingHyperlinkToSpace
+                        ? '✨ Convert to Space'
+                        : tileType === 'hyperlink'
+                          ? '🔗 Update Hyperlink'
+                          : '✨ Update Space'}
                   </button>
                 </div>
               </div>

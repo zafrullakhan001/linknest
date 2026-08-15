@@ -1039,6 +1039,7 @@ export const recordTileVisit = async (tileId: string): Promise<void> => {
     await fetch(`${API_BASE}/tiles/${encodeURIComponent(tileId)}/visit`, {
       method: 'POST',
       credentials: 'include',
+      keepalive: true,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ visitorKey: getOrCreateVisitorKey() }),
     });
