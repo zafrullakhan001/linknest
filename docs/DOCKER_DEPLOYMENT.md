@@ -163,6 +163,26 @@ docker\docker-sync-database.bat -Direction Out -HostBasePath /ArchLinks
 
 ---
 
+## Bookmark Sync on Docker (`https://localhost:8443`)
+
+The extension allowlist is **exact origin** (scheme + host + port). `http://localhost` does **not** match Docker HTTPS.
+
+The shipped `extensions/bookmark-sync/org-branding.json` includes:
+
+- `http://localhost:8090`
+- `https://localhost:8443`
+- the same on `127.0.0.1`
+
+After pulling that JSON (or adding those lines yourself):
+
+1. `chrome://extensions` → Bookmark Sync → **Reload**
+2. Confirm the popup **Allowed LinkNest sites** lists `https://localhost:8443`
+3. Hard-refresh the Docker tab (Ctrl+F5)
+
+Your Bookmarks then shows **Sync** / **OutSync** instead of “Install LinkNest Bookmark Sync…”.
+
+---
+
 ## Other useful Docker commands
 
 ```bat

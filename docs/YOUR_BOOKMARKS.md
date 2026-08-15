@@ -60,7 +60,7 @@ Install **LinkNest Bookmark Sync** (`extensions/bookmark-sync` — load unpacked
 
 Bookmark Sync is a minified Pro-compatible extension: it answers `BROWSER_LAUNCHER_GET_BOOKMARKS` / `BROWSER_LAUNCHER_CHECK` from **allowlisted** LinkNest origins, and only when **Read-only** is On in the popup (it starts **Off**). It reads **this browser profile only** — not another user’s PC or Chrome profile — and does not upload bookmarks. The **display name does not connect Sync**.
 
-After v1.8, turn **Read-only** on for Sync and **Read-write** on for OutSync (both start Off). After v1.6, add your app origin to `org-branding.json` `allowedOrigins` (the shipped file allows local XAMPP/Vite origins such as `http://localhost` and `http://localhost:3000`).
+After v1.8, turn **Read-only** on for Sync and **Read-write** on for OutSync (both start Off). After v1.6, add your app origin to `org-branding.json` `allowedOrigins`. The shipped file allows local XAMPP/Vite (`http://localhost`, `http://localhost:3000`) **and Docker** (`http://localhost:8090`, `https://localhost:8443`). Origins are exact: `http://localhost` does **not** match `https://localhost:8443`. Reload the extension after editing the JSON.
 
 Full extension guide (including mass deploy): **Help → Guides → Bookmark Sync Extension** (also the extension popup **Help** tab).
 

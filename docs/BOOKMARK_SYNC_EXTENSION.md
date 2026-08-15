@@ -103,7 +103,7 @@ OutSync never deletes Chrome bookmarks and never moves existing ones into the Li
 1. **Install** `extensions/bookmark-sync` in the **same browser profile** you use for the app (unpacked for test, force-install for production).
 2. Allow the **bookmarks** permission when Chrome/Edge asks.
 3. Turn **Read-only** on for Sync and **Read-write** on for OutSync in the extension popup (Sync tab). An **OFF** badge means both are disabled.
-4. Open the app at an **allowlisted** `http://` or `https://` origin (see `allowedOrigins`). `file://` pages do not work.
+4. Open the app at an **allowlisted** `http://` or `https://` origin (see `allowedOrigins`). `file://` pages do not work. Docker uses `https://localhost:8443` or `http://localhost:8090` — both are in the shipped allowlist.
 5. Reload the app after installing or reloading the extension.
 6. Favorites → Your Bookmarks → **Sync** (browser → app) or **OutSync** (app → browser).
 
@@ -183,7 +183,7 @@ Reload the extension after editing the JSON. Chrome’s **extensions** page stil
 
 | Symptom | What to try |
 |---------|-------------|
-| Sync times out / “install extension” | Load/reload the extension, **refresh the app**, turn **Read-only** **On**, confirm this origin is in `allowedOrigins` (scheme + host + port, e.g. `http://localhost` not a path) |
+| Sync times out / “install extension” | Load/reload the extension, **refresh the app**, turn **Read-only** **On**, confirm this origin is in `allowedOrigins` (scheme + host + port). Docker: `https://localhost:8443` and `http://localhost:8090` — `http://localhost` alone is not enough |
 | OutSync times out / “reload Bookmark Sync 1.8+” | You still have an older pack. Reload the unpacked folder (or install 1.8.2+), turn **Read-write** On, then **refresh the app** |
 | Backup times out / empty | Reload Bookmark Sync **1.8.2+**, refresh the app, turn **Read-only or Read-write** On. Uncheck backup on the preview to Apply without a backup |
 | “Read-only Sync is turned off…” | Popup → Sync tab → turn **Read-only** on |

@@ -50,7 +50,7 @@ IT must force-install **per user** and forbid shared Chrome profiles if employee
 2. Turn on **Developer mode**
 3. Click **Load unpacked**
 4. Choose this folder: `extensions/bookmark-sync`
-5. Edit `org-branding.json` `allowedOrigins` if your app is not `http://localhost`
+5. Edit `org-branding.json` `allowedOrigins` if your app origin is missing. Docker needs `https://localhost:8443` and/or `http://localhost:8090` (scheme + port must match the address bar). Then **Reload** the extension.
 6. Turn **Read-only** and/or **Read-write** **On** in the popup
 7. Reload LinkNest, then Favorites → **Your Bookmarks** → **Sync** or **OutSync**
 
