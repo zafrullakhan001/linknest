@@ -19,6 +19,7 @@ const DOCS_CATEGORY_MAP = [
     'SETUP.md' => 'Getting Started',
     'ARCHITECTURE.md' => 'Architecture',
     'APP_UPDATES.md' => 'Updates & Deploy',
+    'DOCKER_DEPLOYMENT.md' => 'Updates & Deploy',
     'PACKAGE_FOR_DEPLOYMENT.md' => 'Updates & Deploy',
     'XAMPP_PHP_UPGRADE.md' => 'Updates & Deploy',
     'REMOTE_WIDGETS_MANUAL_DEPLOY.md' => 'Updates & Deploy',
@@ -57,7 +58,8 @@ const DOCS_CATEGORY_ORDER = [
 /** Preferred sort within Updates & Deploy */
 const DOCS_FILE_PRIORITY = [
     'APP_UPDATES.md' => 0,
-    'PACKAGE_FOR_DEPLOYMENT.md' => 1,
+    'DOCKER_DEPLOYMENT.md' => 1,
+    'PACKAGE_FOR_DEPLOYMENT.md' => 2,
     'XAMPP_PHP_UPGRADE.md' => 2,
     'REMOTE_WIDGETS_MANUAL_DEPLOY.md' => 3,
     'SETUP.md' => 0,

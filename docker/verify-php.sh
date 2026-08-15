@@ -8,7 +8,7 @@ echo ""
 echo "=== Checking Required PHP Extensions ==="
 # Core extensions that must be loaded
 # Note: json, curl, and openssl are usually built-in or have different detection methods
-CRITICAL_EXTENSIONS=("pdo_sqlite" "sqlite3" "ldap" "zip")
+CRITICAL_EXTENSIONS=("pdo_sqlite" "sqlite3" "ldap" "zip" "gd")
 ALL_GOOD=true
 MISSING_EXTENSIONS=()
 
@@ -84,7 +84,7 @@ fi
 
 echo ""
 echo "=== PHP Configuration Summary ==="
-php -i | grep -E "(pdo_sqlite|sqlite3|opcache|ldap|zip|json|curl|openssl)" | head -15
+php -i | grep -E "(pdo_sqlite|sqlite3|opcache|ldap|zip|gd|json|curl|openssl)" | head -20
 
 echo ""
 if [ "$ALL_GOOD" = true ]; then

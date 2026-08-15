@@ -1,21 +1,44 @@
-version: '3.8'
-
+# Production compose — same image as docker-compose.yml, always-restart + Traefik labels.
+# Prefer docker/docker-compose.yml for local/pilot (includes Mailpit).
 services:
   linknest:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      args:
+        GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     container_name: linknest
     ports:
-      - "8000:80"
-    volumes:
-      - ../data:/var/www/html/data
-      - ../uploads:/var/www/html/uploads
+      - "8090:80"
+      - "8443:443"
+      - "18681-18780:18681-18780"
+      - "18881-18980:18881-18980"
     environment:
+      - TZ=${TZ:-America/New_York}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - APACHE_DOCUMENT_ROOT=/var/www/html
+      - PHP_MEMORY_LIMIT=256M
+      - PHP_MAX_EXECUTION_TIME=300
+      - PHP_UPLOAD_MAX_FILESIZE=10M
+      - PHP_POST_MAX_SIZE=10M
+      - LINKNEST_WORKERS_ENABLED=1
+      - LINKNEST_WORKER_INTERVAL_SECONDS=60
+      - LINKNEST_DB_PATH=/var/www/html/data/linknest.db
+      - LINKNEST_WORKER_MAX_WORKERS=10
+      - LINKNEST_EMAIL_LIMIT=50
+      - LINKNEST_EMAIL_DEDUPE_WINDOW_SECONDS=0
+      - SSH_GATEWAY_PORT_MIN=18681
+      - SSH_GATEWAY_PORT_MAX=18780
+      - VNC_GATEWAY_PORT_MIN=18881
+      - VNC_GATEWAY_PORT_MAX=18980
+      - LINKNEST_DOCKER=1
+      - DISPLAY=host.docker.internal:0.0
+      - SSH_GATEWAY_X11_DISPLAY=host.docker.internal:0.0
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: always
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/api/settings"]
+      test: [ "CMD", "curl", "-f", "-k", "https://localhost/api/settings" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -23,116 +46,3 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.linknest.rule=Host(`linknest.local`)"
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

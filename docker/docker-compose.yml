@@ -4,6 +4,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      args:
+        GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     container_name: linknest
     ports:
       - "8090:80" # HTTP
@@ -20,6 +22,7 @@ services:
       # Examples: TZ=America/New_York, TZ=Europe/London, TZ=Asia/Tokyo, TZ=UTC
       # If not set, will try to detect from mounted /etc/timezone or use UTC
       - TZ=${TZ:-America/New_York}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - APACHE_DOCUMENT_ROOT=/var/www/html
       - PHP_MEMORY_LIMIT=256M
       - PHP_MAX_EXECUTION_TIME=300

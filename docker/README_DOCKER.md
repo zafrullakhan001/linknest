@@ -18,7 +18,7 @@ This script will:
 3. Build the Docker image
 4. Start the application
 
-The application will be available at `http://localhost:8000`
+The application will be available at `http://localhost:8090` and `https://localhost:8443`
 
 ## Manual Deployment
 
@@ -58,8 +58,8 @@ docker compose -f docker/docker-compose.yml up -d --build
 ### Step 5: Access Application
 
 Open your browser and navigate to:
-- Development: `http://localhost:8000`
-- Production: `http://localhost:8000`
+- HTTP: `http://localhost:8090`
+- HTTPS: `https://localhost:8443`
 
 ## Docker Commands
 
@@ -109,9 +109,9 @@ docker compose -f docker/docker-compose.prod.yml up -d --build
 ```
 
 This will:
-- Run on port 8000
+- Run on HTTP 8090 and HTTPS 8443
 - Set restart policy to `always`
-- Include health checks
+- Include health checks, SSH/VNC gateway ports, and workers
 
 ## Environment Variables
 
@@ -146,7 +146,8 @@ chmod -R 755 data uploads
 Edit `docker/docker-compose.yml` and change the port mapping:
 ```yaml
 ports:
-  - "8000:80"  # Change 8000 to any available port (e.g., "8001:80")
+  - "8090:80"  # Change 8090 to any available port (e.g., "8001:80")
+  - "8443:443"
 ```
 
 ### Rebuild after code changes
@@ -159,7 +160,7 @@ docker compose -f docker/docker-compose.yml up -d --build
 
 The Docker setup includes:
 - **Frontend**: React/Vite application (built during Docker build)
-- **Backend**: PHP 8.2 with Apache
+- **Backend**: PHP 8.4 with Apache (GD, LDAP, zip, OPcache)
 - **Database**: SQLite (stored in `./data` directory)
 - **Uploads**: Logo images (stored in `./uploads` directory)
 

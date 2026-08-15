@@ -374,7 +374,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 border border-emerald-200 dark:border-emerald-800">
                     <p className="font-medium text-emerald-900 dark:text-emerald-100">Guides tab:</p>
                     <p className="text-sm">
-                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (Your Bookmarks, Bookmark Sync Extension, setup, architecture, App Updates, SSH / VNC, Package for Deployment, and more). Start with <strong>Your Bookmarks</strong> or <strong>Bookmark Sync Extension</strong> for guest bookmark Sync / OutSync, or App Updates / Architecture for admin workflows.
+                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (Your Bookmarks, Bookmark Sync Extension, setup, architecture, App Updates, Docker deployment &amp; database, SSH / VNC, Package for Deployment, and more). Start with <strong>Your Bookmarks</strong> or <strong>Bookmark Sync Extension</strong> for guest bookmark Sync / OutSync, or App Updates / Docker Deployment / Architecture for admin workflows.
                     </p>
                   </div>
                 </div>
@@ -571,6 +571,12 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Package for Deployment (Windows)</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
                       Build a XAMPP deploy ZIP with <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">package-for-deployment.bat</code> (fresh DB by default; optional <code className="text-xs">-IncludeDatabase</code>, <code className="text-xs">-ExcludeUploads</code>, <code className="text-xs">-BasePath</code>, <code className="text-xs">-OutputDir</code>, and more). The ZIP includes <code className="text-xs">upgrade-xampp-php.bat</code> + PHP upgrade scripts for the target. Target runs <code className="text-xs">deploy-xampp.bat</code> / <code className="text-xs">update-xampp.bat</code>. See <strong>Guides → Package for Deployment</strong>.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Docker deployment &amp; database</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Rebuild with <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">redeploy-docker.bat</code>. Copy this PC&apos;s SQLite + uploads into the container with <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">docker\docker-sync-database.bat</code>, or pull Docker&apos;s copy back with <code className="text-xs">-Direction Out</code>. Fixes broken tile images caused by <code className="text-xs">/linknest/uploads</code> paths. See <strong>Help → Docker deployment &amp; database</strong> and <strong>Guides → Docker Deployment</strong>.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -959,6 +965,95 @@ package-for-deployment.bat -BasePath "/myapp"`}</pre>
                   <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
                     <p className="text-sm text-amber-800 dark:text-amber-200">
                       <strong>Target needs:</strong> XAMPP (Apache + PHP). SSH Easy and VNC Easy use bundled <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">bin/ttyd.exe</code>, <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">bin/OpenSSH</code>, and <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">bin/python</code>. The ZIP includes <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">upgrade-xampp-php.bat</code> for PHP 8.5+. Full walkthrough: <strong>Guides → Package for Deployment (Windows / XAMPP)</strong>.
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <path fillRule="evenodd" d="M2 4.25A2.25 2.25 0 014.25 2h11.5A2.25 2.25 0 0118 4.25v8.5A2.25 2.25 0 0115.75 15h-3.105a3.501 3.501 0 001.1 1.677A.75.75 0 0113.26 18H6.74a.75.75 0 01-.484-1.323A3.501 3.501 0 007.355 15H4.25A2.25 2.25 0 012 12.75v-8.5zM4.25 3.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h11.5a.75.75 0 00.75-.75v-8.5a.75.75 0 00-.75-.75H4.25z" clipRule="evenodd" />
+                  </svg>
+                  Docker deployment &amp; database
+                </h3>
+                <div className="space-y-3 text-slate-700 dark:text-slate-300">
+                  <p className="text-sm">
+                    Docker runs {appName} in one isolated container (HTTP <strong>8090</strong>, HTTPS <strong>8443</strong>, Mailpit <strong>8025</strong>).
+                    It does <strong>not</strong> live-mount the host <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">data/</code> folder — the SQLite file and <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">uploads/</code> (tile images, logos) are copied at image build, then live only inside the container.
+                    Full command list: <strong>Guides → Docker Deployment</strong>.
+                  </p>
+                  <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-brand-900 dark:text-brand-100">Deploy / rebuild the image</p>
+                    <pre className="text-xs bg-white dark:bg-slate-800 p-3 rounded overflow-x-auto whitespace-pre-wrap">{`redeploy-docker.bat
+docker compose -f docker\\docker-compose.yml up -d --build`}</pre>
+                    <p className="text-sm">Linux: <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">./redeploy-docker.sh</code></p>
+                  </div>
+                  <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 border border-emerald-200 dark:border-emerald-800">
+                    <p className="font-medium text-emerald-900 dark:text-emerald-100">Copy the host database <em>into</em> Docker</p>
+                    <p className="text-sm">
+                      Use this when Docker shows broken tile images or an empty/old grid. It copies this PC&apos;s{' '}
+                      <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">data/linknest.db</code> and{' '}
+                      <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">uploads/</code>, then rewrites{' '}
+                      <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">/linknest/uploads/…</code> to{' '}
+                      <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">/uploads/…</code> (Docker is served at <code className="text-xs">/</code>, not <code className="text-xs">/linknest</code>).
+                    </p>
+                    <pre className="text-xs bg-white dark:bg-slate-800 p-3 rounded overflow-x-auto whitespace-pre-wrap">{`docker\\docker-sync-database.bat
+docker cp data\\linknest.db linknest:/var/www/html/data/linknest.db
+docker cp uploads\\. linknest:/var/www/html/uploads/
+docker restart linknest`}</pre>
+                  </div>
+                  <div className="bg-sky-50 dark:bg-sky-900/20 rounded-lg p-4 space-y-2 border border-sky-200 dark:border-sky-800">
+                    <p className="font-medium text-sky-900 dark:text-sky-100">Copy the Docker database <em>back to</em> this PC</p>
+                    <p className="text-sm">When Docker is the source of truth. The host DB is saved first as <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">data/linknest.db.hostbak-…</code>.</p>
+                    <pre className="text-xs bg-white dark:bg-slate-800 p-3 rounded overflow-x-auto whitespace-pre-wrap">{`docker\\docker-sync-database.bat -Direction Out
+docker cp linknest:/var/www/html/data/linknest.db data\\linknest.db
+docker cp linknest:/var/www/html/uploads\\. uploads\\`}</pre>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2 overflow-x-auto">
+                    <p className="font-medium text-slate-900 dark:text-white">Sync script options</p>
+                    <table className="w-full text-sm text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400">
+                          <th className="py-1.5 pr-3 font-medium">Flag</th>
+                          <th className="py-1.5 font-medium">Purpose</th>
+                        </tr>
+                      </thead>
+                      <tbody className="align-top">
+                        <tr className="border-b border-slate-100 dark:border-slate-800">
+                          <td className="py-1.5 pr-3 whitespace-nowrap"><code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">-Direction In</code></td>
+                          <td className="py-1.5">Host → Docker (default)</td>
+                        </tr>
+                        <tr className="border-b border-slate-100 dark:border-slate-800">
+                          <td className="py-1.5 pr-3 whitespace-nowrap"><code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">-Direction Out</code></td>
+                          <td className="py-1.5">Docker → host</td>
+                        </tr>
+                        <tr className="border-b border-slate-100 dark:border-slate-800">
+                          <td className="py-1.5 pr-3 whitespace-nowrap"><code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">-DatabaseOnly</code></td>
+                          <td className="py-1.5">Only <code className="text-xs">data/linknest.db</code></td>
+                        </tr>
+                        <tr className="border-b border-slate-100 dark:border-slate-800">
+                          <td className="py-1.5 pr-3 whitespace-nowrap"><code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">-UploadsOnly</code></td>
+                          <td className="py-1.5">Only logos / tile emoji &amp; header images</td>
+                        </tr>
+                        <tr className="border-b border-slate-100 dark:border-slate-800">
+                          <td className="py-1.5 pr-3 whitespace-nowrap"><code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">-SkipPathRewrite</code></td>
+                          <td className="py-1.5">Leave <code className="text-xs">/linknest/uploads</code> URLs unchanged</td>
+                        </tr>
+                        <tr>
+                          <td className="py-1.5 pr-3 whitespace-nowrap"><code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">-HostBasePath &quot;/linknest&quot;</code></td>
+                          <td className="py-1.5">XAMPP folder when copying Out (also <code className="text-xs">/ArchLinks</code>, <code className="text-xs">/ERP3</code>)</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <pre className="text-xs bg-white dark:bg-slate-800 p-3 rounded overflow-x-auto whitespace-pre-wrap mt-2">{`docker\\docker-sync-database.bat -DatabaseOnly
+docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pre>
+                  </div>
+                  <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
+                    <p className="text-sm text-amber-800 dark:text-amber-200">
+                      Broken tile images after a Docker rebuild almost always mean XAMPP URLs still start with{' '}
+                      <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">/linknest/uploads/</code>. Run the In sync (or Ctrl+F5 after it) rather than re-uploading every logo.
+                      In-app App Updates do not apply inside Docker — rebuild the image instead.
                     </p>
                   </div>
                 </div>
@@ -1602,6 +1697,7 @@ package-for-deployment.bat -BasePath "/myapp"`}</pre>
                     <li>Apply App Updates from the admin bell, with DB backup and rollback (admin, XAMPP installs). For ArchLinks + ERP3 use one portable Release — Help → In-app App Updates / Guides → App Updates</li>
                     <li>Upgrade XAMPP PHP (e.g. to 8.5) with <code className="text-xs">scripts/upgrade-xampp-php.ps1</code> — see Guides → Upgrade PHP in XAMPP (admin / server ops)</li>
                     <li>Build a Windows XAMPP deploy ZIP with <code className="text-xs">package-for-deployment.bat</code> (options: <code className="text-xs">-IncludeDatabase</code>, <code className="text-xs">-ExcludeUploads</code>, <code className="text-xs">-BasePath</code>, <code className="text-xs">-OutputDir</code>, …) — Guides → Package for Deployment</li>
+                    <li>Docker: copy this PC&apos;s database into the container with <code className="text-xs">docker\docker-sync-database.bat</code>, or pull Docker&apos;s DB back with <code className="text-xs">-Direction Out</code> — Help → Docker deployment &amp; database / Guides → Docker Deployment</li>
                     <li>Configure optional Analytics and Monitorv2 add-ons under Admin → Add-ons</li>
                     <li>Clone {appName} instances for testing or backup purposes (admin only)</li>
                     <li>Run database cleanup to remove orphaned records and optimize performance (admin only)</li>
@@ -1734,8 +1830,9 @@ package-for-deployment.bat -BasePath "/myapp"`}</pre>
                     <li><strong>In-app App Updates:</strong> Check GitHub commits/releases, preview changes, apply with DB backup, and roll back from Admin (XAMPP installs). Office tip: publish a <strong>portable Release</strong> (default relative base) and apply the same Release on ArchLinks and ERP3 — see Help → In-app App Updates</li>
                     <li><strong>XAMPP PHP upgrade:</strong> PowerShell script to move to PHP 8.5+ with LDAP verification — see Guides → Upgrade PHP in XAMPP</li>
                     <li><strong>Package for Deployment:</strong> <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">package-for-deployment.bat</code> builds a full XAMPP ZIP with SQLite runtime, remote-widget binaries, and optional DB/uploads flags</li>
+                    <li><strong>Docker database sync:</strong> <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">docker\docker-sync-database.bat</code> copies SQLite + uploads in or out of the container (<code className="text-xs">-Direction Out</code>, <code className="text-xs">-DatabaseOnly</code>, <code className="text-xs">-UploadsOnly</code>)</li>
                     <li><strong>Bookmark Sync extension:</strong> Origin allowlist, Bookmark sync Off by default, same-origin messages, per-browser-profile isolation, and OutSync (app → Other Bookmarks → LinkNest) — Help → Guides → Bookmark Sync Extension</li>
-                    <li><strong>Guides tab:</strong> Searchable in-app documentation (Your Bookmarks, Bookmark Sync Extension, Architecture, App Updates, Package for Deployment, XAMPP PHP upgrade, SSH / VNC Manual Deployment, SSH Session Shared Worker, Remote Widgets Setup, and more)</li>
+                    <li><strong>Guides tab:</strong> Searchable in-app documentation (Your Bookmarks, Bookmark Sync Extension, Architecture, App Updates, Docker Deployment, Package for Deployment, XAMPP PHP upgrade, SSH / VNC Manual Deployment, SSH Session Shared Worker, Remote Widgets Setup, and more)</li>
                     <li><strong>SSH sessions across refresh:</strong> SharedWorker in browser memory keeps live SSH sockets through page reload; close the widget to disconnect — Help → SSH sessions across refresh / Guides → SSH Session Shared Worker</li>
                     <li><strong>SSH / VNC manual deploy:</strong> Online, air-gapped runtime pack, HTTPS WSS proxy, Easy mode, <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">ssh://</code> / <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">vnc://</code> space links — Help and Guides</li>
                     <li><strong>QR sharing:</strong> Branded QR codes for the app URL and spaces (desktop + mobile)</li>

@@ -3,7 +3,7 @@
 ## Overview
 
 **Single Container Architecture**: This deployment uses ONE container that includes:
-- PHP 8.2 with Apache web server
+- PHP 8.4 with Apache web server
 - SQLite database with all optimizations
 - All application code and assets
 - No separate database container needed
@@ -24,7 +24,7 @@ This Docker deployment configuration provides a complete, optimized container se
 - **Restart Policy**: Auto-restart on failure
 
 ### 2. `Dockerfile`
-- **Base Image**: PHP 8.2 with Apache
+- **Base Image**: PHP 8.4 with Apache
 - **Frontend Build**: Multi-stage build with Node.js 20
 - **Extensions**: PDO SQLite enabled
 - **Apache Modules**: rewrite, headers, mime

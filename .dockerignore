@@ -4,7 +4,10 @@ dist
 .gitignore
 *.md
 !staging-ai-prompt-guide.md
+!docs/
+!docs/**
 README*
+!docs/README*
 .vscode
 .idea
 *.log
@@ -18,6 +21,8 @@ uploads/*.tmp
 uploads/*.temp
 .env
 .env.local
+config/database.local.php
+**/*.local.php
 *.swp
 *.swo
 *~
@@ -26,6 +31,5 @@ coverage
 .nyc_output
 agent-transcripts
 .cursor
-docs
 **/__pycache__
 *.pyc

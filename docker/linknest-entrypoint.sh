@@ -85,6 +85,10 @@ if [ -f "${DB_PATH}" ] && command -v sqlite3 >/dev/null 2>&1; then
     sqlite3 "${DB_PATH}" "INSERT INTO settings (key, value, updated_at) VALUES ('ssh_gateway_x11_display', '${X11_DISPLAY_DOCKER}', ${NOW});" 2>/dev/null || true
   fi
   echo "[ENTRYPOINT] SSH X11 DISPLAY for Docker: ${X11_DISPLAY_DOCKER}"
+  echo "[ENTRYPOINT] Normalizing XAMPP /linknest/uploads URLs to /uploads for Docker root..."
+  sqlite3 "${DB_PATH}" "UPDATE tiles SET emoji_image = substr(emoji_image, instr(emoji_image, '/uploads/')) WHERE emoji_image LIKE '%/uploads/%' AND emoji_image NOT LIKE '/uploads/%';" 2>/dev/null || true
+  sqlite3 "${DB_PATH}" "UPDATE tiles SET header_image = substr(header_image, instr(header_image, '/uploads/')) WHERE header_image LIKE '%/uploads/%' AND header_image NOT LIKE '/uploads/%';" 2>/dev/null || true
+  sqlite3 "${DB_PATH}" "UPDATE settings SET value = substr(value, instr(value, '/uploads/')) WHERE typeof(value)='text' AND value LIKE '%/uploads/%' AND value NOT LIKE '/uploads/%' AND length(value) < 512;" 2>/dev/null || true
 fi
 
 if command -v ttyd >/dev/null 2>&1; then

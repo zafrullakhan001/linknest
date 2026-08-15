@@ -13,15 +13,17 @@ COPY vite.config.ts vite.docker.config.ts tsconfig.json ./
 COPY tailwind.config.js postcss.config.js ./
 
 # Install dependencies (vite lives in devDependencies and is required to build)
+# --ignore-scripts: package.json postinstall copies TinyMCE, but that script is
+# copied after npm ci. The Vite build step runs copy-tinymce-assets.mjs itself.
 # Some environments (corporate SSL inspection / local MITM antivirus) break npm's
 # TLS verification inside containers with UNABLE_TO_VERIFY_LEAF_SIGNATURE.
 # Disable strict SSL only in this disposable builder stage.
 RUN set -eux; \
     npm config set strict-ssl false; \
     if [ -f package-lock.json ]; then \
-        npm ci --include=dev --no-audit --no-fund; \
+        npm ci --include=dev --no-audit --no-fund --ignore-scripts; \
     else \
-        npm install --include=dev --no-audit --no-fund; \
+        npm install --include=dev --no-audit --no-fund --ignore-scripts; \
     fi; \
     test -f node_modules/vite/package.json; \
     test -x node_modules/.bin/vite; \
@@ -41,6 +43,10 @@ COPY App.tsx ./
 COPY types.ts ./
 # Type declarations required by VNC Viewer widget (@novnc/novnc)
 COPY novnc.d.ts ./
+
+# Optional Gemini key for the Vite production bundle (from compose build args / .env)
+ARG GEMINI_API_KEY=
+ENV GEMINI_API_KEY=$GEMINI_API_KEY
 
 # Verify index.html exists and has the entry point
 RUN if [ ! -f index.html ]; then echo "ERROR: index.html not found!" && exit 1; fi && \
@@ -83,12 +89,17 @@ RUN apt-get update && apt-get install -y \
     libldap2-dev \
     libzip-dev \
     zlib1g-dev \
+    libpng-dev \
+    libjpeg62-turbo-dev \
+    libfreetype6-dev \
+    libwebp-dev \
     python3 \
     python3-pip \
     cron \
     tzdata \
-    && docker-php-ext-install pdo pdo_sqlite opcache ldap zip \
-    && docker-php-ext-enable pdo_sqlite opcache ldap zip \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
+    && docker-php-ext-install pdo pdo_sqlite opcache ldap zip gd \
+    && docker-php-ext-enable pdo_sqlite opcache ldap zip gd \
     && ln -sf /usr/bin/python3 /usr/local/bin/python \
     # websockify — VNC Viewer Easy-mode gateway (python3 -m websockify)
     # --trusted-host helps builds behind SSL inspection / MITM antivirus
@@ -133,7 +144,13 @@ WORKDIR /var/www/html
 COPY api/ ./api/
 COPY scripts/ ./scripts/
 COPY extensions/ ./extensions/
+COPY land/ ./land/
+COPY docs/ ./docs/
+COPY config/SamlConfig.php ./config/SamlConfig.php
+COPY composer.json ./composer.json
+COPY vendor/ ./vendor/
 COPY docker/.htaccess ./.htaccess
+COPY sw-cache-first.php ./sw-cache-first.php
 
 # Staging AI Offline Kit templates (served by api/tiles.php from app root)
 COPY staging-ai-import-template.csv ./staging-ai-import-template.csv
@@ -270,8 +287,8 @@ RUN echo "🧹 Cleaning up unnecessary files to reduce image size..." && \
     find /var/www/html -type d -name "node_modules" -exec rm -rf {} + 2>/dev/null || true && \
     # Remove TypeScript/React source files (we only need the built dist folder)
     find /var/www/html -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.jsx" \) ! -path "*/dist/*" ! -path "*/scripts/*" -delete 2>/dev/null || true && \
-    # Remove source directories (components, contexts, services, land) if they exist
-    rm -rf /var/www/html/components /var/www/html/contexts /var/www/html/services /var/www/html/land 2>/dev/null || true && \
+    # Remove source directories (keep land/ — Browser Launcher loads /land/*.js at runtime)
+    rm -rf /var/www/html/components /var/www/html/contexts /var/www/html/services 2>/dev/null || true && \
     # Remove build configuration files (not needed in runtime)
     rm -f /var/www/html/vite.config.ts /var/www/html/vite.docker.config.ts /var/www/html/vite.runtime.config.ts \
           /var/www/html/tsconfig.json /var/www/html/tailwind.config.js /var/www/html/postcss.config.js \
@@ -280,8 +297,12 @@ RUN echo "🧹 Cleaning up unnecessary files to reduce image size..." && \
     rm -f /var/www/html/App.tsx /var/www/html/index.tsx /var/www/html/types.ts /var/www/html/index.css 2>/dev/null || true && \
     # Remove any .git directories if present
     find /var/www/html -type d -name ".git" -exec rm -rf {} + 2>/dev/null || true && \
-    # Remove documentation and markdown files (keep Staging AI prompt guide — required by API)
-    find /var/www/html -type f -name "*.md" ! -name "staging-ai-prompt-guide.md" -delete 2>/dev/null || true && \
+    # Remove leftover markdown (keep Staging AI guide, in-app Help docs, and extension READMEs)
+    find /var/www/html -type f -name "*.md" \
+        ! -name "staging-ai-prompt-guide.md" \
+        ! -path "/var/www/html/docs/*" \
+        ! -path "/var/www/html/extensions/*" \
+        -delete 2>/dev/null || true && \
     # Remove test files
     find /var/www/html -type f -name "test_*.php" -delete 2>/dev/null || true && \
     find /var/www/html -type f -name "*.test.*" -delete 2>/dev/null || true && \
