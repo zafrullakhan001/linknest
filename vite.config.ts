@@ -9,7 +9,10 @@ export default defineConfig(({ mode }) => {
   // Make base path configurable via environment variable.
   // Use "./" | "relative" | "auto" | "portable" for one dist that works under
   // /ArchLinks, /ERP3, /linknest, or any other subfolder (hash-routed SPA).
-  const rawBase = String(env.VITE_BASE_PATH || '').trim();
+  // Production default is relative so `npm run build` works on XAMPP subfolders
+  // (absolute "/assets/..." 404s when the app is served from /linknest/).
+  // Dev keeps "/" so the Vite server and API proxy stay on localhost:3000.
+  const rawBase = String(env.VITE_BASE_PATH || (isProduction ? './' : '')).trim();
   const isRelativeBase =
     rawBase === './' ||
     rawBase === '.' ||
