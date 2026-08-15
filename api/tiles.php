@@ -2873,21 +2873,21 @@ function handleCloneCategory($categoryName) {
         error_log('Clone category: Admin user ' . $user['id'] . ' (' . $user['username'] . ') cloning category "' . $categoryName . '" with ' . count($tiles) . ' tiles');
     }
     
-    // Generate new category name: convert to title case, replace spaces with dashes, add "-Copy"
-    // Example: "MAIN COPY" -> "Main-Copy", "My Category" -> "My-Category-Copy"
-    $categoryNameTitleCase = ucwords(strtolower($categoryName));
-    $categoryNameWithDashes = str_replace(' ', '-', $categoryNameTitleCase);
-    
-    // Check if the name already contains "Copy" (case-insensitive) - if so, just use the converted format
-    // Otherwise, add "-Copy" suffix
-    if (stripos($categoryName, 'copy') !== false) {
-        $newCategoryName = $categoryNameWithDashes;
+    // Keep the original spacing. Only use hyphens in the Copy suffix when
+    // the source name is already hyphen-separated (no spaces).
+    // "BUSINESS IT SERVICES" -> "BUSINESS IT SERVICES Copy"
+    // "My-Category" -> "My-Category-Copy"
+    $baseName = $categoryName;
+    $usesHyphens = strpos($baseName, '-') !== false && strpos($baseName, ' ') === false;
+    $copySeparator = $usesHyphens ? '-' : ' ';
+    if (preg_match('/(?:^|[\s-])copy(?:[\s-]\d+)?$/i', $baseName)) {
+        $newCategoryName = $baseName;
     } else {
-        $newCategoryName = $categoryNameWithDashes . '-Copy';
+        $newCategoryName = $baseName . $copySeparator . 'Copy';
     }
-    
-    // Check if the new category name already exists in the same source, if so, append a number
-    $counter = 1;
+
+    // If that name is taken, append 2, 3, ... with the same separator
+    $counter = 2;
     $finalCategoryName = $newCategoryName;
     while (true) {
         if ($sourceTab === 'staging') {
@@ -2898,12 +2898,12 @@ function handleCloneCategory($categoryName) {
             $checkStmt->execute([$finalCategoryName, 'public']);
         }
         $count = $checkStmt->fetchColumn();
-        
+
         if ($count == 0) {
-            break; // Category name is available
+            break;
         }
-        
-        $finalCategoryName = $categoryNameWithDashes . '-Copy-' . $counter;
+
+        $finalCategoryName = $newCategoryName . $copySeparator . $counter;
         $counter++;
     }
     
@@ -2934,8 +2934,8 @@ function handleCloneCategory($categoryName) {
             // Generate new tile ID
             $newTileId = generateUuid();
             
-            // Create new tile with "Copy of" prefix in title
-            $newTitle = 'Copy of ' . $originalTile['title'];
+            // Keep original space titles; "Copy" is only on the category name
+            $newTitle = $originalTile['title'];
             $newVisibility = $originalTile['visibility'];
             $newAllowedUsers = $originalTile['allowed_users'];
             $newAllowedGroups = $originalTile['allowed_groups'];

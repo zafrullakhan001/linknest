@@ -991,9 +991,7 @@ const Category: React.FC<CategoryProps> = ({
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  if (confirm(`Are you sure you want to delete the category "${categoryName}"?${tileCount > 0 ? `\n\nThis will move ${tileCount} tile(s) to the recycle bin.` : ''}`)) {
-                    onDeleteCategory(categoryName);
-                  }
+                  onDeleteCategory(categoryName);
                 }}
                 className="opacity-0 group-hover/category:opacity-100 transition-opacity p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md transition-all ml-2"
                 title="Delete category"
@@ -6233,10 +6231,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           console.error('Failed to refresh tiles:', error);
         }
 
-        // Show success message
-        if (result.errors.length === 0) {
-          alert(`Successfully cloned category "${categoryName}" to "${result.newCategoryName}".\n\nCloned ${result.clonedCount} tile(s).`);
-        } else {
+        if (result.errors.length > 0) {
           alert(
             `Category cloned with some errors.\n\n` +
             `Cloned ${result.clonedCount} tile(s) successfully.\n` +
@@ -6491,8 +6486,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
     const isFromArchive = activeTab === 'archive';
     const confirmMessage = isFromArchive
-      ? `Are you sure you want to delete the category "${categoryName}" from archive? This will move ${categoryTiles.length} tile(s) to the recycle bin.`
-      : `Are you sure you want to delete the category "${categoryName}"? This will move ${categoryTiles.length} tile(s) to the recycle bin.`;
+      ? `Are you sure you want to delete the category "${categoryName}" from archive?\n\nThis will move ${categoryTiles.length} tile(s) to the recycle bin.`
+      : `Are you sure you want to delete the category "${categoryName}"?\n\nThis will move ${categoryTiles.length} tile(s) to the recycle bin.`;
 
     if (!confirm(confirmMessage)) {
       return;
