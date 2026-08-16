@@ -154,6 +154,18 @@ COPY vendor/ ./vendor/
 COPY docker/.htaccess ./.htaccess
 COPY sw-cache-first.php ./sw-cache-first.php
 
+# Frontend sources so Docker Clone / App Updates can run Vite (npm is in this image).
+COPY package.json package-lock.json tsconfig.json ./
+COPY vite.config.ts vite.docker.config.ts vite.runtime.config.ts ./
+COPY tailwind.config.js postcss.config.js ./
+COPY index.html index.tsx index.css App.tsx types.ts novnc.d.ts ./
+COPY components/ ./components/
+COPY contexts/ ./contexts/
+COPY services/ ./services/
+COPY hooks/ ./hooks/
+COPY utils/ ./utils/
+COPY public/ ./public/
+
 # Staging AI Offline Kit templates (served by api/tiles.php from app root)
 COPY staging-ai-import-template.csv ./staging-ai-import-template.csv
 COPY staging-ai-prompt-guide.md ./staging-ai-prompt-guide.md
@@ -170,9 +182,10 @@ COPY --from=frontend-builder /app/dist ./dist
 RUN if [ ! -f dist/index.html ]; then echo "ERROR: dist/index.html not found!" && exit 1; fi && \
     if grep -q "index.tsx" dist/index.html; then echo "ERROR: Built HTML still references index.tsx!" && cat dist/index.html && exit 1; fi && \
     echo "✓ Built index.html verified" && \
+    cp -a index.html index.vite.html && \
     # Copy dist/index.html to root for DirectoryIndex to work
     cp dist/index.html index.html && \
-    echo "✓ Copied dist/index.html to root"
+    echo "✓ Copied dist/index.html to root (Vite source saved as index.vite.html)"
 
 # Create necessary directories with proper permissions
 RUN mkdir -p data uploads data/backups && \
@@ -212,7 +225,10 @@ RUN chmod 644 ./docker-landing.php && \
 # Set permissions on database files if they exist (will be auto-created if not present)
 RUN chown -R www-data:www-data /var/www/html && \
     chmod -R 755 /var/www/html && \
-    chmod 644 data/*.db 2>/dev/null || echo "Note: Database will be created on first run if not present"
+    chmod 644 data/*.db 2>/dev/null || echo "Note: Database will be created on first run if not present" && \
+    mkdir -p /var/www/clones && \
+    chown www-data:www-data /var/www/clones && \
+    chmod 775 /var/www/clones
 
 # Copy SSL certificate generation script
 COPY docker/generate-ssl-cert.sh /usr/local/bin/generate-ssl-cert.sh
@@ -248,6 +264,7 @@ RUN echo '<IfModule mpm_prefork_module>' > /etc/apache2/conf-available/mpm-perfo
 COPY docker/apache-config.conf /etc/apache2/sites-available/000-default.conf
 COPY docker/apache-ssl-config.conf /etc/apache2/sites-available/000-default-ssl.conf
 COPY docker/apache-gateway-proxy.conf /etc/apache2/conf-available/linknest-gateway-proxy.conf
+COPY docker/apache-clones.conf /etc/apache2/conf-available/linknest-clones.conf
 
 # Enable SSL site
 RUN a2ensite 000-default-ssl.conf
@@ -299,35 +316,15 @@ RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && chown www-data:www-data /var/www/.npmrc \
     && echo "✓ Node.js + npm available for in-container frontend rebuilds"
 
-# Post-build cleanup: Remove unnecessary files to reduce image size
+# Post-build cleanup: drop git metadata and tests; keep Vite sources for clone + in-app rebuilds.
 RUN echo "🧹 Cleaning up unnecessary files to reduce image size..." && \
-    # Remove any node_modules if present (shouldn't be, but just in case)
     find /var/www/html -type d -name "node_modules" -exec rm -rf {} + 2>/dev/null || true && \
-    # Remove TypeScript/React source files (we only need the built dist folder)
-    find /var/www/html -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.jsx" \) ! -path "*/dist/*" ! -path "*/scripts/*" -delete 2>/dev/null || true && \
-    # Remove source directories (keep land/ — Browser Launcher loads /land/*.js at runtime)
-    rm -rf /var/www/html/components /var/www/html/contexts /var/www/html/services 2>/dev/null || true && \
-    # Remove build configuration files (not needed in runtime)
-    rm -f /var/www/html/vite.config.ts /var/www/html/vite.docker.config.ts /var/www/html/vite.runtime.config.ts \
-          /var/www/html/tsconfig.json /var/www/html/tailwind.config.js /var/www/html/postcss.config.js \
-          /var/www/html/package.json /var/www/html/package-lock.json 2>/dev/null || true && \
-    # Remove source files from root
-    rm -f /var/www/html/App.tsx /var/www/html/index.tsx /var/www/html/types.ts /var/www/html/index.css 2>/dev/null || true && \
-    # Remove any .git directories if present
     find /var/www/html -type d -name ".git" -exec rm -rf {} + 2>/dev/null || true && \
-    # Remove leftover markdown (keep Staging AI guide, in-app Help docs, and extension READMEs)
-    find /var/www/html -type f -name "*.md" \
-        ! -name "staging-ai-prompt-guide.md" \
-        ! -path "/var/www/html/docs/*" \
-        ! -path "/var/www/html/extensions/*" \
-        -delete 2>/dev/null || true && \
-    # Remove test files
     find /var/www/html -type f -name "test_*.php" -delete 2>/dev/null || true && \
     find /var/www/html -type f -name "*.test.*" -delete 2>/dev/null || true && \
-    # Clean up apt cache and temporary files
     apt-get clean && \
     rm -rf /tmp/* /var/tmp/* && \
-    echo "✓ Cleanup complete - image size optimized"
+    echo "✓ Cleanup complete (frontend sources kept for Docker clone / App Updates)"
 
 # Set environment variables
 ENV APACHE_DOCUMENT_ROOT=/var/www/html

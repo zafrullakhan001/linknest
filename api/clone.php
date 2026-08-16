@@ -132,7 +132,7 @@ function normalizeCloneHost($host) {
 }
 
 /**
- * Abort with 403 when folder clone is not allowed on this runtime (Docker/WSL).
+ * Abort with 403 when folder clone is not allowed on this runtime (WSL, or Docker without Node).
  */
 function refuseCloneIfNotHost() {
     $env = linknestGetCloneRuntimeEnvironment();
@@ -143,6 +143,15 @@ function refuseCloneIfNotHost() {
             'cloneAllowed' => false,
         ], 403);
     }
+}
+
+function linknestCloneUnixWorkerCommand(string $scriptPath, $cloneId): string
+{
+    $cmd = 'nohup php ' . escapeshellarg($scriptPath) . ' ' . escapeshellarg((string) $cloneId) . ' > /dev/null 2>&1 &';
+    if (function_exists('linknestCloneIsDocker') && linknestCloneIsDocker()) {
+        $cmd = 'HOME=/var/www npm_config_strict_ssl=false NODE_TLS_REJECT_UNAUTHORIZED=0 LINKNEST_DOCKER=1 ' . $cmd;
+    }
+    return $cmd;
 }
 
 function handleClone() {
@@ -162,6 +171,12 @@ function handleClone() {
         // Validate folder name
         if (preg_match('/[<>:"|?*\/\\\\]/', $folderName)) {
             sendJSON(['error' => 'Invalid folder name. Cannot contain path separators or special characters'], 400);
+        }
+        if (!preg_match('/^[A-Za-z0-9][A-Za-z0-9_-]*$/', $folderName)) {
+            sendJSON(['error' => 'Folder name must start with a letter or number and use only letters, numbers, hyphen, or underscore'], 400);
+        }
+        if (in_array(strtolower($folderName), linknestCloneReservedFolderNames(), true)) {
+            sendJSON(['error' => 'That folder name is reserved by the application'], 400);
         }
         
         // Get paths
@@ -189,7 +204,15 @@ function handleClone() {
         }
         
         // Default target path
-        if (!$targetPath) {
+        if (linknestCloneIsDocker()) {
+            $targetPath = linknestCloneDockerInstancesRoot();
+            if (!is_dir($targetPath)) {
+                @mkdir($targetPath, 0775, true);
+            }
+            if (!is_dir($targetPath) || !is_writable($targetPath)) {
+                sendJSON(['error' => 'Docker clone directory is not writable: ' . $targetPath], 500);
+            }
+        } elseif (!$targetPath) {
             $targetPath = dirname($sourcePath);
         } else {
             $targetPath = realpath($targetPath);
@@ -263,9 +286,8 @@ function handleClone() {
             pclose(popen($command, 'r'));
         } else {
             // Linux/Unix: Use nohup
-            $phpPath = PHP_BINARY;
             $scriptPath = __DIR__ . '/clone_worker.php';
-            $command = 'nohup php ' . escapeshellarg($scriptPath) . ' ' . escapeshellarg($cloneId) . ' > /dev/null 2>&1 &';
+            $command = linknestCloneUnixWorkerCommand($scriptPath, $cloneId);
             exec($command);
         }
         
@@ -532,7 +554,9 @@ function handleGetCurrentPath() {
         }
         
         $targetPath = dirname($currentPath);
-        if (!$targetPath || $targetPath === $currentPath) {
+        if (function_exists('linknestCloneIsDocker') && linknestCloneIsDocker()) {
+            $targetPath = linknestCloneDockerInstancesRoot();
+        } elseif (!$targetPath || $targetPath === $currentPath) {
             // Fallback to common XAMPP structure
             $targetPath = 'C:\\xampp\\htdocs';
             error_log("handleGetCurrentPath: Using fallback target path: $targetPath");
@@ -910,9 +934,8 @@ function handleRerunClone($cloneId) {
         $command = 'start /B php ' . escapeshellarg($scriptPath) . ' ' . escapeshellarg($cloneId) . ' > NUL 2>&1';
         pclose(popen($command, 'r'));
     } else {
-        $phpPath = PHP_BINARY;
         $scriptPath = __DIR__ . '/clone_worker.php';
-        $command = 'nohup php ' . escapeshellarg($scriptPath) . ' ' . escapeshellarg($cloneId) . ' > /dev/null 2>&1 &';
+        $command = linknestCloneUnixWorkerCommand($scriptPath, $cloneId);
         exec($command);
     }
     
@@ -945,9 +968,13 @@ function handlePrechecks() {
             'value' => $runtimeLabel,
             'status' => $runtimeEnv['cloneAllowed'] ? 'pass' : 'fail',
             'message' => $runtimeEnv['cloneAllowed']
-                ? 'Host instance — folder clone is available'
+                ? ($runtimeEnv['runtime'] === 'docker'
+                    ? 'Docker — clones are served at /{folder}/ from /var/www/clones'
+                    : 'Host instance — folder clone is available')
                 : ($runtimeEnv['message'] ?? linknestCloneUnavailableMessage()),
-            'description' => 'Folder clone is supported only on host-based installs (not Docker or WSL)',
+            'description' => $runtimeEnv['runtime'] === 'docker'
+                ? 'Folder clone writes to /var/www/clones and is served on the same HTTP port'
+                : 'Folder clone is supported on host installs and Docker (with Node.js); not WSL',
         ]],
     ];
     

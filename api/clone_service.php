@@ -11,7 +11,39 @@ require_once __DIR__ . '/config.php';
  */
 function linknestCloneUnavailableMessage(): string
 {
-    return 'Clone is not available in Docker or WSL mode. Please go with Docker clone or redeploy via Docker container.';
+    return 'Clone is not available in WSL. Use a host filesystem install or Docker.';
+}
+
+/**
+ * Directory where Docker folder clones are written (sibling of html, not DocumentRoot).
+ */
+function linknestCloneDockerInstancesRoot(): string
+{
+    return '/var/www/clones';
+}
+
+/**
+ * Folder names that must not be used for clones (main-app URL prefixes).
+ *
+ * @return list<string>
+ */
+function linknestCloneReservedFolderNames(): array
+{
+    $names = function_exists('linknestReservedUrlSegments')
+        ? linknestReservedUrlSegments()
+        : ['api', 'uploads', 'dist', 'assets', 'node_modules', 'vendor', 'public', 'data', 'bin', 'scripts', 'docs'];
+    $names = array_merge($names, [
+        'html', 'clones', 'apache', 'favicon.ico', 'index.php', 'index.html',
+        'components', 'contexts', 'services', 'hooks', 'utils', 'land', 'extensions',
+    ]);
+    $out = [];
+    foreach ($names as $name) {
+        $key = strtolower((string) $name);
+        if ($key !== '') {
+            $out[$key] = $key;
+        }
+    }
+    return array_values($out);
 }
 
 /**
@@ -75,11 +107,29 @@ function linknestGetCloneRuntimeEnvironment(): array
 {
     $unavailable = linknestCloneUnavailableMessage();
 
-    if (linknestCloneIsDocker()) {
+    if (linknestCloneIsWsl()) {
+        $nodeBin = trim((string) @shell_exec('command -v node 2>/dev/null'));
+        $npmBin = trim((string) @shell_exec('command -v npm 2>/dev/null'));
+        $clonesRoot = linknestCloneDockerInstancesRoot();
+        $writable = is_dir($clonesRoot) && is_writable($clonesRoot);
+        if ($nodeBin === '' || $npmBin === '') {
+            return [
+                'runtime' => 'docker',
+                'cloneAllowed' => false,
+                'message' => 'Clone in Docker needs Node.js/npm in the image. Redeploy with the current Dockerfile, then try again.',
+            ];
+        }
+        if (!$writable) {
+            return [
+                'runtime' => 'docker',
+                'cloneAllowed' => false,
+                'message' => 'Clone in Docker needs a writable ' . $clonesRoot . ' directory.',
+            ];
+        }
         return [
             'runtime' => 'docker',
-            'cloneAllowed' => false,
-            'message' => $unavailable,
+            'cloneAllowed' => true,
+            'message' => null,
         ];
     }
 
@@ -640,6 +690,8 @@ class CloneService {
                 'index.css',
                 'App.tsx',
                 'types.ts',
+                'novnc.d.ts',
+                'index.vite.html',
                 'router.php',
                 'landing.php',
                 'sw-cache-first.php',
@@ -687,6 +739,16 @@ class CloneService {
             }
             $this->writeTraceLog("Root files copy completed: $copiedCount copied, $skippedCount skipped, $failedCount failed", 'INFO');
             $logs = $this->addLog("Copied $copiedCount root files", $logs);
+
+            if (linknestCloneIsDocker()) {
+                $viteHtml = $realSourcePath . DIRECTORY_SEPARATOR . 'index.vite.html';
+                if (is_file($viteHtml)) {
+                    @copy($viteHtml, $targetDir . DIRECTORY_SEPARATOR . 'index.html');
+                    $logs = $this->addLog('Restored Vite source index.html for Docker clone build', $logs);
+                }
+                $this->writeDockerCloneHtaccess($targetDir, $folderName);
+                $logs = $this->addLog('Wrote subdirectory .htaccess for /' . $folderName . '/', $logs);
+            }
             
             // Copy directories
             $this->writeTraceLog("Starting to copy directories", 'INFO');
@@ -1044,7 +1106,11 @@ class CloneService {
             
             $envContent = "# LinkNest Environment Variables\n";
             $envContent .= "# Base path for the application\n";
-            $envContent .= "VITE_BASE_PATH=/$folderName\n";
+            if (linknestCloneIsDocker()) {
+                $envContent .= "VITE_BASE_PATH=./\n";
+            } else {
+                $envContent .= "VITE_BASE_PATH=/$folderName\n";
+            }
             $envContent .= "\n";
             $envContent .= "# Optional: HTTPS Configuration\n";
             $envContent .= "# VITE_PROTOCOL=https\n";
@@ -1055,7 +1121,8 @@ class CloneService {
             $envContent .= "# GEMINI_API_KEY=your-api-key-here\n";
             
             $this->writeTraceLog(".env content length: " . strlen($envContent) . " bytes", 'DEBUG');
-            $this->writeTraceLog(".env content preview: VITE_BASE_PATH=/$folderName", 'DEBUG');
+            $viteBase = linknestCloneIsDocker() ? './' : "/$folderName";
+            $this->writeTraceLog(".env content preview: VITE_BASE_PATH=$viteBase", 'DEBUG');
             
             $result = file_put_contents($envPath, $envContent);
             if ($result === false) {
@@ -1064,7 +1131,7 @@ class CloneService {
             } else {
                 $this->writeTraceLog(".env file created successfully: $result bytes written", 'INFO');
             }
-            $logs = $this->addLog("Created .env with VITE_BASE_PATH=/$folderName", $logs);
+            $logs = $this->addLog("Created .env with VITE_BASE_PATH=$viteBase", $logs);
             
             // Step 5: Install dependencies
             $this->writeTraceLog("STEP 5: Installing npm dependencies", 'INFO');
@@ -1088,7 +1155,7 @@ class CloneService {
             $npmStart = microtime(true);
             $output = [];
             $returnVar = 0;
-            exec('npm install 2>&1', $output, $returnVar);
+            exec($this->cloneNpmCommandPrefix() . 'npm install 2>&1', $output, $returnVar);
             $npmTime = number_format(microtime(true) - $npmStart, 2);
             
             $this->writeTraceLog("npm install completed in {$npmTime}s with exit code: $returnVar", 'INFO');
@@ -1132,7 +1199,10 @@ class CloneService {
             $buildStart = microtime(true);
             $output = [];
             $returnVar = 0;
-            exec('npm run build 2>&1', $output, $returnVar);
+            $buildCmd = linknestCloneIsDocker()
+                ? $this->cloneNpmCommandPrefix() . 'VITE_BASE_PATH=./ npm run build 2>&1'
+                : 'npm run build 2>&1';
+            exec($buildCmd, $output, $returnVar);
             $buildTime = number_format(microtime(true) - $buildStart, 2);
             
             $this->writeTraceLog("npm run build completed in {$buildTime}s with exit code: $returnVar", 'INFO');
@@ -1143,15 +1213,28 @@ class CloneService {
             
             if ($returnVar !== 0) {
                 $errorOutput = implode("\n", $output);
-                $this->writeTraceLog("WARNING: npm run build failed with exit code $returnVar", 'WARNING');
-                $this->writeTraceLog("Build error output: $errorOutput", 'WARNING');
-                $logs = $this->addLog("WARNING: npm run build failed", $logs);
+                $this->writeTraceLog("ERROR: npm run build failed with exit code $returnVar", 'ERROR');
+                $this->writeTraceLog("Build error output: $errorOutput", 'ERROR');
+                $logs = $this->addLog("ERROR: npm run build failed", $logs);
                 $logs = $this->addLog($errorOutput, $logs);
+                if (linknestCloneIsDocker()) {
+                    chdir($oldCwd);
+                    throw new Exception("npm run build failed: " . substr($errorOutput, 0, 400));
+                }
                 $logs = $this->addLog("Clone completed but build failed. You may need to run 'npm run build' manually.", $logs);
             } else {
                 $this->writeTraceLog("Build completed successfully", 'INFO');
                 $logs = $this->addLog("Build completed successfully", $logs);
-                
+                $builtIndex = $targetDir . DIRECTORY_SEPARATOR . 'dist' . DIRECTORY_SEPARATOR . 'index.html';
+                $rootIndex = $targetDir . DIRECTORY_SEPARATOR . 'index.html';
+                if (is_file($builtIndex)) {
+                    @copy($builtIndex, $rootIndex);
+                    $logs = $this->addLog("Installed dist/index.html as the clone home page", $logs);
+                }
+                if (linknestCloneIsDocker()) {
+                    $logs = $this->publishDockerCloneDistAssets($targetDir, $logs);
+                }
+
                 // Clean up node_modules
                 $nodeModulesDir = $targetDir . DIRECTORY_SEPARATOR . 'node_modules';
                 $this->writeTraceLog("Checking for node_modules directory: $nodeModulesDir", 'DEBUG');
@@ -1574,6 +1657,75 @@ class CloneService {
             $this->writeTraceLog("WARNING: Failed to initialize target DB: " . $e->getMessage(), 'WARNING');
         }
         return $logs;
+    }
+
+    private function cloneNpmCommandPrefix(): string
+    {
+        if (!linknestCloneIsDocker()) {
+            return '';
+        }
+        $path = getenv('PATH') ?: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
+        if (strpos($path, '/usr/local/bin') === false) {
+            $path = '/usr/local/bin:' . $path;
+        }
+        return 'HOME=/var/www PATH=' . escapeshellarg($path)
+            . ' npm_config_strict_ssl=false NODE_TLS_REJECT_UNAUTHORIZED=0 ';
+    }
+
+    /**
+     * Apache AliasMatch maps /{folder}/assets/... onto the clone root, but Vite
+     * emits those files under dist/. Symlink the public build dirs so requests
+     * resolve even if vhost rewrite is missing.
+     */
+    private function publishDockerCloneDistAssets(string $targetDir, array $logs): array
+    {
+        $dist = $targetDir . DIRECTORY_SEPARATOR . 'dist';
+        if (!is_dir($dist)) {
+            return $logs;
+        }
+        foreach (['assets', 'tinymce', 'js'] as $dir) {
+            $src = $dist . DIRECTORY_SEPARATOR . $dir;
+            $dest = $targetDir . DIRECTORY_SEPARATOR . $dir;
+            if (!is_dir($src) || file_exists($dest)) {
+                continue;
+            }
+            if (@symlink('dist' . DIRECTORY_SEPARATOR . $dir, $dest)) {
+                $this->writeTraceLog("Linked $dir -> dist/$dir", 'INFO');
+                $logs = $this->addLog("Linked $dir to dist/$dir", $logs);
+            } else {
+                $this->writeTraceLog("WARNING: Could not symlink $dir -> dist/$dir", 'WARNING');
+            }
+        }
+        foreach (['ssh-session-shared-worker.js', 'ssh-session-keepalive.html', 'sw-cache-first.js', 'tinymce-editor.html'] as $file) {
+            $src = $dist . DIRECTORY_SEPARATOR . $file;
+            $dest = $targetDir . DIRECTORY_SEPARATOR . $file;
+            if (!is_file($src) || file_exists($dest)) {
+                continue;
+            }
+            @symlink('dist' . DIRECTORY_SEPARATOR . $file, $dest);
+        }
+        return $logs;
+    }
+
+    private function writeDockerCloneHtaccess($targetDir, $folderName): void
+    {
+        $ht = "# LinkNest Docker clone — subdirectory at /{$folderName}/\n";
+        $ht .= "Options -Indexes -MultiViews +FollowSymLinks\n";
+        $ht .= "DirectoryIndex dist/index.html index.html\n";
+        $ht .= "<IfModule mod_rewrite.c>\n";
+        $ht .= "    RewriteEngine On\n";
+        $ht .= "    RewriteCond %{REQUEST_FILENAME} -f [OR]\n";
+        $ht .= "    RewriteCond %{REQUEST_FILENAME} -d\n";
+        $ht .= "    RewriteRule ^ - [L]\n";
+        $ht .= "    RewriteRule ^api/(.*)\$ api/index.php?path=\$1 [BCTLS,L,QSA]\n";
+        $ht .= "    RewriteRule ^assets/(.*)\$ dist/assets/\$1 [L]\n";
+        $ht .= "    RewriteRule (^|/)tinymce/(.*)\$ dist/tinymce/\$2 [L]\n";
+        $ht .= "    RewriteRule (^|/)ssh-session-shared-worker\\.js\$ dist/ssh-session-shared-worker.js [L]\n";
+        $ht .= "    RewriteRule (^|/)ssh-session-keepalive\\.html\$ dist/ssh-session-keepalive.html [L]\n";
+        $ht .= "    RewriteRule (^|/)tinymce-editor\\.html\$ dist/tinymce-editor.html [L]\n";
+        $ht .= "    RewriteRule . dist/index.html [L]\n";
+        $ht .= "</IfModule>\n";
+        @file_put_contents($targetDir . DIRECTORY_SEPARATOR . '.htaccess', $ht);
     }
 }
 

@@ -83,6 +83,18 @@ writeWorkerTraceLog("Loading: " . __DIR__ . '/clone_service.php', 'DEBUG');
 require_once __DIR__ . '/clone_service.php';
 writeWorkerTraceLog("Required files loaded successfully", 'INFO');
 
+if (function_exists('linknestCloneIsDocker') && linknestCloneIsDocker()) {
+    putenv('HOME=/var/www');
+    putenv('npm_config_strict_ssl=false');
+    putenv('NODE_TLS_REJECT_UNAUTHORIZED=0');
+    $path = getenv('PATH') ?: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
+    if (strpos($path, '/usr/local/bin') === false) {
+        $path = '/usr/local/bin:' . $path;
+    }
+    putenv('PATH=' . $path);
+    writeWorkerTraceLog("Docker npm environment prepared (HOME=/var/www, strict-ssl=false)", 'INFO');
+}
+
 // Get clone ID from command line argument
 if ($argc < 2) {
     writeWorkerTraceLog("ERROR: No clone ID provided in command line arguments", 'ERROR');

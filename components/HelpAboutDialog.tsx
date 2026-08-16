@@ -527,7 +527,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Instance Cloning</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Clone entire {appName} instances with progress tracking. Choose a preset: empty (schema + default admin), structure only (tiles without users or private links), full mirror (database + all uploads), or demo data. Perfect for training sites, department copies, or presentation sandboxes.
+                      Clone entire {appName} instances with progress tracking. Choose a preset: empty (schema + default admin), structure only (tiles without users or private links), full mirror (database + all uploads), or demo data. On Docker, clones are served at <code className="text-[11px]">/{'{folder}'}/</code> on the same container port. Perfect for training sites, department copies, or presentation sandboxes.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">

@@ -9344,7 +9344,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         <span aria-hidden>🧬</span> Clone Instance
                       </h3>
                       <p className="text-sm text-sky-800/70 dark:text-sky-200/70 mt-0.5">
-                        Clone the current LinkNest setup to a new folder with all necessary files.
+                        {cloneRuntime === 'docker'
+                          ? 'Clone this instance to a new folder served at /{name}/ on the same Docker port (Node.js rebuilds the UI).'
+                          : 'Clone the current LinkNest setup to a new folder with all necessary files.'}
                       </p>
                     </div>
 
@@ -9362,7 +9364,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           className="w-full bg-white dark:bg-slate-900/50 border border-sky-200 dark:border-sky-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                         />
                         <p className="text-xs text-sky-700/70 dark:text-sky-300/70 mt-1">
-                          Name of the new folder to create (no path separators or special characters)
+                          {cloneRuntime === 'docker'
+                            ? 'Opens at http://localhost:8090/' + (cloneFolderName || 'folder') + '/ on this container (HTTPS: 8443).'
+                            : 'Name of the new folder to create (no path separators or special characters)'}
                         </p>
                       </div>
 
@@ -9376,6 +9380,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             value={cloneSourcePath}
                             onChange={(e) => setCloneSourcePath(e.target.value)}
                             placeholder="e.g., C:\xampp\htdocs\linknest"
+                            readOnly={cloneRuntime === 'docker'}
                             className="flex-1 bg-white dark:bg-slate-900/50 border border-sky-200 dark:border-sky-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                           />
                           <input
@@ -9431,6 +9436,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             value={cloneTargetPath}
                             onChange={(e) => setCloneTargetPath(e.target.value)}
                             placeholder="e.g., C:\projects"
+                            readOnly={cloneRuntime === 'docker'}
                             className="flex-1 bg-white dark:bg-slate-900/50 border border-sky-200 dark:border-sky-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                           />
                           <input

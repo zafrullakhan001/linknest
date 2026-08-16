@@ -102,9 +102,7 @@ docker exec -it linknest bash
 
 ## Clone Instance (host only)
 
-Admin → Integrations → Clone copies the app to a **sibling folder on the host** (for example XAMPP `htdocs`). That path does not work inside Docker or WSL. In those modes the UI shows:
-
-> Clone is not available in Docker or WSL mode. Please go with Docker clone or redeploy via Docker container.
+Admin → Integrations → Clone copies the app to a **sibling folder**. On the host that is XAMPP `htdocs`. **In Docker**, clones go to `/var/www/clones/{name}` and are served at `http://localhost:8090/{name}/` (same container; Node.js rebuilds the UI). WSL folder clone is not supported.
 
 To refresh this container after code changes, rebuild:
 
