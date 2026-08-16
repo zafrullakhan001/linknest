@@ -100,6 +100,28 @@ docker exec -it linknest bash
 
 **Important**: Change the admin password immediately after first login!
 
+## Clone Instance (host only)
+
+Admin → Integrations → Clone copies the app to a **sibling folder on the host** (for example XAMPP `htdocs`). That path does not work inside Docker or WSL. In those modes the UI shows:
+
+> Clone is not available in Docker or WSL mode. Please go with Docker clone or redeploy via Docker container.
+
+To refresh this container after code changes, rebuild:
+
+```bash
+# from the project root
+./redeploy-docker.sh
+# Windows: redeploy-docker.bat
+```
+
+To create another **host** copy (not a second container), run on the host:
+
+```bash
+scripts/clone-linknest.sh myspaces --preset empty
+```
+
+Presets: `empty`, `structure`, `full`, `demo`. Each clone writes `data/install_identity.php` so logins do not share cookies with other folders. The Docker entrypoint writes a Docker identity (`LNSESSdocker`, cookie path `/`) so `http://localhost:8090` stays separate from host XAMPP.
+
 ## Production Deployment
 
 For production, use the production compose file:

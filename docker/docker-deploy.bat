@@ -132,6 +132,11 @@ echo    Password: admin123
 echo.
 echo IMPORTANT: Change the admin password after first login!
 echo.
+echo Clone Instance:
+echo    Admin folder clone is host-only ^(XAMPP sibling folders^).
+echo    In Docker/WSL it is disabled — rebuild this container instead,
+echo    or clone on the host: scripts\clone-linknest.bat myspaces --preset empty
+echo.
 echo Useful commands:
 echo    View logs:        %COMPOSE_CMD% -f docker\docker-compose.yml logs -f
 echo    Stop container:   %COMPOSE_CMD% -f docker\docker-compose.yml down

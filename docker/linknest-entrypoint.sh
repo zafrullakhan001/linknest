@@ -46,6 +46,17 @@ fi
 echo "[ENTRYPOINT] Current timezone: $(cat /etc/timezone 2>/dev/null || echo 'UTC')"
 echo "[ENTRYPOINT] Current time: $(date)"
 
+# Isolate Docker login cookies from host XAMPP on the same machine (LNSESSdocker, path /).
+# Keeps an existing system token if data/install_identity.php already exists.
+echo "[ENTRYPOINT] Writing Docker install identity (session cookie isolation)..."
+mkdir -p /var/www/html/data /var/www/html/data/sessions
+if php /var/www/html/scripts/write-install-identity.php /var/www/html docker http://localhost:8090/; then
+    echo "[ENTRYPOINT] Docker install identity ready"
+else
+    echo "[ENTRYPOINT] WARNING: Could not write install identity"
+fi
+chown -R www-data:www-data /var/www/html/data/sessions /var/www/html/data/install_identity.php 2>/dev/null || true
+
 # Ensure backups directory exists with proper permissions
 BACKUPS_DIR="/var/www/html/data/backups"
 if [ ! -d "$BACKUPS_DIR" ]; then

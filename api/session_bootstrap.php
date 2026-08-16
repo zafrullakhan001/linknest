@@ -253,3 +253,94 @@ function linknestConfigureSession(): void
 
     linknestExpireSharedSessionCookies();
 }
+
+/**
+ * Write data/install_identity.php so this install has its own session cookie, session files, and system token.
+ * Keeps an existing LINKNEST_SYSTEM_TOKEN on rebuild/redeploy.
+ *
+ * @return array{sessionName: string, cookiePath: string, token: string, identityPath: string}
+ */
+function linknestWriteInstallIdentity(string $appRoot, string $folderName, ?string $url = null): array
+{
+    $appRoot = rtrim(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $appRoot), DIRECTORY_SEPARATOR);
+    $dataDir = $appRoot . DIRECTORY_SEPARATOR . 'data';
+    if (!is_dir($dataDir)) {
+        @mkdir($dataDir, 0755, true);
+    }
+
+    $seg = preg_replace('/[^A-Za-z0-9]/', '', (string) $folderName);
+    if (!is_string($seg) || $seg === '') {
+        $seg = bin2hex(random_bytes(4));
+    }
+    $sessionName = 'LNSESS' . $seg;
+
+    $cookiePath = '/' . ltrim((string) $folderName, '/');
+    $parsed = is_string($url) ? parse_url($url) : false;
+    if (is_array($parsed) && isset($parsed['path']) && $parsed['path'] !== '' && $parsed['path'] !== '/') {
+        $cookiePath = rtrim((string) $parsed['path'], '/');
+        if ($cookiePath === '') {
+            $cookiePath = '/';
+        }
+    }
+    if ($folderName === 'docker') {
+        $cookiePath = '/';
+    }
+
+    $identityPath = $dataDir . DIRECTORY_SEPARATOR . 'install_identity.php';
+    $token = 'ln_' . bin2hex(random_bytes(24));
+    if (is_file($identityPath)) {
+        $existing = (string) @file_get_contents($identityPath);
+        $existingFolder = '';
+        if (preg_match("/define\\('LINKNEST_INSTALL_FOLDER',\\s*'([^']*)'\\)/", $existing, $fm)) {
+            $existingFolder = $fm[1];
+        }
+        // Keep the token across container restarts; mint a new one if this file
+        // belonged to a different install (e.g. host XAMPP data copied into Docker).
+        if ($existingFolder === (string) $folderName
+            && preg_match("/define\\('LINKNEST_SYSTEM_TOKEN',\\s*'([^']+)'\\)/", $existing, $m)
+            && $m[1] !== ''
+        ) {
+            $token = $m[1];
+        }
+    }
+
+    $sessionsDir = $dataDir . DIRECTORY_SEPARATOR . 'sessions';
+    if (!is_dir($sessionsDir)) {
+        @mkdir($sessionsDir, 0700, true);
+    }
+
+    $identity = "<?php\n";
+    $identity .= "// Generated for this install — do not copy between host clones or Docker.\n";
+    $identity .= "if (!defined('LINKNEST_INSTALL_FOLDER')) {\n";
+    $identity .= "    define('LINKNEST_INSTALL_FOLDER', " . var_export((string) $folderName, true) . ");\n";
+    $identity .= "}\n";
+    $identity .= "if (!defined('LINKNEST_SESSION_NAME')) {\n";
+    $identity .= "    define('LINKNEST_SESSION_NAME', " . var_export($sessionName, true) . ");\n";
+    $identity .= "}\n";
+    $identity .= "if (!defined('LINKNEST_COOKIE_PATH')) {\n";
+    $identity .= "    define('LINKNEST_COOKIE_PATH', " . var_export($cookiePath, true) . ");\n";
+    $identity .= "}\n";
+    $identity .= "if (!defined('LINKNEST_SYSTEM_TOKEN')) {\n";
+    $identity .= "    define('LINKNEST_SYSTEM_TOKEN', " . var_export($token, true) . ");\n";
+    $identity .= "}\n";
+    $identity .= "if (!defined('LINKNEST_SESSION_SAVE_PATH')) {\n";
+    $identity .= "    define('LINKNEST_SESSION_SAVE_PATH', __DIR__ . DIRECTORY_SEPARATOR . 'sessions');\n";
+    $identity .= "}\n";
+
+    if (@file_put_contents($identityPath, $identity) === false) {
+        throw new RuntimeException('Failed to write ' . $identityPath);
+    }
+    @chmod($identityPath, 0640);
+
+    $denyAll = "<IfModule mod_authz_core.c>\n    Require all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\n    Deny from all\n</IfModule>\n";
+    @file_put_contents($dataDir . DIRECTORY_SEPARATOR . '.htaccess', $denyAll);
+    @file_put_contents($sessionsDir . DIRECTORY_SEPARATOR . '.htaccess', $denyAll);
+    @file_put_contents($sessionsDir . DIRECTORY_SEPARATOR . 'index.html', '');
+
+    return [
+        'sessionName' => $sessionName,
+        'cookiePath' => $cookiePath,
+        'token' => $token,
+        'identityPath' => $identityPath,
+    ];
+}
