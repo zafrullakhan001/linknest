@@ -35,7 +35,9 @@ Then access the application at `http://localhost:3000` (Vite will proxy API requ
 
 ### 3. Apache Configuration
 
-If using Apache, ensure mod_rewrite is enabled and the `.htaccess` file is being read. The `.htaccess` file is already configured to route API requests.
+If using Apache, ensure `mod_rewrite` is enabled and the `.htaccess` file is being read. The `.htaccess` file is already configured to route API requests.
+
+**Vanilla Apache + PHP 8.5 on Windows** (not XAMPP): after the stock install, see [VANILLA_APACHE_PHP85_WINDOWS.md](VANILLA_APACHE_PHP85_WINDOWS.md) for the exact `httpd.conf` and `php.ini` edits (`AllowOverride All`, `php8apache2_4.dll`, required extensions).
 
 ### 4. Nginx Configuration
 

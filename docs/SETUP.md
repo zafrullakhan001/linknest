@@ -83,6 +83,10 @@ Make sure the `data/` directory is writable for session storage.
 
 See `README_BACKEND.md` for production setup instructions.
 
+## Vanilla Apache + PHP 8.5 (Windows, not XAMPP)
+
+After a stock Apache install at `D:\Apache` and PHP 8.5 Thread Safe at `D:\php`, the files to change (`httpd.conf`, `php.ini`, DLLs, ACLs) are listed in [VANILLA_APACHE_PHP85_WINDOWS.md](VANILLA_APACHE_PHP85_WINDOWS.md).
+
 ## Upgrade PHP on Windows XAMPP
 
 Official XAMPP packages may ship an older PHP (for example 8.2) while LinkNest runs well on newer releases such as **PHP 8.5**.

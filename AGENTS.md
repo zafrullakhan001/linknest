@@ -351,6 +351,7 @@ Default credentials:
 - `docs/BOOKMARK_SYNC_EXTENSION.md` - LinkNest Bookmark Sync extension (handshake, origin allowlist, per-profile sync, mass deploy)
 - `docs/APP_UPDATES.md` - In-app App Updates (portable Releases for ArchLinks / ERP3)
 - `docs/SETUP.md` - Detailed setup instructions
+- `docs/VANILLA_APACHE_PHP85_WINDOWS.md` - Vanilla Apache + PHP 8.5 on Windows (`D:\Apache` + `D:\php`, post-install `httpd.conf` / `php.ini`)
 - `docs/PACKAGE_FOR_DEPLOYMENT.md` - Windows XAMPP deploy ZIP (`package-for-deployment.bat`)
 - `docs/REMOTE_WIDGETS_MANUAL_DEPLOY.md` - SSH / VNC manual deployment (ttyd, websockify, HTTPS WSS)
 - `docs/REMOTE_WIDGETS_SETUP.md` - SSH / VNC feature overview
@@ -387,6 +388,10 @@ Default credentials:
 ## In-app updates
 
 See [`docs/APP_UPDATES.md`](docs/APP_UPDATES.md) for publishing GitHub Releases (`scripts/publish-update-release.ps1`) and applying them from Admin → App Updates.
+
+## Vanilla Apache + PHP 8.5 (Windows)
+
+See [`docs/VANILLA_APACHE_PHP85_WINDOWS.md`](docs/VANILLA_APACHE_PHP85_WINDOWS.md) for post-install `httpd.conf` / `php.ini` on a stock Apache + PHP 8.5 Thread Safe layout (`D:\Apache`, `D:\php`) — not XAMPP.
 
 ## XAMPP PHP upgrades
 

@@ -374,7 +374,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 border border-emerald-200 dark:border-emerald-800">
                     <p className="font-medium text-emerald-900 dark:text-emerald-100">Guides tab:</p>
                     <p className="text-sm">
-                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (Your Bookmarks, Bookmark Sync Extension, setup, architecture, App Updates, Docker deployment &amp; database, SSH / VNC, Package for Deployment, and more). Start with <strong>Your Bookmarks</strong> or <strong>Bookmark Sync Extension</strong> for guest bookmark Sync / OutSync, or App Updates / Docker Deployment / Architecture for admin workflows.
+                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (Your Bookmarks, Bookmark Sync Extension, setup, architecture, App Updates, Docker deployment &amp; database, SSH / VNC, Package for Deployment, Vanilla Apache + PHP 8.5, and more). Start with <strong>Your Bookmarks</strong> or <strong>Bookmark Sync Extension</strong> for guest bookmark Sync / OutSync, or App Updates / Docker Deployment / Architecture for admin workflows.
                     </p>
                   </div>
                 </div>
@@ -565,6 +565,12 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">XAMPP PHP Runtime Upgrade</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
                       On Windows XAMPP, upgrade the PHP runtime (for example to 8.5.x) with <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">scripts/upgrade-xampp-php.ps1</code>. The script verifies LDAP before swapping. Full steps: <strong>Guides → Upgrade PHP in XAMPP</strong>.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Vanilla Apache + PHP 8.5 (Windows)</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      After a stock Apache install at <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">D:\Apache</code> and PHP 8.5 Thread Safe at <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">D:\php</code> (not XAMPP), edit <code className="text-xs">httpd.conf</code> and <code className="text-xs">php.ini</code> so this app runs at <code className="text-xs">/linknest/</code>. Full steps: <strong>Help → Vanilla Apache + PHP 8.5 (Windows)</strong> and <strong>Guides → Vanilla Apache + PHP 8.5 (Windows)</strong>.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -899,6 +905,35 @@ npm run build:prod`}</pre>
                   </div>
                   <p className="text-sm">
                     Full steps, remote reuse, and troubleshooting: <strong>Guides → Upgrade PHP in XAMPP</strong>.
+                  </p>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <path fillRule="evenodd" d="M2 4.25A2.25 2.25 0 014.25 2h11.5A2.25 2.25 0 0118 4.25v11.5A2.25 2.25 0 0115.75 18H4.25A2.25 2.25 0 012 15.75V4.25zM4.25 3.5a.75.75 0 00-.75.75v11.5c0 .414.336.75.75.75h11.5a.75.75 0 00.75-.75V4.25a.75.75 0 00-.75-.75H4.25z" clipRule="evenodd" />
+                    <path d="M6 7.25A.75.75 0 016.75 6.5h6.5a.75.75 0 010 1.5h-6.5A.75.75 0 016 7.25zM6.75 10a.75.75 0 000 1.5h3.5a.75.75 0 000-1.5h-3.5z" />
+                  </svg>
+                  Vanilla Apache + PHP 8.5 (Windows)
+                </h3>
+                <div className="space-y-3 text-slate-700 dark:text-slate-300">
+                  <p>
+                    After a stock Apache HTTP Server and PHP 8.5 <strong>Thread Safe</strong> x64 install (not XAMPP), change only Apache and PHP config so {appName} runs at <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">http://&lt;host&gt;/linknest/</code>. Typical layout on this machine: Apache at <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">D:\Apache</code>, PHP at <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">D:\php</code>, app at <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">D:\Apache\htdocs\linknest</code>.
+                  </p>
+                  <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-brand-900 dark:text-brand-100">Files to update:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li><code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">D:\php\php.ini</code> — copy from <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">php.ini-production</code>; enable <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">pdo_sqlite</code>, <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">curl</code>, <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">openssl</code>, <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">ldap</code>, and set <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">session.save_path</code></li>
+                      <li><code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">D:\Apache\conf\httpd.conf</code> — load <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">php8apache2_4.dll</code>, uncomment <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">mod_rewrite</code>, set <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">AllowOverride All</code> on <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">htdocs</code></li>
+                      <li>Copy PHP DLLs (<code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">icu*.dll</code>, <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">libsasl.dll</code>, curl/OpenSSL) into <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">D:\Apache\bin</code></li>
+                      <li>Create writable <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">D:\Apache\tmp</code>, <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">data\</code>, and <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">uploads\</code></li>
+                      <li>This PC may already have XAMPP on port 80 — stop that Apache or change vanilla <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">Listen</code></li>
+                    </ul>
+                  </div>
+                  <p className="text-sm">
+                    Full checklist, smoke tests, and optional HTTPS / SSH-VNC WSS: <strong>Guides → Vanilla Apache + PHP 8.5 (Windows)</strong>.
+                    A pre-configured runtime ZIP (Apache + PHP 8.5, <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">httpd.conf</code> / <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">php.ini</code> already set) can be built with <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">scripts\package-vanilla-apache-php85.bat</code> — extract to <code className="text-xs">D:\</code> and run <code className="text-xs">install-runtime.bat</code> as Administrator.
                   </p>
                 </div>
               </section>
@@ -1696,6 +1731,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                     <li>Track tile changes with version control — view, compare, and restore versions</li>
                     <li>Apply App Updates from the admin bell, with DB backup and rollback (admin, XAMPP installs). For ArchLinks + ERP3 use one portable Release — Help → In-app App Updates / Guides → App Updates</li>
                     <li>Upgrade XAMPP PHP (e.g. to 8.5) with <code className="text-xs">scripts/upgrade-xampp-php.ps1</code> — see Guides → Upgrade PHP in XAMPP (admin / server ops)</li>
+                    <li>Vanilla Apache + PHP 8.5 (Windows, not XAMPP): after install, edit <code className="text-xs">D:\Apache\conf\httpd.conf</code> and <code className="text-xs">D:\php\php.ini</code> — Help → Vanilla Apache + PHP 8.5 (Windows) / Guides → Vanilla Apache + PHP 8.5 (Windows)</li>
                     <li>Build a Windows XAMPP deploy ZIP with <code className="text-xs">package-for-deployment.bat</code> (options: <code className="text-xs">-IncludeDatabase</code>, <code className="text-xs">-ExcludeUploads</code>, <code className="text-xs">-BasePath</code>, <code className="text-xs">-OutputDir</code>, …) — Guides → Package for Deployment</li>
                     <li>Docker: copy this PC&apos;s database into the container with <code className="text-xs">docker\docker-sync-database.bat</code>, or pull Docker&apos;s DB back with <code className="text-xs">-Direction Out</code> — Help → Docker deployment &amp; database / Guides → Docker Deployment</li>
                     <li>Configure optional Analytics and Monitorv2 add-ons under Admin → Add-ons</li>
@@ -1716,7 +1752,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                     <li>Use SAML/SSO for enterprise Single Sign-On authentication (admin only)</li>
                     <li>Control tab visibility to show/hide specific tabs application-wide (admin only)</li>
                     <li>Send broadcast messages that scroll across the application (admin only)</li>
-                    <li>Open the <strong>Guides</strong> tab for searchable docs (Your Bookmarks, Architecture, App Updates, Package for Deployment, XAMPP PHP upgrade, deployment, and more)</li>
+                    <li>Open the <strong>Guides</strong> tab for searchable docs (Your Bookmarks, Architecture, App Updates, Package for Deployment, Vanilla Apache + PHP 8.5, XAMPP PHP upgrade, deployment, and more)</li>
                   </ul>
                 </div>
               </section>
@@ -1829,10 +1865,11 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                     <li><strong>Mobile Link Preview:</strong> Phone action on Quick Links opens an in-app device mockup (phone / tablet / watch) or a device-sized window for DevTools testing</li>
                     <li><strong>In-app App Updates:</strong> Check GitHub commits/releases, preview changes, apply with DB backup, and roll back from Admin (XAMPP installs). Office tip: publish a <strong>portable Release</strong> (default relative base) and apply the same Release on ArchLinks and ERP3 — see Help → In-app App Updates</li>
                     <li><strong>XAMPP PHP upgrade:</strong> PowerShell script to move to PHP 8.5+ with LDAP verification — see Guides → Upgrade PHP in XAMPP</li>
+                    <li><strong>Vanilla Apache + PHP 8.5 (Windows):</strong> Post-install <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">httpd.conf</code> / <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">php.ini</code> for stock Apache at <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">D:\Apache</code> and PHP at <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">D:\php</code> — Help → Vanilla Apache + PHP 8.5 (Windows) / Guides</li>
                     <li><strong>Package for Deployment:</strong> <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">package-for-deployment.bat</code> builds a full XAMPP ZIP with SQLite runtime, remote-widget binaries, and optional DB/uploads flags</li>
                     <li><strong>Docker database sync:</strong> <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">docker\docker-sync-database.bat</code> copies SQLite + uploads in or out of the container (<code className="text-xs">-Direction Out</code>, <code className="text-xs">-DatabaseOnly</code>, <code className="text-xs">-UploadsOnly</code>)</li>
                     <li><strong>Bookmark Sync extension:</strong> Origin allowlist, Bookmark sync Off by default, same-origin messages, per-browser-profile isolation, and OutSync (app → Other Bookmarks → LinkNest) — Help → Guides → Bookmark Sync Extension</li>
-                    <li><strong>Guides tab:</strong> Searchable in-app documentation (Your Bookmarks, Bookmark Sync Extension, Architecture, App Updates, Docker Deployment, Package for Deployment, XAMPP PHP upgrade, SSH / VNC Manual Deployment, SSH Session Shared Worker, Remote Widgets Setup, and more)</li>
+                    <li><strong>Guides tab:</strong> Searchable in-app documentation (Your Bookmarks, Bookmark Sync Extension, Architecture, App Updates, Docker Deployment, Package for Deployment, Vanilla Apache + PHP 8.5, XAMPP PHP upgrade, SSH / VNC Manual Deployment, SSH Session Shared Worker, Remote Widgets Setup, and more)</li>
                     <li><strong>SSH sessions across refresh:</strong> SharedWorker in browser memory keeps live SSH sockets through page reload; close the widget to disconnect — Help → SSH sessions across refresh / Guides → SSH Session Shared Worker</li>
                     <li><strong>SSH / VNC manual deploy:</strong> Online, air-gapped runtime pack, HTTPS WSS proxy, Easy mode, <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">ssh://</code> / <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">vnc://</code> space links — Help and Guides</li>
                     <li><strong>QR sharing:</strong> Branded QR codes for the app URL and spaces (desktop + mobile)</li>
@@ -1933,6 +1970,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                     'Staging & AI Offline Kit',
                     'In-app App Updates & Rollback',
                     'XAMPP PHP Runtime Upgrade Script',
+                    'Vanilla Apache + PHP 8.5 (Windows)',
                     'Package for Deployment (Windows ZIP)',
                     'Help Guides (in-app docs)',
                     'Instance Cloning',
