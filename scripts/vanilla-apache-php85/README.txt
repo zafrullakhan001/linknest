@@ -14,7 +14,8 @@ On the target PC (Administrator):
   3. Right-click install-runtime.bat -> Run as administrator
   4. Copy the LinkNest app into D:\Apache\htdocs\linknest
      (keep the existing data\ and uploads\ folders)
-  5. Open http://localhost/linknest/
+  5. Open http://localhost/linknest/health.php  (JSON: health.php?format=json)
+  6. Then open http://localhost/linknest/
 
 Notes
 -----

@@ -909,6 +909,18 @@ try {
                     <h2>System Tools</h2>
                 </div>
                 <ul class="link-list">
+                    <?php if (file_exists(__DIR__ . '/health.php')): ?>
+                    <li>
+                        <a href="<?php echo $baseUrl; ?>/health.php" class="link-item" target="_blank">
+                            <span class="link-icon">🩺</span>
+                            <div class="link-content">
+                                <span class="link-label">Apache / PHP Deploy Health</span>
+                                <span class="link-url">/health.php</span>
+                            </div>
+                            <span class="link-badge">HTTP</span>
+                        </a>
+                    </li>
+                    <?php endif; ?>
                     <?php if (file_exists(__DIR__ . '/check_opcache.php')): ?>
                     <li>
                         <a href="<?php echo $baseUrl; ?>/check_opcache.php" class="link-item" target="_blank">

@@ -933,6 +933,7 @@ npm run build:prod`}</pre>
                   </div>
                   <p className="text-sm">
                     Full checklist, smoke tests, and optional HTTPS / SSH-VNC WSS: <strong>Guides → Vanilla Apache + PHP 8.5 (Windows)</strong>.
+                    After Apache is up, open <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">/health.php</code> (JSON: <code className="text-xs">/health.php?format=json</code>) to verify extensions, OPcache, SQLite 3.53+, and writable folders.
                     A pre-configured runtime ZIP (Apache + PHP 8.5, <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">httpd.conf</code> / <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">php.ini</code> already set) can be built with <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">scripts\package-vanilla-apache-php85.bat</code> — extract to <code className="text-xs">D:\</code> and run <code className="text-xs">install-runtime.bat</code> as Administrator.
                   </p>
                 </div>

@@ -49,6 +49,6 @@ if errorlevel 1 (
 )
 net start Apache24-LinkNest
 echo.
-echo Done. Put LinkNest in D:\Apache\htdocs\linknest then open http://localhost/linknest/
+echo Done. Put LinkNest in D:\Apache\htdocs\linknest then open http://localhost/linknest/health.php
 echo Service name: Apache24-LinkNest (does not replace XAMPP Apache2.4)
 pause

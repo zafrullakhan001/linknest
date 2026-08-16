@@ -358,23 +358,14 @@ In a browser (or `curl`):
 
 | URL | Expect |
 |-----|--------|
+| `http://<host>/linknest/health.php` | READY (or DEGRADED with warnings). JSON: `health.php?format=json` |
 | `http://<host>/linknest/` | HTTP 200, app UI (not a directory listing, not `index.tsx` 404) |
 | `http://<host>/linknest/api/tiles` | HTTP 200 JSON |
 | `http://<host>/linknest/dist/index.html` | HTTP 200 (confirms the production build exists) |
 
-Quick PHP-under-Apache check — create `D:\Apache\htdocs\linknest\phpinfo.php` temporarily:
+Open `http://<host>/linknest/health.php` first. It checks PHP extensions (`pdo_sqlite`, `curl`, `ldap`, …), Apache modules (`mod_rewrite`), `php.ini` path, OPcache, writable `data/` / `uploads/` / session tmp, and the SQLite engine plus Windows `libsqlite3.dll` (3.53.4 ~3 MB). HTTP 503 means a critical check failed.
 
-```php
-<?php phpinfo();
-```
-
-Open `http://<host>/linknest/phpinfo.php`. Confirm:
-
-- **Loaded Configuration File** is `D:\php\php.ini`
-- Extensions: `pdo_sqlite`, `curl`, `openssl`, `mbstring`, `ldap`
-- `session.save_path` is `D:/Apache/tmp`
-
-Delete `phpinfo.php` when done.
+Do **not** leave a `phpinfo.php` file on the server. Use `/health.php` instead.
 
 ---
 
@@ -446,7 +437,7 @@ On Windows, `MaxRequestWorkers` is not valid for `mpm_winnt`.
 - [ ] Port 80 (or your `Listen` port) not taken by XAMPP
 - [ ] `httpd.exe -t` → Syntax OK; Apache service running
 - [ ] `http://<host>/linknest/` and `http://<host>/linknest/api/tiles` return 200
-- [ ] `phpinfo()` Loaded Configuration File is `D:\php\php.ini` (then delete the probe file)
+- [ ] `http://<host>/linknest/health.php` is READY (or DEGRADED with only warnings); php.ini path is `D:\php\php.ini`
 
 ---
 
@@ -456,7 +447,7 @@ On Windows, `MaxRequestWorkers` is not valid for `mpm_winnt`.
 |---------|--------------|-----|
 | Home page is a directory listing, or `/api/tiles` 404 | `.htaccess` not applied | `AllowOverride All`; uncomment `rewrite_module`; restart Apache |
 | `index.tsx` 404 | Serving source `index.html` instead of `dist/` | Confirm `dist\index.html` exists; hard-refresh (Ctrl+F5) |
-| API JSON `PDO SQLite extension is not enabled` | `pdo_sqlite` off or wrong `php.ini` | Uncomment `extension=pdo_sqlite`; confirm `phpinfo()` loaded file |
+| API JSON `PDO SQLite extension is not enabled` | `pdo_sqlite` off or wrong `php.ini` | Uncomment `extension=pdo_sqlite`; confirm `/health.php` loaded ini |
 | Apache will not start: cannot load `php8apache2_4.dll` | NTS PHP, missing VC++, or `php8ts.dll` not found | Use TS x64; `LoadFile` php8ts.dll; install VC++ x64 |
 | `Unable to load dynamic library 'curl'` under Apache (CLI curl OK) | Older DLLs in `D:\Apache\bin` shadow PHP 8.5 | Copy curl/OpenSSL DLLs from `D:\php` into `D:\Apache\bin` |
 | `Unable to load dynamic library 'intl'` | Missing ICU | Copy `icu*.dll` from `D:\php` into `D:\Apache\bin` |
