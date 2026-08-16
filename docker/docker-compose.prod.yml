@@ -22,6 +22,8 @@ services:
       - PHP_UPLOAD_MAX_FILESIZE=10M
       - PHP_POST_MAX_SIZE=10M
       - PYTHONDONTWRITEBYTECODE=1
+      - npm_config_strict_ssl=false
+      - NODE_TLS_REJECT_UNAUTHORIZED=0
       - LINKNEST_WORKERS_ENABLED=1
       - LINKNEST_WORKER_INTERVAL_SECONDS=60
       - LINKNEST_DB_PATH=/var/www/html/data/linknest.db

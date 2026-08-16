@@ -537,7 +537,31 @@ function updaterIsDockerRuntime(): bool {
     if (getenv('LINKNEST_DOCKER') === '1' || getenv('SSH_GATEWAY_DOCKER') === '1') {
         return true;
     }
-    return is_file('/.dockerenv');
+    $server = $_SERVER['LINKNEST_DOCKER'] ?? $_SERVER['SSH_GATEWAY_DOCKER'] ?? '';
+    if ((string)$server === '1') {
+        return true;
+    }
+    if (@is_file('/.dockerenv')) {
+        return true;
+    }
+    $identity = UPDATER_ROOT . '/data/install_identity.php';
+    if (is_file($identity)) {
+        $raw = (string)@file_get_contents($identity);
+        if (preg_match("/define\\('LINKNEST_INSTALL_FOLDER',\\s*'docker'\\)/", $raw)) {
+            return true;
+        }
+    }
+    if (is_readable('/proc/1/cgroup')) {
+        $cgroup = (string)@file_get_contents('/proc/1/cgroup');
+        if ($cgroup !== '' && (
+            stripos($cgroup, 'docker') !== false
+            || stripos($cgroup, 'containerd') !== false
+            || stripos($cgroup, 'kubepods') !== false
+        )) {
+            return true;
+        }
+    }
+    return false;
 }
 
 function updaterCommandExists(string $cmd): bool {
@@ -1749,6 +1773,11 @@ function updaterRebuildFrontend(): void {
     // Stale caniuse-lite only prints a stderr warning, but on some hosts that noise
     // was the only text shown when a rebuild was mis-reported as failed.
     $viteEnv['BROWSERSLIST_IGNORE_OLD_DATA'] = '1';
+    // Corporate SSL inspection / MITM antivirus breaks npm registry TLS
+    // (UNABLE_TO_VERIFY_LEAF_SIGNATURE). Same workaround as the Docker image build.
+    $viteEnv['npm_config_strict_ssl'] = 'false';
+    $viteEnv['NPM_CONFIG_STRICT_SSL'] = 'false';
+    $viteEnv['NODE_TLS_REJECT_UNAUTHORIZED'] = '0';
     updaterSetProgress(55, 'Installing npm dependencies...');
     $ci = updaterRunCommand('npm ci', null, 600, $viteEnv);
     if (!$ci['ok']) {
@@ -2102,7 +2131,8 @@ function updaterSpawnApplyWorker(string $spec): bool {
         return $ok;
     }
 
-    $command = 'nohup ' . escapeshellarg($php) . ' -f ' . escapeshellarg($scriptPath) . ' '
+    $envPrefix = 'HOME=/var/www npm_config_strict_ssl=false NODE_TLS_REJECT_UNAUTHORIZED=0 LINKNEST_DOCKER=1 ';
+    $command = $envPrefix . 'nohup ' . escapeshellarg($php) . ' -f ' . escapeshellarg($scriptPath) . ' '
         . escapeshellarg($spec) . ' >> ' . escapeshellarg($logFile) . ' 2>&1 &';
     if (function_exists('exec')) {
         @exec($command);

@@ -120,6 +120,14 @@ fi
 export PYTHONDONTWRITEBYTECODE=1
 rm -rf /var/www/html/scripts/__pycache__ 2>/dev/null || true
 
+# npm behind SSL inspection (same as image build). Survives App Updates overwriting updater_lib.php.
+mkdir -p /usr/local/etc /var/www/.npm
+printf 'strict-ssl=false\n' > /usr/local/etc/npmrc
+printf 'strict-ssl=false\n' > /var/www/.npmrc
+chown www-data:www-data /var/www/.npmrc /var/www/.npm 2>/dev/null || true
+export npm_config_strict_ssl=false
+export NODE_TLS_REJECT_UNAUTHORIZED=0
+
 # Start cron daemon for scheduled tasks (database backups at 2:00 AM and 3:00 AM daily)
 echo "[ENTRYPOINT] Starting cron daemon for scheduled backups..."
 # Start cron in the background

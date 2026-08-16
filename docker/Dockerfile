@@ -293,6 +293,10 @@ RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && chown -R www-data:www-data /var/www/.npm /var/www/.cache \
     && node --version \
     && npm --version \
+    && mkdir -p /usr/local/etc \
+    && printf 'strict-ssl=false\n' > /usr/local/etc/npmrc \
+    && printf 'strict-ssl=false\n' > /var/www/.npmrc \
+    && chown www-data:www-data /var/www/.npmrc \
     && echo "✓ Node.js + npm available for in-container frontend rebuilds"
 
 # Post-build cleanup: Remove unnecessary files to reduce image size
