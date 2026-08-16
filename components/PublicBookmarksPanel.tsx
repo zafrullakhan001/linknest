@@ -374,13 +374,13 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
   const canExtSync = !!extPresence?.canSync;
   const canExtOutSync = !!extPresence?.canOutSync;
   const syncButtonTitle = canExtSync
-    ? 'Merge this browser profile’s bookmarks via LinkNest Bookmark Sync (allowlisted origin + Read-only On).'
-    : 'Turn Read-only (Sync) On in the Bookmark Sync toolbar popup.';
+    ? 'Merge this browser profile’s bookmarks via Bookmark Sync or Browser Launcher Pro (Read-only On).'
+    : 'Turn Read-only (Sync) On in the Bookmark Sync tab of the extension popup.';
   const outSyncButtonTitle = canExtOutSync
-    ? 'Preview what OutSync would add or update in this browser (Bookmark Sync 1.8.2+, Read-write On). Optionally back up Chrome bookmarks first, download a JSON changelog, then Apply. Nothing is written until you Apply.'
+    ? 'Preview what OutSync would add or update in this browser (Bookmark Sync 1.8.2+ or Browser Launcher Pro 3.1+, Read-write On). Optionally back up Chrome bookmarks first, download a JSON changelog, then Apply. Nothing is written until you Apply.'
     : extPresence?.supportsOutSync
-      ? 'Turn Read-write (OutSync) On in the Bookmark Sync toolbar popup.'
-      : 'OutSync needs Bookmark Sync 1.8+ with Read-write On. Browser Launcher Pro cannot push bookmarks.';
+      ? 'Turn Read-write (OutSync) On in the Bookmark Sync tab of the extension popup.'
+      : 'OutSync needs Bookmark Sync 1.8+ or Browser Launcher Pro 3.1+ with Read-write On.';
   const isSearching = searchQuery.trim().length > 0;
   const q = searchQuery.trim().toLowerCase();
   const dupeCount = useMemo(

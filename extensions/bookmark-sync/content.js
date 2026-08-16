@@ -1,7 +1,7 @@
 /**
  * Page bridge for LinkNest Bookmark Sync.
  * Speaks the same postMessage protocol as Browser Launcher Pro, bookmarks only,
- * plus LinkNest OutSync (PUSH_BOOKMARKS) which Pro does not implement.
+ * plus LinkNest OutSync (PUSH_BOOKMARKS). Pro 3.1+ implements OutSync as well.
  * Only allowlisted origins receive replies; postMessage uses this page's origin (not *).
  */
 (function () {

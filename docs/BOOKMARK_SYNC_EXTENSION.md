@@ -2,7 +2,7 @@
 
 This guide explains how **LinkNest Bookmark Sync** (v1.8) connects to **Sync** and **OutSync** in Your Bookmarks (and Fetch in Favorites Organizer), how IT mass-deploys it, and how each person can only sync **their own** browser bookmarks.
 
-The extension lives in `extensions/bookmark-sync`. Load it unpacked for testing, or **force-install a packed CRX** in production. It is a small stand-in for **Browser Launcher Pro**: bookmarks only — no other-browser launching, native host, or license.
+The extension lives in `extensions/bookmark-sync`. Load it unpacked for testing, or **force-install a packed CRX** in production. It is a small stand-in for **Browser Launcher Pro**: bookmarks only — no other-browser launching, native host, or license. **Browser Launcher Pro 3.1+** implements the same Sync / OutSync / backup protocol on its **Bookmark Sync** tab, so you do not need this extension if Pro is installed.
 
 Full in-app copy: **Help → Guides → Bookmark Sync Extension**. The extension popup also has a **Help** tab.
 
@@ -81,7 +81,7 @@ If the extension is missing, sync is **Off**, the origin is not allowlisted, or 
 { type: "BROWSER_LAUNCHER_PREVIEW_PUSH_BOOKMARKS", timestamp: <number>, rootFolder: "LinkNest", bookmarks: [{ title, url, folder }] }
 ```
 
-3. The content script ignores the message unless `event.source === window`, `event.origin` matches the page, and that origin is on the allowlist. Browser Launcher Pro does **not** implement this message — you need Bookmark Sync **1.8.1+**. Older 1.8.0 packs time out on preview instead of writing.
+3. The content script ignores the message unless `event.source === window`, `event.origin` matches the page, and that origin is on the allowlist. **Browser Launcher Pro 3.1+** implements the same preview / apply / backup messages on its Bookmark Sync tab. Older Bookmark Sync 1.8.0 packs time out on preview instead of writing.
 4. If **Read-write** is **On**, the background script indexes this profile’s tree by normalized URL (dry-run), then:
 
 | Browser has this URL? | Action |
@@ -107,7 +107,7 @@ OutSync never deletes Chrome bookmarks and never moves existing ones into the Li
 5. Reload the app after installing or reloading the extension.
 6. Favorites → Your Bookmarks → **Sync** (browser → app) or **OutSync** (app → browser).
 
-You do **not** need Browser Launcher Pro if this extension is installed. You do **not** need the branded name to match the site title. OutSync requires this extension (Pro cannot push bookmarks).
+You do **not** need Browser Launcher Pro if this extension is installed. You do **not** need the branded name to match the site title. OutSync works with this extension **or** Browser Launcher Pro **3.1+** (Read-write On).
 
 After upgrading from v1.7, **reload** the extension so the separate Read-only / Read-write toggles appear (a previous single On still enables both until you change them). After upgrading from v1.6, reload so OutSync is available. After upgrading from v1.5, turn the toggles On (they now default Off) and confirm your LinkNest URL is in `allowedOrigins`.
 

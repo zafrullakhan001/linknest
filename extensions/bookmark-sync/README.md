@@ -10,9 +10,9 @@ Version **1.8.2** can export a Netscape HTML + JSON backup of this profile’s b
 
 | Feature | This extension | Browser Launcher Pro |
 |---------|----------------|----------------------|
-| `BROWSER_LAUNCHER_GET_BOOKMARKS` (Your Bookmarks / Fav Organizer **Sync**) | Yes, if the site is allowlisted and Read-only is On | Yes (if `bookmarks` permission is granted) |
-| `BROWSER_LAUNCHER_PUSH_BOOKMARKS` (Your Bookmarks **OutSync**) | Yes (v1.8+, Read-write On) | No |
-| `BROWSER_LAUNCHER_BACKUP_BOOKMARKS` (browser tree backup) | Yes (v1.8.2+, Read-only or Read-write On) | No |
+| `BROWSER_LAUNCHER_GET_BOOKMARKS` (Your Bookmarks / Fav Organizer **Sync**) | Yes, if the site is allowlisted and Read-only is On | Yes (3.1+ Bookmark Sync tab; Read-only defaults On; empty origin list allows all sites) |
+| `BROWSER_LAUNCHER_PUSH_BOOKMARKS` (Your Bookmarks **OutSync**) | Yes (v1.8+, Read-write On) | Yes (3.1+, Read-write On) |
+| `BROWSER_LAUNCHER_BACKUP_BOOKMARKS` (browser tree backup) | Yes (v1.8.2+, Read-only or Read-write On) | Yes (3.1+, Read-only or Read-write On) |
 | Open links in another installed browser | No | Yes |
 | Native messaging / WSL / license | No | Yes |
 | Read another user’s PC or Chrome profile | No | No |
@@ -58,7 +58,7 @@ Chrome and Edge will prompt for the **bookmarks** permission. Allow it or Sync /
 
 **Production:** pack a signed CRX / Edge add-on and force-install. Do not leave Developer mode enabled on organisation PCs.
 
-If you already run Browser Launcher Pro with bookmarks access, you do **not** need this extension for inbound Sync (Pro does not use this allowlist). You **do** need this extension for OutSync.
+If you already run Browser Launcher Pro **3.1+**, you do **not** need this extension for Sync or OutSync (use Pro’s Bookmark Sync tab; turn Read-write On for OutSync). Older Pro builds only did inbound Sync.
 
 After loading (or reloading) the unpacked folder, open the toolbar popup:
 

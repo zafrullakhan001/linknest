@@ -58,7 +58,7 @@ Import a Chrome/Edge bookmark HTML export. Links are grouped into **spaces by we
 ### Sync from browser (extension)
 Install **LinkNest Bookmark Sync** (`extensions/bookmark-sync` — load unpacked in Chrome/Edge) **or** **Browser Launcher Pro** with the Chrome `bookmarks` permission. **Sync** and **OutSync** appear only when an extension answers on this origin. Each button is greyed out when its popup toggle is Off (Read-only for Sync, Read-write for OutSync). Hover a greyed button for the hint. Click **Sync** (when enabled) to merge browser bookmarks into Your Bookmarks without an HTML file. New URLs are added; existing ones are skipped.
 
-Bookmark Sync is a minified Pro-compatible extension: it answers `BROWSER_LAUNCHER_GET_BOOKMARKS` / `BROWSER_LAUNCHER_CHECK` from **allowlisted** LinkNest origins, and only when **Read-only** is On in the popup (it starts **Off**). It reads **this browser profile only** — not another user’s PC or Chrome profile — and does not upload bookmarks. The **display name does not connect Sync**.
+Bookmark Sync is a minified Pro-compatible extension: it answers `BROWSER_LAUNCHER_GET_BOOKMARKS` / `BROWSER_LAUNCHER_CHECK` from **allowlisted** LinkNest origins, and only when **Read-only** is On in the popup (it starts **Off**). **Browser Launcher Pro 3.1+** has the same Sync / OutSync protocol on its **Bookmark Sync** tab (Read-only starts **On** for existing Pro users; Read-write starts **Off**; an empty origin list allows all sites). Both extensions read **this browser profile only** — not another user’s PC or Chrome profile — and do not upload bookmarks. The **display name does not connect Sync**.
 
 After v1.8, turn **Read-only** on for Sync and **Read-write** on for OutSync (both start Off). After v1.6, add your app origin to `org-branding.json` `allowedOrigins`. The shipped file allows local XAMPP/Vite (`http://localhost`, `http://localhost:3000`) **and Docker** (`http://localhost:8090`, `https://localhost:8443`). Origins are exact: `http://localhost` does **not** match `https://localhost:8443`. Reload the extension after editing the JSON.
 
@@ -67,7 +67,7 @@ Full extension guide (including mass deploy): **Help → Guides → Bookmark Syn
 If Sync fails (extension missing, Read-only off, no `bookmarks` permission, or `getTree` errors), use **Import Chrome HTML** / **Merge Import** instead.
 
 ### OutSync to browser (extension)
-Click **OutSync** on Your Bookmarks (when the button is enabled and you have links saved) to **preview** what would change in **this Chrome/Edge profile**, then **Apply**. The button is hidden until Bookmark Sync is available on this origin, and greyed until **Read-write** is On. Requires Bookmark Sync **1.8.2+**. Browser Launcher Pro does not implement OutSync (OutSync stays greyed if only Pro is installed).
+Click **OutSync** on Your Bookmarks (when the button is enabled and you have links saved) to **preview** what would change in **this Chrome/Edge profile**, then **Apply**. The button is hidden until an extension that supports OutSync answers on this origin, and greyed until **Read-write** is On. Requires Bookmark Sync **1.8.2+** or **Browser Launcher Pro 3.1+** (turn Read-write On in the Bookmark Sync tab).
 
 - Matching URLs (normalized) already in the browser are **skipped**; titles are **updated in place** if they differ
 - New URLs are added under **Other Bookmarks → LinkNest → space name**
@@ -77,7 +77,7 @@ Click **OutSync** on Your Bookmarks (when the button is enabled and you have lin
 
 **Restore:** Chrome → Bookmarks → Bookmark manager → **Import bookmarks** (the HTML). Import **merges**; it does not delete newer bookmarks. OutSync adds live under **Other Bookmarks → LinkNest** — delete that folder to drop new links. Title updates can be restored from the changelog JSON (`previousTitle`).
 
-If OutSync times out, reload Bookmark Sync 1.8.2+, refresh the app, and turn **Read-write** **On**. Backup also works with **Read-only** On.
+If OutSync times out, reload Bookmark Sync 1.8.2+ or Browser Launcher Pro 3.1+, refresh the app, and turn **Read-write** **On**. Backup also works with **Read-only** On.
 
 ### Space toolbar (common)
 | Action | Purpose |
