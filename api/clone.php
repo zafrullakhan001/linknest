@@ -169,6 +169,10 @@ function handleClone() {
         $targetPath = !empty($data['targetPath']) ? trim($data['targetPath']) : null;
         $copyAssets = isset($data['copyAssets']) && $data['copyAssets'] === true;
         $copyDatabase = isset($data['copyDatabase']) && $data['copyDatabase'] === true;
+        $preset = linknestNormalizeClonePreset($data['preset'] ?? null, $copyAssets, $copyDatabase);
+        $presetOpts = linknestClonePresetOptions($preset);
+        $copyAssets = $presetOpts['copyAssets'];
+        $copyDatabase = $presetOpts['copyDatabase'];
         $customUrl = !empty($data['url']) ? trim($data['url']) : null;
         
         // Default to project root if source not specified
@@ -227,7 +231,7 @@ function handleClone() {
         
         // Create clone record
         $db = getDB();
-        $stmt = $db->prepare('INSERT INTO clones (folder_name, source_path, target_path, full_path, url, status, progress, copy_assets, copy_database, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $stmt = $db->prepare('INSERT INTO clones (folder_name, source_path, target_path, full_path, url, status, progress, copy_assets, copy_database, clone_preset, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         
         $stmt->execute([
             $folderName,
@@ -239,6 +243,7 @@ function handleClone() {
             0,
             $copyAssets ? 1 : 0,
             $copyDatabase ? 1 : 0,
+            $preset,
             time(),
             $createdBy
         ]);
@@ -453,6 +458,7 @@ function handleGetCloneList() {
                     'errorMessage' => $clone['error_message'],
                     'copyAssets' => (bool)$clone['copy_assets'],
                     'copyDatabase' => (bool)$clone['copy_database'],
+                    'preset' => linknestNormalizeClonePreset($clone['clone_preset'] ?? null, (bool)$clone['copy_assets'], (bool)$clone['copy_database']),
                     'sourcePath' => $clone['source_path'],
                     'targetPath' => $clone['target_path']
                 ];
@@ -599,6 +605,7 @@ function handleGetClone($cloneId) {
         'progress' => (int)$clone['progress'],
         'copyAssets' => (bool)$clone['copy_assets'],
         'copyDatabase' => (bool)$clone['copy_database'],
+        'preset' => linknestNormalizeClonePreset($clone['clone_preset'] ?? null, (bool)$clone['copy_assets'], (bool)$clone['copy_database']),
         'createdAt' => (int)$clone['created_at'],
         'completedAt' => $clone['completed_at'] ? (int)$clone['completed_at'] : null,
         'errorMessage' => $clone['error_message']
@@ -641,14 +648,19 @@ function handleUpdateClone($cloneId) {
         $params[] = trim($data['targetPath']);
     }
     
-    if (isset($data['copyAssets'])) {
+    if (isset($data['preset']) || isset($data['copyAssets']) || isset($data['copyDatabase'])) {
+        $preset = linknestNormalizeClonePreset(
+            $data['preset'] ?? ($clone['clone_preset'] ?? null),
+            isset($data['copyAssets']) ? (bool)$data['copyAssets'] : (bool)$clone['copy_assets'],
+            isset($data['copyDatabase']) ? (bool)$data['copyDatabase'] : (bool)$clone['copy_database']
+        );
+        $presetOpts = linknestClonePresetOptions($preset);
+        $updates[] = 'clone_preset = ?';
+        $params[] = $preset;
         $updates[] = 'copy_assets = ?';
-        $params[] = $data['copyAssets'] ? 1 : 0;
-    }
-    
-    if (isset($data['copyDatabase'])) {
+        $params[] = $presetOpts['copyAssets'] ? 1 : 0;
         $updates[] = 'copy_database = ?';
-        $params[] = $data['copyDatabase'] ? 1 : 0;
+        $params[] = $presetOpts['copyDatabase'] ? 1 : 0;
     }
     
     if (isset($data['url'])) {

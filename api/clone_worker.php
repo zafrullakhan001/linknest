@@ -132,7 +132,7 @@ try {
     
     writeWorkerTraceLog("Clone record found: folder_name={$clone['folder_name']}, status={$clone['status']}", 'INFO');
     writeWorkerTraceLog("Clone details: source_path={$clone['source_path']}, target_path={$clone['target_path']}", 'DEBUG');
-    writeWorkerTraceLog("Clone options: copy_assets=" . ($clone['copy_assets'] ? '1' : '0') . ", copy_database=" . ($clone['copy_database'] ? '1' : '0'), 'DEBUG');
+    writeWorkerTraceLog("Clone options: preset=" . ($clone['clone_preset'] ?? 'legacy') . ", copy_assets=" . ($clone['copy_assets'] ? '1' : '0') . ", copy_database=" . ($clone['copy_database'] ? '1' : '0'), 'DEBUG');
     error_log("Clone worker: Found clone - {$clone['folder_name']}, status: {$clone['status']}");
     
     // Verify source and target paths exist
@@ -192,7 +192,8 @@ try {
         $clone['target_path'],
         (bool)$clone['copy_assets'],
         (bool)$clone['copy_database'],
-        $clone['created_by']
+        $clone['created_by'],
+        $clone['clone_preset'] ?? null
     );
     
     $executionTime = number_format(microtime(true) - $executionStart, 2);

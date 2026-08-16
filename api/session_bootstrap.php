@@ -14,6 +14,22 @@ function linknestReservedUrlSegments(): array
 }
 
 /**
+ * Load data/install_identity.php when present (written by Clone Instance).
+ */
+function linknestLoadInstallIdentity(): void
+{
+    static $loaded = false;
+    if ($loaded) {
+        return;
+    }
+    $loaded = true;
+    $file = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'install_identity.php';
+    if (is_file($file)) {
+        require_once $file;
+    }
+}
+
+/**
  * Install folder from this request, e.g. '/ArchLinks' or '/ERP3'.
  * Empty string for a domain-root deploy.
  */
@@ -22,6 +38,18 @@ function linknestDetectUrlInstallPath(): string
     static $cached = null;
     if ($cached !== null) {
         return $cached;
+    }
+
+    linknestLoadInstallIdentity();
+    if (defined('LINKNEST_COOKIE_PATH')) {
+        $baked = rtrim((string)LINKNEST_COOKIE_PATH, '/');
+        if ($baked !== '' && $baked !== '/') {
+            return $cached = $baked;
+        }
+        if ($baked === '' || $baked === '/') {
+            // Dedicated host / root cookie path; still prefer baked folder for session name.
+            return $cached = '';
+        }
     }
 
     $reserved = linknestReservedUrlSegments();
@@ -71,6 +99,13 @@ function linknestRequestIsHttps(): bool
  */
 function linknestSessionName(): string
 {
+    linknestLoadInstallIdentity();
+    if (defined('LINKNEST_SESSION_NAME')) {
+        $baked = preg_replace('/[^A-Za-z0-9]/', '', (string)LINKNEST_SESSION_NAME);
+        if (is_string($baked) && $baked !== '') {
+            return $baked;
+        }
+    }
     $path = linknestDetectUrlInstallPath();
     if ($path === '') {
         return 'PHPSESSID';
@@ -84,6 +119,14 @@ function linknestSessionName(): string
 
 function linknestSessionCookiePath(): string
 {
+    linknestLoadInstallIdentity();
+    if (defined('LINKNEST_COOKIE_PATH')) {
+        $baked = (string)LINKNEST_COOKIE_PATH;
+        if ($baked === '') {
+            return '/';
+        }
+        return $baked[0] === '/' ? $baked : '/' . $baked;
+    }
     $path = linknestDetectUrlInstallPath();
     return $path !== '' ? $path : '/';
 }
@@ -176,6 +219,18 @@ function linknestConfigureSession(): void
         return;
     }
     $done = true;
+
+    linknestLoadInstallIdentity();
+
+    if (defined('LINKNEST_SESSION_SAVE_PATH')) {
+        $savePath = (string)LINKNEST_SESSION_SAVE_PATH;
+        if ($savePath !== '' && !is_dir($savePath)) {
+            @mkdir($savePath, 0700, true);
+        }
+        if ($savePath !== '' && is_dir($savePath) && is_writable($savePath)) {
+            @ini_set('session.save_path', $savePath);
+        }
+    }
 
     if (session_status() === PHP_SESSION_ACTIVE) {
         linknestExpireSharedSessionCookies();

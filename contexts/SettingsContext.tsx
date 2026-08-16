@@ -1,8 +1,14 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
 import { settingsService, AppSettings } from '../services/settingsService';
+import { getAppStorageScope } from '../services/apiHelpers';
 
-export const BRANDING_CACHE_KEY = 'linknest_branding_cache';
-export const BRANDING_CSS_CACHE_KEY = 'linknest_branding_css';
+function brandingStorageKey(base: string): string {
+  const scope = getAppStorageScope() || '__root__';
+  return `${base}:${scope}`;
+}
+
+export const BRANDING_CACHE_KEY = brandingStorageKey('linknest_branding_cache');
+export const BRANDING_CSS_CACHE_KEY = brandingStorageKey('linknest_branding_css');
 
 /** Keys to hydrate from localStorage so nav sizes/fonts match before API returns */
 const BRANDING_HYDRATE_KEYS = [
@@ -498,12 +504,12 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
               });
             });
             await reg.update();
-            if (typeof sessionStorage !== 'undefined' && !sessionStorage.getItem('linknest_pwa_logged')) {
-              sessionStorage.setItem('linknest_pwa_logged', '1');
+            if (typeof sessionStorage !== 'undefined' && !sessionStorage.getItem(brandingStorageKey('linknest_pwa_logged'))) {
+              sessionStorage.setItem(brandingStorageKey('linknest_pwa_logged'), '1');
               console.log('[LinkNest PWA] Semi-PWA is ON. Normal load = from cache. Hard refresh (Ctrl+F5 / Cmd+Shift+R) = from database/server — look for "[LinkNest PWA] Database/network fetch" in console.');
             }
           } else {
-            if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('linknest_pwa_logged');
+            if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(brandingStorageKey('linknest_pwa_logged'));
             const scope = getSwScope();
             const reg = await navigator.serviceWorker.getRegistration(scope);
             if (reg) await reg.unregister();

@@ -80,6 +80,41 @@ function resolveDocsBase(): string {
   return apiBase.replace('/api', '');
 }
 
+type ClonePresetId = 'empty' | 'structure' | 'full' | 'demo';
+
+const CLONE_PRESETS: Array<{ id: ClonePresetId; title: string; emoji: string; description: string }> = [
+  {
+    id: 'empty',
+    title: 'Empty',
+    emoji: '📭',
+    description: 'Schema only with default admin (admin / admin123). Use for training or a new department.',
+  },
+  {
+    id: 'structure',
+    title: 'Structure only',
+    emoji: '🗂️',
+    description: 'Tiles, tabs, and sections. No other users, no private or staging content. Remaining spaces stay public or authenticated.',
+  },
+  {
+    id: 'full',
+    title: 'Full mirror',
+    emoji: '🪞',
+    description: 'Copy the database and all uploads (logos, favicon, and tile images). LDAP secrets are re-encrypted for the new folder.',
+  },
+  {
+    id: 'demo',
+    title: 'Demo',
+    emoji: '🎭',
+    description: 'Fresh schema, then seed presentation data. Admin is admin / admin123; demo users use password.',
+  },
+];
+
+function clonePresetLabel(preset: string | undefined, copyAssets?: boolean, copyDatabase?: boolean): string {
+  const id = (CLONE_PRESETS.find((p) => p.id === preset)?.id)
+    || (copyDatabase && copyAssets ? 'full' : copyDatabase ? 'structure' : 'empty');
+  return CLONE_PRESETS.find((p) => p.id === id)?.title || 'Empty';
+}
+
 interface AdminPanelProps {
   onUserApproved?: () => void;
 }
@@ -1018,8 +1053,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [cloneSourcePath, setCloneSourcePath] = useState('');
   const [cloneTargetPath, setCloneTargetPath] = useState('');
   const [cloneUrl, setCloneUrl] = useState('');
-  const [cloneCopyAssets, setCloneCopyAssets] = useState(false);
-  const [cloneCopyDatabase, setCloneCopyDatabase] = useState(false);
+  const [clonePreset, setClonePreset] = useState<ClonePresetId>('empty');
   const [cloneLoading, setCloneLoading] = useState(false);
   const [cloneProgress, setCloneProgress] = useState(0);
   const [cloneStatus, setCloneStatus] = useState<string | null>(null);
@@ -1038,6 +1072,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     targetPath: string;
     copyAssets: boolean;
     copyDatabase: boolean;
+    preset?: ClonePresetId | string;
   }>>([]);
   const [clonesLoading, setClonesLoading] = useState(false);
 
@@ -1052,6 +1087,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       url: string;
       copyAssets: boolean;
       copyDatabase: boolean;
+      preset?: ClonePresetId | string;
     } | null;
   }>({ open: false, clone: null });
   const [editCloneLoading, setEditCloneLoading] = useState(false);
@@ -9455,37 +9491,40 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                       <div className="rounded-xl bg-teal-50/50 dark:bg-teal-950/20 border border-teal-100 dark:border-teal-900/40 p-4 space-y-3">
                         <h4 className="text-sm font-semibold text-teal-900 dark:text-teal-100 flex items-center gap-1.5">
-                          <span aria-hidden>⚙️</span> Copy Options
+                          <span aria-hidden>⚙️</span> Clone preset
                         </h4>
-                        <label className="flex items-center gap-3 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={cloneCopyAssets}
-                            onChange={(e) => setCloneCopyAssets(e.target.checked)}
-                            className="w-4 h-4 text-sky-600 border-slate-300 dark:border-slate-600 rounded focus:ring-sky-500 focus:ring-2"
-                          />
-                          <div>
-                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300"><span className="mr-1" aria-hidden>🖼️</span>Copy Assets</span>
-                            <p className="text-xs text-teal-700/70 dark:text-teal-300/70">
-                              Copy logos and favicon from uploads folder
-                            </p>
-                          </div>
-                        </label>
-
-                        <label className="flex items-center gap-3 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={cloneCopyDatabase}
-                            onChange={(e) => setCloneCopyDatabase(e.target.checked)}
-                            className="w-4 h-4 text-sky-600 border-slate-300 dark:border-slate-600 rounded focus:ring-sky-500 focus:ring-2"
-                          />
-                          <div>
-                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300"><span className="mr-1" aria-hidden>🗄️</span>Copy Database</span>
-                            <p className="text-xs text-teal-700/70 dark:text-teal-300/70">
-                              Copy database file from data folder (LDAP passwords will be encrypted automatically)
-                            </p>
-                          </div>
-                        </label>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {CLONE_PRESETS.map((preset) => {
+                            const selected = clonePreset === preset.id;
+                            return (
+                              <label
+                                key={preset.id}
+                                className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${
+                                  selected
+                                    ? 'border-teal-400 bg-white dark:bg-slate-900/60 dark:border-teal-600'
+                                    : 'border-teal-100 dark:border-teal-900/50 bg-white/60 dark:bg-slate-900/30'
+                                }`}
+                              >
+                                <input
+                                  type="radio"
+                                  name="clone-preset"
+                                  value={preset.id}
+                                  checked={selected}
+                                  onChange={() => setClonePreset(preset.id)}
+                                  className="mt-1 w-4 h-4 text-sky-600 border-slate-300 dark:border-slate-600 focus:ring-sky-500 focus:ring-2"
+                                />
+                                <div>
+                                  <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                                    <span className="mr-1" aria-hidden>{preset.emoji}</span>{preset.title}
+                                  </span>
+                                  <p className="text-xs text-teal-700/80 dark:text-teal-300/70 mt-0.5">
+                                    {preset.description}
+                                  </p>
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
                       </div>
 
                       {/* Progress Bar - show as soon as a clone is started */}
@@ -9505,12 +9544,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                               cloneStatus === 'pending' ? 'Starting...' :
                                                 cloneStatus ? String(cloneStatus) : 'Starting...'}
                             </span>
-                            <span className="text-sm text-sky-700 dark:text-sky-300">{cloneProgress}%</span>
+                            <span className="text-sm text-sky-700 dark:text-sky-300">{Math.round(Number(cloneProgress) || 0)}%</span>
                           </div>
                           <div className="w-full bg-sky-100 dark:bg-sky-900/40 rounded-full h-2.5">
                             <div
                               className="bg-sky-600 h-2.5 rounded-full transition-all duration-300"
-                              style={{ width: `${Math.max(0, cloneProgress)}%` }}
+                              style={{ width: `${Math.max(0, Math.min(100, Math.round(Number(cloneProgress) || 0)))}%` }}
                             ></div>
                           </div>
                         </div>
@@ -9616,8 +9655,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     sourcePath: cloneSourcePath.trim() || undefined,
                                     targetPath: cloneTargetPath.trim() || undefined,
                                     url: cloneUrl.trim() || undefined,
-                                    copyAssets: cloneCopyAssets,
-                                    copyDatabase: cloneCopyDatabase,
+                                    preset: clonePreset,
                                   }),
                                 });
 
@@ -9638,8 +9676,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 setCloneSourcePath('');
                                 setCloneTargetPath('');
                                 setCloneUrl('');
-                                setCloneCopyAssets(false);
-                                setCloneCopyDatabase(false);
+                                setClonePreset('empty');
 
                                 // Reload clones list
                                 loadClonesList();
@@ -9812,6 +9849,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 />
                               </th>
                               <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700 dark:text-slate-300">Folder Name</th>
+                              <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700 dark:text-slate-300">Preset</th>
                               <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700 dark:text-slate-300">Source Folder</th>
                               <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700 dark:text-slate-300">Target Folder</th>
                               <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700 dark:text-slate-300">Status</th>
@@ -9835,6 +9873,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   />
                                 </td>
                                 <td className="py-3 px-4 text-sm text-slate-900 dark:text-white font-medium">{clone.folderName}</td>
+                                <td className="py-3 px-4 text-sm text-slate-600 dark:text-slate-300">
+                                  {clonePresetLabel(clone.preset, clone.copyAssets, clone.copyDatabase)}
+                                </td>
                                 <td className="py-3 px-4 text-sm text-slate-600 dark:text-slate-400 font-mono text-xs">
                                   {clone.sourcePath || '-'}
                                 </td>
@@ -9857,10 +9898,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                           clone.status === 'failed' ? 'bg-red-600' :
                                             'bg-brand-600'
                                           }`}
-                                        style={{ width: `${clone.progress}%` }}
+                                        style={{ width: `${Math.max(0, Math.min(100, Math.round(Number(clone.progress) || 0)))}%` }}
                                       ></div>
                                     </div>
-                                    <span className="text-xs text-slate-600 dark:text-slate-400">{clone.progress}%</span>
+                                    <span className="text-xs text-slate-600 dark:text-slate-400">{Math.round(Number(clone.progress) || 0)}%</span>
                                   </div>
                                 </td>
                                 <td className="py-3 px-4 text-sm">
@@ -9897,7 +9938,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                             targetPath: clone.targetPath,
                                             url: clone.url || '',
                                             copyAssets: clone.copyAssets,
-                                            copyDatabase: clone.copyDatabase
+                                            copyDatabase: clone.copyDatabase,
+                                            preset: (clone.preset as ClonePresetId) || (clone.copyDatabase && clone.copyAssets ? 'full' : clone.copyDatabase ? 'structure' : 'empty'),
                                           }
                                         });
                                       }}
@@ -10116,32 +10158,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         </p>
                       </div>
 
-                      <div className="rounded-xl bg-teal-50/50 dark:bg-teal-950/20 border border-teal-100 dark:border-teal-900/40 p-3 space-y-3">
-                        <label className="flex items-center gap-3 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={editCloneModal.clone.copyAssets}
-                            onChange={(e) => setEditCloneModal({
-                              ...editCloneModal,
-                              clone: { ...editCloneModal.clone!, copyAssets: e.target.checked }
-                            })}
-                            className="w-4 h-4 text-sky-600 border-slate-300 dark:border-slate-600 rounded focus:ring-sky-500 focus:ring-2"
-                          />
-                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300"><span className="mr-1" aria-hidden>🖼️</span>Copy Assets</span>
-                        </label>
-
-                        <label className="flex items-center gap-3 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={editCloneModal.clone.copyDatabase}
-                            onChange={(e) => setEditCloneModal({
-                              ...editCloneModal,
-                              clone: { ...editCloneModal.clone!, copyDatabase: e.target.checked }
-                            })}
-                            className="w-4 h-4 text-sky-600 border-slate-300 dark:border-slate-600 rounded focus:ring-sky-500 focus:ring-2"
-                          />
-                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300"><span className="mr-1" aria-hidden>🗄️</span>Copy Database</span>
-                        </label>
+                      <div className="rounded-xl bg-teal-50/50 dark:bg-teal-950/20 border border-teal-100 dark:border-teal-900/40 p-3 space-y-2">
+                        <p className="text-sm font-medium text-teal-900 dark:text-teal-100">Clone preset</p>
+                        {CLONE_PRESETS.map((preset) => (
+                          <label key={preset.id} className="flex items-start gap-3 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="edit-clone-preset"
+                              value={preset.id}
+                              checked={(editCloneModal.clone.preset || 'empty') === preset.id}
+                              onChange={() => setEditCloneModal({
+                                ...editCloneModal,
+                                clone: { ...editCloneModal.clone!, preset: preset.id }
+                              })}
+                              className="mt-1 w-4 h-4 text-sky-600 border-slate-300 dark:border-slate-600 focus:ring-sky-500 focus:ring-2"
+                            />
+                            <span className="text-sm text-slate-700 dark:text-slate-300">
+                              <span className="mr-1" aria-hidden>{preset.emoji}</span>{preset.title}
+                            </span>
+                          </label>
+                        ))}
                       </div>
 
                       {error && (
@@ -10179,8 +10215,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   sourcePath: editCloneModal.clone.sourcePath,
                                   targetPath: editCloneModal.clone.targetPath,
                                   url: editCloneModal.clone.url.trim() || undefined,
-                                  copyAssets: editCloneModal.clone.copyAssets,
-                                  copyDatabase: editCloneModal.clone.copyDatabase,
+                                  preset: editCloneModal.clone.preset || 'empty',
                                 }),
                               });
 

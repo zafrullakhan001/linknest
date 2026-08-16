@@ -124,11 +124,16 @@ set_exception_handler(function($exception) {
 // Database configuration
 define('DB_PATH', __DIR__ . '/../data/linknest.db');
 define('DB_DIR', __DIR__ . '/../data');
-define('SYSTEM_TOKEN', 'linknest_secret_token_123'); // Change this for production!
+if (!defined('SYSTEM_TOKEN')) {
+    define(
+        'SYSTEM_TOKEN',
+        defined('LINKNEST_SYSTEM_TOKEN') ? LINKNEST_SYSTEM_TOKEN : 'linknest_secret_token_123'
+    );
+}
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 86);
+    define('LINKNEST_SCHEMA_VERSION', 87);
 }
 
 function getSchemaPatchFlagPath(): string {
@@ -659,6 +664,31 @@ function ensureUserAuditLogTable($db): void {
     }
 }
 
+/**
+ * Clone Instance preset (empty / structure / full / demo) on the clones tracking table.
+ */
+function ensureClonesPresetColumn(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $exists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='clones'")->fetchColumn();
+        if (!$exists) {
+            $ensured = true;
+            return;
+        }
+        $columns = $db->query('PRAGMA table_info(clones)')->fetchAll(PDO::FETCH_ASSOC);
+        $names = array_column($columns, 'name');
+        if (!in_array('clone_preset', $names, true)) {
+            $db->exec("ALTER TABLE clones ADD COLUMN clone_preset TEXT DEFAULT 'empty'");
+        }
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureClonesPresetColumn warning: ' . $e->getMessage());
+    }
+}
+
 // Initialize database
 function initDatabase() {
     $initLock = null;
@@ -687,6 +717,7 @@ function initDatabase() {
                 ensurePublicGuestRole($db);
                 ensureRoleLinkActionDefaults($db);
                 ensureUserAuditLogTable($db);
+                ensureClonesPresetColumn($db);
                 markSchemaPatchesApplied();
             }
             return $db;
@@ -710,6 +741,7 @@ function initDatabase() {
                 ensurePublicGuestRole($db);
                 ensureRoleLinkActionDefaults($db);
                 ensureUserAuditLogTable($db);
+                ensureClonesPresetColumn($db);
                 markSchemaPatchesApplied();
             }
             releaseDatabaseInitLock($initLock);
@@ -2044,12 +2076,14 @@ function initDatabase() {
             progress INTEGER DEFAULT 0,
             copy_assets INTEGER DEFAULT 0,
             copy_database INTEGER DEFAULT 0,
+            clone_preset TEXT DEFAULT "empty",
             created_at INTEGER NOT NULL,
             completed_at INTEGER,
             error_message TEXT,
             created_by INTEGER,
             FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
         )');
+        ensureClonesPresetColumn($db);
         
         // Create user_preferences table for storing user-specific preferences
         $db->exec('CREATE TABLE IF NOT EXISTS user_preferences (
