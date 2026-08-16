@@ -597,7 +597,24 @@ export const UpdatesPanel: React.FC<{
             <p className="text-[11px] text-slate-500">
               Updates never run automatically — choose a commit/release, then confirm Update.
             </p>
-            {status?.mode === 'zip' && status?.capabilities && !status.capabilities.nodeAvailable && (
+            {status?.capabilities?.dockerRuntime && !status.capabilities.nodeAvailable && (
+              <div className="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-3 text-sm text-amber-950 dark:text-amber-100 space-y-1">
+                <p className="font-semibold">Docker: UI comes from image rebuild, not commit zipballs</p>
+                <p className="text-[12px] leading-relaxed text-amber-900/90 dark:text-amber-100/90">
+                  This container has no Node.js, so applying a GitHub <strong>commit</strong> updates PHP/API
+                  only and keeps the existing <code className="text-[11px]">dist/</code>. To refresh the UI,
+                  run <code className="text-[11px] px-1 rounded bg-white/70 dark:bg-slate-900/50">redeploy-docker.bat</code>{' '}
+                  (or <code className="text-[11px]">redeploy-docker.sh</code>) from the project root.
+                </p>
+              </div>
+            )}
+            {status?.capabilities?.dockerRuntime && status.capabilities.nodeAvailable && (
+              <p className="text-[11px] text-emerald-700 dark:text-emerald-300">
+                Docker has Node.js — applying a commit rebuilds <code className="px-1">dist/</code> with the
+                Docker Vite config (base <code className="px-1">/</code>).
+              </p>
+            )}
+            {status?.mode === 'zip' && status?.capabilities && !status.capabilities.nodeAvailable && !status.capabilities.dockerRuntime && (
               <div className="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-3 text-sm text-amber-950 dark:text-amber-100 space-y-1">
                 <p className="font-semibold">Widget / UI updates need a Release ZIP on this server</p>
                 <p className="text-[12px] leading-relaxed text-amber-900/90 dark:text-amber-100/90">

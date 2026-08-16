@@ -533,6 +533,13 @@ function updaterFormatGithubHttpError(int $status, string $body, string $repo): 
     return $msg;
 }
 
+function updaterIsDockerRuntime(): bool {
+    if (getenv('LINKNEST_DOCKER') === '1' || getenv('SSH_GATEWAY_DOCKER') === '1') {
+        return true;
+    }
+    return is_file('/.dockerenv');
+}
+
 function updaterCommandExists(string $cmd): bool {
     $isWin = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
     $check = $isWin ? 'where ' . escapeshellarg($cmd) : 'command -v ' . escapeshellarg($cmd);
@@ -552,6 +559,7 @@ function updaterCapabilities(): array {
         'gitAvailable' => $gitAvailable,
         'nodeAvailable' => $nodeAvailable,
         'zipAvailable' => $zipAvailable,
+        'dockerRuntime' => updaterIsDockerRuntime(),
         'mode' => $mode,
         'projectRoot' => UPDATER_ROOT,
     ];
@@ -625,7 +633,28 @@ function updaterRunCommand(string $command, ?string $cwd = null, int $timeoutSec
         $env['GCM_INTERACTIVE'] = 'never';
         $env['GIT_ASKPASS'] = '';
     } else {
-        $env = is_array($_ENV) ? $_ENV : [];
+        $env = [];
+        if (is_array($_ENV)) {
+            foreach ($_ENV as $k => $v) {
+                if (is_string($k) && is_string($v) && preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $k)) {
+                    $env[$k] = $v;
+                }
+            }
+        }
+        foreach (['PATH', 'HOME', 'USER', 'LOGNAME', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TERM', 'TMPDIR', 'TZ'] as $keep) {
+            $val = getenv($keep);
+            if (is_string($val) && $val !== '' && !isset($env[$keep])) {
+                $env[$keep] = $val;
+            }
+        }
+        if (empty($env['PATH'])) {
+            $env['PATH'] = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
+        } elseif (strpos($env['PATH'], '/usr/local/bin') === false) {
+            $env['PATH'] = '/usr/local/bin:' . $env['PATH'];
+        }
+        if (empty($env['HOME'])) {
+            $env['HOME'] = updaterIsDockerRuntime() ? '/var/www' : '/tmp';
+        }
         $env['GIT_TERMINAL_PROMPT'] = '0';
         $env['GIT_ASKPASS'] = '';
     }
@@ -1418,6 +1447,16 @@ function updaterIsZipPathAllowed(string $entryName): bool {
     if (preg_match('/^\.env/i', $base)) {
         return false;
     }
+    // Bytecode and caches must never be extracted — Docker workers often
+    // recreate __pycache__ as root, and www-data cannot overwrite those files.
+    if (preg_match('/\.(pyc|pyo|pyd)$/i', $base)) {
+        return false;
+    }
+    foreach (explode('/', $name) as $part) {
+        if ($part === '__pycache__' || $part === '.pytest_cache' || $part === '.mypy_cache') {
+            return false;
+        }
+    }
     if (in_array($name, UPDATER_ZIP_ALLOW_ROOT_FILES, true)) {
         return true;
     }
@@ -1496,8 +1535,14 @@ function updaterExtractUpdateZip(string $zipPath): void {
             continue;
         }
         if (@file_put_contents($target, $content) === false) {
-            $zip->close();
-            throw new RuntimeException('Failed writing ' . $rel);
+            if (is_file($target)) {
+                @chmod($target, 0644);
+                @unlink($target);
+            }
+            if (@file_put_contents($target, $content) === false) {
+                $zip->close();
+                throw new RuntimeException('Failed writing ' . $rel);
+            }
         }
         $extracted++;
     }
@@ -1607,6 +1652,14 @@ function updaterEnsureFrontendBuilt(bool $nodeAvailable, string $distFingerprint
     }
 
     if ($needsRebuild) {
+        if (updaterIsDockerRuntime()) {
+            updaterAppendLog(
+                'WARNING: Frontend source changed but this Docker image has no Node.js, so dist/ was not rebuilt. '
+                . 'PHP/API from the update are in place. Refresh the UI with redeploy-docker.bat / redeploy-docker.sh '
+                . '(or apply a Release ZIP that includes dist/).'
+            );
+            return;
+        }
         throw new RuntimeException(
             'This update includes frontend/widget source (e.g. SSH Terminal) but could not rebuild dist/. '
             . 'Office XAMPP installs usually have no Node.js, so commit zipballs leave the old UI in place. '
@@ -1673,12 +1726,26 @@ function updaterPortableViteEnv(): array {
     ];
 }
 
+function updaterDockerViteEnv(): array
+{
+    updaterAppendLog('Frontend rebuild using Docker vite.docker.config.ts (base /)');
+    return [
+        'VITE_BASE_PATH' => '/',
+        'VITE_API_BASE' => '/api',
+        'HOME' => '/var/www',
+        'NPM_CONFIG_CACHE' => '/var/www/.npm',
+        'npm_config_cache' => '/var/www/.npm',
+        'npm_config_strict_ssl' => 'false',
+    ];
+}
+
 function updaterRebuildFrontend(): void {
     $caps = updaterCapabilities();
     if (!$caps['nodeAvailable']) {
         throw new RuntimeException('Node.js/npm required to rebuild after checkout');
     }
-    $viteEnv = updaterPortableViteEnv();
+    $docker = updaterIsDockerRuntime();
+    $viteEnv = $docker ? updaterDockerViteEnv() : updaterPortableViteEnv();
     // Stale caniuse-lite only prints a stderr warning, but on some hosts that noise
     // was the only text shown when a rebuild was mis-reported as failed.
     $viteEnv['BROWSERSLIST_IGNORE_OLD_DATA'] = '1';
@@ -1691,8 +1758,17 @@ function updaterRebuildFrontend(): void {
             throw new RuntimeException('npm install failed: ' . updaterCommandFailureMessage($ci));
         }
     }
-    updaterSetProgress(75, 'Building frontend (portable base for any folder name)...');
-    $build = updaterRunCommand('npm run build:prod', null, 600, $viteEnv);
+    if ($docker) {
+        updaterSetProgress(75, 'Building frontend (Docker Vite config, base /)...');
+        $dockerVite = UPDATER_ROOT . DIRECTORY_SEPARATOR . 'vite.docker.config.ts';
+        $buildCmd = is_file($dockerVite)
+            ? 'npm run build:prod -- --config vite.docker.config.ts'
+            : 'npm run build:prod';
+        $build = updaterRunCommand($buildCmd, null, 600, $viteEnv);
+    } else {
+        updaterSetProgress(75, 'Building frontend (portable base for any folder name)...');
+        $build = updaterRunCommand('npm run build:prod', null, 600, $viteEnv);
+    }
     if (!$build['ok']) {
         throw new RuntimeException('npm run build failed: ' . updaterCommandFailureMessage($build));
     }

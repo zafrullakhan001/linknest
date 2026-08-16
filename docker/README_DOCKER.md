@@ -114,6 +114,8 @@ To refresh this container after code changes, rebuild:
 # Windows: redeploy-docker.bat
 ```
 
+The Docker image includes **Node.js 20 + npm** so Admin → App Updates can apply a GitHub commit and rebuild `dist/` inside the container (Vite config `vite.docker.config.ts`, base `/`).
+
 To create another **host** copy (not a second container), run on the host:
 
 ```bash

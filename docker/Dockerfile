@@ -143,6 +143,8 @@ WORKDIR /var/www/html
 # Copy PHP files
 COPY api/ ./api/
 COPY scripts/ ./scripts/
+RUN find ./scripts -type d -name '__pycache__' -prune -exec rm -rf {} + 2>/dev/null || true; \
+    find ./scripts -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete 2>/dev/null || true
 COPY extensions/ ./extensions/
 COPY land/ ./land/
 COPY docs/ ./docs/
@@ -280,6 +282,18 @@ RUN echo "# Daily database export at 2:00 AM" > /etc/cron.d/linknest-backup && \
 
 # Verify PHP and SQLite are working
 RUN /usr/local/bin/verify-php.sh
+
+# Node.js 20 + npm for in-app App Updates (commit zipballs rebuild dist/ with Vite).
+# Copy the toolchain from the frontend-builder stage so the runtime matches the image build.
+COPY --from=frontend-builder /usr/local/bin/node /usr/local/bin/node
+COPY --from=frontend-builder /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -sf /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && mkdir -p /var/www/.npm /var/www/.cache \
+    && chown -R www-data:www-data /var/www/.npm /var/www/.cache \
+    && node --version \
+    && npm --version \
+    && echo "✓ Node.js + npm available for in-container frontend rebuilds"
 
 # Post-build cleanup: Remove unnecessary files to reduce image size
 RUN echo "🧹 Cleaning up unnecessary files to reduce image size..." && \

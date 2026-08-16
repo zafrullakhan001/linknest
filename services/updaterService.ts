@@ -132,10 +132,11 @@ export interface UpdaterStatus {
   commitMessage?: string | null;
   trackBranch?: string;
   mode: 'git' | 'zip' | string;
-  capabilities: {
+    capabilities: {
     gitAvailable: boolean;
     nodeAvailable: boolean;
     zipAvailable: boolean;
+    dockerRuntime?: boolean;
     mode: string;
     projectRoot?: string;
   };

@@ -6,7 +6,7 @@ Also in-app: **Help & About → Help → In-app App Updates** and **Guides → A
 
 The App Updates dialog is **movable and resizable** on desktop (drag the header; resize from the bottom-right corner). While an update runs, **progress stays sticky at the top** of the panel so you do not need to scroll to monitor it.
 
-**Scope:** XAMPP / filesystem installs only (not Docker in-container updates).  
+**Scope:** XAMPP / filesystem installs, and Docker when the image includes Node.js (in-container commit apply rebuilds `dist/`). Office hosts without Node should apply a **Release** ZIP.  
 **Who:** Admins only.
 
 ---
@@ -226,8 +226,9 @@ Env (optional): `GITHUB_TOKEN` / `GH_TOKEN`.
 | 404 `/linknest/assets/...` under ArchLinks or ERP3 | Release baked wrong base — publish with default `relative`, or rebuild with `VITE_BASE_PATH=./` |
 | Build fails: `buildSshLinkUrl` is not exported | Old bug: zip skipped `utils/` — fixed in updater allow-list; re-apply a Release that includes `utils/sshLink.ts` |
 | Build fails: `Could not resolve "./styles/tinymce-wysiwyg.css"` | Zip allow-list omitted `styles/`; TinyMCE display CSS now lives in `index.css`. Re-apply this update (or a Release). |
-| Update failed: could not rebuild dist | Expected without Node — publish/apply a Release instead |
+| Update failed: could not rebuild dist | Expected without Node on office XAMPP — publish/apply a Release instead. In Docker this no longer aborts; run `redeploy-docker.bat` to refresh the UI. |
 | `Failed writing scripts/data/` | Empty ZIP folder entry on Windows; fixed in **v2.3.5**. Do not retry v2.3.4 — apply **Release v2.3.5** |
+| `Failed writing scripts/__pycache__/*.pyc` | Python bytecode in the zip, often root-owned in Docker. Updater now skips `__pycache__`; retry the update. |
 | UI still old | Ctrl+F5; check `BUILD_INFO.json` and that `dist/assets/*.js` timestamps changed |
 
 ---

@@ -116,6 +116,10 @@ else
   echo "[ENTRYPOINT] WARNING: websockify not found — VNC Viewer Easy mode will not work"
 fi
 
+# Do not write .pyc as root — those files block in-app updates (www-data cannot overwrite them).
+export PYTHONDONTWRITEBYTECODE=1
+rm -rf /var/www/html/scripts/__pycache__ 2>/dev/null || true
+
 # Start cron daemon for scheduled tasks (database backups at 2:00 AM and 3:00 AM daily)
 echo "[ENTRYPOINT] Starting cron daemon for scheduled backups..."
 # Start cron in the background

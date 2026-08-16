@@ -69,6 +69,11 @@ clone_elevated_*.ps1
 opcache/
 sessions/
 
+# Python bytecode (do not ship — Docker workers recreate these as root)
+__pycache__/
+*.py[cod]
+*$py.class
+
 # Docker
 docker/volumes/
 docker/data/
