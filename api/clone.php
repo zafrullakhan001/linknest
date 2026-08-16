@@ -246,10 +246,10 @@ function handleClone() {
                 $url = rtrim($customUrl, '/') . '/';
             }
         } else {
-            // Default to localhost with folder name if not provided
-            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-            $host = normalizeCloneHost($_SERVER['HTTP_HOST'] ?? 'localhost');
-            $url = "$protocol://$host/$folderName/";
+            $url = function_exists('linknestClonePublicUrl')
+                ? linknestClonePublicUrl($folderName)
+                : (((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http')
+                    . '://' . normalizeCloneHost($_SERVER['HTTP_HOST'] ?? 'localhost') . "/$folderName/");
         }
         
         // Create clone record
@@ -472,7 +472,9 @@ function handleGetCloneList() {
                 $formatted[] = [
                     'id' => (int)$clone['id'],
                     'folderName' => $clone['folder_name'],
-                    'url' => $clone['url'],
+                    'url' => (function_exists('linknestRewriteDockerCloneUrl')
+                        ? linknestRewriteDockerCloneUrl((string) ($clone['url'] ?? ''), (string) ($clone['folder_name'] ?? ''))
+                        : $clone['url']),
                     'status' => $clone['status'],
                     'progress' => (int)$clone['progress'],
                     'createdAt' => (int)$clone['created_at'],
@@ -624,7 +626,9 @@ function handleGetClone($cloneId) {
         'folderName' => $clone['folder_name'],
         'sourcePath' => $clone['source_path'],
         'targetPath' => $clone['target_path'],
-        'url' => $clone['url'],
+        'url' => (function_exists('linknestRewriteDockerCloneUrl')
+            ? linknestRewriteDockerCloneUrl((string) ($clone['url'] ?? ''), (string) ($clone['folder_name'] ?? ''))
+            : $clone['url']),
         'status' => $clone['status'],
         'progress' => (int)$clone['progress'],
         'copyAssets' => (bool)$clone['copy_assets'],
@@ -705,9 +709,10 @@ function handleUpdateClone($cloneId) {
     
     // Update URL if folder name changed (only if URL not explicitly provided)
     if (isset($data['folderName']) && !isset($data['url'])) {
-        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-        $host = normalizeCloneHost($_SERVER['HTTP_HOST'] ?? 'localhost');
-        $newUrl = "$protocol://$host/" . trim($data['folderName']) . "/";
+        $newUrl = function_exists('linknestClonePublicUrl')
+            ? linknestClonePublicUrl(trim($data['folderName']))
+            : (( (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http')
+                . '://' . normalizeCloneHost($_SERVER['HTTP_HOST'] ?? 'localhost') . '/' . trim($data['folderName']) . '/');
         $updates[] = 'url = ?';
         $params[] = $newUrl;
     }

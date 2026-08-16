@@ -115,6 +115,13 @@ function clonePresetLabel(preset: string | undefined, copyAssets?: boolean, copy
   return CLONE_PRESETS.find((p) => p.id === id)?.title || 'Empty';
 }
 
+/** Browser URL for a clone folder on this same origin (includes Docker 8090/8443). */
+function suggestedCloneInstanceUrl(folderName: string): string {
+  const name = folderName.trim().replace(/^\/+|\/+$/g, '');
+  if (!name || typeof window === 'undefined') return '';
+  return `${window.location.origin.replace(/\/$/, '')}/${name}/`;
+}
+
 interface AdminPanelProps {
   onUserApproved?: () => void;
 }
@@ -9359,13 +9366,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         <input
                           type="text"
                           value={cloneFolderName}
-                          onChange={(e) => setCloneFolderName(e.target.value)}
+                          onChange={(e) => {
+                            const next = e.target.value;
+                            const prevSuggested = suggestedCloneInstanceUrl(cloneFolderName);
+                            setCloneFolderName(next);
+                            const nextSuggested = suggestedCloneInstanceUrl(next);
+                            if (cloneRuntime === 'docker' || !cloneUrl.trim() || cloneUrl.trim() === prevSuggested) {
+                              setCloneUrl(nextSuggested);
+                            }
+                          }}
                           placeholder="e.g., myspaces"
                           className="w-full bg-white dark:bg-slate-900/50 border border-sky-200 dark:border-sky-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                         />
                         <p className="text-xs text-sky-700/70 dark:text-sky-300/70 mt-1">
                           {cloneRuntime === 'docker'
-                            ? 'Opens at http://localhost:8090/' + (cloneFolderName || 'folder') + '/ on this container (HTTPS: 8443).'
+                            ? 'Opens at ' + suggestedCloneInstanceUrl(cloneFolderName || 'folder')
                             : 'Name of the new folder to create (no path separators or special characters)'}
                         </p>
                       </div>
@@ -9480,17 +9495,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                       <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          <span className="mr-1" aria-hidden>🔗</span>Instance URL <span className="text-red-500">*</span>
+                          <span className="mr-1" aria-hidden>🔗</span>Instance URL {cloneRuntime === 'docker' ? '' : <span className="text-red-500">*</span>}
                         </label>
                         <input
                           type="url"
                           value={cloneUrl}
                           onChange={(e) => setCloneUrl(e.target.value)}
-                          placeholder="e.g., https://myspaces.example.com or http://localhost/myspaces"
+                          readOnly={cloneRuntime === 'docker'}
+                          placeholder="e.g., https://localhost:8443/myspaces/"
                           className="w-full bg-white dark:bg-slate-900/50 border border-sky-200 dark:border-sky-800/50 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                         />
                         <p className="text-xs text-sky-700/70 dark:text-sky-300/70 mt-1">
-                          Full URL where the cloned instance will be accessible (include protocol and path)
+                          {cloneRuntime === 'docker'
+                            ? 'Filled from this Docker origin so the clone opens on the same host and port.'
+                            : 'Full URL where the cloned instance will be accessible (include protocol and path)'}
                         </p>
                       </div>
                       </div>
@@ -9660,7 +9678,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     folderName: cloneFolderName.trim(),
                                     sourcePath: cloneSourcePath.trim() || undefined,
                                     targetPath: cloneTargetPath.trim() || undefined,
-                                    url: cloneUrl.trim() || undefined,
+                                    url: cloneUrl.trim() || suggestedCloneInstanceUrl(cloneFolderName) || undefined,
                                     preset: clonePreset,
                                   }),
                                 });
@@ -9693,7 +9711,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 setCloneLoading(false);
                               }
                             }}
-                            disabled={cloneLoading || !cloneFolderName.trim() || !cloneUrl.trim() || (currentCloneId !== null)}
+                            disabled={cloneLoading || !cloneFolderName.trim() || (cloneRuntime !== 'docker' && !cloneUrl.trim() && !suggestedCloneInstanceUrl(cloneFolderName)) || (currentCloneId !== null)}
                             className="flex-1 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-sm shadow-sky-500/20 flex items-center justify-center gap-1.5"
                           >
                             <span aria-hidden>🚀</span>
@@ -9911,22 +9929,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   </div>
                                 </td>
                                 <td className="py-3 px-4 text-sm">
-                                  {clone.status === 'completed' && clone.url ? (
+                                  {(() => {
+                                    const href = (clone.url && String(clone.url).trim()) || suggestedCloneInstanceUrl(clone.folderName);
+                                    if (!href) {
+                                      return <span className="text-slate-400 dark:text-slate-500">-</span>;
+                                    }
+                                    const ready = clone.status === 'completed';
+                                    return (
                                     <a
-                                      href={clone.url}
+                                      href={href}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="text-brand-600 dark:text-brand-400 hover:underline flex items-center gap-1"
+                                      title={ready ? href : 'Clone is still running — URL will work when the build finishes'}
+                                      className={`hover:underline flex items-center gap-1 ${ready ? 'text-brand-600 dark:text-brand-400' : 'text-slate-600 dark:text-slate-300'}`}
                                     >
-                                      {clone.url}
+                                      {href}
                                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                                         <path fillRule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clipRule="evenodd" />
                                         <path fillRule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z" clipRule="evenodd" />
                                       </svg>
                                     </a>
-                                  ) : (
-                                    <span className="text-slate-400 dark:text-slate-500">-</span>
-                                  )}
+                                    );
+                                  })()}
                                 </td>
                                 <td className="py-3 px-4 text-sm text-slate-600 dark:text-slate-400">
                                   {new Date(clone.createdAt * 1000).toLocaleString()}

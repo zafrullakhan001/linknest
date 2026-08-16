@@ -23,6 +23,48 @@ function linknestCloneDockerInstancesRoot(): string
 }
 
 /**
+ * Public browser URL for a clone folder.
+ * Docker publishes 8090/8443; Apache inside the container listens on 80/443.
+ */
+function linknestClonePublicUrl(string $folderName): string
+{
+    $folderName = trim($folderName, "/\\");
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || ((string) ($_SERVER['SERVER_PORT'] ?? '') === '443')
+        || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower((string) $_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https');
+    $protocol = $https ? 'https' : 'http';
+    $host = trim((string) ($_SERVER['HTTP_HOST'] ?? 'localhost'));
+    if (strpos($host, ':') === false && function_exists('linknestCloneIsDocker') && linknestCloneIsDocker()) {
+        $host .= $https ? ':8443' : ':8090';
+    }
+    return $protocol . '://' . $host . '/' . $folderName . '/';
+}
+
+/**
+ * Prefer a Docker-reachable URL when the stored value is host-style (no published port).
+ */
+function linknestRewriteDockerCloneUrl(string $url, string $folderName): string
+{
+    $public = linknestClonePublicUrl($folderName);
+    if ($folderName === '') {
+        return $url;
+    }
+    if ($url === '') {
+        return $public;
+    }
+    if (!function_exists('linknestCloneIsDocker') || !linknestCloneIsDocker()) {
+        return $url;
+    }
+    $parsed = parse_url($url);
+    $host = strtolower((string) ($parsed['host'] ?? ''));
+    $port = $parsed['port'] ?? null;
+    if (($host === 'localhost' || $host === '127.0.0.1') && $port === null) {
+        return $public;
+    }
+    return $url;
+}
+
+/**
  * Folder names that must not be used for clones (main-app URL prefixes).
  *
  * @return list<string>
@@ -249,6 +291,46 @@ class CloneService {
                 $this->writeTraceLog("Peak Memory Usage: " . $this->formatBytes(memory_get_peak_usage(true)));
             }
         }
+        $this->prepareCloneDbConnection();
+    }
+
+    private function prepareCloneDbConnection(): void
+    {
+        if (!$this->db) {
+            return;
+        }
+        try {
+            $this->db->exec('PRAGMA busy_timeout = 15000');
+            $this->db->setAttribute(PDO::ATTR_TIMEOUT, 15);
+        } catch (Throwable $e) {
+            // Connection still usable; retries handle SQLITE_BUSY.
+        }
+    }
+
+    private function cloneDbExecute(PDOStatement $stmt, array $params): bool
+    {
+        $delayUs = 50000;
+        $last = null;
+        for ($attempt = 1; $attempt <= 8; $attempt++) {
+            try {
+                return $stmt->execute($params);
+            } catch (PDOException $e) {
+                $last = $e;
+                $msg = $e->getMessage();
+                $busy = stripos($msg, 'database is locked') !== false
+                    || stripos($msg, 'SQLITE_BUSY') !== false;
+                if (!$busy || $attempt === 8) {
+                    throw $e;
+                }
+                $this->writeTraceLog("SQLite busy on attempt $attempt, retrying: $msg", 'WARNING');
+                usleep($delayUs);
+                $delayUs = min($delayUs * 2, 500000);
+            }
+        }
+        if ($last) {
+            throw $last;
+        }
+        return false;
     }
     
     /**
@@ -439,7 +521,7 @@ class CloneService {
                 $stmt = $this->db->prepare('UPDATE clones SET status = ?, progress = ?, error_message = ? WHERE id = ?');
                 $errorMsg = ($step === 'error') ? $message : null;
                 $statusValue = ($step === 'error') ? 'failed' : (($step === 'complete') ? 'completed' : 'running');
-                $stmt->execute([$statusValue, $progress, $errorMsg, $this->cloneId]);
+                $this->cloneDbExecute($stmt, [$statusValue, $progress, $errorMsg, $this->cloneId]);
                 $this->writeTraceLog("Database updated: status=$statusValue, progress=$progress", 'DEBUG');
             } catch (PDOException $e) {
                 $this->writeTraceLog("ERROR: Failed to update clone progress in database: " . $e->getMessage(), 'ERROR');
@@ -588,9 +670,10 @@ class CloneService {
         
         // Fallback to default URL generation if not found
         if (!$url) {
-            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-            $host = $this->normalizeCloneHost($_SERVER['HTTP_HOST'] ?? 'localhost');
-            $url = "$protocol://$host/$folderName/";
+            $url = function_exists('linknestClonePublicUrl')
+                ? linknestClonePublicUrl($folderName)
+                : (( (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http')
+                    . '://' . $this->normalizeCloneHost($_SERVER['HTTP_HOST'] ?? 'localhost') . "/$folderName/");
             $this->writeTraceLog("Using generated default URL: $url", 'INFO');
         } else {
             // Normalize host in stored URL (fix typos like locahost -> localhost)
@@ -1297,7 +1380,7 @@ class CloneService {
                 $this->writeTraceLog("Updating database with completion status", 'DEBUG');
                 try {
                     $stmt = $this->db->prepare('UPDATE clones SET status = ?, progress = 100, completed_at = ?, url = ? WHERE id = ?');
-                    $stmt->execute(['completed', time(), $url, $this->cloneId]);
+                    $this->cloneDbExecute($stmt, ['completed', time(), $url, $this->cloneId]);
                     $this->writeTraceLog("Database updated successfully", 'INFO');
                 } catch (PDOException $e) {
                     $this->writeTraceLog("ERROR: Failed to update database with completion: " . $e->getMessage(), 'ERROR');
@@ -1412,6 +1495,63 @@ class CloneService {
     }
     
     /**
+     * Status JSON is written even when SQLite is busy. Heal stale DB rows from it.
+     */
+    private static function syncCloneRowFromStatusFile(array $row): array
+    {
+        $id = (int) ($row['id'] ?? 0);
+        if ($id < 1) {
+            return $row;
+        }
+        $statusFile = __DIR__ . '/../clone_status_' . $id . '.json';
+        if (!is_file($statusFile)) {
+            return $row;
+        }
+        $file = json_decode((string) @file_get_contents($statusFile), true);
+        if (!is_array($file)) {
+            return $row;
+        }
+        $step = (string) ($file['step'] ?? '');
+        $fileProgress = isset($file['progress']) ? (int) $file['progress'] : null;
+        if ($step === 'complete' || $step === 'completed' || ($fileProgress !== null && $fileProgress >= 100 && $step !== 'error')) {
+            $row['status'] = 'completed';
+            $row['progress'] = 100;
+            if (empty($row['completed_at'])) {
+                $row['completed_at'] = $file['timestamp'] ?? time();
+            }
+            self::persistHealedCloneState($id, 'completed', 100, null, (int) $row['completed_at']);
+            return $row;
+        }
+        if ($step === 'error') {
+            $row['status'] = 'failed';
+            $row['error_message'] = $file['message'] ?? ($row['error_message'] ?? 'Clone failed');
+            self::persistHealedCloneState($id, 'failed', (int) ($row['progress'] ?? 0), (string) $row['error_message'], null);
+            return $row;
+        }
+        if ($fileProgress !== null && in_array((string) ($row['status'] ?? ''), ['running', 'pending'], true)) {
+            $row['progress'] = max((int) ($row['progress'] ?? 0), $fileProgress);
+        }
+        return $row;
+    }
+
+    private static function persistHealedCloneState(int $id, string $status, int $progress, ?string $error, $completedAt): void
+    {
+        try {
+            $db = getDB();
+            $db->exec('PRAGMA busy_timeout = 15000');
+            if ($status === 'completed') {
+                $stmt = $db->prepare('UPDATE clones SET status = ?, progress = ?, error_message = NULL, completed_at = COALESCE(completed_at, ?) WHERE id = ? AND status != ?');
+                $stmt->execute([$status, $progress, $completedAt ?: time(), $id, 'completed']);
+            } else {
+                $stmt = $db->prepare('UPDATE clones SET status = ?, progress = ?, error_message = ? WHERE id = ?');
+                $stmt->execute([$status, $progress, $error, $id]);
+            }
+        } catch (Throwable $e) {
+            error_log('clone heal persist failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
      * Get all clones
      */
     public static function getAllClones() {
@@ -1424,7 +1564,13 @@ class CloneService {
             }
             $stmt->execute();
             $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            return is_array($result) ? $result : [];
+            if (!is_array($result)) {
+                return [];
+            }
+            foreach ($result as $i => $row) {
+                $result[$i] = self::syncCloneRowFromStatusFile($row);
+            }
+            return $result;
         } catch (Exception $e) {
             error_log("Error in getAllClones: " . $e->getMessage());
             error_log("Stack trace: " . $e->getTraceAsString());

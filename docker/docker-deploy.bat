@@ -133,9 +133,9 @@ echo.
 echo IMPORTANT: Change the admin password after first login!
 echo.
 echo Clone Instance:
-echo    Admin folder clone is host-only ^(XAMPP sibling folders^).
-echo    In Docker/WSL it is disabled — rebuild this container instead,
-echo    or clone on the host: scripts\clone-linknest.bat myspaces --preset empty
+echo    Admin - Integrations - Clone works in Docker.
+echo    Clones live in /var/www/clones/{name} and open at http://localhost:8090/{name}/
+echo    ^(HTTPS: https://localhost:8443/{name}/^). WSL folder clone is not supported.
 echo.
 echo Useful commands:
 echo    View logs:        %COMPOSE_CMD% -f docker\docker-compose.yml logs -f
