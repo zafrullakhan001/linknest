@@ -131,8 +131,23 @@ function normalizeCloneHost($host) {
     return $typos[$lower] ?? $host;
 }
 
+/**
+ * Abort with 403 when folder clone is not allowed on this runtime (Docker/WSL).
+ */
+function refuseCloneIfNotHost() {
+    $env = linknestGetCloneRuntimeEnvironment();
+    if (!$env['cloneAllowed']) {
+        sendJSON([
+            'error' => $env['message'],
+            'runtime' => $env['runtime'],
+            'cloneAllowed' => false,
+        ], 403);
+    }
+}
+
 function handleClone() {
     requireAdmin();
+    refuseCloneIfNotHost();
     
     try {
         $data = getJSONInput();
@@ -519,10 +534,14 @@ function handleGetCurrentPath() {
         
         error_log("handleGetCurrentPath: currentPath=$currentPath, targetPath=$targetPath");
         
+        $runtimeEnv = linknestGetCloneRuntimeEnvironment();
         sendJSON([
             'currentPath' => $currentPath,
             'sourcePath' => $currentPath,
-            'targetPath' => $targetPath
+            'targetPath' => $targetPath,
+            'runtime' => $runtimeEnv['runtime'],
+            'cloneAllowed' => $runtimeEnv['cloneAllowed'],
+            'message' => $runtimeEnv['message'],
         ]);
     } catch (Exception $e) {
         $errorMsg = 'Failed to get current path: ' . $e->getMessage();
@@ -848,6 +867,7 @@ function handleDeleteClone($cloneId) {
 
 function handleRerunClone($cloneId) {
     requireAdmin();
+    refuseCloneIfNotHost();
     
     $cloneId = (int)$cloneId;
     $db = getDB();
@@ -894,9 +914,29 @@ function handleRerunClone($cloneId) {
 function handlePrechecks() {
     requireAdmin();
     
+    $runtimeEnv = linknestGetCloneRuntimeEnvironment();
     $results = [
-        'allGood' => true,
+        'allGood' => $runtimeEnv['cloneAllowed'],
+        'runtime' => $runtimeEnv['runtime'],
+        'cloneAllowed' => $runtimeEnv['cloneAllowed'],
+        'message' => $runtimeEnv['message'],
         'checks' => []
+    ];
+
+    $runtimeLabel = $runtimeEnv['runtime'] === 'host'
+        ? 'Host'
+        : ($runtimeEnv['runtime'] === 'docker' ? 'Docker' : 'WSL');
+    $results['checks'][] = [
+        'category' => 'Runtime Environment',
+        'items' => [[
+            'name' => 'Clone availability',
+            'value' => $runtimeLabel,
+            'status' => $runtimeEnv['cloneAllowed'] ? 'pass' : 'fail',
+            'message' => $runtimeEnv['cloneAllowed']
+                ? 'Host instance — folder clone is available'
+                : ($runtimeEnv['message'] ?? linknestCloneUnavailableMessage()),
+            'description' => 'Folder clone is supported only on host-based installs (not Docker or WSL)',
+        ]],
     ];
     
     // PHP Configuration

@@ -1059,6 +1059,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [rerunCloneLoading, setRerunCloneLoading] = useState<number | null>(null);
   const [selectedCloneIds, setSelectedCloneIds] = useState<Set<number>>(new Set());
   const [bulkDeleteClonesLoading, setBulkDeleteClonesLoading] = useState(false);
+  const [cloneAllowed, setCloneAllowed] = useState<boolean | null>(null);
+  const [cloneRuntime, setCloneRuntime] = useState<'host' | 'docker' | 'wsl' | string>('host');
+  const cloneUnavailableMessage = 'Clone is not available in Docker or WSL mode. Please go with Docker clone or redeploy via Docker container.';
 
   // Prechecks state
   const [prechecksLoading, setPrechecksLoading] = useState(false);
@@ -1305,7 +1308,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       loadRoles(); // Ensure roles are loaded before loading user roles
     }
     if (activeTab === 'clone') {
-      loadClonesList();
       loadCurrentPath();
     }
     if (activeTab === 'database') {
@@ -1657,6 +1659,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       });
       if (response.ok) {
         const data = await response.json();
+        const allowed = data.cloneAllowed !== false;
+        setCloneAllowed(allowed);
+        if (typeof data.runtime === 'string' && data.runtime) {
+          setCloneRuntime(data.runtime);
+        }
+        if (!allowed) {
+          return;
+        }
+        loadClonesList();
         if (!cloneSourcePath) {
           setCloneSourcePath(data.sourcePath || '');
         }
@@ -1664,6 +1675,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           setCloneTargetPath(data.targetPath || '');
         }
       } else {
+        setCloneAllowed(true);
+        loadClonesList();
         // If API fails, set default paths based on common XAMPP structure
         if (!cloneSourcePath) {
           // Default to current app directory (typically C:\xampp\htdocs\linknest)
@@ -1676,6 +1689,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       }
     } catch (err) {
       console.error('Failed to load current path:', err);
+      setCloneAllowed(true);
+      loadClonesList();
       // Set default paths on error
       if (!cloneSourcePath) {
         setCloneSourcePath('C:\\xampp\\htdocs\\linknest');
@@ -9235,6 +9250,57 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               {/* Clone Tab */}
               {activeTab === 'clone' && (
                 <div className="space-y-6">
+                  {cloneAllowed === null && (
+                    <div className="bg-white dark:bg-slate-800 border border-sky-200/70 dark:border-sky-800/40 rounded-xl overflow-hidden shadow-sm shadow-sky-500/5">
+                      <div className="bg-gradient-to-r from-sky-50 via-teal-50/80 to-cyan-50/60 dark:from-sky-950/40 dark:via-teal-950/30 dark:to-cyan-950/20 border-b border-sky-100 dark:border-sky-800/40 px-6 py-5">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                          <span aria-hidden>🧬</span> Clone Instance
+                        </h3>
+                      </div>
+                      <div className="p-6">
+                        <p className="text-sm text-sky-800/80 dark:text-sky-200/80">Checking clone availability...</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {cloneAllowed === false && (
+                    <div className="bg-white dark:bg-slate-800 border border-amber-200/80 dark:border-amber-800/40 rounded-xl overflow-hidden shadow-sm">
+                      <div className="bg-gradient-to-r from-amber-50 via-orange-50/80 to-sky-50/60 dark:from-amber-950/40 dark:via-orange-950/30 dark:to-sky-950/20 border-b border-amber-100 dark:border-amber-800/40 px-6 py-5">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                          <span aria-hidden>🧬</span> Clone Instance
+                        </h3>
+                        <p className="text-sm text-amber-800/80 dark:text-amber-200/70 mt-0.5">
+                          Host folder clone is not available in this environment.
+                        </p>
+                      </div>
+                      <div className="p-6 space-y-3">
+                        <div className="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 p-4">
+                          <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
+                            {cloneUnavailableMessage}
+                          </p>
+                          <p className="text-xs text-amber-800/80 dark:text-amber-200/70 mt-2">
+                            Detected runtime: {cloneRuntime === 'docker' ? 'Docker' : cloneRuntime === 'wsl' ? 'WSL' : cloneRuntime}.
+                            Use a host-side Docker clone or redeploy instead of copying to a new folder inside the container.
+                          </p>
+                        </div>
+                        <div className="rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 p-4 text-sm text-slate-700 dark:text-slate-300 space-y-2">
+                          <p className="font-medium text-slate-900 dark:text-white">Redeploy via Docker container</p>
+                          <p>
+                            Windows: <code className="text-xs bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600">redeploy-docker.bat</code>
+                          </p>
+                          <p>
+                            Linux: <code className="text-xs bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600">./redeploy-docker.sh</code>
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            See Admin Help → Docker deployment, or <code className="text-[11px]">docs/DOCKER_DEPLOYMENT.md</code>.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {cloneAllowed === true && (
+                  <>
                   {/* Clone Form */}
                   <div className="bg-white dark:bg-slate-800 border border-sky-200/70 dark:border-sky-800/40 rounded-xl overflow-hidden shadow-sm shadow-sky-500/5">
                     <div className="bg-gradient-to-r from-sky-50 via-teal-50/80 to-cyan-50/60 dark:from-sky-950/40 dark:via-teal-950/30 dark:to-cyan-950/20 border-b border-sky-100 dark:border-sky-800/40 px-6 py-5">
@@ -9969,6 +10035,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     )}
                     </div>
                   </div>
+                  </>
+                  )}
                 </div>
               )}
 

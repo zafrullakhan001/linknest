@@ -6,6 +6,98 @@
 
 require_once __DIR__ . '/config.php';
 
+/**
+ * Message shown when folder clone is blocked in Docker or WSL.
+ */
+function linknestCloneUnavailableMessage(): string
+{
+    return 'Clone is not available in Docker or WSL mode. Please go with Docker clone or redeploy via Docker container.';
+}
+
+/**
+ * True when this PHP process is running inside a container.
+ * Checked before WSL because Docker Desktop kernels often contain "microsoft".
+ */
+function linknestCloneIsDocker(): bool
+{
+    if (getenv('LINKNEST_DOCKER') === '1' || getenv('SSH_GATEWAY_DOCKER') === '1') {
+        return true;
+    }
+    if (is_file('/.dockerenv')) {
+        return true;
+    }
+    if (is_readable('/proc/1/cgroup')) {
+        $cgroup = @file_get_contents('/proc/1/cgroup');
+        if (is_string($cgroup) && $cgroup !== '' && (
+            stripos($cgroup, 'docker') !== false
+            || stripos($cgroup, 'containerd') !== false
+            || stripos($cgroup, 'kubepods') !== false
+        )) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * True when PHP is running in WSL (not Windows XAMPP, not a Docker container).
+ */
+function linknestCloneIsWsl(): bool
+{
+    if (defined('PHP_OS_FAMILY') && PHP_OS_FAMILY === 'Windows') {
+        return false;
+    }
+    if (getenv('WSL_DISTRO_NAME') || getenv('WSL_INTEROP') || getenv('WSLENV')) {
+        return true;
+    }
+    $release = php_uname('r');
+    if (stripos($release, 'microsoft') !== false || stripos($release, 'WSL') !== false) {
+        return true;
+    }
+    if (is_readable('/proc/version')) {
+        $version = @file_get_contents('/proc/version');
+        if (is_string($version) && $version !== '' && (
+            stripos($version, 'microsoft') !== false
+            || stripos($version, 'WSL') !== false
+        )) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Detect whether clone may run on this install.
+ *
+ * @return array{runtime: string, cloneAllowed: bool, message: string|null}
+ */
+function linknestGetCloneRuntimeEnvironment(): array
+{
+    $unavailable = linknestCloneUnavailableMessage();
+
+    if (linknestCloneIsDocker()) {
+        return [
+            'runtime' => 'docker',
+            'cloneAllowed' => false,
+            'message' => $unavailable,
+        ];
+    }
+
+    if (linknestCloneIsWsl()) {
+        return [
+            'runtime' => 'wsl',
+            'cloneAllowed' => false,
+            'message' => $unavailable,
+        ];
+    }
+
+    return [
+        'runtime' => 'host',
+        'cloneAllowed' => true,
+        'message' => null,
+    ];
+}
+
 class CloneService {
     private $db;
     private $cloneId;
@@ -325,6 +417,24 @@ class CloneService {
         $this->writeTraceLog("Parameters: folderName=$folderName, sourcePath=$sourcePath, targetPath=$targetPath", 'INFO');
         $this->writeTraceLog("Options: copyAssets=" . ($copyAssets ? 'true' : 'false') . ", copyDatabase=" . ($copyDatabase ? 'true' : 'false'), 'INFO');
         $this->writeTraceLog("Created by user ID: " . ($createdBy ?? 'null'), 'INFO');
+
+        $runtimeEnv = linknestGetCloneRuntimeEnvironment();
+        $this->writeTraceLog("Runtime environment: " . $runtimeEnv['runtime'] . ", cloneAllowed=" . ($runtimeEnv['cloneAllowed'] ? 'true' : 'false'), 'INFO');
+        if (!$runtimeEnv['cloneAllowed']) {
+            $blocked = $runtimeEnv['message'] ?? linknestCloneUnavailableMessage();
+            $this->writeTraceLog("ERROR: Clone blocked on runtime " . $runtimeEnv['runtime'] . ": $blocked", 'ERROR');
+            $logs = $this->addLog("ERROR: $blocked", []);
+            $this->updateProgress('error', 0, $blocked, $logs);
+            if ($this->cloneId) {
+                try {
+                    $stmt = $this->db->prepare('UPDATE clones SET status = ?, error_message = ? WHERE id = ?');
+                    $stmt->execute(['failed', $blocked, $this->cloneId]);
+                } catch (PDOException $dbError) {
+                    $this->writeTraceLog("ERROR: Failed to update database with runtime block: " . $dbError->getMessage(), 'ERROR');
+                }
+            }
+            throw new Exception($blocked);
+        }
         
         // Get URL from database early (use stored URL instead of generating)
         $url = null;
@@ -460,7 +570,11 @@ class CloneService {
                 'section-links-import-template.csv',
                 'staging-ai-import-template.csv',
                 'staging-ai-prompt-guide.md',
-                'metadata.json'
+                'metadata.json',
+                'AGENTS.md',
+                'package-for-deployment.bat',
+                'redeploy-docker.bat',
+                'redeploy-docker.sh'
             ];
             
             $copiedCount = 0;
@@ -496,7 +610,7 @@ class CloneService {
             // Copy directories
             $this->writeTraceLog("Starting to copy directories", 'INFO');
             // Include utils (frontend helpers) and public (static JS / SW assets)
-            $directories = ['api', 'components', 'config', 'contexts', 'hooks', 'migrations', 'services', 'src', 'utils', 'public', 'docker', 'docs', 'land'];
+            $directories = ['api', 'analytics', 'bin', 'components', 'config', 'contexts', 'hooks', 'migrations', 'services', 'src', 'utils', 'public', 'docker', 'docs', 'land'];
             $this->writeTraceLog("Directories to copy: " . implode(', ', $directories), 'DEBUG');
             
             foreach ($directories as $index => $dir) {
