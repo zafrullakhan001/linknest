@@ -23,3 +23,58 @@ export function normalizeStoredLinkUrl(url: string): string {
 export function isHttpOrHttpsUrl(url: string): boolean {
   return /^https?:\/\//i.test(String(url || '').trim());
 }
+
+type ShortUrlInheritItem = { inheritShortUrls?: boolean | null } | null | undefined;
+
+/** On/omitted inherits the parent. Off overrides to original URLs. */
+export function inheritsShortUrls(item?: ShortUrlInheritItem): boolean {
+  return item?.inheritShortUrls !== false;
+}
+
+export function effectiveShowShortUrls(
+  spaceOn: boolean,
+  ...items: ShortUrlInheritItem[]
+): boolean {
+  if (!spaceOn) return false;
+  return items.every((item) => inheritsShortUrls(item));
+}
+
+/** Prefer the recyclable short URL when a space is set to show short URLs. */
+export function viewerLinkUrl(
+  link: { url?: string; shortUrl?: string } | null | undefined,
+  showShortUrls?: boolean | null
+): string {
+  if (showShortUrls && link?.shortUrl) {
+    return link.shortUrl;
+  }
+  return String(link?.url || '');
+}
+
+export function viewerLinkDisplay(
+  link: { url?: string; shortUrl?: string } | null | undefined,
+  showShortUrls?: boolean | null,
+  maxLength = 48
+): string {
+  return getDisplayUrl(viewerLinkUrl(link, showShortUrls), maxLength);
+}
+
+/**
+ * Rich labels sometimes contain a nested <a href="original">. That inner href
+ * wins the browser status-bar preview. Rewrite those hrefs to the viewer URL
+ * (short URL when the space is set to show them).
+ */
+export function rewriteHtmlAnchorHrefs(html: string, href: string): string {
+  const source = String(html || '');
+  const nextHref = String(href || '');
+  if (!source || !nextHref || !/<a\b/i.test(source)) return source;
+  const safe = nextHref
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;');
+  return source.replace(/<a\b([^>]*?)>/gi, (_match, attrs: string) => {
+    const cleaned = String(attrs)
+      .replace(/\s*href\s*=\s*(["'])[\s\S]*?\1/gi, '')
+      .replace(/\s*href\s*=\s*[^\s>]+/gi, '');
+    return `<a${cleaned} href="${safe}">`;
+  });
+}

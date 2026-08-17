@@ -16,6 +16,8 @@ const transformTile = (apiTile: any): Tile => {
     showEmoji: apiTile.showEmoji === false || apiTile.showEmoji === 0 || apiTile.showEmoji === '0' ? false : true,
     showTitle: apiTile.showTitle === false || apiTile.showTitle === 0 || apiTile.showTitle === '0' ? false : true,
     showDescription: apiTile.showDescription === false || apiTile.showDescription === 0 || apiTile.showDescription === '0' ? false : true,
+    showShortUrls: apiTile.showShortUrls === true || apiTile.showShortUrls === 1 || apiTile.showShortUrls === '1',
+    shortUrl: typeof apiTile.shortUrl === 'string' && apiTile.shortUrl ? apiTile.shortUrl : undefined,
     emojiImage: apiTile.emojiImage || undefined,
     emojiImageOpacity: typeof apiTile.emojiImageOpacity === 'number'
       ? Math.max(0, Math.min(100, apiTile.emojiImageOpacity))
@@ -122,6 +124,7 @@ const extractSearchLinks = (tile: Tile): Tile['searchLinks'] => {
         tooltip: link.tooltip,
         richTextContent: link.richTextContent,
         health: link.health,
+        shortUrl: (link as { shortUrl?: string }).shortUrl,
       });
     });
   };
@@ -643,7 +646,10 @@ export interface FavoriteLink {
     title: string;
     emoji: string;
     themeColor: string;
+    showShortUrls?: boolean;
+    shortUrl?: string;
   };
+  shortUrl?: string;
 }
 
 export const getFavoriteLinks = async (): Promise<FavoriteLink[]> => {

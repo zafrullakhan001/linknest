@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/access_restrictions_lib.php';
+require_once __DIR__ . '/short_urls_lib.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
@@ -206,7 +207,7 @@ function handleGetTiles() {
     // Step 1: Get visible tiles filtered by source_tab
     // Summary mode skips html_content and other heavy columns
     $tileCols = $summaryMode
-        ? 'id, user_id, title, description, emoji, theme_color, "group", position, created_at, visibility, allowed_users, allowed_groups, source_tab, deleted_at, archived_at, is_hyperlink, hyperlink_url, open_in_new_tab, browser, visible_from, expires_at, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, search_tags, published, access_restrictions'
+        ? 'id, user_id, title, description, emoji, theme_color, "group", position, created_at, visibility, allowed_users, allowed_groups, source_tab, deleted_at, archived_at, is_hyperlink, hyperlink_url, open_in_new_tab, browser, visible_from, expires_at, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, show_short_urls, search_tags, published, access_restrictions'
         : '*';
     $baseWhere = 'deleted_at IS NULL AND archived_at IS NULL';
     if ($sourceTab === 'staging') {
@@ -545,6 +546,7 @@ function handleGetTiles() {
             'emojiImageZoom' => !empty($row['emoji_image']) && isset($row['emoji_image_zoom']) && $row['emoji_image_zoom'] !== null && $row['emoji_image_zoom'] !== '' ? max(50, min(300, (int)$row['emoji_image_zoom'])) : null,
             'showTitle' => !(isset($row['show_title']) && ((int)$row['show_title'] === 0 || $row['show_title'] === '0' || $row['show_title'] === false)),
             'showDescription' => !(isset($row['show_description']) && ((int)$row['show_description'] === 0 || $row['show_description'] === '0' || $row['show_description'] === false)),
+            'showShortUrls' => mapShowShortUrlsFromRow($row),
             'tabs' => [],
             'sharedWithMeInvitationId' => isset($acceptedSharedTiles[$row['id']]) ? $acceptedSharedTiles[$row['id']]['invitationId'] : null,
             'sharedWithMeSharer' => isset($acceptedSharedTiles[$row['id']]) ? ['userId' => $acceptedSharedTiles[$row['id']]['sharerUserId'], 'username' => $acceptedSharedTiles[$row['id']]['sharerUsername']] : null
@@ -727,6 +729,8 @@ function handleGetTiles() {
             error_log('Warning: duplicate tile positions detected on GET /tiles?summary=1 (count=' . count($tiles) . '); skipping write-on-read normalization');
         }
 
+        attachShortUrlsToTilesList($db, $tiles, $user['id'] ?? null);
+
         if (!$user && $sourceTab === 'public') {
             responseCacheSet('tiles_summary_guest_public', $tiles);
             responseCacheHitHeader(false);
@@ -890,6 +894,7 @@ function handleGetTiles() {
                         'emoji' => contentEmojiFromRow($tabRow),
                         'position' => (int)($tabRow['position'] ?? 0),
                         'textColor' => (!empty($tabRow['text_color']) && trim($tabRow['text_color']) !== '') ? trim($tabRow['text_color']) : null,
+                        'inheritShortUrls' => mapInheritShortUrlsFromRow($tabRow),
                         'visibleFrom' => $tabRow['visible_from'] ?? null,
                         'expiresAt' => $tabRow['expires_at'] ?? null,
                         'accessRestrictions' => decodeAccessRestrictionsJson($tabRow['access_restrictions'] ?? null),
@@ -917,6 +922,7 @@ function handleGetTiles() {
                                 'visibleFrom' => $sectionRow['visible_from'] ?? null,
                                 'expiresAt' => $sectionRow['expires_at'] ?? null,
                                 'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
+                                'inheritShortUrls' => mapInheritShortUrlsFromRow($sectionRow),
                                 'position' => isset($sectionRow['position']) ? (int)$sectionRow['position'] : 0,
                                 'visibility' => $sectionRow['visibility'] ?? 'public',
                                 'published' => isContentPublished($sectionRow),
@@ -960,6 +966,7 @@ function handleGetTiles() {
                                         'url' => $linkRow['url'],
                                         'icon' => isset($linkRow['icon']) ? $linkRow['icon'] : null,
                                         'textColor' => isset($linkRow['text_color']) ? $linkRow['text_color'] : null,
+                                        'inheritShortUrls' => mapInheritShortUrlsFromRow($linkRow),
                                         'visibility' => $visibility,
                                         'published' => isContentPublished($linkRow),
                                         'allowedUsers' => $allowedUsers,
@@ -1029,6 +1036,7 @@ function handleGetTiles() {
                                 'emoji' => contentEmojiFromRow($sectionRow),
                         'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
                         'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
+                                'inheritShortUrls' => mapInheritShortUrlsFromRow($sectionRow),
                         'visibility' => $sectionRow['visibility'] ?? 'public',
                         'published' => isContentPublished($sectionRow),
                         'allowedUsers' => (isset($sectionRow['allowed_users']) && $sectionRow['allowed_users'] ? json_decode($sectionRow['allowed_users'], true) : null) ?? [],
@@ -1070,6 +1078,7 @@ function handleGetTiles() {
                                 'url' => $linkRow['url'],
                                 'icon' => $linkRow['icon'] ?? null,
                                 'textColor' => $linkRow['text_color'] ?? null,
+                                'inheritShortUrls' => mapInheritShortUrlsFromRow($linkRow),
                                 'visibility' => $visibility,
                                 'published' => isContentPublished($linkRow),
                                 'allowedUsers' => $allowedUsers,
@@ -1140,6 +1149,7 @@ function handleGetTiles() {
     // We now rely on the tiles.position column for ordering.
     // tile_arrangements is still written for compatibility, but not required for reading.
     
+    attachShortUrlsToTilesList($db, $tiles, $user['id'] ?? null);
     sendJSON($tiles);
     } catch (PDOException $e) {
         error_log('Database error in handleGetTiles: ' . $e->getMessage());
@@ -1365,6 +1375,7 @@ function handleGetTile($tileId) {
         'emojiImageZoom' => !empty($row['emoji_image']) && isset($row['emoji_image_zoom']) && $row['emoji_image_zoom'] !== null && $row['emoji_image_zoom'] !== '' ? max(50, min(300, (int)$row['emoji_image_zoom'])) : null,
             'showTitle' => !(isset($row['show_title']) && ((int)$row['show_title'] === 0 || $row['show_title'] === '0' || $row['show_title'] === false)),
             'showDescription' => !(isset($row['show_description']) && ((int)$row['show_description'] === 0 || $row['show_description'] === '0' || $row['show_description'] === false)),
+            'showShortUrls' => mapShowShortUrlsFromRow($row),
         'tabs' => [],
         'sharedWithMeInvitationId' => null,
         'sharedWithMeSharer' => null
@@ -1433,6 +1444,7 @@ function handleGetTile($tileId) {
                         'emoji' => contentEmojiFromRow($tabRow),
             'position' => (int)($tabRow['position'] ?? 0),
             'textColor' => $tabColor,
+            'inheritShortUrls' => mapInheritShortUrlsFromRow($tabRow),
             'visibleFrom' => $tabRow['visible_from'] ?? null,
             'expiresAt' => $tabRow['expires_at'] ?? null,
             'accessRestrictions' => decodeAccessRestrictionsJson($tabRow['access_restrictions'] ?? null),
@@ -1462,6 +1474,7 @@ function handleGetTile($tileId) {
                 'visibleFrom' => $sectionRow['visible_from'] ?? null,
                 'expiresAt' => $sectionRow['expires_at'] ?? null,
                 'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
+                                'inheritShortUrls' => mapInheritShortUrlsFromRow($sectionRow),
                 'position' => isset($sectionRow['position']) ? (int)$sectionRow['position'] : 0,
                 'visibility' => $sectionRow['visibility'] ?? 'public',
                 'published' => isContentPublished($sectionRow),
@@ -1512,6 +1525,7 @@ function handleGetTile($tileId) {
                     'url' => $linkRow['url'],
                     'icon' => isset($linkRow['icon']) ? $linkRow['icon'] : null,
                     'textColor' => isset($linkRow['text_color']) ? $linkRow['text_color'] : null,
+                    'inheritShortUrls' => mapInheritShortUrlsFromRow($linkRow),
                     'visibility' => $visibility,
                     'published' => isContentPublished($linkRow),
                     'allowedUsers' => $allowedUsers,
@@ -1587,6 +1601,7 @@ function handleGetTile($tileId) {
                                 'emoji' => contentEmojiFromRow($sectionRow),
                     'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
                     'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
+                                'inheritShortUrls' => mapInheritShortUrlsFromRow($sectionRow),
                     'visibility' => $sectionRow['visibility'] ?? 'public',
                     'allowedUsers' => (isset($sectionRow['allowed_users']) && $sectionRow['allowed_users'] ? json_decode($sectionRow['allowed_users'], true) : null) ?? [],
                     'allowedGroups' => (isset($sectionRow['allowed_groups']) && $sectionRow['allowed_groups'] ? json_decode($sectionRow['allowed_groups'], true) : null) ?? [],
@@ -1636,6 +1651,7 @@ function handleGetTile($tileId) {
                         'url' => $linkRow['url'],
                         'icon' => $linkRow['icon'] ?? null,
                         'textColor' => $linkRow['text_color'] ?? null,
+                        'inheritShortUrls' => mapInheritShortUrlsFromRow($linkRow),
                         'visibility' => $visibility,
                         'allowedUsers' => $allowedUsers,
                         'allowedGroups' => $allowedGroups,
@@ -1684,6 +1700,8 @@ function handleGetTile($tileId) {
     // Avoid duplicating nested section bytes when tabs already carry them.
     // Legacy-only tiles are wrapped into a default tab above, so sections stay empty here.
     $tile['sections'] = [];
+
+    attachShortUrlsToTilePayload($db, $tile, true, $user['id'] ?? null);
     
     sendJSON($tile);
 }
@@ -1904,6 +1922,8 @@ function handleCreateTile() {
     ])) {
         sendJSON(['error' => 'Failed to create tile'], 500);
     }
+
+    persistTileShowShortUrls($db, $tileId, $data);
     
     // Create share invitations for users added to allowed list (they must accept to get access)
     if (!empty($pendingShareUserIds) && $visibility === 'private') {
@@ -1947,6 +1967,7 @@ function handleCreateTile() {
                 $tabPublished,
                 encodeAccessRestrictionsJson($tab['accessRestrictions'] ?? null)
             ]);
+            persistInheritShortUrls($db, 'tabs', $tabId, $tab);
             
             // Insert sections for this tab
             if (isset($tab['sections']) && is_array($tab['sections'])) {
@@ -1974,6 +1995,7 @@ function handleCreateTile() {
                         $secAllowedGroups,
                         $secPublished
                     ]);
+                    persistInheritShortUrls($db, 'sections', $sectionId, $section);
                     
                     // Insert links for this section
                     if (isset($section['links']) && is_array($section['links'])) {
@@ -2010,6 +2032,7 @@ function handleCreateTile() {
                                     $linkPublished,
                                     encodeAccessRestrictionsJson($link['accessRestrictions'] ?? null)
                                 ]);
+                                persistInheritShortUrls($db, 'links', $linkId, $link);
                             } catch (PDOException $e) {
                                 error_log('Error inserting link: ' . $e->getMessage());
                                 error_log('Link data: ' . json_encode($link));
@@ -2558,6 +2581,7 @@ function handleCloneTile($tileId) {
             return;
         }
         $db->prepare('UPDATE tiles SET access_restrictions = ? WHERE id = ?')->execute([$originalTile['access_restrictions'] ?? null, $newTileId]);
+        persistTileShowShortUrls($db, $newTileId, null, $originalTile);
     
         // Clone tabs, sections, and links
         $tabStmt = $db->prepare('SELECT * FROM tabs WHERE tile_id = ? ORDER BY position ASC');
@@ -2676,6 +2700,7 @@ function handleCloneTile($tileId) {
                 $tab['expires_at'] ?? null,
                 $tab['access_restrictions'] ?? null
             ]);
+            persistInheritShortUrls($db, 'tabs', $newTabId, $tab);
             
             // Clone sections for this tab
             $sectionStmt = $db->prepare('SELECT * FROM sections WHERE tab_id = ? ORDER BY position ASC, id ASC');
@@ -2727,6 +2752,7 @@ function handleCloneTile($tileId) {
                                 $link['animation'] ?? null,
                         $link['access_restrictions'] ?? null
                     ]);
+                    persistInheritShortUrls($db, 'links', $newLinkId, $link);
                 }
                 
                 // Clone rich text content for sections
@@ -3063,6 +3089,7 @@ function handleCloneCategory($categoryName) {
                 continue;
             }
             $db->prepare('UPDATE tiles SET access_restrictions = ? WHERE id = ?')->execute([$originalTile['access_restrictions'] ?? null, $newTileId]);
+        persistTileShowShortUrls($db, $newTileId, null, $originalTile);
             
             // Clone tabs, sections, and links
             $tabStmt = $db->prepare('SELECT * FROM tabs WHERE tile_id = ? ORDER BY position ASC');
@@ -4191,13 +4218,18 @@ function mapFavoriteLinkRow(array $row): array {
         'tooltip' => $row['tooltip'] ?? null,
         'browser' => $row['browser'] ?? null,
         'richTextContent' => $row['rich_text_content'] ?? null,
+        'inheritShortUrls' => mapInheritShortUrlsFromRow($row),
         'isFavorite' => true,
         'health' => $health,
         'tile' => [
             'id' => $row['tile_id'],
             'title' => $row['tile_title'] ?? 'Untitled',
             'emoji' => $row['tile_emoji'] ?? '✨',
-            'themeColor' => $row['tile_theme_color'] ?? 'blue'
+            'themeColor' => $row['tile_theme_color'] ?? 'blue',
+            'showShortUrls' => mapShowShortUrlsFromRow(['show_short_urls' => $row['tile_show_short_urls'] ?? 0])
+                && mapInheritShortUrlsFromRow(['inherit_short_urls' => $row['tab_inherit_short_urls'] ?? 1])
+                && mapInheritShortUrlsFromRow(['inherit_short_urls' => $row['section_inherit_short_urls'] ?? 1])
+                && mapInheritShortUrlsFromRow($row),
         ]
     ];
 }
@@ -4217,6 +4249,9 @@ function handleGetFavoriteLinks() {
                 t.emoji as tile_emoji,
                 t.theme_color as tile_theme_color,
                 t.published as tile_published,
+                t.show_short_urls as tile_show_short_urls,
+                tb.inherit_short_urls as tab_inherit_short_urls,
+                s.inherit_short_urls as section_inherit_short_urls,
                 s.id as section_id
             FROM user_link_favorites ulf
             INNER JOIN links l ON l.id = ulf.link_id
@@ -4248,6 +4283,36 @@ function handleGetFavoriteLinks() {
             // Keep the user's own favorites list intact (visibility/ACL was already
             // checked when they could open/favorite the link).
             $favoriteLinks[] = mapFavoriteLinkRow($row);
+        }
+
+        $byTile = [];
+        foreach ($favoriteLinks as $idx => $fav) {
+            $tid = (string)($fav['tile']['id'] ?? '');
+            if ($tid === '') {
+                continue;
+            }
+            $byTile[$tid][] = $idx;
+        }
+        foreach ($byTile as $tid => $indexes) {
+            $ensure = !empty($favoriteLinks[$indexes[0]]['tile']['showShortUrls']);
+            $targets = [['type' => 'tile', 'id' => $tid]];
+            foreach ($indexes as $idx) {
+                $targets[] = ['type' => 'link', 'id' => (string)$favoriteLinks[$idx]['id']];
+            }
+            $codes = $ensure
+                ? ensureShortUrlsForTargets($db, $tid, $targets, $user['id'] ?? null)
+                : lookupActiveShortUrlCodes($db, $targets);
+            if (isset($codes['tile:' . $tid])) {
+                foreach ($indexes as $idx) {
+                    $favoriteLinks[$idx]['tile']['shortUrl'] = shortUrlForCode($codes['tile:' . $tid]);
+                }
+            }
+            foreach ($indexes as $idx) {
+                $key = 'link:' . $favoriteLinks[$idx]['id'];
+                if (isset($codes[$key])) {
+                    $favoriteLinks[$idx]['shortUrl'] = shortUrlForCode($codes[$key]);
+                }
+            }
         }
 
         sendJSON($favoriteLinks);
@@ -4537,6 +4602,7 @@ function handleGetRecycleBin() {
             'emojiImageZoom' => !empty($row['emoji_image']) && isset($row['emoji_image_zoom']) && $row['emoji_image_zoom'] !== null && $row['emoji_image_zoom'] !== '' ? max(50, min(300, (int)$row['emoji_image_zoom'])) : null,
             'showTitle' => !(isset($row['show_title']) && ((int)$row['show_title'] === 0 || $row['show_title'] === '0' || $row['show_title'] === false)),
             'showDescription' => !(isset($row['show_description']) && ((int)$row['show_description'] === 0 || $row['show_description'] === '0' || $row['show_description'] === false)),
+            'showShortUrls' => mapShowShortUrlsFromRow($row),
             'tabs' => []
         ];
         
@@ -4552,6 +4618,7 @@ function handleGetRecycleBin() {
                         'emoji' => contentEmojiFromRow($tabRow),
                 'position' => (int)($tabRow['position'] ?? 0),
                 'textColor' => (!empty($tabRow['text_color']) && trim($tabRow['text_color']) !== '') ? trim($tabRow['text_color']) : null,
+                'inheritShortUrls' => mapInheritShortUrlsFromRow($tabRow),
                 'visibleFrom' => $tabRow['visible_from'] ?? null,
                 'expiresAt' => $tabRow['expires_at'] ?? null,
                 'accessRestrictions' => decodeAccessRestrictionsJson($tabRow['access_restrictions'] ?? null),
@@ -4574,6 +4641,7 @@ function handleGetRecycleBin() {
                     'visibleFrom' => $sectionRow['visible_from'] ?? null,
                     'expiresAt' => $sectionRow['expires_at'] ?? null,
                     'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
+                                'inheritShortUrls' => mapInheritShortUrlsFromRow($sectionRow),
                     'position' => isset($sectionRow['position']) ? (int)$sectionRow['position'] : 0,
                     'visibility' => $sectionRow['visibility'] ?? 'public',
                     'allowedUsers' => (isset($sectionRow['allowed_users']) && $sectionRow['allowed_users'] ? json_decode($sectionRow['allowed_users'], true) : null) ?? [],
@@ -4592,6 +4660,7 @@ function handleGetRecycleBin() {
                         'url' => $linkRow['url'],
                         'icon' => $linkRow['icon'] ?? null,
                         'textColor' => $linkRow['text_color'] ?? null,
+                        'inheritShortUrls' => mapInheritShortUrlsFromRow($linkRow),
                         'visibility' => $linkRow['visibility'] ?? 'public',
                         'allowedUsers' => $linkRow['allowed_users'] ? json_decode($linkRow['allowed_users'], true) : [],
                         'allowedGroups' => isset($linkRow['allowed_groups']) && $linkRow['allowed_groups'] ? json_decode($linkRow['allowed_groups'], true) : [],
@@ -4902,6 +4971,7 @@ function handleGetArchive() {
                 'emojiImageZoom' => !empty($row['emoji_image']) && isset($row['emoji_image_zoom']) && $row['emoji_image_zoom'] !== null && $row['emoji_image_zoom'] !== '' ? max(50, min(300, (int)$row['emoji_image_zoom'])) : null,
                 'showTitle' => !(isset($row['show_title']) && ((int)$row['show_title'] === 0 || $row['show_title'] === '0' || $row['show_title'] === false)),
                 'showDescription' => !(isset($row['show_description']) && ((int)$row['show_description'] === 0 || $row['show_description'] === '0' || $row['show_description'] === false)),
+            'showShortUrls' => mapShowShortUrlsFromRow($row),
                 'tabs' => []
             ];
             
@@ -4933,6 +5003,7 @@ function handleGetArchive() {
                         'emoji' => contentEmojiFromRow($tabRow),
                     'position' => isset($tabRow['position']) ? (int)$tabRow['position'] : 0,
                     'textColor' => (!empty($tabRow['text_color']) && trim($tabRow['text_color']) !== '') ? trim($tabRow['text_color']) : null,
+                'inheritShortUrls' => mapInheritShortUrlsFromRow($tabRow),
                     'visibleFrom' => $tabRow['visible_from'] ?? null,
                     'expiresAt' => $tabRow['expires_at'] ?? null,
                     'accessRestrictions' => decodeAccessRestrictionsJson($tabRow['access_restrictions'] ?? null),
@@ -4955,6 +5026,7 @@ function handleGetArchive() {
                         'visibleFrom' => $sectionRow['visible_from'] ?? null,
                         'expiresAt' => $sectionRow['expires_at'] ?? null,
                         'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
+                                'inheritShortUrls' => mapInheritShortUrlsFromRow($sectionRow),
                         'position' => isset($sectionRow['position']) ? (int)$sectionRow['position'] : 0,
                         'visibility' => $sectionRow['visibility'] ?? 'public',
                         'allowedUsers' => (isset($sectionRow['allowed_users']) && $sectionRow['allowed_users'] ? json_decode($sectionRow['allowed_users'], true) : null) ?? [],
@@ -4972,6 +5044,7 @@ function handleGetArchive() {
                             'url' => $linkRow['url'],
                             'icon' => $linkRow['icon'] ?? null,
                             'textColor' => $linkRow['text_color'] ?? null,
+                        'inheritShortUrls' => mapInheritShortUrlsFromRow($linkRow),
                             'visibility' => $linkRow['visibility'] ?? 'public',
                             'allowedUsers' => $linkRow['allowed_users'] ? json_decode($linkRow['allowed_users'], true) : [],
                             'notes' => $linkRow['notes'] ?? null,
@@ -5398,6 +5471,7 @@ function getTileForVersion($tileId, $db) {
         'emojiImageZoom' => !empty($row['emoji_image']) && isset($row['emoji_image_zoom']) && $row['emoji_image_zoom'] !== null && $row['emoji_image_zoom'] !== '' ? max(50, min(300, (int)$row['emoji_image_zoom'])) : null,
             'showTitle' => !(isset($row['show_title']) && ((int)$row['show_title'] === 0 || $row['show_title'] === '0' || $row['show_title'] === false)),
             'showDescription' => !(isset($row['show_description']) && ((int)$row['show_description'] === 0 || $row['show_description'] === '0' || $row['show_description'] === false)),
+            'showShortUrls' => mapShowShortUrlsFromRow($row),
         'tabs' => [],
         'messages' => []
     ];
@@ -5446,6 +5520,7 @@ function getTileForVersion($tileId, $db) {
                         'emoji' => contentEmojiFromRow($tabRow),
             'position' => (int)($tabRow['position'] ?? 0),
             'textColor' => (!empty($tabRow['text_color']) && trim($tabRow['text_color']) !== '') ? trim($tabRow['text_color']) : null,
+                'inheritShortUrls' => mapInheritShortUrlsFromRow($tabRow),
             'visibleFrom' => $tabRow['visible_from'] ?? null,
             'expiresAt' => $tabRow['expires_at'] ?? null,
             'accessRestrictions' => decodeAccessRestrictionsJson($tabRow['access_restrictions'] ?? null),
@@ -5470,6 +5545,7 @@ function getTileForVersion($tileId, $db) {
                 'visibleFrom' => $sectionRow['visible_from'] ?? null,
                 'expiresAt' => $sectionRow['expires_at'] ?? null,
                 'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
+                                'inheritShortUrls' => mapInheritShortUrlsFromRow($sectionRow),
                 'position' => isset($sectionRow['position']) ? (int)$sectionRow['position'] : 0,
                 'visibility' => $sectionRow['visibility'] ?? 'public',
                 'published' => isContentPublished($sectionRow),
@@ -5489,6 +5565,7 @@ function getTileForVersion($tileId, $db) {
                     'url' => $linkRow['url'],
                     'icon' => isset($linkRow['icon']) ? $linkRow['icon'] : null,
                     'textColor' => isset($linkRow['text_color']) ? $linkRow['text_color'] : null,
+                    'inheritShortUrls' => mapInheritShortUrlsFromRow($linkRow),
                     'visibility' => $linkRow['visibility'] ?? 'public',
                     'published' => isContentPublished($linkRow),
                     'allowedUsers' => $linkRow['allowed_users'] ? json_decode($linkRow['allowed_users'], true) : [],
@@ -6150,6 +6227,8 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
             $tileId
         ]);
 
+        persistTileShowShortUrls($db, $tileId, $data, $currentTileData);
+
         if ($preserveNested) {
             // Metadata-only update: leave tabs, sections, links untouched.
             // Message Board edits from the home-grid edit modal still send messages —
@@ -6316,6 +6395,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                     $tabPublished,
                     encodeAccessRestrictionsJson($tab['accessRestrictions'] ?? null)
                 ]);
+                persistInheritShortUrls($db, 'tabs', $tabId, $tab);
                 
                 if (isset($tab['sections']) && is_array($tab['sections'])) {
                     foreach ($tab['sections'] as $sectionIndex => $section) {
@@ -6342,6 +6422,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                             $secAllowedGroups,
                             $secPublished
                         ]);
+                        persistInheritShortUrls($db, 'sections', $sectionId, $section);
                         
                         // Links
                         if (isset($section['links']) && is_array($section['links'])) {
@@ -6374,6 +6455,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                                     $linkPublished,
                                     encodeAccessRestrictionsJson($link['accessRestrictions'] ?? null)
                                 ]);
+                                persistInheritShortUrls($db, 'links', $linkId, $link);
                             }
                         }
                         
@@ -6624,7 +6706,7 @@ function generateChangelogSummary($old, $new) {
     $changes = [];
     
     // Root level fields
-    $rootFields = ['title', 'description', 'htmlContent', 'group', 'emoji', 'showEmoji', 'showTitle', 'showDescription', 'emojiImage', 'emojiImageOpacity', 'emojiImageOffsetX', 'emojiImageOffsetY', 'emojiImageZoom', 'visibility', 'browser', 'themeColor', 'isHyperlink', 'hyperlinkUrl', 'pageAnimation', 'linksAnimation', 'headerImage', 'headerImageAlign', 'headerImageOpacity', 'headerImageOffsetX', 'headerImageOffsetY', 'headerImageZoom', 'headerImageFit'];
+    $rootFields = ['title', 'description', 'htmlContent', 'group', 'emoji', 'showEmoji', 'showTitle', 'showDescription', 'showShortUrls', 'emojiImage', 'emojiImageOpacity', 'emojiImageOffsetX', 'emojiImageOffsetY', 'emojiImageZoom', 'visibility', 'browser', 'themeColor', 'isHyperlink', 'hyperlinkUrl', 'pageAnimation', 'linksAnimation', 'headerImage', 'headerImageAlign', 'headerImageOpacity', 'headerImageOffsetX', 'headerImageOffsetY', 'headerImageZoom', 'headerImageFit'];
     foreach ($rootFields as $f) {
         $oldVal = is_array($old) ? ($old[$f] ?? null) : null;
         $newVal = is_array($new) ? ($new[$f] ?? null) : null;

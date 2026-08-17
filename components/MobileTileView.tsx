@@ -14,7 +14,7 @@ import {
 } from '../services/publicBookmarksService';
 import { PublicBookmarksPanel } from './PublicBookmarksPanel';
 import { getFavoriteLinks, resolveFavoriteLinks, FavoriteLink } from '../services/storageService';
-import { getDisplayUrl } from '../utils/urlDisplay';
+import { getDisplayUrl, viewerLinkDisplay, viewerLinkUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick } from '../utils/sshLink';
 import { tryHandleVncLinkClick } from '../utils/vncLink';
 import { QRCodeDialog } from './QRCodeDialog';
@@ -1088,7 +1088,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
             ) : (
               <div className="grid grid-cols-1 gap-2.5">
                 {favoriteLinks.map((link) => {
-                  const host = getDisplayUrl(link.url || '');
+                  const host = viewerLinkDisplay(link, link.tile?.showShortUrls);
                   return (
                     <button
                       key={link.id}
@@ -1142,11 +1142,13 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
             </div>
             <div className="space-y-2">
               {matchingSearchLinks.map((link) => {
-                let host = link.url;
-                try {
-                  host = new URL(link.url).hostname.replace(/^www\./, '');
-                } catch {
-                  host = getDisplayUrl(link.url);
+                let host = viewerLinkDisplay(link, link.tile?.showShortUrls);
+                if (!link.tile?.showShortUrls) {
+                  try {
+                    host = new URL(link.url).hostname.replace(/^www\./, '');
+                  } catch {
+                    host = getDisplayUrl(link.url);
+                  }
                 }
                 return (
                   <button
@@ -1168,7 +1170,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                       <div className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-2">
                         {stripHtml(link.label)}
                       </div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" title={link.url}>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" title={viewerLinkUrl(link, link.tile?.showShortUrls)}>
                         {host}
                       </div>
                       <div className="flex items-center gap-1.5 mt-1 overflow-hidden">

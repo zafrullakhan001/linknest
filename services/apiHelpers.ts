@@ -13,6 +13,7 @@ const RESERVED_URL_SEGMENTS = new Set([
   'scripts',
   'docs',
   'apache',
+  's',
   '_ln_sshgw',
   '_ln_vncgw'
 ]);

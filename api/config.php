@@ -133,7 +133,7 @@ if (!defined('SYSTEM_TOKEN')) {
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 88);
+    define('LINKNEST_SCHEMA_VERSION', 90);
 }
 
 function getSchemaPatchFlagPath(): string {
@@ -496,6 +496,69 @@ function ensureAccessRestrictionsColumns(PDO $db): void {
 }
 
 /**
+ * Recyclable short URLs: tiles.show_short_urls + short_urls table.
+ * Safe to call on the getDB() fast path when user_version already matches SCHEMA_VERSION.
+ */
+function ensureShortUrlsSchema(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $exists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='tiles'")->fetchColumn();
+        if ($exists) {
+            $columns = $db->query('PRAGMA table_info(tiles)')->fetchAll(PDO::FETCH_ASSOC);
+            $names = array_column($columns, 'name');
+            if (!in_array('show_short_urls', $names, true)) {
+                $db->exec('ALTER TABLE tiles ADD COLUMN show_short_urls INTEGER DEFAULT 0');
+            }
+        }
+
+        $db->exec('CREATE TABLE IF NOT EXISTS short_urls (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT NOT NULL UNIQUE,
+            target_type TEXT NOT NULL,
+            target_id TEXT NOT NULL,
+            tile_id TEXT NOT NULL,
+            revoked INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            revoked_at INTEGER,
+            created_by INTEGER
+        )');
+        $db->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_short_urls_active_target ON short_urls(target_type, target_id) WHERE revoked = 0');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_short_urls_code ON short_urls(code)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_short_urls_tile ON short_urls(tile_id)');
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureShortUrlsSchema warning: ' . $e->getMessage());
+    }
+}
+
+function ensureInheritShortUrlsColumns(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    $tables = ['tabs', 'sections', 'links'];
+    try {
+        foreach ($tables as $table) {
+            $exists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name=" . $db->quote($table))->fetchColumn();
+            if (!$exists) {
+                continue;
+            }
+            $columns = $db->query('PRAGMA table_info(' . $table . ')')->fetchAll(PDO::FETCH_ASSOC);
+            $names = array_column($columns, 'name');
+            if (!in_array('inherit_short_urls', $names, true)) {
+                $db->exec('ALTER TABLE ' . $table . ' ADD COLUMN inherit_short_urls INTEGER DEFAULT 1');
+            }
+        }
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureInheritShortUrlsColumns warning: ' . $e->getMessage());
+    }
+}
+
+/**
  * Decode access_restrictions JSON from a DB row into an associative array, or null if empty.
  * @param mixed $raw
  * @return array<string, mixed>|null
@@ -773,6 +836,8 @@ function initDatabase() {
         if ($currentVersion >= (int)LINKNEST_SCHEMA_VERSION) {
             // Required by tiles summary SELECT — always repair even if the v88 patch flag already exists.
             ensureAccessRestrictionsColumns($db);
+            ensureShortUrlsSchema($db);
+            ensureInheritShortUrlsColumns($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -798,6 +863,8 @@ function initDatabase() {
         }
         if ($currentVersion >= (int)LINKNEST_SCHEMA_VERSION) {
             ensureAccessRestrictionsColumns($db);
+            ensureShortUrlsSchema($db);
+            ensureInheritShortUrlsColumns($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -1366,6 +1433,9 @@ function initDatabase() {
         } catch (PDOException $e) {
             error_log('Tiles search_tags migration warning: ' . $e->getMessage());
         }
+
+        ensureShortUrlsSchema($db);
+        ensureInheritShortUrlsColumns($db);
 
         ensureAccessRestrictionsColumns($db);
         
@@ -3124,6 +3194,14 @@ function createDatabaseIndexes($db) {
             $db->exec('CREATE INDEX IF NOT EXISTS idx_user_audit_log_action ON user_audit_log(action)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_user_audit_log_target ON user_audit_log(target_user_id)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_user_audit_log_actor ON user_audit_log(actor_id)');
+        } catch (PDOException $e) {
+            // Table might not exist yet, ignore
+        }
+
+        try {
+            $db->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_short_urls_active_target ON short_urls(target_type, target_id) WHERE revoked = 0');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_short_urls_code ON short_urls(code)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_short_urls_tile ON short_urls(tile_id)');
         } catch (PDOException $e) {
             // Table might not exist yet, ignore
         }

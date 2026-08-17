@@ -17,6 +17,7 @@ export type SearchMatchingLink = {
   richTextContent?: string;
   notes?: string;
   tooltip?: string;
+  shortUrl?: string;
   match?: SearchMatchScore;
   tile: {
     id: string;
@@ -24,6 +25,7 @@ export type SearchMatchingLink = {
     emoji: string;
     themeColor: string;
     browser?: string | null;
+    showShortUrls?: boolean;
   };
 };
 
@@ -213,6 +215,7 @@ export function collectMatchingSearchLinks(
         richTextContent?: string;
         notes?: string;
         tooltip?: string;
+        shortUrl?: string;
       }) => {
         const uniqueKey = `${(link.label || '').toLowerCase()}|${(link.url || '').toLowerCase()}`;
         if (uniqueLinksMap.has(uniqueKey)) return;
@@ -236,12 +239,14 @@ export function collectMatchingSearchLinks(
           richTextContent: link.richTextContent,
           notes: link.notes,
           tooltip: link.tooltip,
+          shortUrl: link.shortUrl,
           tile: {
             id: tile.id,
             title: tile.title,
             emoji: tile.emoji || '✨',
             themeColor: tile.themeColor || 'blue',
-            browser: tile.browser
+            browser: tile.browser,
+            showShortUrls: tile.showShortUrls === true,
           }
         });
       };

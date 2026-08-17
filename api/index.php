@@ -93,6 +93,10 @@ if ($path === '/') {
 } elseif (strpos($path, '/user-audit') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 11);
     require __DIR__ . '/user_audit.php';
+} elseif (strpos($path, '/short-urls') === 0) {
+    $remainingPath = substr($path, 11); // Remove '/short-urls'
+    $_SERVER['PATH_INFO'] = (empty($remainingPath) || $remainingPath === '/') ? '/' : (($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath);
+    require __DIR__ . '/short_urls.php';
 } elseif (strpos($path, '/access-restrictions') === 0) {
     $remainingPath = substr($path, 21); // Remove '/access-restrictions'
     $_SERVER['PATH_INFO'] = (empty($remainingPath) || $remainingPath === '/') ? '/' : (($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath);

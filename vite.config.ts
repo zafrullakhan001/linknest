@@ -236,6 +236,27 @@ export default defineConfig(({ mode }) => {
             return path;
           }
         },
+        '/s': {
+          target: proxyTarget,
+          changeOrigin: true,
+          secure: protocol === 'https',
+          rewrite: (path) => {
+            const code = path.replace(/^\/s\/?/, '');
+            return `/s.php?code=${encodeURIComponent(code)}`;
+          }
+        },
+        ...(basePath ? {
+          [`${basePath}/s`]: {
+            target: proxyTarget,
+            changeOrigin: true,
+            secure: protocol === 'https',
+            rewrite: (path) => {
+              const stripped = path.replace(new RegExp(`^${basePath}`), '');
+              const code = stripped.replace(/^\/s\/?/, '');
+              return `/s.php?code=${encodeURIComponent(code)}`;
+            }
+          }
+        } : {}),
         // Proxy basePath/uploads requests (when basePath is set)
         ...(basePath ? {
           [`${basePath}/uploads`]: {

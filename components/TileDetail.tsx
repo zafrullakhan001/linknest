@@ -17,6 +17,7 @@ import { removeSharedTile } from '../services/tileShareService';
 import { useSettings } from '../contexts/SettingsContext';
 import { useAccessRestrictionGate } from '../contexts/AccessRestrictionContext';
 import { AccessRestrictionsEditor, AccessRestrictionsBadge } from './AccessRestrictionsEditor';
+import { ShortUrlActions } from './ShortUrlActions';
 import { isEscapeDialogOpen, useEscapeToClose } from '../hooks/useEscapeToClose';
 import { SelectableRichTextEditor } from './SelectableRichTextEditor';
 import { RichTextContentItem, type RichTextContentItemHandle } from './RichTextContentItem';
@@ -57,7 +58,7 @@ import {
 import { VersionDiffViewer } from './VersionDiffViewer';
 import { TileAnimationSelector, getTileAnimationClass, TileAnimation, getAnimationOption, resolveLinkAnimation } from './TileAnimationSelector';
 import { AuthSourceBadge } from './AuthSourceBadge';
-import { getDisplayUrl, isHttpOrHttpsUrl, normalizeStoredLinkUrl } from '../utils/urlDisplay';
+import { getDisplayUrl, isHttpOrHttpsUrl, normalizeStoredLinkUrl, rewriteHtmlAnchorHrefs, viewerLinkDisplay, viewerLinkUrl, effectiveShowShortUrls } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
 import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
 import { printQrView } from '../utils/printQrView';
@@ -133,6 +134,11 @@ function getTabParamFromHash(): string | null {
     return tab && tab.trim() ? tab.trim() : null;
 }
 
+function getSectionParamFromHash(): string | null {
+    const section = getTileHashParts()?.params.get('section');
+    return section && section.trim() ? section.trim() : null;
+}
+
 function slugifyTabTitle(title: string): string {
     return (title || '')
         .trim()
@@ -159,10 +165,17 @@ function tabParamFor(tab: Tab, allTabs: Tab[]): string {
     return tab.id;
 }
 
-function writeTileHashTab(tabParam: string, mode: 'push' | 'replace'): void {
+function writeTileHashTab(tabParam: string, mode: 'push' | 'replace', sectionId?: string | null): void {
     const parts = getTileHashParts();
     if (!parts) return;
     parts.params.set('tab', tabParam);
+    if (sectionId === undefined) {
+        // keep existing section
+    } else if (sectionId) {
+        parts.params.set('section', sectionId);
+    } else {
+        parts.params.delete('section');
+    }
     const qs = parts.params.toString();
     const nextHash = qs ? `#${parts.path}?${qs}` : `#${parts.path}`;
     if (window.location.hash === nextHash) return;
@@ -472,6 +485,7 @@ const cloneLinkItem = (link: Link, opts?: { appendCopyLabel?: boolean }): Link =
     hasRoleAccess: link.hasRoleAccess === true ? true : undefined,
     position: link.position,
     animation: link.animation,
+    inheritShortUrls: link.inheritShortUrls,
 });
 
 /** Deep-clone a rich text block with a fresh id (all box/meta fields preserved). */
@@ -520,6 +534,7 @@ const cloneSectionItem = (
         visibleFrom: section.visibleFrom,
         expiresAt: section.expiresAt,
         forceStackedView: section.forceStackedView,
+        inheritShortUrls: section.inheritShortUrls,
         position: opts?.position ?? section.position ?? 0,
         links: links.map((link) => cloneLinkItem(link)),
         richTextContent: richTextContent.map((rt) => cloneRichTextItem(rt)),
@@ -549,6 +564,7 @@ const cloneTabItem = (
         accessRestrictions: tab.accessRestrictions
             ? JSON.parse(JSON.stringify(tab.accessRestrictions))
             : undefined,
+        inheritShortUrls: tab.inheritShortUrls,
         position: opts?.position ?? tab.position,
         sections: sortedSections.map((section, index) =>
             cloneSectionItem(section, { position: section.position ?? index })
@@ -586,6 +602,25 @@ const VisibilityProtectionBadge: React.FC<{
   );
 };
 
+const ShortUrlInheritToggle: React.FC<{
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  title?: string;
+}> = ({ checked, onChange, title }) => (
+  <label
+    className="flex items-center gap-1.5 cursor-pointer p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shrink-0 select-none"
+    title={title || 'On: inherit short URLs from the parent. Off: show original URLs for this item.'}
+  >
+    <input
+      type="checkbox"
+      checked={checked}
+      onChange={(e) => onChange(e.target.checked)}
+      className="w-4 h-4 text-orange-500 bg-slate-100 border-slate-300 rounded focus:ring-orange-500 dark:bg-slate-700 dark:border-slate-600"
+    />
+    <span className="text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">Short URLs</span>
+  </label>
+);
+
 export const TileDetail: React.FC<TileDetailProps> = ({
     tile,
     allTiles,
@@ -596,6 +631,38 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     user
 }) => {
     const { assertCanOpen } = useAccessRestrictionGate();
+    const canRecycleShortUrl = tile.canEdit === true || !!user?.is_admin;
+    const showShortUrls = tile.showShortUrls === true;
+    const [shortUrlOverrides, setShortUrlOverrides] = useState<Record<string, string>>({});
+
+    const shortOf = useCallback((type: 'tile' | 'tab' | 'section' | 'link', id: string, current?: string) => {
+        return shortUrlOverrides[`${type}:${id}`] || current;
+    }, [shortUrlOverrides]);
+
+    const applyRecycledShortUrl = useCallback((targetType: 'tile' | 'tab' | 'section' | 'link', targetId: string, shortUrl: string) => {
+        setShortUrlOverrides((prev) => ({ ...prev, [`${targetType}:${targetId}`]: shortUrl }));
+    }, []);
+
+    const linkViewerHref = useCallback((link: Link, show?: boolean) => {
+        return viewerLinkUrl({ ...link, shortUrl: shortOf('link', link.id, link.shortUrl) }, show ?? showShortUrls) || link.url;
+    }, [showShortUrls, shortOf]);
+
+    const persistShowShortUrls = useCallback(async (enabled: boolean) => {
+        const updatedTile: Tile = { ...tile, showShortUrls: enabled };
+        const updatedTiles = allTiles.map((t) => (t.id === tile.id ? updatedTile : t));
+        try {
+            await saveTile(updatedTile);
+            onUpdateTiles(updatedTiles, true, false, true);
+        } catch (e) {
+            console.error('Failed to save short URL display setting', e);
+            alert(e instanceof Error ? e.message : 'Failed to save short URL display setting');
+        }
+    }, [tile, allTiles, onUpdateTiles]);
+
+    useEffect(() => {
+        setShortUrlOverrides({});
+    }, [tile.id]);
+
     const [isEditing, setIsEditing] = useState(false);
     const autoSavingRef = useRef(false);
     const tempVersionCreatedRef = useRef<{ tileId: string | null; active: boolean }>({ tileId: null, active: false });
@@ -672,7 +739,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editSections, setEditSections] = useState<LinkSection[]>(tile.sections || []);
 
     // Temporary State for Adding Links (keyed by section ID)
-    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, browser: string, richTextContent: string, animation: string, accessRestrictions?: AccessRestrictions }>>({});
+    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, browser: string, richTextContent: string, animation: string, accessRestrictions?: AccessRestrictions }>>({});
 
     // Selection State for Bulk Actions
     const [selectedLinkIds, setSelectedLinkIds] = useState<string[]>([]);
@@ -683,7 +750,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
     const [convertLinkDialog, setConvertLinkDialog] = useState<{ tabId: string; sectionId: string; link: Link } | null>(null);
     const [convertingLinkToTile, setConvertingLinkToTile] = useState(false);
-    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, browser: string, richTextContent: string, animation: string, accessRestrictions?: AccessRestrictions }>>({});
+    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, browser: string, richTextContent: string, animation: string, accessRestrictions?: AccessRestrictions }>>({});
 
     // Available browsers from BrowserLauncher API
     const [availableBrowsers, setAvailableBrowsers] = useState<string[]>([]);
@@ -2326,7 +2393,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
         richTextContent: state.richTextContent?.trim() || undefined,
         animation: linkAnimationForSave(state.animation),
-        accessRestrictions: state.accessRestrictions
+        accessRestrictions: state.accessRestrictions,
+        inheritShortUrls: state.inheritShortUrls !== false
     });
 
     const buildLinkFromNewLinkState = (state: NonNullable<(typeof newLinkState)[string]>): Link => ({
@@ -2346,6 +2414,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         animation: linkAnimationForSave(state.animation),
         hasRoleAccess: tile.hasRoleAccess === true || undefined,
         accessRestrictions: state.accessRestrictions,
+        inheritShortUrls: state.inheritShortUrls !== false,
     });
 
     const emptyNewLinkFormState = (): NonNullable<(typeof newLinkState)[string]> => ({
@@ -2355,6 +2424,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         textColor: '',
         visibility: 'public',
         published: true,
+        inheritShortUrls: true,
         allowedUsers: [],
         allowedGroups: [],
         notes: '',
@@ -3465,11 +3535,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     // Link Management
-    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'browser' | 'richTextContent' | 'animation' | 'published', value: string | LinkVisibility | number[] | boolean) => {
+    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'browser' | 'richTextContent' | 'animation' | 'published' | 'inheritShortUrls', value: string | LinkVisibility | number[] | boolean) => {
         setNewLinkState(prev => ({
             ...prev,
             [sectionId]: {
-                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, published: true, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '', animation: 'inherit' }),
+                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, published: true, inheritShortUrls: true, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '', animation: 'inherit' }),
                 [field]: value
             }
         }));
@@ -3513,6 +3583,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             // Role-assigned spaces: mark new links as role-visible so Your Apps keeps them after save
             hasRoleAccess: tile.hasRoleAccess === true || undefined,
             accessRestrictions: state.accessRestrictions,
+            inheritShortUrls: state.inheritShortUrls !== false,
         };
 
         if (editTabs.length > 0) {
@@ -3793,7 +3864,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 browser: link.browser || 'default',
                 richTextContent: link.richTextContent || '',
                 animation: linkAnimationForEdit(link.animation),
-                accessRestrictions: link.accessRestrictions
+                accessRestrictions: link.accessRestrictions,
+                inheritShortUrls: link.inheritShortUrls !== false
             }
         });
         setShowUserPicker(prev => ({ ...prev, [link.id]: false }));
@@ -3859,7 +3931,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setLinkGroupSearch(prev => ({ ...prev, [linkId]: '' }));
     };
 
-    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'browser' | 'richTextContent' | 'animation' | 'published', value: string | LinkVisibility | number[] | boolean) => {
+    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'browser' | 'richTextContent' | 'animation' | 'published' | 'inheritShortUrls', value: string | LinkVisibility | number[] | boolean) => {
         setEditLinkState(prev => ({
             ...prev,
             [linkId]: { ...prev[linkId], [field]: value }
@@ -5065,6 +5137,21 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     }, [selectedTabId, tile.id, tile.tabs]);
 
+    useEffect(() => {
+        const sectionId = getSectionParamFromHash();
+        if (!sectionId) return;
+        const timer = window.setTimeout(() => {
+            const el = document.getElementById(`section-${sectionId}`);
+            if (!el) return;
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            el.classList.add('ring-2', 'ring-brand-400');
+            window.setTimeout(() => {
+                el.classList.remove('ring-2', 'ring-brand-400');
+            }, 2500);
+        }, 80);
+        return () => window.clearTimeout(timer);
+    }, [selectedTabId, tile.id]);
+
     // Browser back/forward (and hash edits) should change the visible tab
     useEffect(() => {
         const onHashChange = () => {
@@ -5184,6 +5271,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             .sort((a, b) => (a.position || 0) - (b.position || 0))
             .filter(tab => isEditing || (isContentVisible(tab) && canViewerSeeByVisibility(tab))) // Show all in edit mode
         : [];
+    const activeViewTab = displayTabs.find((tab) => tab.id === selectedTabId || tab.id === resolveTabId(displayTabs, selectedTabId));
 
 
     // VIEW MODE
@@ -5245,6 +5333,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     <h1 className="linknest-content-title text-2xl md:text-3xl font-bold text-white tracking-tight">
                                         {tile.title}
                                     </h1>
+                                    {showShortUrls ? (
+                                    <ShortUrlActions
+                                        targetType="tile"
+                                        targetId={tile.id}
+                                        shortUrl={shortOf('tile', tile.id, tile.shortUrl)}
+                                        canRecycle={canRecycleShortUrl}
+                                        onRecycled={({ shortUrl }) => applyRecycledShortUrl('tile', tile.id, shortUrl)}
+                                    />
+                                    ) : null}
                                 </div>
                                 <p className="text-white/80 dark:text-slate-400 text-sm font-medium dark:font-normal">{tile.description}</p>
                             </div>
@@ -5253,6 +5350,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             <div className="flex items-center gap-3 justify-center md:justify-end w-full md:w-auto">
                                 {/* Desktop controls */}
                                 <div className="hidden md:flex items-center gap-3 flex-wrap justify-end">
+                                    {tile.canEdit && (
+                                        <label
+                                            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/15 hover:bg-white/25 text-white text-sm font-medium border border-white/20 cursor-pointer backdrop-blur-sm select-none"
+                                            title="Show LinkNest short URLs instead of original destinations (hover, copy, and QR)"
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={showShortUrls}
+                                                onChange={(e) => { void persistShowShortUrls(e.target.checked); }}
+                                                className="rounded border-white/40 text-brand-600 focus:ring-white/50"
+                                            />
+                                            <span>Short URLs</span>
+                                        </label>
+                                    )}
                                     {/* Space page entrance animation — applies to whole link sections */}
                                     {tile.canEdit && (
                                         <div className="relative flex items-center">
@@ -5523,6 +5634,19 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
                                                                 </svg>
                                                             </button>
+                                                        </div>
+                                                    )}
+                                                    {tile.canEdit && (
+                                                        <div className="px-4 pb-3 mb-2 border-b border-slate-100 dark:border-slate-800">
+                                                            <label className="flex items-center gap-2 cursor-pointer select-none">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={showShortUrls}
+                                                                    onChange={(e) => { void persistShowShortUrls(e.target.checked); }}
+                                                                    className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                                                                />
+                                                                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show short URLs instead of original URLs</span>
+                                                            </label>
                                                         </div>
                                                     )}
 
@@ -6031,7 +6155,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         if (!allowed) return;
                                                     }
                                                     setSelectedTabId(tab.id);
-                                                    writeTileHashTab(tabParamFor(tab, displayTabs), 'push');
+                                                    writeTileHashTab(tabParamFor(tab, displayTabs), 'push', null);
                                                 }}
                                                 data-active={isActive}
                                                 className={`linknest-content-tab relative px-5 py-2.5 text-sm font-medium transition-all duration-200 whitespace-nowrap rounded-lg ${isActive
@@ -6049,6 +6173,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     {(tile.canEdit === true || !!user?.is_admin) && (
                                                         <VisibilityProtectionBadge visibility={tab.visibility} />
                                                     )}
+                                                    <span onClick={(e) => e.stopPropagation()} className="inline-flex">
+                                                        {effectiveShowShortUrls(showShortUrls, tab) ? (
+                                                        <ShortUrlActions
+                                                            targetType="tab"
+                                                            targetId={tab.id}
+                                                            shortUrl={shortOf('tab', tab.id, tab.shortUrl)}
+                                                            canRecycle={canRecycleShortUrl}
+                                                            compact
+                                                            onRecycled={({ shortUrl }) => applyRecycledShortUrl('tab', tab.id, shortUrl)}
+                                                        />
+                                                        ) : null}
+                                                    </span>
                                                     {tabLinksCount > 0 && (
                                                         <span className={`px-2 py-0.5 text-xs rounded-full font-semibold transition-colors ${isActive
                                                             ? `${styles.iconBg} ${styles.text}`
@@ -6101,6 +6237,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     return (
                                         <div
                                             key={section.id}
+                                            id={`section-${section.id}`}
                                             style={{ animationDelay: isQrLayout ? undefined : `${sectionIndex * 120}ms` }}
                                             data-view-layout={sectionLinkLayout}
                                             data-qr-print-section={isQrLayout ? section.id : undefined}
@@ -6131,6 +6268,16 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             <span className="shrink-0 leading-none" aria-hidden>{section.emoji}</span>
                                                         ) : null}
                                                         <span className="truncate">{section.title}</span>
+                                                        {effectiveShowShortUrls(showShortUrls, activeViewTab, section) ? (
+                                                        <ShortUrlActions
+                                                            targetType="section"
+                                                            targetId={section.id}
+                                                            shortUrl={shortOf('section', section.id, section.shortUrl)}
+                                                            canRecycle={canRecycleShortUrl}
+                                                            compact
+                                                            onRecycled={({ shortUrl }) => applyRecycledShortUrl('section', section.id, shortUrl)}
+                                                        />
+                                                        ) : null}
                                                         {(tile.canEdit === true || !!user?.is_admin) && (
                                                             <VisibilityProtectionBadge visibility={section.visibility} />
                                                         )}
@@ -6336,7 +6483,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             showCopyAction ||
                                                             showMobileAction ||
                                                             showQrAction ||
-                                                            showBrowserAction;
+                                                            showBrowserAction ||
+                                                            canRecycleShortUrl;
+                                                        const viewerHref = linkViewerHref(link, effectiveShowShortUrls(showShortUrls, activeViewTab, section, link));
+                                                        const labelHtml = rewriteHtmlAnchorHrefs(link.label || '', viewerHref);
+                                                        const linkShowShortUrls = effectiveShowShortUrls(showShortUrls, activeViewTab, section, link);
 
                                                         if (isQrView) {
                                                             const plainQrLabel = stripHtmlTags(link.label || '');
@@ -6349,7 +6500,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 >
                                                                     <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm w-full flex justify-center max-w-[280px]">
                                                                         <BrandedQRCode
-                                                                            value={link.url || ''}
+                                                                            value={viewerHref || ''}
                                                                             size={isMobile ? 220 : 200}
                                                                             title={`QR code for ${plainQrLabel}`}
                                                                             className="w-full flex justify-center [&_svg]:max-w-full [&_svg]:h-auto"
@@ -6361,19 +6512,19 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 <span className="text-base leading-none shrink-0" aria-hidden>{link.icon}</span>
                                                                             ) : null}
                                                                             <p
-                                                                                className="font-semibold text-sm sm:text-base text-slate-900 dark:text-white truncate"
+                                                                                className="font-semibold text-sm sm:text-base text-slate-900 dark:text-white truncate [&_a]:pointer-events-none"
                                                                                 title={plainQrLabel}
-                                                                                dangerouslySetInnerHTML={{ __html: link.label || '' }}
+                                                                                dangerouslySetInnerHTML={{ __html: labelHtml }}
                                                                             />
                                                                         </div>
-                                                                        <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-mono truncate" title={link.url}>
-                                                                            {getDisplayUrl(link.url)}
+                                                                        <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-mono truncate" title={viewerHref}>
+                                                                            {viewerLinkDisplay({ ...link, shortUrl: shortOf('link', link.id, link.shortUrl) }, linkShowShortUrls)}
                                                                         </p>
                                                                     </div>
                                                                     <div className="flex items-center justify-center gap-2 flex-wrap">
                                                                         {link.url ? (
                                                                             <a
-                                                                                href={link.url}
+                                                                                href={viewerHref}
                                                                                 target="_blank"
                                                                                 rel="noopener noreferrer"
                                                                                 className="text-xs font-medium text-brand-600 dark:text-brand-400 hover:underline"
@@ -6401,7 +6552,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     onClick={(e) => {
                                                                                         e.preventDefault();
                                                                                         e.stopPropagation();
-                                                                                        setQrDialogState({ url: link.url, label: link.label });
+                                                                                        setQrDialogState({ url: viewerHref || link.url, label: link.label });
                                                                                     }}
                                                                                 >
                                                                                     Enlarge
@@ -6458,10 +6609,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 </div>
 
                                                                 <a
-                                                                    href={link.url}
+                                                                    href={viewerHref}
                                                                     target="_blank"
                                                                     rel="noopener noreferrer"
-                                                                    className={`min-w-0 block focus:outline-none overflow-hidden ${
+                                                                    className={`min-w-0 block focus:outline-none overflow-hidden [&_a]:pointer-events-none ${
                                                                         isGridCards
                                                                             ? 'w-full px-1 pb-1'
                                                                             : isCompact
@@ -6513,7 +6664,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 >
                                                                     <div className={`flex items-center gap-2 ${isGridCards ? 'justify-center' : ''}`}>
                                                                         <h4
-                                                                            className={`linknest-content-link-title font-semibold ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors ${
+                                                                            className={`linknest-content-link-title font-semibold ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors [&_a]:pointer-events-none ${
                                                                                 isCompact
                                                                                     ? 'text-xs truncate'
                                                                                     : isGridCards
@@ -6530,7 +6681,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     fontWeight: '700'
                                                                                 } : {})
                                                                             }}
-                                                                            dangerouslySetInnerHTML={{ __html: link.label || '' }}
+                                                                            dangerouslySetInnerHTML={{ __html: labelHtml }}
                                                                         />
                                                                         <AccessRestrictionsBadge rules={link.accessRestrictions} />
                                                                     </div>
@@ -6538,8 +6689,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         isCompact ? 'hidden' : isGridCards ? 'mt-0.5 items-center' : 'mt-0.5'
                                                                     }`}>
                                                                         <div className="linknest-content-link-domain flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors overflow-hidden">
-                                                                            <span className="truncate max-w-full" title={link.url}>
-                                                                                {getDisplayUrl(link.url)}
+                                                                            <span className="truncate max-w-full" title={viewerHref}>
+                                                                                {viewerLinkDisplay({ ...link, shortUrl: shortOf('link', link.id, link.shortUrl) }, linkShowShortUrls)}
                                                                             </span>
                                                                             {link.visibility && link.visibility !== 'public' && (
                                                                                 <span
@@ -6812,12 +6963,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     </button>
                                                                     )}
 
-                                                                    {/* Copy button */}
+                                                                    {/* Copy URL: original when editors also have a short-URL copy; otherwise the displayed URL */}
                                                                     {showCopyAction && (
                                                                     <button
-                                                                        onClick={(e) => handleCopy(e, link.url, link.id)}
+                                                                        onClick={(e) => handleCopy(
+                                                                            e,
+                                                                            (linkShowShortUrls && canRecycleShortUrl) ? link.url : (linkViewerHref(link, linkShowShortUrls) || link.url),
+                                                                            link.id
+                                                                        )}
                                                                         className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all relative"
-                                                                        title="Copy URL"
+                                                                        title={
+                                                                            linkShowShortUrls && canRecycleShortUrl
+                                                                                ? 'Copy original URL'
+                                                                                : (linkShowShortUrls ? 'Copy short URL' : 'Copy URL')
+                                                                        }
                                                                     >
                                                                         {copiedId === link.id ? (
                                                                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-emerald-500">
@@ -6830,6 +6989,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             </svg>
                                                                         )}
                                                                     </button>
+                                                                    )}
+
+                                                                    {linkShowShortUrls && canRecycleShortUrl && (
+                                                                        <span onClick={(e) => e.stopPropagation()}>
+                                                                            <ShortUrlActions
+                                                                                targetType="link"
+                                                                                targetId={link.id}
+                                                                                shortUrl={shortOf('link', link.id, link.shortUrl)}
+                                                                                canRecycle={canRecycleShortUrl}
+                                                                                showCopy
+                                                                                compact
+                                                                                onRecycled={({ shortUrl }) => applyRecycledShortUrl('link', link.id, shortUrl)}
+                                                                            />
+                                                                        </span>
                                                                     )}
 
                                                                     {/* Mobile / tablet preview button */}
@@ -6866,7 +7039,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             tempDiv.innerHTML = link.label || '';
                                                                             const plainLabel = tempDiv.textContent || tempDiv.innerText || link.label || link.url;
                                                                             setQrDialogState({
-                                                                                url: link.url,
+                                                                                url: viewerHref || link.url,
                                                                                 label: plainLabel
                                                                             });
                                                                         }}
@@ -6959,7 +7132,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         linkLabel={linkInfoDialog.link.label}
                         linkIcon={linkInfoDialog.link.icon}
                         richTextContent={linkInfoDialog.link.richTextContent || ''}
-                        linkUrl={linkInfoDialog.link.url}
+                        linkUrl={viewerLinkUrl({ ...linkInfoDialog.link, shortUrl: shortOf('link', linkInfoDialog.link.id, linkInfoDialog.link.shortUrl) }, effectiveShowShortUrls(showShortUrls, activeViewTab, linkInfoDialog.link)) || linkInfoDialog.link.url}
                         browser={linkInfoDialog.link.browser}
                     />
                 )}
@@ -8270,6 +8443,23 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         className="flex-1 bg-transparent border-none font-bold text-lg focus:ring-0 placeholder-slate-400"
                                                         style={tab.textColor ? { color: tab.textColor } : { color: 'inherit' }}
                                                     />
+                                                    <ShortUrlInheritToggle
+                                                        checked={tab.inheritShortUrls !== false}
+                                                        title="On: inherit short URLs from the space. Off: show original URLs for this tab."
+                                                        onChange={(inherit) => {
+                                                            setEditTabs(editTabs.map((t) => t.id === tab.id ? { ...t, inheritShortUrls: inherit } : t));
+                                                        }}
+                                                    />
+                                                    {effectiveShowShortUrls(showShortUrls, tab) ? (
+                                                    <ShortUrlActions
+                                                        targetType="tab"
+                                                        targetId={tab.id}
+                                                        shortUrl={shortOf('tab', tab.id, tab.shortUrl)}
+                                                        canRecycle={canRecycleShortUrl}
+                                                        compact
+                                                        onRecycled={({ shortUrl }) => applyRecycledShortUrl('tab', tab.id, shortUrl)}
+                                                    />
+                                                    ) : null}
                                                     {/* Color Picker for Tab Title */}
                                                     <div className="flex items-center gap-1">
                                                         <label
@@ -8492,6 +8682,31 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         placeholder="Section Header (e.g. Resources)"
                                                                         className="flex-1 bg-transparent border-none text-slate-900 dark:text-white font-semibold focus:ring-0 placeholder-slate-400"
                                                                     />
+                                                                    <ShortUrlInheritToggle
+                                                                        checked={section.inheritShortUrls !== false}
+                                                                        title="On: inherit short URLs from the tab/space. Off: show original URLs for this section."
+                                                                        onChange={(inherit) => {
+                                                                            setEditTabs(editTabs.map((t) => {
+                                                                                if (t.id !== tab.id) return t;
+                                                                                return {
+                                                                                    ...t,
+                                                                                    sections: t.sections.map((s) =>
+                                                                                        s.id === section.id ? { ...s, inheritShortUrls: inherit } : s
+                                                                                    )
+                                                                                };
+                                                                            }));
+                                                                        }}
+                                                                    />
+                                                                    {effectiveShowShortUrls(showShortUrls, tab, section) ? (
+                                                                    <ShortUrlActions
+                                                                        targetType="section"
+                                                                        targetId={section.id}
+                                                                        shortUrl={shortOf('section', section.id, section.shortUrl)}
+                                                                        canRecycle={canRecycleShortUrl}
+                                                                        compact
+                                                                        onRecycled={({ shortUrl }) => applyRecycledShortUrl('section', section.id, shortUrl)}
+                                                                    />
+                                                                    ) : null}
                                                                     {/* Bulk Action Buttons */}
                                                                     {selectedItemCount > 0 && (
                                                                         <div className="flex gap-1.5 animate-in fade-in slide-in-from-right-2">
@@ -8995,6 +9210,29 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                             </div>
                                                                                         )}
 
+                                                                                        <div className={`flex items-center justify-between gap-3 p-3.5 rounded-xl border-2 ${
+                                                                                            (editLinkState[link.id]?.inheritShortUrls !== false)
+                                                                                                ? 'border-orange-300 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30'
+                                                                                                : 'border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-900/60'
+                                                                                        }`}>
+                                                                                            <div className="min-w-0">
+                                                                                                <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Short URLs</div>
+                                                                                                <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                                                                                                    {(editLinkState[link.id]?.inheritShortUrls !== false) ? 'Inherit from parent' : 'Override — original URL'}
+                                                                                                </div>
+                                                                                            </div>
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                role="switch"
+                                                                                                aria-checked={editLinkState[link.id]?.inheritShortUrls !== false}
+                                                                                                onClick={() => updateEditLinkState(link.id, 'inheritShortUrls', editLinkState[link.id]?.inheritShortUrls === false)}
+                                                                                                className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${(editLinkState[link.id]?.inheritShortUrls !== false) ? 'bg-orange-500' : 'bg-slate-400 dark:bg-slate-600'}`}
+                                                                                                title="On: inherit short URLs from the section/tab/space. Off: show the original URL."
+                                                                                            >
+                                                                                                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${(editLinkState[link.id]?.inheritShortUrls !== false) ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                                                            </button>
+                                                                                        </div>
+
                                                                                         {/* Basics */}
                                                                                         <LinkEditSection
                                                                                             emoji="🔗"
@@ -9419,7 +9657,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     </span>
                                                                                                 )}
                                                                                             </div>
-                                                                                            <div className="text-xs text-slate-500 truncate font-mono" title={link.url}>{getDisplayUrl(link.url)}</div>
+                                                                                            <div className="text-xs text-slate-500 truncate font-mono" title={effectiveShowShortUrls(showShortUrls, tab, section, link) ? viewerLinkUrl({ ...link, shortUrl: shortOf('link', link.id, link.shortUrl) }, true) : link.url}>{effectiveShowShortUrls(showShortUrls, tab, section, link) ? viewerLinkDisplay({ ...link, shortUrl: shortOf('link', link.id, link.shortUrl) }, true) : getDisplayUrl(link.url)}</div>
                                                                                             {settings.browser_specific_links_enabled === '1' && (() => {
                                                                                                 // Determine which browser is being used for this link
                                                                                                 // Priority: link-specific browser > tile default browser > system default
@@ -9785,6 +10023,29 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     </button>
                                                                                 </div>
                                                                             )}
+
+                                                                            <div className={`flex items-center justify-between gap-3 p-3 rounded-lg border-2 ${
+                                                                                (newLinkState[section.id]?.inheritShortUrls !== false)
+                                                                                    ? 'border-orange-300 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30'
+                                                                                    : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50'
+                                                                            }`}>
+                                                                                <div>
+                                                                                    <div className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Short URLs</div>
+                                                                                    <div className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                                                                                        {(newLinkState[section.id]?.inheritShortUrls !== false) ? 'Inherit from parent' : 'Override — original URL'}
+                                                                                    </div>
+                                                                                </div>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    role="switch"
+                                                                                    aria-checked={newLinkState[section.id]?.inheritShortUrls !== false}
+                                                                                    onClick={() => updateNewLinkState(section.id, 'inheritShortUrls', newLinkState[section.id]?.inheritShortUrls === false)}
+                                                                                    className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${(newLinkState[section.id]?.inheritShortUrls !== false) ? 'bg-orange-500' : 'bg-slate-400 dark:bg-slate-600'}`}
+                                                                                    title="On: inherit short URLs from the section/tab/space. Off: show the original URL."
+                                                                                >
+                                                                                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${(newLinkState[section.id]?.inheritShortUrls !== false) ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                                                </button>
+                                                                            </div>
 
                                                                             {/* Notes - full width for readability */}
                                                                             <div>

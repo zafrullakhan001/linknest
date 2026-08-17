@@ -35,7 +35,7 @@ import { rolesService } from '../services/rolesService';
 import { FaTimes } from 'react-icons/fa';
 import { useMobile } from '../hooks/useMobile';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
-import { getDisplayUrl } from '../utils/urlDisplay';
+import { viewerLinkDisplay, viewerLinkUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
 import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
 import { MobileTileView } from './MobileTileView';
@@ -2651,6 +2651,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [newShowEmoji, setNewShowEmoji] = useState(true);
   const [newShowTitle, setNewShowTitle] = useState(true);
   const [newShowDescription, setNewShowDescription] = useState(true);
+  const [newShowShortUrls, setNewShowShortUrls] = useState(false);
   const [newEmojiImage, setNewEmojiImage] = useState<string>('');
   const [newEmojiImageOpacity, setNewEmojiImageOpacity] = useState(100);
   const [newEmojiImageOffsetX, setNewEmojiImageOffsetX] = useState(0);
@@ -4675,6 +4676,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       showEmoji: newShowEmoji,
       showTitle: newShowTitle,
       showDescription: newShowDescription,
+      showShortUrls: newShowShortUrls,
       emojiImage: newEmojiImage.trim() || null,
       emojiImageOpacity: newEmojiImage.trim() ? newEmojiImageOpacity : null,
       emojiImageOffsetX: newEmojiImage.trim() ? newEmojiImageOffsetX : null,
@@ -4750,6 +4752,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setNewShowEmoji(true);
     setNewShowTitle(true);
     setNewShowDescription(true);
+    setNewShowShortUrls(false);
     setNewEmojiImage('');
     setNewEmojiImageOpacity(100);
     setNewEmojiImageOffsetX(0);
@@ -5196,6 +5199,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setNewShowEmoji(tile.showEmoji !== false);
     setNewShowTitle(tile.showTitle !== false);
     setNewShowDescription(tile.showDescription !== false);
+    setNewShowShortUrls(tile.showShortUrls === true);
     setNewEmojiImage(tile.emojiImage || '');
     setNewEmojiImageOpacity(
       typeof tile.emojiImageOpacity === 'number' ? Math.max(0, Math.min(100, tile.emojiImageOpacity)) : 100
@@ -5505,6 +5509,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       showEmoji: newShowEmoji,
       showTitle: newShowTitle,
       showDescription: newShowDescription,
+      showShortUrls: newShowShortUrls,
       emojiImage: newEmojiImage.trim() || null,
       emojiImageOpacity: newEmojiImage.trim() ? newEmojiImageOpacity : null,
       emojiImageOffsetX: newEmojiImage.trim() ? newEmojiImageOffsetX : null,
@@ -8305,8 +8310,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         <div className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-2 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
                           {stripHtml(link.label)}
                         </div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }} title={link.url}>
-                          {getDisplayUrl(link.url)}
+                        <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }} title={viewerLinkUrl(link, link.tile.showShortUrls)}>
+                          {viewerLinkDisplay(link, link.tile.showShortUrls)}
                         </div>
                         {/* Browser Indicator */}
                         {settings.browser_specific_links_enabled === '1' && browserToUse && (
@@ -9091,6 +9096,15 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
                         />
                         <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">💬 Show description on card</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={newShowShortUrls}
+                          onChange={(e) => setNewShowShortUrls(e.target.checked)}
+                          className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                        />
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show short URLs instead of original URLs</span>
                       </label>
                       <div className="flex flex-wrap items-center gap-3">
                         <label className="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
@@ -11603,6 +11617,15 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
                         />
                         <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show description on card</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={newShowShortUrls}
+                          onChange={(e) => setNewShowShortUrls(e.target.checked)}
+                          className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                        />
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show short URLs instead of original URLs</span>
                       </label>
                       <div className="flex flex-wrap items-center gap-3">
                         <label className="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">

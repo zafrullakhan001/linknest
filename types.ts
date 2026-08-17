@@ -82,6 +82,13 @@ export interface Link {
   animation?: string;
   /** Open-time HTTP restrictions (does not hide the link). */
   accessRestrictions?: AccessRestrictions;
+  /** Recyclable LinkNest short URL for this link. */
+  shortUrl?: string;
+  /**
+   * On/omitted: inherit short-URL display from the parent section/tab/space.
+   * Off: show the original URL even if the space has short URLs on.
+   */
+  inheritShortUrls?: boolean | null;
 }
 
 export interface RichTextContent {
@@ -125,6 +132,13 @@ export interface LinkSection {
   expiresAt?: string; // ISO date string - section expires at this date/time
   forceStackedView?: boolean; // Force stacked view for this section regardless of global view preference
   position?: number; // Position in the tab (for sorting)
+  /** Recyclable LinkNest short URL for this section. */
+  shortUrl?: string;
+  /**
+   * On/omitted: inherit short-URL display from the parent tab/space.
+   * Off: show original URLs for this section even if the space has short URLs on.
+   */
+  inheritShortUrls?: boolean | null;
 }
 
 export interface Tab {
@@ -143,6 +157,13 @@ export interface Tab {
   expiresAt?: string; // ISO date string - tab expires at this date/time
   /** Open-time HTTP restrictions (does not hide the tab). */
   accessRestrictions?: AccessRestrictions;
+  /** Recyclable LinkNest short URL for this tab. */
+  shortUrl?: string;
+  /**
+   * On/omitted: inherit short-URL display from the space.
+   * Off: show original URLs for this tab even if the space has short URLs on.
+   */
+  inheritShortUrls?: boolean | null;
 }
 
 export interface Tile {
@@ -158,6 +179,10 @@ export interface Tile {
   showTitle?: boolean | null;
   /** When false, the description is hidden on the space/tile card. Default true. */
   showDescription?: boolean | null;
+  /** When true, viewers see/copy/QR the recyclable short URL instead of the original destination. */
+  showShortUrls?: boolean | null;
+  /** Recyclable LinkNest short URL for this space. */
+  shortUrl?: string;
   /** Optional PNG URL shown inside the emoji badge (replaces the emoji character when set). */
   emojiImage?: string | null;
   /** Opacity of the emoji/icon image (0–100). Default 100. */

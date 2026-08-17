@@ -817,6 +817,23 @@ const AppContent: React.FC = () => {
     }
   }, [isAuthenticated, authModalOpen]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const next = params.get('ln_next') || '';
+    const wantLogin = params.get('ln_login') === '1';
+    if (wantLogin && !isAuthenticated && !authLoading) {
+      setAuthModalOpen(true);
+    }
+    if (isAuthenticated && next.startsWith('/') && /\/s\/[A-Za-z0-9]+$/.test(next)) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('ln_login');
+      url.searchParams.delete('ln_next');
+      window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+      window.location.href = next;
+    }
+  }, [isAuthenticated, authLoading]);
+
   const handleUpdateTiles = async (
     newTiles: Tile[],
     skipReload: boolean = false,

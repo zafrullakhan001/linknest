@@ -99,6 +99,9 @@ AddDefaultCharset UTF-8
     RewriteCond %{REQUEST_FILENAME} !-f
     # BCTLS escapes spaces/CTL in $1 so category names with spaces are not 403'd.
     RewriteRule ^api/(.*)$ api/index.php?path=$1 [BCTLS,L,QSA]
+
+    # Recyclable short URLs: /s/{code} → s.php
+    RewriteRule ^s/([A-Za-z0-9]+)$ s.php?code=$1 [L,QSA]
     
     # Redirect /index.tsx to dist/index.html (serve compiled version)
     RewriteCond %{DOCUMENT_ROOT}/dist/index.html -f
@@ -145,6 +148,7 @@ AddDefaultCharset UTF-8
     # Production: Force serve dist/index.html for all other SPA routes
     RewriteCond %{DOCUMENT_ROOT}/dist/index.html -f
     RewriteCond %{REQUEST_URI} !^/api
+    RewriteCond %{REQUEST_URI} !^/s/
     RewriteCond %{REQUEST_URI} !^/dist
     RewriteCond %{REQUEST_URI} !^/land/
     RewriteCond %{REQUEST_URI} !^/extensions/
@@ -166,6 +170,7 @@ AddDefaultCharset UTF-8
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_URI} !^/api
+    RewriteCond %{REQUEST_URI} !^/s/
     RewriteRule . index.html [L]
 </IfModule>
 

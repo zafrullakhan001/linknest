@@ -18,7 +18,7 @@ import type { Link, Tile } from '../types';
 import type { FavoriteLink } from '../services/storageService';
 import type { LinkHealthCheckResult } from '../services/favoriteLinkHealthService';
 import { favoriteLinkHealthService } from '../services/favoriteLinkHealthService';
-import { getDisplayUrl } from '../utils/urlDisplay';
+import { viewerLinkDisplay, viewerLinkUrl } from '../utils/urlDisplay';
 import { isSshLinkUrl, tryHandleSshLinkClick } from '../utils/sshLink';
 import { isVncLinkUrl, tryHandleVncLinkClick } from '../utils/vncLink';
 import { getTileAnimationClass, getTileDecorationClass, type TileAnimation, type TileDecoration } from './TileAnimationSelector';
@@ -206,7 +206,7 @@ const SortableFavoriteLinkCard: React.FC<{
           isDragging ? 'ring-2 ring-amber-400 shadow-md' : ''
         }`}
         onClick={openLink}
-        title={link.url}
+        title={viewerLinkUrl(link, link.tile?.showShortUrls)}
       >
         {healthResult && !skipHealth && (
           <div
@@ -328,9 +328,9 @@ const SortableFavoriteLinkCard: React.FC<{
         <div
           className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5"
           style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}
-          title={link.url}
+          title={viewerLinkUrl(link, link.tile?.showShortUrls)}
         >
-          {getDisplayUrl(link.url)}
+          {viewerLinkDisplay(link, link.tile?.showShortUrls)}
         </div>
         {browserSpecificLinksEnabled && browserToUse && (
           <div

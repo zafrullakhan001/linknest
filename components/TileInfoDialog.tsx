@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Tile } from '../types';
 import { FaTimes, FaCheck, FaCopy } from 'react-icons/fa';
+import { ShortUrlActions } from './ShortUrlActions';
 
 interface TileAdmin {
   userId: number;
@@ -290,6 +291,7 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
   const [tileInfo, setTileInfo] = useState<TileInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [spaceShortUrl, setSpaceShortUrl] = useState(tile?.shortUrl || '');
 
   const [modalPosition, setModalPosition] = useState({ x: 0, y: 0 });
   const [modalSize, setModalSize] = useState({ width: 0, height: 0 });
@@ -300,6 +302,10 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
   const modalPositionRef = useRef({ x: 0, y: 0 });
   const modalSizeRef = useRef({ width: 0, height: 0 });
   const modalRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setSpaceShortUrl(tile?.shortUrl || '');
+  }, [tile?.id, tile?.shortUrl]);
 
   useEffect(() => {
     if (isOpen && tile && !categoryInfo) {
@@ -559,7 +565,14 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
               <p className="text-rose-700 dark:text-rose-300 font-medium">{error}</p>
             </div>
           ) : tileInfo ? (
-            <TileInfoView tileInfo={tileInfo} formatDate={formatDate} formatRelativeTime={formatRelativeTime} />
+            <TileInfoView
+              tileInfo={tileInfo}
+              formatDate={formatDate}
+              formatRelativeTime={formatRelativeTime}
+              spaceShortUrl={spaceShortUrl}
+              setSpaceShortUrl={setSpaceShortUrl}
+              canRecycleShortUrl={tile?.canEdit === true}
+            />
           ) : null}
         </div>
 
@@ -583,7 +596,10 @@ const TileInfoView: React.FC<{
   tileInfo: TileInfo;
   formatDate: (ts: number) => string;
   formatRelativeTime: (ts: number) => string;
-}> = ({ tileInfo, formatDate, formatRelativeTime }) => {
+  spaceShortUrl?: string;
+  setSpaceShortUrl?: (url: string) => void;
+  canRecycleShortUrl?: boolean;
+}> = ({ tileInfo, formatDate, formatRelativeTime, spaceShortUrl, setSpaceShortUrl, canRecycleShortUrl }) => {
   return (
     <div className="space-y-5">
       <SectionCard emoji="📋" title="Basic Information" accent="sky">
@@ -593,6 +609,23 @@ const TileInfoView: React.FC<{
         <InfoRow label="ID" labelEmoji="🆔">
           <CopyableId value={tileInfo.tileId} />
         </InfoRow>
+        {spaceShortUrl || canRecycleShortUrl ? (
+          <InfoRow label="Short URL" labelEmoji="🔗">
+            <div className="flex items-center gap-2 min-w-0">
+              {spaceShortUrl ? <CopyableId value={spaceShortUrl} /> : <span className="text-xs text-slate-500">Not generated yet</span>}
+              {canRecycleShortUrl ? (
+                <ShortUrlActions
+                  targetType="tile"
+                  targetId={tileInfo.tileId}
+                  shortUrl={spaceShortUrl}
+                  canRecycle
+                  compact
+                  onRecycled={({ shortUrl }) => setSpaceShortUrl?.(shortUrl)}
+                />
+              ) : null}
+            </div>
+          </InfoRow>
+        ) : null}
         <InfoRow label="Visibility" labelEmoji="👁️">
           <VisibilityBadge visibility={tileInfo.visibility} />
         </InfoRow>

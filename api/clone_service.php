@@ -777,6 +777,7 @@ class CloneService {
                 'index.vite.html',
                 'router.php',
                 'landing.php',
+                's.php',
                 'sw-cache-first.php',
                 '.htaccess',
                 '.gitignore',
@@ -1864,6 +1865,7 @@ class CloneService {
         $ht .= "    RewriteCond %{REQUEST_FILENAME} -d\n";
         $ht .= "    RewriteRule ^ - [L]\n";
         $ht .= "    RewriteRule ^api/(.*)\$ api/index.php?path=\$1 [BCTLS,L,QSA]\n";
+        $ht .= "    RewriteRule ^s/([A-Za-z0-9]+)\$ s.php?code=\$1 [L,QSA]\n";
         $ht .= "    RewriteRule ^assets/(.*)\$ dist/assets/\$1 [L]\n";
         $ht .= "    RewriteRule (^|/)tinymce/(.*)\$ dist/tinymce/\$2 [L]\n";
         $ht .= "    RewriteRule (^|/)ssh-session-shared-worker\\.js\$ dist/ssh-session-shared-worker.js [L]\n";
