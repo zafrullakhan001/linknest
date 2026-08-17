@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Tile } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useAccessRestrictionGate } from '../contexts/AccessRestrictionContext';
 import { COLOR_STYLES } from '../types';
 import { TileAnimationSelector, useTileAnimation, getTileAnimationClass, getTileDecorationClass, TileAnimation, TileDecoration } from './TileAnimationSelector';
 import { getPublicFavorites, checkLocalStorageAvailability, togglePublicFavorite, isPublicFavorite, getPublicLinkFavorites, getPublicLinkFavoriteDetails, syncPublicLinkFavoriteDetails } from '../services/publicFavoritesService';
@@ -138,6 +139,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
   const [showAppQrDialog, setShowAppQrDialog] = useState(false);
   const [showUpdatesDialog, setShowUpdatesDialog] = useState(false);
   const { user: authUser, logout } = useAuth();
+  const { assertCanOpen } = useAccessRestrictionGate();
   const { loading: settingsLoading } = useSettings();
   const user = userProp || authUser;
 
@@ -1091,13 +1093,11 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                     <button
                       key={link.id}
                       type="button"
-                      onClick={() => {
+                      onClick={async () => {
                         if (tryHandleSshLinkClick(link.url || '')) return;
                         if (tryHandleVncLinkClick(link.url || '')) return;
-                        if (link.richTextContent) {
-                          window.open(link.url, '_blank', 'noopener,noreferrer');
-                          return;
-                        }
+                        const allowed = await assertCanOpen('link', link.id);
+                        if (!allowed) return;
                         window.open(link.url, '_blank', 'noopener,noreferrer');
                       }}
                       className="group relative flex items-center gap-3 p-3.5 w-full text-left bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl active:scale-[0.99] transition-all shadow-sm"
@@ -1152,9 +1152,11 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                   <button
                     key={link.id}
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       if (tryHandleSshLinkClick(link.url || '')) return;
                       if (tryHandleVncLinkClick(link.url || '')) return;
+                      const allowed = await assertCanOpen('link', link.id);
+                      if (!allowed) return;
                       window.open(link.url, '_blank', 'noopener,noreferrer');
                     }}
                     className="group relative flex items-center gap-3 p-3.5 w-full text-left bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl active:scale-[0.99] transition-all shadow-sm"

@@ -5,10 +5,12 @@ import { getDisplayUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick } from '../utils/sshLink';
 import { tryHandleVncLinkClick } from '../utils/vncLink';
 import { linkifyHtml } from '../utils/richTextDisplay';
+import { useAccessRestrictionGate } from '../contexts/AccessRestrictionContext';
 
 interface LinkInfoDialogProps {
   isOpen: boolean;
   onClose: () => void;
+  linkId?: string;
   linkLabel: string;
   linkIcon?: string;
   richTextContent: string;
@@ -78,6 +80,7 @@ function enhanceRichTextWithEmojis(html: string): string {
 export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
   isOpen,
   onClose,
+  linkId,
   linkLabel,
   linkIcon,
   richTextContent,
@@ -85,6 +88,7 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
   browser,
 }) => {
   const { settings } = useSettings();
+  const { assertCanOpen } = useAccessRestrictionGate();
   const dialogRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -336,11 +340,15 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
               <>
                 <button
                   type="button"
-                  onClick={(e) => {
+                  onClick={async (e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     if (tryHandleSshLinkClick(linkUrl, e)) return;
                     if (tryHandleVncLinkClick(linkUrl, e)) return;
+                    if (linkId) {
+                      const allowed = await assertCanOpen('link', linkId);
+                      if (!allowed) return;
+                    }
                     if (settings.browser_specific_links_enabled === '1' && browser && browser !== 'default') {
                       openLinkInBrowser(linkUrl, browser);
                     } else {

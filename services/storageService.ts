@@ -1,5 +1,6 @@
 import { Tile } from '../types';
 import { resolveApiBase } from './apiHelpers';
+import { hasAccessRestrictions } from './accessRestrictionService';
 
 const API_BASE = resolveApiBase();
 
@@ -76,6 +77,7 @@ const transformTile = (apiTile: any): Tile => {
     archivedAt: apiTile.archivedAt || undefined, // Include archivedAt if present (for archive)
     visibleFrom: apiTile.visibleFrom || undefined,
     expiresAt: apiTile.expiresAt || undefined,
+    accessRestrictions: apiTile.accessRestrictions || undefined,
     browser: apiTile.browser || undefined, // Include browser if present
     // Tile decoration properties - preserve all values including false/0, only use undefined for null/missing
     tileBackgroundColor: apiTile.tileBackgroundColor !== undefined && apiTile.tileBackgroundColor !== null && apiTile.tileBackgroundColor !== '' ? apiTile.tileBackgroundColor : undefined,
@@ -242,6 +244,8 @@ export const saveTile = async (tile: Tile, isFinal: boolean = false): Promise<vo
             is_final: isFinal,
           };
         })();
+
+    payload.accessRestrictions = hasAccessRestrictions(tile.accessRestrictions) ? tile.accessRestrictions : null;
 
     const response = await fetch(`${API_BASE}/tiles/${tile.id}`, {
       method: 'PUT',

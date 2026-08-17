@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/access_restrictions_lib.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
@@ -205,7 +206,7 @@ function handleGetTiles() {
     // Step 1: Get visible tiles filtered by source_tab
     // Summary mode skips html_content and other heavy columns
     $tileCols = $summaryMode
-        ? 'id, user_id, title, description, emoji, theme_color, "group", position, created_at, visibility, allowed_users, allowed_groups, source_tab, deleted_at, archived_at, is_hyperlink, hyperlink_url, open_in_new_tab, browser, visible_from, expires_at, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, search_tags, published'
+        ? 'id, user_id, title, description, emoji, theme_color, "group", position, created_at, visibility, allowed_users, allowed_groups, source_tab, deleted_at, archived_at, is_hyperlink, hyperlink_url, open_in_new_tab, browser, visible_from, expires_at, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, search_tags, published, access_restrictions'
         : '*';
     $baseWhere = 'deleted_at IS NULL AND archived_at IS NULL';
     if ($sourceTab === 'staging') {
@@ -517,6 +518,7 @@ function handleGetTiles() {
             'canEditTile' => $granularPermissions ? $granularPermissions['canEditTile'] : null,
             'visibleFrom' => $row['visible_from'] ?? null,
             'expiresAt' => $row['expires_at'] ?? null,
+            'accessRestrictions' => decodeAccessRestrictionsJson($row['access_restrictions'] ?? null),
             'hasRoleAccess' => $hasRoleAccess,
             'tileBackgroundColor' => !empty($row['tile_background_color']) ? $row['tile_background_color'] : null,
             'tileGradientEnabled' => isset($row['tile_gradient_enabled']) && $row['tile_gradient_enabled'] !== null ? (bool)$row['tile_gradient_enabled'] : null,
@@ -890,6 +892,7 @@ function handleGetTiles() {
                         'textColor' => (!empty($tabRow['text_color']) && trim($tabRow['text_color']) !== '') ? trim($tabRow['text_color']) : null,
                         'visibleFrom' => $tabRow['visible_from'] ?? null,
                         'expiresAt' => $tabRow['expires_at'] ?? null,
+                        'accessRestrictions' => decodeAccessRestrictionsJson($tabRow['access_restrictions'] ?? null),
                         'visibility' => $tabRow['visibility'] ?? 'public',
                         'published' => isContentPublished($tabRow),
                         'allowedUsers' => (isset($tabRow['allowed_users']) && $tabRow['allowed_users'] ? json_decode($tabRow['allowed_users'], true) : null) ?? [],
@@ -966,6 +969,7 @@ function handleGetTiles() {
                                         'richTextContent' => isset($linkRow['rich_text_content']) ? $linkRow['rich_text_content'] : null,
                                         'visibleFrom' => isset($linkRow['visible_from']) ? $linkRow['visible_from'] : null,
                                         'expiresAt' => isset($linkRow['expires_at']) ? $linkRow['expires_at'] : null,
+                                        'accessRestrictions' => decodeAccessRestrictionsJson($linkRow['access_restrictions'] ?? null),
                                         'browser' => isset($linkRow['browser']) ? $linkRow['browser'] : null,
                                         'animation' => isset($linkRow['animation']) ? $linkRow['animation'] : null,
                                         'isFavorite' => (bool)($linkRow['is_favorite'] ?? false),
@@ -1335,6 +1339,7 @@ function handleGetTile($tileId) {
         'hasRoleAccess' => $hasRoleAccess,
         'visibleFrom' => $row['visible_from'] ?? null,
         'expiresAt' => $row['expires_at'] ?? null,
+        'accessRestrictions' => decodeAccessRestrictionsJson($row['access_restrictions'] ?? null),
         'tileBackgroundColor' => !empty($row['tile_background_color']) ? $row['tile_background_color'] : null,
         'tileGradientEnabled' => isset($row['tile_gradient_enabled']) && $row['tile_gradient_enabled'] !== null ? (bool)$row['tile_gradient_enabled'] : null,
         'tileGradientColors' => $tileGradientColors,
@@ -1430,6 +1435,7 @@ function handleGetTile($tileId) {
             'textColor' => $tabColor,
             'visibleFrom' => $tabRow['visible_from'] ?? null,
             'expiresAt' => $tabRow['expires_at'] ?? null,
+            'accessRestrictions' => decodeAccessRestrictionsJson($tabRow['access_restrictions'] ?? null),
             'visibility' => $tabRow['visibility'] ?? 'public',
             'published' => isContentPublished($tabRow),
             'allowedUsers' => (isset($tabRow['allowed_users']) && $tabRow['allowed_users'] ? json_decode($tabRow['allowed_users'], true) : null) ?? [],
@@ -1515,6 +1521,7 @@ function handleGetTile($tileId) {
                     'richTextContent' => isset($linkRow['rich_text_content']) ? $linkRow['rich_text_content'] : null,
                     'visibleFrom' => isset($linkRow['visible_from']) ? $linkRow['visible_from'] : null,
                     'expiresAt' => isset($linkRow['expires_at']) ? $linkRow['expires_at'] : null,
+                    'accessRestrictions' => decodeAccessRestrictionsJson($linkRow['access_restrictions'] ?? null),
                     'browser' => isset($linkRow['browser']) ? $linkRow['browser'] : null,
                     'animation' => isset($linkRow['animation']) ? $linkRow['animation'] : null,
                     'isFavorite' => (bool)($linkRow['is_favorite'] ?? false),
@@ -1724,6 +1731,7 @@ function handleCreateTile() {
     // Handle scheduling fields
     $visibleFrom = isset($data['visibleFrom']) && $data['visibleFrom'] ? $data['visibleFrom'] : null;
     $expiresAt = isset($data['expiresAt']) && $data['expiresAt'] ? $data['expiresAt'] : null;
+    $tileAccessRestrictions = encodeAccessRestrictionsJson($data['accessRestrictions'] ?? null);
     
     // Handle tile decoration fields - preserve values, only set to null if truly missing
     $tileBackgroundColor = isset($data['tileBackgroundColor']) && $data['tileBackgroundColor'] !== null && $data['tileBackgroundColor'] !== '' ? $data['tileBackgroundColor'] : null;
@@ -1842,7 +1850,7 @@ function handleCreateTile() {
     // Published flag: only admins may create unpublished content
     $published = resolvePublishedFlag($data, $user, true);
     
-    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, search_tags, source_tab, published, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, search_tags, source_tab, published, access_restrictions, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     
     if (!$stmt->execute([
         $tileId,
@@ -1890,6 +1898,7 @@ function handleCreateTile() {
         $searchTagsJson,
         $sourceTab,
         $published,
+        $tileAccessRestrictions,
         $position,
         $data['createdAt'] ?? time()
     ])) {
@@ -1922,7 +1931,7 @@ function handleCreateTile() {
             $tabAllowedUsers = isset($tab['allowedUsers']) && is_array($tab['allowedUsers']) ? json_encode($tab['allowedUsers']) : null;
             $tabAllowedGroups = isset($tab['allowedGroups']) && is_array($tab['allowedGroups']) ? json_encode($tab['allowedGroups']) : null;
             $tabPublished = resolvePublishedFlag($tab, $user, true);
-            $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, emoji, visible_from, expires_at, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, emoji, visible_from, expires_at, visibility, allowed_users, allowed_groups, published, access_restrictions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             $tabStmt->execute([
                 $tabId,
                 $tileId,
@@ -1935,7 +1944,8 @@ function handleCreateTile() {
                 $tabVisibility,
                 $tabAllowedUsers,
                 $tabAllowedGroups,
-                $tabPublished
+                $tabPublished,
+                encodeAccessRestrictionsJson($tab['accessRestrictions'] ?? null)
             ]);
             
             // Insert sections for this tab
@@ -1978,7 +1988,7 @@ function handleCreateTile() {
                                 : null;
                             $linkPublished = resolvePublishedFlag($link, $user, true);
                             try {
-                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, allowed_groups, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, allowed_groups, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation, published, access_restrictions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                                 $linkStmt->execute([
                                     $linkId,
                                     $sectionId,
@@ -1997,7 +2007,8 @@ function handleCreateTile() {
                                     isset($link['position']) ? (int)$link['position'] : 0,
                                     $link['richTextContent'] ?? null,
                                     $link['animation'] ?? null,
-                                    $linkPublished
+                                    $linkPublished,
+                                    encodeAccessRestrictionsJson($link['accessRestrictions'] ?? null)
                                 ]);
                             } catch (PDOException $e) {
                                 error_log('Error inserting link: ' . $e->getMessage());
@@ -2546,6 +2557,7 @@ function handleCloneTile($tileId) {
             sendJSON(['error' => 'Failed to create cloned tile'], 500);
             return;
         }
+        $db->prepare('UPDATE tiles SET access_restrictions = ? WHERE id = ?')->execute([$originalTile['access_restrictions'] ?? null, $newTileId]);
     
         // Clone tabs, sections, and links
         $tabStmt = $db->prepare('SELECT * FROM tabs WHERE tile_id = ? ORDER BY position ASC');
@@ -2594,7 +2606,7 @@ function handleCloneTile($tileId) {
                 
                 foreach ($links as $link) {
                     $newLinkId = uniqid('link_', true);
-                    $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, allowed_groups, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                    $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, allowed_groups, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation, access_restrictions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                     $linkInsertStmt->execute([
                         $newLinkId,
                         $newSectionId,
@@ -2612,7 +2624,8 @@ function handleCloneTile($tileId) {
                         $link['browser'] ?? null,
                         isset($link['position']) ? (int)$link['position'] : 0,
                                 $link['rich_text_content'] ?? null,
-                                $link['animation'] ?? null
+                                $link['animation'] ?? null,
+                        $link['access_restrictions'] ?? null
                     ]);
                 }
                 
@@ -2651,7 +2664,7 @@ function handleCloneTile($tileId) {
         // Clone tabs and their sections/links
         foreach ($tabs as $tab) {
             $newTabId = uniqid('tab_', true);
-            $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, emoji, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+            $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, emoji, visible_from, expires_at, access_restrictions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
             $tabInsertStmt->execute([
                 $newTabId,
                 $newTileId,
@@ -2660,7 +2673,8 @@ function handleCloneTile($tileId) {
                 (!empty($tab['text_color']) && trim($tab['text_color']) !== '') ? trim($tab['text_color']) : null,
                 contentEmojiFromRow($tab),
                 $tab['visible_from'] ?? null,
-                $tab['expires_at'] ?? null
+                $tab['expires_at'] ?? null,
+                $tab['access_restrictions'] ?? null
             ]);
             
             // Clone sections for this tab
@@ -2692,7 +2706,7 @@ function handleCloneTile($tileId) {
                 
                 foreach ($links as $link) {
                     $newLinkId = uniqid('link_', true);
-                    $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, allowed_groups, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                    $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, allowed_groups, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation, access_restrictions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                     $linkInsertStmt->execute([
                         $newLinkId,
                         $newSectionId,
@@ -2710,7 +2724,8 @@ function handleCloneTile($tileId) {
                         $link['browser'] ?? null,
                         isset($link['position']) ? (int)$link['position'] : 0,
                                 $link['rich_text_content'] ?? null,
-                                $link['animation'] ?? null
+                                $link['animation'] ?? null,
+                        $link['access_restrictions'] ?? null
                     ]);
                 }
                 
@@ -3047,6 +3062,7 @@ function handleCloneCategory($categoryName) {
                 $errors[] = 'Failed to clone tile: ' . $originalTile['title'];
                 continue;
             }
+            $db->prepare('UPDATE tiles SET access_restrictions = ? WHERE id = ?')->execute([$originalTile['access_restrictions'] ?? null, $newTileId]);
             
             // Clone tabs, sections, and links
             $tabStmt = $db->prepare('SELECT * FROM tabs WHERE tile_id = ? ORDER BY position ASC');
@@ -3094,7 +3110,7 @@ function handleCloneCategory($categoryName) {
                         
                         foreach ($links as $link) {
                             $newLinkId = uniqid('link_', true);
-                            $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                            $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation, access_restrictions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                             $linkInsertStmt->execute([
                                 $newLinkId,
                                 $newSectionId,
@@ -3111,7 +3127,8 @@ function handleCloneCategory($categoryName) {
                                 $link['browser'] ?? null,
                                 $link['position'] ?? 0,
                                 $link['rich_text_content'] ?? null,
-                                $link['animation'] ?? null
+                                $link['animation'] ?? null,
+                                $link['access_restrictions'] ?? null
                             ]);
                         }
                     }
@@ -3120,7 +3137,7 @@ function handleCloneCategory($categoryName) {
                 // Clone tabs and their sections/links
                 foreach ($tabs as $tab) {
                     $newTabId = uniqid('tab_', true);
-                    $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, emoji, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                    $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, emoji, visible_from, expires_at, access_restrictions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
                     $tabInsertStmt->execute([
                         $newTabId,
                         $newTileId,
@@ -3129,7 +3146,8 @@ function handleCloneCategory($categoryName) {
                         (!empty($tab['text_color']) && trim($tab['text_color']) !== '') ? trim($tab['text_color']) : null,
                         contentEmojiFromRow($tab),
                         $tab['visible_from'] ?? null,
-                        $tab['expires_at'] ?? null
+                        $tab['expires_at'] ?? null,
+                        $tab['access_restrictions'] ?? null
                     ]);
                     
                     // Clone sections for this tab
@@ -3161,7 +3179,7 @@ function handleCloneCategory($categoryName) {
                         
                         foreach ($links as $link) {
                             $newLinkId = uniqid('link_', true);
-                            $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                            $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation, access_restrictions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                             $linkInsertStmt->execute([
                                 $newLinkId,
                                 $newSectionId,
@@ -3178,7 +3196,8 @@ function handleCloneCategory($categoryName) {
                                 $link['browser'] ?? null,
                                 $link['position'] ?? 0,
                                 $link['rich_text_content'] ?? null,
-                                $link['animation'] ?? null
+                                $link['animation'] ?? null,
+                                $link['access_restrictions'] ?? null
                             ]);
                         }
                     }
@@ -4535,6 +4554,7 @@ function handleGetRecycleBin() {
                 'textColor' => (!empty($tabRow['text_color']) && trim($tabRow['text_color']) !== '') ? trim($tabRow['text_color']) : null,
                 'visibleFrom' => $tabRow['visible_from'] ?? null,
                 'expiresAt' => $tabRow['expires_at'] ?? null,
+                'accessRestrictions' => decodeAccessRestrictionsJson($tabRow['access_restrictions'] ?? null),
                 'visibility' => $tabRow['visibility'] ?? 'public',
                 'allowedUsers' => (isset($tabRow['allowed_users']) && $tabRow['allowed_users'] ? json_decode($tabRow['allowed_users'], true) : null) ?? [],
                 'allowedGroups' => (isset($tabRow['allowed_groups']) && $tabRow['allowed_groups'] ? json_decode($tabRow['allowed_groups'], true) : null) ?? [],
@@ -4580,6 +4600,7 @@ function handleGetRecycleBin() {
                         'richTextContent' => $linkRow['rich_text_content'] ?? null,
                         'visibleFrom' => $linkRow['visible_from'] ?? null,
                         'expiresAt' => $linkRow['expires_at'] ?? null,
+                        'accessRestrictions' => decodeAccessRestrictionsJson($linkRow['access_restrictions'] ?? null),
                         'browser' => $linkRow['browser'] ?? null,
                         'animation' => $linkRow['animation'] ?? null,
                     ];
@@ -4855,6 +4876,7 @@ function handleGetArchive() {
                 'canDelete' => $canDelete, // Allow delete from archive (moves to recycle bin)
                 'visibleFrom' => $row['visible_from'] ?? null,
                 'expiresAt' => $row['expires_at'] ?? null,
+                'accessRestrictions' => decodeAccessRestrictionsJson($row['access_restrictions'] ?? null),
                 'tileBackgroundColor' => !empty($row['tile_background_color']) ? $row['tile_background_color'] : null,
                 'tileGradientEnabled' => isset($row['tile_gradient_enabled']) && $row['tile_gradient_enabled'] !== null ? (bool)$row['tile_gradient_enabled'] : null,
                 'tileGradientColors' => $tileGradientColors,
@@ -4913,6 +4935,7 @@ function handleGetArchive() {
                     'textColor' => (!empty($tabRow['text_color']) && trim($tabRow['text_color']) !== '') ? trim($tabRow['text_color']) : null,
                     'visibleFrom' => $tabRow['visible_from'] ?? null,
                     'expiresAt' => $tabRow['expires_at'] ?? null,
+                    'accessRestrictions' => decodeAccessRestrictionsJson($tabRow['access_restrictions'] ?? null),
                     'visibility' => $tabRow['visibility'] ?? 'public',
                     'allowedUsers' => (isset($tabRow['allowed_users']) && $tabRow['allowed_users'] ? json_decode($tabRow['allowed_users'], true) : null) ?? [],
                     'allowedGroups' => (isset($tabRow['allowed_groups']) && $tabRow['allowed_groups'] ? json_decode($tabRow['allowed_groups'], true) : null) ?? [],
@@ -4955,6 +4978,7 @@ function handleGetArchive() {
                             'tooltip' => $linkRow['tooltip'] ?? null,
                             'visibleFrom' => $linkRow['visible_from'] ?? null,
                             'expiresAt' => $linkRow['expires_at'] ?? null,
+                            'accessRestrictions' => decodeAccessRestrictionsJson($linkRow['access_restrictions'] ?? null),
                             'browser' => $linkRow['browser'] ?? null,
                             'animation' => $linkRow['animation'] ?? null,
                         ];
@@ -5348,6 +5372,7 @@ function getTileForVersion($tileId, $db) {
         'browser' => isset($row['browser']) ? $row['browser'] : null,
         'visibleFrom' => $row['visible_from'] ?? null,
         'expiresAt' => $row['expires_at'] ?? null,
+        'accessRestrictions' => decodeAccessRestrictionsJson($row['access_restrictions'] ?? null),
         'tileBackgroundColor' => !empty($row['tile_background_color']) ? $row['tile_background_color'] : null,
         'tileGradientEnabled' => isset($row['tile_gradient_enabled']) && $row['tile_gradient_enabled'] !== null ? (bool)$row['tile_gradient_enabled'] : false,
         'tileGradientColors' => $tileGradientColors,
@@ -5423,6 +5448,7 @@ function getTileForVersion($tileId, $db) {
             'textColor' => (!empty($tabRow['text_color']) && trim($tabRow['text_color']) !== '') ? trim($tabRow['text_color']) : null,
             'visibleFrom' => $tabRow['visible_from'] ?? null,
             'expiresAt' => $tabRow['expires_at'] ?? null,
+            'accessRestrictions' => decodeAccessRestrictionsJson($tabRow['access_restrictions'] ?? null),
             'visibility' => $tabRow['visibility'] ?? 'public',
             'published' => isContentPublished($tabRow),
             'allowedUsers' => (isset($tabRow['allowed_users']) && $tabRow['allowed_users'] ? json_decode($tabRow['allowed_users'], true) : null) ?? [],
@@ -5471,6 +5497,7 @@ function getTileForVersion($tileId, $db) {
                     'tooltip' => isset($linkRow['tooltip']) ? $linkRow['tooltip'] : null,
                     'visibleFrom' => isset($linkRow['visible_from']) ? $linkRow['visible_from'] : null,
                     'expiresAt' => isset($linkRow['expires_at']) ? $linkRow['expires_at'] : null,
+                    'accessRestrictions' => decodeAccessRestrictionsJson($linkRow['access_restrictions'] ?? null),
                     'browser' => isset($linkRow['browser']) ? $linkRow['browser'] : null,
                     'animation' => isset($linkRow['animation']) ? $linkRow['animation'] : null,
                     'position' => (int)($linkRow['position'] ?? 0),
@@ -5796,6 +5823,13 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
         // Handle scheduling fields
         $visibleFrom = isset($data['visibleFrom']) && $data['visibleFrom'] ? $data['visibleFrom'] : null;
         $expiresAt = isset($data['expiresAt']) && $data['expiresAt'] ? $data['expiresAt'] : null;
+        if (array_key_exists('accessRestrictions', $data)) {
+            $tileAccessRestrictions = encodeAccessRestrictionsJson($data['accessRestrictions'] ?? null);
+        } else {
+            $tileAccessRestrictions = encodeAccessRestrictionsJson(
+                is_array($currentTileData) ? ($currentTileData['accessRestrictions'] ?? null) : null
+            );
+        }
         
         // Check granular permission for browser changes (tile-level and link-level). Deny unless explicitly true.
         $canChangeBrowser = canTileAdminPerformAction($user['id'], $tileId, 'change_browser', $db);
@@ -6067,7 +6101,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
         }
         
         // Update tile
-        $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, allowed_groups = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ?, visible_from = ?, expires_at = ?, browser = ?, tile_background_color = ?, tile_gradient_enabled = ?, tile_gradient_colors = ?, tile_gradient_color_positions = ?, tile_gradient_direction = ?, tile_gradient_type = ?, tile_border_radius = ?, tile_text_color = ?, page_animation = ?, links_animation = ?, header_image = ?, header_image_align = ?, header_image_opacity = ?, header_image_offset_x = ?, header_image_offset_y = ?, header_image_zoom = ?, header_image_fit = ?, show_emoji = ?, emoji_image = ?, emoji_image_opacity = ?, emoji_image_offset_x = ?, emoji_image_offset_y = ?, emoji_image_zoom = ?, show_title = ?, show_description = ?, search_tags = ?, source_tab = ?, published = ? WHERE id = ?');
+        $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, allowed_groups = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ?, visible_from = ?, expires_at = ?, browser = ?, tile_background_color = ?, tile_gradient_enabled = ?, tile_gradient_colors = ?, tile_gradient_color_positions = ?, tile_gradient_direction = ?, tile_gradient_type = ?, tile_border_radius = ?, tile_text_color = ?, page_animation = ?, links_animation = ?, header_image = ?, header_image_align = ?, header_image_opacity = ?, header_image_offset_x = ?, header_image_offset_y = ?, header_image_zoom = ?, header_image_fit = ?, show_emoji = ?, emoji_image = ?, emoji_image_opacity = ?, emoji_image_offset_x = ?, emoji_image_offset_y = ?, emoji_image_zoom = ?, show_title = ?, show_description = ?, search_tags = ?, source_tab = ?, published = ?, access_restrictions = ? WHERE id = ?');
         $stmt->execute([
             $data['title'] ?? '',
             $data['description'] ?? '',
@@ -6112,6 +6146,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
             $searchTagsJson,
             $sourceTab,
             $published,
+            $tileAccessRestrictions,
             $tileId
         ]);
 
@@ -6265,7 +6300,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                 $tabAllowedUsers = isset($tab['allowedUsers']) && is_array($tab['allowedUsers']) ? json_encode($tab['allowedUsers']) : null;
                 $tabAllowedGroups = isset($tab['allowedGroups']) && is_array($tab['allowedGroups']) ? json_encode($tab['allowedGroups']) : null;
                 $tabPublished = resolvePublishedFlag($tab, $user, true);
-                $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, emoji, visible_from, expires_at, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, emoji, visible_from, expires_at, visibility, allowed_users, allowed_groups, published, access_restrictions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                 $tabStmt->execute([
                     $tabId,
                     $tileId,
@@ -6278,7 +6313,8 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                     $tabVisibility,
                     $tabAllowedUsers,
                     $tabAllowedGroups,
-                    $tabPublished
+                    $tabPublished,
+                    encodeAccessRestrictionsJson($tab['accessRestrictions'] ?? null)
                 ]);
                 
                 if (isset($tab['sections']) && is_array($tab['sections'])) {
@@ -6316,7 +6352,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                                 $allowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) ? json_encode($link['allowedUsers']) : null;
                                 $allowedGroups = isset($link['allowedGroups']) && is_array($link['allowedGroups']) ? json_encode($link['allowedGroups']) : null;
                                 $linkPublished = resolvePublishedFlag($link, $user, true);
-                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, allowed_groups, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, allowed_groups, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation, published, access_restrictions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                                 $linkStmt->execute([
                                     $linkId,
                                     $sectionId,
@@ -6335,7 +6371,8 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                                     isset($link['position']) ? (int)$link['position'] : 0,
                                     $link['richTextContent'] ?? null,
                                     $link['animation'] ?? null,
-                                    $linkPublished
+                                    $linkPublished,
+                                    encodeAccessRestrictionsJson($link['accessRestrictions'] ?? null)
                                 ]);
                             }
                         }

@@ -10,6 +10,51 @@ export interface LinkHealth {
 export type LinkVisibility = 'public' | 'authenticated' | 'private';
 export type TileVisibility = 'public' | 'authenticated' | 'private';
 
+export type AccessRestrictionMode = 'allow' | 'deny';
+export type AccessDeviceType = 'any' | 'desktop' | 'mobile';
+export type AccessBrowserName = 'chrome' | 'edge' | 'firefox' | 'safari' | 'opera' | 'brave' | 'vivaldi' | 'duckduckgo';
+export type AccessOsName = 'windows' | 'macos' | 'linux' | 'android' | 'ios';
+
+export interface AccessTimeRule {
+  mode: AccessRestrictionMode;
+  /** 1 (Monday) through 7 (Sunday). Null/omitted = any day. */
+  dayOfWeek?: number | null;
+  startTime: string;
+  endTime: string;
+}
+
+export interface AccessHostRule {
+  mode: AccessRestrictionMode;
+  pattern: string;
+}
+
+export interface AccessBrowserRule {
+  name: AccessBrowserName;
+  minVersion?: number;
+}
+
+export interface AccessVpnRules {
+  required?: boolean;
+  allowedIpRanges?: string;
+  trustedHeaderName?: string;
+  trustedHeaderValue?: string;
+}
+
+/** HTTP-checkable open-time restrictions (tile, tab, or link). Empty/omitted = no extra gate. */
+export interface AccessRestrictions {
+  timeRules?: AccessTimeRule[];
+  hostRules?: AccessHostRule[];
+  vpn?: AccessVpnRules;
+  allowedDeviceType?: AccessDeviceType;
+  browsers?: AccessBrowserRule[];
+  osAllow?: AccessOsName[];
+  countryAllow?: string[];
+  countryDeny?: string[];
+  validFrom?: string | null;
+  validUntil?: string | null;
+  referrerPatterns?: string[];
+}
+
 export interface Link {
   id: string;
   label: string;
@@ -35,6 +80,8 @@ export interface Link {
    * Omitted/undefined = inherit space linksAnimation; 'none' = no animation; other id = override.
    */
   animation?: string;
+  /** Open-time HTTP restrictions (does not hide the link). */
+  accessRestrictions?: AccessRestrictions;
 }
 
 export interface RichTextContent {
@@ -94,6 +141,8 @@ export interface Tab {
   allowedGroups?: number[]; // Array of group IDs for private tabs
   visibleFrom?: string; // ISO date string - tab becomes visible from this date/time
   expiresAt?: string; // ISO date string - tab expires at this date/time
+  /** Open-time HTTP restrictions (does not hide the tab). */
+  accessRestrictions?: AccessRestrictions;
 }
 
 export interface Tile {
@@ -171,6 +220,8 @@ export interface Tile {
   deletedAt?: number; // Timestamp when tile was deleted (for recycle bin)
   visibleFrom?: string; // ISO date string - tile becomes visible from this date/time
   expiresAt?: string; // ISO date string - tile expires at this date/time
+  /** Open-time HTTP restrictions (does not hide the space). Null/undefined = none. */
+  accessRestrictions?: AccessRestrictions | null;
   archivedAt?: number; // Timestamp when tile was archived
   browser?: string; // Browser to open links in: 'default', 'chrome', 'firefox', 'edge', 'safari', or custom browser ID
   // Tile decoration properties

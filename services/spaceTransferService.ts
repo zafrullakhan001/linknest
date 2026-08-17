@@ -338,6 +338,7 @@ const normalizeImportedLink = (link: any): Link => ({
   health: link.health || undefined,
   visibleFrom: typeof link.visibleFrom === 'string' ? link.visibleFrom : undefined,
   expiresAt: typeof link.expiresAt === 'string' ? link.expiresAt : undefined,
+  accessRestrictions: link.accessRestrictions && typeof link.accessRestrictions === 'object' ? link.accessRestrictions : undefined,
   animation: typeof link.animation === 'string' ? link.animation : undefined
 });
 
@@ -634,6 +635,7 @@ export const normalizeImportedTiles = (
           allowedGroups: asNumberArray(tab.allowedGroups),
           visibleFrom: typeof tab.visibleFrom === 'string' ? tab.visibleFrom : undefined,
           expiresAt: typeof tab.expiresAt === 'string' ? tab.expiresAt : undefined,
+          accessRestrictions: tab.accessRestrictions && typeof tab.accessRestrictions === 'object' ? tab.accessRestrictions : undefined,
           sections: Array.isArray(tab.sections)
             ? tab.sections.map(normalizeImportedSection)
             : []
@@ -706,6 +708,7 @@ export const normalizeImportedTiles = (
       browser: typeof src.browser === 'string' ? src.browser : undefined,
       visibleFrom: typeof src.visibleFrom === 'string' ? src.visibleFrom : undefined,
       expiresAt: typeof src.expiresAt === 'string' ? src.expiresAt : undefined,
+      accessRestrictions: src.accessRestrictions && typeof src.accessRestrictions === 'object' ? src.accessRestrictions : undefined,
       // Preserve tile decoration properties
       tileBackgroundColor: typeof src.tileBackgroundColor === 'string' ? src.tileBackgroundColor : undefined,
       tileGradientEnabled: typeof src.tileGradientEnabled === 'boolean' ? src.tileGradientEnabled : undefined,

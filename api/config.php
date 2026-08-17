@@ -133,7 +133,7 @@ if (!defined('SYSTEM_TOKEN')) {
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 87);
+    define('LINKNEST_SCHEMA_VERSION', 88);
 }
 
 function getSchemaPatchFlagPath(): string {
@@ -467,6 +467,68 @@ function ensureTilesSearchTagsColumn(PDO $db): void {
     }
 }
 
+/** Ensure access_restrictions JSON columns exist on tiles, tabs, and links. */
+function ensureAccessRestrictionsColumns(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $allPresent = true;
+        foreach (['tiles', 'tabs', 'links'] as $table) {
+            $exists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name=" . $db->quote($table))->fetchColumn();
+            if (!$exists) {
+                $allPresent = false;
+                continue;
+            }
+            $columns = $db->query("PRAGMA table_info({$table})")->fetchAll(PDO::FETCH_ASSOC);
+            $names = array_column($columns, 'name');
+            if (!in_array('access_restrictions', $names, true)) {
+                $db->exec("ALTER TABLE {$table} ADD COLUMN access_restrictions TEXT");
+            }
+        }
+        if ($allPresent) {
+            $ensured = true;
+        }
+    } catch (PDOException $e) {
+        error_log('ensureAccessRestrictionsColumns warning: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Decode access_restrictions JSON from a DB row into an associative array, or null if empty.
+ * @param mixed $raw
+ * @return array<string, mixed>|null
+ */
+function decodeAccessRestrictionsJson($raw): ?array {
+    if (!is_string($raw) || trim($raw) === '') {
+        return null;
+    }
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded) || $decoded === []) {
+        return null;
+    }
+    return $decoded;
+}
+
+/**
+ * Encode access restriction payload for storage. Returns null when nothing is configured.
+ * @param mixed $input
+ */
+function encodeAccessRestrictionsJson($input): ?string {
+    if (!is_array($input) || $input === []) {
+        return null;
+    }
+    $normalized = function_exists('normalize_access_restrictions')
+        ? normalize_access_restrictions($input)
+        : $input;
+    if (!is_array($normalized) || $normalized === []) {
+        return null;
+    }
+    $json = json_encode($normalized, JSON_UNESCAPED_UNICODE);
+    return ($json === false || $json === '[]' || $json === '{}') ? null : $json;
+}
+
 /**
  * Normalize search tag lists: trim, drop empties, case-insensitive dedupe, max 50 chars, max 100 tags.
  * @param mixed $input
@@ -709,6 +771,8 @@ function initDatabase() {
             $currentVersion = 0;
         }
         if ($currentVersion >= (int)LINKNEST_SCHEMA_VERSION) {
+            // Required by tiles summary SELECT — always repair even if the v88 patch flag already exists.
+            ensureAccessRestrictionsColumns($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -733,6 +797,7 @@ function initDatabase() {
             $currentVersion = 0;
         }
         if ($currentVersion >= (int)LINKNEST_SCHEMA_VERSION) {
+            ensureAccessRestrictionsColumns($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -1301,6 +1366,8 @@ function initDatabase() {
         } catch (PDOException $e) {
             error_log('Tiles search_tags migration warning: ' . $e->getMessage());
         }
+
+        ensureAccessRestrictionsColumns($db);
         
         // Create tabs table
         $db->exec('CREATE TABLE IF NOT EXISTS tabs (
@@ -1598,6 +1665,8 @@ function initDatabase() {
         } catch (PDOException $e) {
             error_log('Links published migration warning: ' . $e->getMessage());
         }
+
+        ensureAccessRestrictionsColumns($db);
         
         // Migrate existing links table to add allowed_groups column if it doesn't exist
         try {

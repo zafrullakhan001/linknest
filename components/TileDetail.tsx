@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Tile, Link, LinkSection, Tab, LinkVisibility, TileVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, TileMessage } from '../types';
+import { Tile, Link, LinkSection, Tab, LinkVisibility, TileVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, TileMessage, AccessRestrictions } from '../types';
 import { linkHealthService, LinkHealthMap } from '../services/linkHealthService';
 import { performanceAnalyticsService, type AnalyticsMetric } from '../services/performanceAnalyticsService';
 import { authService, UserListItem, User } from '../services/authService';
@@ -15,6 +15,8 @@ import { cloneTile, createTile, getTiles, saveTile, toggleLinkFavorite, createTe
 import { generateUuid } from '../services/idService';
 import { removeSharedTile } from '../services/tileShareService';
 import { useSettings } from '../contexts/SettingsContext';
+import { useAccessRestrictionGate } from '../contexts/AccessRestrictionContext';
+import { AccessRestrictionsEditor, AccessRestrictionsBadge } from './AccessRestrictionsEditor';
 import { isEscapeDialogOpen, useEscapeToClose } from '../hooks/useEscapeToClose';
 import { SelectableRichTextEditor } from './SelectableRichTextEditor';
 import { RichTextContentItem, type RichTextContentItemHandle } from './RichTextContentItem';
@@ -463,6 +465,9 @@ const cloneLinkItem = (link: Link, opts?: { appendCopyLabel?: boolean }): Link =
     richTextContent: link.richTextContent,
     visibleFrom: link.visibleFrom,
     expiresAt: link.expiresAt,
+    accessRestrictions: link.accessRestrictions
+        ? { ...link.accessRestrictions, timeRules: link.accessRestrictions.timeRules ? [...link.accessRestrictions.timeRules] : undefined, hostRules: link.accessRestrictions.hostRules ? [...link.accessRestrictions.hostRules] : undefined, browsers: link.accessRestrictions.browsers ? [...link.accessRestrictions.browsers] : undefined, osAllow: link.accessRestrictions.osAllow ? [...link.accessRestrictions.osAllow] : undefined, countryAllow: link.accessRestrictions.countryAllow ? [...link.accessRestrictions.countryAllow] : undefined, countryDeny: link.accessRestrictions.countryDeny ? [...link.accessRestrictions.countryDeny] : undefined, referrerPatterns: link.accessRestrictions.referrerPatterns ? [...link.accessRestrictions.referrerPatterns] : undefined, vpn: link.accessRestrictions.vpn ? { ...link.accessRestrictions.vpn } : undefined }
+        : undefined,
     browser: link.browser,
     hasRoleAccess: link.hasRoleAccess === true ? true : undefined,
     position: link.position,
@@ -541,6 +546,9 @@ const cloneTabItem = (
         allowedGroups: tab.allowedGroups ? [...tab.allowedGroups] : undefined,
         visibleFrom: tab.visibleFrom,
         expiresAt: tab.expiresAt,
+        accessRestrictions: tab.accessRestrictions
+            ? JSON.parse(JSON.stringify(tab.accessRestrictions))
+            : undefined,
         position: opts?.position ?? tab.position,
         sections: sortedSections.map((section, index) =>
             cloneSectionItem(section, { position: section.position ?? index })
@@ -587,6 +595,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     sourceTab = null,
     user
 }) => {
+    const { assertCanOpen } = useAccessRestrictionGate();
     const [isEditing, setIsEditing] = useState(false);
     const autoSavingRef = useRef(false);
     const tempVersionCreatedRef = useRef<{ tileId: string | null; active: boolean }>({ tileId: null, active: false });
@@ -615,6 +624,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editEmoji, setEditEmoji] = useState(tile.emoji);
     const [editColor, setEditColor] = useState<ThemeColor>(tile.themeColor);
     const [editVisibility, setEditVisibility] = useState<TileVisibility>(tile.visibility || 'public');
+    const [editAccessRestrictions, setEditAccessRestrictions] = useState<AccessRestrictions | null | undefined>(tile.accessRestrictions);
     const [editPublished, setEditPublished] = useState<boolean>(tile.published !== false);
     const [editAllowedUsers, setEditAllowedUsers] = useState<number[]>(() => {
         // Always include owner in allowed users list for initialization
@@ -662,7 +672,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editSections, setEditSections] = useState<LinkSection[]>(tile.sections || []);
 
     // Temporary State for Adding Links (keyed by section ID)
-    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, browser: string, richTextContent: string, animation: string }>>({});
+    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, browser: string, richTextContent: string, animation: string, accessRestrictions?: AccessRestrictions }>>({});
 
     // Selection State for Bulk Actions
     const [selectedLinkIds, setSelectedLinkIds] = useState<string[]>([]);
@@ -673,7 +683,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
     const [convertLinkDialog, setConvertLinkDialog] = useState<{ tabId: string; sectionId: string; link: Link } | null>(null);
     const [convertingLinkToTile, setConvertingLinkToTile] = useState(false);
-    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, browser: string, richTextContent: string, animation: string }>>({});
+    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, browser: string, richTextContent: string, animation: string, accessRestrictions?: AccessRestrictions }>>({});
 
     // Available browsers from BrowserLauncher API
     const [availableBrowsers, setAvailableBrowsers] = useState<string[]>([]);
@@ -786,6 +796,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     // Scheduling Dialog State
     const [schedulingDialogTab, setSchedulingDialogTab] = useState<string | null>(null);
     const [schedulingDialogSection, setSchedulingDialogSection] = useState<{ tabId: string; sectionId: string } | null>(null);
+    const [restrictionsDialogTab, setRestrictionsDialogTab] = useState<string | null>(null);
     const [schedulingDialogLink, setSchedulingDialogLink] = useState<{ tabId: string; sectionId: string; linkId: string } | null>(null);
     const [schedulingDialogRichText, setSchedulingDialogRichText] = useState<{ tabId: string; sectionId: string; richTextId: string } | null>(null);
 
@@ -1111,6 +1122,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setEditEmoji(tile.emoji);
         setEditColor(tile.themeColor);
         setEditVisibility(tile.visibility || 'public');
+        setEditAccessRestrictions(tile.accessRestrictions);
         setEditPublished(tile.published !== false);
 
         // Always include owner in allowed users list
@@ -2313,7 +2325,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
         browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
         richTextContent: state.richTextContent?.trim() || undefined,
-        animation: linkAnimationForSave(state.animation)
+        animation: linkAnimationForSave(state.animation),
+        accessRestrictions: state.accessRestrictions
     });
 
     const buildLinkFromNewLinkState = (state: NonNullable<(typeof newLinkState)[string]>): Link => ({
@@ -2332,6 +2345,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         richTextContent: state.richTextContent?.trim() || undefined,
         animation: linkAnimationForSave(state.animation),
         hasRoleAccess: tile.hasRoleAccess === true || undefined,
+        accessRestrictions: state.accessRestrictions,
     });
 
     const emptyNewLinkFormState = (): NonNullable<(typeof newLinkState)[string]> => ({
@@ -2347,7 +2361,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         tooltip: '',
         browser: 'default',
         richTextContent: '',
-        animation: 'inherit'
+        animation: 'inherit',
+        accessRestrictions: undefined
     });
 
     const applyRichTextDraftToItem = (rt: RichTextContent, content: string, meta?: RichTextBoxMeta): RichTextContent => {
@@ -2725,6 +2740,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             published: editPublished,
             allowedUsers: editVisibility === 'private' ? finalAllowedUsers : undefined,
             allowedGroups: editVisibility === 'private' ? editAllowedGroups : undefined,
+            accessRestrictions: editAccessRestrictions ?? null,
             browser: editBrowser !== 'default' ? editBrowser : undefined,
             // Preserve section animation from tile (edited via view header); save links default from edit panel
             // Send null (not undefined) so JSON includes the key and the API clears links_animation
@@ -3060,6 +3076,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     expiresAt: expiresAt || undefined
                 }
                 : t
+        ));
+    };
+
+    const handleUpdateTabAccessRestrictions = (tabId: string, accessRestrictions?: AccessRestrictions | null) => {
+        setEditTabs(editTabs.map(t =>
+            t.id === tabId ? { ...t, accessRestrictions: accessRestrictions ?? undefined } : t
         ));
     };
 
@@ -3490,6 +3512,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             animation: linkAnimationForSave(state.animation),
             // Role-assigned spaces: mark new links as role-visible so Your Apps keeps them after save
             hasRoleAccess: tile.hasRoleAccess === true || undefined,
+            accessRestrictions: state.accessRestrictions,
         };
 
         if (editTabs.length > 0) {
@@ -3769,7 +3792,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 tooltip: link.tooltip || '',
                 browser: link.browser || 'default',
                 richTextContent: link.richTextContent || '',
-                animation: linkAnimationForEdit(link.animation)
+                animation: linkAnimationForEdit(link.animation),
+                accessRestrictions: link.accessRestrictions
             }
         });
         setShowUserPicker(prev => ({ ...prev, [link.id]: false }));
@@ -6001,7 +6025,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         return (
                                             <button
                                                 key={tab.id}
-                                                onClick={() => {
+                                                onClick={async () => {
+                                                    if (!isEditing) {
+                                                        const allowed = await assertCanOpen('tab', tab.id);
+                                                        if (!allowed) return;
+                                                    }
                                                     setSelectedTabId(tab.id);
                                                     writeTileHashTab(tabParamFor(tab, displayTabs), 'push');
                                                 }}
@@ -6017,6 +6045,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         <span className="shrink-0 leading-none" aria-hidden>{tab.emoji}</span>
                                                     ) : null}
                                                     {tab.title}
+                                                    <AccessRestrictionsBadge rules={tab.accessRestrictions} />
                                                     {(tile.canEdit === true || !!user?.is_admin) && (
                                                         <VisibilityProtectionBadge visibility={tab.visibility} />
                                                     )}
@@ -6348,10 +6377,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 target="_blank"
                                                                                 rel="noopener noreferrer"
                                                                                 className="text-xs font-medium text-brand-600 dark:text-brand-400 hover:underline"
-                                                                                onClick={(e) => {
+                                                                                onClick={async (e) => {
                                                                                     if (tryHandleSshLinkClick(link.url, e)) return;
                                                                                     if (tryHandleVncLinkClick(link.url, e)) return;
+                                                                                    e.preventDefault();
                                                                                     e.stopPropagation();
+                                                                                    const allowed = await assertCanOpen('link', link.id);
+                                                                                    if (!allowed) return;
+                                                                                    window.open(link.url, '_blank', 'noopener,noreferrer');
                                                                                 }}
                                                                             >
                                                                                 Open link
@@ -6435,22 +6468,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 ? 'flex-1 pr-20'
                                                                                 : 'flex-1 pr-32'
                                                                     }`}
-                                                                    onClick={(e) => {
+                                                                    onClick={async (e) => {
                                                                         if (tryHandleSshLinkClick(link.url, e)) return;
                                                                         if (tryHandleVncLinkClick(link.url, e)) return;
+                                                                        e.preventDefault();
+                                                                        e.stopPropagation();
+                                                                        const allowed = await assertCanOpen('link', link.id);
+                                                                        if (!allowed) return;
 
                                                                         // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                                                                         if (e.ctrlKey || e.metaKey) {
-                                                                            // Explicitly open in new tab and focus it using window.open
-                                                                            e.preventDefault();
-                                                                            e.stopPropagation();
                                                                             // If rich text content exists, still show dialog on Ctrl/Cmd
                                                                             if (link.richTextContent) {
                                                                                 setLinkInfoDialog({ link });
                                                                                 return;
                                                                             }
                                                                             const newWindow = window.open(link.url, '_blank', 'noopener,noreferrer');
-                                                                            // Focus the new window/tab if it was successfully opened
                                                                             if (newWindow) {
                                                                                 newWindow.focus();
                                                                             }
@@ -6459,8 +6492,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                                                                         // If link has rich text content, show dialog instead of opening URL
                                                                         if (link.richTextContent) {
-                                                                            e.preventDefault();
-                                                                            e.stopPropagation();
                                                                             setLinkInfoDialog({ link });
                                                                             return;
                                                                         }
@@ -6473,15 +6504,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 : (tile.browser && tile.browser !== 'default' ? tile.browser : null);
 
                                                                             if (browserToUse && typeof window !== 'undefined' && (window as any).BrowserLauncher) {
-                                                                                e.preventDefault();
-                                                                                e.stopPropagation();
                                                                                 openLinkInBrowser(link.url, browserToUse);
                                                                                 return;
                                                                             }
-                                                                            // If BrowserLauncher is not available, allow default behavior
                                                                         }
-                                                                        // If no browser is set or set to default, allow normal link behavior (opens in default browser)
-                                                                        // Menu will only appear when clicking the browser button
+                                                                        window.open(link.url, '_blank', 'noopener,noreferrer');
                                                                     }}
                                                                 >
                                                                     <div className={`flex items-center gap-2 ${isGridCards ? 'justify-center' : ''}`}>
@@ -6505,6 +6532,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             }}
                                                                             dangerouslySetInnerHTML={{ __html: link.label || '' }}
                                                                         />
+                                                                        <AccessRestrictionsBadge rules={link.accessRestrictions} />
                                                                     </div>
                                                                     <div className={`flex flex-col gap-0.5 overflow-hidden ${
                                                                         isCompact ? 'hidden' : isGridCards ? 'mt-0.5 items-center' : 'mt-0.5'
@@ -6579,9 +6607,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     Open in Browser
                                                                                 </div>
                                                                                 <button
-                                                                                    onClick={(e) => {
+                                                                                    onClick={async (e) => {
                                                                                         e.preventDefault();
                                                                                         e.stopPropagation();
+                                                                                        const allowed = await assertCanOpen('link', link.id);
+                                                                                        if (!allowed) return;
                                                                                         setSelectedBrowserForLink(prev => ({ ...prev, [link.id]: 'default' }));
                                                                                         if (!saveBrowserForLink[link.id]) {
                                                                                             // If not saving, just open the link
@@ -6607,9 +6637,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         return (
                                                                                             <button
                                                                                                 key={browserId}
-                                                                                                onClick={(e) => {
+                                                                                                onClick={async (e) => {
                                                                                                     e.preventDefault();
                                                                                                     e.stopPropagation();
+                                                                                                    const allowed = await assertCanOpen('link', link.id);
+                                                                                                    if (!allowed) return;
                                                                                                     setSelectedBrowserForLink(prev => ({ ...prev, [link.id]: browserId }));
                                                                                                     if (!saveBrowserForLink[link.id]) {
                                                                                                         // If not saving, just open the link
@@ -6923,6 +6955,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     <LinkInfoDialog
                         isOpen={!!linkInfoDialog}
                         onClose={() => setLinkInfoDialog(null)}
+                        linkId={linkInfoDialog.link.id}
                         linkLabel={linkInfoDialog.link.label}
                         linkIcon={linkInfoDialog.link.icon}
                         richTextContent={linkInfoDialog.link.richTextContent || ''}
@@ -6965,6 +6998,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     editVisibility={editVisibility}
                     editPublished={editPublished}
                     editAllowedUsers={editAllowedUsers}
+                    editAccessRestrictions={editAccessRestrictions}
                     editTabs={editTabs}
                     onTitleChange={setEditTitle}
                     onDescChange={setEditDesc}
@@ -6974,6 +7008,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     onVisibilityChange={setEditVisibility}
                     onPublishedChange={setEditPublished}
                     onAllowedUsersChange={setEditAllowedUsers}
+                    onAccessRestrictionsChange={setEditAccessRestrictions}
                     onTabsChange={setEditTabs}
                     onSave={(tabs) => handleSaveChanges(tabs)}
                     onCancel={() => {
@@ -7535,6 +7570,16 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         </div>
                                     )}
                                 </div>
+
+                                {(tile.canChangeVisibility !== false) && (
+                                    <div className="mt-6">
+                                        <AccessRestrictionsEditor
+                                            value={editAccessRestrictions}
+                                            onChange={setEditAccessRestrictions}
+                                            disabled={tile.canChangeVisibility === false}
+                                        />
+                                    </div>
+                                )}
 
                                 {/* Browser Selection - Only show if feature is enabled and user has canChangeBrowser or is admin */}
                                 {settings.browser_specific_links_enabled === '1' && (user?.is_admin || tile.canChangeBrowser === true) && (
@@ -8312,6 +8357,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
                                                         </svg>
                                                     </button>
+                                                    <button
+                                                        onClick={() => setRestrictionsDialogTab(tab.id)}
+                                                        className="text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 p-2"
+                                                        title="Tab access restrictions"
+                                                    >
+                                                        <span className="text-base leading-none">🛡️</span>
+                                                    </button>
+                                                    <AccessRestrictionsBadge rules={tab.accessRestrictions} />
                                                     {(tile.canDeleteTabs !== false && (tile.canDeleteTabs !== undefined || tile.canEdit)) && (
                                                         <button
                                                             type="button"
@@ -9233,6 +9286,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                             </div>
                                                                                         </LinkEditSection>
 
+                                                                                        <AccessRestrictionsEditor
+                                                                                            compact
+                                                                                            value={editLinkState[link.id]?.accessRestrictions}
+                                                                                            disabled={tile.canChangeVisibility === false}
+                                                                                            onChange={(next) => {
+                                                                                                setEditLinkState(prev => ({
+                                                                                                    ...prev,
+                                                                                                    [link.id]: { ...prev[link.id], accessRestrictions: next }
+                                                                                                }));
+                                                                                            }}
+                                                                                        />
+
                                                                                         {/* Action Buttons */}
                                                                                         <div className="flex flex-wrap gap-2 justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
                                                                                             <button
@@ -9839,6 +9904,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 </div>
                                                                             </div>
 
+                                                                            <AccessRestrictionsEditor
+                                                                                compact
+                                                                                value={newLinkState[section.id]?.accessRestrictions}
+                                                                                disabled={tile.canChangeVisibility === false}
+                                                                                onChange={(next) => {
+                                                                                    setNewLinkState(prev => ({
+                                                                                        ...prev,
+                                                                                        [section.id]: { ...prev[section.id], accessRestrictions: next }
+                                                                                    }));
+                                                                                }}
+                                                                            />
+
                                                                             {/* Action Button */}
                                                                             <div className="flex justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
                                                                                 <button
@@ -10269,6 +10346,37 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         <button
                                             onClick={() => setVisibilityDialogTab(null)}
                                             className="w-full bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                                        >
+                                            Done
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+
+                        {restrictionsDialogTab && (() => {
+                            const tab = editTabs.find(t => t.id === restrictionsDialogTab);
+                            if (!tab) return null;
+                            return (
+                                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setRestrictionsDialogTab(null)}>
+                                    <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 max-w-3xl w-full mx-4 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                                        <div className="flex items-center justify-between mb-4">
+                                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Tab restrictions: {tab.title}</h3>
+                                            <button
+                                                onClick={() => setRestrictionsDialogTab(null)}
+                                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700"
+                                            >
+                                                ×
+                                            </button>
+                                        </div>
+                                        <AccessRestrictionsEditor
+                                            value={tab.accessRestrictions}
+                                            disabled={tile.canChangeVisibility === false}
+                                            onChange={(next) => handleUpdateTabAccessRestrictions(tab.id, next)}
+                                        />
+                                        <button
+                                            onClick={() => setRestrictionsDialogTab(null)}
+                                            className="mt-4 w-full bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg font-medium"
                                         >
                                             Done
                                         </button>

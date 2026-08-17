@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
-import { Tile, Tab, LinkSection, ThemeColor, THEME_COLORS, COLOR_STYLES, TileVisibility, TileMessage, Link, CelebrationConfig } from '../types';
+import { Tile, Tab, LinkSection, ThemeColor, THEME_COLORS, COLOR_STYLES, TileVisibility, TileMessage, Link, CelebrationConfig, AccessRestrictions } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { useStyles } from '../contexts/StyleContext';
 import { applyCategoryTextCase, buildCategoryCaseRenameMap } from '../services/styleService';
@@ -16,6 +16,8 @@ import { FavoriteLinksSection } from './FavoriteLinksSection';
 import { authService, UserListItem } from '../services/authService';
 import { resolveApiBase } from '../services/apiHelpers';
 import { useAuth } from '../contexts/AuthContext';
+import { useAccessRestrictionGate } from '../contexts/AccessRestrictionContext';
+import { AccessRestrictionsEditor, AccessRestrictionsBadge } from './AccessRestrictionsEditor';
 import { userPreferencesService } from '../services/userPreferencesService';
 import { getPublicFavorites, togglePublicFavorite, isPublicFavorite, getPublicActiveTab, setPublicActiveTab, exportPublicFavorites, importPublicFavorites, clearPublicFavorites, getPublicLinkFavorites, togglePublicLinkFavorite, clearPublicLinkFavorites, getPublicLinkFavoriteDetails, syncPublicLinkFavoriteDetails, upsertPublicLinkFavoriteDetail, removePublicLinkFavoriteDetail, getPublicFavoritesInstanceLabel, setPublicFavorites as writePublicFavorites, setPublicLinkFavorites as writePublicLinkFavorites, swapPublicFavoriteIds, getPublicFavoritesLayout, setPublicFavoritesLayout } from '../services/publicFavoritesService';
 import { linkHealthService } from '../services/linkHealthService';
@@ -2038,6 +2040,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
               {showTitle ? (
                 <h3 className={`font-bold text-sm leading-tight line-clamp-2 mb-1.5 ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}>
                   {tile.title}
+                  <AccessRestrictionsBadge rules={tile.accessRestrictions} />
                   {tile.published === false && (
                     <span className="ml-1.5 inline-block align-middle text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 font-semibold tracking-wide uppercase">
                       Unpublished
@@ -2273,6 +2276,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const { settings } = useSettings();
   const { styles } = useStyles();
   const { user } = useAuth();
+  const { assertCanOpen } = useAccessRestrictionGate();
   const isMobile = useMobile(768); // Use mobile view below 768px width
 
   // Store allowed tabs based on user's roles
@@ -2672,6 +2676,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [newVisibility, setNewVisibility] = useState<TileVisibility>('public');
   const [visibleFrom, setVisibleFrom] = useState<string>('');
   const [expiresAt, setExpiresAt] = useState<string>('');
+  const [newAccessRestrictions, setNewAccessRestrictions] = useState<AccessRestrictions | null | undefined>(undefined);
   const [newAllowedUsers, setNewAllowedUsers] = useState<number[]>([]);
   const [newAllowedGroups, setNewAllowedGroups] = useState<number[]>([]);
   const [availableUsers, setAvailableUsers] = useState<UserListItem[]>([]);
@@ -4701,6 +4706,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       openInNewTab: tileType === 'hyperlink' ? openInNewTab : undefined,
       visibleFrom: visibleFrom.trim() ? new Date(visibleFrom).toISOString() : undefined,
       expiresAt: expiresAt.trim() ? new Date(expiresAt).toISOString() : undefined,
+      accessRestrictions: newAccessRestrictions ?? null,
       sourceTab: (activeTab === 'staging' || newCreateInStaging) ? 'staging' : 'public',
       messages: messages,
       // Tile decoration properties - preserve false/0 values, only use undefined for empty
@@ -4778,6 +4784,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setOpenInNewTab(true);
     setVisibleFrom('');
     setExpiresAt('');
+    setNewAccessRestrictions(undefined);
     setEditModalActiveTab('general');
     // Reset decoration properties
     setTileBackgroundColor('');
@@ -5160,7 +5167,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     }
   };
 
-  const handleTileClick = (tileId: string) => {
+  const handleTileClick = async (tileId: string) => {
+    const allowed = await assertCanOpen('tile', tileId);
+    if (!allowed) return;
     const sourceList = activeTab === 'staging' ? stagingTiles : tiles;
     const tile = sourceList.find(t => t.id === tileId);
     if (tile?.isHyperlink && tile.hyperlinkUrl) {
@@ -5253,6 +5262,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     // Convert ISO date strings to datetime-local format (YYYY-MM-DDTHH:mm)
     setVisibleFrom(tile.visibleFrom ? new Date(tile.visibleFrom).toISOString().slice(0, 16) : '');
     setExpiresAt(tile.expiresAt ? new Date(tile.expiresAt).toISOString().slice(0, 16) : '');
+    setNewAccessRestrictions(tile.accessRestrictions);
     // Load decoration properties (use explicit checks to preserve false/0 values)
     setTileBackgroundColor(tile.tileBackgroundColor ?? '');
     setTileGradientEnabled(tile.tileGradientEnabled ?? false);
@@ -5517,6 +5527,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       openInNewTab: tileType === 'hyperlink' ? openInNewTab : undefined,
       visibleFrom: visibleFrom.trim() ? new Date(visibleFrom).toISOString() : undefined,
       expiresAt: expiresAt.trim() ? new Date(expiresAt).toISOString() : undefined,
+      accessRestrictions: newAccessRestrictions ?? null,
       messages: messages,
       ...(convertingHyperlinkToSpace
         ? { tabs: convertedTabs, sections: [] }
@@ -8231,9 +8242,15 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       key={link.id}
                       className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-brand-300 dark:hover:border-brand-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} ${tileAnimatedClass}`}
                       style={{ animationDelay: `${animationDelay}ms` }}
-                      onClick={(e) => {
+                      onClick={async (e) => {
                         if (tryHandleSshLinkClick(link.url, e)) return;
                         if (tryHandleVncLinkClick(link.url, e)) return;
+                        const allowed = await assertCanOpen('link', link.id);
+                        if (!allowed) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          return;
+                        }
 
                         // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                         if (e.ctrlKey || e.metaKey) {
@@ -9645,6 +9662,13 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                     </div>
                     </FormSection>
                   )}
+
+                  <FormSection emoji="🛡️" title="Open-time restrictions" accent="rose">
+                    <AccessRestrictionsEditor
+                      value={newAccessRestrictions}
+                      onChange={setNewAccessRestrictions}
+                    />
+                  </FormSection>
 
                   {/* Scheduling - Only shown when type is space */}
                   {tileType === 'space' && (
@@ -11352,6 +11376,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       </div>
                     )}
 
+                    <AccessRestrictionsEditor
+                      value={newAccessRestrictions}
+                      onChange={setNewAccessRestrictions}
+                      disabled={!!(editingTile && editingTile.canChangeVisibility === false)}
+                    />
+
                     </FormSection>
 
                     <FormSection emoji="🎨" title="Look & Feel" accent="violet">
@@ -12680,6 +12710,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           <LinkInfoDialog
             isOpen={!!linkInfoDialog}
             onClose={() => setLinkInfoDialog(null)}
+            linkId={linkInfoDialog.link.id}
             linkLabel={linkInfoDialog.link.label}
             linkIcon={linkInfoDialog.link.icon}
             richTextContent={linkInfoDialog.link.richTextContent || ''}

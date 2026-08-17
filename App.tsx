@@ -7,6 +7,7 @@ import { Navigation } from './components/Navigation';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SettingsProvider, useSettings, readBrandingCache } from './contexts/SettingsContext';
 import { StyleProvider, useStyles } from './contexts/StyleContext';
+import { AccessRestrictionProvider, useAccessRestrictionGate } from './contexts/AccessRestrictionContext';
 import { AuthModal } from './components/AuthModal';
 import { getDisabledTabsFromSettings } from './services/tabVisibilityService';
 import { MaintenancePage } from './components/MaintenancePage';
@@ -125,6 +126,7 @@ const AppContent: React.FC = () => {
   const [databasePath, setDatabasePath] = useState<string>('');
   const [databasePathAbsolute, setDatabasePathAbsolute] = useState<string>('');
   const { user, isAuthenticated, loading: authLoading } = useAuth();
+  const { assertCanOpen } = useAccessRestrictionGate();
   const { updateStyles, styles } = useStyles();
   const { settings, loading: settingsLoading } = useSettings();
   const disabledTabs = useMemo(() => getDisabledTabsFromSettings(settings), [settings?.disabled_tabs]);
@@ -761,11 +763,24 @@ const AppContent: React.FC = () => {
     setDetailLoading(true);
     setDetailError(null);
     getTile(tileRouteId)
-      .then((t) => {
+      .then(async (t) => {
         if (cancelled) return;
+        if (!t) {
+          setDetailLoading(false);
+          setDetailTile(null);
+          setDetailError('Space not found or you do not have permission to view it.');
+          return;
+        }
+        const allowed = await assertCanOpen('tile', t.id);
+        if (cancelled) return;
+        if (!allowed) {
+          setDetailLoading(false);
+          setDetailTile(null);
+          window.location.hash = '#/';
+          return;
+        }
         setDetailLoading(false);
-        setDetailTile(t || null);
-        if (!t) setDetailError('Space not found or you do not have permission to view it.');
+        setDetailTile(t);
       })
       .catch((err) => {
         if (!cancelled) {
@@ -777,7 +792,7 @@ const AppContent: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [tileRouteId, isAuthenticated]);
+  }, [tileRouteId, isAuthenticated, assertCanOpen]);
 
   // If guest access is disabled and user is not authenticated, we show login dialog (computed here so hooks below run unconditionally).
   // Require !authLoading so we never show/open login until session check has finished (fixes refresh with existing session).
@@ -1752,7 +1767,9 @@ const App: React.FC = () => {
     <AuthProvider>
       <SettingsProvider>
         <StyleProvider>
-          <AppContent />
+          <AccessRestrictionProvider>
+            <AppContent />
+          </AccessRestrictionProvider>
         </StyleProvider>
       </SettingsProvider>
     </AuthProvider>

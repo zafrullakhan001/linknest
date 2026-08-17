@@ -98,6 +98,7 @@ function normalizeImportedLink(raw: unknown): Link | null {
     health: link.health && typeof link.health === 'object' ? (link.health as Link['health']) : undefined,
     visibleFrom: typeof link.visibleFrom === 'string' ? link.visibleFrom : undefined,
     expiresAt: typeof link.expiresAt === 'string' ? link.expiresAt : undefined,
+    accessRestrictions: link.accessRestrictions && typeof link.accessRestrictions === 'object' ? (link.accessRestrictions as Link['accessRestrictions']) : undefined,
     animation: typeof link.animation === 'string' ? link.animation : undefined
   };
 }
@@ -230,6 +231,7 @@ export const parseTabExport = (data: unknown): Tab => {
       : undefined,
     visibleFrom: typeof t.visibleFrom === 'string' ? t.visibleFrom : undefined,
     expiresAt: typeof t.expiresAt === 'string' ? t.expiresAt : undefined,
+    accessRestrictions: t.accessRestrictions && typeof t.accessRestrictions === 'object' ? (t.accessRestrictions as Tab['accessRestrictions']) : undefined,
     sections
   };
 };

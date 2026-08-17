@@ -22,6 +22,7 @@ import { getDisplayUrl } from '../utils/urlDisplay';
 import { isSshLinkUrl, tryHandleSshLinkClick } from '../utils/sshLink';
 import { isVncLinkUrl, tryHandleVncLinkClick } from '../utils/vncLink';
 import { getTileAnimationClass, getTileDecorationClass, type TileAnimation, type TileDecoration } from './TileAnimationSelector';
+import { useAccessRestrictionGate } from '../contexts/AccessRestrictionContext';
 
 const stripHtml = (value: string): string =>
   String(value || '').replace(/<[^>]*>/g, '').trim();
@@ -130,6 +131,7 @@ const SortableFavoriteLinkCard: React.FC<{
     transition,
     isDragging,
   } = useSortable({ id: link.id, disabled: !canDrag });
+  const { assertCanOpen } = useAccessRestrictionGate();
 
   const parentTile = tiles.find((t) => t.id === link.tile.id);
   const browserToUse =
@@ -156,9 +158,15 @@ const SortableFavoriteLinkCard: React.FC<{
 
   const title = stripHtml(link.label);
 
-  const openLink = (e: React.MouseEvent) => {
+  const openLink = async (e: React.MouseEvent) => {
     if (tryHandleSshLinkClick(link.url, e)) return;
     if (tryHandleVncLinkClick(link.url, e)) return;
+    const allowed = await assertCanOpen('link', link.id);
+    if (!allowed) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
 
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();

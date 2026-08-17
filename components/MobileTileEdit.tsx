@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Tile, Tab, LinkSection, Link, LinkVisibility, TileVisibility, ThemeColor, THEME_COLORS, COLOR_STYLES } from '../types';
+import { Tile, Tab, LinkSection, Link, LinkVisibility, TileVisibility, ThemeColor, THEME_COLORS, COLOR_STYLES, AccessRestrictions } from '../types';
 import { User } from '../services/authService';
 import { AppSettings } from '../services/settingsService';
 import { MobileRichTextEditor } from './MobileRichTextEditor';
 import { TitleEmojiPicker } from './TitleEmojiPicker';
 import { HierarchyExpandControls } from './TileHierarchyViews';
+import { AccessRestrictionsEditor } from './AccessRestrictionsEditor';
 
 interface MobileTileEditProps {
     tile: Tile;
@@ -16,6 +17,7 @@ interface MobileTileEditProps {
     editVisibility: TileVisibility;
     editPublished: boolean;
     editAllowedUsers: number[];
+    editAccessRestrictions?: AccessRestrictions;
     editTabs: Tab[];
     onTitleChange: (title: string) => void;
     onDescChange: (desc: string) => void;
@@ -25,6 +27,7 @@ interface MobileTileEditProps {
     onVisibilityChange: (visibility: TileVisibility) => void;
     onPublishedChange: (published: boolean) => void;
     onAllowedUsersChange: (users: number[]) => void;
+    onAccessRestrictionsChange?: (next: AccessRestrictions | undefined) => void;
     onTabsChange: (tabs: Tab[]) => void;
     onSave: (tabs?: Tab[]) => void;
     onCancel: () => void;
@@ -59,6 +62,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
     editVisibility,
     editPublished,
     editAllowedUsers,
+    editAccessRestrictions,
     editTabs,
     onTitleChange,
     onDescChange,
@@ -68,6 +72,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
     onVisibilityChange,
     onPublishedChange,
     onAllowedUsersChange,
+    onAccessRestrictionsChange,
     onTabsChange,
     onSave,
     onCancel,
@@ -864,6 +869,17 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                         </div>
                     )}
                 </div>
+
+                {onAccessRestrictionsChange && (
+                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+                        <AccessRestrictionsEditor
+                            compact
+                            value={editAccessRestrictions}
+                            onChange={onAccessRestrictionsChange}
+                            disabled={tile.canChangeVisibility === false}
+                        />
+                    </div>
+                )}
 
                 {/* Tabs & Sections */}
                 <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
