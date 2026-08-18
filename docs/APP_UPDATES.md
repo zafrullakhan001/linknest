@@ -29,8 +29,18 @@ The browser loads **`dist/`**, not raw `.tsx`. Zip-mode office hosts usually hav
 
 ### A. On the build PC (once per version)
 
-1. Commit and push your branch (e.g. `updater`).
-2. Publish a **portable** Release (default base = relative — do **not** pass `-BasePath "/linknest"`):
+**Easiest:** double-click [`publish-base-release.bat`](../publish-base-release.bat) in the repo root. It bumps the patch version, pushes the current branch, and publishes a **portable** Release (Vite base `./`).
+
+```bat
+publish-base-release.bat
+publish-base-release.bat -Yes
+publish-base-release.bat -Bump minor
+publish-base-release.bat -Version 2.4.0
+```
+
+Auth uses `GITHUB_TOKEN` / `GH_TOKEN`, `gh auth login`, or Git Credential Manager (the same login as `git push`).
+
+Manual equivalent (do **not** pass `-BasePath "/linknest"`):
 
 ```powershell
 cd C:\xampp\htdocs\linknest
@@ -186,15 +196,19 @@ If a commit apply rebuild fails with a **Browserslist / caniuse-lite is N months
 
 ## Publisher: create a versioned release
 
+Double-click **`publish-base-release.bat`** in the repo root (portable `./` base, auto patch bump). Extra flags go to [`scripts/publish-base-release.ps1`](../scripts/publish-base-release.ps1).
+
 ```powershell
 cd C:\xampp\htdocs\linknest
+.\scripts\publish-base-release.ps1 -Yes
+# or, if you already set the version and only want to package + tag:
 $env:GITHUB_TOKEN = 'ghp_YOUR_TOKEN'
 .\scripts\publish-update-release.ps1 -Version 2.3.2
 # default -BasePath relative  → portable for ArchLinks / ERP3 / any folder
 ```
 
 - Auto release notes from git commits since the previous tag  
-- Uploads `linknest-update-v2.3.2.zip` (includes built frontend)  
+- Uploads `linknest-update-vX.Y.Z.zip` (includes built frontend)  
 - See script help for `-SkipPackage`, `-UpdateNotesOnly`, `-NotesFile`, `-DryRun`, `-BasePath`
 
 ---
@@ -236,6 +250,6 @@ Env (optional): `GITHUB_TOKEN` / `GH_TOKEN`.
 ## Related
 
 - Packager: [`package-for-deployment.ps1`](../package-for-deployment.ps1) / [`package-for-deployment.bat`](../package-for-deployment.bat) — [PACKAGE_FOR_DEPLOYMENT.md](PACKAGE_FOR_DEPLOYMENT.md)
-- Publish script: [`../scripts/publish-update-release.ps1`](../scripts/publish-update-release.ps1)
+- Publish script: [`publish-base-release.bat`](../publish-base-release.bat) / [`../scripts/publish-base-release.ps1`](../scripts/publish-base-release.ps1) / [`../scripts/publish-update-release.ps1`](../scripts/publish-update-release.ps1)
 - SSH / VNC deploy: [`REMOTE_WIDGETS_MANUAL_DEPLOY.md`](REMOTE_WIDGETS_MANUAL_DEPLOY.md)
 - Production layout: [`PRODUCTION.md`](PRODUCTION.md)

@@ -64,11 +64,46 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function Get-GitHubTokenFromGitCredential {
+    $prevPrompt = $env:GIT_TERMINAL_PROMPT
+    $env:GIT_TERMINAL_PROMPT = "0"
+    try {
+        $spec = "protocol=https`nhost=github.com`n`n"
+        $raw = $spec | git credential fill 2>$null
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($raw)) {
+            return ""
+        }
+        foreach ($line in @($raw -split "`r?`n")) {
+            if ($line -match '^password=(.+)$') {
+                return $Matches[1].Trim()
+            }
+        }
+    } finally {
+        if ($null -eq $prevPrompt) {
+            Remove-Item Env:GIT_TERMINAL_PROMPT -ErrorAction SilentlyContinue
+        } else {
+            $env:GIT_TERMINAL_PROMPT = $prevPrompt
+        }
+    }
+    return ""
+}
+
 function Get-GitHubToken {
     param([string]$Explicit)
     if (-not [string]::IsNullOrWhiteSpace($Explicit)) { return $Explicit.Trim() }
     if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_TOKEN)) { return $env:GITHUB_TOKEN.Trim() }
     if (-not [string]::IsNullOrWhiteSpace($env:GH_TOKEN)) { return $env:GH_TOKEN.Trim() }
+    $gh = Get-Command gh -ErrorAction SilentlyContinue
+    if ($gh) {
+        $fromGh = & gh auth token 2>$null
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($fromGh)) {
+            return ([string]$fromGh).Trim()
+        }
+    }
+    $fromGit = Get-GitHubTokenFromGitCredential
+    if (-not [string]::IsNullOrWhiteSpace($fromGit)) {
+        return $fromGit
+    }
     return ""
 }
 
@@ -417,7 +452,7 @@ Write-Host $ReleaseNotes
 Write-Host "  --- end preview ---" -ForegroundColor DarkCyan
 Write-Host ""
 
-if ($pkgJson.version -ne $Version -and -not $UpdateNotesOnly) {
+if ($pkgJson.version -ne $Version -and -not $UpdateNotesOnly -and -not $DryRun) {
     Write-Host "  Updating package.json version -> $Version" -ForegroundColor Yellow
     $pkgJson.version = $Version
     $pkgJson | ConvertTo-Json -Depth 100 | Set-Content (Join-Path $ProjectRoot "package.json") -Encoding UTF8

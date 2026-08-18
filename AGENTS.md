@@ -387,7 +387,7 @@ Default credentials:
 
 ## In-app updates
 
-See [`docs/APP_UPDATES.md`](docs/APP_UPDATES.md) for publishing GitHub Releases (`scripts/publish-update-release.ps1`) and applying them from Admin → App Updates.
+See [`docs/APP_UPDATES.md`](docs/APP_UPDATES.md). Double-click [`publish-base-release.bat`](publish-base-release.bat) to publish a portable GitHub Release from the current branch, then apply it from Admin → App Updates.
 
 ## Vanilla Apache + PHP 8.5 (Windows)
 
