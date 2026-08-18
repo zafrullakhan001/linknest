@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AccessBrowserName,
   AccessOsName,
@@ -112,6 +112,23 @@ function parseLines(text: string): string[] {
   return text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 }
 
+function formattedTimeSnapshot(rules: AccessTimeRule[] | undefined): string {
+  return `${formatTimeRules(rules, 'allow')}\n---\n${formatTimeRules(rules, 'deny')}`;
+}
+
+function PaneHint({ children }: { children: React.ReactNode }): React.ReactElement {
+  return <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">{children}</p>;
+}
+
+function ExampleBox({ title = 'Example', children }: { title?: string; children: React.ReactNode }): React.ReactElement {
+  return (
+    <div className="rounded-lg border border-dashed border-slate-200 dark:border-slate-600 bg-white/70 dark:bg-slate-800/50 px-2.5 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-0.5">{title}</p>
+      <div className="text-[11px] font-mono text-slate-600 dark:text-slate-300 whitespace-pre-wrap">{children}</div>
+    </div>
+  );
+}
+
 function paneHasValues(id: PaneId, value: AccessRestrictions): boolean {
   switch (id) {
     case 'time-host':
@@ -162,9 +179,30 @@ export const AccessRestrictionsEditor: React.FC<AccessRestrictionsEditorProps> =
 }) => {
   const [pane, setPane] = useState<PaneId>('time-host');
   const current: AccessRestrictions = value || {};
+  const [allowTimeText, setAllowTimeText] = useState(() => formatTimeRules(value?.timeRules, 'allow'));
+  const [denyTimeText, setDenyTimeText] = useState(() => formatTimeRules(value?.timeRules, 'deny'));
+  const lastTimeSnapshot = useRef(formattedTimeSnapshot(value?.timeRules));
 
   const emit = (next: AccessRestrictions) => {
     onChange(hasAccessRestrictions(next) ? next : null);
+  };
+
+  useEffect(() => {
+    const next = formattedTimeSnapshot(value?.timeRules);
+    if (next === lastTimeSnapshot.current) return;
+    lastTimeSnapshot.current = next;
+    setAllowTimeText(formatTimeRules(value?.timeRules, 'allow'));
+    setDenyTimeText(formatTimeRules(value?.timeRules, 'deny'));
+  }, [value?.timeRules]);
+
+  const commitTimeRules = (allowText: string, denyText: string) => {
+    const nextRules = [...parseTimeRules(allowText, 'allow'), ...parseTimeRules(denyText, 'deny')];
+    lastTimeSnapshot.current = formattedTimeSnapshot(nextRules);
+    emit({ ...current, timeRules: nextRules });
+  };
+
+  const stopFieldKeys = (e: React.KeyboardEvent) => {
+    e.stopPropagation();
   };
 
   const timezone = useMemo(() => {
@@ -189,7 +227,12 @@ export const AccessRestrictionsEditor: React.FC<AccessRestrictionsEditorProps> =
           <button
             type="button"
             disabled={disabled}
-            onClick={() => onChange(null)}
+            onClick={() => {
+              lastTimeSnapshot.current = formattedTimeSnapshot(undefined);
+              setAllowTimeText('');
+              setDenyTimeText('');
+              onChange(null);
+            }}
             className="mt-2 text-xs font-medium text-rose-600 dark:text-rose-400 hover:underline disabled:opacity-50"
           >
             Clear all restrictions
@@ -226,20 +269,31 @@ export const AccessRestrictionsEditor: React.FC<AccessRestrictionsEditorProps> =
 
       {pane === 'time-host' && (
         <div className="space-y-3">
-          <p className="text-[11px] text-slate-500">Time zone: <code>{timezone}</code>. Format: <code>Mon 09:00-17:00</code> or <code>Any 00:00-23:59</code>.</p>
+          <PaneHint>
+            Time zone: <code>{timezone}</code>. One rule per line: <code>Day HH:MM-HH:MM</code>. Use <code>Any</code> for every day. Allow lists restrict opening to those windows; block lists always deny those windows.
+          </PaneHint>
+          <ExampleBox>
+            {`Mon 09:00-17:00
+Fri 09:00-12:00
+Any 00:00-23:59`}
+          </ExampleBox>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
               Times access is allowed
               <textarea
                 disabled={disabled}
                 rows={3}
+                autoComplete="off"
+                spellCheck={false}
                 className={`${textareaClass} mt-1`}
                 placeholder={'Mon 09:00-17:00\nTue 09:00-17:00'}
-                value={formatTimeRules(current.timeRules, 'allow')}
-                onChange={(e) => emit({
-                  ...current,
-                  timeRules: [...parseTimeRules(e.target.value, 'allow'), ...parseTimeRules(formatTimeRules(current.timeRules, 'deny'), 'deny')],
-                })}
+                value={allowTimeText}
+                onKeyDown={stopFieldKeys}
+                onChange={(e) => {
+                  const text = e.target.value;
+                  setAllowTimeText(text);
+                  commitTimeRules(text, denyTimeText);
+                }}
               />
             </label>
             <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
@@ -247,13 +301,17 @@ export const AccessRestrictionsEditor: React.FC<AccessRestrictionsEditorProps> =
               <textarea
                 disabled={disabled}
                 rows={3}
+                autoComplete="off"
+                spellCheck={false}
                 className={`${textareaClass} mt-1`}
                 placeholder={'Sat 00:00-23:59\nSun 00:00-23:59'}
-                value={formatTimeRules(current.timeRules, 'deny')}
-                onChange={(e) => emit({
-                  ...current,
-                  timeRules: [...parseTimeRules(formatTimeRules(current.timeRules, 'allow'), 'allow'), ...parseTimeRules(e.target.value, 'deny')],
-                })}
+                value={denyTimeText}
+                onKeyDown={stopFieldKeys}
+                onChange={(e) => {
+                  const text = e.target.value;
+                  setDenyTimeText(text);
+                  commitTimeRules(allowTimeText, text);
+                }}
               />
             </label>
             <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
@@ -261,9 +319,12 @@ export const AccessRestrictionsEditor: React.FC<AccessRestrictionsEditorProps> =
               <textarea
                 disabled={disabled}
                 rows={3}
+                autoComplete="off"
+                spellCheck={false}
                 className={`${textareaClass} mt-1`}
-                placeholder={'192.168.10.15\n10.0.*'}
+                placeholder={'192.168.10.15\n10.0.*\noffice.example.com'}
                 value={formatHostRules(current.hostRules, 'allow')}
+                onKeyDown={stopFieldKeys}
                 onChange={(e) => emit({
                   ...current,
                   hostRules: [...parseHostRules(e.target.value, 'allow'), ...parseHostRules(formatHostRules(current.hostRules, 'deny'), 'deny')],
@@ -275,8 +336,12 @@ export const AccessRestrictionsEditor: React.FC<AccessRestrictionsEditorProps> =
               <textarea
                 disabled={disabled}
                 rows={3}
+                autoComplete="off"
+                spellCheck={false}
                 className={`${textareaClass} mt-1`}
+                placeholder={'203.0.113.10\n*.untrusted.example'}
                 value={formatHostRules(current.hostRules, 'deny')}
+                onKeyDown={stopFieldKeys}
                 onChange={(e) => emit({
                   ...current,
                   hostRules: [...parseHostRules(formatHostRules(current.hostRules, 'allow'), 'allow'), ...parseHostRules(e.target.value, 'deny')],
@@ -289,6 +354,14 @@ export const AccessRestrictionsEditor: React.FC<AccessRestrictionsEditorProps> =
 
       {pane === 'network-vpn' && (
         <div className="space-y-3">
+          <PaneHint>
+            Use this when the item should only open on a corporate network or VPN. An allow list of IP ranges is enough; the trusted header is optional if your reverse proxy sets one.
+          </PaneHint>
+          <ExampleBox>
+            {`10.0.0.0/8
+192.168.1.1-192.168.1.254
+Header: X-VPN-Status = active`}
+          </ExampleBox>
           <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
             <input
               type="checkbox"
@@ -303,9 +376,12 @@ export const AccessRestrictionsEditor: React.FC<AccessRestrictionsEditorProps> =
             <textarea
               disabled={disabled}
               rows={3}
+              autoComplete="off"
+              spellCheck={false}
               className={`${textareaClass} mt-1`}
               placeholder={'10.0.0.0/8\n192.168.1.1-192.168.1.254'}
               value={current.vpn?.allowedIpRanges || ''}
+              onKeyDown={stopFieldKeys}
               onChange={(e) => emit({ ...current, vpn: { ...(current.vpn || {}), allowedIpRanges: e.target.value } })}
             />
           </label>
@@ -317,6 +393,7 @@ export const AccessRestrictionsEditor: React.FC<AccessRestrictionsEditorProps> =
                 className={`${inputClass} mt-1`}
                 placeholder="X-VPN-Status"
                 value={current.vpn?.trustedHeaderName || ''}
+                onKeyDown={stopFieldKeys}
                 onChange={(e) => emit({ ...current, vpn: { ...(current.vpn || {}), trustedHeaderName: e.target.value } })}
               />
             </label>
@@ -327,6 +404,7 @@ export const AccessRestrictionsEditor: React.FC<AccessRestrictionsEditorProps> =
                 className={`${inputClass} mt-1`}
                 placeholder="active"
                 value={current.vpn?.trustedHeaderValue || ''}
+                onKeyDown={stopFieldKeys}
                 onChange={(e) => emit({ ...current, vpn: { ...(current.vpn || {}), trustedHeaderValue: e.target.value } })}
               />
             </label>
@@ -335,23 +413,34 @@ export const AccessRestrictionsEditor: React.FC<AccessRestrictionsEditorProps> =
       )}
 
       {pane === 'device' && (
-        <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
-          Allowed device type
-          <select
-            disabled={disabled}
-            className={`${inputClass} mt-1 max-w-xs`}
-            value={current.allowedDeviceType || 'any'}
-            onChange={(e) => emit({ ...current, allowedDeviceType: e.target.value as AccessRestrictions['allowedDeviceType'] })}
-          >
-            <option value="any">Any device</option>
-            <option value="desktop">Desktop only</option>
-            <option value="mobile">Mobile/tablet only</option>
-          </select>
-        </label>
+        <div className="space-y-3">
+          <PaneHint>
+            Limits opening by screen class. Desktop means a regular computer. Mobile/tablet covers phones and tablets. Leave as Any device for no extra check.
+          </PaneHint>
+          <ExampleBox>Desktop only — phones cannot open this item.</ExampleBox>
+          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+            Allowed device type
+            <select
+              disabled={disabled}
+              className={`${inputClass} mt-1 max-w-xs`}
+              value={current.allowedDeviceType || 'any'}
+              onChange={(e) => emit({ ...current, allowedDeviceType: e.target.value as AccessRestrictions['allowedDeviceType'] })}
+            >
+              <option value="any">Any device</option>
+              <option value="desktop">Desktop only</option>
+              <option value="mobile">Mobile/tablet only</option>
+            </select>
+          </label>
+        </div>
       )}
 
       {pane === 'browser' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div className="space-y-3">
+          <PaneHint>
+            Check the browsers that may open this item. If none are checked, any browser is allowed. The number is a minimum version; 0 means any version of that browser.
+          </PaneHint>
+          <ExampleBox>Chrome 120 — Chrome 120 or newer can open it; unchecked browsers cannot.</ExampleBox>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {ACCESS_BROWSER_NAMES.map((name) => {
             const rule = (current.browsers || []).find((b) => b.name === name);
             return (
@@ -385,10 +474,16 @@ export const AccessRestrictionsEditor: React.FC<AccessRestrictionsEditorProps> =
             );
           })}
         </div>
+        </div>
       )}
 
       {pane === 'os' && (
-        <div className="flex flex-wrap gap-3">
+        <div className="space-y-3">
+          <PaneHint>
+            Check the operating systems that may open this item. If none are checked, any OS is allowed.
+          </PaneHint>
+          <ExampleBox>Windows + macOS — Android and iOS phones are blocked.</ExampleBox>
+          <div className="flex flex-wrap gap-3">
           {ACCESS_OS_NAMES.map((os) => {
             const checked = (current.osAllow || []).includes(os);
             return (
@@ -407,71 +502,108 @@ export const AccessRestrictionsEditor: React.FC<AccessRestrictionsEditorProps> =
             );
           })}
         </div>
+        </div>
       )}
 
       {pane === 'country' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
-            Allow only these countries
-            <textarea
-              disabled={disabled}
-              rows={3}
-              className={`${textareaClass} mt-1`}
-              placeholder={'US\nCA'}
-              value={formatLines(current.countryAllow)}
-              onChange={(e) => emit({ ...current, countryAllow: parseLines(e.target.value).map((c) => c.toUpperCase()) })}
-            />
-          </label>
-          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
-            Deny these countries
-            <textarea
-              disabled={disabled}
-              rows={3}
-              className={`${textareaClass} mt-1`}
-              value={formatLines(current.countryDeny)}
-              onChange={(e) => emit({ ...current, countryDeny: parseLines(e.target.value).map((c) => c.toUpperCase()) })}
-            />
-          </label>
+        <div className="space-y-3">
+          <PaneHint>
+            Use two-letter ISO country codes, one per line. An allow list means only those countries can open it. A deny list blocks those countries even if they also appear in the allow list.
+          </PaneHint>
+          <ExampleBox>
+            {`US
+CA
+GB`}
+          </ExampleBox>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+              Allow only these countries
+              <textarea
+                disabled={disabled}
+                rows={3}
+                autoComplete="off"
+                spellCheck={false}
+                className={`${textareaClass} mt-1`}
+                placeholder={'US\nCA'}
+                value={formatLines(current.countryAllow)}
+                onKeyDown={stopFieldKeys}
+                onChange={(e) => emit({ ...current, countryAllow: parseLines(e.target.value).map((c) => c.toUpperCase()) })}
+              />
+            </label>
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+              Deny these countries
+              <textarea
+                disabled={disabled}
+                rows={3}
+                autoComplete="off"
+                spellCheck={false}
+                className={`${textareaClass} mt-1`}
+                placeholder={'CN\nRU'}
+                value={formatLines(current.countryDeny)}
+                onKeyDown={stopFieldKeys}
+                onChange={(e) => emit({ ...current, countryDeny: parseLines(e.target.value).map((c) => c.toUpperCase()) })}
+              />
+            </label>
+          </div>
         </div>
       )}
 
       {pane === 'date' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
-            Valid from
-            <input
-              type="date"
-              disabled={disabled}
-              className={`${inputClass} mt-1`}
-              value={current.validFrom || ''}
-              onChange={(e) => emit({ ...current, validFrom: e.target.value || null })}
-            />
-          </label>
-          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
-            Valid until
-            <input
-              type="date"
-              disabled={disabled}
-              className={`${inputClass} mt-1`}
-              value={current.validUntil || ''}
-              onChange={(e) => emit({ ...current, validUntil: e.target.value || null })}
-            />
-          </label>
+        <div className="space-y-3">
+          <PaneHint>
+            Optional calendar window. Opening is blocked before the start date and after the end date. Leave either field blank for no start or no end.
+          </PaneHint>
+          <ExampleBox>Valid from 2026-01-01 until 2026-12-31</ExampleBox>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+              Valid from
+              <input
+                type="date"
+                disabled={disabled}
+                className={`${inputClass} mt-1`}
+                value={current.validFrom || ''}
+                onChange={(e) => emit({ ...current, validFrom: e.target.value || null })}
+              />
+            </label>
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+              Valid until
+              <input
+                type="date"
+                disabled={disabled}
+                className={`${inputClass} mt-1`}
+                value={current.validUntil || ''}
+                onChange={(e) => emit({ ...current, validUntil: e.target.value || null })}
+              />
+            </label>
+          </div>
         </div>
       )}
 
       {pane === 'referrer' && (
-        <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
-          Allowed referrer prefixes (one per line)
-          <textarea
-            disabled={disabled}
-            rows={3}
-            className={`${textareaClass} mt-1`}
-            placeholder="https://intranet.example.com/"
-            value={formatLines(current.referrerPatterns)}
-            onChange={(e) => emit({ ...current, referrerPatterns: parseLines(e.target.value) })}
-          />
-        </label>
+        <div className="space-y-3">
+          <PaneHint>
+            The referrer is the page the browser came from when this item was opened. If you list prefixes here, the item can only be opened when the incoming page URL starts with one of them. Bookmarks, pasted URLs, and most “open in new tab” links send no referrer and will be blocked.
+          </PaneHint>
+          <ExampleBox title="Example prefixes">
+            {`https://intranet.example.com/
+https://app.company.com/dashboard
+https://mail.google.com/`}
+          </ExampleBox>
+          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+            Allowed referrer prefixes (one per line)
+            <textarea
+              disabled={disabled}
+              rows={4}
+              autoComplete="off"
+              spellCheck={false}
+              className={`${textareaClass} mt-1`}
+              placeholder={'https://intranet.example.com/\nhttps://app.company.com/dashboard'}
+              value={formatLines(current.referrerPatterns)}
+              onKeyDown={stopFieldKeys}
+              onChange={(e) => emit({ ...current, referrerPatterns: parseLines(e.target.value) })}
+            />
+          </label>
+        </div>
       )}
     </div>
   );

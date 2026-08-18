@@ -70,6 +70,18 @@ const isViewLayoutMode = (value: string | null | undefined): value is ViewLayout
     value === 'stacked' || value === 'side-by-side' || value === 'grid' || value === 'compact' || value === 'qr';
 
 const sectionLinkLayoutsStorageKey = (tileId: string) => `linknest_section_link_layouts_${tileId}`;
+const GENERAL_SETTINGS_EXPANDED_KEY = 'linknest_edit_general_settings_expanded';
+
+const readGeneralSettingsExpanded = (): boolean => {
+    try {
+        const saved = localStorage.getItem(GENERAL_SETTINGS_EXPANDED_KEY);
+        if (saved === '0') return false;
+        if (saved === '1') return true;
+    } catch {
+        /* ignore quota / private mode */
+    }
+    return true;
+};
 
 const loadSectionLinkLayouts = (tileId: string): Record<string, ViewLayoutMode> => {
     try {
@@ -676,6 +688,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editDesc, setEditDesc] = useState(tile.description);
     const [editHtml, setEditHtml] = useState(tile.htmlContent || '');
     const [editingIntro, setEditingIntro] = useState(false);
+    const [generalSettingsExpanded, setGeneralSettingsExpanded] = useState<boolean>(readGeneralSettingsExpanded);
+    const [generalSettingsSparkleKey, setGeneralSettingsSparkleKey] = useState(0);
     const [expandedTabs, setExpandedTabs] = useState<Set<string>>(new Set());
     const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
     const [hierarchyView, setHierarchyView] = useState<HierarchyViewMode>(() => readHierarchyViewPreference());
@@ -1450,6 +1464,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             }
         };
     }, [tile.id, isEditing]);
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(GENERAL_SETTINGS_EXPANDED_KEY, generalSettingsExpanded ? '1' : '0');
+        } catch (error) {
+            console.error('Failed to save general settings expanded preference:', error);
+        }
+    }, [generalSettingsExpanded]);
 
     // Save view layout preference to localStorage
     useEffect(() => {
@@ -7254,22 +7276,67 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 items-start">
 
                         {/* LEFT COLUMN: General Settings & HTML Editor */}
-                        <div className="lg:col-span-1 space-y-6">
+                        <div className={`w-full shrink-0 space-y-6 transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${generalSettingsExpanded ? 'lg:w-1/3' : 'lg:w-[4.25rem]'}`}>
                             {/* Basic Info Card */}
-                            <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 space-y-6 sticky top-6 shadow-lg shadow-slate-200/50 dark:shadow-black/20">
-                                <div className="flex items-center gap-3 pb-4 border-b border-slate-200 dark:border-slate-700">
-                                    <div className="w-10 h-10 rounded-lg bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center">
+                            <div className={`relative bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-lg shadow-slate-200/50 dark:shadow-black/20 transition-[padding,box-shadow] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${generalSettingsExpanded ? 'p-6' : 'p-4 lg:p-3 sticky top-6 ln-gs-rail-settle'}`}>
+                                <button
+                                    type="button"
+                                    onClick={() => setGeneralSettingsExpanded((open) => {
+                                        if (open) setGeneralSettingsSparkleKey((key) => key + 1);
+                                        return !open;
+                                    })}
+                                    className={`relative flex items-center gap-3 text-left rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors ${
+                                        generalSettingsExpanded
+                                            ? 'w-full pb-4 border-b border-slate-200 dark:border-slate-700'
+                                            : 'w-full lg:w-auto lg:flex-col lg:py-2'
+                                    }`}
+                                    aria-expanded={generalSettingsExpanded}
+                                    title={generalSettingsExpanded ? 'Collapse general settings' : 'Expand general settings'}
+                                >
+                                    {!generalSettingsExpanded && (
+                                        <span key={generalSettingsSparkleKey} className="ln-gs-sparkles hidden lg:block" aria-hidden>
+                                            <span className="ln-gs-sparkle" />
+                                            <span className="ln-gs-sparkle" />
+                                            <span className="ln-gs-sparkle" />
+                                            <span className="ln-gs-sparkle" />
+                                            <span className="ln-gs-sparkle" />
+                                            <span className="ln-gs-sparkle" />
+                                        </span>
+                                    )}
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={`w-5 h-5 text-slate-400 shrink-0 transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${generalSettingsExpanded ? 'rotate-180' : 'lg:-rotate-90'}`}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                                    </svg>
+                                    <div className="w-10 h-10 rounded-lg bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center shrink-0">
                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.128.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.128c-.355-.196-.75-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                                         </svg>
                                     </div>
-                                    <h3 className="text-lg font-bold text-slate-800 dark:text-white">General Settings</h3>
-                                </div>
+                                    <div className={`min-w-0 ${generalSettingsExpanded ? 'flex-1' : 'flex-1 lg:flex-none lg:flex lg:flex-col lg:items-center lg:gap-3'}`}>
+                                        <h3 className={`text-lg font-bold text-slate-800 dark:text-white ${generalSettingsExpanded ? '' : 'lg:[writing-mode:vertical-rl] lg:rotate-180 lg:whitespace-nowrap'}`}>
+                                            General Settings
+                                        </h3>
+                                        {!generalSettingsExpanded && (
+                                            <p className="text-sm text-slate-500 dark:text-slate-400 truncate lg:hidden">
+                                                {editEmoji ? `${editEmoji} ` : ''}{editTitle || 'Untitled'}
+                                            </p>
+                                        )}
+                                    </div>
+                                    {!generalSettingsExpanded && editEmoji ? (
+                                        <span className="hidden lg:inline text-xl leading-none" aria-hidden>{editEmoji}</span>
+                                    ) : null}
+                                </button>
 
+                                <div
+                                    className={`grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${
+                                        generalSettingsExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+                                    }`}
+                                >
+                                <div className="overflow-hidden min-h-0">
+                                <div className="space-y-6 pt-4">
                                 {/* Emoji & Title */}
                                 <div className="space-y-4">
                                     <div>
@@ -8155,11 +8222,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         </div>
                                     )}
                                 </div>
+                                </div>
+                                </div>
+                                </div>
                             </div>
                         </div>
 
                         {/* RIGHT COLUMN: Tab and Section Manager */}
-                        <div className="lg:col-span-2 space-y-6">
+                        <div className="w-full min-w-0 flex-1 space-y-6">
                             <div className="flex items-center justify-between gap-3 pb-4 border-b border-slate-200 dark:border-slate-700 flex-wrap">
                                 <div className="flex items-center gap-3 min-w-0">
                                     <div className="w-10 h-10 rounded-lg bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center shrink-0">
@@ -8394,7 +8464,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         return (
                                             <div id={`tab-${tab.id}`} key={tab.id} className={`bg-white dark:bg-slate-800 border-2 border-t-2 border-r-2 border-b-2 border-slate-200 dark:border-slate-700 ${tabColorClass} rounded-2xl overflow-hidden shadow-lg shadow-slate-200/50 dark:shadow-black/20 scroll-mt-24 hover:shadow-xl transition-shadow`}>
                                                 {/* Tab Header */}
-                                                <div className={`p-5 ${expandedTabs.has(tab.id) ? 'border-b-2 border-slate-200 dark:border-slate-700' : ''} ${tabBgClass} flex gap-3 items-center`}>
+                                                <div className={`p-5 ${expandedTabs.has(tab.id) ? 'border-b-2 border-slate-200 dark:border-slate-700' : ''} ${tabBgClass} flex flex-wrap gap-x-3 gap-y-2 items-center`}>
+                                                    <div className="flex items-center gap-3 min-w-[10rem] grow">
                                                     {/* Collapse Toggle */}
                                                     <button
                                                         type="button"
@@ -8440,9 +8511,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         value={tab.title}
                                                         onChange={(e) => handleUpdateTabTitle(tab.id, e.target.value)}
                                                         placeholder="Tab Title (e.g. Resources)"
-                                                        className="flex-1 bg-transparent border-none font-bold text-lg focus:ring-0 placeholder-slate-400"
+                                                        className="flex-1 min-w-0 bg-transparent border-none font-bold text-lg focus:ring-0 placeholder-slate-400"
                                                         style={tab.textColor ? { color: tab.textColor } : { color: 'inherit' }}
                                                     />
+                                                    </div>
+                                                    <div className="flex items-center gap-1 flex-wrap justify-end max-w-full min-w-0 [&>*]:shrink-0">
                                                     <ShortUrlInheritToggle
                                                         checked={tab.inheritShortUrls !== false}
                                                         title="On: inherit short URLs from the space. Off: show original URLs for this tab."
@@ -8573,6 +8646,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             </svg>
                                                         </button>
                                                     )}
+                                                    </div>
                                                 </div>
 
                                                 {/* Tab Sections */}
@@ -8620,7 +8694,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         return (
                                                             <div key={section.id} className={`bg-slate-50 dark:bg-slate-900/50 border-2 border-l-2 border-t-2 border-b-2 border-slate-200 dark:border-slate-700 ${sectionColorClass} rounded-xl overflow-hidden shadow-sm`}>
                                                                 {/* Section Header */}
-                                                                <div className={`p-4 ${expandedSections.has(section.id) ? 'border-b-2 border-slate-200 dark:border-slate-700' : ''} bg-white dark:bg-slate-800 ${sectionBgClass} flex gap-3 items-center`}>
+                                                                <div className={`p-4 ${expandedSections.has(section.id) ? 'border-b-2 border-slate-200 dark:border-slate-700' : ''} bg-white dark:bg-slate-800 ${sectionBgClass} flex flex-wrap gap-x-3 gap-y-2 items-center`}>
+                                                                    <div className="flex items-center gap-3 min-w-[10rem] grow">
                                                                     {/* Collapse Toggle */}
                                                                     <button
                                                                         type="button"
@@ -8680,8 +8755,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         value={section.title}
                                                                         onChange={(e) => handleUpdateSectionTitle(tab.id, section.id, e.target.value)}
                                                                         placeholder="Section Header (e.g. Resources)"
-                                                                        className="flex-1 bg-transparent border-none text-slate-900 dark:text-white font-semibold focus:ring-0 placeholder-slate-400"
+                                                                        className="flex-1 min-w-0 bg-transparent border-none text-slate-900 dark:text-white font-semibold focus:ring-0 placeholder-slate-400"
                                                                     />
+                                                                    </div>
+                                                                    <div className="flex items-center gap-1 flex-wrap justify-end max-w-full min-w-0 [&>*]:shrink-0">
                                                                     <ShortUrlInheritToggle
                                                                         checked={section.inheritShortUrls !== false}
                                                                         title="On: inherit short URLs from the tab/space. Off: show original URLs for this section."
@@ -8902,6 +8979,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             </svg>
                                                                         </button>
                                                                     )}
+                                                                    </div>
                                                                 </div>
 
                                                                 {/* Section Links */}
