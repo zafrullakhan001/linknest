@@ -731,7 +731,7 @@ https://mail.google.com/`}
       {pane === 'fingerprint' && (
         <div className="space-y-3">
           <PaneHint>
-            Only browsers whose fingerprint hash matches a value below can open this item. Copy the hash from Help &amp; About → Fingerprint on the allowed device (include location there if GPS should be part of the key; GPS is matched within about 1 mile). One hash per line.
+            Only browsers whose fingerprint hash matches a value below can open this item. Copy the hash from Help &amp; About → Fingerprint on the allowed device after choosing which signals to include (exclude IP address, hostname, and other changing values if the hash should stay stable). Include location there if GPS should be part of the key; GPS is matched within about 1 mile. One hash per line.
           </PaneHint>
           <ExampleBox title="Example">
             {`lnfp_a1b2c3d4e5f60718293a4b5c6d7e8f90112233445566778899aabbccddeeff00`}

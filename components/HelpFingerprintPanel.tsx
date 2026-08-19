@@ -4,10 +4,24 @@ import {
   clearFingerprintCache,
   lookupFingerprintRegistry,
   registerFingerprintTag,
+  applyFingerprintHashPreset,
+  setFingerprintSignalIncluded,
+  fingerprintSignalLabel,
+  FINGERPRINT_SIGNAL_CATALOG,
+  FINGERPRINT_NETWORK_SIGNAL_IDS,
+  FINGERPRINT_STABLE_EXCLUDED_IDS,
   type FingerprintAttribute,
   type FingerprintResult,
   type FingerprintRegistryLookup,
 } from '../services/fingerprintService';
+
+const CHANGEABLE_PANEL_IDS: string[] = [
+  ...FINGERPRINT_NETWORK_SIGNAL_IDS,
+  'gps',
+  'permissions',
+  'mediaDevices',
+  'timezone',
+];
 
 const GROUP_META: Record<
   FingerprintAttribute['group'],
@@ -187,6 +201,7 @@ export const HelpFingerprintPanel: React.FC = () => {
   const [registryLoading, setRegistryLoading] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [hashUpdating, setHashUpdating] = useState(false);
 
   const refreshRegistry = useCallback(async (hash: string) => {
     setRegistryLoading(true);
@@ -237,6 +252,35 @@ export const HelpFingerprintPanel: React.FC = () => {
     await load({ forceGps: true });
   };
 
+  const rehashFromChoices = useCallback(async () => {
+    setHashUpdating(true);
+    setError(null);
+    try {
+      const next = await collectFingerprint({ includePlace: true });
+      setResult(next);
+      await refreshRegistry(next.hash);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not update fingerprint hash.');
+    } finally {
+      setHashUpdating(false);
+    }
+  }, [refreshRegistry]);
+
+  const toggleSignal = async (signalId: string, included: boolean) => {
+    if (signalId === 'gps' && included && !result?.gps) {
+      setFingerprintSignalIncluded('gps', true);
+      await includeGps();
+      return;
+    }
+    setFingerprintSignalIncluded(signalId, included);
+    await rehashFromChoices();
+  };
+
+  const applyPreset = async (preset: 'full' | 'stable') => {
+    applyFingerprintHashPreset(preset);
+    await rehashFromChoices();
+  };
+
   const saveTag = async () => {
     if (!result?.hash) return;
     const tag = tagName.trim();
@@ -278,6 +322,23 @@ export const HelpFingerprintPanel: React.FC = () => {
     return map;
   }, [filtered]);
 
+  const excludedSet = useMemo(() => new Set(result?.excludedSignals || []), [result]);
+  const changeableSignals = useMemo(
+    () =>
+      CHANGEABLE_PANEL_IDS.map((id) => FINGERPRINT_SIGNAL_CATALOG.find((s) => s.id === id)).filter(
+        (s): s is NonNullable<typeof s> => !!s
+      ),
+    []
+  );
+  const fullCaptureActive = (result?.excludedSignals || []).length === 0;
+  const stableDeviceActive = useMemo(() => {
+    const current = new Set(result?.excludedSignals || []);
+    return (
+      FINGERPRINT_STABLE_EXCLUDED_IDS.every((id) => current.has(id)) &&
+      current.size === FINGERPRINT_STABLE_EXCLUDED_IDS.length
+    );
+  }, [result]);
+
   return (
     <div className="space-y-5">
       <section className="rounded-xl border border-violet-200/70 dark:border-violet-800/40 bg-gradient-to-br from-violet-50/80 via-white to-sky-50/70 dark:from-violet-950/30 dark:via-slate-900/40 dark:to-sky-950/20 p-4">
@@ -287,11 +348,10 @@ export const HelpFingerprintPanel: React.FC = () => {
         <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
           Signals collected from this browser (similar to AmIUnique). Copy the hash and paste it into
           a space, tab, or link under <span className="font-medium text-violet-700 dark:text-violet-300">Access restrictions → Fingerprint</span>.
-          Battery level, connection speed, and referer are shown but not hashed. GPS is added to the hash
-          only after you accept location, using about a 1 mile radius so nearby movement stays valid.
-          Public IP (and local IPs when the browser exposes them) are included in the hash. MAC address
-          cannot be read by a web page. Bookmark Sync and Browser Launcher Pro are shown if installed,
-          but they are not part of the hash.
+          Use the include/exclude choices below so changing values such as IP address, VPN, or hostname
+          do not rotate the hash. Battery level, referer, and extensions are shown but never hashed.
+          GPS is added to the hash only after you accept location (about a 1 mile radius), and you can
+          exclude it like any other signal. Your choices are remembered on this browser.
         </p>
       </section>
 
@@ -321,33 +381,131 @@ export const HelpFingerprintPanel: React.FC = () => {
             <button
               type="button"
               onClick={() => void copyHash()}
-              disabled={!result?.hashDisplay || loading}
+              disabled={!result?.hashDisplay || loading || hashUpdating}
               className="px-3 py-1.5 text-xs font-medium rounded-lg bg-violet-600 hover:bg-violet-500 text-white disabled:opacity-50"
             >
               <span aria-hidden="true">{copied ? '✅' : '📋'}</span> {copied ? 'Copied' : 'Copy hash'}
             </button>
           </div>
         </div>
+        <div className="rounded-lg border border-indigo-100 dark:border-indigo-900/50 bg-white/70 dark:bg-slate-900/40 p-3 space-y-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
+                <span aria-hidden="true">🎛️</span> Signals in this hash
+              </div>
+              <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+                Uncheck values that can change (IP, VPN, hostname) so the hash stays the same on this device.
+                Copy the hash after you set these. The same choices are used when this browser unlocks a restricted item.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void applyPreset('stable')}
+                disabled={loading || hashUpdating}
+                className={`px-2.5 py-1 text-[11px] font-medium rounded-lg border disabled:opacity-50 ${
+                  stableDeviceActive
+                    ? 'border-emerald-400 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-900 dark:text-emerald-100'
+                    : 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200'
+                }`}
+              >
+                <span aria-hidden="true">🏠</span> Stable device
+              </button>
+              <button
+                type="button"
+                onClick={() => void applyPreset('full')}
+                disabled={loading || hashUpdating}
+                className={`px-2.5 py-1 text-[11px] font-medium rounded-lg border disabled:opacity-50 ${
+                  fullCaptureActive
+                    ? 'border-violet-400 bg-violet-100 dark:bg-violet-900/50 text-violet-900 dark:text-violet-100'
+                    : 'border-violet-200 dark:border-violet-800 bg-violet-50/80 dark:bg-violet-950/40 text-violet-800 dark:text-violet-200'
+                }`}
+              >
+                <span aria-hidden="true">📦</span> Include all
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+            {changeableSignals.map((signal) => {
+              const included = !excludedSet.has(signal.id);
+              const gpsOff = signal.id === 'gps' && !result?.gps;
+              return (
+                <label
+                  key={signal.id}
+                  className="flex items-start gap-2 rounded-md px-2 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-indigo-50/80 dark:hover:bg-slate-800/60 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 rounded border-slate-300 dark:border-slate-600"
+                    checked={signal.id === 'gps' ? !!result?.gpsHashed : included}
+                    disabled={loading || hashUpdating}
+                    onChange={(e) => void toggleSignal(signal.id, e.target.checked)}
+                  />
+                  <span>
+                    <span className="font-medium">{signal.label}</span>
+                    {signal.volatile ? (
+                      <span className="ml-1.5 inline-flex items-center rounded-full bg-amber-100/90 dark:bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-normal text-amber-800 dark:text-amber-200">
+                        may change
+                      </span>
+                    ) : null}
+                    {gpsOff ? (
+                      <span className="block text-[10px] text-slate-500">Check to request location</span>
+                    ) : null}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+          {result?.excludedSignals?.length ? (
+            <p className="text-[11px] text-amber-800 dark:text-amber-300">
+              <span aria-hidden="true">🚫</span> Excluded from hash:{' '}
+              {result.excludedSignals.map((id) => fingerprintSignalLabel(id)).join(', ')}
+            </p>
+          ) : (
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              All hashable signals are included. Individual rows below can also be toggled.
+            </p>
+          )}
+        </div>
         <code className="block break-all text-sm font-mono text-violet-900 dark:text-violet-100 bg-white/85 dark:bg-slate-900/70 rounded-lg px-3 py-2 border border-violet-200/80 dark:border-violet-800/50">
-          {loading && !result ? '✨ Collecting…' : result?.hashDisplay || 'Unavailable'}
+          {loading && !result ? '✨ Collecting…' : hashUpdating ? `${result?.hashDisplay || ''} · updating…` : result?.hashDisplay || 'Unavailable'}
         </code>
         {result?.publicIp ? (
           <p className="text-xs text-indigo-800/80 dark:text-indigo-200/80">
-            <span aria-hidden="true">🌐</span> Public IP in this hash:{' '}
+            <span aria-hidden="true">🌐</span> Public IP:{' '}
             <span className="font-mono">{result.publicIp}</span>
+            {excludedSet.has('ipAddress') ? (
+              <span className="ml-1 text-amber-700 dark:text-amber-300">(excluded from hash)</span>
+            ) : (
+              <span> in this hash</span>
+            )}
             {result.hostname ? (
               <>
                 {' '}
                 · <span aria-hidden="true">🖥️</span> Host: <span className="font-mono">{result.hostname}</span>
+                {excludedSet.has('hostname') ? (
+                  <span className="ml-1 text-amber-700 dark:text-amber-300">(excluded)</span>
+                ) : null}
               </>
             ) : null}
-            {result.localIps?.length ? ` · 🏠 Local: ${result.localIps.join(', ')}` : ''}
-            . Changing network, VPN, or machine name can change the hash.
+            {result.localIps?.length ? (
+              <>
+                {` · 🏠 Local: ${result.localIps.join(', ')}`}
+                {excludedSet.has('localIps') ? (
+                  <span className="ml-1 text-amber-700 dark:text-amber-300">(excluded)</span>
+                ) : null}
+              </>
+            ) : null}
+            . Changing network, VPN, or machine name can change the hash unless those signals are excluded.
           </p>
         ) : null}
         {result?.gpsIncluded && result.gps ? (
           <p className="text-xs text-emerald-800 dark:text-emerald-300 rounded-lg bg-emerald-50/80 dark:bg-emerald-950/30 px-2.5 py-1.5">
-            <span aria-hidden="true">📍</span> GPS included in this hash ({result.gps.lat}, {result.gps.lon}
+            <span aria-hidden="true">📍</span>{' '}
+            {result.gpsHashed
+              ? `GPS included in this hash (${result.gps.lat}, ${result.gps.lon}`
+              : `GPS captured but excluded from this hash (${result.gps.lat}, ${result.gps.lon}`}
             {result.gpsPlace?.city && result.gpsPlace.city !== 'Unknown'
               ? ` · ${[result.gpsPlace.city, result.gpsPlace.region, result.gpsPlace.country_name].filter((p) => p && p !== 'Unknown').join(', ')}`
               : ''}
@@ -490,7 +648,26 @@ export const HelpFingerprintPanel: React.FC = () => {
                           {attributeEmoji(row.name)}
                         </span>
                         {row.name}
-                        {!row.hashed ? (
+                        {row.volatile ? (
+                          <span className="ml-1.5 inline-flex items-center rounded-full bg-orange-100/90 dark:bg-orange-900/40 px-1.5 py-0.5 text-[10px] font-normal text-orange-800 dark:text-orange-200">
+                            may change
+                          </span>
+                        ) : null}
+                        {row.hashable && row.signalId ? (
+                          <button
+                            type="button"
+                            disabled={loading || hashUpdating}
+                            onClick={() => void toggleSignal(row.signalId as string, !row.hashed)}
+                            className={`ml-1.5 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-normal disabled:opacity-50 ${
+                              row.hashed
+                                ? 'bg-teal-100/80 dark:bg-teal-900/40 text-teal-800 dark:text-teal-200 hover:bg-teal-200/90 dark:hover:bg-teal-800/50'
+                                : 'bg-rose-100/90 dark:bg-rose-900/40 text-rose-800 dark:text-rose-200 hover:bg-rose-200/90 dark:hover:bg-rose-800/50'
+                            }`}
+                            title={row.hashed ? 'Exclude this signal from the hash' : 'Include this signal in the hash'}
+                          >
+                            {row.hashed ? '🔐 hashed' : '🚫 excluded'}
+                          </button>
+                        ) : !row.hashed ? (
                           <span className="ml-1.5 inline-flex items-center rounded-full bg-amber-100/90 dark:bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-normal text-amber-800 dark:text-amber-200">
                             👁️ display only
                           </span>
