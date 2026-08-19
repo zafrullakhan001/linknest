@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
 import { settingsService, AppSettings } from '../services/settingsService';
-import { getAppStorageScope } from '../services/apiHelpers';
+import { getAppBasePath, getAppStorageScope } from '../services/apiHelpers';
 
 function brandingStorageKey(base: string): string {
   const scope = getAppStorageScope() || '__root__';
@@ -404,24 +404,69 @@ nav.linknest-nav .linknest-brand-subheading {
   } catch (_) { /* ignore */ }
 }
 
-function updatePwaIcons(faviconUrl: string, appName: string) {
-  document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]').forEach((link) => link.remove());
+/** Built-in tab icon (never 404s). Used when no upload is set or the file is missing. */
+export const DEFAULT_FAVICON_HREF =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%233b82f6'/%3E%3Cpath fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round' d='M13.2 18.8l-1.2 1.2a3.6 3.6 0 01-5.1-5.1l2.2-2.2m9.9-.9l1.2-1.2a3.6 3.6 0 015.1 5.1l-2.2 2.2M12.8 19.2l6.4-6.4'/%3E%3C/svg%3E";
 
-  if (faviconUrl) {
-    const type = faviconUrl.endsWith('.svg') ? 'image/svg+xml' :
-      faviconUrl.endsWith('.ico') ? 'image/x-icon' : 'image/png';
+function faviconMimeType(href: string): string {
+  const path = href.split('?')[0].toLowerCase();
+  if (href.startsWith('data:image/svg') || path.endsWith('.svg')) return 'image/svg+xml';
+  if (href.startsWith('data:image/x-icon') || path.endsWith('.ico')) return 'image/x-icon';
+  if (path.endsWith('.webp')) return 'image/webp';
+  if (href.startsWith('data:image/png')) return 'image/png';
+  return 'image/png';
+}
 
-    const icon = document.createElement('link');
-    icon.rel = 'icon';
-    icon.type = type;
-    icon.href = faviconUrl;
-    document.head.appendChild(icon);
+/** Prefix /uploads/... with the install folder (e.g. /linknest) so it is not requested from the domain root. */
+export function resolveBrandedAssetHref(raw: string): string {
+  const url = String(raw || '').trim();
+  if (!url) return '';
+  if (url.startsWith('data:') || url.startsWith('blob:')) return url;
 
-    const apple = document.createElement('link');
-    apple.rel = 'apple-touch-icon';
-    apple.href = faviconUrl;
-    document.head.appendChild(apple);
+  const base = getAppBasePath();
+  const prefixUploads = (pathname: string, search = ''): string => {
+    let path = pathname.startsWith('/') ? pathname : `/${pathname}`;
+    path = path.replace(/^\/[^/]+(\/uploads\/)/, '$1');
+    if (path.startsWith('/uploads/') && base) {
+      path = `${base}${path}`;
+    }
+    return path + search;
+  };
+
+  if (/^https?:\/\//i.test(url)) {
+    try {
+      const parsed = new URL(url);
+      if (parsed.pathname.includes('/uploads/')) {
+        return prefixUploads(parsed.pathname, parsed.search);
+      }
+    } catch {
+      /* keep original */
+    }
+    return url;
   }
+
+  return prefixUploads(url);
+}
+
+function applyFaviconLinks(href: string) {
+  const type = faviconMimeType(href);
+  const nextIcon = document.createElement('link');
+  nextIcon.rel = 'icon';
+  nextIcon.type = type;
+  nextIcon.href = href;
+  const nextApple = document.createElement('link');
+  nextApple.rel = 'apple-touch-icon';
+  nextApple.href = href;
+  document.head.appendChild(nextIcon);
+  document.head.appendChild(nextApple);
+  document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]').forEach((link) => {
+    if (link !== nextIcon && link !== nextApple) link.remove();
+  });
+}
+
+function updatePwaIcons(faviconUrl: string, appName: string) {
+  const resolved = resolveBrandedAssetHref(faviconUrl);
+  applyFaviconLinks(resolved || DEFAULT_FAVICON_HREF);
 
   let manifestLink = document.querySelector('link[rel="manifest"]') as HTMLLinkElement | null;
   if (!manifestLink) {

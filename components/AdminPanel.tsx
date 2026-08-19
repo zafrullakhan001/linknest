@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { authService, PendingUser, AllUser, LdapUserDetail } from '../services/authService';
 import { settingsService, AppSettings, SEMI_PWA_EXCLUDE_PATHS_DEFAULT } from '../services/settingsService';
 import { databaseService } from '../services/databaseService';
-import { useSettings, resolvePageTitle } from '../contexts/SettingsContext';
+import { useSettings, resolvePageTitle, resolveBrandedAssetHref } from '../contexts/SettingsContext';
 import { useAuth } from '../contexts/AuthContext';
 import { getTiles, createTile, saveTile, deleteTile, bulkImportTiles, getCategoryArrangement, saveCategoryArrangement } from '../services/storageService';
 import { exportAllCategoriesToFileAsync, parseSpaceExportObject, normalizeImportedTiles, restoreImportedTileAssets } from '../services/spaceTransferService';
@@ -11991,7 +11991,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       title="Checkerboard shows transparency"
                                     >
                                       <img
-                                        src={faviconPreview || settings.favicon}
+                                        src={faviconPreview || resolveBrandedAssetHref(settings.favicon)}
                                         alt="Favicon preview"
                                         className="max-w-full max-h-full object-contain"
                                         onError={(e) => {

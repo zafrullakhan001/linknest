@@ -18,6 +18,19 @@ try {
 
     $name = trim($map['app_name'] ?? '') ?: trim($map['page_title'] ?? '') ?: 'App';
     $favicon = trim($map['favicon'] ?? '');
+    if ($favicon !== '' && function_exists('getAppBasePath')) {
+        $normalized = preg_replace('#^/[^/]+/uploads/#', '/uploads/', $favicon);
+        if (is_string($normalized) && strpos($normalized, '/uploads/') === 0) {
+            $filename = basename($normalized);
+            $disk = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . $filename;
+            if ($filename === '' || !is_file($disk)) {
+                $favicon = '';
+            } else {
+                $base = getAppBasePath();
+                $favicon = ($base !== '' ? $base : '') . $normalized;
+            }
+        }
+    }
 
     $icons = [];
     if ($favicon !== '') {

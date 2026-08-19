@@ -1,6 +1,6 @@
 import React, { Component, useMemo, type ErrorInfo, type ReactNode } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { useSettings } from '../contexts/SettingsContext';
+import { useSettings, resolveBrandedAssetHref } from '../contexts/SettingsContext';
 
 /** Render an emoji as an SVG data URL for QR center branding. */
 export function emojiToQrDataUrl(emoji: string): string {
@@ -23,7 +23,7 @@ export function emojiToQrDataUrl(emoji: string): string {
 
 export function useQrCenterImageSrc(): string {
   const { settings } = useSettings();
-  const faviconUrl = settings.favicon?.trim() || '';
+  const faviconUrl = resolveBrandedAssetHref(settings.favicon?.trim() || '');
   const brandingMode = settings.qr_branding_mode === 'emoji' ? 'emoji' : 'favicon';
   const brandingEmoji = settings.qr_branding_emoji?.trim() || '❤️';
   const useFavicon = brandingMode === 'favicon' && !!faviconUrl;

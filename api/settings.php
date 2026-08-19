@@ -77,18 +77,31 @@ function normalizeLogoUrl($url) {
     if (empty($url)) {
         return $url;
     }
-    
+
+    $raw = trim((string) $url);
+    if ($raw === '' || preg_match('#^https?://#i', $raw) || str_starts_with($raw, 'data:')) {
+        return $raw;
+    }
+
     // Remove any existing base path prefix to get the normalized path
-    $normalized = preg_replace('#^/[^/]+/uploads/#', '/uploads/', $url);
-    
-    // Get current base path
+    $normalized = preg_replace('#^/[^/]+/uploads/#', '/uploads/', $raw);
+
+    if (is_string($normalized) && strpos($normalized, '/uploads/') === 0) {
+        $filename = basename($normalized);
+        if (!preg_match('/^[a-zA-Z0-9._-]+$/', $filename)) {
+            return '';
+        }
+        $disk = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . $filename;
+        if (!is_file($disk)) {
+            return '';
+        }
+    }
+
     $basePath = getBasePath();
-    
-    // If we have a base path and the URL is /uploads/..., add the base path
-    if ($basePath && strpos($normalized, '/uploads/') === 0) {
+    if ($basePath && is_string($normalized) && strpos($normalized, '/uploads/') === 0) {
         $normalized = $basePath . $normalized;
     }
-    
+
     return $normalized;
 }
 
@@ -460,6 +473,11 @@ function handleGetSettings() {
     if (!$hasSessionUser) {
         $cached = responseCacheGet('settings_public');
         if (is_array($cached)) {
+            foreach (['favicon', 'logo_image', 'header_logo_image'] as $assetKey) {
+                if (!empty($cached[$assetKey])) {
+                    $cached[$assetKey] = normalizeLogoUrl($cached[$assetKey]);
+                }
+            }
             responseCacheHitHeader(true);
             sendJSON(['settings' => $cached]);
             return;
@@ -473,6 +491,11 @@ function handleGetSettings() {
     if ($hasSessionUser && !$isAdmin) {
         $cached = responseCacheGet('settings_public');
         if (is_array($cached)) {
+            foreach (['favicon', 'logo_image', 'header_logo_image'] as $assetKey) {
+                if (!empty($cached[$assetKey])) {
+                    $cached[$assetKey] = normalizeLogoUrl($cached[$assetKey]);
+                }
+            }
             responseCacheHitHeader(true);
             sendJSON(['settings' => $cached]);
             return;
