@@ -11,6 +11,10 @@
     #wrap { height: 100%; box-sizing: border-box; padding: 8px; }
     .error { font-family: system-ui, sans-serif; padding: 16px; color: #b91c1c; }
   </style>
+  <!-- Keep in sync with utils/richTextFonts.ts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alex+Brush&family=Allura&family=Caveat:wght@400%3B700&family=Cookie&family=Courgette&family=Dancing+Script:wght@400%3B700&family=Great+Vibes&family=Homemade+Apple&family=Indie+Flower&family=Kaushan+Script&family=Lato:wght@400%3B700&family=Lobster&family=Lora:wght@400%3B700&family=Merriweather:wght@400%3B700&family=Montserrat:wght@400%3B700&family=Nunito:wght@400%3B700&family=Open+Sans:wght@400%3B700&family=Oswald:wght@400%3B700&family=Pacifico&family=Pinyon+Script&family=Playfair+Display:wght@400%3B700&family=Poppins:wght@400%3B700&family=Roboto:wght@400%3B700&family=Roboto+Mono:wght@400%3B700&family=Sacramento&family=Satisfy&family=Shadows+Into+Light&family=Source+Code+Pro:wght@400%3B700&family=Tangerine:wght@400%3B700&family=Yellowtail&display=swap" />
 </head>
 <body>
   <div id="wrap"><textarea id="editor"></textarea></div>
@@ -43,6 +47,77 @@
       }, true);
 
       var tinymceBase = new URL('./tinymce/', document.baseURI).href.replace(/\/?$/, '');
+      var googleFontsHref = 'https://fonts.googleapis.com/css2?family=Alex+Brush&family=Allura&family=Caveat:wght@400%3B700&family=Cookie&family=Courgette&family=Dancing+Script:wght@400%3B700&family=Great+Vibes&family=Homemade+Apple&family=Indie+Flower&family=Kaushan+Script&family=Lato:wght@400%3B700&family=Lobster&family=Lora:wght@400%3B700&family=Merriweather:wght@400%3B700&family=Montserrat:wght@400%3B700&family=Nunito:wght@400%3B700&family=Open+Sans:wght@400%3B700&family=Oswald:wght@400%3B700&family=Pacifico&family=Pinyon+Script&family=Playfair+Display:wght@400%3B700&family=Poppins:wght@400%3B700&family=Roboto:wght@400%3B700&family=Roboto+Mono:wght@400%3B700&family=Sacramento&family=Satisfy&family=Shadows+Into+Light&family=Source+Code+Pro:wght@400%3B700&family=Tangerine:wght@400%3B700&family=Yellowtail&display=swap';
+      // Keep in sync with utils/richTextFonts.ts
+      var fontFamilyFormats = [
+        "Arial=Arial, Helvetica, sans-serif",
+        "Arial Black='Arial Black', Gadget, sans-serif",
+        "Calibri=Calibri, Candara, Segoe, sans-serif",
+        "Century Gothic='Century Gothic', AppleGothic, sans-serif",
+        "Helvetica=Helvetica, Arial, sans-serif",
+        "Lato=Lato, Helvetica, sans-serif",
+        "Lucida Sans='Lucida Sans Unicode', 'Lucida Grande', sans-serif",
+        "Montserrat=Montserrat, 'Helvetica Neue', sans-serif",
+        "Nunito=Nunito, Geneva, sans-serif",
+        "Open Sans='Open Sans', Arial, sans-serif",
+        "Oswald=Oswald, Impact, sans-serif",
+        "Poppins=Poppins, 'Segoe UI', sans-serif",
+        "Roboto=Roboto, Arial, sans-serif",
+        "Segoe UI='Segoe UI', Tahoma, Geneva, sans-serif",
+        "Tahoma=Tahoma, Geneva, sans-serif",
+        "Trebuchet MS='Trebuchet MS', Helvetica, sans-serif",
+        "Verdana=Verdana, Geneva, sans-serif",
+        "Book Antiqua='Book Antiqua', Palatino, serif",
+        "Cambria=Cambria, Georgia, serif",
+        "Garamond=Garamond, Baskerville, serif",
+        "Georgia=Georgia, 'Times New Roman', serif",
+        "Lora=Lora, Georgia, serif",
+        "Merriweather=Merriweather, Georgia, serif",
+        "Palatino='Palatino Linotype', Palatino, serif",
+        "Playfair Display='Playfair Display', Georgia, serif",
+        "Times New Roman='Times New Roman', Times, serif",
+        "Andale Mono='Andale Mono', Monaco, monospace",
+        "Consolas=Consolas, Monaco, monospace",
+        "Courier New='Courier New', Courier, monospace",
+        "Lucida Console='Lucida Console', Monaco, monospace",
+        "Roboto Mono='Roboto Mono', Consolas, monospace",
+        "Source Code Pro='Source Code Pro', Consolas, monospace",
+        "Terminal=Terminal, Monaco, monospace",
+        "Alex Brush='Alex Brush', 'Segoe Script', cursive",
+        "Allura=Allura, 'Segoe Script', cursive",
+        "Apple Chancery='Apple Chancery', 'Dancing Script', cursive",
+        "Bradley Hand='Bradley Hand ITC', 'Segoe Print', Caveat, cursive",
+        "Brush Script='Brush Script MT', 'Segoe Script', 'Alex Brush', cursive",
+        "Caveat=Caveat, 'Segoe Print', cursive",
+        "Comic Sans MS='Comic Sans MS', 'Comic Sans', cursive",
+        "Cookie=Cookie, 'Segoe Script', cursive",
+        "Courgette=Courgette, 'Segoe Script', cursive",
+        "Dancing Script='Dancing Script', 'Segoe Script', cursive",
+        "Edwardian Script='Edwardian Script ITC', 'Great Vibes', cursive",
+        "Freestyle Script='Freestyle Script', 'Dancing Script', cursive",
+        "French Script='French Script MT', 'Great Vibes', cursive",
+        "Great Vibes='Great Vibes', 'Segoe Script', cursive",
+        "Homemade Apple='Homemade Apple', 'Lucida Handwriting', cursive",
+        "Indie Flower='Indie Flower', 'Comic Sans MS', cursive",
+        "Kaushan Script='Kaushan Script', 'Segoe Script', cursive",
+        "Lobster=Lobster, Impact, cursive",
+        "Lucida Calligraphy='Lucida Calligraphy', 'Great Vibes', cursive",
+        "Lucida Handwriting='Lucida Handwriting', 'Dancing Script', cursive",
+        "Monotype Corsiva='Monotype Corsiva', 'Dancing Script', cursive",
+        "Pacifico=Pacifico, 'Segoe Script', cursive",
+        "Pinyon Script='Pinyon Script', 'Great Vibes', cursive",
+        "Sacramento=Sacramento, 'Segoe Script', cursive",
+        "Satisfy=Satisfy, 'Segoe Script', cursive",
+        "Segoe Print='Segoe Print', Caveat, cursive",
+        "Segoe Script='Segoe Script', 'Dancing Script', cursive",
+        "Shadows Into Light='Shadows Into Light', 'Comic Sans MS', cursive",
+        "Tangerine=Tangerine, 'Great Vibes', cursive",
+        "Yellowtail=Yellowtail, 'Segoe Script', cursive",
+        "Impact=Impact, Haettenschweiler, sans-serif",
+        "Symbol=Symbol, serif",
+        "Webdings=Webdings, sans-serif",
+        "Wingdings=Wingdings, 'Zapf Dingbats'"
+      ].join(';');
       var script = document.createElement('script');
       script.src = tinymceBase + '/tinymce.min.js';
       script.onerror = function () {
@@ -77,7 +152,10 @@
           contextmenu: 'link image table',
           skin: dark ? 'oxide-dark' : 'oxide',
           content_css: dark ? 'dark' : 'default',
+          font_css: googleFontsHref,
+          font_family_formats: fontFamilyFormats,
           content_style:
+            '@import url("' + googleFontsHref + '"); ' +
             'body { font-family: Georgia, "Times New Roman", Times, serif; font-size: 16px; line-height: 1.5; } ' +
             'body.mce-content-body li.ln-li-space, body.mce-content-body li.ln-li-space-1, body.mce-content-body li[data-ln-space="1"] { margin-bottom: 1em !important; } ' +
             'body.mce-content-body li.ln-li-space-2, body.mce-content-body li[data-ln-space="2"] { margin-bottom: 2em !important; } ' +

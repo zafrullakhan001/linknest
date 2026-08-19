@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { EmojiPickerPopover } from './EmojiPickerPanel';
+import { ensureRichTextFontsLoaded, RICH_TEXT_FONT_GROUPS, RICH_TEXT_FONTS } from '../utils/richTextFonts';
 
 interface RichTextEditorProps {
     value: string;
@@ -15,6 +16,10 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     placeholder = 'Enter text...',
     className = ''
 }) => {
+    useEffect(() => {
+        ensureRichTextFontsLoaded();
+    }, []);
+
     const editorRef = useRef<HTMLDivElement>(null);
     const savedRangeRef = useRef<Range | null>(null);
     const isInternalUpdateRef = useRef(false);
@@ -1657,17 +1662,19 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                         defaultValue=""
                     >
                         <option value="">Font</option>
-                        <option value="Arial">Arial</option>
-                        <option value="Helvetica">Helvetica</option>
-                        <option value="Times New Roman">Times New Roman</option>
-                        <option value="Courier New">Courier New</option>
-                        <option value="Verdana">Verdana</option>
-                        <option value="Georgia">Georgia</option>
-                        <option value="Palatino">Palatino</option>
-                        <option value="Garamond">Garamond</option>
-                        <option value="Comic Sans MS">Comic Sans MS</option>
-                        <option value="Trebuchet MS">Trebuchet MS</option>
-                        <option value="Impact">Impact</option>
+                        {RICH_TEXT_FONT_GROUPS.map((group) => (
+                            <optgroup key={group} label={group}>
+                                {RICH_TEXT_FONTS.filter((font) => font.group === group).map((font) => (
+                                    <option
+                                        key={font.label}
+                                        value={font.cssFamily}
+                                        style={{ fontFamily: font.cssFamily }}
+                                    >
+                                        {font.label}
+                                    </option>
+                                ))}
+                            </optgroup>
+                        ))}
                     </select>
                 </div>
 

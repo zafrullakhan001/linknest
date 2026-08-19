@@ -43,7 +43,7 @@ import { LinkMaintenanceDialog } from './LinkMaintenanceDialog';
 import { LinkMaintenanceVideoField } from './LinkMaintenanceVideoField';
 import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
 import { isLinkInMaintenance } from '../utils/linkMaintenance';
-import { hasVisibleRichText, looksLikeHtml, plainNotesToHtml } from '../utils/richTextDisplay';
+import { hasVisibleRichText, looksLikeHtml, plainNotesToHtml, prepareViewerHtml } from '../utils/richTextDisplay';
 import { isInfoContentEnabled, isNotesTooltipEnabled, linkHoverTitle, shouldOpenInfoDialog, shouldShowLinkNotes } from '../utils/linkFeatureToggles';
 import { LinkNotesDialog } from './LinkNotesDialog';
 import { QRCodeDialog } from './QRCodeDialog';
@@ -6225,7 +6225,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             <div className="lg:hidden bg-white dark:bg-slate-800/30 rounded-xl border border-slate-200 dark:border-slate-700/50 p-6 shadow-sm">
                                 <div
                                     className="ln-tinymce-content text-slate-700 dark:text-slate-200"
-                                    dangerouslySetInnerHTML={{ __html: tile.htmlContent }}
+                                    dangerouslySetInnerHTML={{ __html: prepareViewerHtml(tile.htmlContent) }}
                                 />
                             </div>
                         )}
@@ -6235,7 +6235,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             <div className="hidden lg:block bg-white dark:bg-slate-800/20 border border-slate-200 dark:border-slate-800 p-6 rounded-xl shadow-sm">
                                 <div
                                     className="ln-tinymce-content text-slate-700 dark:text-slate-200"
-                                    dangerouslySetInnerHTML={{ __html: tile.htmlContent }}
+                                    dangerouslySetInnerHTML={{ __html: prepareViewerHtml(tile.htmlContent) }}
                                 />
                             </div>
                         )}
@@ -6652,7 +6652,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     e.preventDefault();
                                                                                     e.stopPropagation();
                                                                                     const allowed = await assertCanOpen('link', link.id, {
-                                                                                        rules: [tile.accessRestrictions, tab.accessRestrictions, link.accessRestrictions],
+                                                                                        rules: [tile.accessRestrictions, activeViewTab?.accessRestrictions, link.accessRestrictions],
                                                                                     });
                                                                                     if (!allowed) return;
                                                                                     if (isLinkInMaintenance(link)) {
@@ -6749,7 +6749,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         e.preventDefault();
                                                                         e.stopPropagation();
                                                                         const allowed = await assertCanOpen('link', link.id, {
-                                                                            rules: [tile.accessRestrictions, tab.accessRestrictions, link.accessRestrictions],
+                                                                            rules: [tile.accessRestrictions, activeViewTab?.accessRestrictions, link.accessRestrictions],
                                                                         });
                                                                         if (!allowed) return;
                                                                         if (isLinkInMaintenance(link)) {
@@ -6893,7 +6893,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         e.preventDefault();
                                                                                         e.stopPropagation();
                                                                                         const allowed = await assertCanOpen('link', link.id, {
-                                                                                        rules: [tile.accessRestrictions, tab.accessRestrictions, link.accessRestrictions],
+                                                                                        rules: [tile.accessRestrictions, activeViewTab?.accessRestrictions, link.accessRestrictions],
                                                                                     });
                                                                                         if (!allowed) return;
                                                                                         if (isLinkInMaintenance(link)) {
@@ -6930,7 +6930,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     e.preventDefault();
                                                                                                     e.stopPropagation();
                                                                                                     const allowed = await assertCanOpen('link', link.id, {
-                                                                                        rules: [tile.accessRestrictions, tab.accessRestrictions, link.accessRestrictions],
+                                                                                        rules: [tile.accessRestrictions, activeViewTab?.accessRestrictions, link.accessRestrictions],
                                                                                     });
                                                                                                     if (!allowed) return;
                                                                                                     if (isLinkInMaintenance(link)) {

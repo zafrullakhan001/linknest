@@ -3,6 +3,8 @@
  * without nesting inside existing anchors, and without mutating stored content.
  */
 
+import { ensureRichTextFontsLoaded } from './richTextFonts';
+
 const SKIP_TAGS = new Set(['A', 'SCRIPT', 'STYLE', 'TEXTAREA', 'CODE', 'PRE']);
 
 const URL_OR_EMAIL_RE =
@@ -26,6 +28,22 @@ function createLinkElement(doc: Document, href: string, text: string): HTMLAncho
     a.rel = 'noopener noreferrer';
   }
   return a;
+}
+
+/** Keep editor font-family against theme CSS that uses !important. */
+function promoteEditorFonts(root: Element): void {
+  const styled = root.querySelectorAll<HTMLElement>('[style]');
+  styled.forEach((el) => {
+    const family = el.style.fontFamily;
+    if (family) {
+      el.style.setProperty('font-family', family, 'important');
+    }
+  });
+  root.querySelectorAll('font[face]').forEach((fontEl) => {
+    const face = fontEl.getAttribute('face');
+    if (!face) return;
+    (fontEl as HTMLElement).style.setProperty('font-family', face, 'important');
+  });
 }
 
 function linkifyTextNode(doc: Document, textNode: Text): void {
@@ -69,6 +87,7 @@ function linkifyTextNode(doc: Document, textNode: Text): void {
  */
 export function linkifyHtml(html: string): string {
   if (!html || typeof document === 'undefined') return html || '';
+  ensureRichTextFontsLoaded();
 
   const parser = new DOMParser();
   const doc = parser.parseFromString(`<div id="__rt_root">${html}</div>`, 'text/html');
@@ -89,6 +108,20 @@ export function linkifyHtml(html: string): string {
     linkifyTextNode(doc, node);
   }
 
+  promoteEditorFonts(root);
+
+  return root.innerHTML;
+}
+
+/** Load web fonts and keep editor font-family in viewers without auto-linking. */
+export function prepareViewerHtml(html: string): string {
+  if (!html || typeof document === 'undefined') return html || '';
+  ensureRichTextFontsLoaded();
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(`<div id="__rt_root">${html}</div>`, 'text/html');
+  const root = doc.getElementById('__rt_root');
+  if (!root) return html;
+  promoteEditorFonts(root);
   return root.innerHTML;
 }
 

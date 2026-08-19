@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import { ensureRichTextFontsLoaded } from '../utils/richTextFonts';
+import { prepareViewerHtml } from '../utils/richTextDisplay';
 
 interface TinyMceRichTextEditorProps {
   value: string;
@@ -28,6 +30,10 @@ export const TinyMceRichTextEditor: React.FC<TinyMceRichTextEditorProps> = ({
 }) => {
   const [open, setOpen] = useState(startOpen);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  useEffect(() => {
+    ensureRichTextFontsLoaded();
+  }, []);
   const htmlRef = useRef(value || '');
   const readyRef = useRef(false);
 
@@ -36,7 +42,7 @@ export const TinyMceRichTextEditor: React.FC<TinyMceRichTextEditorProps> = ({
   const iframeSrc = useMemo(() => {
     const base = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/');
     const dark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
-    return `${base}tinymce-editor.html?v=listspace5&dark=${dark ? '1' : '0'}`;
+    return `${base}tinymce-editor.html?v=fonts1&dark=${dark ? '1' : '0'}`;
   }, []);
 
   const postToEditor = useCallback((payload: Record<string, unknown>) => {
@@ -82,9 +88,11 @@ export const TinyMceRichTextEditor: React.FC<TinyMceRichTextEditorProps> = ({
 
   useEscapeToClose(open, close);
 
-  const previewHtml = (value || '').trim()
-    ? value
-    : `<p class="text-slate-400 italic">${placeholder}</p>`;
+  const previewHtml = useMemo(() => {
+    const raw = (value || '').trim();
+    if (!raw) return `<p class="text-slate-400 italic">${placeholder}</p>`;
+    return prepareViewerHtml(value);
+  }, [value, placeholder]);
 
   return (
     <div className={`tinymce-rich-text-editor ${className}`}>

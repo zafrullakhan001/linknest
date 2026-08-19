@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { SelectableRichTextEditor } from './SelectableRichTextEditor';
+import { ensureRichTextFontsLoaded, RICH_TEXT_FONT_GROUPS, RICH_TEXT_FONTS } from '../utils/richTextFonts';
 
 interface MobileRichTextEditorProps {
     value: string;
@@ -27,6 +28,10 @@ export const MobileRichTextEditor: React.FC<MobileRichTextEditorProps> = ({
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [toolbarCategory, setToolbarCategory] = useState<'basic' | 'format' | 'insert'>('basic');
     const editorRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        ensureRichTextFontsLoaded();
+    }, []);
 
     // Close toolbar when clicking outside
     useEffect(() => {
@@ -302,6 +307,31 @@ export const MobileRichTextEditor: React.FC<MobileRichTextEditorProps> = ({
                                                 <option value="7">Extra Large</option>
                                             </select>
                                         </div>
+                                        <select
+                                            onChange={(e) => {
+                                                if (e.target.value) {
+                                                    execCommand('fontName', e.target.value);
+                                                    e.target.value = '';
+                                                }
+                                            }}
+                                            className="w-full p-3 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                                            style={{ minHeight: '44px' }}
+                                        >
+                                            <option value="">Font...</option>
+                                            {RICH_TEXT_FONT_GROUPS.map((group) => (
+                                                <optgroup key={group} label={group}>
+                                                    {RICH_TEXT_FONTS.filter((font) => font.group === group).map((font) => (
+                                                        <option
+                                                            key={font.label}
+                                                            value={font.cssFamily}
+                                                            style={{ fontFamily: font.cssFamily }}
+                                                        >
+                                                            {font.label}
+                                                        </option>
+                                                    ))}
+                                                </optgroup>
+                                            ))}
+                                        </select>
                                         <div className="grid grid-cols-2 gap-2">
                                             <button
                                                 type="button"
