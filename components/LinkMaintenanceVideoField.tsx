@@ -1,6 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { VideoTrimStrip } from './VideoTrimStrip';
 import { uploadLinkMaintenanceVideo } from '../services/storageService';
 import { WebcamBackgroundBlurEngine } from '../utils/webcamBackgroundBlur';
+import { extensionForMime, pickRecorderMimeType, trimVideoBlob } from '../utils/trimVideoBlob';
+
+type PendingClip = {
+  blob: Blob;
+  mime: string;
+  objectUrl: string;
+  source: 'webcam' | 'file';
+};
 
 interface LinkMaintenanceVideoFieldProps {
   value?: string;
@@ -61,23 +70,6 @@ const QUALITY_PRESETS: Record<QualityId, {
     audioBitsPerSecond: 128_000,
   },
 };
-
-function pickRecorderMimeType(): string {
-  if (typeof MediaRecorder === 'undefined') return '';
-  const candidates = [
-    'video/webm;codecs=vp9,opus',
-    'video/webm;codecs=vp8,opus',
-    'video/webm',
-    'video/mp4',
-  ];
-  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || '';
-}
-
-function extensionForMime(mime: string): string {
-  if (mime.includes('mp4')) return 'mp4';
-  if (mime.includes('ogg')) return 'ogv';
-  return 'webm';
-}
 
 function readStoredDeviceId(key: string): string {
   try {
@@ -345,8 +337,11 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
   const noiseSuppressionRef = useRef(readStoredFlag(NOISE_STORAGE_KEY, true));
   const backgroundImageRef = useRef<HTMLImageElement | null>(null);
   const brandObjectUrlRef = useRef<string | null>(null);
+  const pendingClipUrlRef = useRef<string | null>(null);
+  const trimAbortRef = useRef<AbortController | null>(null);
 
   const [isPreviewing, setIsPreviewing] = useState(false);
+  const [pendingClip, setPendingClip] = useState<PendingClip | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isSwitching, setIsSwitching] = useState(false);
@@ -407,6 +402,26 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
     }
   }, [stopDrawLoop]);
 
+  const clearPendingClip = useCallback(() => {
+    trimAbortRef.current?.abort();
+    trimAbortRef.current = null;
+    if (pendingClipUrlRef.current) {
+      URL.revokeObjectURL(pendingClipUrlRef.current);
+      pendingClipUrlRef.current = null;
+    }
+    setPendingClip(null);
+  }, []);
+
+  const setPendingFromBlob = useCallback((blob: Blob, mime: string, source: PendingClip['source']) => {
+    if (pendingClipUrlRef.current) {
+      URL.revokeObjectURL(pendingClipUrlRef.current);
+      pendingClipUrlRef.current = null;
+    }
+    const objectUrl = URL.createObjectURL(blob);
+    pendingClipUrlRef.current = objectUrl;
+    setPendingClip({ blob, mime, objectUrl, source });
+  }, []);
+
   useEffect(() => {
     blurEngineRef.current = new WebcamBackgroundBlurEngine();
     return () => {
@@ -415,6 +430,11 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
       if (brandObjectUrlRef.current) {
         URL.revokeObjectURL(brandObjectUrlRef.current);
         brandObjectUrlRef.current = null;
+      }
+      trimAbortRef.current?.abort();
+      if (pendingClipUrlRef.current) {
+        URL.revokeObjectURL(pendingClipUrlRef.current);
+        pendingClipUrlRef.current = null;
       }
     };
   }, []);
@@ -733,14 +753,14 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
     }
   };
 
-  const stopAndUpload = () => {
+  const stopRecording = () => {
     const recorder = recorderRef.current;
     if (!recorder || recorder.state === 'inactive') return;
-    recorder.onstop = async () => {
+    recorder.onstop = () => {
       isRecordingRef.current = false;
       setIsRecording(false);
-      const mime = recorder.mimeType || pickRecorderMimeType() || 'video/webm';
-      const blob = new Blob(chunksRef.current, { type: mime.split(';')[0] });
+      const mime = (recorder.mimeType || pickRecorderMimeType() || 'video/webm').split(';')[0];
+      const blob = new Blob(chunksRef.current, { type: mime });
       chunksRef.current = [];
       recorderRef.current = null;
       setIsPreviewing(false);
@@ -750,37 +770,63 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
         setError('Recording was empty. Please try again.');
         return;
       }
-      setIsUploading(true);
       setError(null);
-      try {
-        const url = await uploadLinkMaintenanceVideo(blob, `recording.${extensionForMime(mime)}`);
-        onChange(url);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to upload recording');
-      } finally {
-        setIsUploading(false);
-      }
+      setPendingFromBlob(blob, mime, 'webcam');
     };
     recorder.stop();
   };
 
-  const handleFile = async (file: File | undefined) => {
+  const handleFile = (file: File | undefined) => {
     if (!file) return;
     if (!file.type.startsWith('video/')) {
       setError('Please choose a video file.');
       return;
     }
+    setError(null);
+    setPendingFromBlob(file, file.type || 'video/webm', 'file');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const confirmPendingClip = async (startSec: number, endSec: number) => {
+    const clip = pendingClip;
+    if (!clip) return;
+    trimAbortRef.current?.abort();
+    const abort = new AbortController();
+    trimAbortRef.current = abort;
     setIsUploading(true);
     setError(null);
     try {
-      const url = await uploadLinkMaintenanceVideo(file, file.name);
+      const preset = QUALITY_PRESETS[qualityRef.current];
+      const trimmed = await trimVideoBlob(clip.blob, startSec, endSec, {
+        videoBitsPerSecond: preset.videoBitsPerSecond,
+        audioBitsPerSecond: preset.audioBitsPerSecond,
+        signal: abort.signal,
+      });
+      const mime = trimmed.type || clip.mime;
+      const originalName = clip.blob instanceof File ? clip.blob.name : '';
+      const filename = originalName && trimmed === clip.blob
+        ? originalName
+        : `recording.${extensionForMime(mime)}`;
+      const url = await uploadLinkMaintenanceVideo(trimmed, filename);
+      clearPendingClip();
       onChange(url);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to upload video');
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      setError(err instanceof Error ? err.message : 'Failed to prepare the clip');
     } finally {
       setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
+  };
+
+  const discardPendingClip = () => {
+    clearPendingClip();
+    setError(null);
+  };
+
+  const rerecordPendingClip = () => {
+    clearPendingClip();
+    setError(null);
+    void startCamera();
   };
 
   const handleCameraChange = (id: string) => {
@@ -966,6 +1012,17 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
             Remove video
           </button>
         </div>
+      ) : pendingClip ? (
+        <VideoTrimStrip
+          src={pendingClip.objectUrl}
+          source={pendingClip.source}
+          busy={isUploading}
+          busyLabel="Preparing clip…"
+          onConfirm={(startSec, endSec) => void confirmPendingClip(startSec, endSec)}
+          onDiscard={discardPendingClip}
+          onRerecord={pendingClip.source === 'webcam' ? rerecordPendingClip : undefined}
+          onChooseAnotherFile={pendingClip.source === 'file' ? () => fileInputRef.current?.click() : undefined}
+        />
       ) : (
         <>
           {isPreviewing && (
@@ -1236,10 +1293,10 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
             ) : isRecording ? (
               <button
                 type="button"
-                onClick={stopAndUpload}
+                onClick={stopRecording}
                 className="px-3 py-1.5 text-xs font-medium rounded-lg bg-red-600 hover:bg-red-500 text-white"
               >
-                Stop &amp; upload
+                Stop recording
               </button>
             ) : (
               <button
@@ -1268,16 +1325,16 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
             >
               {isUploading ? 'Uploading…' : 'Upload video file'}
             </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="video/*"
-              className="hidden"
-              onChange={(e) => void handleFile(e.target.files?.[0])}
-            />
           </div>
         </>
       )}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="video/*"
+        className="hidden"
+        onChange={(e) => handleFile(e.target.files?.[0])}
+      />
       {error && (
         <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
       )}

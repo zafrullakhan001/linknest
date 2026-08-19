@@ -1265,3 +1265,301 @@ export async function registerFingerprintTag(
   }
   return data;
 }
+
+export const FINGERPRINT_SNAPSHOT_KIND = 'linknest-fingerprint';
+export const FINGERPRINT_SNAPSHOT_VERSION = 1;
+
+const ATTR_GROUPS: FingerprintAttribute['group'][] = ['http', 'extensions', 'javascript', 'geo'];
+
+export interface FingerprintSnapshotAttribute {
+  name: string;
+  value: string;
+  group: FingerprintAttribute['group'];
+  hashed: boolean;
+  signalId?: string;
+  hashable?: boolean;
+  volatile?: boolean;
+}
+
+export interface FingerprintSnapshotExtension {
+  kind: string;
+  name: string;
+  version: string;
+}
+
+export interface FingerprintSnapshot {
+  kind: typeof FINGERPRINT_SNAPSHOT_KIND;
+  version: number;
+  exportedAt: string;
+  hash: string;
+  hashDisplay: string;
+  excludedSignals: string[];
+  attributes: FingerprintSnapshotAttribute[];
+  publicIp: string;
+  hostname: string;
+  localIps: string[];
+  gps: FingerprintGps | null;
+  gpsPlace: FingerprintGpsPlace | null;
+  gpsIncluded?: boolean;
+  gpsHashed?: boolean;
+  extensions: FingerprintSnapshotExtension[];
+}
+
+export type FingerprintDiffStatus = 'unchanged' | 'changed' | 'onlyA' | 'onlyB';
+
+export interface FingerprintAttributeDiff {
+  key: string;
+  group: FingerprintAttribute['group'];
+  name: string;
+  status: FingerprintDiffStatus;
+  valueA: string | null;
+  valueB: string | null;
+  hashedA: boolean | null;
+  hashedB: boolean | null;
+}
+
+export interface FingerprintSnapshotDiff {
+  hashMatch: boolean;
+  hashA: string;
+  hashB: string;
+  hashDisplayA: string;
+  hashDisplayB: string;
+  excludedA: string[];
+  excludedB: string[];
+  excludedOnlyA: string[];
+  excludedOnlyB: string[];
+  counts: { unchanged: number; changed: number; onlyA: number; onlyB: number };
+  rows: FingerprintAttributeDiff[];
+}
+
+function isAttrGroup(value: unknown): value is FingerprintAttribute['group'] {
+  return value === 'http' || value === 'javascript' || value === 'geo' || value === 'extensions';
+}
+
+function snapshotAttrKey(group: string, name: string): string {
+  return `${group}\0${name}`;
+}
+
+export function serializeFingerprintSnapshot(result: FingerprintResult): FingerprintSnapshot {
+  return {
+    kind: FINGERPRINT_SNAPSHOT_KIND,
+    version: FINGERPRINT_SNAPSHOT_VERSION,
+    exportedAt: new Date(result.collectedAt || Date.now()).toISOString(),
+    hash: result.hash,
+    hashDisplay: result.hashDisplay,
+    excludedSignals: [...(result.excludedSignals || [])],
+    attributes: (result.attributes || []).map((a) => ({
+      name: a.name,
+      value: a.value,
+      group: a.group,
+      hashed: !!a.hashed,
+      signalId: a.signalId,
+      hashable: a.hashable,
+      volatile: a.volatile,
+    })),
+    publicIp: result.publicIp || '',
+    hostname: result.hostname || '',
+    localIps: [...(result.localIps || [])],
+    gps: result.gps ? { ...result.gps } : null,
+    gpsPlace: result.gpsPlace ? { ...result.gpsPlace } : null,
+    gpsIncluded: result.gpsIncluded,
+    gpsHashed: result.gpsHashed,
+    extensions: (result.extensions || []).map((e) => ({
+      kind: e.kind,
+      name: e.name,
+      version: e.version,
+    })),
+  };
+}
+
+export function fingerprintSnapshotToJson(result: FingerprintResult): string {
+  return JSON.stringify(serializeFingerprintSnapshot(result), null, 2);
+}
+
+export function fingerprintSnapshotFilename(when: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const stamp = `${when.getFullYear()}${pad(when.getMonth() + 1)}${pad(when.getDate())}-${pad(when.getHours())}${pad(when.getMinutes())}${pad(when.getSeconds())}`;
+  return `linknest-fingerprint-${stamp}.json`;
+}
+
+export function downloadFingerprintSnapshot(result: FingerprintResult): void {
+  const blob = new Blob([fingerprintSnapshotToJson(result)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fingerprintSnapshotFilename();
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string');
+}
+
+export function parseFingerprintSnapshotJson(raw: string): FingerprintSnapshot {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error('That file is not valid JSON.');
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('That file is not a LinkNest fingerprint export.');
+  }
+  const obj = parsed as Record<string, unknown>;
+  if (obj.kind !== FINGERPRINT_SNAPSHOT_KIND) {
+    throw new Error('That file is not a LinkNest fingerprint export.');
+  }
+  if (obj.version !== FINGERPRINT_SNAPSHOT_VERSION) {
+    throw new Error('This fingerprint export version is not supported.');
+  }
+  if (typeof obj.hash !== 'string' || typeof obj.hashDisplay !== 'string') {
+    throw new Error('That fingerprint export is missing a hash.');
+  }
+  if (!Array.isArray(obj.attributes)) {
+    throw new Error('That fingerprint export is missing attributes.');
+  }
+
+  const attributes: FingerprintSnapshotAttribute[] = [];
+  for (const item of obj.attributes) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    if (typeof row.name !== 'string' || typeof row.value !== 'string' || !isAttrGroup(row.group)) {
+      continue;
+    }
+    attributes.push({
+      name: row.name,
+      value: row.value,
+      group: row.group,
+      hashed: !!row.hashed,
+      signalId: typeof row.signalId === 'string' ? row.signalId : undefined,
+      hashable: typeof row.hashable === 'boolean' ? row.hashable : undefined,
+      volatile: typeof row.volatile === 'boolean' ? row.volatile : undefined,
+    });
+  }
+
+  let gps: FingerprintGps | null = null;
+  if (obj.gps && typeof obj.gps === 'object') {
+    const g = obj.gps as Record<string, unknown>;
+    if (
+      typeof g.lat === 'number' &&
+      typeof g.lon === 'number' &&
+      typeof g.latCell === 'number' &&
+      typeof g.lonCell === 'number'
+    ) {
+      gps = { lat: g.lat, lon: g.lon, latCell: g.latCell, lonCell: g.lonCell };
+    }
+  }
+
+  let gpsPlace: FingerprintGpsPlace | null = null;
+  if (obj.gpsPlace && typeof obj.gpsPlace === 'object') {
+    const p = obj.gpsPlace as Record<string, unknown>;
+    gpsPlace = {
+      country_code: typeof p.country_code === 'string' ? p.country_code : '',
+      country_name: typeof p.country_name === 'string' ? p.country_name : '',
+      region: typeof p.region === 'string' ? p.region : '',
+      city: typeof p.city === 'string' ? p.city : '',
+    };
+  }
+
+  const extensions: FingerprintSnapshotExtension[] = [];
+  if (Array.isArray(obj.extensions)) {
+    for (const item of obj.extensions) {
+      if (!item || typeof item !== 'object') continue;
+      const e = item as Record<string, unknown>;
+      extensions.push({
+        kind: typeof e.kind === 'string' ? e.kind : 'other',
+        name: typeof e.name === 'string' ? e.name : '',
+        version: typeof e.version === 'string' ? e.version : '',
+      });
+    }
+  }
+
+  return {
+    kind: FINGERPRINT_SNAPSHOT_KIND,
+    version: FINGERPRINT_SNAPSHOT_VERSION,
+    exportedAt: typeof obj.exportedAt === 'string' ? obj.exportedAt : '',
+    hash: obj.hash,
+    hashDisplay: obj.hashDisplay,
+    excludedSignals: asStringArray(obj.excludedSignals),
+    attributes,
+    publicIp: typeof obj.publicIp === 'string' ? obj.publicIp : '',
+    hostname: typeof obj.hostname === 'string' ? obj.hostname : '',
+    localIps: asStringArray(obj.localIps),
+    gps,
+    gpsPlace,
+    gpsIncluded: typeof obj.gpsIncluded === 'boolean' ? obj.gpsIncluded : undefined,
+    gpsHashed: typeof obj.gpsHashed === 'boolean' ? obj.gpsHashed : undefined,
+    extensions,
+  };
+}
+
+export async function parseFingerprintSnapshotFile(file: File): Promise<FingerprintSnapshot> {
+  const raw = await file.text();
+  return parseFingerprintSnapshotJson(raw);
+}
+
+export function diffFingerprintSnapshots(
+  a: FingerprintSnapshot,
+  b: FingerprintSnapshot
+): FingerprintSnapshotDiff {
+  const mapA = new Map<string, FingerprintSnapshotAttribute>();
+  const mapB = new Map<string, FingerprintSnapshotAttribute>();
+  for (const attr of a.attributes) mapA.set(snapshotAttrKey(attr.group, attr.name), attr);
+  for (const attr of b.attributes) mapB.set(snapshotAttrKey(attr.group, attr.name), attr);
+
+  const keys = Array.from(new Set([...mapA.keys(), ...mapB.keys()]));
+  const rows: FingerprintAttributeDiff[] = [];
+  const counts = { unchanged: 0, changed: 0, onlyA: 0, onlyB: 0 };
+
+  for (const key of keys) {
+    const left = mapA.get(key);
+    const right = mapB.get(key);
+    const group = (left?.group || right?.group || 'javascript') as FingerprintAttribute['group'];
+    const name = left?.name || right?.name || key;
+    let status: FingerprintDiffStatus;
+    if (left && !right) status = 'onlyA';
+    else if (!left && right) status = 'onlyB';
+    else if (left && right && (left.value !== right.value || !!left.hashed !== !!right.hashed)) status = 'changed';
+    else status = 'unchanged';
+    counts[status] += 1;
+    rows.push({
+      key,
+      group,
+      name,
+      status,
+      valueA: left ? left.value : null,
+      valueB: right ? right.value : null,
+      hashedA: left ? !!left.hashed : null,
+      hashedB: right ? !!right.hashed : null,
+    });
+  }
+
+  const groupOrder = new Map(ATTR_GROUPS.map((g, i) => [g, i]));
+  rows.sort((x, y) => {
+    const gx = groupOrder.get(x.group) ?? 99;
+    const gy = groupOrder.get(y.group) ?? 99;
+    if (gx !== gy) return gx - gy;
+    return x.name.localeCompare(y.name);
+  });
+
+  const setA = new Set(a.excludedSignals);
+  const setB = new Set(b.excludedSignals);
+
+  return {
+    hashMatch: a.hash === b.hash,
+    hashA: a.hash,
+    hashB: b.hash,
+    hashDisplayA: a.hashDisplay,
+    hashDisplayB: b.hashDisplay,
+    excludedA: [...a.excludedSignals],
+    excludedB: [...b.excludedSignals],
+    excludedOnlyA: a.excludedSignals.filter((id) => !setB.has(id)),
+    excludedOnlyB: b.excludedSignals.filter((id) => !setA.has(id)),
+    counts,
+    rows,
+  };
+}

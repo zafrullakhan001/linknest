@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { HelpFingerprintComparePanel } from './HelpFingerprintComparePanel';
 import {
   collectFingerprint,
   clearFingerprintCache,
@@ -7,6 +8,7 @@ import {
   applyFingerprintHashPreset,
   setFingerprintSignalIncluded,
   fingerprintSignalLabel,
+  downloadFingerprintSnapshot,
   FINGERPRINT_SIGNAL_CATALOG,
   FINGERPRINT_NETWORK_SIGNAL_IDS,
   FINGERPRINT_STABLE_EXCLUDED_IDS,
@@ -202,6 +204,8 @@ export const HelpFingerprintPanel: React.FC = () => {
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [hashUpdating, setHashUpdating] = useState(false);
+  const [panelTab, setPanelTab] = useState<'collect' | 'compare'>('collect');
+  const [exported, setExported] = useState(false);
 
   const refreshRegistry = useCallback(async (hash: string) => {
     setRegistryLoading(true);
@@ -244,6 +248,17 @@ export const HelpFingerprintPanel: React.FC = () => {
       window.setTimeout(() => setCopied(false), 1800);
     } catch {
       setError('Could not copy to clipboard.');
+    }
+  };
+
+  const exportJson = () => {
+    if (!result) return;
+    try {
+      downloadFingerprintSnapshot(result);
+      setExported(true);
+      window.setTimeout(() => setExported(false), 1800);
+    } catch {
+      setError('Could not export fingerprint JSON.');
     }
   };
 
@@ -341,6 +356,35 @@ export const HelpFingerprintPanel: React.FC = () => {
 
   return (
     <div className="space-y-5">
+      <div className="flex border-b border-slate-200 dark:border-slate-700">
+        <button
+          type="button"
+          onClick={() => setPanelTab('collect')}
+          className={`px-4 py-2 text-sm font-medium transition-colors ${
+            panelTab === 'collect'
+              ? 'text-violet-700 dark:text-violet-300 border-b-2 border-violet-600 dark:border-violet-400'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+          }`}
+        >
+          This browser
+        </button>
+        <button
+          type="button"
+          onClick={() => setPanelTab('compare')}
+          className={`px-4 py-2 text-sm font-medium transition-colors ${
+            panelTab === 'compare'
+              ? 'text-violet-700 dark:text-violet-300 border-b-2 border-violet-600 dark:border-violet-400'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+          }`}
+        >
+          Compare
+        </button>
+      </div>
+
+      {panelTab === 'compare' ? <HelpFingerprintComparePanel currentResult={result} /> : null}
+
+      {panelTab === 'collect' ? (
+      <>
       <section className="rounded-xl border border-violet-200/70 dark:border-violet-800/40 bg-gradient-to-br from-violet-50/80 via-white to-sky-50/70 dark:from-violet-950/30 dark:via-slate-900/40 dark:to-sky-950/20 p-4">
         <h3 className="text-xl font-semibold text-violet-900 dark:text-violet-100 mb-2 flex items-center gap-2">
           <span aria-hidden="true">🪪</span> Browser fingerprint
@@ -386,8 +430,19 @@ export const HelpFingerprintPanel: React.FC = () => {
             >
               <span aria-hidden="true">{copied ? '✅' : '📋'}</span> {copied ? 'Copied' : 'Copy hash'}
             </button>
+            <button
+              type="button"
+              onClick={exportJson}
+              disabled={!result || loading}
+              className="px-3 py-1.5 text-xs font-medium rounded-lg border border-violet-200 dark:border-violet-800 bg-white/80 dark:bg-slate-900/40 text-violet-800 dark:text-violet-200 hover:bg-violet-50 dark:hover:bg-violet-900/40 disabled:opacity-50"
+            >
+              <span aria-hidden="true">{exported ? '✅' : '⬇️'}</span> {exported ? 'Exported' : 'Export JSON'}
+            </button>
           </div>
         </div>
+        <p className="text-[11px] text-indigo-800/80 dark:text-indigo-200/80">
+          Export this snapshot, then export again from InPrivate / Incognito, and open the Compare tab to see which signals differ.
+        </p>
         <div className="rounded-lg border border-indigo-100 dark:border-indigo-900/50 bg-white/70 dark:bg-slate-900/40 p-3 space-y-3">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
@@ -705,6 +760,8 @@ export const HelpFingerprintPanel: React.FC = () => {
           </section>
         );
       })}
+      </>
+      ) : null}
     </div>
   );
 };
