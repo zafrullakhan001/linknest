@@ -3,6 +3,7 @@ import { Tile, Tab, LinkSection, Link, LinkVisibility, TileVisibility, ThemeColo
 import { User } from '../services/authService';
 import { AppSettings } from '../services/settingsService';
 import { MobileRichTextEditor } from './MobileRichTextEditor';
+import { LinkLabelField } from './LinkLabelField';
 import { LinkMaintenanceVideoField } from './LinkMaintenanceVideoField';
 import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
 import { TitleEmojiPicker } from './TitleEmojiPicker';
@@ -930,14 +931,12 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                 </div>
 
                 {onAccessRestrictionsChange && (
-                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4">
-                        <AccessRestrictionsEditor
-                            compact
-                            value={editAccessRestrictions}
-                            onChange={onAccessRestrictionsChange}
-                            disabled={tile.canChangeVisibility === false}
-                        />
-                    </div>
+                    <AccessRestrictionsEditor
+                        compact
+                        value={editAccessRestrictions}
+                        onChange={onAccessRestrictionsChange}
+                        disabled={tile.canChangeVisibility === false}
+                    />
                 )}
 
                 {/* Tabs & Sections */}
@@ -1085,16 +1084,12 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                         {/* Add Link Form */}
                                                         {showAddLinkForm[section.id] && (
                                                             <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700 space-y-3">
-                                                                <div>
-                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-                                                                        Link Label (Rich Text)
-                                                                    </label>
-                                                                    <MobileRichTextEditor
-                                                                        value={newLinkState[section.id]?.label || ''}
-                                                                        onChange={(value) => updateNewLinkState(section.id, 'label', value)}
-                                                                        placeholder="Enter link name..."
-                                                                    />
-                                                                </div>
+                                                                <LinkLabelField
+                                                                    key={`new-${section.id}`}
+                                                                    variant="mobile"
+                                                                    value={newLinkState[section.id]?.label || ''}
+                                                                    onChange={(value) => updateNewLinkState(section.id, 'label', value)}
+                                                                />
                                                                 <div>
                                                                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
                                                                         URL
@@ -1375,16 +1370,12 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                                             </svg>
                                                                                         </button>
                                                                                     </div>
-                                                                                    <div>
-                                                                                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-                                                                                            Link Label (Rich Text)
-                                                                                        </label>
-                                                                                        <MobileRichTextEditor
-                                                                                            value={editLinkState[link.id]?.label || ''}
-                                                                                            onChange={(value) => updateEditLinkState(link.id, 'label', value)}
-                                                                                            placeholder="Enter link name..."
-                                                                                        />
-                                                                                    </div>
+                                                                                    <LinkLabelField
+                                                                                        key={link.id}
+                                                                                        variant="mobile"
+                                                                                        value={editLinkState[link.id]?.label || ''}
+                                                                                        onChange={(value) => updateEditLinkState(link.id, 'label', value)}
+                                                                                    />
                                                                                     <div>
                                                                                         <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
                                                                                             URL

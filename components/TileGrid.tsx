@@ -9702,6 +9702,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
                   <FormSection emoji="🛡️" title="Open-time restrictions" accent="rose">
                     <AccessRestrictionsEditor
+                      embedded
                       value={newAccessRestrictions}
                       onChange={setNewAccessRestrictions}
                     />

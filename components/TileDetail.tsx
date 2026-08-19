@@ -16,10 +16,12 @@ import { generateUuid } from '../services/idService';
 import { removeSharedTile } from '../services/tileShareService';
 import { useSettings } from '../contexts/SettingsContext';
 import { useAccessRestrictionGate } from '../contexts/AccessRestrictionContext';
+import { hasAccessRestrictions } from '../services/accessRestrictionService';
 import { AccessRestrictionsEditor, AccessRestrictionsBadge } from './AccessRestrictionsEditor';
 import { ShortUrlActions } from './ShortUrlActions';
 import { isEscapeDialogOpen, useEscapeToClose } from '../hooks/useEscapeToClose';
 import { SelectableRichTextEditor } from './SelectableRichTextEditor';
+import { LinkLabelField } from './LinkLabelField';
 import { RichTextContentItem, type RichTextContentItemHandle } from './RichTextContentItem';
 import { RichTextBoxedView } from './RichTextBoxedView';
 import {
@@ -9433,14 +9435,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                             accent="sky"
                                                                                             defaultOpen
                                                                                         >
-                                                                                            <div>
-                                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Link Label (Rich Text)</label>
-                                                                                                <SelectableRichTextEditor
-                                                                                                    value={editLinkState[link.id]?.label || ''}
-                                                                                                    onChange={(value) => updateEditLinkState(link.id, 'label', value)}
-                                                                                                    placeholder="Enter link name with formatting..."
-                                                                                                />
-                                                                                            </div>
+                                                                                            <LinkLabelField
+                                                                                                key={link.id}
+                                                                                                value={editLinkState[link.id]?.label || ''}
+                                                                                                onChange={(value) => updateEditLinkState(link.id, 'label', value)}
+                                                                                            />
                                                                                             <div>
                                                                                                 <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
                                                                                                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">URL</label>
@@ -9795,17 +9794,27 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                             </div>
                                                                                         </LinkEditSection>
 
-                                                                                        <AccessRestrictionsEditor
-                                                                                            compact
-                                                                                            value={editLinkState[link.id]?.accessRestrictions}
-                                                                                            disabled={tile.canChangeVisibility === false}
-                                                                                            onChange={(next) => {
-                                                                                                setEditLinkState(prev => ({
-                                                                                                    ...prev,
-                                                                                                    [link.id]: { ...prev[link.id], accessRestrictions: next }
-                                                                                                }));
-                                                                                            }}
-                                                                                        />
+                                                                                        <LinkEditSection
+                                                                                            emoji="🛡️"
+                                                                                            title="Additional access restrictions"
+                                                                                            subtitle="Optional extra gate when opening this link"
+                                                                                            accent="slate"
+                                                                                            defaultOpen={hasAccessRestrictions(editLinkState[link.id]?.accessRestrictions)}
+                                                                                            badge={<AccessRestrictionsBadge rules={editLinkState[link.id]?.accessRestrictions} />}
+                                                                                        >
+                                                                                            <AccessRestrictionsEditor
+                                                                                                compact
+                                                                                                embedded
+                                                                                                value={editLinkState[link.id]?.accessRestrictions}
+                                                                                                disabled={tile.canChangeVisibility === false}
+                                                                                                onChange={(next) => {
+                                                                                                    setEditLinkState(prev => ({
+                                                                                                        ...prev,
+                                                                                                        [link.id]: { ...prev[link.id], accessRestrictions: next }
+                                                                                                    }));
+                                                                                                }}
+                                                                                            />
+                                                                                        </LinkEditSection>
 
                                                                                         {/* Action Buttons */}
                                                                                         <div className="flex flex-wrap gap-2 justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
@@ -10040,14 +10049,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             </div>
                                                                             {/* Link Label & URL */}
                                                                             <div className="space-y-3">
-                                                                                <div>
-                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Link Label (Rich Text)</label>
-                                                                                    <SelectableRichTextEditor
-                                                                                        value={newLinkState[section.id]?.label || ''}
-                                                                                        onChange={(value) => updateNewLinkState(section.id, 'label', value)}
-                                                                                        placeholder="Enter link name with formatting..."
-                                                                                    />
-                                                                                </div>
+                                                                                <LinkLabelField
+                                                                                    key={`new-${section.id}`}
+                                                                                    value={newLinkState[section.id]?.label || ''}
+                                                                                    onChange={(value) => updateNewLinkState(section.id, 'label', value)}
+                                                                                />
                                                                                 <div>
                                                                                     <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
                                                                                         <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">URL</label>
@@ -10489,17 +10495,27 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 </div>
                                                                             </div>
 
-                                                                            <AccessRestrictionsEditor
-                                                                                compact
-                                                                                value={newLinkState[section.id]?.accessRestrictions}
-                                                                                disabled={tile.canChangeVisibility === false}
-                                                                                onChange={(next) => {
-                                                                                    setNewLinkState(prev => ({
-                                                                                        ...prev,
-                                                                                        [section.id]: { ...prev[section.id], accessRestrictions: next }
-                                                                                    }));
-                                                                                }}
-                                                                            />
+                                                                            <LinkEditSection
+                                                                                emoji="🛡️"
+                                                                                title="Additional access restrictions"
+                                                                                subtitle="Optional extra gate when opening this link"
+                                                                                accent="slate"
+                                                                                defaultOpen={false}
+                                                                                badge={<AccessRestrictionsBadge rules={newLinkState[section.id]?.accessRestrictions} />}
+                                                                            >
+                                                                                <AccessRestrictionsEditor
+                                                                                    compact
+                                                                                    embedded
+                                                                                    value={newLinkState[section.id]?.accessRestrictions}
+                                                                                    disabled={tile.canChangeVisibility === false}
+                                                                                    onChange={(next) => {
+                                                                                        setNewLinkState(prev => ({
+                                                                                            ...prev,
+                                                                                            [section.id]: { ...prev[section.id], accessRestrictions: next }
+                                                                                        }));
+                                                                                    }}
+                                                                                />
+                                                                            </LinkEditSection>
 
                                                                             {/* Action Button */}
                                                                             <div className="flex justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
@@ -10955,6 +10971,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             </button>
                                         </div>
                                         <AccessRestrictionsEditor
+                                            collapsible={false}
                                             value={tab.accessRestrictions}
                                             disabled={tile.canChangeVisibility === false}
                                             onChange={(next) => handleUpdateTabAccessRestrictions(tab.id, next)}

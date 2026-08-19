@@ -503,26 +503,19 @@ function evaluate_access_restrictions(array $rules, array $ctx): array {
         if ($pattern === '') {
             return false;
         }
-        $candidateValues = [];
-        if ($ip !== '') {
-            $candidateValues[] = $ip;
+        if ($ip !== '' && ip_matches_network_pattern($ip, $pattern)) {
+            return true;
         }
-        if ($host !== '') {
-            $candidateValues[] = strtolower($host);
+        if ($host === '') {
+            return false;
         }
         $patternLower = strtolower($pattern);
-        foreach ($candidateValues as $value) {
-            $valLower = strtolower($value);
-            if (strpos($patternLower, '*') !== false) {
-                $regex = '#^' . str_replace('\*', '.*', preg_quote($patternLower, '#')) . '$#i';
-                if (preg_match($regex, $valLower) === 1) {
-                    return true;
-                }
-            } elseif ($valLower === $patternLower) {
-                return true;
-            }
+        $hostLower = strtolower($host);
+        if (strpos($patternLower, '*') !== false) {
+            $regex = '#^' . str_replace('\*', '.*', preg_quote($patternLower, '#')) . '$#i';
+            return preg_match($regex, $hostLower) === 1;
         }
-        return false;
+        return $hostLower === $patternLower;
     };
 
     $hostDenied = false;

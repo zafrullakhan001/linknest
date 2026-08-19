@@ -92,8 +92,24 @@ function parseTimeRules(text: string, mode: 'allow' | 'deny'): AccessTimeRule[] 
   return out;
 }
 
-function formatHostRules(rules: AccessRestrictions['hostRules'], mode: 'allow' | 'deny'): string {
-  return (rules || []).filter((r) => r.mode === mode).map((r) => r.pattern).join('\n');
+function isIpRangePattern(pattern: string): boolean {
+  const p = pattern.trim();
+  if (!p) return false;
+  if (p.includes('/')) return true;
+  if (/^\d{1,3}(?:\.\d{1,3}){3}\s*-\s*\d{1,3}(?:\.\d{1,3}){3}$/.test(p)) return true;
+  if (p.includes(':') && p.includes('-') && !p.includes('*')) return true;
+  return false;
+}
+
+function formatHostRules(
+  rules: AccessRestrictions['hostRules'],
+  mode: 'allow' | 'deny',
+  ranges = false
+): string {
+  return (rules || [])
+    .filter((r) => r.mode === mode && isIpRangePattern(r.pattern) === ranges)
+    .map((r) => r.pattern)
+    .join('\n');
 }
 
 function parseHostRules(text: string, mode: 'allow' | 'deny'): NonNullable<AccessRestrictions['hostRules']> {
@@ -102,6 +118,16 @@ function parseHostRules(text: string, mode: 'allow' | 'deny'): NonNullable<Acces
     .map((l) => l.trim())
     .filter(Boolean)
     .map((pattern) => ({ mode, pattern }));
+}
+
+function replaceHostRuleGroup(
+  rules: AccessRestrictions['hostRules'],
+  mode: 'allow' | 'deny',
+  ranges: boolean,
+  text: string
+): NonNullable<AccessRestrictions['hostRules']> {
+  const kept = (rules || []).filter((r) => !(r.mode === mode && isIpRangePattern(r.pattern) === ranges));
+  return [...kept, ...parseHostRules(text, mode)];
 }
 
 function formatLines(list?: string[] | null): string {
@@ -169,6 +195,11 @@ interface AccessRestrictionsEditorProps {
   onChange: (next: AccessRestrictions | null | undefined) => void;
   disabled?: boolean;
   compact?: boolean;
+  /** Skip the outer card and heading when a parent already provides them. */
+  embedded?: boolean;
+  /** Collapse behind a header row (like Advanced). Ignored when embedded. */
+  collapsible?: boolean;
+  defaultOpen?: boolean;
 }
 
 export const AccessRestrictionsEditor: React.FC<AccessRestrictionsEditorProps> = ({
@@ -176,8 +207,12 @@ export const AccessRestrictionsEditor: React.FC<AccessRestrictionsEditorProps> =
   onChange,
   disabled = false,
   compact = false,
+  embedded = false,
+  collapsible = true,
+  defaultOpen,
 }) => {
   const [pane, setPane] = useState<PaneId>('time-host');
+  const [open, setOpen] = useState(() => defaultOpen ?? hasAccessRestrictions(value));
   const current: AccessRestrictions = value || {};
   const [allowTimeText, setAllowTimeText] = useState(() => formatTimeRules(value?.timeRules, 'allow'));
   const [denyTimeText, setDenyTimeText] = useState(() => formatTimeRules(value?.timeRules, 'deny'));
@@ -215,30 +250,29 @@ export const AccessRestrictionsEditor: React.FC<AccessRestrictionsEditorProps> =
 
   const textareaClass = 'w-full text-xs rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1.5 font-mono';
   const inputClass = 'w-full text-xs rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1.5';
+  const hasRules = hasAccessRestrictions(current);
+  const showCollapseChrome = collapsible && !embedded;
 
-  return (
-    <div className={`rounded-xl border border-slate-200 dark:border-slate-700 ${compact ? 'p-3' : 'p-4'} bg-slate-50/80 dark:bg-slate-900/40`}>
-      <div className="mb-3">
-        <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Additional access restrictions</h4>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-          Optional. Items stay visible; opening is blocked when a check fails. Leave blank for no extra gate.
-        </p>
-        {hasAccessRestrictions(current) && (
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => {
-              lastTimeSnapshot.current = formattedTimeSnapshot(undefined);
-              setAllowTimeText('');
-              setDenyTimeText('');
-              onChange(null);
-            }}
-            className="mt-2 text-xs font-medium text-rose-600 dark:text-rose-400 hover:underline disabled:opacity-50"
-          >
-            Clear all restrictions
-          </button>
-        )}
-      </div>
+  const clearRestrictions = () => {
+    lastTimeSnapshot.current = formattedTimeSnapshot(undefined);
+    setAllowTimeText('');
+    setDenyTimeText('');
+    onChange(null);
+  };
+
+  const clearButton = hasRules ? (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={clearRestrictions}
+      className="text-xs font-medium text-rose-600 dark:text-rose-400 hover:underline disabled:opacity-50"
+    >
+      Clear all restrictions
+    </button>
+  ) : null;
+
+  const fields = (
+    <>
       <div className="flex flex-wrap gap-1.5 mb-3" role="tablist" aria-label="Restriction sections">
         {PANES.map((p, idx) => {
           const active = pane === p.id;
@@ -327,7 +361,7 @@ Any 00:00-23:59`}
                 onKeyDown={stopFieldKeys}
                 onChange={(e) => emit({
                   ...current,
-                  hostRules: [...parseHostRules(e.target.value, 'allow'), ...parseHostRules(formatHostRules(current.hostRules, 'deny'), 'deny')],
+                  hostRules: replaceHostRuleGroup(current.hostRules, 'allow', false, e.target.value),
                 })}
               />
             </label>
@@ -344,7 +378,51 @@ Any 00:00-23:59`}
                 onKeyDown={stopFieldKeys}
                 onChange={(e) => emit({
                   ...current,
-                  hostRules: [...parseHostRules(formatHostRules(current.hostRules, 'allow'), 'allow'), ...parseHostRules(e.target.value, 'deny')],
+                  hostRules: replaceHostRuleGroup(current.hostRules, 'deny', false, e.target.value),
+                })}
+              />
+            </label>
+          </div>
+          <PaneHint>
+            IP ranges are checked against the visitor&apos;s address. Use CIDR (<code>10.0.0.0/8</code>) or start-end (<code>192.168.1.1-192.168.1.254</code>), one per line.
+          </PaneHint>
+          <ExampleBox title="IP range examples">
+            {`10.0.0.0/8
+192.168.1.1-192.168.1.254
+2001:db8::/32`}
+          </ExampleBox>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+              Allowed IP ranges
+              <textarea
+                disabled={disabled}
+                rows={3}
+                autoComplete="off"
+                spellCheck={false}
+                className={`${textareaClass} mt-1`}
+                placeholder={'10.0.0.0/8\n192.168.1.1-192.168.1.254'}
+                value={formatHostRules(current.hostRules, 'allow', true)}
+                onKeyDown={stopFieldKeys}
+                onChange={(e) => emit({
+                  ...current,
+                  hostRules: replaceHostRuleGroup(current.hostRules, 'allow', true, e.target.value),
+                })}
+              />
+            </label>
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+              Blocked IP ranges
+              <textarea
+                disabled={disabled}
+                rows={3}
+                autoComplete="off"
+                spellCheck={false}
+                className={`${textareaClass} mt-1`}
+                placeholder={'203.0.113.0/24\n198.51.100.1-198.51.100.50'}
+                value={formatHostRules(current.hostRules, 'deny', true)}
+                onKeyDown={stopFieldKeys}
+                onChange={(e) => emit({
+                  ...current,
+                  hostRules: replaceHostRuleGroup(current.hostRules, 'deny', true, e.target.value),
                 })}
               />
             </label>
@@ -605,6 +683,78 @@ https://mail.google.com/`}
           </label>
         </div>
       )}
+    </>
+  );
+
+  const description = (
+    <p className="text-xs text-slate-500 dark:text-slate-400">
+      Optional. Items stay visible; opening is blocked when a check fails. Leave blank for no extra gate.
+    </p>
+  );
+
+  if (embedded) {
+    return (
+      <div>
+        <div className="mb-3 space-y-2">
+          {description}
+          {clearButton}
+        </div>
+        {fields}
+      </div>
+    );
+  }
+
+  if (showCollapseChrome) {
+    return (
+      <div className="rounded-xl border-2 overflow-hidden shadow-sm border-slate-200 dark:border-slate-700">
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+          className="w-full flex items-center gap-3 px-3.5 py-3 text-left transition-colors bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-lg bg-slate-200/80 dark:bg-slate-700" aria-hidden>
+            🛡️
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold text-slate-800 dark:text-slate-100">Additional access restrictions</span>
+            <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+              Optional extra gate when opening
+            </span>
+          </span>
+          {hasRules ? <AccessRestrictionsBadge rules={current} /> : null}
+          <svg
+            className={`w-4 h-4 shrink-0 text-slate-400 transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            aria-hidden
+          >
+            <path
+              fillRule="evenodd"
+              d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"
+              clipRule="evenodd"
+            />
+          </svg>
+        </button>
+        {open && (
+          <div className={`${compact ? 'px-3 py-3' : 'px-3.5 py-3.5'} space-y-3 border-t border-slate-100 dark:border-slate-700/80 bg-white/80 dark:bg-slate-900/40`}>
+            {description}
+            {clearButton}
+            {fields}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className={`rounded-xl border border-slate-200 dark:border-slate-700 ${compact ? 'p-3' : 'p-4'} bg-slate-50/80 dark:bg-slate-900/40`}>
+      <div className="mb-3 space-y-2">
+        <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Additional access restrictions</h4>
+        {description}
+        {clearButton}
+      </div>
+      {fields}
     </div>
   );
 };
