@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { uploadLinkMaintenanceVideo } from '../services/storageService';
+import { WebcamBackgroundBlurEngine } from '../utils/webcamBackgroundBlur';
 
 interface LinkMaintenanceVideoFieldProps {
   value?: string;
@@ -8,10 +9,58 @@ interface LinkMaintenanceVideoFieldProps {
 
 const CAMERA_STORAGE_KEY = 'linknest.maintenanceVideo.cameraId';
 const MIC_STORAGE_KEY = 'linknest.maintenanceVideo.micId';
+const QUALITY_STORAGE_KEY = 'linknest.maintenanceVideo.quality';
+const MIRROR_STORAGE_KEY = 'linknest.maintenanceVideo.mirror';
+const NOISE_STORAGE_KEY = 'linknest.maintenanceVideo.noiseSuppression';
+const EDGE_CHOKE_STORAGE_KEY = 'linknest.maintenanceVideo.edgeChoke';
+const ZOOM_STORAGE_KEY = 'linknest.maintenanceVideo.zoom';
 const DEFAULT_BRIGHTNESS = 1;
 const DEFAULT_CONTRAST = 1;
 const DEFAULT_SATURATION = 1;
 const DEFAULT_MIC_GAIN = 1;
+const DEFAULT_BLUR_AMOUNT = 12;
+const DEFAULT_EDGE_CHOKE = 3;
+const DEFAULT_ZOOM = 1;
+
+type QualityId = 'fast' | 'balanced' | 'high';
+
+const QUALITY_PRESETS: Record<QualityId, {
+  label: string;
+  hint: string;
+  width: number;
+  height: number;
+  fps: number;
+  videoBitsPerSecond: number;
+  audioBitsPerSecond: number;
+}> = {
+  fast: {
+    label: 'Fast (480p)',
+    hint: 'More compression, snappier preview and upload',
+    width: 854,
+    height: 480,
+    fps: 24,
+    videoBitsPerSecond: 800_000,
+    audioBitsPerSecond: 64_000,
+  },
+  balanced: {
+    label: 'Balanced (720p)',
+    hint: 'Good quality with moderate file size',
+    width: 1280,
+    height: 720,
+    fps: 24,
+    videoBitsPerSecond: 1_800_000,
+    audioBitsPerSecond: 96_000,
+  },
+  high: {
+    label: 'High (1080p)',
+    hint: 'Best quality, larger file and slower upload',
+    width: 1920,
+    height: 1080,
+    fps: 30,
+    videoBitsPerSecond: 4_000_000,
+    audioBitsPerSecond: 128_000,
+  },
+};
 
 function pickRecorderMimeType(): string {
   if (typeof MediaRecorder === 'undefined') return '';
@@ -47,6 +96,31 @@ function storeDeviceId(key: string, id: string): void {
   }
 }
 
+function readStoredQuality(): QualityId {
+  const value = readStoredDeviceId(QUALITY_STORAGE_KEY);
+  if (value === 'fast' || value === 'balanced' || value === 'high') return value;
+  return 'balanced';
+}
+
+function readStoredFlag(key: string, fallback = false): boolean {
+  try {
+    const value = localStorage.getItem(key);
+    if (value === '1' || value === 'true') return true;
+    if (value === '0' || value === 'false') return false;
+  } catch {
+    /* ignore */
+  }
+  return fallback;
+}
+
+function storeFlag(key: string, value: boolean): void {
+  try {
+    localStorage.setItem(key, value ? '1' : '0');
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
 function canCaptureCanvasStream(): boolean {
   return typeof HTMLCanvasElement !== 'undefined'
     && typeof HTMLCanvasElement.prototype.captureStream === 'function';
@@ -67,35 +141,87 @@ function deviceLabel(device: MediaDeviceInfo, index: number, kind: 'camera' | 'm
 function buildConstraints(
   cameraId: string,
   micId: string,
+  quality: QualityId,
+  noiseSuppression: boolean,
   mode: 'exact' | 'ideal'
 ): MediaStreamConstraints {
-  const video: boolean | MediaTrackConstraints = cameraId
-    ? { deviceId: mode === 'exact' ? { exact: cameraId } : { ideal: cameraId } }
-    : true;
-  const audio: boolean | MediaTrackConstraints = micId
-    ? { deviceId: mode === 'exact' ? { exact: micId } : { ideal: micId } }
-    : true;
+  const preset = QUALITY_PRESETS[quality];
+  const video: MediaTrackConstraints = {
+    width: { ideal: preset.width },
+    height: { ideal: preset.height },
+    frameRate: { ideal: preset.fps },
+  };
+  if (cameraId) {
+    video.deviceId = mode === 'exact' ? { exact: cameraId } : { ideal: cameraId };
+  }
+  const audio: MediaTrackConstraints = {
+    echoCancellation: noiseSuppression,
+    noiseSuppression,
+    autoGainControl: false,
+  };
+  if (micId) {
+    audio.deviceId = mode === 'exact' ? { exact: micId } : { ideal: micId };
+  }
   return { video, audio };
 }
 
-async function acquireStream(cameraId: string, micId: string): Promise<MediaStream> {
+async function acquireStream(
+  cameraId: string,
+  micId: string,
+  quality: QualityId,
+  noiseSuppression: boolean
+): Promise<MediaStream> {
   const tryGet = (constraints: MediaStreamConstraints) => navigator.mediaDevices.getUserMedia(constraints);
   if (cameraId || micId) {
     try {
-      return await tryGet(buildConstraints(cameraId, micId, 'exact'));
+      return await tryGet(buildConstraints(cameraId, micId, quality, noiseSuppression, 'exact'));
     } catch {
       try {
-        return await tryGet(buildConstraints(cameraId, micId, 'ideal'));
+        return await tryGet(buildConstraints(cameraId, micId, quality, noiseSuppression, 'ideal'));
       } catch {
         /* fall through to defaults */
       }
     }
   }
   try {
-    return await tryGet({ video: true, audio: true });
+    return await tryGet(buildConstraints('', '', quality, noiseSuppression, 'ideal'));
   } catch {
-    return await tryGet({ video: true, audio: false });
+    try {
+      return await tryGet({ video: true, audio: true });
+    } catch {
+      return await tryGet({ video: true, audio: false });
+    }
   }
+}
+
+function formatRecordingTime(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return `${minutes}:${remainder.toString().padStart(2, '0')}`;
+}
+
+function readStoredEdgeChoke(): number {
+  try {
+    const raw = localStorage.getItem(EDGE_CHOKE_STORAGE_KEY);
+    if (raw == null) return DEFAULT_EDGE_CHOKE;
+    const value = Number(raw);
+    if (Number.isFinite(value)) return Math.min(10, Math.max(0, Math.round(value)));
+  } catch {
+    /* ignore */
+  }
+  return DEFAULT_EDGE_CHOKE;
+}
+
+function readStoredZoom(): number {
+  try {
+    const raw = localStorage.getItem(ZOOM_STORAGE_KEY);
+    if (raw == null) return DEFAULT_ZOOM;
+    const value = Number(raw);
+    if (Number.isFinite(value)) return Math.min(2.5, Math.max(1, Math.round(value * 20) / 20));
+  } catch {
+    /* ignore */
+  }
+  return DEFAULT_ZOOM;
 }
 
 function trackDeviceId(track: MediaStreamTrack | undefined): string {
@@ -107,18 +233,66 @@ function trackDeviceId(track: MediaStreamTrack | undefined): string {
   }
 }
 
+function drawMicWaveform(
+  canvas: HTMLCanvasElement,
+  analyser: AnalyserNode | null,
+  data: Uint8Array | null,
+): void {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const cssWidth = Math.max(1, canvas.clientWidth);
+  const cssHeight = Math.max(1, canvas.clientHeight);
+  const dpr = window.devicePixelRatio || 1;
+  const pixelW = Math.floor(cssWidth * dpr);
+  const pixelH = Math.floor(cssHeight * dpr);
+  if (canvas.width !== pixelW || canvas.height !== pixelH) {
+    canvas.width = pixelW;
+    canvas.height = pixelH;
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = '#020617';
+  ctx.fillRect(0, 0, cssWidth, cssHeight);
+
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, cssHeight / 2);
+  ctx.lineTo(cssWidth, cssHeight / 2);
+  ctx.stroke();
+
+  if (!analyser || !data || data.length !== analyser.fftSize) return;
+  analyser.getByteTimeDomainData(data);
+
+  let peak = 0;
+  ctx.beginPath();
+  const slice = cssWidth / data.length;
+  for (let i = 0; i < data.length; i++) {
+    const v = (data[i] - 128) / 128;
+    peak = Math.max(peak, Math.abs(v));
+    const y = cssHeight / 2 + v * (cssHeight / 2 - 2);
+    if (i === 0) ctx.moveTo(0, y);
+    else ctx.lineTo(i * slice, y);
+  }
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = peak > 0.85 ? '#ef4444' : peak > 0.05 ? '#f59e0b' : '#64748b';
+  ctx.stroke();
+}
+
 const AvSlider: React.FC<{
   label: string;
   value: number;
   min: number;
   max: number;
   step?: number;
+  disabled?: boolean;
+  formatValue?: (value: number) => string;
   onChange: (value: number) => void;
-}> = ({ label, value, min, max, step = 0.05, onChange }) => (
+}> = ({ label, value, min, max, step = 0.05, disabled, formatValue, onChange }) => (
   <label className="block">
     <div className="mb-0.5 flex justify-between text-[11px] font-medium text-slate-600 dark:text-slate-400">
       <span>{label}</span>
-      <span>{value.toFixed(1)}×</span>
+      <span>{formatValue ? formatValue(value) : `${value.toFixed(1)}×`}</span>
     </div>
     <input
       type="range"
@@ -126,8 +300,9 @@ const AvSlider: React.FC<{
       max={max}
       step={step}
       value={value}
+      disabled={disabled}
       onChange={(e) => onChange(Number(e.target.value))}
-      className="w-full accent-amber-600"
+      className="w-full accent-amber-600 disabled:opacity-50"
     />
   </label>
 );
@@ -137,6 +312,7 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
   onChange,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const brandBgInputRef = useRef<HTMLInputElement>(null);
   const liveVideoRef = useRef<HTMLVideoElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const rawStreamRef = useRef<MediaStream | null>(null);
@@ -147,6 +323,9 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
+  const analyserNodeRef = useRef<AnalyserNode | null>(null);
+  const timeDomainDataRef = useRef<Uint8Array | null>(null);
+  const waveformCanvasRef = useRef<HTMLCanvasElement>(null);
   const drawRafRef = useRef<number>(0);
   const pipelineGenRef = useRef(0);
   const selectedCameraIdRef = useRef('');
@@ -155,7 +334,17 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
   const contrastRef = useRef(DEFAULT_CONTRAST);
   const saturationRef = useRef(DEFAULT_SATURATION);
   const micGainRef = useRef(DEFAULT_MIC_GAIN);
+  const backgroundBlurRef = useRef(false);
+  const blurAmountRef = useRef(DEFAULT_BLUR_AMOUNT);
+  const edgeChokeRef = useRef(readStoredEdgeChoke());
+  const zoomRef = useRef(readStoredZoom());
+  const blurEngineRef = useRef<WebcamBackgroundBlurEngine | null>(null);
   const isRecordingRef = useRef(false);
+  const qualityRef = useRef<QualityId>(readStoredQuality());
+  const mirrorRef = useRef(readStoredFlag(MIRROR_STORAGE_KEY, false));
+  const noiseSuppressionRef = useRef(readStoredFlag(NOISE_STORAGE_KEY, true));
+  const backgroundImageRef = useRef<HTMLImageElement | null>(null);
+  const brandObjectUrlRef = useRef<string | null>(null);
 
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -171,6 +360,17 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
   const [contrast, setContrast] = useState(DEFAULT_CONTRAST);
   const [saturation, setSaturation] = useState(DEFAULT_SATURATION);
   const [micGain, setMicGain] = useState(DEFAULT_MIC_GAIN);
+  const [backgroundBlur, setBackgroundBlur] = useState(false);
+  const [blurAmount, setBlurAmount] = useState(DEFAULT_BLUR_AMOUNT);
+  const [edgeChoke, setEdgeChoke] = useState(() => readStoredEdgeChoke());
+  const [zoom, setZoom] = useState(() => readStoredZoom());
+  const [recordingElapsed, setRecordingElapsed] = useState(0);
+  const [blurLoading, setBlurLoading] = useState(false);
+  const [quality, setQuality] = useState<QualityId>(() => readStoredQuality());
+  const [mirror, setMirror] = useState(() => readStoredFlag(MIRROR_STORAGE_KEY, false));
+  const [noiseSuppression, setNoiseSuppression] = useState(() => readStoredFlag(NOISE_STORAGE_KEY, true));
+  const [brandBackgroundName, setBrandBackgroundName] = useState<string | null>(null);
+  const [brandBackgroundPreview, setBrandBackgroundPreview] = useState<string | null>(null);
 
   const canRecord = typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia
     && typeof MediaRecorder !== 'undefined';
@@ -190,8 +390,11 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
     processedStreamRef.current = null;
     try { sourceNodeRef.current?.disconnect(); } catch { /* ignore */ }
     try { gainNodeRef.current?.disconnect(); } catch { /* ignore */ }
+    try { analyserNodeRef.current?.disconnect(); } catch { /* ignore */ }
     sourceNodeRef.current = null;
     gainNodeRef.current = null;
+    analyserNodeRef.current = null;
+    timeDomainDataRef.current = null;
     const audioCtx = audioContextRef.current;
     audioContextRef.current = null;
     if (audioCtx && audioCtx.state !== 'closed') {
@@ -203,6 +406,18 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
       liveVideoRef.current.srcObject = null;
     }
   }, [stopDrawLoop]);
+
+  useEffect(() => {
+    blurEngineRef.current = new WebcamBackgroundBlurEngine();
+    return () => {
+      blurEngineRef.current?.close();
+      blurEngineRef.current = null;
+      if (brandObjectUrlRef.current) {
+        URL.revokeObjectURL(brandObjectUrlRef.current);
+        brandObjectUrlRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => () => {
     if (recorderRef.current && recorderRef.current.state !== 'inactive') {
@@ -231,6 +446,19 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
     navigator.mediaDevices.addEventListener('devicechange', onDeviceChange);
     return () => navigator.mediaDevices.removeEventListener('devicechange', onDeviceChange);
   }, [isPreviewing, refreshDevices]);
+
+  useEffect(() => {
+    if (!isRecording) {
+      setRecordingElapsed(0);
+      return;
+    }
+    const startedAt = Date.now();
+    setRecordingElapsed(0);
+    const timer = window.setInterval(() => {
+      setRecordingElapsed(Math.floor((Date.now() - startedAt) / 1000));
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [isRecording]);
 
   const syncSelectedFromStream = (
     stream: MediaStream,
@@ -266,18 +494,58 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
       if (pipelineGenRef.current !== gen) return;
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        if (video.videoWidth && (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight)) {
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
+        const preset = QUALITY_PRESETS[qualityRef.current];
+        if (video.videoWidth > 0 && video.videoHeight > 0) {
+          const scale = Math.min(1, preset.width / video.videoWidth, preset.height / video.videoHeight);
+          const targetWidth = Math.max(2, Math.round((video.videoWidth * scale) / 2) * 2);
+          const targetHeight = Math.max(2, Math.round((video.videoHeight * scale) / 2) * 2);
+          if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+          }
         }
         if (canvas.width > 0 && canvas.height > 0) {
-          try {
-            ctx.filter = `brightness(${brightnessRef.current}) contrast(${contrastRef.current}) saturate(${saturationRef.current})`;
-          } catch {
-            ctx.filter = 'none';
+          const engine = blurEngineRef.current;
+          if (engine) {
+            engine.drawFrame(ctx, video, {
+              blurEnabled: backgroundBlurRef.current,
+              blurAmount: blurAmountRef.current,
+              brightness: brightnessRef.current,
+              contrast: contrastRef.current,
+              saturation: saturationRef.current,
+              mirror: mirrorRef.current,
+              backgroundImage: backgroundImageRef.current,
+              edgeChoke: edgeChokeRef.current,
+              zoom: zoomRef.current,
+            });
+          } else {
+            ctx.save();
+            if (mirrorRef.current) {
+              ctx.translate(canvas.width, 0);
+              ctx.scale(-1, 1);
+            }
+            const zoomScale = Math.min(2.5, Math.max(1, zoomRef.current));
+            if (zoomScale > 1.001) {
+              ctx.translate(canvas.width / 2, canvas.height / 2);
+              ctx.scale(zoomScale, zoomScale);
+              ctx.translate(-canvas.width / 2, -canvas.height / 2);
+            }
+            try {
+              ctx.filter = `brightness(${brightnessRef.current}) contrast(${contrastRef.current}) saturate(${saturationRef.current})`;
+            } catch {
+              ctx.filter = 'none';
+            }
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            ctx.restore();
           }
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         }
+      }
+      if (waveformCanvasRef.current) {
+        drawMicWaveform(
+          waveformCanvasRef.current,
+          analyserNodeRef.current,
+          timeDomainDataRef.current
+        );
       }
       drawRafRef.current = requestAnimationFrame(draw);
     };
@@ -306,7 +574,7 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
     let bakedVideo = false;
     if (canvas && canCaptureCanvasStream()) {
       try {
-        const canvasStream = canvas.captureStream(30);
+        const canvasStream = canvas.captureStream(QUALITY_PRESETS[qualityRef.current].fps);
         canvasStreamRef.current = canvasStream;
         const canvasTrack = canvasStream.getVideoTracks()[0];
         if (canvasTrack) {
@@ -332,11 +600,17 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
         const source = audioCtx.createMediaStreamSource(rawStream);
         const gain = audioCtx.createGain();
         gain.gain.value = micGainRef.current;
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 1024;
+        analyser.smoothingTimeConstant = 0.35;
         const dest = audioCtx.createMediaStreamDestination();
         source.connect(gain);
-        gain.connect(dest);
+        gain.connect(analyser);
+        analyser.connect(dest);
         sourceNodeRef.current = source;
         gainNodeRef.current = gain;
+        analyserNodeRef.current = analyser;
+        timeDomainDataRef.current = new Uint8Array(analyser.fftSize);
         if (audioCtx.state === 'suspended') {
           await audioCtx.resume().catch(() => undefined);
         }
@@ -368,7 +642,9 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
     try {
       const stream = await acquireStream(
         readStoredDeviceId(CAMERA_STORAGE_KEY),
-        readStoredDeviceId(MIC_STORAGE_KEY)
+        readStoredDeviceId(MIC_STORAGE_KEY),
+        qualityRef.current,
+        noiseSuppressionRef.current
       );
       await waitForPreviewElements();
       await setupPipeline(stream);
@@ -387,7 +663,12 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
     setIsSwitching(true);
     try {
       teardownProcessing();
-      const stream = await acquireStream(selectedCameraIdRef.current, selectedMicIdRef.current);
+      const stream = await acquireStream(
+        selectedCameraIdRef.current,
+        selectedMicIdRef.current,
+        qualityRef.current,
+        noiseSuppressionRef.current
+      );
       await waitForPreviewElements();
       await setupPipeline(stream);
       const deviceLists = await refreshDevices();
@@ -419,9 +700,20 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
     chunksRef.current = [];
     try {
       const mimeType = pickRecorderMimeType();
-      const recorder = mimeType
-        ? new MediaRecorder(recordStream, { mimeType })
-        : new MediaRecorder(recordStream);
+      const preset = QUALITY_PRESETS[qualityRef.current];
+      const recorderOptions: MediaRecorderOptions = {
+        videoBitsPerSecond: preset.videoBitsPerSecond,
+        audioBitsPerSecond: preset.audioBitsPerSecond,
+      };
+      if (mimeType) recorderOptions.mimeType = mimeType;
+      let recorder: MediaRecorder;
+      try {
+        recorder = new MediaRecorder(recordStream, recorderOptions);
+      } catch {
+        recorder = mimeType
+          ? new MediaRecorder(recordStream, { mimeType })
+          : new MediaRecorder(recordStream);
+      }
       recorderRef.current = recorder;
       recorder.ondataavailable = (event) => {
         if (event.data && event.data.size > 0) {
@@ -507,6 +799,28 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
     void restartPreview();
   };
 
+  const handleQualityChange = (next: QualityId) => {
+    if (isRecordingRef.current) return;
+    qualityRef.current = next;
+    setQuality(next);
+    storeDeviceId(QUALITY_STORAGE_KEY, next);
+    void restartPreview();
+  };
+
+  const handleMirrorChange = (enabled: boolean) => {
+    mirrorRef.current = enabled;
+    setMirror(enabled);
+    storeFlag(MIRROR_STORAGE_KEY, enabled);
+  };
+
+  const handleNoiseSuppressionChange = (enabled: boolean) => {
+    if (isRecordingRef.current) return;
+    noiseSuppressionRef.current = enabled;
+    setNoiseSuppression(enabled);
+    storeFlag(NOISE_STORAGE_KEY, enabled);
+    void restartPreview();
+  };
+
   const updateBrightness = (next: number) => {
     brightnessRef.current = next;
     setBrightness(next);
@@ -526,12 +840,108 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
       gainNodeRef.current.gain.value = next;
     }
   };
+  const updateBlurAmount = (next: number) => {
+    blurAmountRef.current = next;
+    setBlurAmount(next);
+  };
+  const updateEdgeChoke = (next: number) => {
+    edgeChokeRef.current = next;
+    setEdgeChoke(next);
+    storeDeviceId(EDGE_CHOKE_STORAGE_KEY, String(next));
+  };
+  const updateZoom = (next: number) => {
+    zoomRef.current = next;
+    setZoom(next);
+    storeDeviceId(ZOOM_STORAGE_KEY, String(next));
+  };
+
+  const ensureBackgroundEngine = async (): Promise<boolean> => {
+    setBlurLoading(true);
+    setError(null);
+    try {
+      if (!blurEngineRef.current) {
+        blurEngineRef.current = new WebcamBackgroundBlurEngine();
+      }
+      await blurEngineRef.current.ensure();
+      return true;
+    } catch {
+      setError('Could not load background effects. Check your connection and try again.');
+      return false;
+    } finally {
+      setBlurLoading(false);
+    }
+  };
+
+  const setBackgroundBlurEnabled = async (enabled: boolean) => {
+    backgroundBlurRef.current = enabled;
+    setBackgroundBlur(enabled);
+    if (!enabled) return;
+    if (blurEngineRef.current?.ready) return;
+    const ok = await ensureBackgroundEngine();
+    if (!ok) {
+      backgroundBlurRef.current = false;
+      setBackgroundBlur(false);
+    }
+  };
+
+  const clearBrandBackground = () => {
+    backgroundImageRef.current = null;
+    if (brandObjectUrlRef.current) {
+      URL.revokeObjectURL(brandObjectUrlRef.current);
+      brandObjectUrlRef.current = null;
+    }
+    setBrandBackgroundName(null);
+    setBrandBackgroundPreview(null);
+    if (brandBgInputRef.current) brandBgInputRef.current.value = '';
+  };
+
+  const handleBrandBackground = async (file: File | undefined) => {
+    if (!file) return;
+    const type = file.type.toLowerCase();
+    const name = file.name.toLowerCase();
+    const isImage = type === 'image/jpeg' || type === 'image/png' || type === 'image/jpg'
+      || name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.png');
+    if (!isImage) {
+      setError('Please choose a JPG or PNG image for the brand background.');
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setError('Brand background must be 8MB or smaller.');
+      return;
+    }
+    const ok = blurEngineRef.current?.ready ? true : await ensureBackgroundEngine();
+    if (!ok) return;
+    if (brandObjectUrlRef.current) {
+      URL.revokeObjectURL(brandObjectUrlRef.current);
+    }
+    const objectUrl = URL.createObjectURL(file);
+    brandObjectUrlRef.current = objectUrl;
+    const image = new Image();
+    image.onload = () => {
+      backgroundImageRef.current = image;
+      setBrandBackgroundName(file.name);
+      setBrandBackgroundPreview(objectUrl);
+      setError(null);
+    };
+    image.onerror = () => {
+      clearBrandBackground();
+      setError('Could not read that image. Try a different JPG or PNG.');
+    };
+    image.src = objectUrl;
+    if (brandBgInputRef.current) brandBgInputRef.current.value = '';
+  };
 
   const resetAdjustments = () => {
     updateBrightness(DEFAULT_BRIGHTNESS);
     updateContrast(DEFAULT_CONTRAST);
     updateSaturation(DEFAULT_SATURATION);
     updateMicGain(DEFAULT_MIC_GAIN);
+    updateBlurAmount(DEFAULT_BLUR_AMOUNT);
+    updateEdgeChoke(DEFAULT_EDGE_CHOKE);
+    updateZoom(DEFAULT_ZOOM);
+    backgroundBlurRef.current = false;
+    setBackgroundBlur(false);
+    handleMirrorChange(false);
   };
 
   const deviceSelectsDisabled = isRecording || isSwitching;
@@ -560,7 +970,7 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
         <>
           {isPreviewing && (
             <div className="space-y-2">
-              <div className="relative w-full overflow-hidden rounded-lg bg-black">
+              <div className="relative mx-auto w-full max-w-sm overflow-hidden rounded-lg bg-black aspect-[4/3]">
                 <video
                   ref={liveVideoRef}
                   autoPlay
@@ -570,7 +980,24 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
                 />
                 <canvas
                   ref={previewCanvasRef}
-                  className="relative w-full max-h-52 bg-black"
+                  className="absolute inset-0 h-full w-full object-contain bg-black"
+                />
+                {isRecording && (
+                  <div className="pointer-events-none absolute top-2 left-2 z-10 flex items-center gap-1.5 rounded-full bg-red-600 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-white shadow-md">
+                    <span className="h-2 w-2 rounded-full bg-white animate-pulse" />
+                    Rec {formatRecordingTime(recordingElapsed)}
+                  </div>
+                )}
+              </div>
+              <div className="mx-auto w-full max-w-sm">
+                <div className="mb-0.5 flex items-center justify-between text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                  <span>Microphone</span>
+                  <span>Speak to test the mic</span>
+                </div>
+                <canvas
+                  ref={waveformCanvasRef}
+                  className="h-12 w-full rounded-md bg-slate-950"
+                  aria-hidden="true"
                 />
               </div>
               <div className="space-y-2 rounded-lg border border-slate-200 dark:border-slate-600 p-2.5">
@@ -622,6 +1049,47 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
                     </select>
                   </label>
                 </div>
+                <label className="block">
+                  <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                    Quality &amp; compression
+                  </span>
+                  <select
+                    value={quality}
+                    disabled={deviceSelectsDisabled}
+                    onChange={(e) => handleQualityChange(e.target.value as QualityId)}
+                    className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-xs text-slate-700 dark:text-slate-200 disabled:opacity-50"
+                  >
+                    {(Object.keys(QUALITY_PRESETS) as QualityId[]).map((id) => (
+                      <option key={id} value={id}>
+                        {QUALITY_PRESETS[id].label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                    {QUALITY_PRESETS[quality].hint}
+                  </p>
+                </label>
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  <label className="inline-flex items-center gap-2 text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                    <input
+                      type="checkbox"
+                      className="accent-amber-600"
+                      checked={mirror}
+                      onChange={(e) => handleMirrorChange(e.target.checked)}
+                    />
+                    Mirror image
+                  </label>
+                  <label className="inline-flex items-center gap-2 text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                    <input
+                      type="checkbox"
+                      className="accent-amber-600"
+                      checked={noiseSuppression}
+                      disabled={deviceSelectsDisabled}
+                      onChange={(e) => handleNoiseSuppressionChange(e.target.checked)}
+                    />
+                    Noise suppression
+                  </label>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <AvSlider
                     label="Brightness"
@@ -651,6 +1119,94 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
                     max={3}
                     onChange={updateMicGain}
                   />
+                  <AvSlider
+                    label="Zoom"
+                    value={zoom}
+                    min={1}
+                    max={2.5}
+                    step={0.05}
+                    onChange={updateZoom}
+                  />
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="inline-flex items-center gap-2 text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                    <input
+                      type="checkbox"
+                      className="accent-amber-600"
+                      checked={backgroundBlur}
+                      disabled={blurLoading || !!brandBackgroundName}
+                      onChange={(e) => void setBackgroundBlurEnabled(e.target.checked)}
+                    />
+                    Background blur
+                    {blurLoading ? <span className="text-slate-400">Loading…</span> : null}
+                  </label>
+                </div>
+                <AvSlider
+                  label="Blur amount"
+                  value={blurAmount}
+                  min={4}
+                  max={24}
+                  step={1}
+                  disabled={!backgroundBlur || blurLoading || !!brandBackgroundName}
+                  formatValue={(value) => `${Math.round(value)}`}
+                  onChange={updateBlurAmount}
+                />
+                <AvSlider
+                  label="Ghost edge"
+                  value={edgeChoke}
+                  min={0}
+                  max={10}
+                  step={1}
+                  disabled={(!backgroundBlur && !brandBackgroundName) || blurLoading}
+                  formatValue={(value) => `${Math.round(value)}`}
+                  onChange={updateEdgeChoke}
+                />
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Ghost edge: 0 keeps more hair; higher tightens the cutout and removes the outline.
+                </p>
+                <div className="space-y-1.5 rounded-md border border-slate-200 dark:border-slate-600 p-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                    Brand background
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Upload a JPG or PNG (logo, office, or branded backdrop). It stays un-mirrored so text stays readable.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {brandBackgroundPreview ? (
+                      <img
+                        src={brandBackgroundPreview}
+                        alt=""
+                        className="h-12 w-20 rounded object-cover bg-slate-200 dark:bg-slate-700"
+                      />
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => brandBgInputRef.current?.click()}
+                      disabled={blurLoading}
+                      className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600 disabled:opacity-50"
+                    >
+                      {brandBackgroundName ? 'Replace image' : 'Upload JPG/PNG'}
+                    </button>
+                    {brandBackgroundName ? (
+                      <button
+                        type="button"
+                        onClick={clearBrandBackground}
+                        className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600"
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                  {brandBackgroundName ? (
+                    <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">{brandBackgroundName}</p>
+                  ) : null}
+                  <input
+                    ref={brandBgInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,.jpg,.jpeg,.png"
+                    className="hidden"
+                    onChange={(e) => void handleBrandBackground(e.target.files?.[0])}
+                  />
                 </div>
                 <button
                   type="button"
@@ -661,7 +1217,7 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
                 </button>
                 {lookNotBakedIn && (
                   <p className="text-[11px] text-amber-700 dark:text-amber-400">
-                    Video look (brightness, contrast, saturation) may not be saved in this browser. Mic volume still applies.
+                    Video look (brightness, contrast, saturation, background blur, brand background) may not be saved in this browser. Mic volume still applies.
                   </p>
                 )}
               </div>

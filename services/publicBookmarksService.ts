@@ -715,9 +715,71 @@ const escapeHtml = (value: string): string =>
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 
+type BookmarkHtmlFolder = {
+  title: string;
+  links: PublicBookmarkLink[];
+  children: BookmarkHtmlFolder[];
+};
+
+const renderBookmarkHtmlFolder = (
+  folder: BookmarkHtmlFolder,
+  now: number,
+  indent: string
+): string => {
+  const items = folder.links
+    .map(
+      (link) =>
+        `${indent}    <DT><A HREF="${escapeHtml(link.url)}" ADD_DATE="${now}">${escapeHtml(link.title)}</A>`
+    )
+    .join('\n');
+  const nested = folder.children
+    .map((child) => renderBookmarkHtmlFolder(child, now, `${indent}    `))
+    .join('\n');
+  const body = [items, nested].filter((part) => part && part.length > 0).join('\n');
+  return `${indent}<DT><H3 ADD_DATE="${now}" LAST_MODIFIED="${now}">${escapeHtml(folder.title)}</H3>
+${indent}<DL><p>
+${body}
+${indent}</DL><p>`;
+};
+
+const categoriesToHtmlFolders = (
+  cats: PublicBookmarkCategory[]
+): BookmarkHtmlFolder[] => {
+  const roots: BookmarkHtmlFolder[] = [];
+  const byTitle = new Map<string, BookmarkHtmlFolder>();
+
+  const ensureRoot = (title: string): BookmarkHtmlFolder => {
+    const key = title.trim().toLowerCase();
+    let node = byTitle.get(key);
+    if (!node) {
+      node = { title, links: [], children: [] };
+      byTitle.set(key, node);
+      roots.push(node);
+    }
+    return node;
+  };
+
+  cats.forEach((cat) => {
+    const sep = BOOKMARK_SUBFOLDER_SEPARATOR;
+    const sepIdx = cat.title.indexOf(sep);
+    if (sepIdx === -1) {
+      const node = ensureRoot(cat.title);
+      node.links = [...node.links, ...cat.links];
+      return;
+    }
+    const parentTitle = cat.title.slice(0, sepIdx).trim() || 'Favorites';
+    const childTitle = cat.title.slice(sepIdx + sep.length).trim() || 'Space';
+    const parent = ensureRoot(parentTitle);
+    parent.children.push({ title: childTitle, links: cat.links, children: [] });
+  });
+
+  return roots;
+};
+
 /**
  * Build a Netscape/Chrome bookmark HTML file from current guest bookmarks.
  * Folders mirror domain spaces so Chrome can import them back.
+ * `{parent} › {space}` titles nest as subfolders.
  */
 export const buildPublicBookmarksHtml = (
   data?: PublicBookmarksData,
@@ -728,19 +790,8 @@ export const buildPublicBookmarksHtml = (
     ? source.categories.filter((c) => c.id === onlyCategoryId)
     : source.categories;
   const now = Math.floor(Date.now() / 1000);
-  const folders = cats
-    .map((cat) => {
-      const items = cat.links
-        .map(
-          (link) =>
-            `            <DT><A HREF="${escapeHtml(link.url)}" ADD_DATE="${now}">${escapeHtml(link.title)}</A>`
-        )
-        .join('\n');
-      return `        <DT><H3 ADD_DATE="${now}" LAST_MODIFIED="${now}">${escapeHtml(cat.title)}</H3>
-        <DL><p>
-${items}
-        </DL><p>`;
-    })
+  const folders = categoriesToHtmlFolders(cats)
+    .map((folder) => renderBookmarkHtmlFolder(folder, now, '        '))
     .join('\n');
 
   const rootTitle = onlyCategoryId
@@ -2558,6 +2609,282 @@ export const recordPublicBookmarkOpened = (
     };
   });
   return persist(categories);
+};
+
+export interface FavoriteBookmarkLinkInput {
+  title?: string;
+  label?: string;
+  url?: string;
+}
+
+export interface CreatePublicBookmarkCategoryResult {
+  success: boolean;
+  message: string;
+  addedCount: number;
+  skippedInvalid: number;
+  skippedDuplicate: number;
+  spaceCount?: number;
+  categoryId?: string;
+  categoryTitle?: string;
+}
+
+/** Separates a named snapshot folder from space subfolders in Your Bookmarks titles. */
+export const BOOKMARK_SUBFOLDER_SEPARATOR = ' › ';
+
+const uniquifyTitle = (title: string, used: Set<string>): string => {
+  const base = title.trim() || 'Favorites';
+  const lowerUsed = new Set([...used].map((t) => t.trim().toLowerCase()));
+  if (!lowerUsed.has(base.toLowerCase())) return base;
+  let n = 2;
+  while (lowerUsed.has(`${base} (${n})`.toLowerCase())) n += 1;
+  return `${base} (${n})`;
+};
+
+const toHttpBookmarkLinks = (
+  links: FavoriteBookmarkLinkInput[]
+): {
+  unique: Array<{ title: string; url: string }>;
+  skippedInvalid: number;
+  skippedDuplicate: number;
+} => {
+  let skippedInvalid = 0;
+  const normalized = (links || [])
+    .map((b) => {
+      const url = typeof b.url === 'string' ? b.url.trim() : '';
+      if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+        skippedInvalid += 1;
+        return null;
+      }
+      const linkTitle =
+        (typeof b.title === 'string' && b.title.trim()) ||
+        (typeof b.label === 'string' && b.label.trim()) ||
+        url;
+      return { title: linkTitle, url };
+    })
+    .filter((b): b is { title: string; url: string } => !!b);
+
+  const { unique, duplicateCount } = deduplicateBookmarks(normalized);
+  return { unique, skippedInvalid, skippedDuplicate: duplicateCount };
+};
+
+const toPublicBookmarkLinks = (
+  unique: Array<{ title: string; url: string }>
+): PublicBookmarkLink[] =>
+  unique.map((link) => ({
+    id: generateUuid(),
+    title: link.title,
+    url: link.url
+  }));
+
+const collectLinksFromFavoriteSpace = (tile: Tile): FavoriteBookmarkLinkInput[] => {
+  const out: FavoriteBookmarkLinkInput[] = [];
+  if (tile.isHyperlink && tile.hyperlinkUrl) {
+    out.push({ title: tile.title, url: tile.hyperlinkUrl });
+  }
+  if (tile.searchLinks && tile.searchLinks.length > 0) {
+    tile.searchLinks.forEach((link) => {
+      out.push({ title: link.label, url: link.url });
+    });
+    return out;
+  }
+  const walk = (links?: Array<{ label?: string; url?: string }>) => {
+    (links || []).forEach((link) => out.push({ title: link.label, url: link.url }));
+  };
+  tile.tabs?.forEach((tab) => tab.sections?.forEach((section) => walk(section.links)));
+  tile.sections?.forEach((section) => walk(section.links));
+  return out;
+};
+
+/** Flatten starred links then favorite-space links (used to enable the copy button). */
+export const collectCopyableFavoriteBookmarkLinks = (
+  favoriteLinks: FavoriteBookmarkLinkInput[],
+  favoriteSpaces: Tile[]
+): FavoriteBookmarkLinkInput[] => {
+  const out: FavoriteBookmarkLinkInput[] = [];
+  (favoriteLinks || []).forEach((link) => {
+    out.push({
+      title: (link.label && link.label.trim()) || (link.title && link.title.trim()) || undefined,
+      url: link.url
+    });
+  });
+  (favoriteSpaces || []).forEach((tile) => {
+    out.push(...collectLinksFromFavoriteSpace(tile));
+  });
+  return out;
+};
+
+const buildCopyResultMessage = (
+  parentTitle: string,
+  addedCount: number,
+  spaceCount: number,
+  skippedDuplicate: number,
+  skippedInvalid: number
+): string => {
+  const extra: string[] = [];
+  if (skippedDuplicate > 0) {
+    extra.push(`${skippedDuplicate} duplicate${skippedDuplicate === 1 ? '' : 's'} skipped`);
+  }
+  if (skippedInvalid > 0) {
+    extra.push(`${skippedInvalid} skipped (not http/https)`);
+  }
+  const extraNote = extra.length > 0 ? ` (${extra.join(', ')})` : '';
+  const spaceNote =
+    spaceCount > 0
+      ? ` and ${spaceCount} space${spaceCount === 1 ? '' : 's'} as subfolders`
+      : '';
+  return `Copied ${addedCount} link${addedCount === 1 ? '' : 's'}${spaceNote} into “${parentTitle}”${extraNote}. Use Your Bookmarks → OutSync to push them to this browser.`;
+};
+
+/**
+ * Create one new Your Bookmarks space from a flat link list.
+ * Does not merge by domain. Duplicate URLs inside this list are skipped.
+ */
+export const createPublicBookmarkCategoryFromLinks = (
+  title: string,
+  links: FavoriteBookmarkLinkInput[]
+): CreatePublicBookmarkCategoryResult => {
+  if (!isLocalStorageAvailable()) {
+    return {
+      success: false,
+      message: 'Browser storage is not available. Cannot save bookmarks here.',
+      addedCount: 0,
+      skippedInvalid: 0,
+      skippedDuplicate: 0
+    };
+  }
+
+  const { unique, skippedInvalid, skippedDuplicate } = toHttpBookmarkLinks(links);
+  if (unique.length === 0) {
+    return {
+      success: false,
+      message: 'No http(s) links to copy into Your Bookmarks.',
+      addedCount: 0,
+      skippedInvalid,
+      skippedDuplicate
+    };
+  }
+
+  const current = getPublicBookmarks();
+  const used = new Set(current.categories.map((c) => c.title));
+  const categoryTitle = uniquifyTitle(title, used);
+  const categoryId = generateUuid();
+  const category: PublicBookmarkCategory = {
+    id: categoryId,
+    title: categoryTitle,
+    emoji: '⭐',
+    themeColor: 'amber',
+    links: toPublicBookmarkLinks(unique)
+  };
+
+  persist([...current.categories, category]);
+
+  return {
+    success: true,
+    message: buildCopyResultMessage(categoryTitle, unique.length, 0, skippedDuplicate, skippedInvalid),
+    addedCount: unique.length,
+    skippedInvalid,
+    skippedDuplicate,
+    spaceCount: 0,
+    categoryId,
+    categoryTitle
+  };
+};
+
+/**
+ * Copy Favorite Links into a named folder and each favorite space into a
+ * `{folder} › {space}` subfolder (Your Bookmarks cards + nested OutSync path).
+ */
+export const copyFavoritesToPublicBookmarkFolders = (
+  title: string,
+  favoriteLinks: FavoriteBookmarkLinkInput[],
+  favoriteSpaces: Tile[]
+): CreatePublicBookmarkCategoryResult => {
+  if (!isLocalStorageAvailable()) {
+    return {
+      success: false,
+      message: 'Browser storage is not available. Cannot save bookmarks here.',
+      addedCount: 0,
+      skippedInvalid: 0,
+      skippedDuplicate: 0,
+      spaceCount: 0
+    };
+  }
+
+  const parentParsed = toHttpBookmarkLinks(favoriteLinks || []);
+  let skippedInvalid = parentParsed.skippedInvalid;
+  let skippedDuplicate = parentParsed.skippedDuplicate;
+  let addedCount = 0;
+  let spaceCount = 0;
+
+  const current = getPublicBookmarks();
+  const used = new Set(current.categories.map((c) => c.title));
+  const parentTitle = uniquifyTitle(title, used);
+  used.add(parentTitle);
+
+  const created: PublicBookmarkCategory[] = [];
+  if (parentParsed.unique.length > 0) {
+    created.push({
+      id: generateUuid(),
+      title: parentTitle,
+      emoji: '⭐',
+      themeColor: 'amber',
+      links: toPublicBookmarkLinks(parentParsed.unique)
+    });
+    addedCount += parentParsed.unique.length;
+  }
+
+  (favoriteSpaces || []).forEach((tile) => {
+    const spaceParsed = toHttpBookmarkLinks(collectLinksFromFavoriteSpace(tile));
+    skippedInvalid += spaceParsed.skippedInvalid;
+    skippedDuplicate += spaceParsed.skippedDuplicate;
+    if (spaceParsed.unique.length === 0) return;
+    const spaceLabel = (tile.title && tile.title.trim()) || 'Space';
+    const childTitle = uniquifyTitle(
+      `${parentTitle}${BOOKMARK_SUBFOLDER_SEPARATOR}${spaceLabel}`,
+      used
+    );
+    used.add(childTitle);
+    created.push({
+      id: generateUuid(),
+      title: childTitle,
+      emoji: (tile.emoji && tile.emoji.trim()) || '📁',
+      themeColor: tile.themeColor || 'sky',
+      links: toPublicBookmarkLinks(spaceParsed.unique)
+    });
+    addedCount += spaceParsed.unique.length;
+    spaceCount += 1;
+  });
+
+  if (addedCount === 0) {
+    return {
+      success: false,
+      message: 'No http(s) links to copy into Your Bookmarks.',
+      addedCount: 0,
+      skippedInvalid,
+      skippedDuplicate,
+      spaceCount: 0
+    };
+  }
+
+  persist([...current.categories, ...created]);
+  const parent = created.find((c) => c.title === parentTitle) || created[0];
+
+  return {
+    success: true,
+    message: buildCopyResultMessage(
+      parentTitle,
+      addedCount,
+      spaceCount,
+      skippedDuplicate,
+      skippedInvalid
+    ),
+    addedCount,
+    skippedInvalid,
+    skippedDuplicate,
+    spaceCount,
+    categoryId: parent?.id,
+    categoryTitle: parentTitle
+  };
 };
 
 export const addPublicBookmarkLink = (

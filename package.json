@@ -16,6 +16,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@google/genai": "^1.30.0",
+    "@mediapipe/tasks-vision": "^1.0.1",
     "@novnc/novnc": "^1.7.0",
     "@tinymce/tinymce-react": "^6.3.0",
     "@xterm/addon-fit": "^0.11.0",

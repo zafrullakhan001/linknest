@@ -128,6 +128,9 @@ export default defineConfig(({ mode }) => {
               if (id.includes('@google/genai') || id.includes('google')) {
                 return 'genai-vendor';
               }
+              if (id.includes('@mediapipe')) {
+                return 'mediapipe-vendor';
+              }
               // UUID (small utility)
               if (id.includes('uuid')) {
                 return 'utils-vendor';
@@ -280,7 +283,7 @@ export default defineConfig(({ mode }) => {
         'react/jsx-runtime',
         'recharts'
       ],
-      exclude: ['@google/genai'] // Exclude large library, load on demand
+      exclude: ['@google/genai', '@mediapipe/tasks-vision']
     },
     plugins: [
       react({

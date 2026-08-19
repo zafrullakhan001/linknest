@@ -154,6 +154,21 @@ async function ensureFolder(parentId, title, cache) {
   return created.id;
 }
 
+/** Walk `Parent › Child` into nested Chrome folders. Other folder names stay one level. */
+async function ensureFolderPath(rootId, folder, cache) {
+  const raw = String(folder || '').trim();
+  if (!raw) return rootId;
+  const parts = raw
+    .split(/\s*›\s*/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  let id = rootId;
+  for (let i = 0; i < parts.length; i++) {
+    id = await ensureFolder(id, parts[i], cache);
+  }
+  return id;
+}
+
 function sanitizePushList(raw, rootFolderRaw) {
   const rootFolder =
     String(rootFolderRaw || DEFAULT_ROOT_FOLDER).trim().slice(0, FOLDER_MAX) ||
@@ -259,7 +274,7 @@ async function pushBookmarks(payload) {
     }
     if (!dryRun) {
       const parentId = item.folder
-        ? await ensureFolder(rootId, item.folder, folderCache)
+        ? await ensureFolderPath(rootId, item.folder, folderCache)
         : rootId;
       try {
         const created = await bookmarkCall('create', [
@@ -279,8 +294,13 @@ async function pushBookmarks(payload) {
       }
     }
     added++;
-    const path = item.folder
-      ? sanitized.rootFolder + ' / ' + item.folder
+    const nestedFolder = String(item.folder || '')
+      .split(/\s*›\s*/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .join(' / ');
+    const path = nestedFolder
+      ? sanitized.rootFolder + ' / ' + nestedFolder
       : sanitized.rootFolder;
     changes.push({
       action: 'add',

@@ -48,7 +48,9 @@ import {
   getPublicFavoritesSubTab,
   setPublicFavoritesSubTab,
   countPublicBookmarkLinks,
-  getPublicBookmarks
+  getPublicBookmarks,
+  collectCopyableFavoriteBookmarkLinks,
+  copyFavoritesToPublicBookmarkFolders
 } from '../services/publicBookmarksService';
 import { SearchResultFilterControl, SearchWordModeControl, FuzzySearchControl, SearchIncludeUrlsControl, RefineSearchInput, SearchStatsBar, MatchScoreBadge, collectMatchingSearchLinks, collectMatchingSearchTags, parseSearchResultFilter, parseSearchWordMode, parseSearchFuzzy, parseSearchIncludeUrls, getSearchWords, tileMatchesSearch, filterGroupedTilesBySearch, matchingLinkMatchesSearch, scoreTileSearch, scoreLinkSearch, scoreTagSearch, combineSearchScores, type SearchResultFilter, type SearchWordMode, type SearchStatsSummary, type SearchMatchScore } from './SearchResultFilterControl';
 import type { StagingOfflineKitHandle } from './StagingOfflineKit';
@@ -6991,6 +6993,47 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     }
   }, [tiles, publicFavorites, favoriteLinks, favoriteLinksAbove, favLinksSort]);
 
+  const favoriteSpaceTilesInOrder = useMemo(() => {
+    const byId = new Map(tiles.map((t) => [t.id, t]));
+    return publicFavorites
+      .map((id) => byId.get(id))
+      .filter((t): t is Tile => !!t);
+  }, [tiles, publicFavorites]);
+
+  const canCopyFavoritesToBookmarks = useMemo(() => {
+    const links = collectCopyableFavoriteBookmarkLinks(favoriteLinks, favoriteSpaceTilesInOrder);
+    return links.some((link) => {
+      const url = (link.url || '').trim();
+      return url.startsWith('http://') || url.startsWith('https://');
+    });
+  }, [favoriteLinks, favoriteSpaceTilesInOrder]);
+
+  const handleCopyFavoritesToBookmarks = useCallback(() => {
+    const links = collectCopyableFavoriteBookmarkLinks(favoriteLinks, favoriteSpaceTilesInOrder);
+    const hasHttp = links.some((link) => {
+      const url = (link.url || '').trim();
+      return url.startsWith('http://') || url.startsWith('https://');
+    });
+    if (!hasHttp) {
+      alert('No http(s) links to copy into Your Bookmarks.');
+      return;
+    }
+    const prompted = window.prompt('Name for the new Your Bookmarks folder', 'Favorites');
+    if (prompted === null) return;
+    const result = copyFavoritesToPublicBookmarkFolders(
+      prompted,
+      favoriteLinks,
+      favoriteSpaceTilesInOrder
+    );
+    if (!result.success) {
+      alert(result.message);
+      return;
+    }
+    setPublicBookmarkLinkCount(countPublicBookmarkLinks());
+    handleSetPublicFavoritesSubTab('bookmarks');
+    alert(result.message);
+  }, [favoriteLinks, favoriteSpaceTilesInOrder, handleSetPublicFavoritesSubTab]);
+
   const handleImportPublicFavorites = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -7378,6 +7421,17 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         {/* Export/Import buttons for public favorites - only on Favorites sub-tab */}
         {!isAuthenticated && !disabledAppTabs.has('favorites') && activeTab === 'public-favorites' && publicFavoritesSubTab === 'favorites' && (
           <div className="flex items-center gap-1 ml-2 pl-2 border-l border-slate-300 dark:border-slate-600 flex-shrink-0">
+            <button
+              type="button"
+              onClick={handleCopyFavoritesToBookmarks}
+              disabled={!canCopyFavoritesToBookmarks}
+              className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10 rounded transition-all disabled:opacity-40 disabled:pointer-events-none"
+              title="Copy favorites to Your Bookmarks as a named folder (spaces become subfolders)"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path fillRule="evenodd" d="M10 2c-1.716 0-3.408.106-5.07.31C3.806 2.45 3 3.414 3 4.517V17.25a.75.75 0 001.075.676L10 15.082l5.925 2.844A.75.75 0 0017 17.25V4.517c0-1.103-.806-2.068-1.93-2.207A41.651 41.651 0 0010 2zM6.75 6.5a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zm0 2.5a.75.75 0 000 1.5h3.5a.75.75 0 000-1.5h-3.5z" clipRule="evenodd" />
+              </svg>
+            </button>
             <button
               onClick={handleExportPublicFavorites}
               className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded transition-all"

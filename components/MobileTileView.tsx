@@ -10,7 +10,9 @@ import {
   PublicFavoritesSubTab,
   getPublicFavoritesSubTab,
   setPublicFavoritesSubTab,
-  countPublicBookmarkLinks
+  countPublicBookmarkLinks,
+  collectCopyableFavoriteBookmarkLinks,
+  copyFavoritesToPublicBookmarkFolders
 } from '../services/publicBookmarksService';
 import { PublicBookmarksPanel } from './PublicBookmarksPanel';
 import { getFavoriteLinks, resolveFavoriteLinks, FavoriteLink } from '../services/storageService';
@@ -202,6 +204,47 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
     !isAuthenticated && activeTab === 'public-favorites' && publicFavoritesSubTab === 'bookmarks';
   const showGuestFavoritesContent =
     isAuthenticated || publicFavoritesSubTab === 'favorites' || activeTab !== 'public-favorites';
+
+  const favoriteSpaceTilesInOrder = useMemo(() => {
+    const byId = new Map(tiles.map((t) => [t.id, t]));
+    return publicFavorites
+      .map((id) => byId.get(id))
+      .filter((t): t is Tile => !!t);
+  }, [tiles, publicFavorites]);
+
+  const canCopyFavoritesToBookmarks = useMemo(() => {
+    const links = collectCopyableFavoriteBookmarkLinks(favoriteLinks, favoriteSpaceTilesInOrder);
+    return links.some((link) => {
+      const url = (link.url || '').trim();
+      return url.startsWith('http://') || url.startsWith('https://');
+    });
+  }, [favoriteLinks, favoriteSpaceTilesInOrder]);
+
+  const handleCopyFavoritesToBookmarks = useCallback(() => {
+    const links = collectCopyableFavoriteBookmarkLinks(favoriteLinks, favoriteSpaceTilesInOrder);
+    const hasHttp = links.some((link) => {
+      const url = (link.url || '').trim();
+      return url.startsWith('http://') || url.startsWith('https://');
+    });
+    if (!hasHttp) {
+      alert('No http(s) links to copy into Your Bookmarks.');
+      return;
+    }
+    const prompted = window.prompt('Name for the new Your Bookmarks folder', 'Favorites');
+    if (prompted === null) return;
+    const result = copyFavoritesToPublicBookmarkFolders(
+      prompted,
+      favoriteLinks,
+      favoriteSpaceTilesInOrder
+    );
+    if (!result.success) {
+      alert(result.message);
+      return;
+    }
+    setPublicBookmarkLinkCount(countPublicBookmarkLinks());
+    handleSetPublicFavoritesSubTab('bookmarks');
+    alert(result.message);
+  }, [favoriteLinks, favoriteSpaceTilesInOrder, handleSetPublicFavoritesSubTab]);
 
   // Load favorite links when Favorites tab is active
   useEffect(() => {
@@ -1071,6 +1114,18 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
               {publicBookmarkLinkCount > 0 ? ` (${publicBookmarkLinkCount})` : ''}
             </button>
           </div>
+        )}
+
+        {!isAuthenticated && activeTab === 'public-favorites' && localStorageAvailable && publicFavoritesSubTab === 'favorites' && (
+          <button
+            type="button"
+            onClick={handleCopyFavoritesToBookmarks}
+            disabled={!canCopyFavoritesToBookmarks}
+            className="mb-4 w-full px-3 py-2 text-sm font-medium rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200 disabled:opacity-40 disabled:pointer-events-none"
+            title="Copy favorites to Your Bookmarks as a named folder (spaces become subfolders)"
+          >
+            Copy favorites to Your Bookmarks
+          </button>
         )}
 
         {showGuestBookmarks && (

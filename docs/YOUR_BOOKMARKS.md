@@ -29,6 +29,7 @@ Star links from spaces so they appear in a dedicated **Favorite Links** strip (a
 - **Left / right arrows** — card view only (hidden in compact)
 - **Notes** — if the link has notes
 - **Health** — corner color + latency when checks run
+- **Copy to Your Bookmarks** (guest) — bookmark icon next to Export/Import on the Favorites tab. Copies **Favorite Links** into a **named folder** (default **Favorites**) and each favorite space into a **subfolder** (`Favorites › Space name`) with that space’s http(s) links. Then **Your Bookmarks** → **OutSync** to push **Other Bookmarks → LinkNest → folder → space subfolders**.
 
 ### Compact view
 Use **View: Compact / Cards** on the Favorite Links toolbar.
@@ -53,7 +54,8 @@ Import a Chrome/Edge bookmark HTML export. Links are grouped into **spaces by we
 ### Getting started
 1. Chrome → Bookmarks → Bookmark manager → ⋮ → **Export bookmarks**
 2. In Favorites → **Your Bookmarks** → **Import Chrome HTML**, **Merge Import**, **Sync** (browser → app), or **OutSync** (app → browser; Bookmark Sync 1.8+, Read-write On)
-3. Open a domain space to work with its links
+3. Or from Favorites: **Copy favorites to Your Bookmarks** to snapshot starred links into a named folder and favorite spaces as subfolders, then OutSync when ready
+4. Open a domain space to work with its links
 
 ### Sync from browser (extension)
 Install **LinkNest Bookmark Sync** (`extensions/bookmark-sync` — load unpacked in Chrome/Edge) **or** **Browser Launcher Pro** with the Chrome `bookmarks` permission. **Sync** and **OutSync** appear only when an extension answers on this origin. Each button is greyed out when its popup toggle is Off (Read-only for Sync, Read-write for OutSync). Hover a greyed button for the hint. Click **Sync** (when enabled) to merge browser bookmarks into Your Bookmarks without an HTML file. New URLs are added; existing ones are skipped.
