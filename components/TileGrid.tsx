@@ -110,6 +110,32 @@ interface TileGridProps {
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
+function getColorStyles(color: string | ThemeColor | undefined) {
+  if (color && Object.prototype.hasOwnProperty.call(COLOR_STYLES, color)) {
+    return COLOR_STYLES[color as ThemeColor];
+  }
+  return COLOR_STYLES.blue;
+}
+
+type CategoryScheduleMeta = { visibleFrom?: string | null; expiresAt?: string | null };
+
+function flattenGroupedTiles(groups: Record<string, Tile[]>): Tile[] {
+  const result: Tile[] = [];
+  for (const groupName of Object.keys(groups)) {
+    const group = groups[groupName];
+    if (group) result.push(...group);
+  }
+  return result;
+}
+
+function countGroupedTiles(groups: Record<string, Tile[]>): number {
+  let count = 0;
+  for (const groupName of Object.keys(groups)) {
+    count += groups[groupName]?.length ?? 0;
+  }
+  return count;
+}
+
 /** Turn a hyperlink tile URL into a default tab → section → link graph. */
 function buildSpaceTabsFromHyperlink(title: string, url: string): Tab[] {
   const trimmedUrl = url.trim();
@@ -184,7 +210,7 @@ const HeaderImageTilePreview: React.FC<{
   showDescription = true,
   themeColor = 'blue',
 }) => {
-  const styles = COLOR_STYLES[themeColor] || COLOR_STYLES.blue;
+  const styles = getColorStyles(themeColor);
   const ox = Math.max(-300, Math.min(300, offsetX));
   const oy = Math.max(-300, Math.min(300, offsetY));
   const op = Math.max(0, Math.min(100, opacity)) / 100;
@@ -1307,7 +1333,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
     });
   };
 
-  const styles = COLOR_STYLES[tile.themeColor] || COLOR_STYLES['blue'];
+  const styles = getColorStyles(tile.themeColor);
   const linkCount = tile.isHyperlink ? 0 : (typeof tile.linkCount === 'number' ? tile.linkCount : (() => {
     const uniqueLinks = new Set<string>();
     const processLink = (link: any) => {
@@ -3375,7 +3401,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
   const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
   const categoryCaseNormalizeLockRef = useRef(false);
   const categoryCaseNormalizeFailedKeyRef = useRef<string | null>(null);
-  const [categoryMetadata, setCategoryMetadata] = useState<Record<string, { visibleFrom?: string | null; expiresAt?: string | null }>>({});
+  const [categoryMetadata, setCategoryMetadata] = useState<Record<string, CategoryScheduleMeta>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [editingCategorySchedule, setEditingCategorySchedule] = useState<string | null>(null);
   const [categoryVisibleFrom, setCategoryVisibleFrom] = useState<string>('');
@@ -4054,7 +4080,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
   }, [tiles]);
 
   // Filter and Group Tiles - Global search across all content
-  const baseGroupedTiles = useMemo(() => {
+  const baseGroupedTiles = useMemo((): Record<string, Tile[]> => {
     // First, filter tiles based on active tab
     let filteredTiles = tiles;
 
@@ -4467,9 +4493,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
   }, [tiles, searchTerm, searchWordMode, searchFuzzy, searchIncludeUrls, categoryOrder, categoryMetadata, activeTab, isAuthenticated, user, recycleBinTiles, archiveTiles, publicFavorites, yourAppsFilter, privateOwnerFilter, stagingTiles, stagingTilesLoading]);
 
   // Apply selected category filter to the grouped tiles
-  const groupedTiles = useMemo(() => {
-    const categoryGroups = selectedCategoryFilter && baseGroupedTiles[selectedCategoryFilter]
-      ? { [selectedCategoryFilter]: baseGroupedTiles[selectedCategoryFilter] }
+  const groupedTiles = useMemo((): Record<string, Tile[]> => {
+    const selectedGroup = selectedCategoryFilter ? baseGroupedTiles[selectedCategoryFilter] : undefined;
+    const categoryGroups: Record<string, Tile[]> = selectedGroup
+      ? { [selectedCategoryFilter as string]: selectedGroup }
       : baseGroupedTiles;
 
     if (!refineSearchTerm.trim()) return categoryGroups;
@@ -4500,7 +4527,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     if (!searchTerm.trim()) return matches;
     const searchWords = getSearchWords(searchTerm);
     const refineWords = getSearchWords(refineSearchTerm);
-    Object.values(groupedTiles).flat().forEach((tile) => {
+    flattenGroupedTiles(groupedTiles).forEach((tile) => {
       const primary = scoreTileSearch(tile, searchWords, searchWordMode, searchFuzzy, searchIncludeUrls);
       const refine = refineWords.length
         ? scoreTileSearch(tile, refineWords, searchWordMode, searchFuzzy, searchIncludeUrls)
@@ -4514,7 +4541,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     if (!searchTerm.trim()) return null;
     const searchWords = getSearchWords(searchTerm);
     const refineWords = getSearchWords(refineSearchTerm);
-    const resultTiles = Object.values(groupedTiles).flat();
+    const resultTiles = flattenGroupedTiles(groupedTiles);
     const tileScores = resultTiles.map((tile) => tileSearchMatches[tile.id]).filter(Boolean);
     const allScores = [...tileScores, ...matchingSearchLinks.map((link) => link.match).filter(Boolean)];
     const matchedScores = allScores.filter((item) => item && item.matched);
@@ -5815,7 +5842,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           const summary = categorySummaries[i];
           try {
             const full = await getTile(summary.id);
-            fullTiles.push(full);
+            fullTiles.push(full ?? summary);
           } catch (err) {
             console.warn('Failed to load full tile for export, using summary:', summary.title, err);
             fullTiles.push(summary);
@@ -5874,7 +5901,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       try {
         // Home-grid tile is summary-only; fetch full nested space + embed logos
         const full = await getTile(tile.id);
-        await exportTileToFileAsync(full);
+        await exportTileToFileAsync(full ?? tile);
       } catch (err) {
         console.warn('Full tile fetch failed; exporting card summary:', tile.title, err);
         await exportTileToFileAsync(tile);
@@ -6361,9 +6388,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       return next === group ? tile : { ...tile, group: next };
     });
     const newCategoryOrder = categoryOrder.map(applyName);
-    const newMetadata: Record<string, { visibleFrom?: string | null; expiresAt?: string | null }> = {};
-    Object.entries(categoryMetadata).forEach(([key, value]) => {
-      newMetadata[applyName(key)] = value;
+    const newMetadata: Record<string, CategoryScheduleMeta> = {};
+    Object.keys(categoryMetadata).forEach((key) => {
+      newMetadata[applyName(key)] = categoryMetadata[key];
     });
 
     categoryCaseNormalizeLockRef.current = true;
@@ -7680,7 +7707,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         <>
           <Suspense fallback={null}>
             <YourAppsOverview
-              spaceCount={Object.values(groupedTiles).reduce((acc: number, group: Tile[]) => acc + group.length, 0)}
+              spaceCount={countGroupedTiles(groupedTiles)}
               onSelectFilter={setYourAppsFilter}
             />
           </Suspense>
@@ -7718,7 +7745,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             <PrivateOverview
               spaceCount={
                 privateSubTab === 'spaces'
-                  ? Object.values(groupedTiles).reduce((acc: number, group: Tile[]) => acc + group.length, 0)
+                  ? countGroupedTiles(groupedTiles)
                   : 0
               }
               pendingInvitationsCount={pendingInvitationsCount}
@@ -7802,7 +7829,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       {activeTab === 'scheduled' && isAuthenticated && (
         <Suspense fallback={null}>
           <ScheduledOverview
-            spaceCount={Object.values(groupedTiles).reduce((acc: number, group: Tile[]) => acc + group.length, 0)}
+            spaceCount={countGroupedTiles(groupedTiles)}
           />
         </Suspense>
       )}
@@ -7811,7 +7838,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       {activeTab === 'expired' && isAuthenticated && (
         <Suspense fallback={null}>
           <ExpiredOverview
-            spaceCount={Object.values(groupedTiles).reduce((acc: number, group: Tile[]) => acc + group.length, 0)}
+            spaceCount={countGroupedTiles(groupedTiles)}
           />
         </Suspense>
       )}
@@ -7930,11 +7957,11 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-brand-500"></div>
-            <span>{Object.values(groupedTiles).reduce((acc: number, group: Tile[]) => acc + group.length, 0)} {Object.values(groupedTiles).reduce((acc: number, group: Tile[]) => acc + group.length, 0) === 1 ? 'Space' : 'Spaces'}</span>
+            <span>{countGroupedTiles(groupedTiles)} {countGroupedTiles(groupedTiles) === 1 ? 'Space' : 'Spaces'}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-violet-500"></div>
-            <span>{Object.values(groupedTiles).flat().reduce((acc: number, t: Tile) => {
+            <span>{flattenGroupedTiles(groupedTiles).reduce((acc: number, t: Tile) => {
               if (t.isHyperlink) return acc;
               const uniqueLinks = new Set<string>();
               const processLink = (link: any) => {
