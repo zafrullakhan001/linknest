@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { linkifyHtml, looksLikeHtml, stripHtmlToPlainText, hasVisibleRichText } from '../utils/richTextDisplay';
+import { toSpeakableText, useReadAloud } from '../hooks/useReadAloud';
+import { ReadAloudButtons, ReadAloudVoiceSelect } from './ReadAloudControls';
 
 interface LinkNotesDialogProps {
   isOpen: boolean;
@@ -171,6 +173,15 @@ export const LinkNotesDialog: React.FC<LinkNotesDialogProps> = ({
 
   const plainLabel = useMemo(() => stripHtmlTags(linkLabel || ''), [linkLabel]);
   const displayHtml = useMemo(() => notesToDisplayHtml(notes || ''), [notes]);
+  const speakableText = useMemo(
+    () => toSpeakableText(looksLikeHtml(notes || '') ? notes || '' : displayHtml || notes || ''),
+    [notes, displayHtml]
+  );
+  const readAloud = useReadAloud({
+    text: speakableText,
+    active: isOpen,
+    autoStart: false,
+  });
 
   useEffect(() => {
     if (!isOpen) return;
@@ -211,7 +222,7 @@ export const LinkNotesDialog: React.FC<LinkNotesDialogProps> = ({
 
   const handleDragStart = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
-    if (target.closest('button') || target.closest('a')) return;
+    if (target.closest('button, a, select, label')) return;
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(true);
@@ -354,18 +365,22 @@ export const LinkNotesDialog: React.FC<LinkNotesDialogProps> = ({
                 />
               </div>
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors shrink-0"
-              title="Close"
-              aria-label="Close"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            <div className="flex items-center gap-0.5 shrink-0">
+              <ReadAloudButtons readAloud={readAloud} theme="slate" />
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                title="Close"
+                aria-label="Close"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
+          <ReadAloudVoiceSelect readAloud={readAloud} id="link-notes-voice" theme="slate" />
         </div>
 
         {/* Body — document-style like Info click */}

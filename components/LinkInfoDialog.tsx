@@ -6,6 +6,8 @@ import { tryHandleSshLinkClick } from '../utils/sshLink';
 import { tryHandleVncLinkClick } from '../utils/vncLink';
 import { linkifyHtml } from '../utils/richTextDisplay';
 import { useAccessRestrictionGate } from '../contexts/AccessRestrictionContext';
+import { toSpeakableText, useReadAloud } from '../hooks/useReadAloud';
+import { ReadAloudButtons, ReadAloudVoiceSelect } from './ReadAloudControls';
 
 interface LinkInfoDialogProps {
   isOpen: boolean;
@@ -104,6 +106,12 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
     () => enhanceRichTextWithEmojis(linkifyHtml(richTextContent || '')),
     [richTextContent]
   );
+  const speakableText = useMemo(() => toSpeakableText(richTextContent || ''), [richTextContent]);
+  const readAloud = useReadAloud({
+    text: speakableText,
+    active: isOpen,
+    autoStart: false,
+  });
 
   const formatBrowserName = (browserId: string | null | undefined): string => {
     if (!browserId || browserId === 'default') return '';
@@ -179,7 +187,7 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
 
   const handleDragStart = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
-    if (target.closest('button') || target.closest('a')) return;
+    if (target.closest('button, a, select, label')) return;
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(true);
@@ -305,18 +313,22 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
                 )}
               </div>
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors shrink-0"
-              title="Close"
-              aria-label="Close"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            <div className="flex items-center gap-0.5 shrink-0">
+              <ReadAloudButtons readAloud={readAloud} theme="slate" />
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                title="Close"
+                aria-label="Close"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
+          <ReadAloudVoiceSelect readAloud={readAloud} id="link-info-voice" theme="slate" />
         </div>
 
         {/* Content */}
