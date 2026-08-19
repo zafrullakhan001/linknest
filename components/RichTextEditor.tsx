@@ -34,6 +34,9 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     const [linkOpenNewTab, setLinkOpenNewTab] = useState(true);
     const [showPasteWordDialog, setShowPasteWordDialog] = useState(false);
     const [pasteWordContent, setPasteWordContent] = useState('');
+    const [listItemSpaceEnabled, setListItemSpaceEnabled] = useState(false);
+    const [listItemSpaceLevel, setListItemSpaceLevel] = useState(0);
+    const [showListItemSpaceMenu, setShowListItemSpaceMenu] = useState(false);
 
     useEscapeToClose(showPasteWordDialog, () => {
         setShowPasteWordDialog(false);
@@ -45,6 +48,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
         setLinkText('');
     });
     useEscapeToClose(showTableDialog, () => setShowTableDialog(false));
+    useEscapeToClose(showListItemSpaceMenu, () => setShowListItemSpaceMenu(false));
 
     // Function to format/beautify HTML
     const formatHTML = (html: string): string => {
@@ -165,6 +169,31 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
         }
     };
 
+    const readListItemSpaceLevel = (li: Element | null): number => {
+        if (!li) return 0;
+        const fromData = parseInt(li.getAttribute('data-ln-space') || '', 10);
+        if (fromData >= 1 && fromData <= 5) return fromData;
+        for (let i = 5; i >= 1; i -= 1) {
+            if (li.classList.contains(`ln-li-space-${i}`)) return i;
+        }
+        if (li.classList.contains('ln-li-space')) return 1;
+        return 0;
+    };
+
+    const syncListItemSpaceUi = (range: Range | null) => {
+        if (!range || !editorRef.current) {
+            setListItemSpaceEnabled(false);
+            setListItemSpaceLevel(0);
+            return;
+        }
+        const node = range.commonAncestorContainer;
+        const el = node instanceof Element ? node : node.parentElement;
+        const li = el?.closest('li');
+        const inEditor = !!(li && editorRef.current.contains(li));
+        setListItemSpaceEnabled(inEditor);
+        setListItemSpaceLevel(inEditor ? readListItemSpaceLevel(li) : 0);
+    };
+
     const saveSelection = () => {
         const selection = window.getSelection();
         if (selection && selection.rangeCount > 0 && editorRef.current) {
@@ -178,9 +207,11 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                     !savedRangeRef.current.collapsed &&
                     editorRef.current.contains(savedRangeRef.current.commonAncestorContainer)
                 ) {
+                    syncListItemSpaceUi(range);
                     return;
                 }
                 savedRangeRef.current = range.cloneRange();
+                syncListItemSpaceUi(range);
             }
         }
     };
@@ -683,6 +714,39 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
         setTimeout(() => {
             handleInput();
         }, 0);
+    };
+
+    const getListItemFromSelection = (): HTMLLIElement | null => {
+        const range = getCurrentRange() || savedRangeRef.current;
+        if (!range || !editorRef.current) return null;
+        const node = range.commonAncestorContainer;
+        const el = node instanceof Element ? node : node.parentElement;
+        const li = el?.closest('li');
+        if (!li || !editorRef.current.contains(li)) return null;
+        return li as HTMLLIElement;
+    };
+
+    const applyListItemSpace = (level: number) => {
+        if (!editorRef.current) return;
+        editorRef.current.focus();
+        restoreSelection();
+        const li = getListItemFromSelection();
+        if (!li) return;
+        li.classList.remove('ln-li-space');
+        for (let i = 1; i <= 5; i += 1) {
+            li.classList.remove(`ln-li-space-${i}`);
+        }
+        li.removeAttribute('data-ln-space');
+        li.style.removeProperty('margin-bottom');
+        if (level >= 1 && level <= 5) {
+            li.classList.add(`ln-li-space-${level}`);
+            li.setAttribute('data-ln-space', String(level));
+            li.style.marginBottom = `${level}em`;
+        }
+        setShowListItemSpaceMenu(false);
+        handleInput();
+        saveSelection();
+        syncListItemSpaceUi(getCurrentRange() || savedRangeRef.current);
     };
 
     const insertTable = (rows: number = 3, cols: number = 3) => {
@@ -1733,7 +1797,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 </div>
 
                 {/* Lists */}
-                <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
+                <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1 relative">
                     <button
                         type="button"
                         onMouseDown={(e) => {
@@ -1768,6 +1832,69 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                             <path strokeLinecap="round" strokeLinejoin="round" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
                         </svg>
                     </button>
+                    <button
+                        type="button"
+                        disabled={!listItemSpaceEnabled}
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            if (!listItemSpaceEnabled) return;
+                            setShowListItemSpaceMenu((open) => !open);
+                        }}
+                        className={`p-1.5 rounded transition-colors inline-flex items-center gap-0.5 ${
+                            !listItemSpaceEnabled
+                                ? 'opacity-40 cursor-not-allowed'
+                                : listItemSpaceLevel > 0
+                                  ? 'bg-slate-200 dark:bg-slate-700'
+                                  : 'hover:bg-slate-200 dark:hover:bg-slate-700'
+                        }`}
+                        title="Space after list item"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 5h16M4 19h16M12 8v8m0 0l-2.5-2.5M12 16l2.5-2.5" />
+                        </svg>
+                        <span className="text-[10px] font-semibold leading-none min-w-[0.7rem]">
+                            {listItemSpaceLevel > 0 ? listItemSpaceLevel : ''}
+                        </span>
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                        </svg>
+                    </button>
+                    {showListItemSpaceMenu && listItemSpaceEnabled && (
+                        <>
+                            <div
+                                className="fixed inset-0 z-[9998]"
+                                onClick={() => setShowListItemSpaceMenu(false)}
+                            />
+                            <div
+                                className="absolute z-[9999] bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg shadow-xl py-1 min-w-[7.5rem]"
+                                style={{ top: '100%', right: 0, marginTop: '4px' }}
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                    Space after item
+                                </div>
+                                {[0, 1, 2, 3, 4, 5].map((level) => (
+                                    <button
+                                        key={level}
+                                        type="button"
+                                        onMouseDown={(e) => e.preventDefault()}
+                                        onClick={() => applyListItemSpace(level)}
+                                        className={`w-full text-left px-3 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-700 ${
+                                            listItemSpaceLevel === level
+                                                ? 'font-semibold text-brand-600 dark:text-brand-400'
+                                                : 'text-slate-700 dark:text-slate-200'
+                                        }`}
+                                    >
+                                        {level === 0 ? 'None' : String(level)}
+                                    </button>
+                                ))}
+                            </div>
+                        </>
+                    )}
                 </div>
 
                 {/* Table */}
@@ -2460,6 +2587,17 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 .rich-text-editor ul { list-style-type: disc; }
                 .rich-text-editor ol { list-style-type: decimal; }
                 .rich-text-editor li { margin: 0.25em 0; }
+                .rich-text-editor li.ln-li-space,
+                .rich-text-editor li.ln-li-space-1,
+                .rich-text-editor li[data-ln-space="1"] { margin-bottom: 1em; }
+                .rich-text-editor li.ln-li-space-2,
+                .rich-text-editor li[data-ln-space="2"] { margin-bottom: 2em; }
+                .rich-text-editor li.ln-li-space-3,
+                .rich-text-editor li[data-ln-space="3"] { margin-bottom: 3em; }
+                .rich-text-editor li.ln-li-space-4,
+                .rich-text-editor li[data-ln-space="4"] { margin-bottom: 4em; }
+                .rich-text-editor li.ln-li-space-5,
+                .rich-text-editor li[data-ln-space="5"] { margin-bottom: 5em; }
                 .rich-text-editor table { 
                     width: 100%; 
                     border-collapse: collapse; 

@@ -8078,6 +8078,32 @@ input[type="search"]::-ms-clear {
   display: list-item;
 }
 
+.ln-tinymce-content li.ln-li-space,
+.ln-tinymce-content li.ln-li-space-1,
+.ln-tinymce-content li[data-ln-space="1"] {
+  margin-bottom: 1em;
+}
+
+.ln-tinymce-content li.ln-li-space-2,
+.ln-tinymce-content li[data-ln-space="2"] {
+  margin-bottom: 2em;
+}
+
+.ln-tinymce-content li.ln-li-space-3,
+.ln-tinymce-content li[data-ln-space="3"] {
+  margin-bottom: 3em;
+}
+
+.ln-tinymce-content li.ln-li-space-4,
+.ln-tinymce-content li[data-ln-space="4"] {
+  margin-bottom: 4em;
+}
+
+.ln-tinymce-content li.ln-li-space-5,
+.ln-tinymce-content li[data-ln-space="5"] {
+  margin-bottom: 5em;
+}
+
 .ln-tinymce-content li > ul,
 .ln-tinymce-content li > ol {
   margin: 0.25em 0;

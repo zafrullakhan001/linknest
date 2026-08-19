@@ -68,8 +68,8 @@
             'preview quickbars searchreplace table visualblocks visualchars wordcount',
           toolbar_mode: 'wrap',
           toolbar: [
-            'undo redo | bold italic underline strikethrough | alignleft aligncenter alignright alignjustify | lineheight | styles | blocks fontfamily fontsize | searchreplace',
-            'bullist numlist accordion | outdent indent | link unlink anchor image | code | forecolor backcolor | table | subscript superscript',
+            'undo redo | bold italic underline strikethrough | alignleft aligncenter alignright alignjustify | lineheight | listitemspace | styles | blocks fontfamily fontsize | searchreplace',
+            'bullist numlist listitemspace accordion | outdent indent | link unlink anchor image | code | forecolor backcolor | table | subscript superscript',
             'charmap emoticons media hr ltr rtl | pastetext | visualchars visualblocks nonbreaking blockquote | preview codesample insertdatetime pagebreak removeformat | help'
           ],
           quickbars_selection_toolbar: 'bold italic underline | quicklink h2 h3 blockquote',
@@ -77,17 +77,106 @@
           contextmenu: 'link image table',
           skin: dark ? 'oxide-dark' : 'oxide',
           content_css: dark ? 'dark' : 'default',
-          content_style: 'body { font-family: Georgia, "Times New Roman", Times, serif; font-size: 16px; line-height: 1.5; }',
+          content_style:
+            'body { font-family: Georgia, "Times New Roman", Times, serif; font-size: 16px; line-height: 1.5; } ' +
+            'body.mce-content-body li.ln-li-space, body.mce-content-body li.ln-li-space-1, body.mce-content-body li[data-ln-space="1"] { margin-bottom: 1em !important; } ' +
+            'body.mce-content-body li.ln-li-space-2, body.mce-content-body li[data-ln-space="2"] { margin-bottom: 2em !important; } ' +
+            'body.mce-content-body li.ln-li-space-3, body.mce-content-body li[data-ln-space="3"] { margin-bottom: 3em !important; } ' +
+            'body.mce-content-body li.ln-li-space-4, body.mce-content-body li[data-ln-space="4"] { margin-bottom: 4em !important; } ' +
+            'body.mce-content-body li.ln-li-space-5, body.mce-content-body li[data-ln-space="5"] { margin-bottom: 5em !important; }',
           convert_urls: false,
           relative_urls: false,
           browser_spellcheck: true,
           resize: false,
           image_advtab: true,
           table_use_colgroups: true,
+          extended_valid_elements: '+li[data-ln-space|class|style]',
           setup: function (editor) {
             var emit = function () {
               window.parent.postMessage({ source: MSG, type: 'change', html: editor.getContent() }, '*');
             };
+            var LI_SPACE_LEGACY = 'ln-li-space';
+            var currentListItem = function () {
+              return editor.dom.getParent(editor.selection.getNode(), 'li');
+            };
+            var getListItemSpaceLevel = function (li) {
+              if (!li) return 0;
+              var fromData = parseInt(editor.dom.getAttrib(li, 'data-ln-space') || '', 10);
+              if (fromData >= 1 && fromData <= 5) return fromData;
+              for (var i = 5; i >= 1; i--) {
+                if (editor.dom.hasClass(li, 'ln-li-space-' + i)) return i;
+              }
+              if (editor.dom.hasClass(li, LI_SPACE_LEGACY)) return 1;
+              return 0;
+            };
+            var writeListItemSpace = function (li, level) {
+              editor.dom.removeClass(li, LI_SPACE_LEGACY);
+              for (var i = 1; i <= 5; i++) {
+                editor.dom.removeClass(li, 'ln-li-space-' + i);
+              }
+              editor.dom.setAttrib(li, 'data-ln-space', null);
+              editor.dom.setStyle(li, 'margin-bottom', '');
+              if (level >= 1 && level <= 5) {
+                editor.dom.addClass(li, 'ln-li-space-' + level);
+                editor.dom.setAttrib(li, 'data-ln-space', String(level));
+                editor.dom.setStyle(li, 'margin-bottom', level + 'em');
+              }
+            };
+            var applyListItemSpace = function (level) {
+              var li = currentListItem();
+              if (!li) return;
+              editor.undoManager.transact(function () {
+                writeListItemSpace(li, level);
+              });
+              editor.nodeChanged();
+              emit();
+            };
+            var syncListItemSpacesFromMarkup = function () {
+              var lis = editor.dom.select('li');
+              for (var i = 0; i < lis.length; i++) {
+                var level = getListItemSpaceLevel(lis[i]);
+                if (level > 0) writeListItemSpace(lis[i], level);
+              }
+            };
+            var listSpaceMenuItems = function () {
+              var current = getListItemSpaceLevel(currentListItem());
+              var items = [{
+                type: 'togglemenuitem',
+                text: 'None',
+                active: current === 0,
+                onAction: function () { applyListItemSpace(0); }
+              }];
+              for (var n = 1; n <= 5; n++) {
+                (function (level) {
+                  items.push({
+                    type: 'togglemenuitem',
+                    text: String(level),
+                    active: current === level,
+                    onAction: function () { applyListItemSpace(level); }
+                  });
+                })(n);
+              }
+              return items;
+            };
+            editor.ui.registry.addMenuButton('listitemspace', {
+              tooltip: 'Space after list item',
+              text: 'List space',
+              icon: 'line-height',
+              fetch: function (callback) {
+                callback(listSpaceMenuItems());
+              },
+              onSetup: function (api) {
+                var update = function () {
+                  api.setEnabled(!!currentListItem());
+                };
+                editor.on('NodeChange', update);
+                update();
+                return function () {
+                  editor.off('NodeChange', update);
+                };
+              }
+            });
+            editor.on('SetContent', syncListItemSpacesFromMarkup);
             editor.on('init', function () {
               window.parent.postMessage({ source: MSG, type: 'ready' }, '*');
             });
