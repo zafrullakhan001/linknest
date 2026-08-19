@@ -68,7 +68,11 @@ export interface Link {
   allowedGroups?: number[]; // Array of group IDs for private links
   notes?: string; // Optional notes/description for the link
   tooltip?: string; // Optional custom hover tooltip text
+  /** When false, notes and hover tooltip are hidden. Content is kept. Unspecified infers from content. */
+  notesEnabled?: boolean;
   richTextContent?: string; // Optional rich text HTML content - if present, shows dialog instead of opening URL
+  /** When false, clicking opens the URL even if richTextContent is stored. Unspecified infers from content. */
+  richTextEnabled?: boolean;
   visibleFrom?: string; // ISO date string - link becomes visible from this date/time
   expiresAt?: string; // ISO date string - link expires at this date/time
   browser?: string; // Browser to open link in (e.g., 'chrome-stable', 'edge-stable', 'default')

@@ -8,6 +8,8 @@ import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
 import { TitleEmojiPicker } from './TitleEmojiPicker';
 import { HierarchyExpandControls } from './TileHierarchyViews';
 import { AccessRestrictionsEditor } from './AccessRestrictionsEditor';
+import { hasVisibleRichText } from '../utils/richTextDisplay';
+import { isInfoContentEnabled, isNotesTooltipEnabled } from '../utils/linkFeatureToggles';
 
 interface MobileTileEditProps {
     tile: Tile;
@@ -103,8 +105,10 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         allowedUsers: number[];
         notes: string;
         tooltip: string;
+        notesEnabled: boolean;
         browser: string;
         richTextContent: string;
+        richTextEnabled: boolean;
         maintenanceEnabled: boolean;
         maintenanceMessage: string;
         maintenanceVideoUrl: string;
@@ -119,8 +123,10 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         allowedUsers: number[];
         notes: string;
         tooltip: string;
+        notesEnabled: boolean;
         browser: string;
         richTextContent: string;
+        richTextEnabled: boolean;
         maintenanceEnabled: boolean;
         maintenanceMessage: string;
         maintenanceVideoUrl: string;
@@ -217,10 +223,12 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
             textColor: state.textColor || undefined,
             visibility: state.visibility || 'public',
             allowedUsers: state.allowedUsers || [],
-            notes: state.notes || undefined,
-            tooltip: state.tooltip || undefined,
+            notes: hasVisibleRichText(state.notes) ? state.notes : undefined,
+            tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip : undefined,
+            notesEnabled: state.notesEnabled === true,
             browser: state.browser || 'default',
             richTextContent: state.richTextContent || undefined,
+            richTextEnabled: state.richTextEnabled === true,
             maintenanceEnabled: state.maintenanceEnabled === true,
             maintenanceMessage: state.maintenanceMessage || undefined,
             maintenanceVideoUrl: state.maintenanceVideoUrl || undefined
@@ -250,8 +258,10 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                 allowedUsers: [],
                 notes: '',
                 tooltip: '',
+                notesEnabled: false,
                 browser: 'default',
                 richTextContent: '',
+                richTextEnabled: false,
                 maintenanceEnabled: false,
                 maintenanceMessage: '',
                 maintenanceVideoUrl: ''
@@ -277,8 +287,10 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                     allowedUsers: link.allowedUsers || [],
                     notes: link.notes || '',
                     tooltip: link.tooltip || '',
+                    notesEnabled: isNotesTooltipEnabled(link),
                     browser: link.browser || 'default',
                     richTextContent: link.richTextContent || '',
+                    richTextEnabled: isInfoContentEnabled(link),
                     maintenanceEnabled: link.maintenanceEnabled === true,
                     maintenanceMessage: link.maintenanceMessage || '',
                     maintenanceVideoUrl: link.maintenanceVideoUrl || ''
@@ -314,10 +326,12 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                             textColor: state.textColor || undefined,
                                             visibility: state.visibility || 'public',
                                             allowedUsers: state.allowedUsers || [],
-                                            notes: state.notes || undefined,
-                                            tooltip: state.tooltip || undefined,
+                                            notes: hasVisibleRichText(state.notes) ? state.notes : undefined,
+                                            tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip : undefined,
+                                            notesEnabled: state.notesEnabled === true,
                                             browser: state.browser || 'default',
                                             richTextContent: state.richTextContent || undefined,
+                                            richTextEnabled: state.richTextEnabled === true,
                                             maintenanceEnabled: state.maintenanceEnabled === true,
                                             maintenanceMessage: state.maintenanceMessage || undefined,
                                             maintenanceVideoUrl: state.maintenanceVideoUrl || undefined
@@ -360,8 +374,10 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         allowedUsers: [],
         notes: '',
         tooltip: '',
+        notesEnabled: false,
         browser: 'default',
         richTextContent: '',
+        richTextEnabled: false,
         maintenanceEnabled: false,
         maintenanceMessage: '',
         maintenanceVideoUrl: ''
@@ -378,10 +394,12 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         textColor: state.textColor || undefined,
         visibility: state.visibility || 'public',
         allowedUsers: state.allowedUsers || [],
-        notes: state.notes || undefined,
-        tooltip: state.tooltip || undefined,
+        notes: hasVisibleRichText(state.notes) ? state.notes : undefined,
+        tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip : undefined,
+        notesEnabled: state.notesEnabled === true,
         browser: state.browser || 'default',
         richTextContent: state.richTextContent || undefined,
+        richTextEnabled: state.richTextEnabled === true,
         maintenanceEnabled: state.maintenanceEnabled === true,
         maintenanceMessage: state.maintenanceMessage || undefined,
         maintenanceVideoUrl: state.maintenanceVideoUrl || undefined
@@ -428,10 +446,12 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                 textColor: state.textColor || undefined,
                 visibility: state.visibility || 'public',
                 allowedUsers: state.allowedUsers || [],
-                notes: state.notes || undefined,
-                tooltip: state.tooltip || undefined,
+                notes: hasVisibleRichText(state.notes) ? state.notes : undefined,
+                tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip : undefined,
+                notesEnabled: state.notesEnabled === true,
                 browser: state.browser || 'default',
                 richTextContent: state.richTextContent || undefined,
+                richTextEnabled: state.richTextEnabled === true,
                 maintenanceEnabled: state.maintenanceEnabled === true,
                 maintenanceMessage: state.maintenanceMessage || undefined,
                 maintenanceVideoUrl: state.maintenanceVideoUrl || undefined
@@ -540,8 +560,10 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                     allowedUsers: [],
                     notes: '',
                     tooltip: '',
+                    notesEnabled: false,
                     browser: 'default',
                     richTextContent: '',
+                    richTextEnabled: false,
                     maintenanceEnabled: false,
                     maintenanceMessage: '',
                     maintenanceVideoUrl: ''
@@ -564,8 +586,10 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                     allowedUsers: [],
                     notes: '',
                     tooltip: '',
+                    notesEnabled: false,
                     browser: 'default',
                     richTextContent: '',
+                    richTextEnabled: false,
                     maintenanceEnabled: false,
                     maintenanceMessage: '',
                     maintenanceVideoUrl: ''
@@ -1206,29 +1230,38 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                         )}
                                                                     </div>
                                                                 )}
+                                                                <div className="flex items-center justify-between gap-3">
+                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                                                                        Notes & Tooltip
+                                                                    </label>
+                                                                    <button
+                                                                        type="button"
+                                                                        role="switch"
+                                                                        aria-checked={!!newLinkState[section.id]?.notesEnabled}
+                                                                        onClick={() => updateNewLinkState(section.id, 'notesEnabled', !newLinkState[section.id]?.notesEnabled)}
+                                                                        className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${newLinkState[section.id]?.notesEnabled ? 'bg-amber-500' : 'bg-slate-400 dark:bg-slate-600'}`}
+                                                                    >
+                                                                        <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${newLinkState[section.id]?.notesEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                                    </button>
+                                                                </div>
                                                                 <div>
                                                                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-                                                                        Notes
+                                                                        Notes (Rich Text)
                                                                     </label>
-                                                                    <textarea
+                                                                    <MobileRichTextEditor
                                                                         value={newLinkState[section.id]?.notes || ''}
-                                                                        onChange={(e) => updateNewLinkState(section.id, 'notes', e.target.value)}
+                                                                        onChange={(value) => updateNewLinkState(section.id, 'notes', value)}
                                                                         placeholder="Add notes..."
-                                                                        rows={2}
-                                                                        className="w-full bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 resize-none"
                                                                     />
                                                                 </div>
                                                                 <div>
                                                                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-                                                                        Hover Tooltip
+                                                                        Hover Tooltip (Rich Text)
                                                                     </label>
-                                                                    <input
-                                                                        type="text"
+                                                                    <MobileRichTextEditor
                                                                         value={newLinkState[section.id]?.tooltip || ''}
-                                                                        onChange={(e) => updateNewLinkState(section.id, 'tooltip', e.target.value)}
+                                                                        onChange={(value) => updateNewLinkState(section.id, 'tooltip', value)}
                                                                         placeholder="Text shown on hover..."
-                                                                        className="w-full bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
-                                                                        style={{ minHeight: '44px' }}
                                                                     />
                                                                 </div>
                                                                 {(settings as any)?.browser_specific_links_enabled === '1' && (user?.is_admin || tile.canChangeBrowser === true) && (
@@ -1251,9 +1284,20 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                     </div>
                                                                 )}
                                                                 <div>
-                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-                                                                        Information Content (Rich Text)
-                                                                    </label>
+                                                                    <div className="flex items-center justify-between gap-3 mb-1.5">
+                                                                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                                                                            Information Content (Rich Text)
+                                                                        </label>
+                                                                        <button
+                                                                            type="button"
+                                                                            role="switch"
+                                                                            aria-checked={!!newLinkState[section.id]?.richTextEnabled}
+                                                                            onClick={() => updateNewLinkState(section.id, 'richTextEnabled', !newLinkState[section.id]?.richTextEnabled)}
+                                                                            className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${newLinkState[section.id]?.richTextEnabled ? 'bg-violet-500' : 'bg-slate-400 dark:bg-slate-600'}`}
+                                                                        >
+                                                                            <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${newLinkState[section.id]?.richTextEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                                        </button>
+                                                                    </div>
                                                                     <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
                                                                         If provided, clicking this link will open a rich text dialog instead of navigating to the URL.
                                                                     </p>
@@ -1476,29 +1520,38 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                                             )}
                                                                                         </div>
                                                                                     )}
+                                                                                    <div className="flex items-center justify-between gap-3">
+                                                                                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                                                                                            Notes & Tooltip
+                                                                                        </label>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            role="switch"
+                                                                                            aria-checked={!!editLinkState[link.id]?.notesEnabled}
+                                                                                            onClick={() => updateEditLinkState(link.id, 'notesEnabled', !editLinkState[link.id]?.notesEnabled)}
+                                                                                            className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${editLinkState[link.id]?.notesEnabled ? 'bg-amber-500' : 'bg-slate-400 dark:bg-slate-600'}`}
+                                                                                        >
+                                                                                            <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${editLinkState[link.id]?.notesEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                                                        </button>
+                                                                                    </div>
                                                                                     <div>
                                                                                         <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-                                                                                            Notes
+                                                                                            Notes (Rich Text)
                                                                                         </label>
-                                                                                        <textarea
+                                                                                        <MobileRichTextEditor
                                                                                             value={editLinkState[link.id]?.notes || ''}
-                                                                                            onChange={(e) => updateEditLinkState(link.id, 'notes', e.target.value)}
+                                                                                            onChange={(value) => updateEditLinkState(link.id, 'notes', value)}
                                                                                             placeholder="Add notes..."
-                                                                                            rows={2}
-                                                                                            className="w-full bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 resize-none"
                                                                                         />
                                                                                     </div>
                                                                                     <div>
                                                                                         <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-                                                                                            Hover Tooltip
+                                                                                            Hover Tooltip (Rich Text)
                                                                                         </label>
-                                                                                        <input
-                                                                                            type="text"
+                                                                                        <MobileRichTextEditor
                                                                                             value={editLinkState[link.id]?.tooltip || ''}
-                                                                                            onChange={(e) => updateEditLinkState(link.id, 'tooltip', e.target.value)}
+                                                                                            onChange={(value) => updateEditLinkState(link.id, 'tooltip', value)}
                                                                                             placeholder="Text shown on hover..."
-                                                                                            className="w-full bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
-                                                                                            style={{ minHeight: '44px' }}
                                                                                         />
                                                                                     </div>
                                                                                     {(settings as any)?.browser_specific_links_enabled === '1' && (user?.is_admin || tile.canChangeBrowser === true) && (
@@ -1521,9 +1574,20 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                                         </div>
                                                                                     )}
                                                                                     <div>
-                                                                                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-                                                                                            Information Content (Rich Text)
-                                                                                        </label>
+                                                                                        <div className="flex items-center justify-between gap-3 mb-1.5">
+                                                                                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                                                                                                Information Content (Rich Text)
+                                                                                            </label>
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                role="switch"
+                                                                                                aria-checked={!!editLinkState[link.id]?.richTextEnabled}
+                                                                                                onClick={() => updateEditLinkState(link.id, 'richTextEnabled', !editLinkState[link.id]?.richTextEnabled)}
+                                                                                                className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${editLinkState[link.id]?.richTextEnabled ? 'bg-violet-500' : 'bg-slate-400 dark:bg-slate-600'}`}
+                                                                                            >
+                                                                                                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${editLinkState[link.id]?.richTextEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                                                            </button>
+                                                                                        </div>
                                                                                         <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
                                                                                             If provided, clicking this link will open a rich text dialog instead of navigating to the URL.
                                                                                         </p>

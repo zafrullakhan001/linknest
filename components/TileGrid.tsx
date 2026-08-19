@@ -39,6 +39,7 @@ import { viewerLinkDisplay, viewerLinkUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
 import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
 import { isLinkInMaintenance } from '../utils/linkMaintenance';
+import { shouldOpenInfoDialog } from '../utils/linkFeatureToggles';
 import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
 import { MobileTileView } from './MobileTileView';
 import { PublicBookmarksPanel } from './PublicBookmarksPanel';
@@ -8277,7 +8278,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           e.preventDefault();
                           e.stopPropagation();
                           // If rich text content exists, still show dialog on Ctrl/Cmd
-                          if (link.richTextContent) {
+                          if (shouldOpenInfoDialog(link)) {
                             setLinkInfoDialog({ link: link as Link });
                             return;
                           }
@@ -8287,7 +8288,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         }
 
                         // If link has rich text content, show dialog instead of opening URL
-                        if (link.richTextContent) {
+                        if (shouldOpenInfoDialog(link)) {
                           e.preventDefault();
                           e.stopPropagation();
                           setLinkInfoDialog({ link: link as Link });
@@ -8367,8 +8368,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                 visibility: undefined,
                                 notes: undefined,
                                 tooltip: undefined,
+                                notesEnabled: link.notesEnabled,
                                 browser: link.browser,
                                 richTextContent: link.richTextContent,
+                                richTextEnabled: link.richTextEnabled,
         maintenanceEnabled: link.maintenanceEnabled,
         maintenanceMessage: link.maintenanceMessage,
         maintenanceVideoUrl: link.maintenanceVideoUrl,

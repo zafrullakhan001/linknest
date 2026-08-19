@@ -41,6 +41,8 @@ import { LinkMaintenanceDialog } from './LinkMaintenanceDialog';
 import { LinkMaintenanceVideoField } from './LinkMaintenanceVideoField';
 import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
 import { isLinkInMaintenance } from '../utils/linkMaintenance';
+import { hasVisibleRichText, looksLikeHtml, plainNotesToHtml } from '../utils/richTextDisplay';
+import { isInfoContentEnabled, isNotesTooltipEnabled, linkHoverTitle, shouldOpenInfoDialog, shouldShowLinkNotes } from '../utils/linkFeatureToggles';
 import { LinkNotesDialog } from './LinkNotesDialog';
 import { QRCodeDialog } from './QRCodeDialog';
 import { MobilePreviewDialog } from './MobilePreviewDialog';
@@ -281,8 +283,9 @@ const LinkEditSection: React.FC<{
     accent?: LinkEditSectionAccent;
     defaultOpen?: boolean;
     badge?: React.ReactNode;
+    headerAction?: React.ReactNode;
     children: React.ReactNode;
-}> = ({ emoji, title, subtitle, accent = 'slate', defaultOpen = false, badge, children }) => {
+}> = ({ emoji, title, subtitle, accent = 'slate', defaultOpen = false, badge, headerAction, children }) => {
     const [open, setOpen] = useState(defaultOpen);
     const styles = LINK_EDIT_SECTION_ACCENTS[accent];
 
@@ -304,6 +307,18 @@ const LinkEditSection: React.FC<{
                     )}
                 </span>
                 {badge}
+                {headerAction && (
+                    <span
+                        className="shrink-0"
+                        onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                        }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                    >
+                        {headerAction}
+                    </span>
+                )}
                 <svg
                     className={`w-4 h-4 shrink-0 text-slate-400 transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
                     viewBox="0 0 20 20"
@@ -325,6 +340,30 @@ const LinkEditSection: React.FC<{
         </div>
     );
 };
+
+const LinkEditHeaderSwitch: React.FC<{
+    enabled: boolean;
+    onToggle: () => void;
+    onClassName: string;
+    labelOn: string;
+    labelOff: string;
+}> = ({ enabled, onToggle, onClassName, labelOn, labelOff }) => (
+    <button
+        type="button"
+        role="switch"
+        aria-checked={enabled}
+        aria-label={enabled ? labelOn : labelOff}
+        title={enabled ? labelOn : labelOff}
+        onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onToggle();
+        }}
+        className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${enabled ? onClassName : 'bg-slate-400 dark:bg-slate-600'}`}
+    >
+        <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+    </button>
+);
 
 const isProbableUrl = (value: string): boolean => {
     // Only probe URLs that already include http(s):// — never invent a scheme.
@@ -491,7 +530,9 @@ const cloneLinkItem = (link: Link, opts?: { appendCopyLabel?: boolean }): Link =
     allowedGroups: link.allowedGroups ? [...link.allowedGroups] : undefined,
     notes: link.notes,
     tooltip: link.tooltip,
+    notesEnabled: link.notesEnabled,
     richTextContent: link.richTextContent,
+    richTextEnabled: link.richTextEnabled,
     maintenanceEnabled: link.maintenanceEnabled,
     maintenanceMessage: link.maintenanceMessage,
     maintenanceVideoUrl: link.maintenanceVideoUrl,
@@ -760,7 +801,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editSections, setEditSections] = useState<LinkSection[]>(tile.sections || []);
 
     // Temporary State for Adding Links (keyed by section ID)
-    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, browser: string, richTextContent: string, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
+    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, notesEnabled: boolean, browser: string, richTextContent: string, richTextEnabled: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
 
     // Selection State for Bulk Actions
     const [selectedLinkIds, setSelectedLinkIds] = useState<string[]>([]);
@@ -771,7 +812,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
     const [convertLinkDialog, setConvertLinkDialog] = useState<{ tabId: string; sectionId: string; link: Link } | null>(null);
     const [convertingLinkToTile, setConvertingLinkToTile] = useState(false);
-    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, browser: string, richTextContent: string, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
+    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, notesEnabled: boolean, browser: string, richTextContent: string, richTextEnabled: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
 
     // Available browsers from BrowserLauncher API
     const [availableBrowsers, setAvailableBrowsers] = useState<string[]>([]);
@@ -2418,10 +2459,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         published: state.published !== false,
         allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
         allowedGroups: state.allowedGroups && state.allowedGroups.length > 0 ? state.allowedGroups : undefined,
-        notes: state.notes?.trim() || undefined,
-        tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
+        notes: hasVisibleRichText(state.notes) ? state.notes?.trim() : undefined,
+        tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip?.trim() : (stripHtmlTags(state.label).trim() || undefined),
+        notesEnabled: state.notesEnabled === true,
         browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
         richTextContent: state.richTextContent?.trim() || undefined,
+        richTextEnabled: state.richTextEnabled === true,
         maintenanceEnabled: state.maintenanceEnabled === true,
         maintenanceMessage: state.maintenanceMessage?.trim() || undefined,
         maintenanceVideoUrl: state.maintenanceVideoUrl?.trim() || undefined,
@@ -2440,10 +2483,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         published: state.published !== false,
         allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
         allowedGroups: state.allowedGroups && state.allowedGroups.length > 0 ? state.allowedGroups : undefined,
-        notes: state.notes?.trim() || undefined,
-        tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
+        notes: hasVisibleRichText(state.notes) ? state.notes?.trim() : undefined,
+        tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip?.trim() : (stripHtmlTags(state.label).trim() || undefined),
+        notesEnabled: state.notesEnabled === true,
         browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
         richTextContent: state.richTextContent?.trim() || undefined,
+        richTextEnabled: state.richTextEnabled === true,
         maintenanceEnabled: state.maintenanceEnabled === true,
         maintenanceMessage: state.maintenanceMessage?.trim() || undefined,
         maintenanceVideoUrl: state.maintenanceVideoUrl?.trim() || undefined,
@@ -2465,8 +2510,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         allowedGroups: [],
         notes: '',
         tooltip: '',
+        notesEnabled: false,
         browser: 'default',
         richTextContent: '',
+        richTextEnabled: false,
         animation: 'inherit',
         accessRestrictions: undefined,
         maintenanceEnabled: false,
@@ -3574,11 +3621,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     // Link Management
-    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'browser' | 'richTextContent' | 'animation' | 'published' | 'inheritShortUrls' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
+    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'notesEnabled' | 'browser' | 'richTextContent' | 'richTextEnabled' | 'animation' | 'published' | 'inheritShortUrls' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
         setNewLinkState(prev => ({
             ...prev,
             [sectionId]: {
-                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, published: true, inheritShortUrls: true, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '', animation: 'inherit', maintenanceEnabled: false, maintenanceMessage: '', maintenanceVideoUrl: '' }),
+                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, published: true, inheritShortUrls: true, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', notesEnabled: false, browser: 'default', richTextContent: '', richTextEnabled: false, animation: 'inherit', maintenanceEnabled: false, maintenanceMessage: '', maintenanceVideoUrl: '' }),
                 [field]: value
             }
         }));
@@ -3614,10 +3661,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             published: state.published !== false,
             allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
             allowedGroups: state.allowedGroups && state.allowedGroups.length > 0 ? state.allowedGroups : undefined,
-            notes: state.notes?.trim() || undefined,
-            tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
+            notes: hasVisibleRichText(state.notes) ? state.notes?.trim() : undefined,
+            tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip?.trim() : (stripHtmlTags(state.label).trim() || undefined),
+            notesEnabled: state.notesEnabled === true,
             browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
             richTextContent: state.richTextContent?.trim() || undefined,
+            richTextEnabled: state.richTextEnabled === true,
             maintenanceEnabled: state.maintenanceEnabled === true,
             maintenanceMessage: state.maintenanceMessage?.trim() || undefined,
             maintenanceVideoUrl: state.maintenanceVideoUrl?.trim() || undefined,
@@ -3903,8 +3952,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 allowedGroups: link.allowedGroups || [],
                 notes: link.notes || '',
                 tooltip: link.tooltip || '',
+                notesEnabled: isNotesTooltipEnabled(link),
                 browser: link.browser || 'default',
                 richTextContent: link.richTextContent || '',
+                richTextEnabled: isInfoContentEnabled(link),
                 animation: linkAnimationForEdit(link.animation),
                 accessRestrictions: link.accessRestrictions,
                 inheritShortUrls: link.inheritShortUrls !== false,
@@ -3976,7 +4027,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setLinkGroupSearch(prev => ({ ...prev, [linkId]: '' }));
     };
 
-    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'browser' | 'richTextContent' | 'animation' | 'published' | 'inheritShortUrls' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
+    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'notesEnabled' | 'browser' | 'richTextContent' | 'richTextEnabled' | 'animation' | 'published' | 'inheritShortUrls' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
         setEditLinkState(prev => ({
             ...prev,
             [linkId]: { ...prev[linkId], [field]: value }
@@ -4430,6 +4481,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         published: linkToClone.published,
                         animation: linkToClone.animation,
                         richTextContent: linkToClone.richTextContent,
+                        notesEnabled: linkToClone.notesEnabled,
+                        richTextEnabled: linkToClone.richTextEnabled,
                         maintenanceEnabled: linkToClone.maintenanceEnabled,
                         maintenanceMessage: linkToClone.maintenanceMessage,
                         maintenanceVideoUrl: linkToClone.maintenanceVideoUrl,
@@ -6511,7 +6564,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         const isGridCards = sectionLinkLayout === 'grid';
                                                         const isCompact = sectionLinkLayout === 'compact';
                                                         const isQrView = sectionLinkLayout === 'qr';
-                                                        const showNotesAction = isLinkActionAllowed('notes') && !!(link.notes && link.notes.trim());
+                                                        const showNotesAction = isLinkActionAllowed('notes') && shouldShowLinkNotes(link);
                                                         const showFavoriteAction = isLinkActionAllowed('favorite');
                                                         const showHealthAction = isLinkActionAllowed('health') && !skipHealth;
                                                         const showCopyAction = isLinkActionAllowed('copy');
@@ -6544,7 +6597,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     key={link.id}
                                                                     className="linknest-qr-card flex flex-col items-center text-center gap-3 p-4 rounded-2xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 shadow-sm w-full min-w-0 max-w-full overflow-hidden"
                                                                     style={{ opacity: 1, position: 'relative', zIndex: 0 }}
-                                                                    title={link.tooltip || plainQrLabel}
+                                                                    title={linkHoverTitle(link, plainQrLabel)}
                                                                 >
                                                                     <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm w-full flex justify-center max-w-[280px]">
                                                                         <BrandedQRCode
@@ -6631,7 +6684,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             : 'flex items-center gap-4 p-4'}
                                                     ${getTileAnimationClass(resolveLinkAnimation(link.animation, tile.linksAnimation))}
                                                 `}
-                                                                title={link.tooltip || link.label}
+                                                                title={linkHoverTitle(link, stripHtmlTags(link.label || ''))}
                                                             >
                                                                 {/* Icon + health (grid: alive dot centered above icon) */}
                                                                 <div className={`relative shrink-0 ${
@@ -6686,7 +6739,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                                                                         if (e.ctrlKey || e.metaKey) {
                                                                             // If rich text content exists, still show dialog on Ctrl/Cmd
-                                                                            if (link.richTextContent) {
+                                                                            if (shouldOpenInfoDialog(link)) {
                                                                                 setLinkInfoDialog({ link });
                                                                                 return;
                                                                             }
@@ -6698,7 +6751,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         }
 
                                                                         // If link has rich text content, show dialog instead of opening URL
-                                                                        if (link.richTextContent) {
+                                                                        if (shouldOpenInfoDialog(link)) {
                                                                             setLinkInfoDialog({ link });
                                                                             return;
                                                                         }
@@ -6968,8 +7021,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         visibility: link.visibility,
                                                                                         notes: link.notes,
                                                                                         tooltip: link.tooltip,
+                                                                                        notesEnabled: link.notesEnabled,
                                                                                         browser: link.browser,
                                                                                         richTextContent: link.richTextContent,
+                                                                                        richTextEnabled: link.richTextEnabled,
                                                                                         maintenanceEnabled: link.maintenanceEnabled,
                                                                                         maintenanceMessage: link.maintenanceMessage,
                                                                                         maintenanceVideoUrl: link.maintenanceVideoUrl,
@@ -9468,16 +9523,25 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                             title="Notes & Tooltip"
                                                                                             subtitle="Owner info, support details, hover text"
                                                                                             accent="amber"
-                                                                                            defaultOpen={!!(editLinkState[link.id]?.notes || editLinkState[link.id]?.tooltip || link.notes || link.tooltip)}
+                                                                                            defaultOpen={!!(editLinkState[link.id]?.notesEnabled || hasVisibleRichText(editLinkState[link.id]?.notes) || hasVisibleRichText(editLinkState[link.id]?.tooltip) || hasVisibleRichText(link.notes) || hasVisibleRichText(link.tooltip))}
                                                                                             badge={
-                                                                                                (editLinkState[link.id]?.notes || link.notes) ? (
-                                                                                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-200/80 dark:bg-amber-800/50 text-amber-800 dark:text-amber-200 font-medium shrink-0">Has notes</span>
+                                                                                                (editLinkState[link.id]?.notesEnabled ?? isNotesTooltipEnabled(link)) ? (
+                                                                                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-200/80 dark:bg-amber-800/50 text-amber-800 dark:text-amber-200 font-medium shrink-0">On</span>
                                                                                                 ) : undefined
+                                                                                            }
+                                                                                            headerAction={
+                                                                                                <LinkEditHeaderSwitch
+                                                                                                    enabled={!!(editLinkState[link.id]?.notesEnabled ?? isNotesTooltipEnabled(link))}
+                                                                                                    onToggle={() => updateEditLinkState(link.id, 'notesEnabled', !(editLinkState[link.id]?.notesEnabled ?? isNotesTooltipEnabled(link)))}
+                                                                                                    onClassName="bg-amber-500"
+                                                                                                    labelOn="Disable notes and tooltip"
+                                                                                                    labelOff="Enable notes and tooltip"
+                                                                                                />
                                                                                             }
                                                                                         >
                                                                                             <div>
                                                                                                 <div className="flex items-center justify-between mb-1.5">
-                                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Notes</label>
+                                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Notes (Rich Text)</label>
                                                                                                     <button
                                                                                                         type="button"
                                                                                                         onClick={() => {
@@ -9492,22 +9556,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                         Preset Form
                                                                                                     </button>
                                                                                                 </div>
-                                                                                                <textarea
+                                                                                                <SelectableRichTextEditor
                                                                                                     value={editLinkState[link.id]?.notes || ''}
-                                                                                                    onChange={(e) => updateEditLinkState(link.id, 'notes', e.target.value)}
+                                                                                                    onChange={(html) => updateEditLinkState(link.id, 'notes', html)}
                                                                                                     placeholder="Add notes... or use Preset Form button above"
-                                                                                                    rows={12}
-                                                                                                    className="w-full min-h-[280px] bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm leading-relaxed text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all resize-y font-mono"
+                                                                                                    className="min-h-[200px]"
                                                                                                 />
                                                                                             </div>
                                                                                             <div>
-                                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Hover Tooltip</label>
-                                                                                                <input
-                                                                                                    type="text"
+                                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Hover Tooltip (Rich Text)</label>
+                                                                                                <SelectableRichTextEditor
                                                                                                     value={editLinkState[link.id]?.tooltip || ''}
-                                                                                                    onChange={(e) => updateEditLinkState(link.id, 'tooltip', e.target.value)}
+                                                                                                    onChange={(html) => updateEditLinkState(link.id, 'tooltip', html)}
                                                                                                     placeholder="Text shown on hover..."
-                                                                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
+                                                                                                    className="min-h-[80px]"
                                                                                                 />
                                                                                             </div>
                                                                                         </LinkEditSection>
@@ -9518,11 +9580,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                             title="Information Content"
                                                                                             subtitle="Rich text dialog instead of opening the URL"
                                                                                             accent="violet"
-                                                                                            defaultOpen={!!(editLinkState[link.id]?.richTextContent || link.richTextContent)}
+                                                                                            defaultOpen={!!(editLinkState[link.id]?.richTextEnabled || editLinkState[link.id]?.richTextContent || link.richTextContent)}
                                                                                             badge={
-                                                                                                (editLinkState[link.id]?.richTextContent || link.richTextContent) ? (
-                                                                                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-200/80 dark:bg-violet-800/50 text-violet-800 dark:text-violet-200 font-medium shrink-0">Has content</span>
+                                                                                                (editLinkState[link.id]?.richTextEnabled ?? isInfoContentEnabled(link)) ? (
+                                                                                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-200/80 dark:bg-violet-800/50 text-violet-800 dark:text-violet-200 font-medium shrink-0">On</span>
                                                                                                 ) : undefined
+                                                                                            }
+                                                                                            headerAction={
+                                                                                                <LinkEditHeaderSwitch
+                                                                                                    enabled={!!(editLinkState[link.id]?.richTextEnabled ?? isInfoContentEnabled(link))}
+                                                                                                    onToggle={() => updateEditLinkState(link.id, 'richTextEnabled', !(editLinkState[link.id]?.richTextEnabled ?? isInfoContentEnabled(link)))}
+                                                                                                    onClassName="bg-violet-500"
+                                                                                                    labelOn="Disable information content"
+                                                                                                    labelOff="Enable information content"
+                                                                                                />
                                                                                             }
                                                                                         >
                                                                                             <div className="flex items-center justify-between gap-2">
@@ -9545,8 +9616,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                             allowedGroups: link.allowedGroups || [],
                                                                                                             notes: link.notes || '',
                                                                                                             tooltip: link.tooltip || '',
+                                                                                                            notesEnabled: isNotesTooltipEnabled(link),
                                                                                                             browser: link.browser || 'default',
                                                                                                             richTextContent: '',
+                                                                                                            richTextEnabled: isInfoContentEnabled(link),
                                                                                                             animation: linkAnimationForEdit(link.animation),
                                                                                                             maintenanceEnabled: link.maintenanceEnabled === true,
                                                                                                             maintenanceMessage: link.maintenanceMessage || '',
@@ -9556,7 +9629,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                             ...editLinkState,
                                                                                                             [link.id]: {
                                                                                                                 ...currentState,
-                                                                                                                richTextContent: demoContent
+                                                                                                                richTextContent: demoContent,
+                                                                                                                richTextEnabled: true
                                                                                                             }
                                                                                                         });
                                                                                                     }}
@@ -9580,8 +9654,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                         allowedGroups: link.allowedGroups || [],
                                                                                                         notes: link.notes || '',
                                                                                                         tooltip: link.tooltip || '',
+                                                                                                        notesEnabled: isNotesTooltipEnabled(link),
                                                                                                         browser: link.browser || 'default',
                                                                                                         richTextContent: '',
+                                                                                                        richTextEnabled: isInfoContentEnabled(link),
                                                                                                         animation: linkAnimationForEdit(link.animation),
                                                                                                         maintenanceEnabled: link.maintenanceEnabled === true,
                                                                                                         maintenanceMessage: link.maintenanceMessage || '',
@@ -10243,26 +10319,34 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             </div>
 
                                                                             {/* Notes - full width for readability */}
+                                                                            <div className="flex items-center justify-between gap-3">
+                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Notes & Tooltip</label>
+                                                                                <LinkEditHeaderSwitch
+                                                                                    enabled={!!newLinkState[section.id]?.notesEnabled}
+                                                                                    onToggle={() => updateNewLinkState(section.id, 'notesEnabled', !newLinkState[section.id]?.notesEnabled)}
+                                                                                    onClassName="bg-amber-500"
+                                                                                    labelOn="Disable notes and tooltip"
+                                                                                    labelOff="Enable notes and tooltip"
+                                                                                />
+                                                                            </div>
                                                                             <div>
-                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Notes</label>
-                                                                                <textarea
+                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Notes (Rich Text)</label>
+                                                                                <SelectableRichTextEditor
                                                                                     value={newLinkState[section.id]?.notes || ''}
-                                                                                    onChange={(e) => updateNewLinkState(section.id, 'notes', e.target.value)}
+                                                                                    onChange={(html) => updateNewLinkState(section.id, 'notes', html)}
                                                                                     placeholder="Add notes..."
-                                                                                    rows={12}
-                                                                                    className="w-full min-h-[280px] bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm leading-relaxed text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all resize-y font-mono"
+                                                                                    className="min-h-[160px]"
                                                                                 />
                                                                             </div>
 
                                                                             {/* Hover Tooltip */}
                                                                             <div>
-                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Hover Tooltip</label>
-                                                                                <input
-                                                                                    type="text"
+                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Hover Tooltip (Rich Text)</label>
+                                                                                <SelectableRichTextEditor
                                                                                     value={newLinkState[section.id]?.tooltip || ''}
-                                                                                    onChange={(e) => updateNewLinkState(section.id, 'tooltip', e.target.value)}
+                                                                                    onChange={(html) => updateNewLinkState(section.id, 'tooltip', html)}
                                                                                     placeholder="Text shown on hover..."
-                                                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
+                                                                                    className="min-h-[80px]"
                                                                                 />
                                                                             </div>
 
@@ -10272,16 +10356,26 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                                                                                         Information Content (Rich Text)
                                                                                     </label>
-                                                                                    <button
-                                                                                        type="button"
-                                                                                        onClick={() => {
-                                                                                            const demoContent = '<h2>Welcome to Information Content</h2><p>This is a <strong>sample rich text content</strong> that demonstrates various formatting options available in the editor.</p><h3>Key Features</h3><ul><li>Rich text formatting with <em>bold</em> and <u>underline</u></li><li>Lists and structured content</li><li>Links and embedded content</li><li>Custom styling options</li></ul><h3>Contact Information</h3><p>For more information, please contact:</p><p><strong>Support Team:</strong> support@company.com<br/><strong>Phone:</strong> +1-555-0100</p><blockquote><p>This is an important note or quote that stands out from the regular content.</p></blockquote><p>You can edit this content using the rich text editor toolbar above.</p>';
-                                                                                            updateNewLinkState(section.id, 'richTextContent', demoContent);
-                                                                                        }}
-                                                                                        className="px-3 py-1 text-xs bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition-colors"
-                                                                                    >
-                                                                                        Demo Fill
-                                                                                    </button>
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        <LinkEditHeaderSwitch
+                                                                                            enabled={!!newLinkState[section.id]?.richTextEnabled}
+                                                                                            onToggle={() => updateNewLinkState(section.id, 'richTextEnabled', !newLinkState[section.id]?.richTextEnabled)}
+                                                                                            onClassName="bg-violet-500"
+                                                                                            labelOn="Disable information content"
+                                                                                            labelOff="Enable information content"
+                                                                                        />
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() => {
+                                                                                                const demoContent = '<h2>Welcome to Information Content</h2><p>This is a <strong>sample rich text content</strong> that demonstrates various formatting options available in the editor.</p><h3>Key Features</h3><ul><li>Rich text formatting with <em>bold</em> and <u>underline</u></li><li>Lists and structured content</li><li>Links and embedded content</li><li>Custom styling options</li></ul><h3>Contact Information</h3><p>For more information, please contact:</p><p><strong>Support Team:</strong> support@company.com<br/><strong>Phone:</strong> +1-555-0100</p><blockquote><p>This is an important note or quote that stands out from the regular content.</p></blockquote><p>You can edit this content using the rich text editor toolbar above.</p>';
+                                                                                                updateNewLinkState(section.id, 'richTextContent', demoContent);
+                                                                                                updateNewLinkState(section.id, 'richTextEnabled', true);
+                                                                                            }}
+                                                                                            className="px-3 py-1 text-xs bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition-colors"
+                                                                                        >
+                                                                                            Demo Fill
+                                                                                        </button>
+                                                                                    </div>
                                                                                 </div>
                                                                                 <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
                                                                                     If provided, clicking this link will open a rich text dialog instead of navigating to the URL. Leave empty to open the URL normally.
@@ -11785,14 +11879,19 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 if (managers.length > 0) sections.push(`Manager Information:\n${managers.join('\n')}`);
 
                                                 const formattedNotes = sections.join('\n\n');
+                                                const additionHtml = plainNotesToHtml(formattedNotes);
 
                                                 // Update the notes field for this link
                                                 if (notesPresetFormState.linkId) {
                                                     const currentNotes = editLinkState[notesPresetFormState.linkId]?.notes || '';
-                                                    const combinedNotes = currentNotes
-                                                        ? (currentNotes + '\n\n' + formattedNotes)
-                                                        : formattedNotes;
+                                                    const currentHtml = looksLikeHtml(currentNotes)
+                                                        ? currentNotes
+                                                        : plainNotesToHtml(currentNotes);
+                                                    const combinedNotes = hasVisibleRichText(currentNotes)
+                                                        ? `${currentHtml}${additionHtml}`
+                                                        : additionHtml;
                                                     updateEditLinkState(notesPresetFormState.linkId, 'notes', combinedNotes);
+                                                    updateEditLinkState(notesPresetFormState.linkId, 'notesEnabled', true);
                                                 }
 
                                                 // Reset form and close dialog

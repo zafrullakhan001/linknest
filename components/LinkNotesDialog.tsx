@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { linkifyHtml } from '../utils/richTextDisplay';
+import { linkifyHtml, looksLikeHtml, stripHtmlToPlainText, hasVisibleRichText } from '../utils/richTextDisplay';
 
 interface LinkNotesDialogProps {
   isOpen: boolean;
@@ -124,6 +124,10 @@ function formatBodyLineHtml(line: string): string {
  * then auto-linkify bare URLs and email addresses (same as Info click).
  */
 function notesToDisplayHtml(notes: string): string {
+  const text = (notes || '').trim();
+  if (!text) return '';
+  if (looksLikeHtml(text)) return hasVisibleRichText(text) ? linkifyHtml(text) : '';
+
   const sections = parseNotesSections(notes);
   if (!sections.length) return '';
 
@@ -287,7 +291,9 @@ export const LinkNotesDialog: React.FC<LinkNotesDialogProps> = ({
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(notes || '');
+      await navigator.clipboard.writeText(
+        looksLikeHtml(notes || '') ? stripHtmlToPlainText(notes || '') : (notes || '')
+      );
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {

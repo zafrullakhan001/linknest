@@ -132,8 +132,10 @@ export interface PublicFavoriteLinkDetail {
   visibility?: string;
   notes?: string;
   tooltip?: string;
+  notesEnabled?: boolean;
   browser?: string;
   richTextContent?: string;
+  richTextEnabled?: boolean;
   maintenanceEnabled?: boolean;
   maintenanceMessage?: string;
   maintenanceVideoUrl?: string;
@@ -543,8 +545,10 @@ const normalizeLinkFavoriteDetails = (
       visibility: typeof detail.visibility === 'string' ? detail.visibility : undefined,
       notes: typeof detail.notes === 'string' ? detail.notes : undefined,
       tooltip: typeof detail.tooltip === 'string' ? detail.tooltip : undefined,
+      notesEnabled: detail.notesEnabled === true,
       browser: typeof detail.browser === 'string' ? detail.browser : undefined,
       richTextContent: typeof detail.richTextContent === 'string' ? detail.richTextContent : undefined,
+      richTextEnabled: detail.richTextEnabled === true,
       maintenanceEnabled: detail.maintenanceEnabled === true,
       maintenanceMessage: typeof detail.maintenanceMessage === 'string' ? detail.maintenanceMessage : undefined,
       maintenanceVideoUrl: typeof detail.maintenanceVideoUrl === 'string' ? detail.maintenanceVideoUrl : undefined,
@@ -620,8 +624,10 @@ export const buildPublicFavoritesExportData = (
         visibility: link.visibility,
         notes: link.notes,
         tooltip: link.tooltip,
+        notesEnabled: link.notesEnabled,
         browser: link.browser,
         richTextContent: link.richTextContent,
+        richTextEnabled: link.richTextEnabled,
         maintenanceEnabled: link.maintenanceEnabled,
         maintenanceMessage: link.maintenanceMessage,
         maintenanceVideoUrl: link.maintenanceVideoUrl,

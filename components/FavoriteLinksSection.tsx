@@ -24,6 +24,7 @@ import { isVncLinkUrl, tryHandleVncLinkClick } from '../utils/vncLink';
 import { getTileAnimationClass, getTileDecorationClass, type TileAnimation, type TileDecoration } from './TileAnimationSelector';
 import { useAccessRestrictionGate } from '../contexts/AccessRestrictionContext';
 import { isLinkInMaintenance } from '../utils/linkMaintenance';
+import { shouldOpenInfoDialog, shouldShowLinkNotes } from '../utils/linkFeatureToggles';
 import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
 
 const stripHtml = (value: string): string =>
@@ -183,7 +184,7 @@ const SortableFavoriteLinkCard: React.FC<{
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
       e.stopPropagation();
-      if (link.richTextContent) {
+      if (shouldOpenInfoDialog(link)) {
         onOpenLinkInfo();
         return;
       }
@@ -192,7 +193,7 @@ const SortableFavoriteLinkCard: React.FC<{
       return;
     }
 
-    if (link.richTextContent) {
+    if (shouldOpenInfoDialog(link)) {
       e.preventDefault();
       e.stopPropagation();
       onOpenLinkInfo();
@@ -249,7 +250,7 @@ const SortableFavoriteLinkCard: React.FC<{
           </div>
         </div>
         <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-          {link.notes && link.notes.trim() && (
+          {shouldShowLinkNotes(link) && (
             <button
               type="button"
               onClick={(e) => {
@@ -449,7 +450,7 @@ const SortableFavoriteLinkCard: React.FC<{
             </button>
           </>
         )}
-        {link.notes && link.notes.trim() && (
+        {shouldShowLinkNotes(link) && (
           <button
             type="button"
             onClick={(e) => {

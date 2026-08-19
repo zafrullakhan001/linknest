@@ -133,7 +133,7 @@ if (!defined('SYSTEM_TOKEN')) {
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 91);
+    define('LINKNEST_SCHEMA_VERSION', 92);
 }
 
 function getSchemaPatchFlagPath(): string {
@@ -616,6 +616,92 @@ function linkMaintenanceInsertValuesFromRow(array $row): array {
     ];
 }
 
+/** Per-link Notes/Tooltip and Information Content enable flags. */
+function ensureLinkFeatureToggleColumns(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $exists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='links'")->fetchColumn();
+        if (!$exists) {
+            return;
+        }
+        $columns = $db->query('PRAGMA table_info(links)')->fetchAll(PDO::FETCH_ASSOC);
+        $names = array_column($columns, 'name');
+        if (!in_array('notes_enabled', $names, true)) {
+            $db->exec('ALTER TABLE links ADD COLUMN notes_enabled INTEGER');
+        }
+        if (!in_array('rich_text_enabled', $names, true)) {
+            $db->exec('ALTER TABLE links ADD COLUMN rich_text_enabled INTEGER');
+        }
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureLinkFeatureToggleColumns warning: ' . $e->getMessage());
+    }
+}
+
+function linkPlainTextLooksNonEmpty($value): bool {
+    $text = trim(html_entity_decode(strip_tags((string)$value), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+    $text = trim(str_replace("\xC2\xA0", ' ', $text));
+    return $text !== '';
+}
+
+function linkToggleFlagFromRow(array $row, string $column, array $contentKeys): bool {
+    if (array_key_exists($column, $row) && $row[$column] !== null && $row[$column] !== '') {
+        return !empty($row[$column]);
+    }
+    foreach ($contentKeys as $key) {
+        if (linkPlainTextLooksNonEmpty($row[$key] ?? null)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function mapLinkFeatureTogglesFromRow(array $row): array {
+    return [
+        'notesEnabled' => linkToggleFlagFromRow($row, 'notes_enabled', ['notes', 'tooltip']),
+        'richTextEnabled' => linkToggleFlagFromRow($row, 'rich_text_enabled', ['rich_text_content']),
+    ];
+}
+
+function applyLinkFeatureTogglesToApi(array &$link, array $row): void {
+    foreach (mapLinkFeatureTogglesFromRow($row) as $key => $value) {
+        $link[$key] = $value;
+    }
+}
+
+function linkToggleFromInput($link, string $jsKey, array $contentKeys): int {
+    if (is_array($link) && array_key_exists($jsKey, $link)) {
+        return !empty($link[$jsKey]) ? 1 : 0;
+    }
+    if (!is_array($link)) {
+        return 0;
+    }
+    foreach ($contentKeys as $key) {
+        if (isset($link[$key]) && linkPlainTextLooksNonEmpty($link[$key])) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+function linkFeatureToggleInsertValuesFromInput($link): array {
+    return [
+        linkToggleFromInput($link, 'notesEnabled', ['notes', 'tooltip']),
+        linkToggleFromInput($link, 'richTextEnabled', ['richTextContent']),
+    ];
+}
+
+function linkFeatureToggleInsertValuesFromRow(array $row): array {
+    $mapped = mapLinkFeatureTogglesFromRow($row);
+    return [
+        !empty($mapped['notesEnabled']) ? 1 : 0,
+        !empty($mapped['richTextEnabled']) ? 1 : 0,
+    ];
+}
+
 function ensureInheritShortUrlsColumns(PDO $db): void {
     static $ensured = false;
     if ($ensured) {
@@ -921,6 +1007,7 @@ function initDatabase() {
             ensureShortUrlsSchema($db);
             ensureInheritShortUrlsColumns($db);
             ensureLinkMaintenanceColumns($db);
+            ensureLinkFeatureToggleColumns($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -949,6 +1036,7 @@ function initDatabase() {
             ensureShortUrlsSchema($db);
             ensureInheritShortUrlsColumns($db);
             ensureLinkMaintenanceColumns($db);
+            ensureLinkFeatureToggleColumns($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -1925,6 +2013,7 @@ function initDatabase() {
         }
 
         ensureLinkMaintenanceColumns($db);
+        ensureLinkFeatureToggleColumns($db);
         
         // Create rich_text_content table
         $db->exec('CREATE TABLE IF NOT EXISTS rich_text_content (
