@@ -5198,11 +5198,12 @@ function getAppBasePath(): string {
         $forced = (string)getenv('BASE_PATH');
     }
     $fromForced = $normalize($forced);
-    if ($fromForced !== '') {
+    $fromRequest = linknestDetectUrlInstallPath();
+    // A copied gateway_http_proxy_base / VITE_BASE_PATH from another folder
+    // (clone to a new name) must not win over the live URL.
+    if ($fromForced !== '' && ($fromRequest === '' || strcasecmp($fromForced, $fromRequest) === 0)) {
         return $cached = $fromForced;
     }
-
-    $fromRequest = linknestDetectUrlInstallPath();
     if ($fromRequest !== '') {
         return $cached = $fromRequest;
     }
@@ -5212,6 +5213,15 @@ function getAppBasePath(): string {
         $base = $normalize('/' . $m[1]);
         if ($base !== '') {
             return $cached = $base;
+        }
+    }
+
+    // Last resort for CLI / clone folders: this install's directory name.
+    $diskFolder = basename(dirname(__DIR__));
+    if ($diskFolder !== '' && !in_array(strtolower($diskFolder), ['html', 'htdocs', 'www', 'public'], true)) {
+        $fromDisk = $normalize('/' . $diskFolder);
+        if ($fromDisk !== '') {
+            return $cached = $fromDisk;
         }
     }
 

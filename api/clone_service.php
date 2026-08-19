@@ -1180,6 +1180,9 @@ class CloneService {
                 $logs = $this->runDemoDataSeed($targetDir, $logs);
             }
 
+            $this->writeTraceLog("STEP: Retargeting branding paths for /$folderName", 'INFO');
+            $logs = $this->retargetCloneBranding($targetDir, $folderName, $logs);
+
             $this->updateProgress('configuring', 55, 'Creating configuration...', $logs);
             
             // Step 4: Create .env file
@@ -1583,10 +1586,115 @@ class CloneService {
     }
 
     /**
+     * After clone, drop source-folder branding URLs and stale caches.
+     * Favicon/logo stay as /uploads/file (the new instance prefixes its own folder at request time).
+     * Missing files are cleared so the default tab icon is used instead of 404s.
+     */
+    private function retargetCloneBranding($targetDir, $folderName, $logs = [])
+    {
+        $targetDir = rtrim(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, (string) $targetDir), DIRECTORY_SEPARATOR);
+        $uploadsDir = $targetDir . DIRECTORY_SEPARATOR . 'uploads';
+        $cacheDir = $targetDir . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'cache';
+        $destDb = $targetDir . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'linknest.db';
+
+        if (is_dir($cacheDir)) {
+            foreach (glob($cacheDir . DIRECTORY_SEPARATOR . '*.json') ?: [] as $cacheFile) {
+                @unlink($cacheFile);
+            }
+            $this->writeTraceLog('Cleared settings/response cache in clone data/cache', 'INFO');
+            $logs = $this->addLog('Cleared branding cache for the new folder', $logs);
+        }
+
+        if (!is_file($destDb)) {
+            return $logs;
+        }
+
+        $canonicalUpload = static function (string $url): string {
+            $url = trim($url);
+            if ($url === '' || strncmp($url, 'data:', 5) === 0) {
+                return $url;
+            }
+            if (preg_match('#^https?://#i', $url)) {
+                $path = (string) (parse_url($url, PHP_URL_PATH) ?: '');
+                $url = $path !== '' ? $path : $url;
+            }
+            $url = str_replace('\\', '/', $url);
+            $url = preg_replace('#^/[^/]+/uploads/#', '/uploads/', $url) ?? $url;
+            if (!str_starts_with($url, '/uploads/') && preg_match('#(?:^|/)uploads/([^/]+)$#', $url, $m)) {
+                $url = '/uploads/' . $m[1];
+            }
+            return $url;
+        };
+
+        try {
+            $db = new PDO('sqlite:' . $destDb);
+            $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            $hasSettings = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'")->fetchColumn();
+            if (!$hasSettings) {
+                $db = null;
+                return $logs;
+            }
+
+            $db->prepare('DELETE FROM settings WHERE key = ?')->execute(['gateway_http_proxy_base']);
+
+            $keys = ['favicon', 'logo_image', 'header_logo_image'];
+            $stmt = $db->prepare('SELECT key, value FROM settings WHERE key IN (' . implode(',', array_fill(0, count($keys), '?')) . ')');
+            $stmt->execute($keys);
+            $upd = $db->prepare('UPDATE settings SET value = ?, updated_at = ? WHERE key = ?');
+            $now = time();
+            $cleared = 0;
+            $kept = 0;
+
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $key = (string) ($row['key'] ?? '');
+                $raw = trim((string) ($row['value'] ?? ''));
+                if ($raw === '') {
+                    continue;
+                }
+                $next = $canonicalUpload($raw);
+                if ($next === '' || strncmp($next, 'data:', 5) === 0) {
+                    if ($next !== $raw) {
+                        $upd->execute([$next, $now, $key]);
+                    }
+                    continue;
+                }
+                if (str_starts_with($next, '/uploads/')) {
+                    $filename = basename($next);
+                    $disk = $uploadsDir . DIRECTORY_SEPARATOR . $filename;
+                    if ($filename === '' || !preg_match('/^[a-zA-Z0-9._-]+$/', $filename) || !is_file($disk)) {
+                        $upd->execute(['', $now, $key]);
+                        $cleared++;
+                        continue;
+                    }
+                    $next = '/uploads/' . $filename;
+                }
+                if ($next !== $raw) {
+                    $upd->execute([$next, $now, $key]);
+                }
+                $kept++;
+            }
+
+            $db = null;
+            $this->writeTraceLog("Retargeted branding for /$folderName (kept=$kept, cleared-missing=$cleared)", 'INFO');
+            $logs = $this->addLog(
+                $cleared > 0
+                    ? "Branding paths retargeted for /$folderName ($cleared missing upload(s) cleared — default icon will be used)"
+                    : "Branding paths retargeted for /$folderName",
+                $logs
+            );
+        } catch (Exception $e) {
+            $this->writeTraceLog('WARNING: retargetCloneBranding failed: ' . $e->getMessage(), 'WARNING');
+            $logs = $this->addLog('WARNING: Could not retarget branding paths: ' . $e->getMessage(), $logs);
+        }
+
+        return $logs;
+    }
+
+    /**
      * After files are copied, initialize schema and apply structure/demo sanitization.
      * Used by Admin clone and by scripts/apply-clone-preset.php.
      */
-    public function applyPostCopyPreset($targetDir, $preset)
+    public function applyPostCopyPreset($targetDir, $preset, $folderName = '')
     {
         $preset = linknestNormalizeClonePreset($preset);
         $opts = linknestClonePresetOptions($preset);
@@ -1598,6 +1706,7 @@ class CloneService {
         if ($opts['runDemo']) {
             $this->runDemoDataSeed($targetDir, []);
         }
+        $this->retargetCloneBranding($targetDir, is_string($folderName) ? $folderName : '');
     }
 
     /**

@@ -3,7 +3,7 @@
  * Print branding for load-test report generation.
  *
  * Default (plain text): app_name only — backwards compatible with older callers.
- * With --json: {"appName":"...","favicon":"/linknest/uploads/..."}
+ * With --json: {"appName":"...","favicon":"/<folder>/uploads/..."}
  */
 $dbPath = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'linknest.db';
 $appName = 'Application';
@@ -36,15 +36,19 @@ try {
 // Normalize relative favicon to include deployment base path when possible
 if ($favicon !== '' && !preg_match('#^https?://#i', $favicon)) {
     $basePath = '';
-    // Guess from common env / sibling vite paths; default /linknest for this project
+    // Guess from env, else this install folder (clone-safe: /ZAF, /ERP3, …)
     $envBase = getenv('VITE_BASE_PATH') ?: getenv('BASE_PATH') ?: '';
-    if (is_string($envBase) && $envBase !== '') {
+    if (is_string($envBase) && $envBase !== '' && $envBase !== './' && !preg_match('/^(relative|auto|portable)$/i', $envBase)) {
         $basePath = '/' . trim(str_replace('\\', '/', $envBase), '/');
         if ($basePath === '/') {
             $basePath = '';
         }
     } else {
-        $basePath = '/linknest';
+        $folder = basename(dirname(__DIR__));
+        $skip = ['html', 'htdocs', 'www', 'public', 'api', 'uploads', 'dist'];
+        $basePath = ($folder !== '' && !in_array(strtolower($folder), $skip, true))
+            ? '/' . $folder
+            : '';
     }
     $favicon = preg_replace('#^/[^/]+/uploads/#', '/uploads/', $favicon);
     if (strpos($favicon, '/') !== 0) {

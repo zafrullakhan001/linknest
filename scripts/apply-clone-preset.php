@@ -45,7 +45,7 @@ $preset = linknestNormalizeClonePreset($preset);
 
 try {
     $svc = new CloneService(null, false);
-    $svc->applyPostCopyPreset($targetDir, $preset);
+    $svc->applyPostCopyPreset($targetDir, $preset, $folderName);
     $info = linknestWriteInstallIdentity($targetDir, $folderName, is_string($url) ? $url : null);
     echo "preset={$preset} session={$info['sessionName']} path={$info['cookiePath']}" . PHP_EOL;
     exit(0);

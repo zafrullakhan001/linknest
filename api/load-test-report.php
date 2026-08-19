@@ -89,7 +89,12 @@ if ($favicon !== '' && !preg_match('#^https?://#i', $favicon) && !str_starts_wit
     if ($baseFromRequest !== '' && strpos($favicon, '/uploads/') === 0) {
         $favicon = $baseFromRequest . $favicon;
     } elseif (strpos($favicon, '/uploads/') === 0) {
-        $favicon = '/linknest' . $favicon;
+        $appRoot = dirname(__DIR__);
+        $folder = basename($appRoot);
+        $skip = ['html', 'htdocs', 'www', 'public', 'api', 'uploads', 'dist'];
+        if ($folder !== '' && !in_array(strtolower($folder), $skip, true)) {
+            $favicon = '/' . $folder . $favicon;
+        }
     }
 }
 
