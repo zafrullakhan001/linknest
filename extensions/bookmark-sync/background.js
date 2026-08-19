@@ -98,24 +98,40 @@ function readBookmarkTree() {
   });
 }
 
-function indexBookmarkUrls(nodes, map) {
-  if (!Array.isArray(nodes)) return;
-  for (const node of nodes) {
-    if (!node) continue;
-    const url = node.url ? String(node.url) : '';
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-      const key = normalizeBookmarkUrl(url);
-      if (key && !map.has(key)) {
-        map.set(key, {
-          id: node.id,
-          title: (node.title && String(node.title).trim()) || url
-        });
+function indexBookmarksByFolderPath(otherNode, map) {
+  function walk(nodes, pathTitles) {
+    if (!Array.isArray(nodes)) return;
+    for (const node of nodes) {
+      if (!node) continue;
+      const url = node.url ? String(node.url) : '';
+      if (url.startsWith('http://') || url.startsWith('https://')) {
+        const urlKey = normalizeBookmarkUrl(url);
+        if (!urlKey) continue;
+        const pathKey = pathTitles.map((t) => String(t || '').toLowerCase()).join('\0');
+        const mapKey = pathKey + '\n' + urlKey;
+        if (!map.has(mapKey)) {
+          map.set(mapKey, {
+            id: node.id,
+            title: (node.title && String(node.title).trim()) || url
+          });
+        }
+      } else if (node.children && node.children.length) {
+        const title = String(node.title || '').trim();
+        walk(node.children, pathTitles.concat([title]));
       }
     }
-    if (node.children && node.children.length) {
-      indexBookmarkUrls(node.children, map);
-    }
   }
+  walk((otherNode && otherNode.children) || [], []);
+}
+
+function destFolderPathKey(rootFolder, folder) {
+  const parts = [String(rootFolder || DEFAULT_ROOT_FOLDER).trim() || DEFAULT_ROOT_FOLDER];
+  String(folder || '')
+    .split(/\s*›\s*/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .forEach((part) => parts.push(part));
+  return parts.map((part) => part.toLowerCase()).join('\0');
 }
 
 function findOtherBookmarksNode(tree) {
@@ -194,12 +210,12 @@ async function pushBookmarks(payload) {
   const dryRun = !!(payload && payload.dryRun);
   const sanitized = sanitizePushList(payload && payload.bookmarks, payload && payload.rootFolder);
   const tree = await bookmarkCall('getTree', []);
-  const byUrl = new Map();
-  indexBookmarkUrls(tree, byUrl);
   const other = findOtherBookmarksNode(tree);
   if (!other || !other.id) {
     return { success: false, error: 'Could not find the Other Bookmarks folder in this profile.' };
   }
+  const byPathUrl = new Map();
+  indexBookmarksByFolderPath(other, byPathUrl);
   const folderCache = new Map();
   let rootId = '';
   if (!dryRun) {
@@ -217,7 +233,9 @@ async function pushBookmarks(payload) {
       skipped++;
       continue;
     }
-    if (seen.has(key)) {
+    const pathKey = destFolderPathKey(sanitized.rootFolder, item.folder);
+    const seenKey = pathKey + '\n' + key;
+    if (seen.has(seenKey)) {
       skipped++;
       changes.push({
         action: 'skip',
@@ -228,8 +246,8 @@ async function pushBookmarks(payload) {
       });
       continue;
     }
-    seen.add(key);
-    const existing = byUrl.get(key);
+    seen.add(seenKey);
+    const existing = byPathUrl.get(seenKey);
     if (existing) {
       if (existing.title !== item.title && item.title && existing.id) {
         const previousTitle = existing.title;
@@ -280,7 +298,7 @@ async function pushBookmarks(payload) {
         const created = await bookmarkCall('create', [
           { parentId: parentId, title: item.title, url: item.url }
         ]);
-        byUrl.set(key, { id: created && created.id, title: item.title });
+        byPathUrl.set(seenKey, { id: created && created.id, title: item.title });
       } catch (_err) {
         skipped++;
         changes.push({

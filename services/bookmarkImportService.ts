@@ -603,23 +603,50 @@ const OUTSYNC_TIMEOUT_MESSAGE =
 export const flattenPublicBookmarksForOutSync = (
   data: {
     categories?: Array<{
+      id?: string;
       title?: string;
+      parentId?: string;
       links?: Array<{ title?: string; url?: string }>;
     }>;
   } | null
 ): OutSyncBookmark[] => {
   const categories = data && Array.isArray(data.categories) ? data.categories : [];
+  const byId = new Map<string, (typeof categories)[number]>();
+  categories.forEach((category) => {
+    if (typeof category?.id === 'string' && category.id.trim()) {
+      byId.set(category.id, category);
+    }
+  });
+  const folderPath = (category: (typeof categories)[number]): string => {
+    const parts: string[] = [];
+    const seen = new Set<string>();
+    let current: (typeof categories)[number] | undefined = category;
+    while (current) {
+      if (current.id && seen.has(current.id)) break;
+      if (current.id) seen.add(current.id);
+      const title = typeof current.title === 'string' ? current.title.trim() : '';
+      if (title) parts.unshift(title);
+      const parentId =
+        typeof current.parentId === 'string' && current.parentId.trim()
+          ? current.parentId.trim()
+          : '';
+      current = parentId ? byId.get(parentId) : undefined;
+    }
+    return parts.join(' › ') || 'Bookmarks';
+  };
   const seen = new Set<string>();
   const out: OutSyncBookmark[] = [];
   for (const category of categories) {
-    const folder = (typeof category?.title === 'string' && category.title.trim()) || 'Bookmarks';
+    const folder = folderPath(category);
     const links = Array.isArray(category?.links) ? category.links : [];
     for (const link of links) {
       const url = typeof link?.url === 'string' ? link.url.trim() : '';
       if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) continue;
-      const key = normalizeBookmarkUrl(url);
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
+      const urlKey = normalizeBookmarkUrl(url);
+      if (!urlKey) continue;
+      const dedupeKey = `${folder.toLowerCase()}\n${urlKey}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
       const title =
         (typeof link?.title === 'string' && link.title.trim()) || url;
       out.push({ title, url, folder });

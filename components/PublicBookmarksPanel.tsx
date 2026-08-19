@@ -57,6 +57,11 @@ import {
   markBookmarkFaviconFailed,
   sortBookmarkCategories,
   sortBookmarkLinks,
+  getRootBookmarkCategories,
+  getChildBookmarkCategories,
+  getSiblingBookmarkCategories,
+  getDescendantBookmarkCategoryIds,
+  getBookmarkFolderPath,
   type BookmarkSortMode,
   type BookmarkRewriteChange,
   type BookmarkRewriteRecipeStep,
@@ -85,6 +90,8 @@ import {
 interface PublicBookmarksPanelProps {
   compact?: boolean;
   onChange?: () => void;
+  /** Open this folder after copy-from-favorites mounts the panel. */
+  initialOpenCategoryId?: string | null;
 }
 
 type ImportMode = 'replace' | 'merge';
@@ -247,7 +254,8 @@ const formatRecent = (iso?: string): string | null => {
 
 export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
   compact = false,
-  onChange
+  onChange,
+  initialOpenCategoryId = null
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importModeRef = useRef<ImportMode>('replace');
@@ -263,7 +271,9 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [openSpaceId, setOpenSpaceId] = useState<string | null>(null);
+  const [openSpaceId, setOpenSpaceId] = useState<string | null>(
+    initialOpenCategoryId || null
+  );
   const [sortMode, setSortMode] = useState<BookmarkSortMode>('manual');
   const [quickAddUrl, setQuickAddUrl] = useState('');
   const [moveMenuLinkId, setMoveMenuLinkId] = useState<string | null>(null);
@@ -381,7 +391,7 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
     ? 'Merge this browser profile’s bookmarks via Bookmark Sync or Browser Launcher Pro (Read-only On).'
     : 'Turn Read-only (Sync) On in the Bookmark Sync tab of the extension popup.';
   const outSyncButtonTitle = canExtOutSync
-    ? 'Preview what OutSync would add or update in this browser (Bookmark Sync 1.8.2+ or Browser Launcher Pro 3.1+, Read-write On). Optionally back up Chrome bookmarks first, download a JSON changelog, then Apply. Nothing is written until you Apply.'
+    ? 'Preview what OutSync would add or update in this browser (Bookmark Sync 1.8.3+ for nested named folders, or Browser Launcher Pro 3.1+, Read-write On). Optionally back up Chrome bookmarks first, download a JSON changelog, then Apply. Nothing is written until you Apply.'
     : extPresence?.supportsOutSync
       ? 'Turn Read-write (OutSync) On in the Bookmark Sync tab of the extension popup.'
       : 'OutSync needs Bookmark Sync 1.8+ or Browser Launcher Pro 3.1+ with Read-write On.';
@@ -436,8 +446,30 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
     }
   }, [openSpaceId, sortMode]);
 
+  const openChildCategories = useMemo(() => {
+    if (!openSpace) return [] as PublicBookmarkCategory[];
+    return sortBookmarkCategories(
+      getChildBookmarkCategories(data.categories, openSpace.id),
+      sortMode === 'broken-first' ? 'manual' : sortMode
+    );
+  }, [data.categories, openSpace, sortMode]);
+
+  const visibleOpenChildren = useMemo(() => {
+    if (!q) return openChildCategories;
+    return openChildCategories.filter((cat) => {
+      if (cat.title.toLowerCase().includes(q)) return true;
+      return cat.links.some(
+        (link) =>
+          link.title.toLowerCase().includes(q) ||
+          link.url.toLowerCase().includes(q) ||
+          getDisplayUrl(link.url).toLowerCase().includes(q)
+      );
+    });
+  }, [openChildCategories, q]);
+
   const displayCategories = useMemo(() => {
-    const sorted = sortBookmarkCategories(data.categories, sortMode);
+    const pool = q ? data.categories : getRootBookmarkCategories(data.categories);
+    const sorted = sortBookmarkCategories(pool, sortMode);
     if (!q) return sorted;
     return sorted.filter((cat) => {
       if (cat.title.toLowerCase().includes(q)) return true;
@@ -1207,14 +1239,21 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
   };
 
   const handleDeleteSpace = (cat: PublicBookmarkCategory) => {
+    const childCount = getDescendantBookmarkCategoryIds(data.categories, cat.id).length;
     const n = cat.links.length;
+    const extra =
+      childCount > 0
+        ? `\n\nThis also deletes ${childCount} nested folder${childCount === 1 ? '' : 's'} inside it.`
+        : '';
     const ok = window.confirm(
-      `Delete space “${cat.title}” and its ${n} link${n === 1 ? '' : 's'}?\n\nThis only removes it from Your Bookmarks in this browser.`
+      `Delete space “${cat.title}” and its ${n} link${n === 1 ? '' : 's'}?${extra}\n\nThis only removes it from Your Bookmarks in this browser.`
     );
     if (!ok) return;
     const next = removePublicBookmarkCategory(cat.id);
     applyData(next);
-    if (openSpaceId === cat.id) setOpenSpaceId(null);
+    if (openSpaceId === cat.id) {
+      setOpenSpaceId(cat.parentId || null);
+    }
     setMessage(`Deleted space “${cat.title}”.`);
   };
 
@@ -1266,10 +1305,11 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
   };
 
   const handleRemoveLink = (categoryId: string, linkId: string) => {
+    const parentId = data.categories.find((c) => c.id === categoryId)?.parentId;
     const next = removePublicBookmarkLink(categoryId, linkId);
     applyData(next);
     if (!next.categories.some((c) => c.id === categoryId)) {
-      setOpenSpaceId(null);
+      setOpenSpaceId(parentId || null);
     }
   };
 
@@ -1651,10 +1691,10 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                         e.stopPropagation();
                         applyData(movePublicBookmarkLinkToCategory(cat.id, link.id, dest.id));
                         setMoveMenuLinkId(null);
-                        setMessage(`Moved to “${dest.title}”.`);
+                        setMessage(`Moved to “${getBookmarkFolderPath(data.categories, dest)}”.`);
                       }}
                     >
-                      {dest.emoji || '🌐'} {dest.title}
+                      {dest.emoji || '🌐'} {getBookmarkFolderPath(data.categories, dest)}
                     </button>
                   ))}
                 </div>
@@ -1680,6 +1720,240 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
     );
   };
 
+  const renderSpaceCard = (cat: PublicBookmarkCategory, displayIndex: number) => {
+    const siblings = getSiblingBookmarkCategories(data.categories, cat);
+    const siblingIndex = siblings.findIndex((c) => c.id === cat.id);
+    const canMoveLeft = !isSearching && isManualSort && siblingIndex > 0;
+    const canMoveRight =
+      !isSearching && isManualSort && siblingIndex >= 0 && siblingIndex < siblings.length - 1;
+    const styles = resolveTheme(cat.themeColor);
+    const spaceLinkCount = cat.links.length;
+    const childCount = getChildBookmarkCategories(data.categories, cat.id).length;
+    const animationDelay = displayIndex * 50;
+    const favicon = getCategoryFaviconUrl(cat);
+    const recent = formatRecent(cat.lastOpenedAt);
+    const metaLabel = [
+      `${spaceLinkCount} link${spaceLinkCount === 1 ? '' : 's'}`,
+      childCount > 0 ? `${childCount} folder${childCount === 1 ? '' : 's'}` : '',
+      recent
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    return (
+      <div
+        key={cat.id}
+        role="button"
+        tabIndex={0}
+        onClick={() => {
+          setOpenSpaceId(cat.id);
+          setSearchQuery('');
+          setMessage(null);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setOpenSpaceId(cat.id);
+            setSearchQuery('');
+            setMessage(null);
+          }
+        }}
+        title={`Open ${cat.title}`}
+        style={{ animationDelay: `${animationDelay}ms` }}
+        className={`
+          linknest-tile ${tileAnimatedClass} ${fullAnimationClass} group relative overflow-hidden rounded-xl
+          border border-slate-200 dark:border-slate-700/50 hover:border-brand-300 dark:hover:border-brand-500/50
+          transition-[transform,box-shadow,border-color] duration-200 ease-out
+          flex flex-col h-auto md:h-full min-h-0 md:min-h-[140px] min-w-0 cursor-pointer
+          ${cat.pinned ? 'ring-1 ring-amber-300/50 dark:ring-amber-500/30' : ''}
+        `}
+      >
+        <div className="flex items-start gap-2 mb-1.5 md:mb-3 min-w-0">
+          <div className="flex items-center gap-2 shrink-0">
+            <div
+              className={`
+                w-8 h-8 md:w-10 md:h-10 rounded-lg ${styles.soft} flex items-center justify-center text-base md:text-lg
+                border ${styles.border} transition-shadow duration-200 ease-out group-hover:shadow-md overflow-hidden
+              `}
+            >
+              {favicon ? (
+                <FaviconImg url={cat.links[0]?.url || ''} fallback={cat.emoji || '🌐'} />
+              ) : (
+                cat.emoji || '🌐'
+              )}
+            </div>
+          </div>
+          <div className="flex-1 min-w-0 md:hidden">
+            <h3 className={`font-bold text-sm leading-tight line-clamp-2 ${styles.text}`}>
+              {cat.pinned ? '📌 ' : ''}
+              {cat.title}
+            </h3>
+            <p className="text-slate-600 dark:text-slate-400 text-[11px] line-clamp-1 leading-snug mt-0.5">
+              {metaLabel}
+            </p>
+          </div>
+          <div className="relative hidden md:block flex-1 min-w-0 min-h-[40px]">
+            <div className="relative z-10 opacity-0 group-hover:opacity-100 transition-opacity flex flex-wrap items-center gap-1 justify-end w-full min-w-0">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  applyData(updatePublicBookmarkCategory(cat.id, { pinned: !cat.pinned }));
+                }}
+                className={`p-1 rounded-md ${
+                  cat.pinned
+                    ? 'text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20'
+                    : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20'
+                }`}
+                title={cat.pinned ? 'Unpin space' : 'Pin space to top'}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                  <path d="M10 2a.75.75 0 01.75.75v1.038a6.502 6.502 0 014.712 4.712H16.5a.75.75 0 010 1.5h-.038a6.502 6.502 0 01-4.712 4.712V16.5a.75.75 0 01-1.5 0v-1.038a6.502 6.502 0 01-4.712-4.712H3.5a.75.75 0 010-1.5h1.038A6.502 6.502 0 019.25 3.788V2.75A.75.75 0 0110 2z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleExportSpaceJson(cat);
+                }}
+                className="p-1 rounded-md text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all"
+                title="Export as LinkNest Space JSON"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                  <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z" />
+                  <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleDeleteSpace(cat);
+                }}
+                className="p-1 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
+                title="Delete this space"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                  <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="relative z-[1] hidden md:block flex-1 mb-3">
+          <h3
+            className={`font-bold text-sm leading-tight line-clamp-2 mb-1.5 ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}
+          >
+            {cat.pinned ? '📌 ' : ''}
+            {cat.title}
+          </h3>
+          <p className="text-slate-600 dark:text-slate-400 text-xs line-clamp-2 leading-snug">
+            {metaLabel}
+          </p>
+        </div>
+
+        <div className="pt-1.5 md:pt-2.5 border-t border-slate-100 dark:border-slate-700/50 flex items-center justify-between gap-1 mt-auto">
+          <div className={`flex items-center gap-1.5 text-xs font-medium ${styles.text}`}>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+              <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
+              <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
+            </svg>
+            <span>{spaceLinkCount}</span>
+            {childCount > 0 && (
+              <span className="opacity-80">· {childCount} folder{childCount === 1 ? '' : 's'}</span>
+            )}
+          </div>
+
+          <div className="flex md:hidden items-center gap-0.5">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                applyData(updatePublicBookmarkCategory(cat.id, { pinned: !cat.pinned }));
+              }}
+              className={`p-1.5 rounded-md ${cat.pinned ? 'text-amber-500' : 'text-slate-400'}`}
+              title={cat.pinned ? 'Unpin space' : 'Pin space'}
+              aria-label={cat.pinned ? 'Unpin space' : 'Pin space'}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                <path d="M10 2a.75.75 0 01.75.75v1.038a6.502 6.502 0 014.712 4.712H16.5a.75.75 0 010 1.5h-.038a6.502 6.502 0 01-4.712 4.712V16.5a.75.75 0 01-1.5 0v-1.038a6.502 6.502 0 01-4.712-4.712H3.5a.75.75 0 010-1.5h1.038A6.502 6.502 0 019.25 3.788V2.75A.75.75 0 0110 2z" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleDeleteSpace(cat);
+              }}
+              className="p-1.5 rounded-md text-slate-400"
+              title="Delete this space"
+              aria-label="Delete this space"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+
+          {!isSearching && isManualSort ? (
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity hidden md:flex items-center gap-0.5 z-10">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleMoveSpace(cat.id, 'up');
+                }}
+                disabled={!canMoveLeft}
+                className={`p-1 rounded-md transition-all ${
+                  canMoveLeft
+                    ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
+                    : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
+                }`}
+                title="Move space left"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                  <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clipRule="evenodd" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleMoveSpace(cat.id, 'down');
+                }}
+                disabled={!canMoveRight}
+                className={`p-1 rounded-md transition-all ${
+                  canMoveRight
+                    ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
+                    : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
+                }`}
+                title="Move space right"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                  <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+          ) : (
+            <div className="hidden md:block text-slate-300 dark:text-slate-600 group-hover:text-brand-500 transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+              </svg>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className={compact ? 'space-y-4' : 'space-y-6 mb-8'}>
       <input
@@ -1696,12 +1970,12 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
             <button
               type="button"
               onClick={() => {
-                setOpenSpaceId(null);
+                setOpenSpaceId(openSpace.parentId || null);
                 setSearchQuery('');
                 setMessage(null);
               }}
               className="p-1.5 rounded-lg text-slate-500 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/20 transition-colors shrink-0"
-              title="Back to bookmark spaces"
+              title={openSpace.parentId ? 'Back to folder' : 'Back to bookmark spaces'}
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
                 <path fillRule="evenodd" d="M17 10a.75.75 0 01-.75.75H5.612l4.158 3.96a.75.75 0 11-1.04 1.08l-5.5-5.25a.75.75 0 010-1.08l5.5-5.25a.75.75 0 111.04 1.08L5.612 9.25H16.25A.75.75 0 0117 10z" clipRule="evenodd" />
@@ -1743,7 +2017,11 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                 </button>
               )}
               <span className="text-sm text-slate-500 dark:text-slate-400">
-                ({openSpace.links.length} link{openSpace.links.length === 1 ? '' : 's'})
+                ({openSpace.links.length} link{openSpace.links.length === 1 ? '' : 's'}
+                {openChildCategories.length > 0
+                  ? ` · ${openChildCategories.length} folder${openChildCategories.length === 1 ? '' : 's'}`
+                  : ''}
+                )
               </span>
               {openSpace.pinned && (
                 <span className="text-[10px] font-semibold uppercase text-amber-600 dark:text-amber-400">
@@ -1908,7 +2186,9 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
               <h2 className="text-xl font-bold text-slate-900 dark:text-white">Your Bookmarks</h2>
             </div>
             <span className="text-sm text-slate-500 dark:text-slate-400 pl-7 sm:pl-0">
-              {data.categories.length} space{data.categories.length === 1 ? '' : 's'} · {linkCount} link{linkCount === 1 ? '' : 's'}
+              {getRootBookmarkCategories(data.categories).length} space
+              {getRootBookmarkCategories(data.categories).length === 1 ? '' : 's'} · {linkCount} link
+              {linkCount === 1 ? '' : 's'}
             </span>
           </div>
 
@@ -2904,7 +3184,24 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
             </button>
           </form>
 
-          {isSearching && openSpaceLinks.length === 0 ? (
+          {visibleOpenChildren.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Spaces
+              </h3>
+              <div
+                className={
+                  compact
+                    ? 'grid grid-cols-3 gap-4'
+                    : 'linknest-tile-grid linknest-bookmarks-tile-grid'
+                }
+              >
+                {visibleOpenChildren.map((cat, displayIndex) => renderSpaceCard(cat, displayIndex))}
+              </div>
+            </div>
+          )}
+
+          {isSearching && openSpaceLinks.length === 0 && visibleOpenChildren.length === 0 ? (
             <div className="text-center py-10 px-4 border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl">
               <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                 No links match “{searchQuery.trim()}” in this space
@@ -2917,7 +3214,7 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                 Clear search
               </button>
             </div>
-          ) : (
+          ) : openSpaceLinks.length > 0 ? (
             <>
               {isSearching && (
                 <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -2937,7 +3234,7 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                 })}
               </div>
             </>
-          )}
+          ) : null}
         </div>
       ) : isSearching && displayCategories.length === 0 ? (
         <div className="text-center py-10 px-4 border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl">
@@ -2966,239 +3263,7 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                 : 'linknest-tile-grid linknest-bookmarks-tile-grid'
             }
           >
-            {displayCategories.map((cat, displayIndex) => {
-              const fullIndex = data.categories.findIndex((c) => c.id === cat.id);
-              const canMoveLeft = !isSearching && isManualSort && fullIndex > 0;
-              const canMoveRight =
-                !isSearching && isManualSort && fullIndex >= 0 && fullIndex < data.categories.length - 1;
-              const styles = resolveTheme(cat.themeColor);
-              const spaceLinkCount = cat.links.length;
-              const animationDelay = displayIndex * 50;
-              const favicon = getCategoryFaviconUrl(cat);
-              const recent = formatRecent(cat.lastOpenedAt);
-              return (
-                <div
-                  key={cat.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => {
-                    setOpenSpaceId(cat.id);
-                    setSearchQuery('');
-                    setMessage(null);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      setOpenSpaceId(cat.id);
-                      setSearchQuery('');
-                      setMessage(null);
-                    }
-                  }}
-                  title={`Open ${cat.title}`}
-                  style={{ animationDelay: `${animationDelay}ms` }}
-                  className={`
-                    linknest-tile ${tileAnimatedClass} ${fullAnimationClass} group relative overflow-hidden rounded-xl
-                    border border-slate-200 dark:border-slate-700/50 hover:border-brand-300 dark:hover:border-brand-500/50
-                    transition-[transform,box-shadow,border-color] duration-200 ease-out
-                    flex flex-col h-auto md:h-full min-h-0 md:min-h-[140px] min-w-0 cursor-pointer
-                    ${cat.pinned ? 'ring-1 ring-amber-300/50 dark:ring-amber-500/30' : ''}
-                  `}
-                >
-                  <div className="flex items-start gap-2 mb-1.5 md:mb-3 min-w-0">
-                    <div className="flex items-center gap-2 shrink-0">
-                      <div
-                        className={`
-                          w-8 h-8 md:w-10 md:h-10 rounded-lg ${styles.soft} flex items-center justify-center text-base md:text-lg
-                          border ${styles.border} transition-shadow duration-200 ease-out group-hover:shadow-md overflow-hidden
-                        `}
-                      >
-                        {favicon ? (
-                          <FaviconImg url={cat.links[0]?.url || ''} fallback={cat.emoji || '🌐'} />
-                        ) : (
-                          cat.emoji || '🌐'
-                        )}
-                      </div>
-                    </div>
-                    {/* Title sits beside icon on small screens to avoid a tall empty card */}
-                    <div className="flex-1 min-w-0 md:hidden">
-                      <h3
-                        className={`font-bold text-sm leading-tight line-clamp-2 ${styles.text}`}
-                      >
-                        {cat.pinned ? '📌 ' : ''}
-                        {cat.title}
-                      </h3>
-                      <p className="text-slate-600 dark:text-slate-400 text-[11px] line-clamp-1 leading-snug mt-0.5">
-                        {spaceLinkCount} link{spaceLinkCount === 1 ? '' : 's'}
-                        {recent ? ` · ${recent}` : ''}
-                      </p>
-                    </div>
-                    <div className="relative hidden md:block flex-1 min-w-0 min-h-[40px]">
-                      <div className="relative z-10 opacity-0 group-hover:opacity-100 transition-opacity flex flex-wrap items-center gap-1 justify-end w-full min-w-0">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            applyData(
-                              updatePublicBookmarkCategory(cat.id, { pinned: !cat.pinned })
-                            );
-                          }}
-                          className={`p-1 rounded-md ${
-                            cat.pinned
-                              ? 'text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20'
-                              : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20'
-                          }`}
-                          title={cat.pinned ? 'Unpin space' : 'Pin space to top'}
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                            <path d="M10 2a.75.75 0 01.75.75v1.038a6.502 6.502 0 014.712 4.712H16.5a.75.75 0 010 1.5h-.038a6.502 6.502 0 01-4.712 4.712V16.5a.75.75 0 01-1.5 0v-1.038a6.502 6.502 0 01-4.712-4.712H3.5a.75.75 0 010-1.5h1.038A6.502 6.502 0 019.25 3.788V2.75A.75.75 0 0110 2z" />
-                          </svg>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            handleExportSpaceJson(cat);
-                          }}
-                          className="p-1 rounded-md text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all"
-                          title="Export as LinkNest Space JSON"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                            <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z" />
-                            <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
-                          </svg>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            handleDeleteSpace(cat);
-                          }}
-                          className="p-1 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
-                          title="Delete this space"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                            <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="relative z-[1] hidden md:block flex-1 mb-3">
-                    <h3
-                      className={`font-bold text-sm leading-tight line-clamp-2 mb-1.5 ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}
-                    >
-                      {cat.pinned ? '📌 ' : ''}
-                      {cat.title}
-                    </h3>
-                    <p className="text-slate-600 dark:text-slate-400 text-xs line-clamp-2 leading-snug">
-                      {spaceLinkCount} link{spaceLinkCount === 1 ? '' : 's'}
-                      {recent ? ` · ${recent}` : ''}
-                    </p>
-                  </div>
-
-                  <div className="pt-1.5 md:pt-2.5 border-t border-slate-100 dark:border-slate-700/50 flex items-center justify-between gap-1 mt-auto">
-                    <div className={`flex items-center gap-1.5 text-xs font-medium ${styles.text}`}>
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                        <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
-                        <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
-                      </svg>
-                      <span>{spaceLinkCount}</span>
-                    </div>
-
-                    {/* Mobile: always-visible compact actions (no hover) */}
-                    <div className="flex md:hidden items-center gap-0.5">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          applyData(
-                            updatePublicBookmarkCategory(cat.id, { pinned: !cat.pinned })
-                          );
-                        }}
-                        className={`p-1.5 rounded-md ${
-                          cat.pinned
-                            ? 'text-amber-500'
-                            : 'text-slate-400'
-                        }`}
-                        title={cat.pinned ? 'Unpin space' : 'Pin space'}
-                        aria-label={cat.pinned ? 'Unpin space' : 'Pin space'}
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                          <path d="M10 2a.75.75 0 01.75.75v1.038a6.502 6.502 0 014.712 4.712H16.5a.75.75 0 010 1.5h-.038a6.502 6.502 0 01-4.712 4.712V16.5a.75.75 0 01-1.5 0v-1.038a6.502 6.502 0 01-4.712-4.712H3.5a.75.75 0 010-1.5h1.038A6.502 6.502 0 019.25 3.788V2.75A.75.75 0 0110 2z" />
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleDeleteSpace(cat);
-                        }}
-                        className="p-1.5 rounded-md text-slate-400"
-                        title="Delete this space"
-                        aria-label="Delete this space"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                          <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
-                        </svg>
-                      </button>
-                    </div>
-
-                    {!isSearching && isManualSort ? (
-                      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity hidden md:flex items-center gap-0.5 z-10">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            handleMoveSpace(cat.id, 'up');
-                          }}
-                          disabled={!canMoveLeft}
-                          className={`p-1 rounded-md transition-all ${canMoveLeft
-                            ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
-                            : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
-                            }`}
-                          title="Move space left"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                            <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clipRule="evenodd" />
-                          </svg>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            handleMoveSpace(cat.id, 'down');
-                          }}
-                          disabled={!canMoveRight}
-                          className={`p-1 rounded-md transition-all ${canMoveRight
-                            ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
-                            : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
-                            }`}
-                          title="Move space right"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                            <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-                          </svg>
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="hidden md:block text-slate-300 dark:text-slate-600 group-hover:text-brand-500 transition-colors">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                          <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+            {displayCategories.map((cat, displayIndex) => renderSpaceCard(cat, displayIndex))}
           </div>
         </div>
       )}

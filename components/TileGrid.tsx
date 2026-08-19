@@ -2459,6 +2459,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [publicBookmarkLinkCount, setPublicBookmarkLinkCount] = useState(() =>
     typeof window !== 'undefined' ? countPublicBookmarkLinks() : 0
   );
+  const [bookmarksOpenCategoryId, setBookmarksOpenCategoryId] = useState<string | null>(null);
   const handleSetPublicFavoritesSubTab = useCallback((tab: PublicFavoritesSubTab) => {
     setPublicFavoritesSubTabState(tab);
     setPublicFavoritesSubTab(tab);
@@ -7057,6 +7058,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       return;
     }
     setPublicBookmarkLinkCount(countPublicBookmarkLinks());
+    setBookmarksOpenCategoryId(result.categoryId || null);
     handleSetPublicFavoritesSubTab('bookmarks');
     alert(result.message);
   }, [favoriteLinks, favoriteSpaceTilesInOrder, handleSetPublicFavoritesSubTab]);
@@ -8012,7 +8014,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
       {/* Guest Your Bookmarks (Chrome HTML import) */}
       {!isAuthenticated && activeTab === 'public-favorites' && publicFavoritesSubTab === 'bookmarks' && (
-        <PublicBookmarksPanel onChange={() => setPublicBookmarkLinkCount(countPublicBookmarkLinks())} />
+        <PublicBookmarksPanel
+          initialOpenCategoryId={bookmarksOpenCategoryId}
+          onChange={() => setPublicBookmarkLinkCount(countPublicBookmarkLinks())}
+        />
       )}
 
       {/* Favorite Links Section - Component */}

@@ -633,7 +633,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                       <li>Star links from spaces so they appear in the Favorite Links strip</li>
                       <li><strong>View: Compact / Cards</strong> — compact shows <em>title only</em> with star + drag (arrows hidden); cards show URL, space, and health</li>
                       <li>Sort A–Z or manual drag; place the strip above or below spaces</li>
-                      <li>Guests: bookmark icon next to Export/Import copies Favorite Links into a <strong>named folder</strong> and each favorite space into a <strong>subfolder</strong> (then OutSync to this browser)</li>
+                      <li>Guests: bookmark icon next to Export/Import copies Favorite Links into a <strong>named folder</strong> and each favorite space as a <strong>subfolder inside that folder</strong> (then OutSync to this browser)</li>
                     </ul>
                   </div>
 
@@ -641,7 +641,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <p className="font-medium text-sky-950 dark:text-sky-100">2. Your Bookmarks (guest)</p>
                     <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
                       <li>Export bookmarks from Chrome → Import / Merge HTML, or use <strong>Sync</strong> (browser → app) with LinkNest Bookmark Sync or Browser Launcher Pro. Use <strong>OutSync</strong> (Bookmark Sync 1.8+ or Browser Launcher Pro 3.1+, Read-write On) to push Your Bookmarks into Other Bookmarks → LinkNest. The branded name does not connect Sync — see <strong>Guides → Bookmark Sync Extension</strong></li>
-                      <li>Copy starred Favorites into a named bookmark folder (spaces become subfolders) from the Favorites tab, then OutSync when you want them in Chrome/Edge</li>
+                      <li>Copy starred Favorites into a named bookmark folder (spaces become subfolders inside it) from the Favorites tab, then OutSync when you want them in Chrome/Edge</li>
                       <li>Inside a space: search, sort, compact list, quick-add URL, pin, move between spaces</li>
                       <li><strong>Check links</strong> / <strong>Remove broken</strong> / <strong>Update redirects</strong> after health probes</li>
                       <li>Export Space JSON (for Admin Import Spaces) or HTML (back to Chrome)</li>

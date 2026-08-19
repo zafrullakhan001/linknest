@@ -45,8 +45,13 @@ export interface PublicBookmarkCategory {
   themeColor?: string;
   pinned?: boolean;
   lastOpenedAt?: string;
+  /** Parent folder id when this space is nested (Favorites copy). */
+  parentId?: string;
   links: PublicBookmarkLink[];
 }
+
+/** Separates a named snapshot folder from space subfolders in OutSync / HTML paths. */
+export const BOOKMARK_SUBFOLDER_SEPARATOR = ' › ';
 
 export interface PublicBookmarksData {
   categories: PublicBookmarkCategory[];
@@ -179,6 +184,15 @@ const normalizeCategory = (raw: unknown): PublicBookmarkCategory | null => {
       typeof obj.lastOpenedAt === 'string' && obj.lastOpenedAt.trim()
         ? obj.lastOpenedAt.trim()
         : undefined,
+    parentId: (() => {
+      const raw =
+        typeof obj.parentId === 'string' && obj.parentId.trim()
+          ? obj.parentId.trim()
+          : '';
+      const ownId =
+        typeof obj.id === 'string' && obj.id.trim() ? obj.id.trim() : '';
+      return raw && raw !== ownId ? raw : undefined;
+    })(),
     links
   };
 };
@@ -353,6 +367,104 @@ export const sortBookmarkLinks = (
   return [...sortWithin(pinned, compare), ...sortWithin(rest, compare)];
 };
 
+export const getRootBookmarkCategories = (
+  categories: PublicBookmarkCategory[]
+): PublicBookmarkCategory[] => categories.filter((cat) => !cat.parentId);
+
+export const getChildBookmarkCategories = (
+  categories: PublicBookmarkCategory[],
+  parentId: string
+): PublicBookmarkCategory[] =>
+  categories.filter((cat) => cat.parentId === parentId);
+
+export const getSiblingBookmarkCategories = (
+  categories: PublicBookmarkCategory[],
+  category: PublicBookmarkCategory
+): PublicBookmarkCategory[] => {
+  const parentKey = category.parentId || '';
+  return categories.filter((cat) => (cat.parentId || '') === parentKey);
+};
+
+export const getDescendantBookmarkCategoryIds = (
+  categories: PublicBookmarkCategory[],
+  categoryId: string
+): string[] => {
+  const ids: string[] = [];
+  const walk = (parentId: string) => {
+    categories.forEach((cat) => {
+      if (cat.parentId === parentId) {
+        ids.push(cat.id);
+        walk(cat.id);
+      }
+    });
+  };
+  walk(categoryId);
+  return ids;
+};
+
+/** OutSync / HTML folder path: `Favorites › PeopleSoft ERP`. */
+export const getBookmarkFolderPath = (
+  categories: PublicBookmarkCategory[],
+  category: PublicBookmarkCategory
+): string => {
+  const byId = new Map(categories.map((cat) => [cat.id, cat]));
+  const parts: string[] = [];
+  const seen = new Set<string>();
+  let current: PublicBookmarkCategory | undefined = category;
+  while (current) {
+    if (seen.has(current.id)) break;
+    seen.add(current.id);
+    const title = current.title.trim();
+    if (title) parts.unshift(title);
+    current = current.parentId ? byId.get(current.parentId) : undefined;
+  }
+  return parts.join(BOOKMARK_SUBFOLDER_SEPARATOR) || 'Bookmarks';
+};
+
+const keepCategoriesWithContent = (
+  categories: PublicBookmarkCategory[]
+): PublicBookmarkCategory[] => {
+  let next = categories;
+  for (;;) {
+    const parentIdsWithChildren = new Set(
+      next.map((cat) => cat.parentId).filter((id): id is string => !!id)
+    );
+    const filtered = next.filter(
+      (cat) => cat.links.length > 0 || parentIdsWithChildren.has(cat.id)
+    );
+    if (filtered.length === next.length) return filtered;
+    next = filtered;
+  }
+};
+
+/** Attach `{parent} › {child}` titles from older copies onto a matching root folder. */
+const migrateNestedBookmarkTitles = (
+  categories: PublicBookmarkCategory[]
+): { categories: PublicBookmarkCategory[]; changed: boolean } => {
+  const sep = BOOKMARK_SUBFOLDER_SEPARATOR;
+  const rootsByTitle = new Map<string, PublicBookmarkCategory>();
+  categories.forEach((cat) => {
+    if (cat.parentId) return;
+    const key = cat.title.trim().toLowerCase();
+    if (key && !rootsByTitle.has(key)) rootsByTitle.set(key, cat);
+  });
+
+  let changed = false;
+  const next = categories.map((cat) => {
+    if (cat.parentId) return cat;
+    const sepIdx = cat.title.indexOf(sep);
+    if (sepIdx === -1) return cat;
+    const parentTitle = cat.title.slice(0, sepIdx).trim();
+    const childTitle = cat.title.slice(sepIdx + sep.length).trim();
+    if (!parentTitle || !childTitle) return cat;
+    const parent = rootsByTitle.get(parentTitle.toLowerCase());
+    if (!parent || parent.id === cat.id) return cat;
+    changed = true;
+    return { ...cat, parentId: parent.id, title: childTitle };
+  });
+  return { categories: next, changed };
+};
+
 export const getPublicBookmarks = (): PublicBookmarksData => {
   if (!isLocalStorageAvailable()) return emptyBookmarks();
   try {
@@ -361,16 +473,25 @@ export const getPublicBookmarks = (): PublicBookmarksData => {
     const parsed = JSON.parse(stored);
     if (!parsed || typeof parsed !== 'object') return emptyBookmarks();
     const categoriesRaw = Array.isArray(parsed.categories) ? parsed.categories : [];
-    const categories = categoriesRaw
+    const normalized = categoriesRaw
       .map(normalizeCategory)
       .filter(Boolean) as PublicBookmarkCategory[];
-    return {
-      categories,
-      updatedAt:
-        typeof parsed.updatedAt === 'string'
-          ? parsed.updatedAt
-          : new Date().toISOString()
-    };
+    const { categories, changed } = migrateNestedBookmarkTitles(normalized);
+    const updatedAt =
+      typeof parsed.updatedAt === 'string'
+        ? parsed.updatedAt
+        : new Date().toISOString();
+    if (changed) {
+      try {
+        localStorage.setItem(
+          storageKey(BOOKMARKS_KEY),
+          JSON.stringify({ categories, updatedAt: new Date().toISOString() })
+        );
+      } catch {
+        // ignore persist of migrated titles
+      }
+    }
+    return { categories, updatedAt };
   } catch (error) {
     console.error('Failed to get public bookmarks:', error);
     return emptyBookmarks();
@@ -698,11 +819,13 @@ export const movePublicBookmarkCategory = (
   direction: 'up' | 'down'
 ): PublicBookmarksData => {
   const data = getPublicBookmarks();
-  const i = data.categories.findIndex((c) => c.id === categoryId);
-  if (i === -1) return data;
+  const cat = data.categories.find((c) => c.id === categoryId);
+  if (!cat) return data;
+  const siblings = getSiblingBookmarkCategories(data.categories, cat);
+  const i = siblings.findIndex((c) => c.id === categoryId);
   const j = direction === 'up' ? i - 1 : i + 1;
-  if (j < 0 || j >= data.categories.length) return data;
-  return swapPublicBookmarkCategories(data.categories[i].id, data.categories[j].id);
+  if (i === -1 || j < 0 || j >= siblings.length) return data;
+  return swapPublicBookmarkCategories(siblings[i].id, siblings[j].id);
 };
 
 export const swapPublicBookmarkLinks = (
@@ -747,17 +870,20 @@ export const removePublicBookmarkLink = (
     .map((cat) => {
       if (cat.id !== categoryId) return cat;
       return { ...cat, links: cat.links.filter((l) => l.id !== linkId) };
-    })
-    .filter((cat) => cat.links.length > 0);
-  return persist(categories);
+    });
+  return persist(keepCategoriesWithContent(categories));
 };
 
-/** Delete an entire bookmark space (category) and its links. */
+/** Delete an entire bookmark space (category), its nested folders, and its links. */
 export const removePublicBookmarkCategory = (
   categoryId: string
 ): PublicBookmarksData => {
   const data = getPublicBookmarks();
-  const categories = data.categories.filter((cat) => cat.id !== categoryId);
+  const drop = new Set([
+    categoryId,
+    ...getDescendantBookmarkCategoryIds(data.categories, categoryId)
+  ]);
+  const categories = data.categories.filter((cat) => !drop.has(cat.id));
   return persist(categories);
 };
 
@@ -798,10 +924,15 @@ ${indent}</DL><p>`;
 const categoriesToHtmlFolders = (
   cats: PublicBookmarkCategory[]
 ): BookmarkHtmlFolder[] => {
+  const nodeById = new Map<string, BookmarkHtmlFolder>();
+  cats.forEach((cat) => {
+    nodeById.set(cat.id, { title: cat.title, links: [...cat.links], children: [] });
+  });
+
   const roots: BookmarkHtmlFolder[] = [];
   const byTitle = new Map<string, BookmarkHtmlFolder>();
 
-  const ensureRoot = (title: string): BookmarkHtmlFolder => {
+  const ensureLegacyRoot = (title: string): BookmarkHtmlFolder => {
     const key = title.trim().toLowerCase();
     let node = byTitle.get(key);
     if (!node) {
@@ -813,26 +944,44 @@ const categoriesToHtmlFolders = (
   };
 
   cats.forEach((cat) => {
+    const node = nodeById.get(cat.id);
+    if (!node) return;
+    if (cat.parentId && nodeById.has(cat.parentId)) {
+      nodeById.get(cat.parentId)!.children.push(node);
+      return;
+    }
+
     const sep = BOOKMARK_SUBFOLDER_SEPARATOR;
-    const sepIdx = cat.title.indexOf(sep);
+    const sepIdx = cat.parentId ? -1 : cat.title.indexOf(sep);
     if (sepIdx === -1) {
-      const node = ensureRoot(cat.title);
-      node.links = [...node.links, ...cat.links];
+      roots.push(node);
+      byTitle.set(cat.title.trim().toLowerCase(), node);
       return;
     }
     const parentTitle = cat.title.slice(0, sepIdx).trim() || 'Favorites';
     const childTitle = cat.title.slice(sepIdx + sep.length).trim() || 'Space';
-    const parent = ensureRoot(parentTitle);
+    const parent = ensureLegacyRoot(parentTitle);
     parent.children.push({ title: childTitle, links: cat.links, children: [] });
   });
 
   return roots;
 };
 
+const collectCategorySubtree = (
+  categories: PublicBookmarkCategory[],
+  categoryId: string
+): PublicBookmarkCategory[] => {
+  const ids = new Set([
+    categoryId,
+    ...getDescendantBookmarkCategoryIds(categories, categoryId)
+  ]);
+  return categories.filter((cat) => ids.has(cat.id));
+};
+
 /**
  * Build a Netscape/Chrome bookmark HTML file from current guest bookmarks.
  * Folders mirror domain spaces so Chrome can import them back.
- * `{parent} › {space}` titles nest as subfolders.
+ * Nested `parentId` folders (and legacy `{parent} › {space}` titles) nest as subfolders.
  */
 export const buildPublicBookmarksHtml = (
   data?: PublicBookmarksData,
@@ -840,7 +989,7 @@ export const buildPublicBookmarksHtml = (
 ): string => {
   const source = data ?? getPublicBookmarks();
   const cats = onlyCategoryId
-    ? source.categories.filter((c) => c.id === onlyCategoryId)
+    ? collectCategorySubtree(source.categories, onlyCategoryId)
     : source.categories;
   const now = Math.floor(Date.now() / 1000);
   const folders = categoriesToHtmlFolders(cats)
@@ -922,7 +1071,9 @@ export const downloadPublicBookmarkCategoryHtml = (
 ): { success: boolean; message: string; linkCount: number } => {
   const source = data ?? getPublicBookmarks();
   const cat = source.categories.find((c) => c.id === categoryId);
-  if (!cat || cat.links.length === 0) {
+  const subtree = cat ? collectCategorySubtree(source.categories, categoryId) : [];
+  const linkCount = subtree.reduce((sum, c) => sum + c.links.length, 0);
+  if (!cat || linkCount === 0) {
     return {
       success: false,
       message: 'Nothing to export in this space.',
@@ -937,8 +1088,8 @@ export const downloadPublicBookmarkCategoryHtml = (
     triggerHtmlDownload(html, `linknest-${safe}-${stamp}.html`);
     return {
       success: true,
-      message: `Exported “${cat.title}” (${cat.links.length} link${cat.links.length === 1 ? '' : 's'}). Import in Chrome via Bookmark manager → Import bookmarks.`,
-      linkCount: cat.links.length
+      message: `Exported “${cat.title}” (${linkCount} link${linkCount === 1 ? '' : 's'}). Import in Chrome via Bookmark manager → Import bookmarks.`,
+      linkCount
     };
   } catch (error) {
     console.error('Failed to export bookmark space:', error);
@@ -2681,9 +2832,6 @@ export interface CreatePublicBookmarkCategoryResult {
   categoryTitle?: string;
 }
 
-/** Separates a named snapshot folder from space subfolders in Your Bookmarks titles. */
-export const BOOKMARK_SUBFOLDER_SEPARATOR = ' › ';
-
 const uniquifyTitle = (title: string, used: Set<string>): string => {
   const base = title.trim() || 'Favorites';
   const lowerUsed = new Set([...used].map((t) => t.trim().toLowerCase()));
@@ -2731,17 +2879,21 @@ const toPublicBookmarkLinks = (
 
 const collectLinksFromFavoriteSpace = (tile: Tile): FavoriteBookmarkLinkInput[] => {
   const out: FavoriteBookmarkLinkInput[] = [];
+  const seen = new Set<string>();
+  const add = (title?: string, url?: string) => {
+    const trimmed = typeof url === 'string' ? url.trim() : '';
+    if (!trimmed) return;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ title, url: trimmed });
+  };
   if (tile.isHyperlink && tile.hyperlinkUrl) {
-    out.push({ title: tile.title, url: tile.hyperlinkUrl });
+    add(tile.title, tile.hyperlinkUrl);
   }
-  if (tile.searchLinks && tile.searchLinks.length > 0) {
-    tile.searchLinks.forEach((link) => {
-      out.push({ title: link.label, url: link.url });
-    });
-    return out;
-  }
+  (tile.searchLinks || []).forEach((link) => add(link.label, link.url));
   const walk = (links?: Array<{ label?: string; url?: string }>) => {
-    (links || []).forEach((link) => out.push({ title: link.label, url: link.url }));
+    (links || []).forEach((link) => add(link.label, link.url));
   };
   tile.tabs?.forEach((tab) => tab.sections?.forEach((section) => walk(section.links)));
   tile.sections?.forEach((section) => walk(section.links));
@@ -2845,7 +2997,7 @@ export const createPublicBookmarkCategoryFromLinks = (
 
 /**
  * Copy Favorite Links into a named folder and each favorite space into a
- * `{folder} › {space}` subfolder (Your Bookmarks cards + nested OutSync path).
+ * nested subfolder inside that folder (Your Bookmarks + OutSync path).
  */
 export const copyFavoritesToPublicBookmarkFolders = (
   title: string,
@@ -2870,36 +3022,34 @@ export const copyFavoritesToPublicBookmarkFolders = (
   let spaceCount = 0;
 
   const current = getPublicBookmarks();
-  const used = new Set(current.categories.map((c) => c.title));
-  const parentTitle = uniquifyTitle(title, used);
-  used.add(parentTitle);
+  const rootTitles = new Set(getRootBookmarkCategories(current.categories).map((c) => c.title));
+  const parentTitle = uniquifyTitle(title, rootTitles);
+  const parentId = generateUuid();
 
-  const created: PublicBookmarkCategory[] = [];
-  if (parentParsed.unique.length > 0) {
-    created.push({
-      id: generateUuid(),
+  const created: PublicBookmarkCategory[] = [
+    {
+      id: parentId,
       title: parentTitle,
       emoji: '⭐',
       themeColor: 'amber',
       links: toPublicBookmarkLinks(parentParsed.unique)
-    });
-    addedCount += parentParsed.unique.length;
-  }
+    }
+  ];
+  addedCount += parentParsed.unique.length;
 
+  const usedChildTitles = new Set<string>();
   (favoriteSpaces || []).forEach((tile) => {
     const spaceParsed = toHttpBookmarkLinks(collectLinksFromFavoriteSpace(tile));
     skippedInvalid += spaceParsed.skippedInvalid;
     skippedDuplicate += spaceParsed.skippedDuplicate;
     if (spaceParsed.unique.length === 0) return;
     const spaceLabel = (tile.title && tile.title.trim()) || 'Space';
-    const childTitle = uniquifyTitle(
-      `${parentTitle}${BOOKMARK_SUBFOLDER_SEPARATOR}${spaceLabel}`,
-      used
-    );
-    used.add(childTitle);
+    const childTitle = uniquifyTitle(spaceLabel, usedChildTitles);
+    usedChildTitles.add(childTitle);
     created.push({
       id: generateUuid(),
       title: childTitle,
+      parentId,
       emoji: (tile.emoji && tile.emoji.trim()) || '📁',
       themeColor: tile.themeColor || 'sky',
       links: toPublicBookmarkLinks(spaceParsed.unique)
@@ -2920,7 +3070,6 @@ export const copyFavoritesToPublicBookmarkFolders = (
   }
 
   persist([...current.categories, ...created]);
-  const parent = created.find((c) => c.title === parentTitle) || created[0];
 
   return {
     success: true,
@@ -2935,7 +3084,7 @@ export const copyFavoritesToPublicBookmarkFolders = (
     skippedInvalid,
     skippedDuplicate,
     spaceCount,
-    categoryId: parent?.id,
+    categoryId: parentId,
     categoryTitle: parentTitle
   };
 };
@@ -3024,10 +3173,9 @@ export const movePublicBookmarkLinkToCategory = (
         return { ...cat, links: [...cat.links, link] };
       }
       return cat;
-    })
-    .filter((cat) => cat.links.length > 0);
+    });
 
-  return persist(categories);
+  return persist(keepCategoriesWithContent(categories));
 };
 
 export const findDuplicatePublicBookmarkGroups = (
@@ -3081,10 +3229,9 @@ export const removeDuplicatePublicBookmarks = (
     .map((cat) => ({
       ...cat,
       links: cat.links.filter((l) => !removeIds.has(l.id))
-    }))
-    .filter((cat) => cat.links.length > 0);
+    }));
 
-  return { data: persist(categories), removed: removeIds.size };
+  return { data: persist(keepCategoriesWithContent(categories)), removed: removeIds.size };
 };
 
 /** Links never opened in this browser (no lastOpenedAt). */
@@ -3114,11 +3261,10 @@ export const removeNeverOpenedPublicBookmarks = (
         return false;
       });
       return { ...cat, links };
-    })
-    .filter((cat) => cat.links.length > 0);
+    });
 
   if (removed === 0) return { data: source, removed: 0 };
-  return { data: persist(categories), removed };
+  return { data: persist(keepCategoriesWithContent(categories)), removed };
 };
 
 export const countBrokenPublicBookmarks = (
@@ -3269,11 +3415,10 @@ export const removeBrokenPublicBookmarks = (
         return false;
       });
       return { ...cat, links };
-    })
-    .filter((cat) => cat.links.length > 0);
+    });
 
   if (removed === 0) return { data: source, removed: 0 };
-  return { data: persist(categories), removed };
+  return { data: persist(keepCategoriesWithContent(categories)), removed };
 };
 
 export const getPublicFavoritesSubTab = (): PublicFavoritesSubTab => {

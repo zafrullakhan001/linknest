@@ -82,13 +82,15 @@ If the extension is missing, sync is **Off**, the origin is not allowlisted, or 
 ```
 
 3. The content script ignores the message unless `event.source === window`, `event.origin` matches the page, and that origin is on the allowlist. **Browser Launcher Pro 3.1+** implements the same preview / apply / backup messages on its Bookmark Sync tab. Older Bookmark Sync 1.8.0 packs time out on preview instead of writing.
-4. If **Read-write** is **On**, the background script indexes this profile’s tree by normalized URL (dry-run), then:
+4. If **Read-write** is **On**, the background script indexes this profile’s Other Bookmarks tree by folder path + normalized URL (dry-run), then:
 
-| Browser has this URL? | Action |
+| Browser has this URL in that LinkNest folder? | Action |
 |----------------------|--------|
-| No | **Add** under Other Bookmarks → `LinkNest` → space title |
-| Yes, same title | **Skip** (no duplicate) |
-| Yes, different title | **Update title in place** (do not move the bookmark) |
+| No | **Add** under Other Bookmarks → `LinkNest` → named folder → space (nested copy) or space title |
+| Yes, same title | **Skip** (already in that folder) |
+| Yes, different title | **Update title in place** in that folder (do not move the bookmark) |
+
+A URL that exists on the bookmarks bar or in another folder is still **added** under the LinkNest destination. Bookmark Sync **1.8.3+** is required for nested named folders (`zaf22` → `PeopleSoft ERP`). Older 1.8.2 packs skip any URL that exists anywhere in Chrome, so those folders never appear.
 
 5. The page shows the preview only when there are adds or title updates, and can **Download JSON** changelog. **Backup this browser’s bookmarks before applying** (default **on**, Bookmark Sync **1.8.2+**) posts `BROWSER_LAUNCHER_BACKUP_BOOKMARKS` (Read-only **or** Read-write). The extension replies with Netscape **HTML** plus a JSON tree, which the app saves to **this PC’s Downloads folder** (`linknest-browser-bookmarks-backup-….html` / `.json`) — not inside LinkNest. If backup fails, Apply does not write. **Apply** then posts `BROWSER_LAUNCHER_PUSH_BOOKMARKS` (same payload, writes). The result is `{ type: "BROWSER_LAUNCHER_PUSH_BOOKMARKS_RESULT", success, added, skipped, updated, changes, timestamp }`.
 
@@ -184,7 +186,8 @@ Reload the extension after editing the JSON. Chrome’s **extensions** page stil
 | Symptom | What to try |
 |---------|-------------|
 | Sync times out / “install extension” | Load/reload the extension, **refresh the app**, turn **Read-only** **On**, confirm this origin is in `allowedOrigins` (scheme + host + port). Docker: `https://localhost:8443` and `http://localhost:8090` — `http://localhost` alone is not enough |
-| OutSync times out / “reload Bookmark Sync 1.8+” | You still have an older pack. Reload the unpacked folder (or install 1.8.2+), turn **Read-write** On, then **refresh the app** |
+| OutSync times out / “reload Bookmark Sync 1.8+” | You still have an older pack. Reload the unpacked folder (or install 1.8.3+), turn **Read-write** On, then **refresh the app** |
+| Nested Favorites folder missing in Chrome after OutSync | Reload Bookmark Sync **1.8.3+**, refresh the app, OutSync again. 1.8.2 skipped any URL already in Chrome, so `zaf22` / space subfolders were never created |
 | Backup times out / empty | Reload Bookmark Sync **1.8.2+**, refresh the app, turn **Read-only or Read-write** On. Uncheck backup on the preview to Apply without a backup |
 | “Read-only Sync is turned off…” | Popup → Sync tab → turn **Read-only** on |
 | “Read-write OutSync is turned off…” | Popup → Sync tab → turn **Read-write** on |

@@ -5,7 +5,7 @@
  * Only allowlisted origins receive replies; postMessage uses this page's origin (not *).
  */
 (function () {
-  const VERSION = '1.8.2';
+  const VERSION = '1.8.3';
   const FEATURES = ['bookmarks', 'bookmarksWrite', 'bookmarksPreview', 'bookmarksBackup'];
   const RELOAD_MSG =
     'Extension was reloaded. Refresh this page, then try Sync or OutSync again.';

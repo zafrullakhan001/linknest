@@ -29,7 +29,7 @@ Star links from spaces so they appear in a dedicated **Favorite Links** strip (a
 - **Left / right arrows** — card view only (hidden in compact)
 - **Notes** — if the link has notes
 - **Health** — corner color + latency when checks run
-- **Copy to Your Bookmarks** (guest) — bookmark icon next to Export/Import on the Favorites tab. Copies **Favorite Links** into a **named folder** (default **Favorites**) and each favorite space into a **subfolder** (`Favorites › Space name`) with that space’s http(s) links. Then **Your Bookmarks** → **OutSync** to push **Other Bookmarks → LinkNest → folder → space subfolders**.
+- **Copy to Your Bookmarks** (guest) — bookmark icon next to Export/Import on the Favorites tab. Copies **Favorite Links** into a **named folder** (default **Favorites**) and each favorite space as a **subfolder inside that folder**, with that space’s http(s) links. Open the named folder in Your Bookmarks to see the links and space tiles. Then **OutSync** to push **Other Bookmarks → LinkNest → folder → space subfolders**.
 
 ### Compact view
 Use **View: Compact / Cards** on the Favorite Links toolbar.
@@ -54,7 +54,7 @@ Import a Chrome/Edge bookmark HTML export. Links are grouped into **spaces by we
 ### Getting started
 1. Chrome → Bookmarks → Bookmark manager → ⋮ → **Export bookmarks**
 2. In Favorites → **Your Bookmarks** → **Import Chrome HTML**, **Merge Import**, **Sync** (browser → app), or **OutSync** (app → browser; Bookmark Sync 1.8+, Read-write On)
-3. Or from Favorites: **Copy favorites to Your Bookmarks** to snapshot starred links into a named folder and favorite spaces as subfolders, then OutSync when ready
+3. Or from Favorites: **Copy favorites to Your Bookmarks** to snapshot starred links into a named folder and favorite spaces as subfolders inside it, then OutSync when ready
 4. Open a domain space to work with its links
 
 ### Sync from browser (extension)
@@ -69,17 +69,17 @@ Full extension guide (including mass deploy): **Help → Guides → Bookmark Syn
 If Sync fails (extension missing, Read-only off, no `bookmarks` permission, or `getTree` errors), use **Import Chrome HTML** / **Merge Import** instead.
 
 ### OutSync to browser (extension)
-Click **OutSync** on Your Bookmarks (when the button is enabled and you have links saved) to **preview** what would change in **this Chrome/Edge profile**, then **Apply**. The button is hidden until an extension that supports OutSync answers on this origin, and greyed until **Read-write** is On. Requires Bookmark Sync **1.8.2+** or **Browser Launcher Pro 3.1+** (turn Read-write On in the Bookmark Sync tab).
+Click **OutSync** on Your Bookmarks (when the button is enabled and you have links saved) to **preview** what would change in **this Chrome/Edge profile**, then **Apply**. The button is hidden until an extension that supports OutSync answers on this origin, and greyed until **Read-write** is On. Requires Bookmark Sync **1.8.3+** (nested named folders) or **1.8.2+** (flat spaces) or **Browser Launcher Pro 3.1+** (turn Read-write On in the Bookmark Sync tab).
 
-- Matching URLs (normalized) already in the browser are **skipped**; titles are **updated in place** if they differ
-- New URLs are added under **Other Bookmarks → LinkNest → space name**
+- A URL is **skipped** only if it already exists under **Other Bookmarks → LinkNest → that folder**. Titles there are **updated in place** if they differ
+- New URLs (including ones that already exist in another Chrome folder) are added under **Other Bookmarks → LinkNest → named folder → space subfolder** (copied Favorites) or **LinkNest → space name** (domain spaces)
 - Nothing is deleted or moved out of existing Chrome folders
 - **Download JSON** saves the preview changelog (adds, title updates, and unchanged URLs)
 - **Backup this browser’s bookmarks before applying** is **on by default**. Apply downloads this Chrome/Edge profile’s tree to **this PC’s Downloads folder** as **HTML** (Chrome Bookmark manager Import) plus **JSON** (`linknest-browser-bookmarks-backup-….html` / `.json`). The backup is not stored in LinkNest. If the backup fails, Apply is blocked until you retry or uncheck backup. **Download backup now** saves the same files without applying.
 
 **Restore:** Chrome → Bookmarks → Bookmark manager → **Import bookmarks** (the HTML). Import **merges**; it does not delete newer bookmarks. OutSync adds live under **Other Bookmarks → LinkNest** — delete that folder to drop new links. Title updates can be restored from the changelog JSON (`previousTitle`).
 
-If OutSync times out, reload Bookmark Sync 1.8.2+ or Browser Launcher Pro 3.1+, refresh the app, and turn **Read-write** **On**. Backup also works with **Read-only** On.
+If OutSync times out, reload Bookmark Sync 1.8.3+, refresh the app, and turn **Read-write** **On**. Backup also works with **Read-only** On.
 
 ### Space toolbar (common)
 | Action | Purpose |

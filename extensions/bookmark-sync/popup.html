@@ -246,7 +246,7 @@
     <img id="header-logo" src="icons/icon48.png" alt="">
     <div>
       <h1 id="header-name">LinkNest Bookmark Sync</h1>
-      <p class="muted" id="version">v1.8.2 · sync off</p>
+      <p class="muted" id="version">v1.8.3 · sync off</p>
     </div>
   </header>
 
@@ -410,7 +410,7 @@
       <p>
         The page posts a window message <code>BROWSER_LAUNCHER_GET_BOOKMARKS</code> to its own origin.
         This extension replies with <code>BROWSER_LAUNCHER_BOOKMARKS_LIST</code> only if the site is allowlisted and <strong>Read-only</strong> is on.
-        OutSync posts <code>BROWSER_LAUNCHER_PREVIEW_PUSH_BOOKMARKS</code> first (preview, no writes), then optionally <code>BROWSER_LAUNCHER_BACKUP_BOOKMARKS</code> (v1.8.2+, Read-only or Read-write) before <code>BROWSER_LAUNCHER_PUSH_BOOKMARKS</code> when you Apply — only if <strong>Read-write</strong> is on. Matching URLs are skipped (titles updated if they differ), and new links go under Other Bookmarks → LinkNest.
+        OutSync posts <code>BROWSER_LAUNCHER_PREVIEW_PUSH_BOOKMARKS</code> first (preview, no writes), then optionally <code>BROWSER_LAUNCHER_BACKUP_BOOKMARKS</code> (v1.8.2+, Read-only or Read-write) before <code>BROWSER_LAUNCHER_PUSH_BOOKMARKS</code> when you Apply — only if <strong>Read-write</strong> is on. Nested folders (v1.8.3+) are created under Other Bookmarks → LinkNest → named folder → space. A URL is skipped only if it already exists in that destination folder.
       </p>
       <h2>Mass deploy (IT)</h2>
       <ul>
@@ -420,7 +420,7 @@
       </ul>
       <h2>If Sync or OutSync fails</h2>
       <ul>
-        <li>Reload this extension, then <strong>refresh the app page</strong>. OutSync preview needs v1.8.1+; bookmark backup before Apply needs v1.8.2+.</li>
+        <li>Reload this extension, then <strong>refresh the app page</strong>. Nested folder OutSync (named folder + space subfolders) needs v1.8.3+. OutSync preview needs v1.8.1+; bookmark backup before Apply needs v1.8.2+.</li>
         <li>Turn Read-only on for Sync, and Read-write on for OutSync. Confirm the site origin is in <code>allowedOrigins</code>.</li>
         <li>Or use Import HTML / Merge / Export HTML in Your Bookmarks.</li>
       </ul>

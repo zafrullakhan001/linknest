@@ -195,6 +195,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
   const [publicBookmarkLinkCount, setPublicBookmarkLinkCount] = useState(() =>
     typeof window !== 'undefined' ? countPublicBookmarkLinks() : 0
   );
+  const [bookmarksOpenCategoryId, setBookmarksOpenCategoryId] = useState<string | null>(null);
   const handleSetPublicFavoritesSubTab = useCallback((tab: PublicFavoritesSubTab) => {
     setPublicFavoritesSubTabState(tab);
     setPublicFavoritesSubTab(tab);
@@ -242,6 +243,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
       return;
     }
     setPublicBookmarkLinkCount(countPublicBookmarkLinks());
+    setBookmarksOpenCategoryId(result.categoryId || null);
     handleSetPublicFavoritesSubTab('bookmarks');
     alert(result.message);
   }, [favoriteLinks, favoriteSpaceTilesInOrder, handleSetPublicFavoritesSubTab]);
@@ -1131,6 +1133,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
         {showGuestBookmarks && (
           <PublicBookmarksPanel
             compact
+            initialOpenCategoryId={bookmarksOpenCategoryId}
             onChange={() => setPublicBookmarkLinkCount(countPublicBookmarkLinks())}
           />
         )}
