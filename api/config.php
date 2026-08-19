@@ -495,6 +495,30 @@ function ensureAccessRestrictionsColumns(PDO $db): void {
     }
 }
 
+/** Registry of saved fingerprint hashes + user tags (Help → Fingerprint uniqueness). */
+function ensureFingerprintRegistryTable(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $db->exec('CREATE TABLE IF NOT EXISTS fingerprint_registry (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            hash TEXT NOT NULL,
+            tag TEXT NOT NULL,
+            user_id INTEGER,
+            username TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_fingerprint_registry_hash ON fingerprint_registry(hash)');
+        $db->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_fingerprint_registry_hash_tag ON fingerprint_registry(hash, tag COLLATE NOCASE)');
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureFingerprintRegistryTable warning: ' . $e->getMessage());
+    }
+}
+
 /**
  * Recyclable short URLs: tiles.show_short_urls + short_urls table.
  * Safe to call on the getDB() fast path when user_version already matches SCHEMA_VERSION.
@@ -1004,6 +1028,7 @@ function initDatabase() {
         if ($currentVersion >= (int)LINKNEST_SCHEMA_VERSION) {
             // Required by tiles summary SELECT — always repair even if the v88 patch flag already exists.
             ensureAccessRestrictionsColumns($db);
+            ensureFingerprintRegistryTable($db);
             ensureShortUrlsSchema($db);
             ensureInheritShortUrlsColumns($db);
             ensureLinkMaintenanceColumns($db);
@@ -1033,6 +1058,7 @@ function initDatabase() {
         }
         if ($currentVersion >= (int)LINKNEST_SCHEMA_VERSION) {
             ensureAccessRestrictionsColumns($db);
+            ensureFingerprintRegistryTable($db);
             ensureShortUrlsSchema($db);
             ensureInheritShortUrlsColumns($db);
             ensureLinkMaintenanceColumns($db);
@@ -1610,6 +1636,7 @@ function initDatabase() {
         ensureInheritShortUrlsColumns($db);
 
         ensureAccessRestrictionsColumns($db);
+        ensureFingerprintRegistryTable($db);
         
         // Create tabs table
         $db->exec('CREATE TABLE IF NOT EXISTS tabs (

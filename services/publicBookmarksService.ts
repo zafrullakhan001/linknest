@@ -192,15 +192,68 @@ const persist = (categories: PublicBookmarkCategory[]): PublicBookmarksData => {
   return next;
 };
 
-/** Favicon URL for a bookmark/page (Google favicon service). */
-export const getBookmarkFaviconUrl = (url: string, size = 64): string => {
+const FAVICON_FAIL_STORAGE = 'ln_favicon_fail';
+const failedFaviconHosts = new Set<string>();
+
+const hydrateFailedFaviconHosts = (): void => {
+  if (failedFaviconHosts.size > 0 || typeof sessionStorage === 'undefined') return;
   try {
-    const host = new URL(url).hostname;
-    if (!host) return '';
-    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=${size}`;
+    const raw = sessionStorage.getItem(FAVICON_FAIL_STORAGE);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return;
+    for (const host of parsed) {
+      if (typeof host === 'string' && host) failedFaviconHosts.add(host);
+    }
+  } catch {
+    /* ignore */
+  }
+};
+
+const persistFailedFaviconHosts = (): void => {
+  try {
+    sessionStorage.setItem(FAVICON_FAIL_STORAGE, JSON.stringify([...failedFaviconHosts].slice(-500)));
+  } catch {
+    /* ignore */
+  }
+};
+
+export const hostnameFromBookmarkUrl = (url: string): string => {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  try {
+    const withProto = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) ? raw : `http://${raw}`;
+    return new URL(withProto).hostname.toLowerCase().replace(/\.+$/, '');
   } catch {
     return '';
   }
+};
+
+/** Google cannot fetch LAN / loopback / raw-IP favicons; skip those requests. */
+export const isUnreachableFaviconHost = (host: string): boolean => {
+  const h = String(host || '').trim().toLowerCase().replace(/\.+$/, '');
+  if (!h) return true;
+  if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal')) {
+    return true;
+  }
+  if (h.includes(':')) return true;
+  return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(h);
+};
+
+export const markBookmarkFaviconFailed = (url: string): void => {
+  hydrateFailedFaviconHosts();
+  const host = hostnameFromBookmarkUrl(url);
+  if (!host || failedFaviconHosts.has(host)) return;
+  failedFaviconHosts.add(host);
+  persistFailedFaviconHosts();
+};
+
+/** Favicon URL for a bookmark/page (Google favicon service). Empty for LAN/IP hosts and known 404s. */
+export const getBookmarkFaviconUrl = (url: string, size = 64): string => {
+  hydrateFailedFaviconHosts();
+  const host = hostnameFromBookmarkUrl(url);
+  if (!host || isUnreachableFaviconHost(host) || failedFaviconHosts.has(host)) return '';
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=${size}`;
 };
 
 export const getCategoryFaviconUrl = (cat: PublicBookmarkCategory, size = 64): string => {

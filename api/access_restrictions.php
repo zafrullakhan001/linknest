@@ -24,7 +24,8 @@ function handleAccessRestrictionsCheck(): void {
         return;
     }
 
-    $result = evaluate_entity_access_chain($entityType, $id);
+    $hash = trim((string) ($data['fingerprintHash'] ?? $data['fingerprint_hash'] ?? ''));
+    $result = evaluate_entity_access_chain($entityType, $id, ['fingerprint_hash' => $hash]);
     if (($result['reason'] ?? '') === 'not_found') {
         sendJSON(['error' => 'Not found'], 404);
         return;

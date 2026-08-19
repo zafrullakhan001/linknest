@@ -21,6 +21,8 @@ const META: Record<string, { title: string; icon: string }> = {
   date_not_yet: { title: 'Not available yet', icon: '📅' },
   date_expired: { title: 'Availability ended', icon: '📅' },
   referrer: { title: 'Open from the dashboard', icon: '🔗' },
+  fingerprint: { title: 'Browser fingerprint not allowed', icon: '🪪' },
+  fingerprint_missing: { title: 'Browser fingerprint required', icon: '🪪' },
 };
 
 interface AccessRestrictionDeniedDialogProps {

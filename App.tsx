@@ -9,6 +9,7 @@ import { SettingsProvider, useSettings, readBrandingCache } from './contexts/Set
 import { StyleProvider, useStyles } from './contexts/StyleContext';
 import { AccessRestrictionProvider, useAccessRestrictionGate } from './contexts/AccessRestrictionContext';
 import { AuthModal } from './components/AuthModal';
+import { FingerprintUnlockPage } from './components/FingerprintUnlockPage';
 import { getDisabledTabsFromSettings } from './services/tabVisibilityService';
 import { MaintenancePage } from './components/MaintenancePage';
 import { BroadcastBanner } from './components/BroadcastBanner';
@@ -957,6 +958,10 @@ const AppContent: React.FC = () => {
 
   // Keep Navigation mounted during load so the top bar does not pop in after the spinner.
   // Do not wait for settings/styles APIs — branding/styles are applied from cache before paint.
+  if (route.startsWith('#/fp-unlock')) {
+    return <FingerprintUnlockPage />;
+  }
+
   if ((authLoading && hasLikelySession()) || (loading && (isAuthenticated || guestAccessEnabled))) {
     return (
       <div className={`linknest-app-container min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 flex flex-col font-sans ${!isMobile ? 'pt-16' : ''}`}>

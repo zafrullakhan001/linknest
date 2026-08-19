@@ -53,6 +53,8 @@ export interface AccessRestrictions {
   validFrom?: string | null;
   validUntil?: string | null;
   referrerPatterns?: string[];
+  /** SHA-256 fingerprint hashes (lnfp_… or hex). Non-empty = only matching browsers may open. */
+  fingerprintHashes?: string[];
 }
 
 export interface Link {

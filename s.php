@@ -90,6 +90,12 @@ if ($restrictionId !== '' && function_exists('evaluate_entity_access_chain')) {
     $access = evaluate_entity_access_chain($restrictionType, $restrictionId);
     if (empty($access['allowed'])) {
         $reason = (string)($access['reason'] ?? '');
+        if ($reason === 'fingerprint_missing') {
+            $returnUrl = rtrim(linknestPublicBaseUrl(), '/') . '/s/' . rawurlencode($code);
+            $unlock = rtrim(linknestPublicBaseUrl(), '/') . '/#/fp-unlock?return=' . rawurlencode($returnUrl);
+            header('Location: ' . $unlock, true, 302);
+            exit;
+        }
         if ($reason === 'not_found') {
             short_url_error_page(404, 'This short link is no longer available.', 'Not found', null, 'not_found');
         }

@@ -28,18 +28,20 @@ export function hasAccessRestrictions(rules?: AccessRestrictions | null): boolea
   if (rules.countryDeny && rules.countryDeny.length > 0) return true;
   if (rules.validFrom || rules.validUntil) return true;
   if (rules.referrerPatterns && rules.referrerPatterns.length > 0) return true;
+  if (rules.fingerprintHashes && rules.fingerprintHashes.length > 0) return true;
   return false;
 }
 
 export async function checkAccessRestriction(
   entityType: 'tile' | 'tab' | 'link',
-  id: string
+  id: string,
+  fingerprintHash?: string | null
 ): Promise<AccessRestrictionCheckResult> {
   const response = await fetch(`${API_BASE}/access-restrictions/check`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ entityType, id }),
+    body: JSON.stringify({ entityType, id, fingerprintHash: fingerprintHash || undefined }),
   });
   const data = await response.json().catch(() => ({}));
   if (response.status === 404) {

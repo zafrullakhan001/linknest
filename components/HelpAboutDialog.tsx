@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useSettings } from '../contexts/SettingsContext';
 import { HelpGuidesPanel } from './HelpGuidesPanel';
+import { HelpFingerprintPanel } from './HelpFingerprintPanel';
 
-type TabType = 'help' | 'guides' | 'about';
+type TabType = 'help' | 'guides' | 'about' | 'fingerprint';
 
 interface HelpAboutDialogProps {
   isOpen: boolean;
@@ -322,6 +323,17 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
           >
             About
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('fingerprint')}
+            className={`flex-1 min-w-[5.5rem] px-4 sm:px-6 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'fingerprint'
+                ? 'text-brand-600 dark:text-brand-400 border-b-2 border-brand-600 dark:border-brand-400 bg-brand-50 dark:bg-brand-900/20'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700/50'
+            }`}
+          >
+            <span aria-hidden="true">🪪</span> Fingerprint
+          </button>
         </div>
 
         {/* Content */}
@@ -331,6 +343,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
           }`}
         >
           {activeTab === 'guides' && <HelpGuidesPanel />}
+          {activeTab === 'fingerprint' && <HelpFingerprintPanel />}
           {activeTab === 'help' && (
             <div className="space-y-6">
               <section>

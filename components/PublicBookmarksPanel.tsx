@@ -54,6 +54,7 @@ import {
   isRemovableBrokenBookmarkHealth,
   getBookmarkFaviconUrl,
   getCategoryFaviconUrl,
+  markBookmarkFaviconFailed,
   sortBookmarkCategories,
   sortBookmarkLinks,
   type BookmarkSortMode,
@@ -223,7 +224,10 @@ const FaviconImg: React.FC<{ url: string; fallback?: string; className?: string 
       className={className}
       loading="lazy"
       referrerPolicy="no-referrer"
-      onError={() => setFailed(true)}
+      onError={() => {
+        markBookmarkFaviconFailed(url);
+        setFailed(true);
+      }}
       draggable={false}
     />
   );

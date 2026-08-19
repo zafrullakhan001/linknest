@@ -165,6 +165,11 @@ function normalize_access_restrictions($input): ?array {
         $out['referrerPatterns'] = $referrers;
     }
 
+    $fpHashes = normalize_fingerprint_hash_list($input['fingerprintHashes'] ?? []);
+    if ($fpHashes !== []) {
+        $out['fingerprintHashes'] = $fpHashes;
+    }
+
     return $out === [] ? null : $out;
 }
 
@@ -194,6 +199,49 @@ function normalize_restriction_date($value): ?string {
         return $m[1];
     }
     return null;
+}
+
+/**
+ * Normalize a copied fingerprint hash (lnfp_ prefix or raw SHA-256 hex).
+ */
+function normalize_fingerprint_hash($value): ?string {
+    if (!is_string($value) && !is_numeric($value)) {
+        return null;
+    }
+    $v = strtolower(trim((string) $value));
+    if (str_starts_with($v, 'lnfp_')) {
+        $v = substr($v, 5);
+    }
+    $v = preg_replace('/[^a-f0-9]/', '', $v) ?? '';
+    if (strlen($v) !== 64) {
+        return null;
+    }
+    return $v;
+}
+
+/**
+ * @param mixed $list
+ * @return string[]
+ */
+function normalize_fingerprint_hash_list($list): array {
+    if (is_string($list)) {
+        $list = preg_split('/[\s,]+/', $list) ?: [];
+    }
+    if (!is_array($list)) {
+        return [];
+    }
+    $out = [];
+    foreach ($list as $item) {
+        $hash = normalize_fingerprint_hash(is_scalar($item) ? (string) $item : '');
+        if ($hash === null) {
+            continue;
+        }
+        $stored = 'lnfp_' . $hash;
+        if (!in_array($stored, $out, true)) {
+            $out[] = $stored;
+        }
+    }
+    return $out;
 }
 
 /**
@@ -744,6 +792,31 @@ function evaluate_access_restrictions(array $rules, array $ctx): array {
         }
     }
 
+    $allowedFingerprints = [];
+    foreach (normalize_fingerprint_hash_list($rules['fingerprintHashes'] ?? []) as $stored) {
+        $hex = normalize_fingerprint_hash((string) $stored);
+        if ($hex !== null && !in_array($hex, $allowedFingerprints, true)) {
+            $allowedFingerprints[] = $hex;
+        }
+    }
+    if ($allowedFingerprints !== []) {
+        $incoming = normalize_fingerprint_hash((string) ($ctx['fingerprint_hash'] ?? ''));
+        if ($incoming === null || $incoming === '') {
+            return [
+                'allowed' => false,
+                'message' => 'This item is limited to a registered browser fingerprint. Open Help & About → Fingerprint on this device, then try again.',
+                'reason' => 'fingerprint_missing',
+            ];
+        }
+        if (!in_array($incoming, $allowedFingerprints, true)) {
+            return [
+                'allowed' => false,
+                'message' => 'This item is limited to a specific browser fingerprint. Copy your hash from Help & About → Fingerprint if this device should be allowed.',
+                'reason' => 'fingerprint',
+            ];
+        }
+    }
+
     return ['allowed' => true];
 }
 
@@ -883,7 +956,7 @@ function load_access_restriction_chain(PDO $db, string $entityType, string $id):
 /**
  * @return array{allowed: bool, message?: string, reason?: string, failedAt?: string}
  */
-function evaluate_entity_access_chain(string $entityType, string $id): array {
+function evaluate_entity_access_chain(string $entityType, string $id, array $extraCtx = []): array {
     $db = getDB();
     $loaded = load_access_restriction_chain($db, $entityType, $id);
     if (!$loaded['ok']) {
@@ -935,6 +1008,15 @@ function evaluate_entity_access_chain(string $entityType, string $id): array {
             break;
         }
     }
+    $fingerprintHash = '';
+    if (!empty($extraCtx['fingerprint_hash'])) {
+        $fingerprintHash = (string) $extraCtx['fingerprint_hash'];
+    } elseif (!empty($_COOKIE['ln_fp'])) {
+        $fingerprintHash = (string) $_COOKIE['ln_fp'];
+    } elseif (!empty($_GET['fp'])) {
+        $fingerprintHash = (string) $_GET['fp'];
+    }
+
     $ctx = [
         'client_ip' => $clientIp,
         'client_host' => resolve_client_host($clientIp),
@@ -943,6 +1025,7 @@ function evaluate_entity_access_chain(string $entityType, string $id): array {
         'country_code' => $needCountry ? restriction_country_code_for_ip($clientIp) : null,
         'request_headers' => null,
         'now' => new DateTimeImmutable('now'),
+        'fingerprint_hash' => $fingerprintHash,
     ];
 
     foreach ($loaded['chain'] as $step) {

@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { AccessRestrictionDeniedDialog, type AccessRestrictionDeniedInfo } from '../components/AccessRestrictionDeniedDialog';
 import { checkAccessRestriction } from '../services/accessRestrictionService';
+import { getFingerprintHash } from '../services/fingerprintService';
 
 interface AccessRestrictionContextValue {
   assertCanOpen: (entityType: 'tile' | 'tab' | 'link', id: string) => Promise<boolean>;
@@ -14,7 +15,13 @@ export const AccessRestrictionProvider: React.FC<{ children: React.ReactNode }> 
   const assertCanOpen = useCallback(async (entityType: 'tile' | 'tab' | 'link', id: string): Promise<boolean> => {
     if (!id) return true;
     try {
-      const result = await checkAccessRestriction(entityType, id);
+      let fingerprintHash: string | undefined;
+      try {
+        fingerprintHash = await getFingerprintHash();
+      } catch {
+        fingerprintHash = undefined;
+      }
+      const result = await checkAccessRestriction(entityType, id, fingerprintHash);
       if (result.allowed) return true;
       setDenied({
         message: result.message,

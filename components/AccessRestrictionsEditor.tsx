@@ -6,6 +6,7 @@ import type {
   AccessTimeRule,
 } from '../types';
 import { ACCESS_BROWSER_NAMES, ACCESS_OS_NAMES, hasAccessRestrictions } from '../services/accessRestrictionService';
+import { formatFingerprintHashDisplay } from '../services/fingerprintService';
 
 const DAY_LABELS: { n: number | null; label: string }[] = [
   { n: null, label: 'Any' },
@@ -48,7 +49,7 @@ const OS_LABELS: Record<AccessOsName, string> = {
   ios: 'iOS',
 };
 
-type PaneId = 'time-host' | 'network-vpn' | 'device' | 'browser' | 'os' | 'country' | 'date' | 'referrer';
+type PaneId = 'time-host' | 'network-vpn' | 'device' | 'browser' | 'os' | 'country' | 'date' | 'referrer' | 'fingerprint';
 
 const PANES: { id: PaneId; label: string }[] = [
   { id: 'time-host', label: 'Time & host' },
@@ -59,6 +60,7 @@ const PANES: { id: PaneId; label: string }[] = [
   { id: 'country', label: 'Country' },
   { id: 'date', label: 'Date range' },
   { id: 'referrer', label: 'Referrer' },
+  { id: 'fingerprint', label: 'Fingerprint' },
 ];
 
 function formatTimeRules(rules: AccessTimeRule[] | undefined, mode: 'allow' | 'deny'): string {
@@ -134,6 +136,14 @@ function formatLines(list?: string[] | null): string {
   return (list || []).join('\n');
 }
 
+function formatFingerprintLines(list?: string[] | null): string {
+  return (list || []).map((line) => formatFingerprintHashDisplay(line)).join('\n');
+}
+
+function parseFingerprintLines(text: string): string[] {
+  return parseLines(text).map((line) => formatFingerprintHashDisplay(line));
+}
+
 function parseLines(text: string): string[] {
   return text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 }
@@ -173,6 +183,8 @@ function paneHasValues(id: PaneId, value: AccessRestrictions): boolean {
       return !!(value.validFrom || value.validUntil);
     case 'referrer':
       return !!(value.referrerPatterns && value.referrerPatterns.length > 0);
+    case 'fingerprint':
+      return !!(value.fingerprintHashes && value.fingerprintHashes.length > 0);
     default:
       return false;
   }
@@ -217,6 +229,10 @@ export const AccessRestrictionsEditor: React.FC<AccessRestrictionsEditorProps> =
   const [allowTimeText, setAllowTimeText] = useState(() => formatTimeRules(value?.timeRules, 'allow'));
   const [denyTimeText, setDenyTimeText] = useState(() => formatTimeRules(value?.timeRules, 'deny'));
   const lastTimeSnapshot = useRef(formattedTimeSnapshot(value?.timeRules));
+  const [fingerprintText, setFingerprintText] = useState(() => formatFingerprintLines(value?.fingerprintHashes));
+  const lastFingerprintSnapshot = useRef(formatFingerprintLines(value?.fingerprintHashes));
+  const [referrerText, setReferrerText] = useState(() => formatLines(value?.referrerPatterns));
+  const lastReferrerSnapshot = useRef(formatLines(value?.referrerPatterns));
 
   const emit = (next: AccessRestrictions) => {
     onChange(hasAccessRestrictions(next) ? next : null);
@@ -230,6 +246,20 @@ export const AccessRestrictionsEditor: React.FC<AccessRestrictionsEditorProps> =
     setDenyTimeText(formatTimeRules(value?.timeRules, 'deny'));
   }, [value?.timeRules]);
 
+  useEffect(() => {
+    const next = formatFingerprintLines(value?.fingerprintHashes);
+    if (next === lastFingerprintSnapshot.current) return;
+    lastFingerprintSnapshot.current = next;
+    setFingerprintText(next);
+  }, [value?.fingerprintHashes]);
+
+  useEffect(() => {
+    const next = formatLines(value?.referrerPatterns);
+    if (next === lastReferrerSnapshot.current) return;
+    lastReferrerSnapshot.current = next;
+    setReferrerText(next);
+  }, [value?.referrerPatterns]);
+
   const commitTimeRules = (allowText: string, denyText: string) => {
     const nextRules = [...parseTimeRules(allowText, 'allow'), ...parseTimeRules(denyText, 'deny')];
     lastTimeSnapshot.current = formattedTimeSnapshot(nextRules);
@@ -238,6 +268,9 @@ export const AccessRestrictionsEditor: React.FC<AccessRestrictionsEditorProps> =
 
   const stopFieldKeys = (e: React.KeyboardEvent) => {
     e.stopPropagation();
+    if (e.key === 'Enter' && e.currentTarget instanceof HTMLTextAreaElement) {
+      e.nativeEvent.stopImmediatePropagation();
+    }
   };
 
   const timezone = useMemo(() => {
@@ -257,6 +290,10 @@ export const AccessRestrictionsEditor: React.FC<AccessRestrictionsEditorProps> =
     lastTimeSnapshot.current = formattedTimeSnapshot(undefined);
     setAllowTimeText('');
     setDenyTimeText('');
+    setFingerprintText('');
+    lastFingerprintSnapshot.current = '';
+    setReferrerText('');
+    lastReferrerSnapshot.current = '';
     onChange(null);
   };
 
@@ -676,9 +713,48 @@ https://mail.google.com/`}
               spellCheck={false}
               className={`${textareaClass} mt-1`}
               placeholder={'https://intranet.example.com/\nhttps://app.company.com/dashboard'}
-              value={formatLines(current.referrerPatterns)}
+              value={referrerText}
               onKeyDown={stopFieldKeys}
-              onChange={(e) => emit({ ...current, referrerPatterns: parseLines(e.target.value) })}
+              onKeyDownCapture={stopFieldKeys}
+              onChange={(e) => {
+                const text = e.target.value;
+                setReferrerText(text);
+                const parsed = parseLines(text);
+                lastReferrerSnapshot.current = formatLines(parsed);
+                emit({ ...current, referrerPatterns: parsed });
+              }}
+            />
+          </label>
+        </div>
+      )}
+
+      {pane === 'fingerprint' && (
+        <div className="space-y-3">
+          <PaneHint>
+            Only browsers whose fingerprint hash matches a value below can open this item. Copy the hash from Help &amp; About → Fingerprint on the allowed device (include location there if GPS should be part of the key; GPS is matched within about 1 mile). One hash per line.
+          </PaneHint>
+          <ExampleBox title="Example">
+            {`lnfp_a1b2c3d4e5f60718293a4b5c6d7e8f90112233445566778899aabbccddeeff00`}
+          </ExampleBox>
+          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+            Allowed fingerprint hashes (one per line)
+            <textarea
+              disabled={disabled}
+              rows={5}
+              autoComplete="off"
+              spellCheck={false}
+              className={`${textareaClass} mt-1`}
+              placeholder={'lnfp_…\nlnfp_…'}
+              value={fingerprintText}
+              onKeyDown={stopFieldKeys}
+              onKeyDownCapture={stopFieldKeys}
+              onChange={(e) => {
+                const text = e.target.value;
+                setFingerprintText(text);
+                const parsed = parseFingerprintLines(text);
+                lastFingerprintSnapshot.current = formatFingerprintLines(parsed);
+                emit({ ...current, fingerprintHashes: parsed });
+              }}
             />
           </label>
         </div>

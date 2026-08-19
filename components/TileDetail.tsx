@@ -1721,9 +1721,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     }, [isEditing, isAuthenticated, tile.canEdit]);
 
-    // Load available browsers from database when feature is enabled
+    // Load available browsers from database when feature is enabled (auth required)
     useEffect(() => {
         if (settings.browser_specific_links_enabled === '1') {
+            const applyLauncherFallback = () => {
+                if (typeof (window as any).BrowserLauncher !== 'undefined') {
+                    const BrowserLauncher = (window as any).BrowserLauncher;
+                    const browsers = BrowserLauncher.getBrowsers();
+                    if (browsers && browsers.length > 0) {
+                        setAvailableBrowsers(browsers);
+                    }
+                }
+            };
+            if (!isAuthenticated) {
+                applyLauncherFallback();
+                return;
+            }
             const loadBrowsersFromDatabase = async () => {
                 try {
                     const API_BASE = (import.meta as any).env?.VITE_API_BASE || '/api';
@@ -1758,7 +1771,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         } else {
             setAvailableBrowsers([]);
         }
-    }, [settings.browser_specific_links_enabled]);
+    }, [settings.browser_specific_links_enabled, isAuthenticated]);
 
     const goBackToDashboard = useCallback(() => {
         window.location.hash = '#/';

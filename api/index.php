@@ -101,6 +101,10 @@ if ($path === '/') {
     $remainingPath = substr($path, 21); // Remove '/access-restrictions'
     $_SERVER['PATH_INFO'] = (empty($remainingPath) || $remainingPath === '/') ? '/' : (($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath);
     require __DIR__ . '/access_restrictions.php';
+} elseif (strpos($path, '/fingerprint') === 0) {
+    $remainingPath = substr($path, 12); // Remove '/fingerprint'
+    $_SERVER['PATH_INFO'] = (empty($remainingPath) || $remainingPath === '/') ? '/' : (($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath);
+    require __DIR__ . '/fingerprint.php';
 } elseif (strpos($path, '/tiles') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 6); // Remove '/tiles'
     require __DIR__ . '/tiles.php';
