@@ -35,6 +35,7 @@ import { getMessages } from './services/chatService';
 import { useMobile } from './hooks/useMobile';
 import { getAllowedWidgets } from './services/widgetService';
 import { performanceAnalyticsService } from './services/performanceAnalyticsService';
+import { collectFingerprint } from './services/fingerprintService';
 
 // Lazy load heavy components for better initial load performance
 const TileGrid = lazy(() => import('./components/TileGrid').then(m => ({ default: m.TileGrid })));
@@ -350,6 +351,25 @@ const AppContent: React.FC = () => {
     const t = window.setTimeout(run, 2000);
     return () => window.clearTimeout(t);
   }, [isAuthenticated]);
+
+  // Warm browser fingerprint after first paint so the first space click is not a cold collect.
+  useEffect(() => {
+    const run = () => {
+      void collectFingerprint({ accessCheck: true }).catch(() => {
+        /* ignore — access gate will collect if needed */
+      });
+    };
+    const idle = (window as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback;
+    if (typeof idle === 'function') {
+      const id = idle(run, { timeout: 4000 });
+      return () => {
+        const cancel = (window as Window & { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback;
+        if (typeof cancel === 'function') cancel(id);
+      };
+    }
+    const t = window.setTimeout(run, 1500);
+    return () => window.clearTimeout(t);
+  }, []);
 
   // Fetch allowed widgets when user logs in or auth state changes
   useEffect(() => {
@@ -772,7 +792,10 @@ const AppContent: React.FC = () => {
           setDetailError('Space not found or you do not have permission to view it.');
           return;
         }
-        const allowed = await assertCanOpen('tile', t.id);
+        const allowed = await assertCanOpen('tile', t.id, {
+          rules: t.accessRestrictions ?? null,
+          skipIfAlreadyAllowed: true,
+        });
         if (cancelled) return;
         if (!allowed) {
           setDetailLoading(false);

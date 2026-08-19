@@ -140,13 +140,8 @@ function fingerprint_client_hostname(string $ip): string {
         $candidates[] = $remoteHost;
     }
     $ip = trim($ip);
-    if ($ip !== '') {
-        $rdns = @gethostbyaddr($ip);
-        if (is_string($rdns) && $rdns !== '' && strcasecmp($rdns, $ip) !== 0) {
-            $candidates[] = strtolower($rdns);
-        }
-    }
-    $isLoopback = $ip === '127.0.0.1' || $ip === '::1' || strcasecmp($ip, 'localhost') === 0;
+    $isLoopback = $ip === '127.0.0.1' || $ip === '::1' || strcasecmp($ip, 'localhost') === 0 || str_starts_with($ip, '127.');
+    // Never call gethostbyaddr() here — on Windows a missing PTR can stall the probe for seconds.
     if ($isLoopback) {
         $node = '';
         if (function_exists('gethostname')) {

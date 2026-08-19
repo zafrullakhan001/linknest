@@ -6267,7 +6267,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 key={tab.id}
                                                 onClick={async () => {
                                                     if (!isEditing) {
-                                                        const allowed = await assertCanOpen('tab', tab.id);
+                                                        const allowed = await assertCanOpen('tab', tab.id, {
+                                                            rules: [tile.accessRestrictions, tab.accessRestrictions],
+                                                        });
                                                         if (!allowed) return;
                                                     }
                                                     setSelectedTabId(tab.id);
@@ -6649,7 +6651,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     if (tryHandleVncLinkClick(link.url, e)) return;
                                                                                     e.preventDefault();
                                                                                     e.stopPropagation();
-                                                                                    const allowed = await assertCanOpen('link', link.id);
+                                                                                    const allowed = await assertCanOpen('link', link.id, {
+                                                                                        rules: [tile.accessRestrictions, tab.accessRestrictions, link.accessRestrictions],
+                                                                                    });
                                                                                     if (!allowed) return;
                                                                                     if (isLinkInMaintenance(link)) {
                                                                                         setLinkMaintenanceDialog({ link });
@@ -6744,7 +6748,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         if (tryHandleVncLinkClick(link.url, e)) return;
                                                                         e.preventDefault();
                                                                         e.stopPropagation();
-                                                                        const allowed = await assertCanOpen('link', link.id);
+                                                                        const allowed = await assertCanOpen('link', link.id, {
+                                                                            rules: [tile.accessRestrictions, tab.accessRestrictions, link.accessRestrictions],
+                                                                        });
                                                                         if (!allowed) return;
                                                                         if (isLinkInMaintenance(link)) {
                                                                             setLinkMaintenanceDialog({ link });
@@ -6886,7 +6892,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     onClick={async (e) => {
                                                                                         e.preventDefault();
                                                                                         e.stopPropagation();
-                                                                                        const allowed = await assertCanOpen('link', link.id);
+                                                                                        const allowed = await assertCanOpen('link', link.id, {
+                                                                                        rules: [tile.accessRestrictions, tab.accessRestrictions, link.accessRestrictions],
+                                                                                    });
                                                                                         if (!allowed) return;
                                                                                         if (isLinkInMaintenance(link)) {
                                                                                             setLinkMaintenanceDialog({ link });
@@ -6921,7 +6929,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                 onClick={async (e) => {
                                                                                                     e.preventDefault();
                                                                                                     e.stopPropagation();
-                                                                                                    const allowed = await assertCanOpen('link', link.id);
+                                                                                                    const allowed = await assertCanOpen('link', link.id, {
+                                                                                        rules: [tile.accessRestrictions, tab.accessRestrictions, link.accessRestrictions],
+                                                                                    });
                                                                                                     if (!allowed) return;
                                                                                                     if (isLinkInMaintenance(link)) {
                                                                                                         setLinkMaintenanceDialog({ link });

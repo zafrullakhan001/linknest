@@ -290,15 +290,78 @@ const classifyExtensionReply = (data: Record<string, unknown>): DetectedBrowserE
   return out;
 };
 
+const buildDetectedList = (
+  replies: Array<Record<string, unknown>>,
+  browsersOk: boolean,
+  browsersVersion: string
+): DetectedBrowserExtension[] => {
+  const live = replies.filter((row) => row && row.available !== false);
+  const unique: DetectedBrowserExtension[] = [];
+  const seen = new Set<string>();
+  const add = (ext: DetectedBrowserExtension) => {
+    const key = `${ext.kind}:${ext.name}:${ext.version}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    unique.push(ext);
+  };
+  for (const row of live) {
+    classifyExtensionReply(row).forEach(add);
+  }
+  if (browsersOk && unique.every((e) => e.kind !== 'launcher-pro')) {
+    const checkVer = live.find((r) => typeof r.version === 'string' && /^3/.test(String(r.version)));
+    add({
+      kind: 'launcher-pro',
+      name: 'Browser Launcher Pro',
+      version:
+        browsersVersion ||
+        (typeof checkVer?.version === 'string' ? checkVer.version : '') ||
+        '3.x',
+      features: ['browsers'],
+      readEnabled: false,
+      writeEnabled: false,
+    });
+  }
+  if (
+    unique.every((e) => e.kind !== 'launcher-pro') &&
+    typeof window !== 'undefined' &&
+    (window as unknown as { BrowserLauncherProExtension?: { version?: string } }).BrowserLauncherProExtension
+  ) {
+    const marker = (window as unknown as { BrowserLauncherProExtension: { version?: string } }).BrowserLauncherProExtension;
+    add({
+      kind: 'launcher-pro',
+      name: 'Browser Launcher Pro',
+      version: marker.version || 'detected',
+      features: [],
+      readEnabled: false,
+      writeEnabled: false,
+    });
+  }
+  return unique;
+};
+
 /** List Bookmark Sync and Browser Launcher Pro if they answer CHECK (both can be installed). */
 export const listDetectedBrowserExtensions = (
-  timeoutMs = 1800
+  timeoutMs = 1800,
+  opts?: { resolveOnFirstReply?: boolean }
 ): Promise<DetectedBrowserExtension[]> => {
   return new Promise((resolve) => {
     const timestamp = Date.now();
     const replies: Array<Record<string, unknown>> = [];
     let browsersOk = false;
     let browsersVersion = '';
+    let settled = false;
+    let earlyTimer: number | null = null;
+    let maxTimer = 0;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (earlyTimer != null) window.clearTimeout(earlyTimer);
+      window.clearTimeout(maxTimer);
+      window.removeEventListener('message', onMessage);
+      resolve(buildDetectedList(replies, browsersOk, browsersVersion));
+    };
+
     const onMessage = (event: MessageEvent) => {
       if (!isTrustedPageExtensionMessage(event)) return;
       const data = event.data as Record<string, unknown> | null;
@@ -306,6 +369,9 @@ export const listDetectedBrowserExtensions = (
       if (data.type === 'BROWSER_LAUNCHER_CHECK_RESPONSE') {
         if (data.timestamp !== timestamp && data.timestamp != null) return;
         replies.push(data);
+        if (opts?.resolveOnFirstReply && earlyTimer == null) {
+          earlyTimer = window.setTimeout(finish, 80);
+        }
       }
       if (data.type === 'BROWSER_LAUNCHER_BROWSERS_LIST') {
         if (data.timestamp !== timestamp && data.timestamp != null) return;
@@ -323,51 +389,7 @@ export const listDetectedBrowserExtensions = (
     };
     ping(origin);
     if (origin !== '*') ping('*');
-    window.setTimeout(() => {
-      window.removeEventListener('message', onMessage);
-      const live = replies.filter((row) => row && row.available !== false);
-      const unique: DetectedBrowserExtension[] = [];
-      const seen = new Set<string>();
-      const add = (ext: DetectedBrowserExtension) => {
-        const key = `${ext.kind}:${ext.name}:${ext.version}`;
-        if (seen.has(key)) return;
-        seen.add(key);
-        unique.push(ext);
-      };
-      for (const row of live) {
-        classifyExtensionReply(row).forEach(add);
-      }
-      if (browsersOk && unique.every((e) => e.kind !== 'launcher-pro')) {
-        const checkVer = live.find((r) => typeof r.version === 'string' && /^3/.test(String(r.version)));
-        add({
-          kind: 'launcher-pro',
-          name: 'Browser Launcher Pro',
-          version:
-            browsersVersion ||
-            (typeof checkVer?.version === 'string' ? checkVer.version : '') ||
-            '3.x',
-          features: ['browsers'],
-          readEnabled: false,
-          writeEnabled: false,
-        });
-      }
-      if (
-        unique.every((e) => e.kind !== 'launcher-pro') &&
-        typeof window !== 'undefined' &&
-        (window as unknown as { BrowserLauncherProExtension?: { version?: string } }).BrowserLauncherProExtension
-      ) {
-        const marker = (window as unknown as { BrowserLauncherProExtension: { version?: string } }).BrowserLauncherProExtension;
-        add({
-          kind: 'launcher-pro',
-          name: 'Browser Launcher Pro',
-          version: marker.version || 'detected',
-          features: [],
-          readEnabled: false,
-          writeEnabled: false,
-        });
-      }
-      resolve(unique);
-    }, timeoutMs);
+    maxTimer = window.setTimeout(finish, Math.max(50, timeoutMs));
   });
 };
 

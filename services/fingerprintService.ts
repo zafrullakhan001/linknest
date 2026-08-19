@@ -213,6 +213,8 @@ interface CollectedFingerprint {
 
 let memoryCache: FingerprintResult | null = null;
 let collectionCache: CollectedFingerprint | null = null;
+let collectionInFlight: Promise<CollectedFingerprint> | null = null;
+let backgroundRefreshQueued = false;
 
 interface ProbePayload {
   headers?: {
@@ -471,9 +473,29 @@ export function readFingerprintCookie(): string | null {
   return null;
 }
 
+export function readPersistedFingerprintHash(): string | null {
+  if (memoryCache?.hash) {
+    const fromMem = normalizeFingerprintHash(memoryCache.hash);
+    if (fromMem) return fromMem;
+  }
+  try {
+    const stored = sessionStorage.getItem('ln_fp_hash');
+    const fromSession = stored ? normalizeFingerprintHash(stored) : null;
+    if (fromSession) return fromSession;
+  } catch {
+    /* ignore */
+  }
+  return readFingerprintCookie();
+}
+
 async function fetchProbe(): Promise<ProbePayload> {
   try {
-    const res = await fetch(`${API_BASE}/fingerprint/probe`, { credentials: 'include' });
+    const res = await fetch(`${API_BASE}/fingerprint/probe`, {
+      credentials: 'include',
+      signal: typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+        ? AbortSignal.timeout(2000)
+        : undefined,
+    });
     if (!res.ok) return {};
     return (await res.json()) as ProbePayload;
   } catch {
@@ -853,7 +875,7 @@ function hashPayloadFromSignals(
   return out;
 }
 
-async function collectLocalIps(): Promise<string[]> {
+async function collectLocalIps(timeoutMs = 1200): Promise<string[]> {
   if (typeof RTCPeerConnection === 'undefined') return [];
   return new Promise((resolve) => {
     const found = new Set<string>();
@@ -869,7 +891,7 @@ async function collectLocalIps(): Promise<string[]> {
       resolve(Array.from(found).sort());
     };
     const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }] });
-    const timer = window.setTimeout(finish, 1200);
+    const timer = window.setTimeout(finish, Math.max(50, timeoutMs));
     try {
       pc.createDataChannel('ln-fp');
     } catch {
@@ -988,6 +1010,8 @@ export async function collectFingerprint(opts?: {
   skipCache?: boolean;
   /** City/region labels for Help & About only — skip on access-check so we do not hit reverse-geocode. */
   includePlace?: boolean;
+  /** Shorter extension/WebRTC waits for the open gate. Help & Unlock should omit this. */
+  accessCheck?: boolean;
 }): Promise<FingerprintResult> {
   const excluded = getExcludedFingerprintSignals();
   if (!opts?.skipCache && !opts?.forceGps && memoryCache?.excludedSignals) {
@@ -1001,7 +1025,16 @@ export async function collectFingerprint(opts?: {
   if (!opts?.skipCache && !opts?.forceGps && collectionCache) {
     return finalizeCollectedFingerprint(collectionCache, excluded);
   }
+  if (!opts?.skipCache && !opts?.forceGps && collectionInFlight) {
+    const inflight = await collectionInFlight;
+    return finalizeCollectedFingerprint(inflight, excluded);
+  }
 
+  const accessCheck = !!opts?.accessCheck;
+  const extensionMs = accessCheck ? 500 : 1800;
+  const localIpMs = accessCheck ? 400 : 1200;
+
+  const runCollect = async (): Promise<CollectedFingerprint> => {
   const [probe, gps, permissions, devices, layout, battery, localIps, extensions] = await Promise.all([
     fetchProbe(),
     readGps(!!opts?.forceGps),
@@ -1009,8 +1042,8 @@ export async function collectFingerprint(opts?: {
     mediaDeviceCounts(),
     keyboardLayout(),
     batteryInfo(),
-    collectLocalIps(),
-    listDetectedBrowserExtensions(1800),
+    collectLocalIps(localIpMs),
+    listDetectedBrowserExtensions(extensionMs, { resolveOnFirstReply: accessCheck }),
   ]);
 
   const headers = probe.headers || {};
@@ -1199,6 +1232,19 @@ export async function collectFingerprint(opts?: {
     extensions,
     collectedAt: Date.now(),
   };
+  return collectionCache;
+  };
+
+  collectionInFlight = runCollect().finally(() => {
+    collectionInFlight = null;
+  });
+  try {
+    const collected = await collectionInFlight;
+    collectionCache = collected;
+  } catch {
+    collectionInFlight = null;
+    throw new Error('Fingerprint collection failed');
+  }
 
   return finalizeCollectedFingerprint(collectionCache, excluded);
 }
@@ -1208,8 +1254,34 @@ export function clearFingerprintCache(): void {
   collectionCache = null;
 }
 
-export async function getFingerprintHash(opts?: { skipCache?: boolean }): Promise<string> {
-  const result = await collectFingerprint(opts);
+function queueFingerprintRefresh(): void {
+  if (backgroundRefreshQueued || memoryCache || collectionInFlight) return;
+  backgroundRefreshQueued = true;
+  const run = () => {
+    void collectFingerprint({ accessCheck: true }).finally(() => {
+      backgroundRefreshQueued = false;
+    });
+  };
+  const idle = (window as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback;
+  if (typeof idle === 'function') {
+    idle(run, { timeout: 2500 });
+    return;
+  }
+  window.setTimeout(run, 0);
+}
+
+export async function getFingerprintHash(opts?: { skipCache?: boolean; accessCheck?: boolean }): Promise<string> {
+  if (!opts?.skipCache && opts?.accessCheck) {
+    const persisted = readPersistedFingerprintHash();
+    if (persisted) {
+      if (!memoryCache) queueFingerprintRefresh();
+      return persisted;
+    }
+  }
+  const result = await collectFingerprint({
+    skipCache: opts?.skipCache,
+    accessCheck: !!opts?.accessCheck,
+  });
   return result.hash;
 }
 

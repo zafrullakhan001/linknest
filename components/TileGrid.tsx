@@ -5178,10 +5178,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
   };
 
   const handleTileClick = async (tileId: string) => {
-    const allowed = await assertCanOpen('tile', tileId);
-    if (!allowed) return;
     const sourceList = activeTab === 'staging' ? stagingTiles : tiles;
     const tile = sourceList.find(t => t.id === tileId);
+    const allowed = await assertCanOpen('tile', tileId, { rules: tile?.accessRestrictions ?? null });
+    if (!allowed) return;
     if (tile?.isHyperlink && tile.hyperlinkUrl) {
       // Hyperlink tiles never open TileDetail, so record the visit here
       void recordTileVisit(tile.id);

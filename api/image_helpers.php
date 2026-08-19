@@ -87,6 +87,92 @@ function resizeGdImageFit($src, $maxW, $maxH) {
 }
 
 /**
+ * Copy a GD image (preserves alpha). Caller owns the returned resource.
+ * @param \GdImage|resource $src
+ * @return \GdImage|resource|false
+ */
+function cloneGdImage($src) {
+    $w = imagesx($src);
+    $h = imagesy($src);
+    if ($w <= 0 || $h <= 0) {
+        return false;
+    }
+    $dst = imagecreatetruecolor($w, $h);
+    imagealphablending($dst, false);
+    imagesavealpha($dst, true);
+    $transparent = imagecolorallocatealpha($dst, 0, 0, 0, 127);
+    imagefilledrectangle($dst, 0, 0, $w, $h, $transparent);
+    imagealphablending($dst, true);
+    imagecopy($dst, $src, 0, 0, 0, 0, $w, $h);
+    return $dst;
+}
+
+/**
+ * Write a square PNG without destroying the source image.
+ * @param \GdImage|resource $src
+ */
+function saveGdImageExactSquarePng($src, $size, $filepath) {
+    $copy = cloneGdImage($src);
+    if ($copy === false) {
+        return false;
+    }
+    $square = resizeGdImageExactSquare($copy, (int) $size);
+    imagealphablending($square, false);
+    imagesavealpha($square, true);
+    $ok = imagepng($square, $filepath, 6);
+    imagedestroy($square);
+    return (bool) $ok;
+}
+
+/**
+ * Ensure 192×192 and 512×512 PNG copies exist next to a raster favicon.
+ * Chromium requires manifest icon `sizes` to match the decoded pixel dimensions;
+ * `sizes: any` is only valid for SVG and triggers "Resource size is not correct".
+ *
+ * @return array<int,string> map of pixel size => filename in uploads/
+ */
+function ensurePwaFaviconIconFiles($sourceDisk) {
+    $out = [];
+    $sourceDisk = (string) $sourceDisk;
+    if ($sourceDisk === '' || !is_file($sourceDisk) || !extension_loaded('gd')) {
+        return $out;
+    }
+    $ext = strtolower(pathinfo($sourceDisk, PATHINFO_EXTENSION));
+    if ($ext === 'svg') {
+        return $out;
+    }
+    $base = pathinfo($sourceDisk, PATHINFO_FILENAME);
+    if ($base === '' || preg_match('/_(192|512)$/', $base)) {
+        return $out;
+    }
+    $dir = dirname($sourceDisk);
+
+    $src = loadGdImageFromFile($sourceDisk, '', $ext);
+    if ($src === false) {
+        $info = @getimagesize($sourceDisk);
+        if ($info && !empty($info['mime'])) {
+            $src = loadGdImageFromFile($sourceDisk, $info['mime'], $ext);
+        }
+    }
+    if ($src === false) {
+        return $out;
+    }
+
+    foreach ([192, 512] as $size) {
+        $filename = $base . '_' . $size . '.png';
+        $filepath = $dir . DIRECTORY_SEPARATOR . $filename;
+        if (!is_file($filepath) && !saveGdImageExactSquarePng($src, $size, $filepath)) {
+            continue;
+        }
+        if (is_file($filepath)) {
+            $out[$size] = $filename;
+        }
+    }
+    imagedestroy($src);
+    return $out;
+}
+
+/**
  * Resize into an exact square canvas (centered, transparent padding).
  * @param \GdImage|resource $src
  * @return \GdImage|resource
@@ -187,8 +273,13 @@ function processUploadedBrandImage($tmpPath, $originalName, $mimeType, $kind, $r
     }
 
     if ($kind === 'favicon') {
+        $stamp = time() . '_' . uniqid();
+        foreach ([192, 512] as $pwaSize) {
+            $pwaPath = $uploadDir . '/favicon_' . $stamp . '_' . $pwaSize . '.png';
+            saveGdImageExactSquarePng($src, $pwaSize, $pwaPath);
+        }
         $dst = resizeGdImageExactSquare($src, 32);
-        $filename = 'favicon_' . time() . '_' . uniqid() . '.png';
+        $filename = 'favicon_' . $stamp . '.png';
     } else {
         $dst = resizeGdImageFit($src, 512, 512);
         $filename = 'logo_' . time() . '_' . uniqid() . '.png';

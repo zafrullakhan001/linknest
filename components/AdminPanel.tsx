@@ -11970,7 +11970,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               </summary>
                               <div className="px-4 pb-4 space-y-4 border-t border-slate-200 dark:border-slate-700 pt-4">
                               <p className="text-xs text-slate-600 dark:text-slate-400">
-                                Upload a favicon for browser tabs and bookmarks. Also used for PWA / home-screen icon. Raster images are auto-converted to a 32×32 PNG.
+                                Upload a favicon for browser tabs and bookmarks. Raster images are converted to a 32×32 PNG for the tab icon, plus 192×192 and 512×512 copies for PWA / home-screen.
                               </p>
 
                               {(faviconPreview || settings.favicon) && (

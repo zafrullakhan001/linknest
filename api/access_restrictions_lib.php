@@ -422,16 +422,97 @@ function ip_matches_network_pattern(string $ip, string $pattern): bool {
     return strcasecmp($ip, $pattern) === 0;
 }
 
-function resolve_client_host(?string $ip): string {
-    $ip = trim((string) $ip);
-    if ($ip === '') {
-        return '';
+function restriction_ip_is_loopback(?string $ip): bool {
+    $ip = strtolower(trim((string) $ip));
+    if ($ip === '' || $ip === 'localhost') {
+        return $ip === 'localhost';
     }
+    if ($ip === '127.0.0.1' || $ip === '::1') {
+        return true;
+    }
+    return str_starts_with($ip, '127.');
+}
+
+function restriction_ip_is_non_public(?string $ip): bool {
+    $ip = trim((string) $ip);
+    if ($ip === '' || restriction_ip_is_loopback($ip)) {
+        return true;
+    }
+    if (filter_var($ip, FILTER_VALIDATE_IP) === false) {
+        return true;
+    }
+    return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false;
+}
+
+function restriction_host_pattern_needs_rdns(string $pattern): bool {
+    $pattern = trim($pattern);
+    if ($pattern === '' || str_contains($pattern, '/')) {
+        return false;
+    }
+    if (str_contains($pattern, ':') && !str_contains($pattern, '.')) {
+        return false;
+    }
+    $asIp = str_replace('*', '0', $pattern);
+    return filter_var($asIp, FILTER_VALIDATE_IP) === false;
+}
+
+function access_restrictions_need_host(?array $rules): bool {
+    if (!is_array($rules) || $rules === []) {
+        return false;
+    }
+    foreach (($rules['hostRules'] ?? []) as $rule) {
+        if (!is_array($rule)) {
+            continue;
+        }
+        $pattern = trim((string) ($rule['pattern'] ?? ''));
+        if ($pattern !== '' && restriction_host_pattern_needs_rdns($pattern)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function resolve_client_host(?string $ip, bool $allowReverseDns = true): string {
+    static $cache = [];
+    $ip = trim((string) $ip);
+    $key = $ip . '|' . ($allowReverseDns ? '1' : '0');
+    if (array_key_exists($key, $cache)) {
+        return $cache[$key];
+    }
+
+    if ($ip === '') {
+        return $cache[$key] = '';
+    }
+
+    if (restriction_ip_is_loopback($ip)) {
+        $node = '';
+        if (function_exists('gethostname')) {
+            $node = (string) @gethostname();
+        }
+        if ($node === '' && function_exists('php_uname')) {
+            $node = (string) @php_uname('n');
+        }
+        $node = strtolower(trim($node, '.'));
+        if ($node !== '' && filter_var($node, FILTER_VALIDATE_IP) === false) {
+            return $cache[$key] = $node;
+        }
+        return $cache[$key] = '';
+    }
+
+    $remoteHost = strtolower(trim((string) ($_SERVER['REMOTE_HOST'] ?? '')));
+    if ($remoteHost !== '' && $remoteHost !== 'unknown' && filter_var($remoteHost, FILTER_VALIDATE_IP) === false) {
+        return $cache[$key] = $remoteHost;
+    }
+
+    if (!$allowReverseDns || restriction_ip_is_non_public($ip)) {
+        return $cache[$key] = '';
+    }
+
     $host = @gethostbyaddr($ip);
     if (!is_string($host) || $host === '' || strcasecmp($host, $ip) === 0) {
-        return '';
+        return $cache[$key] = '';
     }
-    return strtolower($host);
+    return $cache[$key] = strtolower($host);
 }
 
 function restriction_country_code_for_ip(?string $ip): ?string {
@@ -1002,10 +1083,13 @@ function evaluate_entity_access_chain(string $entityType, string $id, array $ext
 
     $clientIp = function_exists('getClientIpAddress') ? (string) (getClientIpAddress() ?? '') : (string) ($_SERVER['REMOTE_ADDR'] ?? '');
     $needCountry = false;
+    $needHost = false;
     foreach ($loaded['chain'] as $step) {
         if (access_restrictions_need_country($step['rules'] ?? null)) {
             $needCountry = true;
-            break;
+        }
+        if (access_restrictions_need_host($step['rules'] ?? null)) {
+            $needHost = true;
         }
     }
     $fingerprintHash = '';
@@ -1019,7 +1103,7 @@ function evaluate_entity_access_chain(string $entityType, string $id, array $ext
 
     $ctx = [
         'client_ip' => $clientIp,
-        'client_host' => resolve_client_host($clientIp),
+        'client_host' => resolve_client_host($clientIp, $needHost),
         'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
         'referrer' => $_SERVER['HTTP_REFERER'] ?? '',
         'country_code' => $needCountry ? restriction_country_code_for_ip($clientIp) : null,

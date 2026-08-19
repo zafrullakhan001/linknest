@@ -16,6 +16,18 @@ export const ACCESS_BROWSER_NAMES = [
 
 export const ACCESS_OS_NAMES = ['windows', 'macos', 'linux', 'android', 'ios'] as const;
 
+export function hasFingerprintHashes(rules?: AccessRestrictions | null): boolean {
+  return !!(rules?.fingerprintHashes && rules.fingerprintHashes.length > 0);
+}
+
+export function anyFingerprintHashes(
+  rules?: AccessRestrictions | AccessRestrictions[] | null
+): boolean {
+  if (!rules) return false;
+  const list = Array.isArray(rules) ? rules : [rules];
+  return list.some((item) => !!item && hasFingerprintHashes(item));
+}
+
 export function hasAccessRestrictions(rules?: AccessRestrictions | null): boolean {
   if (!rules) return false;
   if (rules.timeRules && rules.timeRules.length > 0) return true;
@@ -28,7 +40,7 @@ export function hasAccessRestrictions(rules?: AccessRestrictions | null): boolea
   if (rules.countryDeny && rules.countryDeny.length > 0) return true;
   if (rules.validFrom || rules.validUntil) return true;
   if (rules.referrerPatterns && rules.referrerPatterns.length > 0) return true;
-  if (rules.fingerprintHashes && rules.fingerprintHashes.length > 0) return true;
+  if (hasFingerprintHashes(rules)) return true;
   return false;
 }
 
