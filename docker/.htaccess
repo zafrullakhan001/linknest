@@ -51,8 +51,10 @@ AddDefaultCharset UTF-8
     RewriteCond %{REQUEST_URI} ^/uploads/
     RewriteRule . - [L]
 
-    # XAMPP DBs store /linknest/uploads/... ; Docker serves the app at /
-    RewriteRule ^(?:linknest|ArchLinks|ERP3)/uploads/(.*)$ /uploads/$1 [L]
+    # XAMPP DBs may still request /{oldFolder}/uploads/... ; Docker main app is at /.
+    # Skip when /{name}/ is a real in-container clone under /var/www/clones.
+    RewriteCond /var/www/clones/$1 !-d
+    RewriteRule ^([^/]+)/uploads/(.*)$ /uploads/$2 [L]
 
     # Browser Launcher Pro integration (not bundled by Vite)
     RewriteCond %{REQUEST_URI} ^/land/

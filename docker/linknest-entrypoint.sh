@@ -100,6 +100,18 @@ if [ -f "${DB_PATH}" ] && command -v sqlite3 >/dev/null 2>&1; then
   sqlite3 "${DB_PATH}" "UPDATE tiles SET emoji_image = substr(emoji_image, instr(emoji_image, '/uploads/')) WHERE emoji_image LIKE '%/uploads/%' AND emoji_image NOT LIKE '/uploads/%';" 2>/dev/null || true
   sqlite3 "${DB_PATH}" "UPDATE tiles SET header_image = substr(header_image, instr(header_image, '/uploads/')) WHERE header_image LIKE '%/uploads/%' AND header_image NOT LIKE '/uploads/%';" 2>/dev/null || true
   sqlite3 "${DB_PATH}" "UPDATE settings SET value = substr(value, instr(value, '/uploads/')) WHERE typeof(value)='text' AND value LIKE '%/uploads/%' AND value NOT LIKE '/uploads/%' AND length(value) < 512;" 2>/dev/null || true
+  sqlite3 "${DB_PATH}" "DELETE FROM settings WHERE key='gateway_http_proxy_base';" 2>/dev/null || true
+  for brand_key in favicon logo_image header_logo_image; do
+    brand_val="$(sqlite3 "${DB_PATH}" "SELECT value FROM settings WHERE key='${brand_key}';" 2>/dev/null || true)"
+    if [ -n "${brand_val}" ] && echo "${brand_val}" | grep -q '/uploads/'; then
+      brand_file="$(basename "${brand_val}")"
+      if [ ! -f "/var/www/html/uploads/${brand_file}" ]; then
+        echo "[ENTRYPOINT] Clearing missing ${brand_key} (${brand_file}) — default icon/logo will be used"
+        sqlite3 "${DB_PATH}" "UPDATE settings SET value='', updated_at=strftime('%s','now') WHERE key='${brand_key}';" 2>/dev/null || true
+      fi
+    fi
+  done
+  rm -f /var/www/html/data/cache/*.json 2>/dev/null || true
 fi
 
 if command -v ttyd >/dev/null 2>&1; then

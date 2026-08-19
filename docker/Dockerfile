@@ -153,6 +153,7 @@ COPY composer.json ./composer.json
 COPY vendor/ ./vendor/
 COPY docker/.htaccess ./.htaccess
 COPY sw-cache-first.php ./sw-cache-first.php
+COPY s.php ./s.php
 
 # Frontend sources so Docker Clone / App Updates can run Vite (npm is in this image).
 COPY package.json package-lock.json tsconfig.json ./

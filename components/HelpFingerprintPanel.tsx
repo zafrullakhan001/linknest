@@ -125,6 +125,37 @@ const ATTR_EMOJI: Record<string, string> = {
   GPS: '📍',
 };
 
+function gpsMapsUrl(lat: number, lon: number): string {
+  return `https://www.google.com/maps?q=${lat},${lon}`;
+}
+
+function gpsWeatherUrl(lat: number, lon: number): string {
+  return `https://weather.com/weather/today/l/${lat},${lon}`;
+}
+
+const GpsExternalLinks: React.FC<{ lat: number; lon: number; compact?: boolean }> = ({ lat, lon, compact }) => (
+  <span className={`inline-flex flex-wrap items-center gap-1.5 ${compact ? 'mt-1.5' : 'ml-1'}`}>
+    <a
+      href={gpsMapsUrl(lat, lon)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-medium font-sans no-underline bg-blue-100/90 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-800/60"
+      title={`Open ${lat}, ${lon} in Google Maps`}
+    >
+      <span aria-hidden="true">🗺️</span> Google Maps
+    </a>
+    <a
+      href={gpsWeatherUrl(lat, lon)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-medium font-sans no-underline bg-cyan-100/90 dark:bg-cyan-900/40 text-cyan-800 dark:text-cyan-200 hover:bg-cyan-200 dark:hover:bg-cyan-800/60"
+      title={`Open weather for ${lat}, ${lon} on Weather.com`}
+    >
+      <span aria-hidden="true">🌦️</span> Weather.com
+    </a>
+  </span>
+);
+
 function attributeEmoji(name: string): string {
   if (ATTR_EMOJI[name]) return ATTR_EMOJI[name];
   const n = name.toLowerCase();
@@ -314,13 +345,14 @@ export const HelpFingerprintPanel: React.FC = () => {
             . Changing network, VPN, or machine name can change the hash.
           </p>
         ) : null}
-        {result?.gpsIncluded ? (
+        {result?.gpsIncluded && result.gps ? (
           <p className="text-xs text-emerald-800 dark:text-emerald-300 rounded-lg bg-emerald-50/80 dark:bg-emerald-950/30 px-2.5 py-1.5">
-            <span aria-hidden="true">📍</span> GPS included in this hash ({result.gps?.lat}, {result.gps?.lon}
+            <span aria-hidden="true">📍</span> GPS included in this hash ({result.gps.lat}, {result.gps.lon}
             {result.gpsPlace?.city && result.gpsPlace.city !== 'Unknown'
               ? ` · ${[result.gpsPlace.city, result.gpsPlace.region, result.gpsPlace.country_name].filter((p) => p && p !== 'Unknown').join(', ')}`
               : ''}
-            ). Coordinates are bucketed to about a 1 mile radius, so moving nearby usually keeps the same hash. City and country from GPS are display only.
+            ). Coordinates are bucketed to about a 1 mile radius, so moving nearby usually keeps the same hash. City and country from GPS are display only.{' '}
+            <GpsExternalLinks lat={result.gps.lat} lon={result.gps.lon} />
           </p>
         ) : (
           <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -470,6 +502,9 @@ export const HelpFingerprintPanel: React.FC = () => {
                       </td>
                       <td className="align-top px-3 py-2 text-slate-800 dark:text-slate-100 whitespace-pre-wrap break-all font-mono text-xs">
                         {row.value}
+                        {row.name === 'GPS' && result?.gps ? (
+                          <GpsExternalLinks lat={result.gps.lat} lon={result.gps.lon} compact />
+                        ) : null}
                       </td>
                     </tr>
                   ))}
