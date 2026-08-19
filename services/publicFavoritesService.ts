@@ -134,6 +134,9 @@ export interface PublicFavoriteLinkDetail {
   tooltip?: string;
   browser?: string;
   richTextContent?: string;
+  maintenanceEnabled?: boolean;
+  maintenanceMessage?: string;
+  maintenanceVideoUrl?: string;
   health?: {
     status: 'unknown' | 'healthy' | 'broken' | 'timeout' | 'checking' | 'restricted' | 'accessible' | 'redirected';
     httpCode?: number | null;
@@ -542,6 +545,9 @@ const normalizeLinkFavoriteDetails = (
       tooltip: typeof detail.tooltip === 'string' ? detail.tooltip : undefined,
       browser: typeof detail.browser === 'string' ? detail.browser : undefined,
       richTextContent: typeof detail.richTextContent === 'string' ? detail.richTextContent : undefined,
+      maintenanceEnabled: detail.maintenanceEnabled === true,
+      maintenanceMessage: typeof detail.maintenanceMessage === 'string' ? detail.maintenanceMessage : undefined,
+      maintenanceVideoUrl: typeof detail.maintenanceVideoUrl === 'string' ? detail.maintenanceVideoUrl : undefined,
       health:
         detail.health && typeof detail.health === 'object'
           ? (detail.health as PublicFavoriteLinkDetail['health'])
@@ -616,6 +622,9 @@ export const buildPublicFavoritesExportData = (
         tooltip: link.tooltip,
         browser: link.browser,
         richTextContent: link.richTextContent,
+        maintenanceEnabled: link.maintenanceEnabled,
+        maintenanceMessage: link.maintenanceMessage,
+        maintenanceVideoUrl: link.maintenanceVideoUrl,
         health: link.health,
         tile: {
           id: link.tile?.id || '',

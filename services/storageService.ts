@@ -109,7 +109,7 @@ const extractSearchLinks = (tile: Tile): Tile['searchLinks'] => {
   }
   const links: NonNullable<Tile['searchLinks']> = [];
   const seen = new Set<string>();
-  const addLinks = (sectionLinks?: { id: string; label: string; url: string; icon?: string; browser?: string; notes?: string; tooltip?: string; richTextContent?: string; health?: any }[]) => {
+  const addLinks = (sectionLinks?: { id: string; label: string; url: string; icon?: string; browser?: string; notes?: string; tooltip?: string; richTextContent?: string; maintenanceEnabled?: boolean; maintenanceMessage?: string; maintenanceVideoUrl?: string; health?: any }[]) => {
     sectionLinks?.forEach((link) => {
       const key = `${(link.label || '').toLowerCase()}|${(link.url || '').toLowerCase()}`;
       if (seen.has(key)) return;
@@ -123,6 +123,9 @@ const extractSearchLinks = (tile: Tile): Tile['searchLinks'] => {
         notes: link.notes,
         tooltip: link.tooltip,
         richTextContent: link.richTextContent,
+        maintenanceEnabled: link.maintenanceEnabled,
+        maintenanceMessage: link.maintenanceMessage,
+        maintenanceVideoUrl: link.maintenanceVideoUrl,
         health: link.health,
         shortUrl: (link as { shortUrl?: string }).shortUrl,
       });
@@ -346,6 +349,35 @@ export const uploadTileHeaderImage = async (
   const url = (data as { url?: string }).url;
   if (!url) {
     throw new Error('Upload succeeded but no image URL was returned');
+  }
+  return url;
+};
+
+const LINK_MAINTENANCE_VIDEO_MAX_BYTES = 50 * 1024 * 1024;
+
+export const uploadLinkMaintenanceVideo = async (file: Blob, filename?: string): Promise<string> => {
+  if (file.size > LINK_MAINTENANCE_VIDEO_MAX_BYTES) {
+    throw new Error('Video is too large. Maximum size is 50MB.');
+  }
+
+  const formData = new FormData();
+  const name = filename || (file instanceof File ? file.name : 'recording.webm');
+  formData.append('video', file, name);
+
+  const response = await fetch(`${API_BASE}/uploads/link-maintenance-video`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error((data as { error?: string }).error || 'Failed to upload maintenance video');
+  }
+
+  const url = (data as { url?: string }).url;
+  if (!url) {
+    throw new Error('Upload succeeded but no video URL was returned');
   }
   return url;
 };
@@ -634,6 +666,9 @@ export interface FavoriteLink {
   tooltip?: string;
   browser?: string;
   richTextContent?: string;
+  maintenanceEnabled?: boolean;
+  maintenanceMessage?: string;
+  maintenanceVideoUrl?: string;
   isFavorite: boolean;
   health?: {
     status: 'unknown' | 'healthy' | 'broken' | 'timeout' | 'checking' | 'restricted' | 'accessible' | 'redirected';

@@ -38,6 +38,8 @@ import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { viewerLinkDisplay, viewerLinkUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
 import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
+import { isLinkInMaintenance } from '../utils/linkMaintenance';
+import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
 import { MobileTileView } from './MobileTileView';
 import { PublicBookmarksPanel } from './PublicBookmarksPanel';
 import {
@@ -75,6 +77,7 @@ import { BlockedUsersSection } from './BlockedUsersSection';
 import { removeSharedTile, blockUser, getPendingInvitations, getBlockedUsers } from '../services/tileShareService';
 
 const LinkInfoDialog = lazy(() => import('./LinkInfoDialog').then(m => ({ default: m.LinkInfoDialog })));
+const LinkMaintenanceDialog = lazy(() => import('./LinkMaintenanceDialog').then(m => ({ default: m.LinkMaintenanceDialog })));
 const LinkNotesDialog = lazy(() => import('./LinkNotesDialog').then(m => ({ default: m.LinkNotesDialog })));
 const StagingOverview = lazy(() => import('./StagingOverview').then(m => ({ default: m.StagingOverview })));
 const StagingOfflineKit = lazy(() => import('./StagingOfflineKit').then(m => ({ default: m.StagingOfflineKit })));
@@ -2437,6 +2440,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [pendingInvitationsCount, setPendingInvitationsCount] = useState(0);
   const [blockedUsersCount, setBlockedUsersCount] = useState(0);
   const [linkInfoDialog, setLinkInfoDialog] = useState<{ link: Link } | null>(null);
+  const [linkMaintenanceDialog, setLinkMaintenanceDialog] = useState<{ link: Link } | null>(null);
   const [tileInfoDialog, setTileInfoDialog] = useState<{ tile?: Tile; categoryInfo?: { categoryName: string; tiles: Tile[] } } | null>(null);
   const [shareTileDialog, setShareTileDialog] = useState<Tile | null>(null);
   const [favNotesDialogState, setFavNotesDialogState] = useState<{ linkId: string; notes: string; linkLabel: string } | null>(null);
@@ -6955,6 +6959,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         icon: link.icon,
         browser: link.browser,
         richTextContent: link.richTextContent,
+        maintenanceEnabled: link.maintenanceEnabled,
+        maintenanceMessage: link.maintenanceMessage,
+        maintenanceVideoUrl: link.maintenanceVideoUrl,
         health: link.health,
         tile: {
           id: link.tile.id,
@@ -7978,6 +7985,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             }}
             onOpenNotes={(link) => setFavNotesDialogState({ linkId: link.id, notes: link.notes || '', linkLabel: link.label || '' })}
             onOpenLinkInfo={(link) => setLinkInfoDialog({ link })}
+            onOpenMaintenance={(link) => setLinkMaintenanceDialog({ link })}
           />
         );
 
@@ -8257,6 +8265,13 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           return;
                         }
 
+                        if (isLinkInMaintenance(link)) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setLinkMaintenanceDialog({ link: link as Link });
+                          return;
+                        }
+
                         // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                         if (e.ctrlKey || e.metaKey) {
                           e.preventDefault();
@@ -8310,6 +8325,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         <div className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-2 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
                           {stripHtml(link.label)}
                         </div>
+                        <LinkMaintenanceBadge link={link} className="mt-1" />
                         <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }} title={viewerLinkUrl(link, link.tile.showShortUrls)}>
                           {viewerLinkDisplay(link, link.tile.showShortUrls)}
                         </div>
@@ -8353,6 +8369,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                 tooltip: undefined,
                                 browser: link.browser,
                                 richTextContent: link.richTextContent,
+        maintenanceEnabled: link.maintenanceEnabled,
+        maintenanceMessage: link.maintenanceMessage,
+        maintenanceVideoUrl: link.maintenanceVideoUrl,
                                 health: link.health,
                                 tile: {
                                   id: link.tile.id,
@@ -8453,6 +8472,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             }}
             onOpenNotes={(link) => setFavNotesDialogState({ linkId: link.id, notes: link.notes || '', linkLabel: link.label || '' })}
             onOpenLinkInfo={(link) => setLinkInfoDialog({ link })}
+            onOpenMaintenance={(link) => setLinkMaintenanceDialog({ link })}
           />
         );
 
@@ -12739,6 +12759,19 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             richTextContent={linkInfoDialog.link.richTextContent || ''}
             linkUrl={linkInfoDialog.link.url}
             browser={linkInfoDialog.link.browser}
+          />
+        </Suspense>
+      )}
+
+      {linkMaintenanceDialog && (
+        <Suspense fallback={null}>
+          <LinkMaintenanceDialog
+            isOpen={!!linkMaintenanceDialog}
+            onClose={() => setLinkMaintenanceDialog(null)}
+            linkLabel={linkMaintenanceDialog.link.label}
+            linkIcon={linkMaintenanceDialog.link.icon}
+            maintenanceMessage={linkMaintenanceDialog.link.maintenanceMessage}
+            maintenanceVideoUrl={linkMaintenanceDialog.link.maintenanceVideoUrl}
           />
         </Suspense>
       )}

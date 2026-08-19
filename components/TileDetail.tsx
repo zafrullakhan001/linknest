@@ -37,6 +37,10 @@ import type { BoxAlign } from './RichTextBoxedView';
 import { RichTextContent } from '../types';
 import { isPublicLinkFavorite, togglePublicLinkFavorite, upsertPublicLinkFavoriteDetail, removePublicLinkFavoriteDetail } from '../services/publicFavoritesService';
 import { LinkInfoDialog } from './LinkInfoDialog';
+import { LinkMaintenanceDialog } from './LinkMaintenanceDialog';
+import { LinkMaintenanceVideoField } from './LinkMaintenanceVideoField';
+import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
+import { isLinkInMaintenance } from '../utils/linkMaintenance';
 import { LinkNotesDialog } from './LinkNotesDialog';
 import { QRCodeDialog } from './QRCodeDialog';
 import { MobilePreviewDialog } from './MobilePreviewDialog';
@@ -488,6 +492,9 @@ const cloneLinkItem = (link: Link, opts?: { appendCopyLabel?: boolean }): Link =
     notes: link.notes,
     tooltip: link.tooltip,
     richTextContent: link.richTextContent,
+    maintenanceEnabled: link.maintenanceEnabled,
+    maintenanceMessage: link.maintenanceMessage,
+    maintenanceVideoUrl: link.maintenanceVideoUrl,
     visibleFrom: link.visibleFrom,
     expiresAt: link.expiresAt,
     accessRestrictions: link.accessRestrictions
@@ -753,7 +760,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editSections, setEditSections] = useState<LinkSection[]>(tile.sections || []);
 
     // Temporary State for Adding Links (keyed by section ID)
-    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, browser: string, richTextContent: string, animation: string, accessRestrictions?: AccessRestrictions }>>({});
+    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, browser: string, richTextContent: string, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
 
     // Selection State for Bulk Actions
     const [selectedLinkIds, setSelectedLinkIds] = useState<string[]>([]);
@@ -764,7 +771,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
     const [convertLinkDialog, setConvertLinkDialog] = useState<{ tabId: string; sectionId: string; link: Link } | null>(null);
     const [convertingLinkToTile, setConvertingLinkToTile] = useState(false);
-    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, browser: string, richTextContent: string, animation: string, accessRestrictions?: AccessRestrictions }>>({});
+    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, browser: string, richTextContent: string, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
 
     // Available browsers from BrowserLauncher API
     const [availableBrowsers, setAvailableBrowsers] = useState<string[]>([]);
@@ -932,6 +939,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [hoveredLinkId, setHoveredLinkId] = useState<string | null>(null);
     const [notesDialogState, setNotesDialogState] = useState<{ linkId: string; notes: string; linkLabel: string } | null>(null);
     const [linkInfoDialog, setLinkInfoDialog] = useState<{ link: Link } | null>(null);
+    const [linkMaintenanceDialog, setLinkMaintenanceDialog] = useState<{ link: Link } | null>(null);
     const [qrDialogState, setQrDialogState] = useState<{ url: string; label: string } | null>(null);
     const [mobilePreviewState, setMobilePreviewState] = useState<{ url: string; label: string } | null>(null);
     const [allowedLinkActions, setAllowedLinkActions] = useState<Set<string>>(
@@ -2414,6 +2422,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
         browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
         richTextContent: state.richTextContent?.trim() || undefined,
+        maintenanceEnabled: state.maintenanceEnabled === true,
+        maintenanceMessage: state.maintenanceMessage?.trim() || undefined,
+        maintenanceVideoUrl: state.maintenanceVideoUrl?.trim() || undefined,
         animation: linkAnimationForSave(state.animation),
         accessRestrictions: state.accessRestrictions,
         inheritShortUrls: state.inheritShortUrls !== false
@@ -2433,6 +2444,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
         browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
         richTextContent: state.richTextContent?.trim() || undefined,
+        maintenanceEnabled: state.maintenanceEnabled === true,
+        maintenanceMessage: state.maintenanceMessage?.trim() || undefined,
+        maintenanceVideoUrl: state.maintenanceVideoUrl?.trim() || undefined,
         animation: linkAnimationForSave(state.animation),
         hasRoleAccess: tile.hasRoleAccess === true || undefined,
         accessRestrictions: state.accessRestrictions,
@@ -2454,7 +2468,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         browser: 'default',
         richTextContent: '',
         animation: 'inherit',
-        accessRestrictions: undefined
+        accessRestrictions: undefined,
+        maintenanceEnabled: false,
+        maintenanceMessage: '',
+        maintenanceVideoUrl: ''
     });
 
     const applyRichTextDraftToItem = (rt: RichTextContent, content: string, meta?: RichTextBoxMeta): RichTextContent => {
@@ -3557,11 +3574,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     // Link Management
-    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'browser' | 'richTextContent' | 'animation' | 'published' | 'inheritShortUrls', value: string | LinkVisibility | number[] | boolean) => {
+    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'browser' | 'richTextContent' | 'animation' | 'published' | 'inheritShortUrls' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
         setNewLinkState(prev => ({
             ...prev,
             [sectionId]: {
-                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, published: true, inheritShortUrls: true, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '', animation: 'inherit' }),
+                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, published: true, inheritShortUrls: true, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '', animation: 'inherit', maintenanceEnabled: false, maintenanceMessage: '', maintenanceVideoUrl: '' }),
                 [field]: value
             }
         }));
@@ -3601,6 +3618,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
             browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
             richTextContent: state.richTextContent?.trim() || undefined,
+            maintenanceEnabled: state.maintenanceEnabled === true,
+            maintenanceMessage: state.maintenanceMessage?.trim() || undefined,
+            maintenanceVideoUrl: state.maintenanceVideoUrl?.trim() || undefined,
             animation: linkAnimationForSave(state.animation),
             // Role-assigned spaces: mark new links as role-visible so Your Apps keeps them after save
             hasRoleAccess: tile.hasRoleAccess === true || undefined,
@@ -3643,7 +3663,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
 
         // Clear form and hide it
-        setNewLinkState(prev => ({ ...prev, [sectionId]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, published: true, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '', animation: 'inherit' } }));
+        setNewLinkState(prev => ({ ...prev, [sectionId]: emptyNewLinkFormState() }));
         setShowUserPicker(prev => ({ ...prev, [sectionId]: false }));
         setLinkUserSearch(prev => ({ ...prev, [sectionId]: '' }));
         setLinkGroupSearch(prev => ({ ...prev, [sectionId]: '' }));
@@ -3887,7 +3907,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 richTextContent: link.richTextContent || '',
                 animation: linkAnimationForEdit(link.animation),
                 accessRestrictions: link.accessRestrictions,
-                inheritShortUrls: link.inheritShortUrls !== false
+                inheritShortUrls: link.inheritShortUrls !== false,
+                maintenanceEnabled: link.maintenanceEnabled === true,
+                maintenanceMessage: link.maintenanceMessage || '',
+                maintenanceVideoUrl: link.maintenanceVideoUrl || ''
             }
         });
         setShowUserPicker(prev => ({ ...prev, [link.id]: false }));
@@ -3953,7 +3976,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setLinkGroupSearch(prev => ({ ...prev, [linkId]: '' }));
     };
 
-    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'browser' | 'richTextContent' | 'animation' | 'published' | 'inheritShortUrls', value: string | LinkVisibility | number[] | boolean) => {
+    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'browser' | 'richTextContent' | 'animation' | 'published' | 'inheritShortUrls' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
         setEditLinkState(prev => ({
             ...prev,
             [linkId]: { ...prev[linkId], [field]: value }
@@ -4407,6 +4430,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         published: linkToClone.published,
                         animation: linkToClone.animation,
                         richTextContent: linkToClone.richTextContent,
+                        maintenanceEnabled: linkToClone.maintenanceEnabled,
+                        maintenanceMessage: linkToClone.maintenanceMessage,
+                        maintenanceVideoUrl: linkToClone.maintenanceVideoUrl,
                     };
 
                     // Insert cloned link after the original in the sorted list
@@ -6557,6 +6583,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     e.stopPropagation();
                                                                                     const allowed = await assertCanOpen('link', link.id);
                                                                                     if (!allowed) return;
+                                                                                    if (isLinkInMaintenance(link)) {
+                                                                                        setLinkMaintenanceDialog({ link });
+                                                                                        return;
+                                                                                    }
                                                                                     window.open(link.url, '_blank', 'noopener,noreferrer');
                                                                                 }}
                                                                             >
@@ -6648,6 +6678,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         e.stopPropagation();
                                                                         const allowed = await assertCanOpen('link', link.id);
                                                                         if (!allowed) return;
+                                                                        if (isLinkInMaintenance(link)) {
+                                                                            setLinkMaintenanceDialog({ link });
+                                                                            return;
+                                                                        }
 
                                                                         // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                                                                         if (e.ctrlKey || e.metaKey) {
@@ -6706,6 +6740,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             dangerouslySetInnerHTML={{ __html: labelHtml }}
                                                                         />
                                                                         <AccessRestrictionsBadge rules={link.accessRestrictions} />
+                                                                        <LinkMaintenanceBadge link={link} compact={isCompact} />
                                                                     </div>
                                                                     <div className={`flex flex-col gap-0.5 overflow-hidden ${
                                                                         isCompact ? 'hidden' : isGridCards ? 'mt-0.5 items-center' : 'mt-0.5'
@@ -6785,6 +6820,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         e.stopPropagation();
                                                                                         const allowed = await assertCanOpen('link', link.id);
                                                                                         if (!allowed) return;
+                                                                                        if (isLinkInMaintenance(link)) {
+                                                                                            setLinkMaintenanceDialog({ link });
+                                                                                            setShowBrowserMenu(prev => ({ ...prev, [link.id]: false }));
+                                                                                            return;
+                                                                                        }
                                                                                         setSelectedBrowserForLink(prev => ({ ...prev, [link.id]: 'default' }));
                                                                                         if (!saveBrowserForLink[link.id]) {
                                                                                             // If not saving, just open the link
@@ -6815,6 +6855,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     e.stopPropagation();
                                                                                                     const allowed = await assertCanOpen('link', link.id);
                                                                                                     if (!allowed) return;
+                                                                                                    if (isLinkInMaintenance(link)) {
+                                                                                                        setLinkMaintenanceDialog({ link });
+                                                                                                        setShowBrowserMenu(prev => ({ ...prev, [link.id]: false }));
+                                                                                                        return;
+                                                                                                    }
                                                                                                     setSelectedBrowserForLink(prev => ({ ...prev, [link.id]: browserId }));
                                                                                                     if (!saveBrowserForLink[link.id]) {
                                                                                                         // If not saving, just open the link
@@ -6925,6 +6970,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         tooltip: link.tooltip,
                                                                                         browser: link.browser,
                                                                                         richTextContent: link.richTextContent,
+                                                                                        maintenanceEnabled: link.maintenanceEnabled,
+                                                                                        maintenanceMessage: link.maintenanceMessage,
+                                                                                        maintenanceVideoUrl: link.maintenanceVideoUrl,
                                                                                         health: link.health,
                                                                                         tile: {
                                                                                             id: tile.id,
@@ -7156,6 +7204,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         richTextContent={linkInfoDialog.link.richTextContent || ''}
                         linkUrl={viewerLinkUrl({ ...linkInfoDialog.link, shortUrl: shortOf('link', linkInfoDialog.link.id, linkInfoDialog.link.shortUrl) }, effectiveShowShortUrls(showShortUrls, activeViewTab, linkInfoDialog.link)) || linkInfoDialog.link.url}
                         browser={linkInfoDialog.link.browser}
+                    />
+                )}
+
+                {linkMaintenanceDialog && (
+                    <LinkMaintenanceDialog
+                        isOpen={!!linkMaintenanceDialog}
+                        onClose={() => setLinkMaintenanceDialog(null)}
+                        linkLabel={linkMaintenanceDialog.link.label}
+                        linkIcon={linkMaintenanceDialog.link.icon}
+                        maintenanceMessage={linkMaintenanceDialog.link.maintenanceMessage}
+                        maintenanceVideoUrl={linkMaintenanceDialog.link.maintenanceVideoUrl}
                     />
                 )}
 
@@ -9480,13 +9539,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                             icon: link.icon || '',
                                                                                                             textColor: link.textColor || '',
                                                                                                             visibility: link.visibility || 'public',
+                                                                                                            published: link.published !== false,
+                                                                                                            inheritShortUrls: link.inheritShortUrls !== false,
                                                                                                             allowedUsers: link.allowedUsers || [],
                                                                                                             allowedGroups: link.allowedGroups || [],
                                                                                                             notes: link.notes || '',
                                                                                                             tooltip: link.tooltip || '',
                                                                                                             browser: link.browser || 'default',
                                                                                                             richTextContent: '',
-                                                                                                            animation: linkAnimationForEdit(link.animation)
+                                                                                                            animation: linkAnimationForEdit(link.animation),
+                                                                                                            maintenanceEnabled: link.maintenanceEnabled === true,
+                                                                                                            maintenanceMessage: link.maintenanceMessage || '',
+                                                                                                            maintenanceVideoUrl: link.maintenanceVideoUrl || ''
                                                                                                         };
                                                                                                         setEditLinkState({
                                                                                                             ...editLinkState,
@@ -9510,13 +9574,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                         icon: link.icon || '',
                                                                                                         textColor: link.textColor || '',
                                                                                                         visibility: link.visibility || 'public',
+                                                                                                        published: link.published !== false,
+                                                                                                        inheritShortUrls: link.inheritShortUrls !== false,
                                                                                                         allowedUsers: link.allowedUsers || [],
                                                                                                         allowedGroups: link.allowedGroups || [],
                                                                                                         notes: link.notes || '',
                                                                                                         tooltip: link.tooltip || '',
                                                                                                         browser: link.browser || 'default',
                                                                                                         richTextContent: '',
-                                                                                                        animation: linkAnimationForEdit(link.animation)
+                                                                                                        animation: linkAnimationForEdit(link.animation),
+                                                                                                        maintenanceEnabled: link.maintenanceEnabled === true,
+                                                                                                        maintenanceMessage: link.maintenanceMessage || '',
+                                                                                                        maintenanceVideoUrl: link.maintenanceVideoUrl || ''
                                                                                                     };
                                                                                                     setEditLinkState({
                                                                                                         ...editLinkState,
@@ -9528,6 +9597,54 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                 }}
                                                                                                 placeholder="Enter rich text content that will be displayed in a dialog when the link is clicked..."
                                                                                                 className="min-h-[200px]"
+                                                                                            />
+                                                                                        </LinkEditSection>
+
+                                                                                        <LinkEditSection
+                                                                                            emoji="🔧"
+                                                                                            title="Maintenance"
+                                                                                            subtitle="Show a maintenance dialog instead of opening the URL"
+                                                                                            accent="amber"
+                                                                                            defaultOpen={!!(editLinkState[link.id]?.maintenanceEnabled || editLinkState[link.id]?.maintenanceMessage || editLinkState[link.id]?.maintenanceVideoUrl)}
+                                                                                            badge={
+                                                                                                editLinkState[link.id]?.maintenanceEnabled ? (
+                                                                                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-200/80 dark:bg-amber-800/50 text-amber-800 dark:text-amber-200 font-medium shrink-0">On</span>
+                                                                                                ) : undefined
+                                                                                            }
+                                                                                        >
+                                                                                            <div className={`flex items-center justify-between gap-3 p-3.5 rounded-xl border-2 ${
+                                                                                                editLinkState[link.id]?.maintenanceEnabled
+                                                                                                    ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40'
+                                                                                                    : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50'
+                                                                                            }`}>
+                                                                                                <div>
+                                                                                                    <div className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Maintenance window</div>
+                                                                                                    <div className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                                                                                                        {editLinkState[link.id]?.maintenanceEnabled ? 'Clicks show the maintenance message' : 'Off — link opens normally'}
+                                                                                                    </div>
+                                                                                                </div>
+                                                                                                <button
+                                                                                                    type="button"
+                                                                                                    role="switch"
+                                                                                                    aria-checked={!!editLinkState[link.id]?.maintenanceEnabled}
+                                                                                                    onClick={() => updateEditLinkState(link.id, 'maintenanceEnabled', !editLinkState[link.id]?.maintenanceEnabled)}
+                                                                                                    className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${editLinkState[link.id]?.maintenanceEnabled ? 'bg-amber-500' : 'bg-slate-400 dark:bg-slate-600'}`}
+                                                                                                >
+                                                                                                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${editLinkState[link.id]?.maintenanceEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                                                                </button>
+                                                                                            </div>
+                                                                                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                                                                                                Message and video are kept when the toggle is off so you can reuse them later.
+                                                                                            </p>
+                                                                                            <SelectableRichTextEditor
+                                                                                                value={editLinkState[link.id]?.maintenanceMessage || ''}
+                                                                                                onChange={(html) => updateEditLinkState(link.id, 'maintenanceMessage', html)}
+                                                                                                placeholder="Describe the maintenance window..."
+                                                                                                className="min-h-[160px]"
+                                                                                            />
+                                                                                            <LinkMaintenanceVideoField
+                                                                                                value={editLinkState[link.id]?.maintenanceVideoUrl || ''}
+                                                                                                onChange={(url) => updateEditLinkState(link.id, 'maintenanceVideoUrl', url)}
                                                                                             />
                                                                                         </LinkEditSection>
 
@@ -9835,7 +9952,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     onClick={() => {
                                                                                         setShowAddLinkForm(prev => ({ ...prev, [section.id]: false }));
                                                                                         // Clear form when closing
-                                                                                        setNewLinkState(prev => ({ ...prev, [section.id]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', browser: 'default', richTextContent: '', animation: 'inherit' } }));
+                                                                                        setNewLinkState(prev => ({ ...prev, [section.id]: emptyNewLinkFormState() }));
                                                                                     }}
                                                                                     className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded transition-colors"
                                                                                     title="Close form"
@@ -10176,6 +10293,41 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     className="min-h-[200px]"
                                                                                 />
                                                                             </div>
+
+                                                                            <div className={`flex items-center justify-between gap-3 p-3 rounded-lg border-2 ${
+                                                                                newLinkState[section.id]?.maintenanceEnabled
+                                                                                    ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40'
+                                                                                    : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50'
+                                                                            }`}>
+                                                                                <div>
+                                                                                    <div className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Maintenance window</div>
+                                                                                    <div className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                                                                                        {newLinkState[section.id]?.maintenanceEnabled ? 'Clicks show the maintenance message' : 'Off — link opens normally'}
+                                                                                    </div>
+                                                                                </div>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    role="switch"
+                                                                                    aria-checked={!!newLinkState[section.id]?.maintenanceEnabled}
+                                                                                    onClick={() => updateNewLinkState(section.id, 'maintenanceEnabled', !newLinkState[section.id]?.maintenanceEnabled)}
+                                                                                    className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${newLinkState[section.id]?.maintenanceEnabled ? 'bg-amber-500' : 'bg-slate-400 dark:bg-slate-600'}`}
+                                                                                >
+                                                                                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${newLinkState[section.id]?.maintenanceEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                                                </button>
+                                                                            </div>
+                                                                            <div>
+                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Maintenance message (Rich Text)</label>
+                                                                                <SelectableRichTextEditor
+                                                                                    value={newLinkState[section.id]?.maintenanceMessage || ''}
+                                                                                    onChange={(html) => updateNewLinkState(section.id, 'maintenanceMessage', html)}
+                                                                                    placeholder="Describe the maintenance window..."
+                                                                                    className="min-h-[160px]"
+                                                                                />
+                                                                            </div>
+                                                                            <LinkMaintenanceVideoField
+                                                                                value={newLinkState[section.id]?.maintenanceVideoUrl || ''}
+                                                                                onChange={(url) => updateNewLinkState(section.id, 'maintenanceVideoUrl', url)}
+                                                                            />
 
                                                                             {/* Browser Selection - Only show if feature is enabled and user has canChangeBrowser or is admin */}
                                                                             {settings.browser_specific_links_enabled === '1' && (user?.is_admin || tile.canChangeBrowser === true) && (

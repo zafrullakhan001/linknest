@@ -15,6 +15,9 @@ export type SearchMatchingLink = {
   browser?: string | null;
   health?: any;
   richTextContent?: string;
+  maintenanceEnabled?: boolean;
+  maintenanceMessage?: string;
+  maintenanceVideoUrl?: string;
   notes?: string;
   tooltip?: string;
   shortUrl?: string;
@@ -56,7 +59,7 @@ function linkSearchFields(
   link: { label?: string; url?: string; notes?: string; tooltip?: string; richTextContent?: string },
   includeUrls: boolean
 ): Array<string | undefined | null> {
-  return [link.label, includeUrls ? link.url : undefined, link.notes, link.tooltip, link.richTextContent];
+  return [link.label, includeUrls ? link.url : undefined, link.notes, link.tooltip, link.richTextContent, (link as { maintenanceMessage?: string }).maintenanceMessage];
 }
 
 export function getSearchWords(searchTerm: string): string[] {
@@ -213,6 +216,9 @@ export function collectMatchingSearchLinks(
         browser?: string | null;
         health?: unknown;
         richTextContent?: string;
+        maintenanceEnabled?: boolean;
+        maintenanceMessage?: string;
+        maintenanceVideoUrl?: string;
         notes?: string;
         tooltip?: string;
         shortUrl?: string;
@@ -237,6 +243,9 @@ export function collectMatchingSearchLinks(
           browser: link.browser,
           health: link.health,
           richTextContent: link.richTextContent,
+          maintenanceEnabled: link.maintenanceEnabled,
+          maintenanceMessage: link.maintenanceMessage,
+          maintenanceVideoUrl: link.maintenanceVideoUrl,
           notes: link.notes,
           tooltip: link.tooltip,
           shortUrl: link.shortUrl,

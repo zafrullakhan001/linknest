@@ -22,6 +22,11 @@ if ($method === 'POST' && $path === '/tile-emoji-image') {
     exit;
 }
 
+if ($method === 'POST' && $path === '/link-maintenance-video') {
+    handleLinkMaintenanceVideoUpload();
+    exit;
+}
+
 // Handle GET requests - serve uploaded files
 $filename = ltrim($path, '/');
 
@@ -54,7 +59,12 @@ $mimeTypes = [
     'gif' => 'image/gif',
     'svg' => 'image/svg+xml',
     'webp' => 'image/webp',
-    'ico' => 'image/x-icon'
+    'ico' => 'image/x-icon',
+    'webm' => 'video/webm',
+    'mp4' => 'video/mp4',
+    'ogv' => 'video/ogg',
+    'ogg' => 'video/ogg',
+    'mov' => 'video/quicktime'
 ];
 
 $mimeType = $mimeTypes[$extension] ?? 'application/octet-stream';
@@ -291,3 +301,85 @@ function handleTileEmojiImageUpload() {
         'height' => $result['height'] ?? null
     ]);
 }
+
+function handleLinkMaintenanceVideoUpload() {
+    requireAuth();
+
+    if (!isset($_FILES['video'])) {
+        sendJSON(['error' => 'No file uploaded or upload too large for PHP (raise upload_max_filesize and post_max_size to at least 50MB)'], 400);
+        return;
+    }
+
+    $file = $_FILES['video'];
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        $code = (int)($file['error'] ?? UPLOAD_ERR_NO_FILE);
+        $hint = $code === UPLOAD_ERR_INI_SIZE || $code === UPLOAD_ERR_FORM_SIZE
+            ? ' File exceeds PHP upload_max_filesize / post_max_size (need at least 50MB).'
+            : '';
+        sendJSON(['error' => 'No file uploaded or upload error.' . $hint], 400);
+        return;
+    }
+
+    $allowedTypes = [
+        'video/webm' => 'webm',
+        'video/mp4' => 'mp4',
+        'video/ogg' => 'ogv',
+        'video/quicktime' => 'mov',
+        'video/x-matroska' => 'webm',
+        'application/ogg' => 'ogv',
+    ];
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mimeType = finfo_file($finfo, $file['tmp_name']);
+    finfo_close($finfo);
+    $origExt = strtolower((string)pathinfo($file['name'] ?? '', PATHINFO_EXTENSION));
+    $extToMime = [
+        'webm' => 'video/webm',
+        'mp4' => 'video/mp4',
+        'ogv' => 'video/ogg',
+        'ogg' => 'video/ogg',
+        'mov' => 'video/quicktime',
+    ];
+    if ((!is_string($mimeType) || !isset($allowedTypes[$mimeType])) && isset($extToMime[$origExt])) {
+        if (!is_string($mimeType) || $mimeType === 'application/octet-stream' || $mimeType === 'application/x-octet-stream') {
+            $mimeType = $extToMime[$origExt];
+        }
+    }
+    if (!is_string($mimeType) || !isset($allowedTypes[$mimeType])) {
+        sendJSON(['error' => 'Invalid file type. Allowed: WebM, MP4, Ogg, QuickTime'], 400);
+        return;
+    }
+
+    $maxSize = 50 * 1024 * 1024;
+    if ($file['size'] > $maxSize) {
+        sendJSON(['error' => 'File size too large. Maximum size: 50MB'], 400);
+        return;
+    }
+
+    $uploadDir = __DIR__ . '/../uploads';
+    if (!file_exists($uploadDir)) {
+        if (!mkdir($uploadDir, 0755, true)) {
+            sendJSON(['error' => 'Failed to create uploads directory'], 500);
+            return;
+        }
+    }
+
+    $origExt = strtolower((string)pathinfo($file['name'] ?? '', PATHINFO_EXTENSION));
+    $ext = $allowedTypes[$mimeType];
+    if ($origExt === 'ogg' && $ext === 'ogv') {
+        $ext = 'ogg';
+    }
+    $filename = 'maintvid_' . time() . '_' . uniqid() . '.' . $ext;
+    $filepath = $uploadDir . '/' . $filename;
+
+    if (!move_uploaded_file($file['tmp_name'], $filepath)) {
+        sendJSON(['error' => 'Failed to save uploaded file'], 500);
+        return;
+    }
+
+    $url = uploadsBasePath() . '/uploads/' . $filename;
+    sendJSON([
+        'success' => true,
+        'url' => $url
+    ]);
+}
+

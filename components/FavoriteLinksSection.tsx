@@ -23,6 +23,8 @@ import { isSshLinkUrl, tryHandleSshLinkClick } from '../utils/sshLink';
 import { isVncLinkUrl, tryHandleVncLinkClick } from '../utils/vncLink';
 import { getTileAnimationClass, getTileDecorationClass, type TileAnimation, type TileDecoration } from './TileAnimationSelector';
 import { useAccessRestrictionGate } from '../contexts/AccessRestrictionContext';
+import { isLinkInMaintenance } from '../utils/linkMaintenance';
+import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
 
 const stripHtml = (value: string): string =>
   String(value || '').replace(/<[^>]*>/g, '').trim();
@@ -76,6 +78,7 @@ export interface FavoriteLinksSectionProps {
   onUnfavorite: (linkId: string) => void | Promise<void>;
   onOpenNotes: (link: FavoriteLink) => void;
   onOpenLinkInfo: (link: Link) => void;
+  onOpenMaintenance: (link: Link) => void;
 }
 
 const SortableFavoriteLinkCard: React.FC<{
@@ -98,6 +101,7 @@ const SortableFavoriteLinkCard: React.FC<{
   onUnfavorite: () => void;
   onOpenNotes: () => void;
   onOpenLinkInfo: () => void;
+  onOpenMaintenance: () => void;
   showArrowReorder: boolean;
   compact?: boolean;
 }> = ({
@@ -120,6 +124,7 @@ const SortableFavoriteLinkCard: React.FC<{
   onUnfavorite,
   onOpenNotes,
   onOpenLinkInfo,
+  onOpenMaintenance,
   showArrowReorder,
   compact = false,
 }) => {
@@ -165,6 +170,13 @@ const SortableFavoriteLinkCard: React.FC<{
     if (!allowed) {
       e.preventDefault();
       e.stopPropagation();
+      return;
+    }
+
+    if (isLinkInMaintenance(link)) {
+      e.preventDefault();
+      e.stopPropagation();
+      onOpenMaintenance();
       return;
     }
 
@@ -229,8 +241,11 @@ const SortableFavoriteLinkCard: React.FC<{
           </div>
         )}
         <div className="flex-1 min-w-0">
-          <div className="text-[13px] leading-tight font-semibold text-slate-900 dark:text-white truncate group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
-            {title}
+          <div className="flex items-center gap-1.5 min-w-0">
+            <div className="text-[13px] leading-tight font-semibold text-slate-900 dark:text-white truncate group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+              {title}
+            </div>
+            <LinkMaintenanceBadge link={link} compact />
           </div>
         </div>
         <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -325,6 +340,7 @@ const SortableFavoriteLinkCard: React.FC<{
         >
           {title}
         </div>
+        <LinkMaintenanceBadge link={link} className="mt-1" />
         <div
           className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5"
           style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}
@@ -492,6 +508,7 @@ export const FavoriteLinksSection: React.FC<FavoriteLinksSectionProps> = ({
   onUnfavorite,
   onOpenNotes,
   onOpenLinkInfo,
+  onOpenMaintenance,
 }) => {
   const [savingOrder, setSavingOrder] = useState(false);
   const [linksCompact, setLinksCompact] = useState(() => readFavLinksCompactPref());
@@ -784,6 +801,7 @@ export const FavoriteLinksSection: React.FC<FavoriteLinksSectionProps> = ({
                   onUnfavorite={() => onUnfavorite(link.id)}
                   onOpenNotes={() => onOpenNotes(link)}
                   onOpenLinkInfo={() => onOpenLinkInfo(link as unknown as Link)}
+                  onOpenMaintenance={() => onOpenMaintenance(link as unknown as Link)}
                   showArrowReorder={!linksCompact && canDrag}
                   compact={linksCompact}
                 />

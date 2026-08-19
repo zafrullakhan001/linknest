@@ -17,6 +17,9 @@ import { getFavoriteLinks, resolveFavoriteLinks, FavoriteLink } from '../service
 import { getDisplayUrl, viewerLinkDisplay, viewerLinkUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick } from '../utils/sshLink';
 import { tryHandleVncLinkClick } from '../utils/vncLink';
+import { isLinkInMaintenance } from '../utils/linkMaintenance';
+import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
+import { LinkMaintenanceDialog } from './LinkMaintenanceDialog';
 import { QRCodeDialog } from './QRCodeDialog';
 import { UpdatesDialog } from './UpdatesDialog';
 import { ThemeModeMenu } from './ThemeModeMenu';
@@ -60,6 +63,9 @@ function buildGuestFavoriteLinksFromTiles(allTiles: Tile[], favoriteLinkIds: str
         tooltip: link.tooltip,
         browser: link.browser,
         richTextContent: link.richTextContent,
+        maintenanceEnabled: link.maintenanceEnabled,
+        maintenanceMessage: link.maintenanceMessage,
+        maintenanceVideoUrl: link.maintenanceVideoUrl,
         isFavorite: true,
         health: link.health,
         tile: {
@@ -172,6 +178,12 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
 
   const [favoriteLinks, setFavoriteLinks] = useState<FavoriteLink[]>([]);
   const [isLoadingFavoriteLinks, setIsLoadingFavoriteLinks] = useState(false);
+  const [linkMaintenanceDialog, setLinkMaintenanceDialog] = useState<{
+    label: string;
+    icon?: string;
+    maintenanceMessage?: string;
+    maintenanceVideoUrl?: string;
+  } | null>(null);
   const isFavoritesTab = activeTab === 'favorites' || activeTab === 'public-favorites';
   const [publicFavoritesSubTab, setPublicFavoritesSubTabState] = useState<PublicFavoritesSubTab>(() =>
     typeof window !== 'undefined' ? getPublicFavoritesSubTab() : 'favorites'
@@ -1098,6 +1110,15 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                         if (tryHandleVncLinkClick(link.url || '')) return;
                         const allowed = await assertCanOpen('link', link.id);
                         if (!allowed) return;
+                        if (isLinkInMaintenance(link)) {
+                          setLinkMaintenanceDialog({
+                            label: link.label,
+                            icon: link.icon,
+                            maintenanceMessage: link.maintenanceMessage,
+                            maintenanceVideoUrl: link.maintenanceVideoUrl,
+                          });
+                          return;
+                        }
                         window.open(link.url, '_blank', 'noopener,noreferrer');
                       }}
                       className="group relative flex items-center gap-3 p-3.5 w-full text-left bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl active:scale-[0.99] transition-all shadow-sm"
@@ -1109,6 +1130,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                         <div className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-2">
                           {stripHtml(link.label)}
                         </div>
+                        <LinkMaintenanceBadge link={link} className="mt-1" />
                         <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" title={link.url}>
                           {host}
                         </div>
@@ -1159,6 +1181,15 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                       if (tryHandleVncLinkClick(link.url || '')) return;
                       const allowed = await assertCanOpen('link', link.id);
                       if (!allowed) return;
+                      if (isLinkInMaintenance(link)) {
+                        setLinkMaintenanceDialog({
+                          label: link.label,
+                          icon: link.icon,
+                          maintenanceMessage: link.maintenanceMessage,
+                          maintenanceVideoUrl: link.maintenanceVideoUrl,
+                        });
+                        return;
+                      }
                       window.open(link.url, '_blank', 'noopener,noreferrer');
                     }}
                     className="group relative flex items-center gap-3 p-3.5 w-full text-left bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl active:scale-[0.99] transition-all shadow-sm"
@@ -1170,6 +1201,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                       <div className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-2">
                         {stripHtml(link.label)}
                       </div>
+                      <LinkMaintenanceBadge link={link} className="mt-1" />
                       <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" title={viewerLinkUrl(link, link.tile?.showShortUrls)}>
                         {host}
                       </div>
@@ -1387,6 +1419,14 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
         ) : null}
       </div>
 
+      <LinkMaintenanceDialog
+        isOpen={!!linkMaintenanceDialog}
+        onClose={() => setLinkMaintenanceDialog(null)}
+        linkLabel={linkMaintenanceDialog?.label || ''}
+        linkIcon={linkMaintenanceDialog?.icon}
+        maintenanceMessage={linkMaintenanceDialog?.maintenanceMessage}
+        maintenanceVideoUrl={linkMaintenanceDialog?.maintenanceVideoUrl}
+      />
       <QRCodeDialog
         isOpen={showAppQrDialog}
         onClose={() => setShowAppQrDialog(false)}

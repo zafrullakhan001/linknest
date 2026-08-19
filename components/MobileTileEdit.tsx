@@ -3,6 +3,8 @@ import { Tile, Tab, LinkSection, Link, LinkVisibility, TileVisibility, ThemeColo
 import { User } from '../services/authService';
 import { AppSettings } from '../services/settingsService';
 import { MobileRichTextEditor } from './MobileRichTextEditor';
+import { LinkMaintenanceVideoField } from './LinkMaintenanceVideoField';
+import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
 import { TitleEmojiPicker } from './TitleEmojiPicker';
 import { HierarchyExpandControls } from './TileHierarchyViews';
 import { AccessRestrictionsEditor } from './AccessRestrictionsEditor';
@@ -103,6 +105,9 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         tooltip: string;
         browser: string;
         richTextContent: string;
+        maintenanceEnabled: boolean;
+        maintenanceMessage: string;
+        maintenanceVideoUrl: string;
     }>>({});
     const [editingLink, setEditingLink] = useState<{ tabId: string; sectionId: string; linkId: string } | null>(null);
     const [editLinkState, setEditLinkState] = useState<Record<string, {
@@ -116,6 +121,9 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         tooltip: string;
         browser: string;
         richTextContent: string;
+        maintenanceEnabled: boolean;
+        maintenanceMessage: string;
+        maintenanceVideoUrl: string;
     }>>({});
     const [linkSearchTerm, setLinkSearchTerm] = useState('');
     const [showLinkUserPicker, setShowLinkUserPicker] = useState<Record<string, boolean>>({});
@@ -212,7 +220,10 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
             notes: state.notes || undefined,
             tooltip: state.tooltip || undefined,
             browser: state.browser || 'default',
-            richTextContent: state.richTextContent || undefined
+            richTextContent: state.richTextContent || undefined,
+            maintenanceEnabled: state.maintenanceEnabled === true,
+            maintenanceMessage: state.maintenanceMessage || undefined,
+            maintenanceVideoUrl: state.maintenanceVideoUrl || undefined
         };
 
         const updatedTabs = editTabs.map(tab =>
@@ -240,7 +251,10 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                 notes: '',
                 tooltip: '',
                 browser: 'default',
-                richTextContent: ''
+                richTextContent: '',
+                maintenanceEnabled: false,
+                maintenanceMessage: '',
+                maintenanceVideoUrl: ''
             }
         }));
         setShowAddLinkForm(prev => ({ ...prev, [sectionId]: false }));
@@ -264,7 +278,10 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                     notes: link.notes || '',
                     tooltip: link.tooltip || '',
                     browser: link.browser || 'default',
-                    richTextContent: link.richTextContent || ''
+                    richTextContent: link.richTextContent || '',
+                    maintenanceEnabled: link.maintenanceEnabled === true,
+                    maintenanceMessage: link.maintenanceMessage || '',
+                    maintenanceVideoUrl: link.maintenanceVideoUrl || ''
                 }
             });
             // Close add form if open
@@ -300,7 +317,10 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                             notes: state.notes || undefined,
                                             tooltip: state.tooltip || undefined,
                                             browser: state.browser || 'default',
-                                            richTextContent: state.richTextContent || undefined
+                                            richTextContent: state.richTextContent || undefined,
+                                            maintenanceEnabled: state.maintenanceEnabled === true,
+                                            maintenanceMessage: state.maintenanceMessage || undefined,
+                                            maintenanceVideoUrl: state.maintenanceVideoUrl || undefined
                                         }
                                         : link
                                 ) || []
@@ -341,7 +361,10 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         notes: '',
         tooltip: '',
         browser: 'default',
-        richTextContent: ''
+        richTextContent: '',
+        maintenanceEnabled: false,
+        maintenanceMessage: '',
+        maintenanceVideoUrl: ''
     });
 
     const applyMobileLinkState = (
@@ -358,7 +381,10 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         notes: state.notes || undefined,
         tooltip: state.tooltip || undefined,
         browser: state.browser || 'default',
-        richTextContent: state.richTextContent || undefined
+        richTextContent: state.richTextContent || undefined,
+        maintenanceEnabled: state.maintenanceEnabled === true,
+        maintenanceMessage: state.maintenanceMessage || undefined,
+        maintenanceVideoUrl: state.maintenanceVideoUrl || undefined
     });
 
     const flushPendingLinkChanges = (): Tab[] => {
@@ -405,7 +431,10 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                 notes: state.notes || undefined,
                 tooltip: state.tooltip || undefined,
                 browser: state.browser || 'default',
-                richTextContent: state.richTextContent || undefined
+                richTextContent: state.richTextContent || undefined,
+                maintenanceEnabled: state.maintenanceEnabled === true,
+                maintenanceMessage: state.maintenanceMessage || undefined,
+                maintenanceVideoUrl: state.maintenanceVideoUrl || undefined
             };
             nextTabs = nextTabs.map(t =>
                 t.id !== tab.id
@@ -512,7 +541,10 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                     notes: '',
                     tooltip: '',
                     browser: 'default',
-                    richTextContent: ''
+                    richTextContent: '',
+                    maintenanceEnabled: false,
+                    maintenanceMessage: '',
+                    maintenanceVideoUrl: ''
                 }),
                 [field]: value
             }
@@ -533,7 +565,10 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                     notes: '',
                     tooltip: '',
                     browser: 'default',
-                    richTextContent: ''
+                    richTextContent: '',
+                    maintenanceEnabled: false,
+                    maintenanceMessage: '',
+                    maintenanceVideoUrl: ''
                 }),
                 [field]: value
             }
@@ -1228,6 +1263,41 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                         placeholder="Enter rich text content..."
                                                                     />
                                                                 </div>
+                                                                <div className={`flex items-center justify-between gap-3 p-3 rounded-lg border-2 ${
+                                                                    newLinkState[section.id]?.maintenanceEnabled
+                                                                        ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40'
+                                                                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'
+                                                                }`}>
+                                                                    <div>
+                                                                        <div className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Maintenance window</div>
+                                                                        <div className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                                                                            {newLinkState[section.id]?.maintenanceEnabled ? 'On' : 'Off'}
+                                                                        </div>
+                                                                    </div>
+                                                                    <button
+                                                                        type="button"
+                                                                        role="switch"
+                                                                        aria-checked={!!newLinkState[section.id]?.maintenanceEnabled}
+                                                                        onClick={() => updateNewLinkState(section.id, 'maintenanceEnabled', !newLinkState[section.id]?.maintenanceEnabled)}
+                                                                        className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${newLinkState[section.id]?.maintenanceEnabled ? 'bg-amber-500' : 'bg-slate-400 dark:bg-slate-600'}`}
+                                                                    >
+                                                                        <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${newLinkState[section.id]?.maintenanceEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                                    </button>
+                                                                </div>
+                                                                <div>
+                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
+                                                                        Maintenance message
+                                                                    </label>
+                                                                    <MobileRichTextEditor
+                                                                        value={newLinkState[section.id]?.maintenanceMessage || ''}
+                                                                        onChange={(value) => updateNewLinkState(section.id, 'maintenanceMessage', value)}
+                                                                        placeholder="Describe the maintenance window..."
+                                                                    />
+                                                                </div>
+                                                                <LinkMaintenanceVideoField
+                                                                    value={newLinkState[section.id]?.maintenanceVideoUrl || ''}
+                                                                    onChange={(url) => updateNewLinkState(section.id, 'maintenanceVideoUrl', url)}
+                                                                />
                                                                 <button
                                                                     onClick={() => handleAddLink(tab.id, section.id)}
                                                                     className="w-full px-4 py-3 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-semibold active:bg-brand-700 touch-manipulation"
@@ -1463,6 +1533,41 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                                             placeholder="Enter rich text content..."
                                                                                         />
                                                                                     </div>
+                                                                                    <div className={`flex items-center justify-between gap-3 p-3 rounded-lg border-2 ${
+                                                                                        editLinkState[link.id]?.maintenanceEnabled
+                                                                                            ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40'
+                                                                                            : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'
+                                                                                    }`}>
+                                                                                        <div>
+                                                                                            <div className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Maintenance window</div>
+                                                                                            <div className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                                                                                                {editLinkState[link.id]?.maintenanceEnabled ? 'On' : 'Off'}
+                                                                                            </div>
+                                                                                        </div>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            role="switch"
+                                                                                            aria-checked={!!editLinkState[link.id]?.maintenanceEnabled}
+                                                                                            onClick={() => updateEditLinkState(link.id, 'maintenanceEnabled', !editLinkState[link.id]?.maintenanceEnabled)}
+                                                                                            className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${editLinkState[link.id]?.maintenanceEnabled ? 'bg-amber-500' : 'bg-slate-400 dark:bg-slate-600'}`}
+                                                                                        >
+                                                                                            <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${editLinkState[link.id]?.maintenanceEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                                                        </button>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
+                                                                                            Maintenance message
+                                                                                        </label>
+                                                                                        <MobileRichTextEditor
+                                                                                            value={editLinkState[link.id]?.maintenanceMessage || ''}
+                                                                                            onChange={(value) => updateEditLinkState(link.id, 'maintenanceMessage', value)}
+                                                                                            placeholder="Describe the maintenance window..."
+                                                                                        />
+                                                                                    </div>
+                                                                                    <LinkMaintenanceVideoField
+                                                                                        value={editLinkState[link.id]?.maintenanceVideoUrl || ''}
+                                                                                        onChange={(url) => updateEditLinkState(link.id, 'maintenanceVideoUrl', url)}
+                                                                                    />
                                                                                     <div className="flex gap-2">
                                                                                         <button
                                                                                             onClick={handleCancelEditLink}
@@ -1490,6 +1595,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                                                 <div className="text-sm font-medium text-slate-900 dark:text-white truncate">
                                                                                                     {link.label || 'Untitled Link'}
                                                                                                 </div>
+                                                                                                <LinkMaintenanceBadge link={link} compact className="mt-0.5" />
                                                                                                 <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
                                                                                                     {link.url}
                                                                                                 </div>

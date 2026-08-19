@@ -133,7 +133,7 @@ if (!defined('SYSTEM_TOKEN')) {
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 90);
+    define('LINKNEST_SCHEMA_VERSION', 91);
 }
 
 function getSchemaPatchFlagPath(): string {
@@ -534,6 +534,88 @@ function ensureShortUrlsSchema(PDO $db): void {
     }
 }
 
+/** Per-link maintenance window columns (toggle, HTML message, optional video). */
+function ensureLinkMaintenanceColumns(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $exists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='links'")->fetchColumn();
+        if (!$exists) {
+            return;
+        }
+        $columns = $db->query('PRAGMA table_info(links)')->fetchAll(PDO::FETCH_ASSOC);
+        $names = array_column($columns, 'name');
+        if (!in_array('maintenance_enabled', $names, true)) {
+            $db->exec('ALTER TABLE links ADD COLUMN maintenance_enabled INTEGER DEFAULT 0');
+        }
+        if (!in_array('maintenance_message', $names, true)) {
+            $db->exec('ALTER TABLE links ADD COLUMN maintenance_message TEXT');
+        }
+        if (!in_array('maintenance_video_url', $names, true)) {
+            $db->exec('ALTER TABLE links ADD COLUMN maintenance_video_url TEXT');
+        }
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureLinkMaintenanceColumns warning: ' . $e->getMessage());
+    }
+}
+
+function mapLinkMaintenanceFromRow(array $row): array {
+    $message = isset($row['maintenance_message']) ? trim((string)$row['maintenance_message']) : '';
+    $video = isset($row['maintenance_video_url']) ? trim((string)$row['maintenance_video_url']) : '';
+    return [
+        'maintenanceEnabled' => !empty($row['maintenance_enabled']),
+        'maintenanceMessage' => $message !== '' ? $message : null,
+        'maintenanceVideoUrl' => $video !== '' ? $video : null,
+    ];
+}
+
+function applyLinkMaintenanceToApi(array &$link, array $row): void {
+    foreach (mapLinkMaintenanceFromRow($row) as $key => $value) {
+        $link[$key] = $value;
+    }
+}
+
+function linkMaintenanceEnabledFromInput($link): int {
+    return (is_array($link) && !empty($link['maintenanceEnabled'])) ? 1 : 0;
+}
+
+function linkMaintenanceMessageFromInput($link): ?string {
+    if (!is_array($link) || !isset($link['maintenanceMessage']) || !is_string($link['maintenanceMessage'])) {
+        return null;
+    }
+    $value = trim($link['maintenanceMessage']);
+    return $value === '' ? null : $value;
+}
+
+function linkMaintenanceVideoUrlFromInput($link): ?string {
+    if (!is_array($link) || !isset($link['maintenanceVideoUrl']) || !is_string($link['maintenanceVideoUrl'])) {
+        return null;
+    }
+    $value = trim($link['maintenanceVideoUrl']);
+    return $value === '' ? null : $value;
+}
+
+function linkMaintenanceInsertValuesFromInput($link): array {
+    return [
+        linkMaintenanceEnabledFromInput($link),
+        linkMaintenanceMessageFromInput($link),
+        linkMaintenanceVideoUrlFromInput($link),
+    ];
+}
+
+function linkMaintenanceInsertValuesFromRow(array $row): array {
+    $message = isset($row['maintenance_message']) ? trim((string)$row['maintenance_message']) : '';
+    $video = isset($row['maintenance_video_url']) ? trim((string)$row['maintenance_video_url']) : '';
+    return [
+        !empty($row['maintenance_enabled']) ? 1 : 0,
+        $message !== '' ? $message : null,
+        $video !== '' ? $video : null,
+    ];
+}
+
 function ensureInheritShortUrlsColumns(PDO $db): void {
     static $ensured = false;
     if ($ensured) {
@@ -838,6 +920,7 @@ function initDatabase() {
             ensureAccessRestrictionsColumns($db);
             ensureShortUrlsSchema($db);
             ensureInheritShortUrlsColumns($db);
+            ensureLinkMaintenanceColumns($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -865,6 +948,7 @@ function initDatabase() {
             ensureAccessRestrictionsColumns($db);
             ensureShortUrlsSchema($db);
             ensureInheritShortUrlsColumns($db);
+            ensureLinkMaintenanceColumns($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -1839,6 +1923,8 @@ function initDatabase() {
         } catch (PDOException $e) {
             error_log('Links animation migration warning: ' . $e->getMessage());
         }
+
+        ensureLinkMaintenanceColumns($db);
         
         // Create rich_text_content table
         $db->exec('CREATE TABLE IF NOT EXISTS rich_text_content (
