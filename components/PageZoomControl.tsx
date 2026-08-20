@@ -88,6 +88,9 @@ export const PageZoomControl: React.FC = () => {
     // Cache styles in localStorage for immediate access (works for both authenticated and guest users)
     styleService.cacheStyles(updatedStyles);
     
+    // Always persist locally so the next refresh can apply zoom before Style Manager CSS loads
+    localStorage.setItem('linknest_user_page_zoom', clampedZoom.toString());
+
     // Save preference based on user type
     if (isAuthenticated) {
       // For logged-in users: save to database
@@ -95,12 +98,7 @@ export const PageZoomControl: React.FC = () => {
         await userPreferencesService.updatePreference('page_zoom', clampedZoom.toString());
       } catch (error) {
         console.error('Failed to save zoom to database:', error);
-        // Fallback to localStorage if database save fails
-        localStorage.setItem('linknest_user_page_zoom', clampedZoom.toString());
       }
-    } else {
-      // For guest users: save to localStorage only
-      localStorage.setItem('linknest_user_page_zoom', clampedZoom.toString());
     }
   };
 

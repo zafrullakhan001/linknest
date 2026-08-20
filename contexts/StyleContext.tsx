@@ -12,11 +12,48 @@ interface StyleContextType {
 
 const StyleContext = createContext<StyleContextType | undefined>(undefined);
 
+const USER_PAGE_ZOOM_KEY = 'linknest_user_page_zoom';
+
+function parsePageZoom(value: string | null | undefined): number | null {
+  if (value == null || value === '') return null;
+  const zoomValue = parseInt(String(value), 10);
+  if (!isNaN(zoomValue) && zoomValue >= 10 && zoomValue <= 200) {
+    return zoomValue;
+  }
+  return null;
+}
+
+function readStoredUserZoom(): number | null {
+  try {
+    return parsePageZoom(localStorage.getItem(USER_PAGE_ZOOM_KEY));
+  } catch {
+    return null;
+  }
+}
+
+function persistStoredUserZoom(zoom: number): void {
+  try {
+    localStorage.setItem(USER_PAGE_ZOOM_KEY, String(zoom));
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+/** Keep the user's page zoom when global Style Manager styles load. */
+function overlayUserPageZoom(loaded: SpaceStyles, current: SpaceStyles, dbZoom: number | null): SpaceStyles {
+  const zoom = dbZoom ?? readStoredUserZoom() ?? current.pageZoom ?? loaded.pageZoom ?? 100;
+  if (loaded.pageZoom === zoom) return loaded;
+  return { ...loaded, pageZoom: zoom };
+}
+
 const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // Initialize with cached styles if available (including stale cache), otherwise use defaults
   const getInitialStyles = () => {
     const cached = styleService.getCachedStyles(true);
-    return cached || DEFAULT_STYLES;
+    const base = cached || DEFAULT_STYLES;
+    const storedZoom = readStoredUserZoom();
+    if (storedZoom === null || base.pageZoom === storedZoom) return base;
+    return { ...base, pageZoom: storedZoom };
   };
 
   const hasCachedOnMount = styleService.hasCachedStyles(true);
@@ -24,6 +61,7 @@ const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [styles, setStyles] = useState<SpaceStyles>(getInitialStyles);
   const [isLoading, setIsLoading] = useState(!hasCachedOnMount);
   const { isAuthenticated, loading: authLoading } = useAuth();
+  const isAuthenticatedRef = useRef(isAuthenticated);
   const prevAuthRef = useRef<boolean | undefined>(undefined);
   const initialMountRef = useRef(true);
   const applyingStylesRef = useRef(false);
@@ -36,6 +74,10 @@ const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   useEffect(() => {
     stylesRef.current = styles;
   }, [styles]);
+
+  useEffect(() => {
+    isAuthenticatedRef.current = isAuthenticated;
+  }, [isAuthenticated]);
 
   const applyStyles = useCallback((styleData: SpaceStyles, synchronous: boolean = false) => {
     const apply = () => {
@@ -122,98 +164,44 @@ const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     try {
       const loadedStyles = await styleService.getStyles();
       const loadSource = styleService.getLastLoadSource();
-      
-      // For authenticated users, load their personal zoom preference from database
-      // This ensures registered users get their saved zoom preference, not the global styles zoom
-      if (isAuthenticated) {
+
+      let dbZoom: number | null = null;
+      if (isAuthenticatedRef.current) {
         try {
-          const userZoom = await userPreferencesService.getPreference('page_zoom');
-          if (userZoom) {
-            const zoomValue = parseInt(userZoom, 10);
-            if (!isNaN(zoomValue) && zoomValue >= 10 && zoomValue <= 200) {
-              loadedStyles.pageZoom = zoomValue;
-            }
+          dbZoom = parsePageZoom(await userPreferencesService.getPreference('page_zoom'));
+          if (dbZoom !== null) {
+            persistStoredUserZoom(dbZoom);
           }
         } catch (error) {
           console.error('Failed to load user zoom preference:', error);
-          // Fallback to localStorage if database fails
-          const localZoom = localStorage.getItem('linknest_user_page_zoom');
-          if (localZoom) {
-            const zoomValue = parseInt(localZoom, 10);
-            if (!isNaN(zoomValue) && zoomValue >= 10 && zoomValue <= 200) {
-              loadedStyles.pageZoom = zoomValue;
-            }
-          }
-        }
-      } else {
-        // For guest users, preserve their localStorage zoom preference
-        // This prevents backend styles from overwriting guest user's zoom setting
-        const guestZoom = localStorage.getItem('linknest_user_page_zoom');
-        if (guestZoom) {
-          const zoomValue = parseInt(guestZoom, 10);
-          if (!isNaN(zoomValue) && zoomValue >= 10 && zoomValue <= 200) {
-            loadedStyles.pageZoom = zoomValue;
-          }
         }
       }
-      
-      setStyles(loadedStyles);
-      stylesRef.current = loadedStyles;
-      // Apply loaded styles immediately
-      applyStyles(loadedStyles, false);
-      // Cache the loaded styles
-      styleService.cacheStyles(loadedStyles);
+
+      // Do not let global Style Manager zoom replace the zoom already on screen
+      const nextStyles = overlayUserPageZoom(loadedStyles, stylesRef.current, dbZoom);
+      setStyles(nextStyles);
+      stylesRef.current = nextStyles;
+      applyStyles(nextStyles, false);
+      styleService.cacheStyles(nextStyles);
 
       if (loadSource === 'stale-cache' || loadSource === 'defaults') {
         scheduleBackgroundStylesRetry();
       }
     } catch (error) {
       console.error('Failed to load styles:', error);
-      // Try to use cached styles on error (including stale)
       const cached = styleService.getCachedStyles(true);
-      const fallbackStyles = cached || DEFAULT_STYLES;
-      
-      // For authenticated users, try to load zoom from database
-      if (isAuthenticated) {
-        try {
-          const userZoom = await userPreferencesService.getPreference('page_zoom');
-          if (userZoom) {
-            const zoomValue = parseInt(userZoom, 10);
-            if (!isNaN(zoomValue) && zoomValue >= 10 && zoomValue <= 200) {
-              fallbackStyles.pageZoom = zoomValue;
-            }
-          }
-        } catch (error) {
-          // Fallback to localStorage
-          const localZoom = localStorage.getItem('linknest_user_page_zoom');
-          if (localZoom) {
-            const zoomValue = parseInt(localZoom, 10);
-            if (!isNaN(zoomValue) && zoomValue >= 10 && zoomValue <= 200) {
-              fallbackStyles.pageZoom = zoomValue;
-            }
-          }
-        }
-      } else {
-        // For guest users, preserve their localStorage zoom preference
-        const guestZoom = localStorage.getItem('linknest_user_page_zoom');
-        if (guestZoom) {
-          const zoomValue = parseInt(guestZoom, 10);
-          if (!isNaN(zoomValue) && zoomValue >= 10 && zoomValue <= 200) {
-            fallbackStyles.pageZoom = zoomValue;
-          }
-        }
-      }
-      
-      setStyles(fallbackStyles);
-      stylesRef.current = fallbackStyles;
-      applyStyles(fallbackStyles, false);
+      const fallbackBase = cached || DEFAULT_STYLES;
+      const nextStyles = overlayUserPageZoom(fallbackBase, stylesRef.current, readStoredUserZoom());
+      setStyles(nextStyles);
+      stylesRef.current = nextStyles;
+      applyStyles(nextStyles, false);
       scheduleBackgroundStylesRetry();
     } finally {
       if (!options?.silent) {
         setIsLoading(false);
       }
     }
-  }, [applyStyles, isAuthenticated, scheduleBackgroundStylesRetry]);
+  }, [applyStyles, scheduleBackgroundStylesRetry]);
 
   useEffect(() => {
     loadStylesRef.current = loadStyles;
@@ -302,50 +290,33 @@ const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const zoomCheckInProgressRef = useRef(false);
   useEffect(() => {
     if (authLoading || zoomCheckInProgressRef.current) return;
-    
+
     const preserveZoomPreference = async () => {
       zoomCheckInProgressRef.current = true;
-      
+
       try {
-        let savedZoom: number | null = null;
-        
+        let savedZoom = readStoredUserZoom();
+
         if (isAuthenticated) {
-          // For registered users: load from database
           try {
-            const dbZoom = await userPreferencesService.getPreference('page_zoom');
-            if (dbZoom) {
-              const zoomValue = parseInt(dbZoom, 10);
-              if (!isNaN(zoomValue) && zoomValue >= 10 && zoomValue <= 200) {
-                savedZoom = zoomValue;
-              }
+            const dbZoom = parsePageZoom(await userPreferencesService.getPreference('page_zoom'));
+            if (dbZoom !== null) {
+              savedZoom = dbZoom;
             }
-          } catch (error) {
-            // Fallback to localStorage
-            const localZoom = localStorage.getItem('linknest_user_page_zoom');
-            if (localZoom) {
-              const zoomValue = parseInt(localZoom, 10);
-              if (!isNaN(zoomValue) && zoomValue >= 10 && zoomValue <= 200) {
-                savedZoom = zoomValue;
-              }
-            }
-          }
-        } else {
-          // For guest users: load from localStorage
-          const guestZoom = localStorage.getItem('linknest_user_page_zoom');
-          if (guestZoom) {
-            const zoomValue = parseInt(guestZoom, 10);
-            if (!isNaN(zoomValue) && zoomValue >= 10 && zoomValue <= 200) {
-              savedZoom = zoomValue;
-            }
+          } catch {
+            // keep localStorage zoom
           }
         }
-        
+
+        if (savedZoom !== null) {
+          persistStoredUserZoom(savedZoom);
+        }
+
         // Only restore if:
         // 1. Current zoom is different from user's saved preference
         // 2. The current zoom doesn't match what we last set (not a user change)
         // This prevents overwriting user-initiated zoom changes
         if (savedZoom !== null && styles.pageZoom !== savedZoom && lastUserZoomRef.current !== savedZoom) {
-          // This appears to be a backend reload overwriting user preference
           const updatedStyles = { ...styles, pageZoom: savedZoom };
           setStyles(updatedStyles);
           stylesRef.current = updatedStyles;
@@ -353,7 +324,6 @@ const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
           styleService.cacheStyles(updatedStyles);
           lastUserZoomRef.current = savedZoom;
         } else if (savedZoom !== null && styles.pageZoom === savedZoom) {
-          // Current zoom matches user preference, update ref
           lastUserZoomRef.current = savedZoom;
         }
       } catch (error) {
@@ -362,7 +332,7 @@ const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
         zoomCheckInProgressRef.current = false;
       }
     };
-    
+
     preserveZoomPreference();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [styles.pageZoom, isAuthenticated, authLoading]); // Only watch pageZoom, not entire styles object
@@ -574,6 +544,7 @@ const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     // This prevents the preservation useEffect from overwriting user-initiated changes
     if (newStyles.pageZoom !== undefined) {
       lastUserZoomRef.current = newStyles.pageZoom;
+      persistStoredUserZoom(newStyles.pageZoom);
     }
     
     setStyles(newStyles);
