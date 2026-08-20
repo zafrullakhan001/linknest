@@ -861,15 +861,18 @@ function mcpEnsureTabSection(PDO $db, string $tileId, ?string $tabTitle, ?string
         $stmt->execute([$tileId, $tabTitle]);
         $tabId = $stmt->fetchColumn() ?: null;
     }
-    if (!$tabId) {
+    if (!$tabId && $tabTitle === '') {
         $stmt = $db->prepare('SELECT id FROM tabs WHERE tile_id = ? ORDER BY position LIMIT 1');
         $stmt->execute([$tileId]);
         $tabId = $stmt->fetchColumn() ?: null;
     }
     if (!$tabId) {
         $tabId = function_exists('generateUuid') ? generateUuid() : uniqid('tab_', true);
-        $ins = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, visibility, published) VALUES (?, ?, ?, 0, ?, 1)');
-        $ins->execute([$tabId, $tileId, $tabTitle !== '' ? $tabTitle : 'General', 'public']);
+        $posStmt = $db->prepare('SELECT COALESCE(MAX(position), -1) + 1 FROM tabs WHERE tile_id = ?');
+        $posStmt->execute([$tileId]);
+        $tabPosition = (int)$posStmt->fetchColumn();
+        $ins = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, visibility, published) VALUES (?, ?, ?, ?, ?, 1)');
+        $ins->execute([$tabId, $tileId, $tabTitle !== '' ? $tabTitle : 'General', $tabPosition, 'public']);
     }
 
     $sectionId = null;
@@ -878,15 +881,18 @@ function mcpEnsureTabSection(PDO $db, string $tileId, ?string $tabTitle, ?string
         $stmt->execute([$tabId, $sectionTitle]);
         $sectionId = $stmt->fetchColumn() ?: null;
     }
-    if (!$sectionId) {
+    if (!$sectionId && $sectionTitle === '') {
         $stmt = $db->prepare('SELECT id FROM sections WHERE tab_id = ? ORDER BY position LIMIT 1');
         $stmt->execute([$tabId]);
         $sectionId = $stmt->fetchColumn() ?: null;
     }
     if (!$sectionId) {
         $sectionId = function_exists('generateUuid') ? generateUuid() : uniqid('section_', true);
-        $ins = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, position, visibility, published) VALUES (?, ?, ?, ?, 0, ?, 1)');
-        $ins->execute([$sectionId, $tileId, $tabId, $sectionTitle !== '' ? $sectionTitle : 'Links', 'public']);
+        $posStmt = $db->prepare('SELECT COALESCE(MAX(position), -1) + 1 FROM sections WHERE tab_id = ?');
+        $posStmt->execute([$tabId]);
+        $sectionPosition = (int)$posStmt->fetchColumn();
+        $ins = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, position, visibility, published) VALUES (?, ?, ?, ?, ?, ?, 1)');
+        $ins->execute([$sectionId, $tileId, $tabId, $sectionTitle !== '' ? $sectionTitle : 'Links', $sectionPosition, 'public']);
     }
 
     return ['tabId' => $tabId, 'sectionId' => $sectionId];

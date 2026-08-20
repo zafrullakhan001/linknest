@@ -91,6 +91,7 @@ docker/*.crt
 # IDE and Editor files
 .vscode/*
 !.vscode/extensions.json
+.cursor/mcp.json
 .idea/
 *.iml
 *.ipr
