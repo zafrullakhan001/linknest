@@ -524,6 +524,7 @@ $DirsToInclude = @(
     "services",
     "hooks",
     "utils",      # Vite imports (urlDisplay, releaseNotesMarkdown, richTextDisplay)
+    "constants",  # Vite imports (kept for zip allow-list / future modules)
     "docs",       # Operator docs including APP_UPDATES.md
     "apache",     # XAMPP gateway WSS proxy (HTTPS Mixed Content fix)
     "config",

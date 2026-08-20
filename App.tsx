@@ -772,11 +772,18 @@ const AppContent: React.FC = () => {
     ? ((route.split('/tile/')[1] || '').split('?')[0] || '')
     : '';
 
-  // Fetch full tile when opening #/tile/id (home list is card summary only)
+  // Fetch full tile when opening #/tile/id (home list is card summary only).
+  // Wait for the session check so a refresh does not treat a private/edit space
+  // as missing and bounce to the dashboard.
   useEffect(() => {
     if (!tileRouteId) {
       setDetailTile(null);
       setDetailLoading(false);
+      setDetailError(null);
+      return;
+    }
+    if (authLoading) {
+      setDetailLoading(true);
       setDetailError(null);
       return;
     }
@@ -800,7 +807,7 @@ const AppContent: React.FC = () => {
         if (!allowed) {
           setDetailLoading(false);
           setDetailTile(null);
-          window.location.hash = '#/';
+          setDetailError('Space not found or you do not have permission to view it.');
           return;
         }
         setDetailLoading(false);
@@ -816,7 +823,7 @@ const AppContent: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [tileRouteId, isAuthenticated, assertCanOpen]);
+  }, [tileRouteId, isAuthenticated, authLoading, assertCanOpen]);
 
   // If guest access is disabled and user is not authenticated, we show login dialog (computed here so hooks below run unconditionally).
   // Require !authLoading so we never show/open login until session check has finished (fixes refresh with existing session).
@@ -1216,8 +1223,7 @@ const AppContent: React.FC = () => {
     } else if (isLoadingDetail) {
       content = <LoadingFallback />;
     } else {
-      window.location.hash = '#/';
-      content = null;
+      content = <LoadingFallback />;
     }
   } else {
     content = (

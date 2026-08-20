@@ -20,7 +20,7 @@ Use this when you have **more than one** install on the same server (e.g. `D:\Ap
 | Piece | Commit zipball | Release (`linknest-update-vX.Y.Z.zip`) |
 |-------|----------------|----------------------------------------|
 | PHP / `api/` | Yes | Yes |
-| `utils/`, `components/` | Yes (allow-list) | Yes |
+| `utils/`, `components/`, `constants/` | Yes (allow-list) | Yes |
 | Built UI (`dist/`) | **No** (`dist/` is gitignored) | **Yes** (built on publish) |
 | `bin/` ttyd + OpenSSH + Python | **No** | **Yes** (ttyd, portable OpenSSH, embeddable CPython + websockify) |
 | Works without Node on office | API only; **widgets stay old** | Full UI + widgets |
@@ -179,7 +179,7 @@ API: `POST /api/updater/rollback` with `{ "historyId": "…", "restoreDatabase":
 - PHP `ZipArchive` + cURL
 - Prefer Releases with `linknest-update-vX.Y.Z.zip`
 - Commit zipballs do not include `dist/`; without Node the UI stays old
-- Extract allow-list includes `api/`, `dist/`, `components/`, `services/`, `utils/`, `styles/`, `App.tsx`, `types.ts`, `index.css`, etc. (not `data/` / `uploads/`)
+- Extract allow-list includes `api/`, `dist/`, `components/`, `services/`, `utils/`, `constants/`, `styles/`, `App.tsx`, `types.ts`, `index.css`, etc. (not `data/` / `uploads/`)
 
 ### Frontend / SSH & VNC widgets
 
@@ -240,6 +240,7 @@ Env (optional): `GITHUB_TOKEN` / `GH_TOKEN`.
 | 404 `/linknest/assets/...` under ArchLinks or ERP3 | Release baked wrong base — publish with default `relative`, or rebuild with `VITE_BASE_PATH=./` |
 | Build fails: `buildSshLinkUrl` is not exported | Old bug: zip skipped `utils/` — fixed in updater allow-list; re-apply a Release that includes `utils/sshLink.ts` |
 | Build fails: `Could not resolve "./styles/tinymce-wysiwyg.css"` | Zip allow-list omitted `styles/`; TinyMCE display CSS now lives in `index.css`. Re-apply this update (or a Release). |
+| Build fails: `Could not resolve "../constants/mcpExamplePrompts"` | Zip allow-list omitted `constants/`. MCP example prompts now live in `utils/mcpExamplePrompts.ts` (already allowed). Re-apply this update (or a Release). |
 | Update failed: could not rebuild dist | Expected without Node on office XAMPP — publish/apply a Release instead. In Docker this no longer aborts; run `redeploy-docker.bat` to refresh the UI. |
 | `Failed writing scripts/data/` | Empty ZIP folder entry on Windows; fixed in **v2.3.5**. Do not retry v2.3.4 — apply **Release v2.3.5** |
 | `Failed writing scripts/__pycache__/*.pyc` | Python bytecode in the zip, often root-owned in Docker. Updater now skips `__pycache__`; retry the update. |

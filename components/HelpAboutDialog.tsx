@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useSettings } from '../contexts/SettingsContext';
 import { HelpGuidesPanel } from './HelpGuidesPanel';
 import { HelpFingerprintPanel } from './HelpFingerprintPanel';
-import { MCP_EXAMPLE_NEED_LABEL, MCP_EXAMPLE_PROMPTS } from '../constants/mcpExamplePrompts';
+import { MCP_EXAMPLE_NEED_LABEL, MCP_EXAMPLE_PROMPTS } from '../utils/mcpExamplePrompts';
 
 type TabType = 'help' | 'guides' | 'about' | 'fingerprint';
 

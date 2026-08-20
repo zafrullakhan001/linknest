@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { authService, AllUser } from '../services/authService';
 import { mcpService, McpToken } from '../services/mcpService';
 import { getAppBasePath } from '../services/apiHelpers';
-import { MCP_EXAMPLE_NEED_LABEL, MCP_EXAMPLE_PROMPTS } from '../constants/mcpExamplePrompts';
+import { MCP_EXAMPLE_NEED_LABEL, MCP_EXAMPLE_PROMPTS } from '../utils/mcpExamplePrompts';
 
 type McpAdminTab = 'tokens' | 'examples';
 
