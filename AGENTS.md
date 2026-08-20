@@ -12,7 +12,7 @@ LinkNest is a **link and space organization platform** built with a React fronte
 - Role-based access control and user groups
 - Floating widgets (clock, weather, calculator, notes, etc.)
 - AI-powered content generation via Google Gemini
-- MCP interface so LLMs can list, search, and edit spaces and links (admin-scoped tokens can also manage users, roles, LDAP/SAML)
+- MCP interface so LLMs can list, search, and edit spaces and links (admin-scoped tokens can also manage users, roles, LDAP/SAML, Device Presets, and database export/import)
 - Email notifications and broadcast messaging
 - Browser integration for direct link opening
 
@@ -75,6 +75,10 @@ linknest/
 │   ├── index.php           # API router
 │   ├── mcp.php             # MCP (LLM) JSON-RPC endpoint
 │   ├── mcp_lib.php         # MCP tools (spaces, links, notes)
+│   ├── mcp_admin_lib.php   # Admin MCP tools (users, roles, LDAP/SAML, Device Presets, database export/import)
+│   ├── mcp_user_lib.php    # MCP user management
+│   ├── mcp_device_presets_lib.php # MCP Device Presets tools
+│   ├── device_presets_lib.php     # Shared Device Preview catalog + persist
 │   ├── mcp_tokens.php      # MCP token admin API
 │   ├── tiles.php           # Tile CRUD API
 │   ├── auth.php            # Authentication API
@@ -356,7 +360,7 @@ Default credentials:
 
 - `docs/YOUR_BOOKMARKS.md` - Guest Your Bookmarks, Favorite Links compact view, Rewrite tools
 - `docs/BOOKMARK_SYNC_EXTENSION.md` - LinkNest Bookmark Sync extension (handshake, origin allowlist, per-profile sync, mass deploy)
-- `docs/MCP.md` - MCP / AI: LLMs (Cursor, Claude Desktop) list spaces, search links, and create or edit bookmarks
+- `docs/MCP.md` - MCP / AI: LLMs (Cursor, Claude Desktop) list spaces, search links, create or edit bookmarks, and (admin tokens) manage users, roles, Device Presets, and database export/import
 - `docs/APP_UPDATES.md` - In-app App Updates (portable Releases for ArchLinks / ERP3)
 - `docs/SETUP.md` - Detailed setup instructions
 - `docs/VANILLA_APACHE_PHP85_WINDOWS.md` - Vanilla Apache + PHP 8.5 on Windows (`D:\Apache` + `D:\php`, post-install `httpd.conf` / `php.ini`)

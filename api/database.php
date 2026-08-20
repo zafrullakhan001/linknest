@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/database_transfer_lib.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -144,56 +145,19 @@ function handleGetDatabaseInfo() {
 }
 
 function formatBytes($bytes, $precision = 2) {
-    $units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    $bytes = max($bytes, 0);
-    $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
-    $pow = min($pow, count($units) - 1);
-    $bytes /= pow(1024, $pow);
-    return round($bytes, $precision) . ' ' . $units[$pow];
+    return linknestFormatBytes((int)$bytes, (int)$precision);
 }
 
 function handleExportDatabase() {
     requireAdmin(); // Only admins can export
-    
-    $db = getDB();
-    
-    try {
-        // Export all tables
-        $export = [
-            'version' => '3.0', // Updated to include all new tables and columns
-            'exported_at' => time(),
-            'tables' => []
-        ];
-        
-        $tables = [
-            'users', 'tiles', 'tabs', 'sections', 'links', 'settings', 
-            'tile_arrangements', 'category_arrangements', 'rich_text_content',
-            'user_tile_favorites', 'user_link_favorites', 'user_tile_permissions',
-            'style_profiles', 'user_preferences', 'user_custom_timezones', 'user_alarms', 'monitors', 'monitor_logs',
-            'browser_list', 'browser_list_metadata', 'roles', 'user_roles', 'role_tile_permissions', 'role_link_permissions', 'role_tab_permissions',
-            'user_audit_log'
-        ];
 
-        foreach ($tables as $table) {
-            try {
-                $stmt = $db->prepare("SELECT * FROM $table");
-                $stmt->execute();
-                $export['tables'][$table] = $stmt->fetchAll();
-            } catch (PDOException $e) {
-                // Table might not exist, skip
-                $export['tables'][$table] = [];
-            }
-        }
-        
+    try {
         // Note: clones table is intentionally excluded as it contains operational/temporary data
-        
-        // Set headers for file download
+        $export = linknestBuildDatabaseExport(getDB());
         header('Content-Type: application/json');
         header('Content-Disposition: attachment; filename="linknest-database-export-' . date('Y-m-d-His') . '.json"');
-        
-        echo json_encode($export, JSON_PRETTY_PRINT);
+        echo json_encode($export, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         exit;
-        
     } catch (PDOException $e) {
         sendJSON(['error' => 'Failed to export database: ' . $e->getMessage()], 500);
     }
@@ -201,91 +165,19 @@ function handleExportDatabase() {
 
 function handleImportDatabase() {
     requireAdmin(); // Only admins can import
-    
+
     $data = getJSONInput();
-    
-    if (!isset($data['tables']) || !is_array($data['tables'])) {
-        sendJSON(['error' => 'Invalid import data. Expected "tables" array.'], 400);
-    }
-    
-    // getDB() calls initDatabase() which ensures all tables and columns exist
-    $db = getDB();
-    $db->beginTransaction();
-    
+
     try {
-        // Disable foreign key checks temporarily for import
-        $db->exec('PRAGMA foreign_keys = OFF');
-        
-        // List of tables to clear and import
-        $tables = [
-            'monitor_logs', 'monitors', 'user_tile_permissions', 'user_link_favorites',
-            'user_tile_favorites', 'user_preferences', 'rich_text_content',
-            'category_arrangements', 'tile_arrangements', 'links', 'sections',
-            'tabs', 'tiles', 'style_profiles', 'settings', 'users', 'user_custom_timezones', 'user_alarms',
-            'browser_list', 'browser_list_metadata', 'role_link_permissions', 'role_tile_permissions', 'user_roles', 'roles'
-        ];
-
-        foreach ($tables as $table) {
-            try {
-                $db->exec("DELETE FROM $table");
-                if ($table === 'users') {
-                    $db->exec('DELETE FROM sqlite_sequence WHERE name = "users"');
-                }
-            } catch (PDOException $e) {
-                // Table might not exist, ignore
-            }
-        }
-
-        if (isset($data['tables']['user_audit_log'])) {
-            try {
-                $db->exec('DELETE FROM user_audit_log');
-            } catch (PDOException $e) {
-                // Table might not exist, ignore
-            }
-        }
-        
-        // Helper to import a table dynamically
-        foreach ($data['tables'] as $tableName => $rows) {
-            if (empty($rows) || !is_array($rows)) continue;
-            
-            // Get columns from the first row
-            $columns = array_keys($rows[0]);
-            $placeholders = array_fill(0, count($columns), '?');
-            
-            $sql = "INSERT INTO $tableName (" . implode(', ', array_map(function($c) { return '"' . $c . '"'; }, $columns)) . ") VALUES (" . implode(', ', $placeholders) . ")";
-            
-            $stmt = $db->prepare($sql);
-            foreach ($rows as $row) {
-                $values = [];
-                foreach ($columns as $col) {
-                    $values[] = $row[$col] ?? null;
-                }
-                $stmt->execute($values);
-            }
-        }
-        
-        // Recreate indexes after import for optimal performance
-        createDatabaseIndexes($db);
-        
-        // Re-enable foreign keys
-        $db->exec('PRAGMA foreign_keys = ON');
-        
-        $db->commit();
-        
-        $importedCounts = [];
-        foreach ($data['tables'] as $table => $rows) {
-            $importedCounts[$table] = count($rows);
-        }
-
+        $result = linknestImportDatabaseData(getDB(), is_array($data) ? $data : []);
         sendJSON([
             'success' => true,
-            'message' => 'Database imported successfully',
-            'imported' => $importedCounts
+            'message' => $result['message'],
+            'imported' => $result['imported'],
         ]);
-        
+    } catch (InvalidArgumentException $e) {
+        sendJSON(['error' => $e->getMessage()], 400);
     } catch (Exception $e) {
-        $db->rollBack();
-        $db->exec('PRAGMA foreign_keys = ON'); // Re-enable even on error
         sendJSON(['error' => 'Failed to import database: ' . $e->getMessage()], 500);
     }
 }

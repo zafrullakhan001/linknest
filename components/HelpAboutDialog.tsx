@@ -427,7 +427,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                 <div className="space-y-3 text-slate-700 dark:text-slate-300">
                   <p className="text-sm">
                     {appName} exposes a Model Context Protocol (MCP) server so Cursor, Claude Desktop, and other LLM clients can list spaces, search links, and create or edit bookmarks using the same permissions as the token’s user.
-                    Create a write-enabled token in <strong>Admin → MCP / AI</strong>, then wire the client as below. Check <strong>Admin (users, roles, LDAP / SAML)</strong> only when the bound user is an administrator. Copy-ready chat statements live on <strong>Admin → MCP / AI → Example prompts</strong>. Full walkthrough: <strong>Guides → MCP / AI</strong>.
+                    Create a write-enabled token in <strong>Admin → MCP / AI</strong>, then wire the client as below. Check <strong>Admin (users, roles, LDAP / SAML, Device Presets, database)</strong> only when the bound user is an administrator. Copy-ready chat statements live on <strong>Admin → MCP / AI → Example prompts</strong>. Full walkthrough: <strong>Guides → MCP / AI</strong>.
                   </p>
                   <div className="bg-sky-50 dark:bg-sky-900/20 rounded-lg p-4 space-y-2 border border-sky-200 dark:border-sky-800">
                     <p className="font-medium text-sky-900 dark:text-sky-100">Configure Cursor (HTTP)</p>
@@ -496,7 +496,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
                       <li><strong>Read:</strong> whoami, list spaces, get one space, search links, list categories, list notes</li>
                       <li><strong>Write</strong> (if the token allows it): create/update/delete spaces, add/update/delete links, create/update notes</li>
-                      <li><strong>Admin</strong> (admin user + admin scope): LDAP/SAML status and tests, users, Access Manager roles/widgets/nav tabs/teams/space editors. Write admin tools also need write. Assign tools merge by default.</li>
+                      <li><strong>Admin</strong> (admin user + admin scope): full user management, LDAP/SAML, Access Manager, Device Presets, database info/export, and (with write) database import. Import needs confirm=true and replaces all data. Never paste export JSON into chat.</li>
                       <li>Write follows the same edit rules as the web app (owner, admin, or explicit edit permission)</li>
                     </ul>
                   </div>
@@ -630,7 +630,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">MCP / AI</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Connect Cursor or Claude Desktop so an LLM can list spaces, search links, create a space with bookmarks, and (with an admin token) inspect LDAP/SAML and Access Manager. Copy-ready statements: Admin → MCP / AI → Example prompts. Full guide: <strong>Guides → MCP / AI</strong>.
+                      Connect Cursor or Claude Desktop so an LLM can list spaces, search links, create a space with bookmarks, and (with an admin token) inspect LDAP/SAML, Access Manager, Device Presets, and database export/import. Copy-ready statements: Admin → MCP / AI → Example prompts. Full guide: <strong>Guides → MCP / AI</strong>.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -1953,7 +1953,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                       <li><strong>Database Management:</strong> Export/import backups, cleanup orphaned records, duplicate-tile cleanup</li>
                       <li><strong>Space Management:</strong> Bulk import/export spaces, manage all spaces</li>
                       <li><strong>Staging:</strong> Admin sandbox with AI Offline Kit (CSV → JSON → Staging → Public)</li>
-                      <li><strong>MCP / AI:</strong> Tokens so Cursor, Claude Desktop, and other LLMs can list, search, and edit spaces and links, plus admin LDAP/SAML and Access Manager tools. Example prompts: Admin → MCP / AI → Example prompts — Help → MCP / AI / Guides → MCP / AI</li>
+                      <li><strong>MCP / AI:</strong> Tokens so Cursor, Claude Desktop, and other LLMs can list, search, and edit spaces and links, plus admin LDAP/SAML, Access Manager, Device Presets, and database export/import. Example prompts: Admin → MCP / AI → Example prompts — Help → MCP / AI / Guides → MCP / AI</li>
                       <li><strong>Tab Visibility:</strong> Control which tabs are visible in the application</li>
                       <li><strong>Custom Widgets:</strong> Create, enable/disable, and manage custom widgets</li>
                       <li><strong>Broadcast Messages:</strong> Display scrolling messages across the application</li>
@@ -1988,7 +1988,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                 <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3">What&apos;s New in 2.2.0</h3>
                 <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 text-sm text-slate-700 dark:text-slate-300">
                   <ul className="list-disc list-inside space-y-1 ml-2">
-                    <li><strong>MCP / AI:</strong> Admin tokens let Cursor, Claude Desktop, and other MCP clients list spaces, search links, create or edit bookmarks, and (with admin scope) manage users, roles, LDAP/SAML. Copy-ready statements: Admin → MCP / AI → Example prompts — Help → MCP / AI / Guides → MCP / AI</li>
+                    <li><strong>MCP / AI:</strong> Admin tokens let Cursor, Claude Desktop, and other MCP clients list spaces, search links, create or edit bookmarks, and (with admin scope) manage users, roles, LDAP/SAML, Device Presets, and database export/import. Copy-ready statements: Admin → MCP / AI → Example prompts — Help → MCP / AI / Guides → MCP / AI</li>
                     <li><strong>Mobile Link Preview:</strong> Phone action on Quick Links opens an in-app device mockup (phone / tablet / watch) or a device-sized window for DevTools testing</li>
                     <li><strong>In-app App Updates:</strong> Check GitHub commits/releases, preview changes, apply with DB backup, and roll back from Admin (XAMPP installs). Office tip: publish a <strong>portable Release</strong> (default relative base) and apply the same Release on ArchLinks and ERP3 — see Help → In-app App Updates</li>
                     <li><strong>XAMPP PHP upgrade:</strong> PowerShell script to move to PHP 8.5+ with LDAP verification — see Guides → Upgrade PHP in XAMPP</li>

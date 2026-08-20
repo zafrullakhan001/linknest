@@ -125,7 +125,7 @@ function mcpHandleMessage(array $message, array $user): ?array {
                     'title' => 'LinkNest',
                     'version' => mcpAppVersion(),
                 ],
-                'instructions' => 'LinkNest organizes links into spaces (tiles), each with tabs and sections. Start with whoami. Use list_spaces and search_links for bookmarks. Write tools need the write scope. Admin tokens (admin user + admin scope) can call get_auth_status, list_users, list_roles, and guarded LDAP/SAML and Access Manager tools. Assign tools default to mode add so they do not wipe existing grants.',
+                'instructions' => 'LinkNest organizes links into spaces (tiles), each with tabs and sections. Start with whoami. Use list_spaces and search_links for bookmarks. Write tools need the write scope. Admin tokens (admin user + admin scope) can call get_auth_status, list_users, list_roles, list_device_presets, get_database_info, export_database, and guarded LDAP/SAML, Access Manager, and Device Presets tools. import_database is destructive and needs write plus confirm=true. replace_device_presets and reset_device_presets also need confirm=true. Assign tools default to mode add so they do not wipe existing grants.',
             ]);
 
         case 'notifications/initialized':

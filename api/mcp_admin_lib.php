@@ -1,11 +1,14 @@
 <?php
 /**
- * Admin-gated MCP tools: LDAP/SAML, users, Access Manager.
+ * Admin-gated MCP tools: LDAP/SAML, users, Access Manager, Device Presets.
  * Requires bound user is_admin AND token admin scope.
  */
 
 require_once __DIR__ . '/user_notes_helper.php';
 require_once __DIR__ . '/user_audit_helper.php';
+require_once __DIR__ . '/database_transfer_lib.php';
+
+// mcp_user_lib.php and mcp_device_presets_lib.php are loaded at the bottom after shared helpers.
 
 function mcpHasAdminScope(array $user): bool {
     if (empty($user['is_admin'])) {
@@ -148,13 +151,13 @@ function mcpAdminFindUser(PDO $db, array $args): ?array {
     $id = isset($args['user_id']) ? (int)$args['user_id'] : 0;
     $username = trim((string)($args['username'] ?? ''));
     if ($id > 0) {
-        $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved, COALESCE(is_disabled, 0) AS is_disabled, auth_source, notes, created_at FROM users WHERE id = ?');
+        $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved, COALESCE(is_disabled, 0) AS is_disabled, auth_source, display_name, notes, created_at FROM users WHERE id = ?');
         $stmt->execute([$id]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         return $row ?: null;
     }
     if ($username !== '') {
-        $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved, COALESCE(is_disabled, 0) AS is_disabled, auth_source, notes, created_at FROM users WHERE LOWER(username) = LOWER(?)');
+        $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved, COALESCE(is_disabled, 0) AS is_disabled, auth_source, display_name, notes, created_at FROM users WHERE LOWER(username) = LOWER(?)');
         $stmt->execute([$username]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         return $row ?: null;
@@ -181,6 +184,7 @@ function mcpAdminMapUserRow(array $row, array $roles = []): array {
         'isApproved' => !empty($row['is_approved']),
         'isDisabled' => !empty($row['is_disabled']),
         'authSource' => $row['auth_source'] ?? 'local',
+        'displayName' => isset($row['display_name']) && $row['display_name'] !== '' ? (string)$row['display_name'] : null,
         'notes' => $row['notes'] !== null && $row['notes'] !== '' ? (string)$row['notes'] : null,
         'createdAt' => (int)($row['created_at'] ?? 0),
         'roles' => $roles,
@@ -253,7 +257,7 @@ function mcpAdminValidWidgetIds(PDO $db): array {
 
 function mcpAdminReadTools(): array {
     $empty = ['type' => 'object', 'properties' => new stdClass(), 'additionalProperties' => false];
-    return [
+    $tools = [
         [
             'name' => 'get_auth_status',
             'description' => 'LDAP/SAML status for admins. Never returns bind passwords or IdP certificate PEM (fingerprint only).',
@@ -349,11 +353,42 @@ function mcpAdminReadTools(): array {
                 'additionalProperties' => false,
             ],
         ],
+        [
+            'name' => 'get_database_info',
+            'description' => 'SQLite file size, pragmas, and table row counts. Same data as Admin → Database. Does not return table rows or secrets.',
+            'inputSchema' => $empty,
+        ],
+        [
+            'name' => 'list_database_exports',
+            'description' => 'List JSON database export files in data/exports (filename, size, modified time). Use export_database to create one. Never read or paste file contents (they contain password hashes).',
+            'inputSchema' => $empty,
+        ],
+        [
+            'name' => 'export_database',
+            'description' => 'Write a JSON database backup to data/exports (same format as Admin → Database Export & Import). Returns filename, size, and row counts only — never the file contents. Optional filename (basename.json).',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [
+                    'filename' => [
+                        'type' => 'string',
+                        'description' => 'Optional basename ending in .json. Default: linknest-database-export-YYYY-MM-DD-His.json',
+                    ],
+                ],
+                'additionalProperties' => false,
+            ],
+        ],
     ];
+    if (function_exists('mcpAdminUserReadToolsExtra')) {
+        $tools = array_merge($tools, mcpAdminUserReadToolsExtra());
+    }
+    if (function_exists('mcpAdminDevicePresetsReadToolsExtra')) {
+        $tools = array_merge($tools, mcpAdminDevicePresetsReadToolsExtra());
+    }
+    return $tools;
 }
 
 function mcpAdminWriteTools(): array {
-    return [
+    $tools = [
         [
             'name' => 'update_ldap',
             'description' => 'Guarded LDAP setup. bind_password is write-only (blank keeps existing). Never returned in the result.',
@@ -406,7 +441,7 @@ function mcpAdminWriteTools(): array {
         ],
         [
             'name' => 'update_user',
-            'description' => 'Update username, email, notes, or auth_source (local|ldap|saml). Pass user_id or username.',
+            'description' => 'Update username, email, display_name, notes, or auth_source (local|ldap|saml). Pass user_id or username.',
             'inputSchema' => [
                 'type' => 'object',
                 'properties' => [
@@ -414,6 +449,7 @@ function mcpAdminWriteTools(): array {
                     'username' => ['type' => 'string'],
                     'new_username' => ['type' => 'string'],
                     'email' => ['type' => 'string'],
+                    'display_name' => ['type' => 'string'],
                     'notes' => ['type' => 'string'],
                     'auth_source' => ['type' => 'string', 'enum' => ['local', 'ldap', 'saml']],
                 ],
@@ -567,7 +603,37 @@ function mcpAdminWriteTools(): array {
                 'additionalProperties' => false,
             ],
         ],
+        [
+            'name' => 'import_database',
+            'description' => 'DESTRUCTIVE. Replace the live database with a JSON export from data/exports (Admin → Database Export format). Requires confirm=true. Default backup_first=true writes a new export before replacing. Do not paste JSON into this tool. After import, call whoami — MCP tokens are not in the JSON export and user ids may change.',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [
+                    'filename' => [
+                        'type' => 'string',
+                        'description' => 'Basename of a .json file in data/exports',
+                    ],
+                    'confirm' => [
+                        'type' => 'boolean',
+                        'description' => 'Must be true. Confirms replacing all users, spaces, settings, and related tables.',
+                    ],
+                    'backup_first' => [
+                        'type' => 'boolean',
+                        'description' => 'Write a JSON backup to data/exports before import (default true)',
+                    ],
+                ],
+                'required' => ['filename', 'confirm'],
+                'additionalProperties' => false,
+            ],
+        ],
     ];
+    if (function_exists('mcpAdminUserWriteToolsExtra')) {
+        $tools = array_merge($tools, mcpAdminUserWriteToolsExtra());
+    }
+    if (function_exists('mcpAdminDevicePresetsWriteToolsExtra')) {
+        $tools = array_merge($tools, mcpAdminDevicePresetsWriteToolsExtra());
+    }
+    return $tools;
 }
 
 function mcpAdminDispatch(string $name, array $args, array $user): array {
@@ -576,9 +642,14 @@ function mcpAdminDispatch(string $name, array $args, array $user): array {
     }
     $write = [
         'update_ldap', 'update_saml', 'update_user', 'set_user_status',
+        'create_local_user', 'add_ldap_user', 'reset_user_password', 'change_admin_password',
+        'delete_user', 'set_user_admin', 'bulk_user_action', 'transfer_space_ownership', 'purge_ldap_settings',
         'create_role', 'update_role', 'assign_user_roles',
         'set_role_spaces', 'set_role_widgets', 'set_role_tabs',
         'assign_team_roles', 'add_team_members', 'set_space_editor',
+        'import_database',
+        'add_device_preset', 'update_device_preset', 'delete_device_preset',
+        'set_device_quick_presets', 'replace_device_presets', 'reset_device_presets',
     ];
     if (in_array($name, $write, true) && !mcpHasWriteScope($user)) {
         return ['error' => 'This token cannot write admin settings. Enable write plus admin on the token.'];
@@ -629,7 +700,27 @@ function mcpAdminDispatch(string $name, array $args, array $user): array {
             return mcpAdminListSpaceEditors($args);
         case 'set_space_editor':
             return mcpAdminSetSpaceEditor($args);
+        case 'get_database_info':
+            return mcpAdminGetDatabaseInfo();
+        case 'list_database_exports':
+            return mcpAdminListDatabaseExports();
+        case 'export_database':
+            return mcpAdminExportDatabase($args, $user);
+        case 'import_database':
+            return mcpAdminImportDatabase($args, $user);
         default:
+            if (function_exists('mcpAdminUserDispatch')) {
+                $userResult = mcpAdminUserDispatch($name, $args, $user);
+                if ($userResult !== null) {
+                    return $userResult;
+                }
+            }
+            if (function_exists('mcpAdminDevicePresetsDispatch')) {
+                $deviceResult = mcpAdminDevicePresetsDispatch($name, $args, $user);
+                if ($deviceResult !== null) {
+                    return $deviceResult;
+                }
+            }
             return ['error' => 'Unknown admin tool: ' . $name];
     }
 }
@@ -931,7 +1022,7 @@ function mcpAdminUpdateSaml(array $args): array {
 function mcpAdminListUsers(array $args): array {
     $db = getDB();
     $limit = isset($args['limit']) ? max(1, min(500, (int)$args['limit'])) : 200;
-    $stmt = $db->query('SELECT id, username, email, is_admin, is_approved, COALESCE(is_disabled, 0) AS is_disabled, auth_source, notes, created_at FROM users ORDER BY username');
+    $stmt = $db->query('SELECT id, username, email, is_admin, is_approved, COALESCE(is_disabled, 0) AS is_disabled, auth_source, display_name, notes, created_at FROM users ORDER BY username');
     $query = strtolower(trim((string)($args['query'] ?? '')));
     $pending = array_key_exists('pending', $args) ? !empty($args['pending']) : null;
     $disabled = array_key_exists('disabled', $args) ? !empty($args['disabled']) : null;
@@ -995,8 +1086,20 @@ function mcpAdminUpdateUser(array $args, array $actor): array {
     if (strlen($username) < 3) {
         return ['error' => 'Username must be at least 3 characters'];
     }
+    if (array_key_exists('email', $args)) {
+        $emailErr = mcpAdminValidateEmail($email);
+        if ($emailErr !== null) {
+            return ['error' => $emailErr];
+        }
+    }
     $notesProvided = array_key_exists('notes', $args);
     $notes = $notesProvided ? sanitizeUserNotes($args['notes']) : ($row['notes'] ?? null);
+    $displayName = array_key_exists('display_name', $args)
+        ? trim((string)$args['display_name'])
+        : (string)($row['display_name'] ?? '');
+    if ($displayName === '') {
+        $displayName = null;
+    }
 
     $dup = $db->prepare('SELECT id FROM users WHERE LOWER(username) = LOWER(?) AND id != ?');
     $dup->execute([$username, $row['id']]);
@@ -1009,8 +1112,8 @@ function mcpAdminUpdateUser(array $args, array $actor): array {
         return ['error' => 'Email already exists'];
     }
 
-    $stmt = $db->prepare('UPDATE users SET username = ?, email = ?, auth_source = ?, notes = ? WHERE id = ?');
-    $stmt->execute([$username, $email, $auth, $notes, $row['id']]);
+    $stmt = $db->prepare('UPDATE users SET username = ?, email = ?, auth_source = ?, notes = ?, display_name = ? WHERE id = ?');
+    $stmt->execute([$username, $email, $auth, $notes, $displayName, $row['id']]);
     if (function_exists('logUserAudit')) {
         logUserAudit('user.updated', [
             'actor' => $actor,
@@ -1599,3 +1702,84 @@ function mcpAdminSetSpaceEditor(array $args): array {
     }
     return ['ok' => true, 'user_id' => (int)$user['id'], 'space_id' => $tileId, 'can_edit' => true];
 }
+
+function mcpAdminArgIsTrue($value): bool
+{
+    return $value === true || $value === 1 || $value === '1'
+        || (is_string($value) && strtolower(trim($value)) === 'true');
+}
+
+function mcpAdminGetDatabaseInfo(): array
+{
+    return linknestGetDatabaseInfo();
+}
+
+function mcpAdminListDatabaseExports(): array
+{
+    return linknestListDatabaseExports();
+}
+
+function mcpAdminExportDatabase(array $args, array $user): array
+{
+    $filename = trim((string)($args['filename'] ?? ''));
+    try {
+        $result = linknestWriteDatabaseExportFile(getDB(), $filename !== '' ? $filename : null);
+    } catch (InvalidArgumentException $e) {
+        return ['error' => $e->getMessage()];
+    } catch (Throwable $e) {
+        return ['error' => 'Failed to export database: ' . $e->getMessage()];
+    }
+    if (function_exists('logUserAudit')) {
+        logUserAudit('mcp.database_export', [
+            'actor' => $user,
+            'details' => [
+                'filename' => $result['filename'] ?? null,
+                'size' => $result['size'] ?? null,
+            ],
+        ]);
+    }
+    return $result;
+}
+
+function mcpAdminImportDatabase(array $args, array $user): array
+{
+    if (!mcpAdminArgIsTrue($args['confirm'] ?? false)) {
+        return ['error' => 'Import refused. Pass confirm=true. This replaces all users, spaces, settings, and related tables.'];
+    }
+    $filename = trim((string)($args['filename'] ?? ''));
+    if ($filename === '') {
+        return ['error' => 'filename is required (a .json file in data/exports). Call list_database_exports first.'];
+    }
+    $backupFirst = array_key_exists('backup_first', $args)
+        ? mcpAdminArgIsTrue($args['backup_first'])
+        : true;
+
+    $db = getDB();
+    $backup = null;
+    try {
+        if ($backupFirst) {
+            $backup = linknestWriteDatabaseExportFile($db, null);
+        }
+        $result = linknestImportDatabaseFromExportFile($db, $filename);
+    } catch (InvalidArgumentException $e) {
+        return ['error' => $e->getMessage(), 'backup' => $backup];
+    } catch (Throwable $e) {
+        return ['error' => 'Failed to import database: ' . $e->getMessage(), 'backup' => $backup];
+    }
+
+    $result['backup'] = $backup;
+    $result['note'] = 'Live database replaced. MCP tokens are not part of the JSON export; call whoami. Do not paste export file contents into chat.';
+    if (function_exists('logUserAudit')) {
+        logUserAudit('mcp.database_import', [
+            'actor' => $user,
+            'details' => [
+                'filename' => $result['filename'] ?? $filename,
+                'backup' => is_array($backup) ? ($backup['filename'] ?? null) : null,
+            ],
+        ]);
+    }
+    return $result;
+}
+
+require_once __DIR__ . '/mcp_user_lib.php';
+require_once __DIR__ . '/mcp_device_presets_lib.php';

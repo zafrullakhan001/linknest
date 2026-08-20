@@ -308,7 +308,7 @@ export const McpAdminPanel: React.FC = () => {
                 className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
               />
               <span className="text-sm text-slate-700 dark:text-slate-300">
-                Admin (users, roles, LDAP / SAML). Bound user must be an administrator.
+                Admin (users, roles, LDAP / SAML, Device Presets, database). Bound user must be an administrator.
               </span>
             </label>
           </div>
@@ -407,18 +407,24 @@ export const McpAdminPanel: React.FC = () => {
             <h4 className="font-semibold text-slate-800 dark:text-slate-100 mb-2">Admin read (admin user + admin scope)</h4>
             <ul className="list-disc pl-5 space-y-1 text-slate-600 dark:text-slate-300">
               <li><code>get_auth_status</code>, <code>test_ldap</code>, <code>test_saml</code></li>
-              <li><code>list_users</code>, <code>get_user</code>, <code>list_roles</code>, <code>get_role</code></li>
-              <li><code>list_teams</code>, <code>list_space_editors</code></li>
+              <li><code>list_users</code>, <code>list_pending_users</code>, <code>get_user</code>, <code>search_ldap_users</code></li>
+              <li><code>list_roles</code>, <code>get_role</code>, <code>list_teams</code>, <code>list_space_editors</code></li>
+              <li><code>get_database_info</code>, <code>list_database_exports</code>, <code>export_database</code></li>
+              <li><code>list_device_presets</code>, <code>get_device_preset</code>, <code>list_device_preset_options</code></li>
             </ul>
           </div>
           <div>
             <h4 className="font-semibold text-slate-800 dark:text-slate-100 mb-2">Admin write (also needs write)</h4>
             <ul className="list-disc pl-5 space-y-1 text-slate-600 dark:text-slate-300">
-              <li><code>update_ldap</code>, <code>update_saml</code></li>
-              <li><code>update_user</code>, <code>set_user_status</code></li>
+              <li><code>update_ldap</code>, <code>update_saml</code>, <code>purge_ldap_settings</code></li>
+              <li><code>create_local_user</code>, <code>add_ldap_user</code>, <code>update_user</code>, <code>set_user_status</code></li>
+              <li><code>reset_user_password</code>, <code>change_admin_password</code>, <code>delete_user</code>, <code>set_user_admin</code>, <code>bulk_user_action</code></li>
               <li><code>create_role</code>, <code>update_role</code>, <code>assign_user_roles</code></li>
               <li><code>set_role_spaces</code>, <code>set_role_widgets</code>, <code>set_role_tabs</code></li>
-              <li><code>assign_team_roles</code>, <code>add_team_members</code>, <code>set_space_editor</code></li>
+              <li><code>assign_team_roles</code>, <code>add_team_members</code>, <code>set_space_editor</code>, <code>transfer_space_ownership</code></li>
+              <li><code>import_database</code> (destructive; needs <code>confirm: true</code>)</li>
+              <li><code>add_device_preset</code>, <code>update_device_preset</code>, <code>delete_device_preset</code>, <code>set_device_quick_presets</code></li>
+              <li><code>replace_device_presets</code> / <code>reset_device_presets</code> (need <code>confirm: true</code>)</li>
             </ul>
           </div>
         </div>

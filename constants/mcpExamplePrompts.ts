@@ -65,10 +65,62 @@ Add these links:
     prompt: 'List pending LinkNest users and approve jane.doe.',
   },
   {
+    id: 'create-local-user',
+    title: 'Create and approve a local user',
+    need: 'admin-write',
+    prompt: 'Create a local LinkNest user named helpdesk1 with email helpdesk1@example.com, auto-approve them, then list their profile with get_user. Do not print the password you set.',
+  },
+  {
+    id: 'reset-password',
+    title: 'Reset a local user password',
+    need: 'admin-write',
+    prompt: 'Reset the password for local user helpdesk1. Do not echo the new password in the chat.',
+  },
+  {
+    id: 'promote-admin',
+    title: 'Promote user to admin',
+    need: 'admin-write',
+    prompt: 'Promote user jsmith to administrator using set_user_admin.',
+  },
+  {
+    id: 'transfer-ownership',
+    title: 'Transfer space ownership',
+    need: 'admin-write',
+    prompt: 'Transfer space PeopleSoft ERP to user jsmith. Keep the previous owner as a space editor.',
+  },
+  {
     id: 'helpdesk-role',
     title: 'Create a role and assign it',
     need: 'admin-write',
     prompt:
       'Create role Helpdesk, assign nav tabs public and favorites, widgets clock and notes, and spaces PeopleSoft ERP and PAM. Then assign that role to user jsmith. Use add mode so existing grants are not wiped.',
+  },
+  {
+    id: 'export-database',
+    title: 'Export the database',
+    need: 'admin-read',
+    prompt:
+      'Export the LinkNest database to a JSON backup file. Then tell me the filename, size, and row counts. Do not print or read the file contents.',
+  },
+  {
+    id: 'import-database',
+    title: 'Import a database export',
+    need: 'admin-write',
+    prompt:
+      'List LinkNest database export files in data/exports. Import the latest JSON backup. This replaces all existing data — confirm that, and keep backup_first true. Do not paste the JSON into chat.',
+  },
+  {
+    id: 'list-device-presets',
+    title: 'List device presets',
+    need: 'admin-read',
+    prompt:
+      'List LinkNest Device Preview presets. Summarize by group with width × height, and say whether the catalog is custom or built-in defaults. Then show which ids are on the quick bar.',
+  },
+  {
+    id: 'add-device-preset',
+    title: 'Add a device preset',
+    need: 'admin-write',
+    prompt:
+      'Add a LinkNest Device Preview preset: id iphone-17, label iPhone 17, width 402, height 874, group iPhone, variant iphone-island. Put it on the quick bar.',
   },
 ];

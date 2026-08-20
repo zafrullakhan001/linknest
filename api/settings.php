@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/image_helpers.php';
+require_once __DIR__ . '/device_presets_lib.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -334,92 +335,11 @@ function normalizeLinkCheckExceptionPattern($raw, $maxLen = 2048) {
  * @return string JSON array string or empty string
  */
 function normalizeDevicePresetsSetting($value) {
-    $allowedGroups = ['Responsive', 'iPhone', 'Android', 'Tablet', 'Watch', 'Enterprise'];
-    $allowedVariants = [
-        'iphone-island', 'iphone-notch', 'iphone-legacy', 'android', 'android-tablet', 'ipad',
-        'watch-square', 'watch-round', 'zebra-handheld', 'zebra-tc73', 'zebra-tc58', 'zebra-tc52ax',
-        'zebra-et60', 'zebra-et51', 'zebra-mc3300', 'zebra-mc9300',
-    ];
-    $maxPresets = 200;
-    $minDim = 120;
-    $maxDim = 4096;
-
-    $decoded = null;
-    if (is_array($value)) {
-        $decoded = $value;
-    } elseif (is_string($value)) {
-        $trimmed = trim($value);
-        if ($trimmed === '') {
-            return '';
-        }
-        $decoded = json_decode($trimmed, true);
-        if (!is_array($decoded)) {
-            sendJSON(['error' => 'device_presets must be a JSON array'], 400);
-        }
-    } else {
-        return '';
+    $result = devicePresetsEncodeSetting($value);
+    if (empty($result['ok'])) {
+        sendJSON(['error' => $result['error'] ?? 'Invalid device_presets'], 400);
     }
-
-    if (count($decoded) > $maxPresets) {
-        sendJSON(['error' => "device_presets supports at most {$maxPresets} devices"], 400);
-    }
-
-    $out = [];
-    $seen = [];
-    foreach ($decoded as $item) {
-        if (!is_array($item)) {
-            continue;
-        }
-        $id = strtolower(trim((string)($item['id'] ?? '')));
-        $id = preg_replace('/[^a-z0-9]+/', '-', $id);
-        $id = trim($id, '-');
-        if ($id === '' || isset($seen[$id])) {
-            continue;
-        }
-        $label = trim((string)($item['label'] ?? ''));
-        if ($label === '') {
-            continue;
-        }
-        if (function_exists('mb_substr')) {
-            $label = mb_substr($label, 0, 120);
-        } else {
-            $label = substr($label, 0, 120);
-        }
-        $group = (string)($item['group'] ?? '');
-        $variant = (string)($item['variant'] ?? '');
-        if (!in_array($group, $allowedGroups, true) || !in_array($variant, $allowedVariants, true)) {
-            continue;
-        }
-        $width = (int)round((float)($item['width'] ?? 0));
-        $height = (int)round((float)($item['height'] ?? 0));
-        if ($width < $minDim) {
-            $width = $minDim;
-        }
-        if ($width > $maxDim) {
-            $width = $maxDim;
-        }
-        if ($height < $minDim) {
-            $height = $minDim;
-        }
-        if ($height > $maxDim) {
-            $height = $maxDim;
-        }
-        $seen[$id] = true;
-        $out[] = [
-            'id' => $id,
-            'label' => $label,
-            'width' => $width,
-            'height' => $height,
-            'variant' => $variant,
-            'group' => $group,
-        ];
-    }
-
-    if (count($decoded) > 0 && count($out) === 0) {
-        sendJSON(['error' => 'device_presets contained no valid devices'], 400);
-    }
-
-    return $out === [] ? '' : json_encode($out, JSON_UNESCAPED_UNICODE);
+    return (string)($result['json'] ?? '');
 }
 
 /**
@@ -427,39 +347,11 @@ function normalizeDevicePresetsSetting($value) {
  * @return string JSON array string or empty string
  */
 function normalizeDeviceQuickPresetsSetting($value) {
-    $decoded = null;
-    if (is_array($value)) {
-        $decoded = $value;
-    } elseif (is_string($value)) {
-        $trimmed = trim($value);
-        if ($trimmed === '') {
-            return '';
-        }
-        $decoded = json_decode($trimmed, true);
-        if (!is_array($decoded)) {
-            sendJSON(['error' => 'device_quick_presets must be a JSON array'], 400);
-        }
-    } else {
-        return '';
+    $result = devicePresetsEncodeQuickSetting($value);
+    if (empty($result['ok'])) {
+        sendJSON(['error' => $result['error'] ?? 'Invalid device_quick_presets'], 400);
     }
-
-    $out = [];
-    $seen = [];
-    foreach ($decoded as $item) {
-        $id = strtolower(trim((string)$item));
-        $id = preg_replace('/[^a-z0-9]+/', '-', $id);
-        $id = trim($id, '-');
-        if ($id === '' || isset($seen[$id])) {
-            continue;
-        }
-        $seen[$id] = true;
-        $out[] = $id;
-        if (count($out) >= 40) {
-            break;
-        }
-    }
-
-    return $out === [] ? '' : json_encode($out, JSON_UNESCAPED_UNICODE);
+    return (string)($result['json'] ?? '');
 }
 
 function handleGetSettings() {

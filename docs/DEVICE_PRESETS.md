@@ -49,4 +49,6 @@ New phones can reuse an existing variant (e.g. `iphone-island`); a unique bezel 
 4. Or use **Add device** in Admin and click **Add & save**.
 5. **Reset defaults** clears custom settings so built-ins apply again.
 
+Admins with an MCP token (admin user + admin scope + write) can do the same from Cursor or Claude: `list_device_presets`, `add_device_preset`, `replace_device_presets` (`confirm: true`), or `reset_device_presets` (`confirm: true`). See [`MCP.md`](MCP.md).
+
 Import replaces the full list (not a merge). Keep your previous export if you need to restore.

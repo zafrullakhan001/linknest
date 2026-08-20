@@ -48,6 +48,10 @@ AddDefaultCharset UTF-8
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
+
+    # Never serve SQLite, JSON exports, or snapshots from data/
+    RewriteRule (^|/)data/ - [F,L]
+
     RewriteCond %{HTTP:Authorization} .
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 

@@ -56,7 +56,7 @@ export const MAX_DEVICE_PRESETS = 200;
 export const MIN_DEVICE_DIM = 120;
 export const MAX_DEVICE_DIM = 4096;
 
-/** Built-in presets for In-app mockups + Device emulation windows. */
+/** Built-in presets for In-app mockups + Device emulation windows. Keep in sync with api/device_presets_lib.php. */
 export const DEFAULT_DEVICE_PRESETS: DevicePreset[] = [
   { id: 'responsive', label: 'Responsive', width: 543, height: 1006, variant: 'android', group: 'Responsive' },
   { id: 'iphone-se', label: 'iPhone SE', width: 375, height: 667, variant: 'iphone-legacy', group: 'iPhone' },
