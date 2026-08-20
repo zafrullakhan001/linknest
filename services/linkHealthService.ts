@@ -184,7 +184,7 @@ export const linkHealthService = {
   async checkUrl(url: string, signal?: AbortSignal): Promise<{
     url: string;
     scheme: 'http' | 'https' | string;
-    health: LinkHealth & { serverLatency?: number; finalUrl?: string | null };
+    health: LinkHealth & { serverLatency?: number; finalUrl?: string | null; redirectCount?: number };
   }> {
     const response = await withTimeout(
       fetch(`${API_BASE}/linkhealth/check-url`, {
@@ -194,7 +194,7 @@ export const linkHealthService = {
         body: JSON.stringify({ url }),
         signal
       }),
-      10000,
+      65000,
       'checkUrl'
     );
 
@@ -221,7 +221,7 @@ export const linkHealthService = {
     Array<{
       url: string;
       skipped?: boolean;
-      health: (LinkHealth & { serverLatency?: number; finalUrl?: string | null }) | null;
+      health: (LinkHealth & { serverLatency?: number; finalUrl?: string | null; redirectCount?: number }) | null;
     }>
   > {
     const response = await withTimeout(
@@ -281,7 +281,7 @@ export const linkHealthService = {
       case 'timeout':
         return 'Link timed out';
       case 'redirected':
-        return 'Link redirected';
+        return 'Link redirected (host reachable; may require sign-in)';
       case 'restricted':
         return 'Link is online (requires authentication)';
       case 'checking':

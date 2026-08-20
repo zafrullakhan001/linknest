@@ -7,6 +7,11 @@ ob_start();
 
 require_once __DIR__ . '/config.php';
 
+/** Max redirects to follow during health probes (SSO chains can exceed 50 hops). */
+if (!defined('HEALTH_MAX_REDIRS')) {
+    define('HEALTH_MAX_REDIRS', 55);
+}
+
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
@@ -57,17 +62,35 @@ switch ($method) {
 function determineHealthStatus($httpCode, $errno, $error, $redirectCount = 0) {
     // Determine status based on response
     if ($errno !== 0) {
-        // cURL error occurred
-        $status = 'broken';
-        if ($errno === CURLE_OPERATION_TIMEDOUT || $errno === CURLE_OPERATION_TIMEOUTED) {
-            $status = 'timeout';
-            $error = 'Connection timed out';
-        } elseif ($errno === CURLE_COULDNT_RESOLVE_HOST) {
-            $error = 'Could not resolve host';
-        } elseif ($errno === CURLE_COULDNT_CONNECT) {
-            $error = 'Could not connect to server';
-        } elseif ($errno === CURLE_SSL_CONNECT_ERROR) {
-            $error = 'SSL connection error';
+        // Redirect loop / still redirecting after HEALTH_MAX_REDIRS — not a hard failure
+        if ($errno === CURLE_TOO_MANY_REDIRECTS) {
+            $status = 'redirected';
+            $error = 'Maximum (' . (int)HEALTH_MAX_REDIRS . ') redirects followed';
+        } elseif ($errno === CURLE_OPERATION_TIMEDOUT || $errno === CURLE_OPERATION_TIMEOUTED) {
+            // Host responded but SSO/redirect chain never settled within the probe budget.
+            // Prefer "redirected" over "timeout" so working browser links are not flagged as down.
+            $sawRedirect = $redirectCount > 0 || ($httpCode >= 300 && $httpCode < 400);
+            if ($sawRedirect) {
+                $status = 'redirected';
+                if ($redirectCount > 0) {
+                    $error = 'Redirect chain did not settle within probe time (' . (int)$redirectCount . ' redirect(s))';
+                } else {
+                    $error = 'Redirect chain did not settle within probe time (HTTP ' . (int)$httpCode . ')';
+                }
+            } else {
+                $status = 'timeout';
+                $error = 'Connection timed out';
+            }
+        } else {
+            // Other cURL errors
+            $status = 'broken';
+            if ($errno === CURLE_COULDNT_RESOLVE_HOST) {
+                $error = 'Could not resolve host';
+            } elseif ($errno === CURLE_COULDNT_CONNECT) {
+                $error = 'Could not connect to server';
+            } elseif ($errno === CURLE_SSL_CONNECT_ERROR) {
+                $error = 'SSL connection error';
+            }
         }
     } elseif ($httpCode >= 300 && $httpCode < 400) {
         // Final response is still a redirect
@@ -382,24 +405,27 @@ function checkUrlHealth($url, $timeoutSeconds = 2) {
         'http_code' => $httpCode,
         'error' => $error,
         'server_latency' => $serverLatency,
-        'final_url' => $finalUrl
+        'final_url' => $finalUrl,
+        'redirect_count' => $redirectCount
     ];
 }
 
 /**
  * Build a fast cURL handle for health probing (HEAD, short timeouts, connection reuse).
+ * @param bool $followLocation When false, caller follows redirects manually (for hop chain).
  */
-function createHealthCurlHandle($url, $timeoutSeconds = 2) {
+function createHealthCurlHandle($url, $timeoutSeconds = 2, $followLocation = true) {
     $timeoutSeconds = max(1, min(5, (int)$timeoutSeconds));
     $ch = curl_init();
     curl_setopt_array($ch, [
         CURLOPT_URL => $url,
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_MAXREDIRS => 2,
+        CURLOPT_FOLLOWLOCATION => $followLocation,
+        CURLOPT_MAXREDIRS => $followLocation ? (int)HEALTH_MAX_REDIRS : 0,
         CURLOPT_TIMEOUT => $timeoutSeconds,
         CURLOPT_CONNECTTIMEOUT => min(1, $timeoutSeconds),
-        CURLOPT_NOBODY => true, // HEAD â€” fastest probe
+        CURLOPT_NOBODY => true, // HEAD — fastest probe
+        CURLOPT_HEADER => !$followLocation, // need Location when not auto-following
         CURLOPT_SSL_VERIFYPEER => false,
         CURLOPT_SSL_VERIFYHOST => 0,
         CURLOPT_USERAGENT => (function_exists('getAppName') ? (getAppName() ?: 'LinkNest') : 'LinkNest') . ' Health Checker/1.0',
@@ -413,6 +439,190 @@ function createHealthCurlHandle($url, $timeoutSeconds = 2) {
         CURLOPT_ENCODING => ''
     ]);
     return $ch;
+}
+
+/**
+ * Resolve a Location header against the current request URL.
+ * @return string|null Absolute URL or null if unusable
+ */
+function resolveHealthRedirectUrl($baseUrl, $location) {
+    $location = trim((string)$location);
+    if ($location === '' || preg_match('/[\r\n]/', $location)) {
+        return null;
+    }
+    // Strip optional quotes / angle brackets some servers send
+    if ($location[0] === '<' && substr($location, -1) === '>') {
+        $location = substr($location, 1, -1);
+    }
+    $location = trim($location, " \t\"'");
+
+    if (preg_match('#^https?://#i', $location)) {
+        return $location;
+    }
+
+    $base = parse_url($baseUrl);
+    if (!$base || empty($base['scheme']) || empty($base['host'])) {
+        return null;
+    }
+    $scheme = $base['scheme'];
+    $host = $base['host'];
+    $port = isset($base['port']) ? (':' . $base['port']) : '';
+
+    if (str_starts_with($location, '//')) {
+        return $scheme . ':' . $location;
+    }
+    if (str_starts_with($location, '/')) {
+        return $scheme . '://' . $host . $port . $location;
+    }
+
+    $path = $base['path'] ?? '/';
+    $dir = preg_replace('#/[^/]*$#', '/', $path);
+    if ($dir === null || $dir === '') {
+        $dir = '/';
+    }
+    return $scheme . '://' . $host . $port . $dir . $location;
+}
+
+/**
+ * Extract the first Location header value from a raw header block.
+ */
+function extractHealthLocationHeader($rawHeaders) {
+    if (!is_string($rawHeaders) || $rawHeaders === '') {
+        return null;
+    }
+    if (preg_match('/^Location:\s*(.+)$/im', $rawHeaders, $m)) {
+        return trim($m[1]);
+    }
+    return null;
+}
+
+/**
+ * Interactive probe: follow redirects hop-by-hop and return the full chain
+ * (URL + status per hop) for the edit-form redirect badge.
+ */
+function checkUrlHealthWithRedirectChain($url, $timeoutSeconds = 5) {
+    if (shouldSkipLinkHealthCheck($url)) {
+        return [
+            'status' => null,
+            'http_code' => 0,
+            'error' => null,
+            'server_latency' => 0,
+            'skipped' => true,
+            'redirect_count' => 0,
+            'redirect_chain' => []
+        ];
+    }
+    if (!filter_var($url, FILTER_VALIDATE_URL)) {
+        return [
+            'status' => 'broken',
+            'http_code' => 0,
+            'error' => 'Invalid URL format',
+            'server_latency' => 0,
+            'redirect_count' => 0,
+            'redirect_chain' => []
+        ];
+    }
+
+    $timeoutSeconds = max(1, min(60, (int)$timeoutSeconds));
+    $deadline = microtime(true) + $timeoutSeconds;
+    $start = microtime(true);
+    $chain = [];
+    $currentUrl = $url;
+    $redirectCount = 0;
+    $httpCode = 0;
+    $errno = 0;
+    $error = '';
+
+    while (true) {
+        $remaining = $deadline - microtime(true);
+        if ($remaining <= 0.05) {
+            $errno = CURLE_OPERATION_TIMEDOUT;
+            $error = 'Connection timed out';
+            break;
+        }
+
+        $hopTimeout = max(1, min(5, (int)ceil($remaining)));
+        $ch = createHealthCurlHandle($currentUrl, $hopTimeout, false);
+        $raw = curl_exec($ch);
+        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $hopErrno = curl_errno($ch);
+        $hopError = curl_error($ch);
+        curl_close($ch);
+
+        if ($hopErrno !== 0 && $code === 0) {
+            $errno = $hopErrno;
+            $error = $hopError;
+            $chain[] = [
+                'step' => count($chain),
+                'url' => $currentUrl,
+                'httpCode' => 0,
+                'error' => $hopError !== '' ? $hopError : 'Request failed'
+            ];
+            break;
+        }
+
+        $location = null;
+        if ($code >= 300 && $code < 400) {
+            $location = extractHealthLocationHeader($raw);
+        }
+
+        $entry = [
+            'step' => count($chain),
+            'url' => $currentUrl,
+            'httpCode' => $code
+        ];
+        if ($location !== null && $location !== '') {
+            $entry['location'] = $location;
+        }
+        $chain[] = $entry;
+        $httpCode = $code;
+        $errno = 0;
+        $error = '';
+
+        if ($code < 300 || $code >= 400) {
+            // Final non-redirect response
+            break;
+        }
+
+        // 3xx — follow if under the hop cap
+        if ($redirectCount >= (int)HEALTH_MAX_REDIRS) {
+            $errno = CURLE_TOO_MANY_REDIRECTS;
+            $error = 'Maximum (' . (int)HEALTH_MAX_REDIRS . ') redirects followed';
+            break;
+        }
+
+        $next = resolveHealthRedirectUrl($currentUrl, $location ?? '');
+        if ($next === null) {
+            // Redirect response without a usable Location
+            break;
+        }
+
+        $redirectCount++;
+        $currentUrl = $next;
+    }
+
+    $serverLatency = round((microtime(true) - $start) * 1000);
+    $statusResult = determineHealthStatus($httpCode, $errno, $error, $redirectCount);
+
+    $finalUrl = null;
+    if (!empty($chain)) {
+        $lastUrl = (string)$chain[count($chain) - 1]['url'];
+        if ($lastUrl !== '' && strcasecmp($lastUrl, $url) !== 0) {
+            $finalUrl = $lastUrl;
+        } elseif ($redirectCount > 0 && $currentUrl !== '' && strcasecmp($currentUrl, $url) !== 0) {
+            $finalUrl = $currentUrl;
+        }
+    }
+
+    return [
+        'status' => $statusResult['status'],
+        'http_code' => $httpCode,
+        'error' => $statusResult['error'],
+        'server_latency' => $serverLatency,
+        'final_url' => $finalUrl,
+        'redirect_count' => $redirectCount,
+        'redirect_chain' => $chain
+    ];
 }
 
 /**
@@ -483,7 +693,8 @@ function checkUrlsParallel($urls, $maxConcurrent = 12) {
             'http_code' => $httpCode,
             'error' => $statusResult['error'],
             'server_latency' => $serverLatency,
-            'final_url' => $finalUrl
+            'final_url' => $finalUrl,
+            'redirect_count' => $redirectCount
         ];
     };
 
@@ -950,6 +1161,7 @@ function handleCheckUrls() {
                     'error' => $healthResult['error'] ?? null,
                     'serverLatency' => $healthResult['server_latency'] ?? 0,
                     'finalUrl' => !empty($healthResult['final_url']) ? (string)$healthResult['final_url'] : null,
+                    'redirectCount' => isset($healthResult['redirect_count']) ? (int)$healthResult['redirect_count'] : 0,
                     'checkedAt' => time()
                 ]
             ];
@@ -970,7 +1182,7 @@ function handleCheckUrl() {
         return;
     }
     releaseSessionLock();
-    set_time_limit(8);
+    set_time_limit(90);
 
     try {
         $data = getJSONInput();
@@ -1020,8 +1232,29 @@ function handleCheckUrl() {
             return;
         }
 
-        // Slightly longer timeout for interactive edit-form previews
-        $healthResult = checkUrlHealth($url, 5);
+        // Interactive edit-form probe: hop-by-hop chain for the redirects badge
+        $healthResult = checkUrlHealthWithRedirectChain($url, 60);
+
+        $redirectChain = [];
+        if (!empty($healthResult['redirect_chain']) && is_array($healthResult['redirect_chain'])) {
+            foreach ($healthResult['redirect_chain'] as $hop) {
+                if (!is_array($hop) || empty($hop['url'])) {
+                    continue;
+                }
+                $item = [
+                    'step' => isset($hop['step']) ? (int)$hop['step'] : count($redirectChain),
+                    'url' => (string)$hop['url'],
+                    'httpCode' => isset($hop['httpCode']) ? (int)$hop['httpCode'] : 0
+                ];
+                if (!empty($hop['location'])) {
+                    $item['location'] = (string)$hop['location'];
+                }
+                if (!empty($hop['error'])) {
+                    $item['error'] = (string)$hop['error'];
+                }
+                $redirectChain[] = $item;
+            }
+        }
 
         sendJSON([
             'success' => true,
@@ -1033,6 +1266,8 @@ function handleCheckUrl() {
                 'error' => $healthResult['error'],
                 'serverLatency' => $healthResult['server_latency'],
                 'finalUrl' => !empty($healthResult['final_url']) ? (string)$healthResult['final_url'] : null,
+                'redirectCount' => isset($healthResult['redirect_count']) ? (int)$healthResult['redirect_count'] : 0,
+                'redirectChain' => $redirectChain,
                 'checkedAt' => time()
             ]
         ]);

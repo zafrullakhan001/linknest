@@ -1,3 +1,11 @@
+export interface LinkRedirectHop {
+  step: number;
+  url: string;
+  httpCode: number;
+  location?: string;
+  error?: string;
+}
+
 export interface LinkHealth {
   status: 'unknown' | 'healthy' | 'broken' | 'timeout' | 'checking' | 'restricted' | 'accessible' | 'redirected';
   httpCode?: number | null;
@@ -5,6 +13,10 @@ export interface LinkHealth {
   checkedAt?: number | null;
   /** Final URL after following redirects (when available from health probe). */
   finalUrl?: string | null;
+  /** Number of redirects followed during the health probe (when available). */
+  redirectCount?: number;
+  /** Hop-by-hop redirect trace from the edit-form URL probe (when available). */
+  redirectChain?: LinkRedirectHop[];
 }
 
 export type LinkVisibility = 'public' | 'authenticated' | 'private';
