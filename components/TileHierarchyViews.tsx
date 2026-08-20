@@ -309,6 +309,8 @@ export interface TileHierarchyViewsProps {
   onCloneSection: (tabId: string, sectionId: string) => void;
   onCloneLink: (tabId: string, sectionId: string, linkId: string) => void;
   onConvertLinkToTile: (tabId: string, sectionId: string, link: Link) => void;
+  onConvertTabToSpace: (tabId: string) => void;
+  onConvertSectionToSpace: (tabId: string, sectionId: string) => void;
   onRemoveLink: (tabId: string, sectionId: string, linkId: string) => void;
   onMoveTab: (tabId: string, direction: 'up' | 'down') => void;
   onMoveSection: (tabId: string, sectionId: string, direction: 'up' | 'down') => void;
@@ -394,6 +396,8 @@ const TabNode: React.FC<
   onCloneSection,
   onCloneLink,
   onConvertLinkToTile,
+  onConvertTabToSpace,
+  onConvertSectionToSpace,
   onRemoveLink,
   onMoveTab,
   onMoveSection,
@@ -496,6 +500,7 @@ const TabNode: React.FC<
             { id: 'move-up', label: 'Move up', onClick: () => onMoveTab(tab.id, 'up'), disabled: tabIndex === 0 },
             { id: 'move-down', label: 'Move down', onClick: () => onMoveTab(tab.id, 'down'), disabled: tabIndex >= tabCount - 1 },
             { id: 'clone', label: 'Clone tab', onClick: () => onCloneTab(tab.id) },
+            { id: 'convert-space', label: 'Convert to space…', onClick: () => onConvertTabToSpace(tab.id) },
             { id: 'import', label: 'Import tab (JSON)', onClick: () => onImportTab(tab.id) },
             { id: 'export', label: 'Export tab (JSON)', onClick: () => exportTabToFile(tab) },
             { id: 'schedule', label: 'Schedule…', onClick: () => onScheduleTab(tab.id) },
@@ -531,6 +536,7 @@ const TabNode: React.FC<
               onCloneSection={onCloneSection}
               onCloneLink={onCloneLink}
               onConvertLinkToTile={onConvertLinkToTile}
+              onConvertSectionToSpace={onConvertSectionToSpace}
               onRemoveLink={onRemoveLink}
               onMoveSection={onMoveSection}
               onMoveItem={onMoveItem}
@@ -585,6 +591,7 @@ const SectionNode: React.FC<{
   onCloneSection: (tabId: string, sectionId: string) => void;
   onCloneLink: (tabId: string, sectionId: string, linkId: string) => void;
   onConvertLinkToTile: (tabId: string, sectionId: string, link: Link) => void;
+  onConvertSectionToSpace: (tabId: string, sectionId: string) => void;
   onRemoveLink: (tabId: string, sectionId: string, linkId: string) => void;
   onMoveSection: (tabId: string, sectionId: string, direction: 'up' | 'down') => void;
   onMoveItem: (tabId: string, sectionId: string, itemId: string, direction: 'up' | 'down') => void;
@@ -619,6 +626,7 @@ const SectionNode: React.FC<{
   onCloneSection,
   onCloneLink,
   onConvertLinkToTile,
+  onConvertSectionToSpace,
   onRemoveLink,
   onMoveSection,
   onMoveItem,
@@ -711,6 +719,7 @@ const SectionNode: React.FC<{
               disabled: sectionIndex >= sectionCount - 1,
             },
             { id: 'clone', label: 'Clone section', onClick: () => onCloneSection(tab.id, section.id) },
+            { id: 'convert-space', label: 'Convert to space…', onClick: () => onConvertSectionToSpace(tab.id, section.id) },
             { id: 'import', label: 'Import links (JSON/CSV)', onClick: () => onImportSection(tab.id, section.id) },
             { id: 'export', label: 'Export links (JSON)', onClick: () => exportSectionLinksToFile(section) },
             { id: 'schedule', label: 'Schedule…', onClick: () => onScheduleSection(tab.id, section.id) },

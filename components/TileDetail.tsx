@@ -1048,6 +1048,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
     const [convertLinkDialog, setConvertLinkDialog] = useState<{ tabId: string; sectionId: string; link: Link } | null>(null);
     const [convertingLinkToTile, setConvertingLinkToTile] = useState(false);
+    const [convertTabSectionDialog, setConvertTabSectionDialog] = useState<
+        | { kind: 'tab'; tabId: string }
+        | { kind: 'section'; tabId: string; sectionId: string }
+        | null
+    >(null);
+    const [convertingTabSectionToSpace, setConvertingTabSectionToSpace] = useState(false);
     const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, notesEnabled: boolean, browser: string, richTextContent: string, richTextEnabled: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
 
     // Available browsers from BrowserLauncher API
@@ -4881,6 +4887,248 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             alert(err instanceof Error ? err.message : 'Failed to create tile from this link.');
         } finally {
             setConvertingLinkToTile(false);
+        }
+    };
+
+    const openConvertTabToSpaceDialog = (tabId: string) => {
+        if (!tile.canEdit) {
+            alert('You do not have permission to edit this tile.');
+            return;
+        }
+        if (!editTabs.some((t) => t.id === tabId)) {
+            alert('Tab not found.');
+            return;
+        }
+        setConvertTabSectionDialog({ kind: 'tab', tabId });
+    };
+
+    const openConvertSectionToSpaceDialog = (tabId: string, sectionId: string) => {
+        if (!tile.canEdit) {
+            alert('You do not have permission to edit this tile.');
+            return;
+        }
+        const tab = editTabs.find((t) => t.id === tabId);
+        if (!tab || !tab.sections.some((s) => s.id === sectionId)) {
+            alert('Section not found.');
+            return;
+        }
+        setConvertTabSectionDialog({ kind: 'section', tabId, sectionId });
+    };
+
+    const resolveConvertedSpaceVisibility = (
+        sourceVisibility?: LinkVisibility,
+        sourceAllowedUsers?: number[],
+        sourceAllowedGroups?: number[]
+    ): { visibility: TileVisibility; allowedUsers: number[]; allowedGroups: number[] } => {
+        const isAdmin = !!user?.is_admin;
+        let visibility: TileVisibility = tile.visibility || 'public';
+        let allowedUsers = tile.allowedUsers ? [...tile.allowedUsers] : [];
+        let allowedGroups = tile.allowedGroups ? [...tile.allowedGroups] : [];
+
+        if (sourceVisibility === 'private') {
+            visibility = 'private';
+            if (sourceAllowedUsers?.length) allowedUsers = [...sourceAllowedUsers];
+            if (sourceAllowedGroups?.length) allowedGroups = [...sourceAllowedGroups];
+        } else if (sourceVisibility === 'authenticated' && visibility === 'public') {
+            visibility = 'authenticated';
+        }
+
+        if (!isAdmin) {
+            visibility = 'private';
+        }
+        if (visibility === 'private' && user && !allowedUsers.includes(user.id)) {
+            allowedUsers = [...allowedUsers, user.id];
+        }
+
+        return { visibility, allowedUsers, allowedGroups };
+    };
+
+    const persistParentAfterConvertMove = async (nextTabs: Tab[], createdTile: Tile) => {
+        const updatedParent: Tile = {
+            ...tile,
+            title: editTitle,
+            description: editDesc,
+            htmlContent: editHtml,
+            emoji: editEmoji,
+            themeColor: editColor,
+            tabs: nextTabs.length > 0 ? nextTabs : undefined,
+            sections: nextTabs.length > 0 ? undefined : editSections,
+            visibility: editVisibility,
+            published: editPublished,
+            allowedUsers: editVisibility === 'private' ? editAllowedUsers : undefined,
+        };
+
+        autoSavingRef.current = true;
+        try {
+            let list: Tile[];
+            if (createdTile.sourceTab !== 'staging') {
+                list = await getTiles();
+                list = list.map((t) => (t.id === updatedParent.id ? updatedParent : t));
+                if (!list.some((t) => t.id === createdTile.id)) {
+                    list = [...list, createdTile];
+                }
+            } else {
+                list = allTiles.map((t) => (t.id === updatedParent.id ? updatedParent : t));
+                if (!list.some((t) => t.id === createdTile.id)) {
+                    list = [...list, createdTile];
+                }
+            }
+            onUpdateTiles(list, true);
+            setTimeout(() => {
+                autoSavingRef.current = false;
+            }, 1000);
+        } catch (error) {
+            console.error('Auto-save after convert move failed:', error);
+            autoSavingRef.current = false;
+            throw error;
+        }
+    };
+
+    const handleConvertTabOrSectionToSpace = async (mode: 'copy' | 'move') => {
+        if (!convertTabSectionDialog) return;
+        if (!isAuthenticated) {
+            onAuthRequired?.();
+            return;
+        }
+        if (!tile.canEdit) {
+            alert('You do not have permission to edit this tile.');
+            return;
+        }
+
+        const dialog = convertTabSectionDialog;
+
+        if (dialog.kind === 'tab') {
+            if (mode === 'move' && editTabs.length <= 1) {
+                alert('Cannot move the last tab. A space must have at least one tab. Use Copy instead.');
+                return;
+            }
+            const tab = editTabs.find((t) => t.id === dialog.tabId);
+            if (!tab) {
+                alert('Tab not found.');
+                return;
+            }
+            const title = stripHtmlTags(tab.title || '').trim() || 'Untitled';
+            const emoji = (tab.emoji && tab.emoji.trim()) ? tab.emoji : (tile.emoji || '📁');
+            const sourceLabel = `tab “${title}”`;
+            const { visibility, allowedUsers, allowedGroups } = resolveConvertedSpaceVisibility(
+                tab.visibility,
+                tab.allowedUsers,
+                tab.allowedGroups
+            );
+            const clonedTab = cloneTabItem(tab, { appendCopyTitle: false, position: 0 });
+
+            const newTile: Tile = {
+                id: generateUuid(),
+                title,
+                description: '',
+                emoji,
+                themeColor: tile.themeColor,
+                group: tile.group || 'General',
+                tabs: [clonedTab],
+                createdAt: Date.now(),
+                visibility,
+                allowedUsers: visibility === 'private' ? allowedUsers : undefined,
+                allowedGroups: visibility === 'private' ? allowedGroups : undefined,
+                showShortUrls: tile.showShortUrls,
+                sourceTab: (tile.sourceTab === 'staging' || sourceTab === 'staging') ? 'staging' : 'public',
+            };
+
+            setConvertingTabSectionToSpace(true);
+            try {
+                await createTile(newTile);
+                if (mode === 'move') {
+                    const reorderedTabs = editTabs
+                        .filter((t) => t.id !== dialog.tabId)
+                        .map((t, idx) => ({ ...t, position: idx }));
+                    setEditTabs(reorderedTabs);
+                    await persistParentAfterConvertMove(reorderedTabs, newTile);
+                    setConvertTabSectionDialog(null);
+                    alert(`Moved ${sourceLabel} into a new space on the dashboard.`);
+                } else {
+                    if (newTile.sourceTab !== 'staging') {
+                        const updatedTiles = await getTiles();
+                        onUpdateTiles(updatedTiles, true);
+                    }
+                    setConvertTabSectionDialog(null);
+                    alert(`Created a new space from ${sourceLabel}. You’ll find it on the dashboard. The original tab is still in this space.`);
+                }
+            } catch (err) {
+                console.error(err);
+                alert(err instanceof Error ? err.message : 'Failed to convert tab to a space.');
+            } finally {
+                setConvertingTabSectionToSpace(false);
+            }
+            return;
+        }
+
+        // Section → space
+        const parentTab = editTabs.find((t) => t.id === dialog.tabId);
+        const section = parentTab?.sections.find((s) => s.id === dialog.sectionId);
+        if (!parentTab || !section) {
+            alert('Section not found.');
+            return;
+        }
+        const title = stripHtmlTags(section.title || '').trim() || 'Untitled';
+        const emoji = (section.emoji && section.emoji.trim()) ? section.emoji : (tile.emoji || '📁');
+        const sourceLabel = `section “${title}”`;
+        const { visibility, allowedUsers, allowedGroups } = resolveConvertedSpaceVisibility(
+            section.visibility,
+            section.allowedUsers,
+            section.allowedGroups
+        );
+        const clonedSection = cloneSectionItem(section, { position: 0 });
+        const tabsForNewSpace: Tab[] = [{
+            id: generateId(),
+            title: stripHtmlTags(parentTab.title || '').trim() || 'General',
+            emoji: parentTab.emoji,
+            position: 0,
+            sections: [clonedSection],
+        }];
+
+        const newTile: Tile = {
+            id: generateUuid(),
+            title,
+            description: '',
+            emoji,
+            themeColor: tile.themeColor,
+            group: tile.group || 'General',
+            tabs: tabsForNewSpace,
+            createdAt: Date.now(),
+            visibility,
+            allowedUsers: visibility === 'private' ? allowedUsers : undefined,
+            allowedGroups: visibility === 'private' ? allowedGroups : undefined,
+            showShortUrls: tile.showShortUrls,
+            sourceTab: (tile.sourceTab === 'staging' || sourceTab === 'staging') ? 'staging' : 'public',
+        };
+
+        setConvertingTabSectionToSpace(true);
+        try {
+            await createTile(newTile);
+            if (mode === 'move') {
+                const nextTabs = editTabs.map((t) => {
+                    if (t.id !== dialog.tabId) return t;
+                    const reordered = t.sections
+                        .filter((s) => s.id !== dialog.sectionId)
+                        .map((s, idx) => ({ ...s, position: idx }));
+                    return { ...t, sections: reordered };
+                });
+                setEditTabs(nextTabs);
+                await persistParentAfterConvertMove(nextTabs, newTile);
+                setConvertTabSectionDialog(null);
+                alert(`Moved ${sourceLabel} into a new space on the dashboard.`);
+            } else {
+                if (newTile.sourceTab !== 'staging') {
+                    const updatedTiles = await getTiles();
+                    onUpdateTiles(updatedTiles, true);
+                }
+                setConvertTabSectionDialog(null);
+                alert(`Created a new space from ${sourceLabel}. You’ll find it on the dashboard. The original section is still in this space.`);
+            }
+        } catch (err) {
+            console.error(err);
+            alert(err instanceof Error ? err.message : 'Failed to convert section to a space.');
+        } finally {
+            setConvertingTabSectionToSpace(false);
         }
     };
 
@@ -8768,6 +9016,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 onCloneSection={handleCloneSection}
                                                 onCloneLink={handleCloneLink}
                                                 onConvertLinkToTile={openConvertLinkDialog}
+                                                onConvertTabToSpace={openConvertTabToSpaceDialog}
+                                                onConvertSectionToSpace={openConvertSectionToSpaceDialog}
                                                 onRemoveLink={handleRemoveLinkFromSection}
                                                 onMoveTab={handleMoveTab}
                                                 onMoveSection={handleMoveSection}
@@ -8889,6 +9139,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     />
                                                     </div>
                                                     <div className="flex items-center gap-1 flex-wrap justify-end max-w-full min-w-0 [&>*]:shrink-0">
+                                                    {tile.canEdit && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => openConvertTabToSpaceDialog(tab.id)}
+                                                        className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 p-2"
+                                                        title="Convert tab to independent space"
+                                                    >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                                            <path d="M2 4.25A2.25 2.25 0 014.25 2h2.5A2.25 2.25 0 019 4.25v2.5A2.25 2.25 0 016.75 9h-2.5A2.25 2.25 0 012 6.75v-2.5zM11 4.25A2.25 2.25 0 0113.25 2h2.5A2.25 2.25 0 0118 4.25v2.5A2.25 2.25 0 0115.75 9h-2.5A2.25 2.25 0 0111 6.75v-2.5zM2 13.25A2.25 2.25 0 014.25 11h2.5A2.25 2.25 0 019 13.25v2.5A2.25 2.25 0 016.75 18h-2.5A2.25 2.25 0 012 15.75v-2.5zM12.25 11.75a.75.75 0 000 1.5h2v2a.75.75 0 001.5 0v-2h2a.75.75 0 000-1.5h-2v-2a.75.75 0 00-1.5 0v2h-2z" />
+                                                        </svg>
+                                                    </button>
+                                                    )}
                                                     <ShortUrlInheritToggle
                                                         checked={tab.inheritShortUrls !== false}
                                                         title="On: inherit short URLs from the space. Off: show original URLs for this tab."
@@ -9132,6 +9394,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     />
                                                                     </div>
                                                                     <div className="flex items-center gap-1 flex-wrap justify-end max-w-full min-w-0 [&>*]:shrink-0">
+                                                                    {tile.canEdit && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => openConvertSectionToSpaceDialog(tab.id, section.id)}
+                                                                        className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 p-2"
+                                                                        title="Convert section to independent space"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                                                            <path d="M2 4.25A2.25 2.25 0 014.25 2h2.5A2.25 2.25 0 019 4.25v2.5A2.25 2.25 0 016.75 9h-2.5A2.25 2.25 0 012 6.75v-2.5zM11 4.25A2.25 2.25 0 0113.25 2h2.5A2.25 2.25 0 0118 4.25v2.5A2.25 2.25 0 0115.75 9h-2.5A2.25 2.25 0 0111 6.75v-2.5zM2 13.25A2.25 2.25 0 014.25 11h2.5A2.25 2.25 0 019 13.25v2.5A2.25 2.25 0 016.75 18h-2.5A2.25 2.25 0 012 15.75v-2.5zM12.25 11.75a.75.75 0 000 1.5h2v2a.75.75 0 001.5 0v-2h2a.75.75 0 000-1.5h-2v-2a.75.75 0 00-1.5 0v2h-2z" />
+                                                                        </svg>
+                                                                    </button>
+                                                                    )}
                                                                     <ShortUrlInheritToggle
                                                                         checked={section.inheritShortUrls !== false}
                                                                         title="On: inherit short URLs from the tab/space. Off: show original URLs for this section."
@@ -11640,6 +11914,89 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 </div>
                             </div>
                         )}
+
+                        {/* Convert tab or section to its own space */}
+                        {convertTabSectionDialog && (() => {
+                            const isTab = convertTabSectionDialog.kind === 'tab';
+                            const dialogTab = editTabs.find((t) => t.id === convertTabSectionDialog.tabId);
+                            const dialogSection = !isTab && dialogTab
+                                ? dialogTab.sections.find((s) => s.id === convertTabSectionDialog.sectionId)
+                                : null;
+                            const sourceName = isTab
+                                ? (dialogTab?.title || 'Untitled tab')
+                                : (dialogSection?.title || 'Untitled section');
+                            const moveDisabled = isTab && editTabs.length <= 1;
+
+                            return (
+                                <div
+                                    className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+                                    onClick={() => !convertingTabSectionToSpace && setConvertTabSectionDialog(null)}
+                                >
+                                    <div
+                                        className="bg-white dark:bg-slate-800 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <div className="flex items-center justify-between mb-2">
+                                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                                                {isTab ? 'Convert tab to space' : 'Convert section to space'}
+                                            </h3>
+                                            <button
+                                                type="button"
+                                                onClick={() => !convertingTabSectionToSpace && setConvertTabSectionDialog(null)}
+                                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                                                title="Close"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                                    <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                        <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                                            Create a dashboard space from{' '}
+                                            <span className="font-semibold text-slate-800 dark:text-slate-200">{sourceName}</span>.
+                                            Choose whether to keep or remove the original in this space.
+                                        </p>
+                                        <div className="space-y-2">
+                                            <button
+                                                type="button"
+                                                disabled={convertingTabSectionToSpace}
+                                                onClick={() => void handleConvertTabOrSectionToSpace('copy')}
+                                                className="w-full text-left rounded-xl border border-sky-200 dark:border-sky-800 bg-sky-50/80 dark:bg-sky-950/30 hover:border-sky-400 px-4 py-3 transition-colors disabled:opacity-50"
+                                            >
+                                                <div className="text-sm font-semibold text-slate-900 dark:text-white">Copy into new space</div>
+                                                <div className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                                                    New space on the dashboard — original {isTab ? 'tab' : 'section'} stays here
+                                                </div>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                disabled={convertingTabSectionToSpace || moveDisabled}
+                                                onClick={() => void handleConvertTabOrSectionToSpace('move')}
+                                                className="w-full text-left rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-950/30 hover:border-amber-400 px-4 py-3 transition-colors disabled:opacity-50"
+                                                title={moveDisabled ? 'Cannot move the last tab — a space must keep at least one tab' : undefined}
+                                            >
+                                                <div className="text-sm font-semibold text-slate-900 dark:text-white">Move into new space</div>
+                                                <div className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                                                    {moveDisabled
+                                                        ? 'Unavailable — this is the only tab in this space'
+                                                        : `New space on the dashboard — remove original ${isTab ? 'tab' : 'section'} from here`}
+                                                </div>
+                                            </button>
+                                        </div>
+                                        <div className="mt-4 flex justify-end">
+                                            <button
+                                                type="button"
+                                                disabled={convertingTabSectionToSpace}
+                                                onClick={() => setConvertTabSectionDialog(null)}
+                                                className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"
+                                            >
+                                                {convertingTabSectionToSpace ? 'Creating…' : 'Cancel'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
 
                         {/* Link Scheduling Dialog */}
                         {schedulingDialogLink && (() => {
