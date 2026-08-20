@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const VOICE_STORAGE_KEY = 'linknest_readaloud_voice';
 const LEGACY_VOICE_STORAGE_KEY = 'linknest_maintenance_readaloud_voice';
+const VOICE_USER_CHOSEN_KEY = 'linknest_readaloud_voice_user_chosen';
 
 const US_MALE_NAME_HINTS = new Set([
   'andrew', 'brian', 'brandon', 'bruce', 'christopher', 'claude', 'daniel', 'david',
@@ -25,8 +26,18 @@ export type UsVoiceOption = {
   gender: UsVoiceGender;
 };
 
+function hasUserChosenVoice(): boolean {
+  try {
+    return localStorage.getItem(VOICE_USER_CHOSEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 function readStoredVoiceUri(): string {
   try {
+    // Honor a stored URI only after the user explicitly picked a voice.
+    if (!hasUserChosenVoice()) return '';
     return localStorage.getItem(VOICE_STORAGE_KEY) || localStorage.getItem(LEGACY_VOICE_STORAGE_KEY) || '';
   } catch {
     return '';
@@ -35,7 +46,9 @@ function readStoredVoiceUri(): string {
 
 function persistVoiceUri(uri: string): void {
   try {
-    if (uri) localStorage.setItem(VOICE_STORAGE_KEY, uri);
+    if (!uri) return;
+    localStorage.setItem(VOICE_STORAGE_KEY, uri);
+    localStorage.setItem(VOICE_USER_CHOSEN_KEY, '1');
   } catch {
     // Ignore storage failures (private mode, quota, etc.)
   }
@@ -84,6 +97,20 @@ export function getUsMaleFemaleVoices(list: SpeechSynthesisVoice[]): UsVoiceOpti
       if (a.gender !== b.gender) return a.gender === 'female' ? -1 : 1;
       return a.voice.name.localeCompare(b.voice.name);
     });
+}
+
+function isEmmaVoice(voice: SpeechSynthesisVoice): boolean {
+  const name = (voice.name || '').toLowerCase();
+  return /\bemma\b/.test(name) || extractVoiceGivenName(voice.name || '') === 'emma';
+}
+
+function pickDefaultUsVoice(usList: UsVoiceOption[]): UsVoiceOption | undefined {
+  return (
+    usList.find((option) => isEmmaVoice(option.voice)) ||
+    usList.find((option) => option.gender === 'female') ||
+    usList.find((option) => option.voice.default) ||
+    usList[0]
+  );
 }
 
 export function toSpeakableText(content: string): string {
@@ -168,7 +195,7 @@ export function useReadAloud({ text, active = true, autoStart = false }: UseRead
       const selectedUri = selectedVoiceUriRef.current;
       const preferredVoice =
         availableUsVoices.find((voice) => voice.voiceURI === selectedUri) ||
-        availableUsVoices.find((voice) => voice.default) ||
+        availableUsVoices.find(isEmmaVoice) ||
         availableUsVoices[0];
 
       const utterance = new SpeechSynthesisUtterance(speakable);
@@ -242,10 +269,6 @@ export function useReadAloud({ text, active = true, autoStart = false }: UseRead
   );
 
   useEffect(() => {
-    if (selectedVoiceUri) persistVoiceUri(selectedVoiceUri);
-  }, [selectedVoiceUri]);
-
-  useEffect(() => {
     if (!canSpeak) return;
 
     const applyVoices = (list: SpeechSynthesisVoice[]) => {
@@ -256,11 +279,7 @@ export function useReadAloud({ text, active = true, autoStart = false }: UseRead
         if (prev && usList.some((option) => option.voice.voiceURI === prev)) return prev;
         const saved = readStoredVoiceUri();
         if (saved && usList.some((option) => option.voice.voiceURI === saved)) return saved;
-        const fallback =
-          usList.find((option) => option.voice.default) ||
-          usList.find((option) => option.gender === 'female') ||
-          usList[0];
-        return fallback?.voice.voiceURI || prev;
+        return pickDefaultUsVoice(usList)?.voice.voiceURI || prev;
       });
     };
 
