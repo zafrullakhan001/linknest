@@ -858,6 +858,15 @@ const AppContent: React.FC = () => {
     }
   }, [isAuthenticated, authLoading]);
 
+  // Session cookies are HttpOnly, so a refresh can render #/admin before getCurrentUser
+  // finishes. Wait for that check so admins are not bounced to the dashboard.
+  useEffect(() => {
+    if (route !== '#/admin' || authLoading) return;
+    if (!user?.is_admin) {
+      window.location.hash = '#/';
+    }
+  }, [route, authLoading, user?.is_admin]);
+
   const handleUpdateTiles = async (
     newTiles: Tile[],
     skipReload: boolean = false,
@@ -1121,7 +1130,9 @@ const AppContent: React.FC = () => {
       </Suspense>
     );
   } else if (route === '#/admin') {
-    if (user?.is_admin) {
+    if (authLoading) {
+      content = <LoadingFallback />;
+    } else if (user?.is_admin) {
       if (disabledTabs.has('admin')) {
         content = (
           <div className="w-full max-w-2xl mx-auto">
@@ -1162,8 +1173,7 @@ const AppContent: React.FC = () => {
         );
       }
     } else {
-      window.location.hash = '#/';
-      content = null;
+      content = <LoadingFallback />;
     }
   } else if (route.startsWith('#/tile/')) {
     // Parse tile ID and optional 'from' query parameter
